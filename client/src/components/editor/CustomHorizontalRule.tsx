@@ -1,6 +1,14 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    customHorizontalRule: {
+      setHorizontalRule: (options?: { width?: "thin" | "medium" | "thick" }) => ReturnType;
+    };
+  }
+}
+
 export interface HorizontalRuleOptions {
   HTMLAttributes: Record<string, any>;
 }

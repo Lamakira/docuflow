@@ -358,7 +358,7 @@ export class DatabaseStorage implements IStorage {
       .insert(users)
       .values({
         id: userData.id,
-        email: userData.email ?? undefined,
+        email: userData.email ?? "",
         password: "REPLIT_OIDC_USER", // Placeholder for OIDC users - never used for auth
         firstName: userData.firstName ?? undefined,
         lastName: userData.lastName ?? undefined,
@@ -367,7 +367,7 @@ export class DatabaseStorage implements IStorage {
       .onConflictDoUpdate({
         target: users.id,
         set: {
-          email: userData.email ?? undefined,
+          email: userData.email ?? "",
           firstName: userData.firstName ?? undefined,
           lastName: userData.lastName ?? undefined,
           profileImageUrl: userData.profileImageUrl ?? undefined,
@@ -1704,7 +1704,7 @@ export class DatabaseStorage implements IStorage {
     
     const creatorIds = [...new Set(notes.map(n => n.createdById))];
     const creatorsData = await db.select().from(users).where(or(...creatorIds.map(id => eq(users.id, id))));
-    const creatorMap = new Map(creatorsData.map(u => [u.id, { id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName, profileImageUrl: u.profileImageUrl, role: u.role, isMainAdmin: u.isMainAdmin, lastGeneratedPassword: u.lastGeneratedPassword, createdAt: u.createdAt, updatedAt: u.updatedAt }]));
+    const creatorMap = new Map(creatorsData.map(u => [u.id, { id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName, profileImageUrl: u.profileImageUrl, role: u.role, hoursPerDay: u.hoursPerDay, isMainAdmin: u.isMainAdmin, lastGeneratedPassword: u.lastGeneratedPassword, lastLoginAt: u.lastLoginAt, createdAt: u.createdAt, updatedAt: u.updatedAt }]));
     
     return notes.map(n => ({
       ...n,
@@ -1723,7 +1723,7 @@ export class DatabaseStorage implements IStorage {
     if (!note) return undefined;
     
     const [creator] = await db.select().from(users).where(eq(users.id, note.createdById));
-    const safeCreator = creator ? { id: creator.id, email: creator.email, firstName: creator.firstName, lastName: creator.lastName, profileImageUrl: creator.profileImageUrl, role: creator.role, isMainAdmin: creator.isMainAdmin, lastGeneratedPassword: creator.lastGeneratedPassword, createdAt: creator.createdAt, updatedAt: creator.updatedAt } : undefined;
+    const safeCreator = creator ? { id: creator.id, email: creator.email, firstName: creator.firstName, lastName: creator.lastName, profileImageUrl: creator.profileImageUrl, role: creator.role, hoursPerDay: creator.hoursPerDay, isMainAdmin: creator.isMainAdmin, lastGeneratedPassword: creator.lastGeneratedPassword, lastLoginAt: creator.lastLoginAt, createdAt: creator.createdAt, updatedAt: creator.updatedAt } : undefined;
     
     return { ...note, createdBy: safeCreator };
   }
@@ -1769,6 +1769,9 @@ export class DatabaseStorage implements IStorage {
           profileImageUrl: user.profileImageUrl,
           role: user.role,
           hoursPerDay: user.hoursPerDay,
+          isMainAdmin: user.isMainAdmin,
+          lastGeneratedPassword: user.lastGeneratedPassword,
+          lastLoginAt: user.lastLoginAt,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         } : undefined,
@@ -1801,7 +1804,7 @@ export class DatabaseStorage implements IStorage {
     const fromUsersData = fromUserIds.length > 0 
       ? await db.select().from(users).where(sql`${users.id} IN ${fromUserIds}`)
       : [];
-    const fromUserMap = new Map(fromUsersData.map(u => [u.id, { id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName, profileImageUrl: u.profileImageUrl, role: u.role, isMainAdmin: u.isMainAdmin, lastGeneratedPassword: u.lastGeneratedPassword, createdAt: u.createdAt, updatedAt: u.updatedAt }]));
+    const fromUserMap = new Map(fromUsersData.map(u => [u.id, { id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName, profileImageUrl: u.profileImageUrl, role: u.role, hoursPerDay: u.hoursPerDay, isMainAdmin: u.isMainAdmin, lastGeneratedPassword: u.lastGeneratedPassword, lastLoginAt: u.lastLoginAt, createdAt: u.createdAt, updatedAt: u.updatedAt }]));
 
     const projectsData = crmProjectIds.length > 0
       ? await db.select().from(crmProjects).leftJoin(projects, eq(crmProjects.projectId, projects.id)).where(sql`${crmProjects.id} IN ${crmProjectIds}`)
@@ -1974,7 +1977,7 @@ export class DatabaseStorage implements IStorage {
   async createCrmModuleField(field: InsertCrmModuleField): Promise<CrmModuleField> {
     const [newField] = await db.insert(crmModuleFields).values({
       ...field,
-      id: randomUUID(),
+      options: field.options as string[] | null | undefined,
     }).returning();
     return newField;
   }
@@ -1982,7 +1985,7 @@ export class DatabaseStorage implements IStorage {
   async updateCrmModuleField(id: string, data: Partial<InsertCrmModuleField>): Promise<CrmModuleField | undefined> {
     const [updated] = await db
       .update(crmModuleFields)
-      .set({ ...data, updatedAt: new Date() })
+      .set({ ...data, options: data.options as string[] | null | undefined, updatedAt: new Date() })
       .where(eq(crmModuleFields.id, id))
       .returning();
     return updated;
