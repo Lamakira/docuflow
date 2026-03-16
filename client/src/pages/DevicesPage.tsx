@@ -38,6 +38,7 @@ import {
   ShieldX,
   Download,
 } from "lucide-react";
+import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 
 const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.1/DocuFlowAgentSetup.exe";
 const AGENT_VERSION = "v0.1.3";
@@ -112,6 +113,7 @@ export default function DevicesPage() {
   const deviceToRevoke = devices.find(d => d.id === revokeDeviceId);
 
   return (
+    <TimeTrackingLayout>
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -307,5 +309,6 @@ export default function DevicesPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </TimeTrackingLayout>
   );
 }

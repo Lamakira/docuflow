@@ -27,6 +27,9 @@ import FileViewerPage from "@/pages/FileViewerPage";
 import AdminPage from "@/pages/AdminPage";
 import TimeTrackingPage from "@/pages/TimeTrackingPage";
 import DevicesPage from "@/pages/DevicesPage";
+import TimeTrackingProjectsPage from "@/pages/TimeTrackingProjectsPage";
+import TimeTrackingDownloadPage from "@/pages/TimeTrackingDownloadPage";
+import TimeTrackingDashboardPage from "@/pages/TimeTrackingDashboardPage";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -106,6 +109,10 @@ function Router() {
         <Route path="/admin/create" component={AdminPage} />
         <Route path="/admin/user/:id" component={AdminPage} />
         <Route path="/time-tracking" component={TimeTrackingPage} />
+        <Route path="/time-tracking/projects" component={TimeTrackingProjectsPage} />
+        <Route path="/time-tracking/devices" component={DevicesPage} />
+        <Route path="/time-tracking/download" component={TimeTrackingDownloadPage} />
+        <Route path="/time-tracking/dashboard" component={TimeTrackingDashboardPage} />
         <Route path="/devices" component={DevicesPage} />
         <Route component={NotFound} />
       </Switch>

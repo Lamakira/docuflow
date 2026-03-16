@@ -2,6 +2,7 @@ import React from 'react';
 import { useAgent } from '../stores/AgentContext';
 import { AgentSidebar } from '../components/sidebar/AgentSidebar';
 import { ActiveTimerHeader } from '../components/timer/ActiveTimerHeader';
+import { WorkedToday } from '../components/timer/WorkedToday';
 import { TimerPage } from '../pages/TimerPage';
 import { ActivityPage } from '../pages/ActivityPage';
 import { ScreenshotsPage } from '../pages/ScreenshotsPage';
@@ -16,6 +17,7 @@ export function AgentLayout() {
       <AgentSidebar />
       <div className="agent-main">
         <ActiveTimerHeader />
+        <WorkedToday />
         <div className="agent-page">
           {page === 'timer' && <TimerPage />}
           {page === 'activity' && <ActivityPage />}

@@ -27,7 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Play, Pause, Square, Clock, ChevronDown, ChevronUp, AlertCircle, Check, ChevronsUpDown, Timer, Monitor, MonitorOff, Plus, X, Loader2 } from "lucide-react";
+import { Play, Pause, Square, Clock, ChevronDown, ChevronUp, AlertCircle, Check, ChevronsUpDown, Timer, Monitor, Plus, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function formatDuration(seconds: number): string {
@@ -179,36 +179,6 @@ export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = 
                   </div>
                 )}
               </div>
-
-              <div className="flex items-center gap-2 p-2 rounded-lg border border-border">
-                <Button
-                  size="sm"
-                  variant={isCapturing ? "default" : "outline"}
-                  className="gap-1.5 flex-1"
-                  onClick={handleToggleCapture}
-                  disabled={!isRunning}
-                  data-testid="button-toggle-screen-capture"
-                >
-                  {isCapturing ? (
-                    <>
-                      <Monitor className="h-3.5 w-3.5" />
-                      <span className="text-xs">Screen Sharing On</span>
-                    </>
-                  ) : (
-                    <>
-                      <MonitorOff className="h-3.5 w-3.5" />
-                      <span className="text-xs">Share Screen</span>
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {captureError && (
-                <div className="flex items-center gap-2 text-red-600 dark:text-red-400 text-xs">
-                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                  <span>{captureError}</span>
-                </div>
-              )}
 
               <div className="flex gap-2">
                 {isRunning ? (

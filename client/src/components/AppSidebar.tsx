@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation, useParams } from "wouter";
-import { Folder, ChevronRight, MoreHorizontal, Pencil, LogOut, FileText, Sparkles, Briefcase, Building2, Shield, Clock, Monitor } from "lucide-react";
+import { Folder, ChevronRight, MoreHorizontal, Pencil, LogOut, FileText, Sparkles, Briefcase, Building2, Shield, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -196,7 +196,7 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
-                    isActive={location === "/time-tracking"}
+                    isActive={location === "/time-tracking" || location.startsWith("/time-tracking/") || location === "/devices"}
                     className="h-9 rounded-md"
                   >
                     <Link
@@ -206,22 +206,6 @@ export function AppSidebar() {
                     >
                       <Clock className="w-4 h-4 shrink-0" />
                       {!isCollapsed && <span className="text-sm">Time Tracking</span>}
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location === "/devices"}
-                    className="h-9 rounded-md"
-                  >
-                    <Link
-                      href="/devices"
-                      className={`flex items-center w-full ${isCollapsed ? 'justify-center' : 'gap-3'}`}
-                      data-testid="link-devices"
-                    >
-                      <Monitor className="w-4 h-4 shrink-0" />
-                      {!isCollapsed && <span className="text-sm">Devices</span>}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

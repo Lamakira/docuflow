@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Clock, Calendar, TrendingUp, Timer, Filter, X, ChevronDown, ChevronRight, LayoutList, Table2, Monitor, ImageIcon, Play, Pause, Square, ChevronLeft } from "lucide-react";
+import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import type { TimeEntry, CrmProjectWithDetails, User } from "@shared/schema";
 
@@ -311,25 +312,28 @@ export default function TimeTrackingPage() {
 
   if (isLoadingEntries) {
     return (
-      <div className="p-6 space-y-6 max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardHeader className="pb-2">
-                <Skeleton className="h-4 w-24" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-8 w-20" />
-              </CardContent>
-            </Card>
-          ))}
+      <TimeTrackingLayout>
+        <div className="p-6 space-y-6 max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i}>
+                <CardHeader className="pb-2">
+                  <Skeleton className="h-4 w-24" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-8 w-20" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Skeleton className="h-96 w-full" />
         </div>
-        <Skeleton className="h-96 w-full" />
-      </div>
+      </TimeTrackingLayout>
     );
   }
 
   return (
+    <TimeTrackingLayout>
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
@@ -865,5 +869,6 @@ export default function TimeTrackingPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </TimeTrackingLayout>
   );
 }
