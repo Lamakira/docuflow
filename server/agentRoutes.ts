@@ -684,6 +684,22 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
+  /** Agent: total seconds worked today (stopped entries only — client adds live elapsed for running entry) */
+  app.get("/api/agent/worked-today", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
+    try {
+      const userId = req.agentUserId!;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const stats = await storage.getTimeStats({ userId, startDate: today, endDate: tomorrow });
+      res.json({ total: stats.totalDuration });
+    } catch (error) {
+      logError("agent.worked-today.failed", error);
+      res.status(500).json({ message: "Failed to fetch worked today" });
+    }
+  });
+
   /** Agent: list tasks for a CRM project (for timer start dropdown) */
   app.get("/api/agent/tasks", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     if (!isTasksEnabled()) return res.json({ data: [] });

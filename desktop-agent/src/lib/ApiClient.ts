@@ -268,14 +268,8 @@ export class ApiClient {
 
   async getWorkedToday(): Promise<number> {
     try {
-      const today = new Date();
-      const start = today.toISOString().split('T')[0]; // YYYY-MM-DD
-      const end = new Date(today.getTime() + 86400000).toISOString().split('T')[0];
-      const data = await this.authenticatedRequest(
-        `/api/time-tracking/stats?startDate=${start}&endDate=${end}`,
-        { method: "GET" }
-      );
-      return data?.totalDuration ?? 0;
+      const data = await this.authenticatedRequest("/api/agent/worked-today", { method: "GET" });
+      return data?.total ?? 0;
     } catch {
       return 0;
     }
