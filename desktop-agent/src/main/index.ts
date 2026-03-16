@@ -77,11 +77,12 @@ let resyncInterval: ReturnType<typeof setInterval> | null = null;
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 580,
-    height: 700,
-    minWidth: 420,
-    minHeight: 560,
+    width: 680,
+    height: 780,
+    minWidth: 400,
+    minHeight: 500,
     resizable: true,
+    backgroundColor: '#0f172a',
     show: false,
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
@@ -91,12 +92,32 @@ function createMainWindow(): BrowserWindow {
   });
 
   win.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+  console.log(`[Main] window.loadURL — ${MAIN_WINDOW_WEBPACK_ENTRY}`);
+
+  win.webContents.on("did-finish-load", () => {
+    console.log("[Main] renderer did-finish-load");
+  });
+  win.webContents.on("did-fail-load", (_e, code, desc) => {
+    console.error(`[Main] renderer did-fail-load — code=${code} desc=${desc}`);
+  });
+  win.webContents.on("console-message", (_e, level, msg, line, src) => {
+    const lvl = ["verbose","info","warn","error"][level] ?? "info";
+    console.log(`[Renderer:${lvl}] ${msg} (${src}:${line})`);
+  });
+  win.webContents.on("render-process-gone", (_e, details) => {
+    console.error(`[Main] render-process-gone — reason=${details.reason} exitCode=${details.exitCode}`);
+  });
+  win.webContents.on("unresponsive", () => {
+    console.warn("[Main] renderer unresponsive");
+  });
+
   win.once("ready-to-show", () => {
     // setAlwaysOnTop bypasses Windows 11 focus-stealing prevention
     win.setAlwaysOnTop(true);
     win.show();
     win.focus();
     win.setAlwaysOnTop(false);
+    console.log("[Main] window shown");
   });
 
   // Ctrl+Shift+I → open DevTools (useful for debugging login/connection issues)
@@ -238,8 +259,8 @@ async function syncTimerFromServer(): Promise<void> {
 
 function startResyncPolling(): void {
   stopResyncPolling();
-  resyncInterval = setInterval(() => syncTimerFromServer(), 30_000);
-  console.log("[Main] Timer resync polling started (30s)");
+  resyncInterval = setInterval(() => syncTimerFromServer(), 5_000);
+  console.log("[Main] Timer resync polling started (5s)");
 }
 
 function stopResyncPolling(): void {
@@ -370,10 +391,9 @@ ipcMain.handle("agent:timer-pause", async () => {
     return { ok: true, entry };
   } catch (error: any) {
     const msg: string = error.message ?? "";
-    if (msg.includes("not running") || msg.includes("already stopped") || msg.includes("not paused")) {
-      console.log(`[Main] Timer conflict on pause ("${msg}") — resyncing from server`);
-      await syncTimerFromServer();
-    }
+    await syncTimerFromServer();
+    // If the server already paused it (e.g. initiated from web), that's the desired outcome.
+    if (store.getTimerStatus() === "paused") return { ok: true };
     return { ok: false, error: msg };
   }
 });
@@ -409,10 +429,9 @@ ipcMain.handle("agent:timer-stop", async () => {
     return { ok: true, entry };
   } catch (error: any) {
     const msg: string = error.message ?? "";
-    if (msg.includes("already stopped") || msg.includes("not running") || msg.includes("not found")) {
-      console.log(`[Main] Timer conflict on stop ("${msg}") — resyncing from server`);
-      await syncTimerFromServer();
-    }
+    await syncTimerFromServer();
+    // If the server already stopped it (e.g. initiated from web), that's the desired outcome.
+    if (!store.getActiveEntryId()) return { ok: true };
     return { ok: false, error: msg };
   }
 });
