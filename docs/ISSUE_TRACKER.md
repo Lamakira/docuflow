@@ -19,8 +19,49 @@
 | 8 | Processus fantômes multiples à chaque relance | ✅ Résolu | `app.requestSingleInstanceLock()` | 🟢 Solide — pattern standard Electron |
 | 9 | MSI silencieux / UAC invisible (`perMachine: true`) | ✅ Résolu | Passé à `perMachine: false` (install per-user, pas d'admin) | 🟢 Solide |
 | 10 | Shortcut Start Menu ne lance rien | ✅ Résolu (partiel) | Ajout `exe: "docuflow-agent.exe"` dans forge.config → WXS corrigé | 🟡 Fragile — voir #11 |
-| 11 | **MSI installe la fenêtre mais ne dépose aucun fichier** | 🔴 En cours | — | — |
-| 12 | Absent de "Recently added" / Apps | 🔴 En cours | Lié à #11 | — |
+| 11 | **MSI installe la fenêtre mais ne dépose aucun fichier** | ✅ Résolu | Migration electron-builder NSIS (abandon WiX) | 🟢 Solide |
+| 12 | Absent de "Recently added" / Apps | ✅ Résolu | NSIS gère le registre Windows nativement | 🟢 Solide |
+| 13 | Installeur two-file : stub 190 KB + payload `.nsis.7z` 81 MB séparé | ✅ Résolu | `differentialPackage: false` dans config nsis electron-builder | 🟢 Solide |
+| 14 | Raccourci "Missing Shortcut" après installation NSIS | ✅ Résolu | `executableName: "docuflow-agent"` dans `win` config electron-builder | 🟢 Solide |
+
+---
+
+## Détail — Problèmes résolus (#13 et #14) — 2026-03-06
+
+### #13 — Installeur two-file (stub + `.nsis.7z`)
+
+**Symptôme**
+electron-builder générait deux fichiers : un stub `.exe` (~190 KB) + un payload `.nsis.7z` (~81 MB) séparé. L'installeur ne fonctionnait pas sans les deux fichiers ensemble.
+
+**Cause**
+`differentialPackage` dans la section `nsis` de `package.json` est `true` par défaut dans electron-builder. Sans le définir explicitement à `false`, le mode two-file est activé.
+
+**Fix appliqué** (`desktop-agent/package.json`)
+```json
+"nsis": {
+  "differentialPackage": false
+}
+```
+
+**Résultat** : `release/DocuFlowAgentSetup.exe` — **65 MB single-file**, aucun `.nsis.7z`.
+
+---
+
+### #14 — Raccourci "Missing Shortcut" après installation
+
+**Symptôme**
+Après installation, Windows affichait "Windows is searching for DocuFlow Desktop Agent.exe" — le raccourci bureau/Start Menu ne pointait vers rien.
+
+**Cause**
+electron-builder déduit le nom de l'exécutable depuis le `productName` normalisé (`DocuFlow Desktop Agent.exe`), alors que electron-forge package l'exe sous le nom `docuflow-agent.exe` (défini par `executableName` dans `forge.config.ts`). Sans indiquer explicitement le bon nom à electron-builder, le raccourci pointait vers un exe inexistant.
+
+**Fix appliqué** (`desktop-agent/package.json`)
+```json
+"win": {
+  "target": "nsis",
+  "executableName": "docuflow-agent"
+}
+```
 
 ---
 
@@ -81,4 +122,16 @@ La migration prend ~1h.
 
 ---
 
-*Dernière mise à jour : 2026-03-05*
+---
+
+## État actuel de la toolchain (2026-03-09)
+
+| Composant | Outil | Statut |
+|-----------|-------|--------|
+| Packaging | `electron-forge package` | ✅ Actif |
+| Installeur | `electron-builder` NSIS | ✅ Actif |
+| WiX / Squirrel | — | ❌ Supprimés |
+| Build script | `scripts/dist-win.js` | ✅ Actif (`npm run dist:win`) |
+| Output | `release/DocuFlowAgentSetup.exe` | ✅ Single-file, 65 MB |
+
+*Dernière mise à jour : 2026-03-09*
