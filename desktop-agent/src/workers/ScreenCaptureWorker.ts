@@ -1,7 +1,7 @@
 /**
  * Screenshot capture worker.
  *
- * Captures a full-screen PNG every CAPTURE_INTERVAL_MS (randomized ±30s)
+ * Captures a full-screen PNG at a random interval between 3 and 5 minutes
  * when the timer is running. Saves to a temp directory and enqueues in
  * SqliteQueue for async upload by SyncWorker.
  *
@@ -19,13 +19,13 @@ import path from "path";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
 
-const DEFAULT_INTERVAL_S = 60; // 1 minute (was 3 min — short enough to verify quickly)
-const CAPTURE_INTERVAL_BASE_MS = (() => {
-  const parsed = parseInt(process.env.SCREENSHOT_INTERVAL_SECONDS ?? "", 10);
-  const seconds = Number.isFinite(parsed) && parsed >= 30 ? Math.min(parsed, 3600) : DEFAULT_INTERVAL_S;
-  return seconds * 1000;
-})();
-const CAPTURE_JITTER_MS = Math.round(CAPTURE_INTERVAL_BASE_MS * 0.1); // ±10%
+const CAPTURE_MIN_MS = 3 * 60 * 1000; // 3 minutes
+const CAPTURE_MAX_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Returns a random delay uniformly distributed between MIN and MAX. */
+function randomCaptureDelay(): number {
+  return CAPTURE_MIN_MS + Math.random() * (CAPTURE_MAX_MS - CAPTURE_MIN_MS);
+}
 const MAX_PNG_SIZE_BYTES = 5 * 1024 * 1024;      // 5 MB hard limit
 
 export class ScreenCaptureWorker {
@@ -51,7 +51,7 @@ export class ScreenCaptureWorker {
     }
     fs.mkdirSync(this.screenshotDir, { recursive: true });
     this.scheduleNext();
-    console.log(`[ScreenCaptureWorker] Started (interval ~${CAPTURE_INTERVAL_BASE_MS / 1000}s, dir: ${this.screenshotDir})`);
+    console.log(`[ScreenCaptureWorker] Started (interval 3–5 min random, dir: ${this.screenshotDir})`);
   }
 
   stop(): void {
@@ -63,8 +63,7 @@ export class ScreenCaptureWorker {
   }
 
   private scheduleNext(): void {
-    const jitter = Math.round((Math.random() - 0.5) * 2 * CAPTURE_JITTER_MS);
-    const delay = CAPTURE_INTERVAL_BASE_MS + jitter;
+    const delay = randomCaptureDelay();
     this.timeout = setTimeout(() => this.captureAndEnqueue(), delay);
   }
 
