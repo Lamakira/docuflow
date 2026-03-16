@@ -238,8 +238,8 @@ async function syncTimerFromServer(): Promise<void> {
 
 function startResyncPolling(): void {
   stopResyncPolling();
-  resyncInterval = setInterval(() => syncTimerFromServer(), 30_000);
-  console.log("[Main] Timer resync polling started (30s)");
+  resyncInterval = setInterval(() => syncTimerFromServer(), 5_000);
+  console.log("[Main] Timer resync polling started (5s)");
 }
 
 function stopResyncPolling(): void {
@@ -370,10 +370,9 @@ ipcMain.handle("agent:timer-pause", async () => {
     return { ok: true, entry };
   } catch (error: any) {
     const msg: string = error.message ?? "";
-    if (msg.includes("not running") || msg.includes("already stopped") || msg.includes("not paused")) {
-      console.log(`[Main] Timer conflict on pause ("${msg}") — resyncing from server`);
-      await syncTimerFromServer();
-    }
+    await syncTimerFromServer();
+    // If the server already paused it (e.g. initiated from web), that's the desired outcome.
+    if (store.getTimerStatus() === "paused") return { ok: true };
     return { ok: false, error: msg };
   }
 });
@@ -409,10 +408,9 @@ ipcMain.handle("agent:timer-stop", async () => {
     return { ok: true, entry };
   } catch (error: any) {
     const msg: string = error.message ?? "";
-    if (msg.includes("already stopped") || msg.includes("not running") || msg.includes("not found")) {
-      console.log(`[Main] Timer conflict on stop ("${msg}") — resyncing from server`);
-      await syncTimerFromServer();
-    }
+    await syncTimerFromServer();
+    // If the server already stopped it (e.g. initiated from web), that's the desired outcome.
+    if (!store.getActiveEntryId()) return { ok: true };
     return { ok: false, error: msg };
   }
 });

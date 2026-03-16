@@ -385,11 +385,9 @@ export function registerAgentRoutes(app: Express): void {
             lastActivityAt: now,
             duration: (hbEntry.duration || 0) + Math.max(0, elapsed),
           });
-        } else if (hbEntry) {
-          await storage.updateTimeEntry(body.timeEntryId, {
-            lastActivityAt: new Date(body.timestamp),
-          });
         }
+        // Non-running entries (paused/stopped): do NOT update lastActivityAt.
+        // Updating it would corrupt the elapsed calculation at resume time.
       }
 
       // Get server-authoritative timer state for desktop resync
