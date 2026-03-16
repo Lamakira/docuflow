@@ -58,6 +58,7 @@ export interface AgentBridge {
   timerStop: () => Promise<{ ok: boolean; error?: string }>;
   timerState: () => Promise<TimerState>;
   openExternal: (url: string) => void;
+  getWorkedToday: () => Promise<{ ok: boolean; total: number }>;
   onLoginProgress: (cb: (data: { message: string }) => void) => () => void;
   onStateUpdate: (cb: (state: any) => void) => void;
 }

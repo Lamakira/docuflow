@@ -440,6 +440,15 @@ ipcMain.handle("agent:timer-state", () => {
   return store.getTimerState();
 });
 
+ipcMain.handle("agent:get-worked-today", async () => {
+  try {
+    const total = await apiClient.getWorkedToday();
+    return { ok: true, total };
+  } catch {
+    return { ok: false, total: 0 };
+  }
+});
+
 // ─── Single instance ───
 
 const gotLock = app.requestSingleInstanceLock();
@@ -458,6 +467,7 @@ if (!gotLock) {
 
 app.whenReady().then(() => {
   initLogger();
+  Menu.setApplicationMenu(null);
   store.setClientVersion(app.getVersion());
   createTray();
   mainWindow = createMainWindow();

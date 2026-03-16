@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld("agentBridge", {
   // Open URL in default browser
   openExternal: (url: string) => ipcRenderer.invoke("agent:open-external", url),
 
+  // Daily totals
+  getWorkedToday: () => ipcRenderer.invoke("agent:get-worked-today"),
+
   // Login progress events pushed from main during waitForBackend + loginWithPassword
   onLoginProgress: (callback: (data: { message: string }) => void) => {
     const handler = (_event: any, data: { message: string }) => callback(data);

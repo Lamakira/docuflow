@@ -18,6 +18,7 @@ export function ProjectTaskPicker() {
 
   const [starting, setStarting] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const { recentTasks } = state;
 
@@ -46,6 +47,10 @@ export function ProjectTaskPicker() {
   }, [selectedProjectId]);
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
+
+  const filteredProjects = search.trim()
+    ? projects.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
+    : projects;
 
   async function handleStartTask(task: Task) {
     if (!selectedProject) return;
@@ -82,6 +87,15 @@ export function ProjectTaskPicker() {
         {/* Left: Projects */}
         <div className="picker-col picker-col--projects">
           <div className="picker-col__header">Projects</div>
+          <div className="picker-search">
+            <input
+              className="picker-search__input"
+              type="text"
+              placeholder="Search…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
           <div className="picker-col__list">
             {projectsLoading && (
               <div className="picker-col__empty">Loading…</div>
@@ -100,10 +114,10 @@ export function ProjectTaskPicker() {
                 )}
               </div>
             )}
-            {!projectsLoading && !projectsError && projects.length === 0 && (
-              <div className="picker-col__empty">No projects found</div>
+            {!projectsLoading && !projectsError && filteredProjects.length === 0 && (
+              <div className="picker-col__empty">{search ? 'No match' : 'No projects found'}</div>
             )}
-            {projects.map((project) => (
+            {filteredProjects.map((project) => (
               <button
                 key={project.id}
                 className={`picker-project-item${selectedProjectId === project.id ? ' picker-project-item--selected' : ''}`}
