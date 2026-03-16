@@ -2,6 +2,7 @@ import React from 'react';
 import { AgentProvider, useAgent } from './stores/AgentContext';
 import { AgentLayout } from './layouts/AgentLayout';
 import { LoginPage } from './pages/LoginPage';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 function AppInner() {
   const { state } = useAgent();
@@ -23,8 +24,12 @@ function AppInner() {
 
 export function App() {
   return (
-    <AgentProvider>
-      <AppInner />
-    </AgentProvider>
+    <ErrorBoundary>
+      <AgentProvider>
+        <ErrorBoundary>
+          <AppInner />
+        </ErrorBoundary>
+      </AgentProvider>
+    </ErrorBoundary>
   );
 }

@@ -42,6 +42,7 @@ const initialState: State = {
 type Action =
   | { type: 'INIT'; payload: AgentState }
   | { type: 'STATE_UPDATE'; payload: any }
+  | { type: 'LOGOUT'; newState: AgentState }
   | { type: 'TICK' }
   | { type: 'SET_PAGE'; page: AppPage }
   | { type: 'SET_LOGIN_PROGRESS'; message: string | null }
@@ -79,6 +80,14 @@ function reducer(state: State, action: Action): State {
         loading: false,
       };
     }
+
+    case 'LOGOUT':
+      return {
+        ...state,
+        agentState: action.newState,
+        wasRevoked: false,
+        loading: false,
+      };
 
     case 'TICK': {
       if (!state.agentState) return state;
@@ -183,7 +192,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     await bridge.unpair();
     const s = await bridge.getState();
-    dispatch({ type: 'STATE_UPDATE', payload: s });
+    dispatch({ type: 'LOGOUT', newState: s });
   }, []);
 
   const startTimer = useCallback(async (args: {

@@ -45,7 +45,7 @@ export function LoginPage() {
       <div className="login-page__title">Sign in</div>
       <div className="login-page__subtitle">Connect to your DocuFlow workspace</div>
 
-      <form className="login-page__form" onSubmit={handleSubmit}>
+      <form className="login-page__form" onSubmit={handleSubmit} style={{ flex: 'none' }}>
         <div className="field">
           <label className="field__label" htmlFor="email">Email</label>
           <input
@@ -53,7 +53,7 @@ export function LoginPage() {
             className="field__input"
             type="email"
             placeholder="you@example.com"
-            autoComplete="off"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={loading}
@@ -67,7 +67,7 @@ export function LoginPage() {
             className="field__input"
             type="password"
             placeholder="Enter your password"
-            autoComplete="off"
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={loading}
@@ -86,6 +86,7 @@ export function LoginPage() {
         {error && <div className="login-page__error">{error}</div>}
       </form>
 
+      <div style={{ flex: 1 }} />
       <div className="login-page__footer">
         <span className="text-dim text-xs">{state.agentState?.apiHost ?? ''}</span>
       </div>
