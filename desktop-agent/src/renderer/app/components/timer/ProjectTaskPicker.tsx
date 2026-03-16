@@ -11,13 +11,12 @@ export function ProjectTaskPicker() {
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState(false);
 
-  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
-  const [selectedTaskId, setSelectedTaskId] = useState('');
-  const [newTaskName, setNewTaskName] = useState('');
+  const [tasksError, setTasksError] = useState(false);
 
-  const [starting, setStarting] = useState(false);
+  const [starting, setStarting] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
 
   const { recentTasks } = state;
@@ -33,34 +32,32 @@ export function ProjectTaskPicker() {
   useEffect(() => {
     if (!selectedProjectId) {
       setTasks([]);
-      setSelectedTaskId('');
+      setTasksError(false);
       return;
     }
     setTasksLoading(true);
-    setSelectedTaskId('');
+    setTasksError(false);
+    setTasks([]);
     bridge.getTasks({ crmProjectId: selectedProjectId }).then((r) => {
       setTasksLoading(false);
       if (r.ok) setTasks(r.data);
-      else setTasks([]);
+      else setTasksError(true);
     });
   }, [selectedProjectId]);
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
-  const isNewTask = selectedTaskId === '__new__';
-  const selectedTask = tasks.find((t) => t.id === selectedTaskId) ?? null;
-  const canStart = !!selectedProjectId && (!!selectedTask || (isNewTask && !!newTaskName.trim()));
 
-  async function handleStart() {
-    if (!canStart || !selectedProject) return;
+  async function handleStartTask(task: Task) {
+    if (!selectedProject) return;
+    setStarting(task.id);
     setStartError(null);
-    setStarting(true);
     const result = await startTimer({
-      crmProjectId: selectedProjectId,
+      crmProjectId: selectedProject.id,
       projectName: selectedProject.name,
-      taskId: isNewTask ? undefined : selectedTask?.id,
-      taskName: isNewTask ? newTaskName.trim() : selectedTask?.name,
+      taskId: task.id,
+      taskName: task.name,
     });
-    setStarting(false);
+    setStarting(null);
     if (!result.ok) {
       setStartError(result.error ?? 'Failed to start timer');
       setTimeout(() => setStartError(null), 3000);
@@ -68,120 +65,126 @@ export function ProjectTaskPicker() {
   }
 
   async function handleStartRecent(r: typeof recentTasks[0]) {
-    setStarting(true);
+    setStarting(`recent-${r.crmProjectId}-${r.taskId ?? 'none'}`);
     await startTimer({
       crmProjectId: r.crmProjectId,
       taskId: r.taskId ?? undefined,
       taskName: r.taskName ?? undefined,
       projectName: r.projectName,
     });
-    setStarting(false);
+    setStarting(null);
   }
 
   return (
-    <div className="picker-v2">
-      <div className="picker-v2__heading">What are you working on?</div>
-
-      <div className="picker-v2__row">
-        <div className="picker-v2__field">
-          <label className="picker-v2__field-label">Project</label>
-          <select
-            className="picker-select"
-            value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-            disabled={projectsLoading || projectsError}
-          >
-            <option value="">
-              {projectsLoading ? 'Loading…' : projectsError ? 'Failed to load' : 'Select project'}
-            </option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="picker-v2__field">
-          <label className="picker-v2__field-label">Task</label>
-          <select
-            className="picker-select"
-            value={selectedTaskId}
-            onChange={(e) => setSelectedTaskId(e.target.value)}
-            disabled={!selectedProjectId || tasksLoading}
-          >
-            <option value="">
-              {!selectedProjectId
-                ? 'Select project first'
-                : tasksLoading
-                ? 'Loading…'
-                : 'Select task'}
-            </option>
-            {tasks.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-            {selectedProjectId && !tasksLoading && (
-              <option value="__new__">+ New task…</option>
+    <div className="picker-main">
+      {/* Two-column: Projects | Tasks */}
+      <div className="picker-cols">
+        {/* Left: Projects */}
+        <div className="picker-col picker-col--projects">
+          <div className="picker-col__header">Projects</div>
+          <div className="picker-col__list">
+            {projectsLoading && (
+              <div className="picker-col__empty">Loading…</div>
             )}
-          </select>
+            {projectsError && (
+              <div className="picker-col__empty">
+                Failed to load
+                {apiBase && (
+                  <a
+                    href="#"
+                    style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem' }}
+                    onClick={(e) => { e.preventDefault(); window.agentBridge.openExternal(apiBase!); }}
+                  >
+                    Open web app
+                  </a>
+                )}
+              </div>
+            )}
+            {!projectsLoading && !projectsError && projects.length === 0 && (
+              <div className="picker-col__empty">No projects found</div>
+            )}
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                className={`picker-project-item${selectedProjectId === project.id ? ' picker-project-item--selected' : ''}`}
+                onClick={() => setSelectedProjectId(project.id)}
+              >
+                {project.name}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <button
-          className="btn btn--success picker-v2__start-btn"
-          disabled={!canStart || starting}
-          onClick={handleStart}
-        >
-          {starting ? '…' : '▶ Start'}
-        </button>
+        {/* Right: Tasks */}
+        <div className="picker-col picker-col--tasks">
+          <div className="picker-col__header">Tasks</div>
+          <div className="picker-col__list">
+            {!selectedProjectId && (
+              <div className="picker-col__empty">← Select a project</div>
+            )}
+            {selectedProjectId && tasksLoading && (
+              <div className="picker-col__empty">Loading…</div>
+            )}
+            {selectedProjectId && tasksError && (
+              <div className="picker-col__empty">Failed to load tasks</div>
+            )}
+            {selectedProjectId && !tasksLoading && !tasksError && tasks.length === 0 && (
+              <div className="picker-col__empty">
+                No tasks.
+                {apiBase && (
+                  <a
+                    href="#"
+                    style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem' }}
+                    onClick={(e) => { e.preventDefault(); window.agentBridge.openExternal(apiBase!); }}
+                  >
+                    Create tasks in web app
+                  </a>
+                )}
+              </div>
+            )}
+            {tasks.map((task) => (
+              <button
+                key={task.id}
+                className="picker-task-item"
+                disabled={starting === task.id}
+                onClick={() => handleStartTask(task)}
+              >
+                <span className="picker-task-item__name">{task.name}</span>
+                <span className="picker-task-item__start">
+                  {starting === task.id ? '…' : '▶'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {isNewTask && (
-        <div className="picker-v2__new-task">
-          <input
-            className="field__input"
-            placeholder="Enter task name…"
-            value={newTaskName}
-            onChange={(e) => setNewTaskName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleStart()}
-            autoFocus
-          />
-        </div>
-      )}
+      {startError && <div className="picker-error">{startError}</div>}
 
-      {startError && <div className="picker-v2__error">{startError}</div>}
-
-      {!projectsLoading && !projectsError && projects.length === 0 && (
-        <div className="empty-state">
-          <span>No projects found.</span>
-          {apiBase && (
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); window.agentBridge.openExternal(apiBase!); }}
-            >
-              Create one in the web app
-            </a>
-          )}
-        </div>
-      )}
-
+      {/* Recent tasks */}
       {recentTasks.length > 0 && (
-        <div className="picker-v2__recents">
+        <div className="picker-recents">
           <div className="picker__section-label">Recent</div>
           <div className="picker__list">
-            {recentTasks.map((r, i) => (
-              <div key={i} className="recent-item">
-                <span className="recent-item__icon">↺</span>
-                <div className="recent-item__info">
-                  <div className="recent-item__task">{r.taskName ?? '(no task)'}</div>
-                  <div className="recent-item__project">{r.projectName}</div>
+            {recentTasks.map((r, i) => {
+              const key = `recent-${r.crmProjectId}-${r.taskId ?? 'none'}`;
+              return (
+                <div key={i} className="recent-item">
+                  <span className="recent-item__icon">↺</span>
+                  <div className="recent-item__info">
+                    <div className="recent-item__task">{r.taskName ?? '(no task)'}</div>
+                    <div className="recent-item__project">{r.projectName}</div>
+                  </div>
+                  <button
+                    className="btn btn--sm btn--success"
+                    disabled={starting === key}
+                    onClick={() => handleStartRecent(r)}
+                  >
+                    {starting === key ? '…' : 'Start'}
+                  </button>
                 </div>
-                <button
-                  className="btn btn--sm btn--success"
-                  disabled={starting}
-                  onClick={() => handleStartRecent(r)}
-                >
-                  Start
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

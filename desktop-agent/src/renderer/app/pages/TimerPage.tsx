@@ -7,15 +7,13 @@ export function TimerPage() {
   const timerStatus = state.agentState?.timer.status ?? 'stopped';
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {timerStatus === 'stopped' ? (
         <ProjectTaskPicker />
       ) : (
-        <div>
-          <div className="info-note">
-            <span>📷</span>
-            <span>Screenshots are captured automatically while the timer runs.</span>
-          </div>
+        <div className="info-note">
+          <span>📷</span>
+          <span>Screenshots are captured automatically while the timer runs.</span>
         </div>
       )}
     </div>
