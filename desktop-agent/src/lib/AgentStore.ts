@@ -19,6 +19,10 @@ interface PersistedData {
   deviceToken: string | null;
   deviceName: string | null;
   userEmail: string | null;
+  // Timer names persisted so they survive restarts
+  activeEntryId: string | null;
+  activeProjectName: string | null;
+  activeTaskName: string | null;
 }
 
 // Runtime state (not persisted — rebuilt from server on startup)
@@ -63,6 +67,9 @@ export class AgentStore {
       deviceToken: null,
       deviceName: null,
       userEmail: null,
+      activeEntryId: null,
+      activeProjectName: null,
+      activeTaskName: null,
     };
     try {
       if (!fs.existsSync(this.configPath)) return empty;
@@ -146,6 +153,11 @@ export class AgentStore {
     this.runtime.activeProjectName = projectName;
     this.runtime.activeTaskName = taskName ?? null;
     this.runtime.activeDescription = description ?? null;
+    // Persist names so they survive restart
+    this.data.activeEntryId = entryId;
+    this.data.activeProjectName = projectName;
+    this.data.activeTaskName = taskName ?? null;
+    this.saveToDisk();
   }
 
   setTimerPaused(duration: number): void {
@@ -162,6 +174,11 @@ export class AgentStore {
     this.runtime.activeProjectName = null;
     this.runtime.activeTaskName = null;
     this.runtime.activeDescription = null;
+    // Clear persisted timer names
+    this.data.activeEntryId = null;
+    this.data.activeProjectName = null;
+    this.data.activeTaskName = null;
+    this.saveToDisk();
   }
 
   /**
@@ -178,7 +195,14 @@ export class AgentStore {
     this.runtime.activeEntryId = entry.id;
     this.runtime.timerDuration = entry.duration;
     if (entryChanged) {
-      this.runtime.activeProjectName = null; // unknown for new entry
+      // Restore from persisted data if it's the same entry (e.g. after restart)
+      if (this.data.activeEntryId === entry.id) {
+        this.runtime.activeProjectName = this.data.activeProjectName;
+        this.runtime.activeTaskName = this.data.activeTaskName;
+      } else {
+        this.runtime.activeProjectName = null;
+        this.runtime.activeTaskName = null;
+      }
     }
     if (entry.status === "running") {
       this.runtime.timerStatus = "running";

@@ -20,8 +20,6 @@ export function ProjectTaskPicker() {
   const [startError, setStartError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  const { recentTasks } = state;
-
   useEffect(() => {
     bridge.getProjects().then((r) => {
       setProjectsLoading(false);
@@ -67,17 +65,6 @@ export function ProjectTaskPicker() {
       setStartError(result.error ?? 'Failed to start timer');
       setTimeout(() => setStartError(null), 3000);
     }
-  }
-
-  async function handleStartRecent(r: typeof recentTasks[0]) {
-    setStarting(`recent-${r.crmProjectId}-${r.taskId ?? 'none'}`);
-    await startTimer({
-      crmProjectId: r.crmProjectId,
-      taskId: r.taskId ?? undefined,
-      taskName: r.taskName ?? undefined,
-      projectName: r.projectName,
-    });
-    setStarting(null);
   }
 
   return (
@@ -164,9 +151,7 @@ export function ProjectTaskPicker() {
                 onClick={() => handleStartTask(task)}
               >
                 <span className="picker-task-item__name">{task.name}</span>
-                <span className="picker-task-item__start">
-                  {starting === task.id ? '…' : '▶'}
-                </span>
+                {starting === task.id && <span className="picker-task-item__loading">…</span>}
               </button>
             ))}
           </div>
@@ -174,34 +159,6 @@ export function ProjectTaskPicker() {
       </div>
 
       {startError && <div className="picker-error">{startError}</div>}
-
-      {/* Recent tasks */}
-      {recentTasks.length > 0 && (
-        <div className="picker-recents">
-          <div className="picker__section-label">Recent</div>
-          <div className="picker__list">
-            {recentTasks.map((r, i) => {
-              const key = `recent-${r.crmProjectId}-${r.taskId ?? 'none'}`;
-              return (
-                <div key={i} className="recent-item">
-                  <span className="recent-item__icon">↺</span>
-                  <div className="recent-item__info">
-                    <div className="recent-item__task">{r.taskName ?? '(no task)'}</div>
-                    <div className="recent-item__project">{r.projectName}</div>
-                  </div>
-                  <button
-                    className="btn btn--sm btn--success"
-                    disabled={starting === key}
-                    onClick={() => handleStartRecent(r)}
-                  >
-                    {starting === key ? '…' : 'Start'}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

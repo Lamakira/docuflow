@@ -280,6 +280,8 @@ export interface IStorage {
     byProject: Array<{ crmProjectId: string; projectName: string; totalDuration: number }>;
     byUser: Array<{ userId: string; userName: string; totalDuration: number }>;
   }>;
+  /** Sum of stopped entry durations for a specific task today (for resume-from-accumulated UX). */
+  getTaskDurationToday(userId: string, taskId: string, start: Date, end: Date): Promise<number>;
 
   // Time Entry Screenshots
   createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot>;
@@ -2365,6 +2367,20 @@ export class DatabaseStorage implements IStorage {
         ...data,
       })),
     };
+  }
+
+  async getTaskDurationToday(userId: string, taskId: string, start: Date, end: Date): Promise<number> {
+    const [row] = await db
+      .select({ total: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)` })
+      .from(timeEntries)
+      .where(and(
+        eq(timeEntries.userId, userId),
+        eq(timeEntries.taskId, taskId),
+        eq(timeEntries.status, "stopped"),
+        sql`${timeEntries.startTime} >= ${start}`,
+        sql`${timeEntries.startTime} <= ${end}`,
+      ));
+    return Number(row?.total ?? 0);
   }
 
   async createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot> {

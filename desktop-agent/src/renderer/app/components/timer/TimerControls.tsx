@@ -34,7 +34,7 @@ export function TimerControls({ compact }: Props) {
             className={compact ? btnClass : 'btn btn--sm btn--warning'}
             disabled={loading}
             onClick={() => act(pauseTimer)}
-            title="Pause"
+            title={error ?? 'Pause'}
           >
             {compact ? '⏸' : 'Pause'}
           </button>
@@ -44,7 +44,7 @@ export function TimerControls({ compact }: Props) {
             className={compact ? btnClass : 'btn btn--sm btn--success'}
             disabled={loading}
             onClick={() => act(resumeTimer)}
-            title="Resume"
+            title={error ?? 'Resume'}
           >
             {compact ? '▶' : 'Resume'}
           </button>
@@ -53,13 +53,13 @@ export function TimerControls({ compact }: Props) {
           className={compact ? btnClass : 'btn btn--sm btn--danger'}
           disabled={loading}
           onClick={() => act(stopTimer)}
-          title="Stop"
+          title={error ?? 'Stop'}
         >
           {compact ? '■' : 'Stop'}
         </button>
       </div>
-      {error && !compact && (
-        <div style={{ fontSize: '0.72rem', color: 'var(--red)', marginTop: '0.25rem' }}>
+      {error && (
+        <div style={{ fontSize: '0.72rem', color: 'var(--red)', marginTop: '0.25rem', maxWidth: '180px' }}>
           {error}
         </div>
       )}

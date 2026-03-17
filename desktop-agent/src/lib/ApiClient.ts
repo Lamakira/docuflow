@@ -267,18 +267,15 @@ export class ApiClient {
   }
 
   async getWorkedToday(): Promise<number> {
-    try {
-      const today = new Date();
-      const start = today.toISOString().split('T')[0]; // YYYY-MM-DD
-      const end = new Date(today.getTime() + 86400000).toISOString().split('T')[0];
-      const data = await this.authenticatedRequest(
-        `/api/time-tracking/stats?startDate=${start}&endDate=${end}`,
-        { method: "GET" }
-      );
-      return data?.totalDuration ?? 0;
-    } catch {
-      return 0;
-    }
+    // Use local midnight so "today" matches the user's clock, not the server's UTC timezone
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const data = await this.authenticatedRequest(
+      `/api/agent/worked-today?start=${encodeURIComponent(startOfDay.toISOString())}&end=${encodeURIComponent(endOfDay.toISOString())}`,
+      { method: "GET" }
+    );
+    return data?.total ?? 0;
   }
 
   // ─── Screenshots ───

@@ -684,6 +684,22 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
+  /** Agent: total seconds worked today (stopped entries only — client adds live elapsed for running entry).
+   *  Client passes ?start=ISO&end=ISO using local midnight so the window matches the user's clock. */
+  app.get("/api/agent/worked-today", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
+    try {
+      const userId = req.agentUserId!;
+      // Prefer client-supplied local-day window; fall back to server UTC day
+      const startDate = req.query.start ? new Date(req.query.start as string) : (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+      const endDate   = req.query.end   ? new Date(req.query.end   as string) : (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })();
+      const stats = await storage.getTimeStats({ userId, startDate, endDate });
+      res.json({ total: stats.totalDuration });
+    } catch (error) {
+      logError("agent.worked-today.failed", error);
+      res.status(500).json({ message: "Failed to fetch worked today" });
+    }
+  });
+
   /** Agent: list tasks for a CRM project (for timer start dropdown) */
   app.get("/api/agent/tasks", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     if (!isTasksEnabled()) return res.json({ data: [] });
@@ -760,7 +776,16 @@ export function registerAgentRoutes(app: Express): void {
 
       logTimeEvent("start", entry.id, userId, { crmProjectId, taskId: taskId || null, deviceId, clientType: "desktop" });
       logInfo("agent.timer.start", { userId, deviceId, entryId: entry.id, crmProjectId });
-      res.json(entry);
+
+      // Return accumulated duration for this task today so the client can resume display from the right offset
+      let taskAccumulatedToday = 0;
+      if (taskId) {
+        const now2 = new Date();
+        const startOfDay = new Date(now2.getFullYear(), now2.getMonth(), now2.getDate(), 0, 0, 0, 0);
+        const endOfDay   = new Date(now2.getFullYear(), now2.getMonth(), now2.getDate(), 23, 59, 59, 999);
+        taskAccumulatedToday = await storage.getTaskDurationToday(userId, taskId, startOfDay, endOfDay);
+      }
+      res.json({ ...entry, taskAccumulatedToday });
     } catch (error) {
       logError("agent.timer.start.failed", error);
       res.status(500).json({ message: "Failed to start timer" });
