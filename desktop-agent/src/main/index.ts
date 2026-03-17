@@ -76,6 +76,10 @@ let resyncInterval: ReturnType<typeof setInterval> | null = null;
 // ─── Window ───
 
 function createMainWindow(): BrowserWindow {
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, "assets", "icon.png")
+    : path.join(__dirname, "../../assets/icon.png");
+
   const win = new BrowserWindow({
     width: 680,
     height: 780,
@@ -84,6 +88,7 @@ function createMainWindow(): BrowserWindow {
     resizable: true,
     backgroundColor: '#0f172a',
     show: false,
+    icon: iconPath,
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,
@@ -159,10 +164,10 @@ function getTrayIconPath(): string {
   // which is inside app.asar. Assets need to be resolved relative to the app root.
   if (app.isPackaged) {
     // Packaged: resources/app.asar/.webpack/main → go up to resources/
-    return path.join(process.resourcesPath, "assets", "tray-icon.png");
+    return path.join(process.resourcesPath, "assets", "icon.png");
   }
   // Dev: .webpack/main → ../../assets/
-  return path.join(__dirname, "../../assets/tray-icon.png");
+  return path.join(__dirname, "../../assets/icon.png");
 }
 
 function createTray(): void {
