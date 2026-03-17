@@ -7,6 +7,7 @@ export interface Task {
   id: string;
   name: string;
   crmProjectId: string;
+  durationToday?: number;
 }
 
 export type TimerStatus = 'running' | 'paused' | 'stopped';
@@ -74,4 +75,11 @@ export function formatTime(seconds: number): string {
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   return [h, m, s].map((v) => String(v).padStart(2, '0')).join(':');
+}
+
+/** Format as "Xh MMm" — used for Worked Today (no seconds) */
+export function formatWorkedToday(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${h}h ${String(m).padStart(2, '0')}m`;
 }

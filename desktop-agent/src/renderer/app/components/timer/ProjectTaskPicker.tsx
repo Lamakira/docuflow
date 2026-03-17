@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useAgent } from '../../stores/AgentContext';
-import { Project, Task } from '../../types';
+import { Project, Task, formatTime } from '../../types';
 
 export function ProjectTaskPicker() {
   const { state, startTimer } = useAgent();
   const bridge = window.agentBridge;
   const apiBase = state.agentState?.apiBase ?? null;
+  const timer = state.agentState?.timer;
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
@@ -43,6 +44,17 @@ export function ProjectTaskPicker() {
       else setTasksError(true);
     });
   }, [selectedProjectId]);
+
+  // Silently refresh task durations when the active timer entry changes
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    const t = setTimeout(() => {
+      bridge.getTasks({ crmProjectId: selectedProjectId }).then((r) => {
+        if (r.ok) setTasks(r.data);
+      });
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [timer?.entryId]);
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
 
@@ -143,17 +155,30 @@ export function ProjectTaskPicker() {
                 )}
               </div>
             )}
-            {tasks.map((task) => (
-              <button
-                key={task.id}
-                className="picker-task-item"
-                disabled={starting === task.id}
-                onClick={() => handleStartTask(task)}
-              >
-                <span className="picker-task-item__name">{task.name}</span>
-                {starting === task.id && <span className="picker-task-item__loading">…</span>}
-              </button>
-            ))}
+            {tasks.map((task) => {
+              const isActiveTask =
+                timer?.status !== 'stopped' &&
+                timer?.taskName === task.name &&
+                timer?.projectName === selectedProject?.name;
+              const liveTime = isActiveTask ? (timer?.elapsed ?? 0) : 0;
+              const displayTime = (task.durationToday ?? 0) + liveTime;
+              return (
+                <button
+                  key={task.id}
+                  className="picker-task-item"
+                  disabled={starting === task.id}
+                  onClick={() => handleStartTask(task)}
+                >
+                  <span className="picker-task-item__name">{task.name}</span>
+                  {starting === task.id && <span className="picker-task-item__loading">…</span>}
+                  {displayTime > 0 && (
+                    <span className={`picker-task-item__time${isActiveTask ? ' picker-task-item__time--active' : ''}`}>
+                      {formatTime(displayTime)}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

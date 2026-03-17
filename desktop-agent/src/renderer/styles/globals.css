@@ -82,19 +82,26 @@ a:hover { text-decoration: underline; }
   margin-bottom: 0.75rem;
 }
 .sidebar__avatar {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   background: var(--accent);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: 1.2rem;
   color: white;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
   flex-shrink: 0;
   cursor: default;
+}
+.sidebar__divider {
+  width: 40px;
+  height: 1px;
+  background: var(--border);
+  margin-bottom: 0.5rem;
+  flex-shrink: 0;
 }
 .sidebar__nav {
   display: flex;
@@ -177,31 +184,32 @@ a:hover { text-decoration: underline; }
   text-overflow: ellipsis;
 }
 .timer-header__elapsed {
-  font-family: monospace;
+  font-family: 'Consolas', 'Cascadia Code', monospace;
   font-size: 1.5rem;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.04em;
   color: white;
   flex-shrink: 0;
+  margin-right: 5rem; /* leave room for the FAB */
 }
 .timer-header__controls { display: flex; gap: 0.25rem; flex-shrink: 0; }
 
 /* ── Pause FAB — à cheval between bar 1 and bar 2 ── */
 .timer-pause-fab-wrap {
   position: absolute;
-  top: -28px;
+  top: -30px;
   right: 1.25rem;
   z-index: 20;
 }
 .timer-pause-fab {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
-  border: 3px solid var(--bg);
+  border: none;
+  outline: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.3rem;
   cursor: pointer;
   background: #dc2626;
   color: #fff;
@@ -209,6 +217,7 @@ a:hover { text-decoration: underline; }
   transition: filter 0.1s, transform 0.1s;
   flex-shrink: 0;
 }
+.timer-pause-fab:focus { outline: none; }
 .timer-pause-fab:hover:not(:disabled) { filter: brightness(1.12); transform: scale(1.06); }
 .timer-pause-fab:disabled { opacity: 0.55; cursor: default; transform: none; }
 .timer-pause-fab--resume { background: #16a34a; }
@@ -219,7 +228,7 @@ a:hover { text-decoration: underline; }
   align-items: center;
   justify-content: space-between;
   position: relative;
-  padding: 0.35rem 1.25rem;
+  padding: 0.35rem 1.25rem 0.5rem;
   background: var(--surface2);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
@@ -234,20 +243,20 @@ a:hover { text-decoration: underline; }
 .worked-today-bar__right {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-left: auto;
+  gap: 0.5rem;
+  margin-right: 5rem; /* align right edge with timer elapsed */
 }
 .worked-today-bar__label {
-  font-size: 0.72rem;
-  color: var(--text-dim);
+  font-size: 0.8rem;
+  color: var(--text-muted);
   font-weight: 500;
 }
 .worked-today-bar__value {
-  font-family: monospace;
-  font-size: 0.85rem;
+  font-family: 'Consolas', 'Cascadia Code', monospace;
+  font-size: 1rem;
   font-weight: 700;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
+  color: white;
+  letter-spacing: 0.02em;
 }
 
 /* ── Buttons ──────────────────────────────────────── */
@@ -495,6 +504,20 @@ a:hover { text-decoration: underline; }
 }
 .picker-task-item:hover .picker-task-item__start { opacity: 1; }
 .picker-task-item:disabled .picker-task-item__start { color: var(--text-dim); background: transparent; opacity: 1; }
+.picker-task-item__time {
+  flex-shrink: 0;
+  font-family: monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+.picker-task-item__time--active {
+  color: var(--green);
+  background: rgba(34,197,94,0.15);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.4rem;
+}
 
 .picker-error { font-size: 0.75rem; color: var(--red); }
 .picker-recents { display: flex; flex-direction: column; gap: 0.25rem; }

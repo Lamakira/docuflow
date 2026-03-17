@@ -71,7 +71,7 @@ export default function TimeTrackingProjectsPage() {
       setNewTaskName("");
       toast({ title: "Task created" });
     },
-    onError: () => toast({ title: "Failed to create task", variant: "destructive" }),
+    onError: (err: any) => toast({ title: err?.message || "Failed to create task", variant: "destructive" }),
   });
 
   const updateTaskMutation = useMutation({
@@ -81,7 +81,7 @@ export default function TimeTrackingProjectsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", selectedProjectId] });
       setEditingTaskId(null);
     },
-    onError: () => toast({ title: "Failed to update task", variant: "destructive" }),
+    onError: (err: any) => toast({ title: err?.message || "Failed to update task", variant: "destructive" }),
   });
 
   const deleteTaskMutation = useMutation({

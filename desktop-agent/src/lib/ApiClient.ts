@@ -49,6 +49,7 @@ export interface TaskSummary {
   id: string;
   name: string;
   status: string;
+  durationToday?: number;
 }
 
 export class ApiClient {

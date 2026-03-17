@@ -369,10 +369,10 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
 ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description }) => {
   try {
     const entry = await apiClient.startTimer(crmProjectId, taskId || undefined, description);
-    // taskAccumulatedToday: sum of stopped entries for this task today (returned by server).
-    // Used as the display base so "resuming" a task shows cumulative time, not 0.
-    const initialDuration = (entry.duration || 0) + ((entry as any).taskAccumulatedToday || 0);
-    store.setTimerRunning(entry.id, initialDuration, projectName || null, taskName || null, description || null);
+    // taskAccumulatedToday: sum of stopped entries for this task today (from server).
+    // Kept separate from entry.duration so syncFromServer() resync never overwrites it.
+    const taskAccumulated = (entry as any).taskAccumulatedToday || 0;
+    store.setTimerRunning(entry.id, entry.duration || 0, projectName || null, taskName || null, description || null, taskAccumulated);
     console.log(`[Main] timer.start — entry=${entry.id} project="${projectName || ""}" task="${taskName || ""}"`);
     pushStateToRenderer();
     return { ok: true, entry };
@@ -407,7 +407,7 @@ ipcMain.handle("agent:timer-resume", async () => {
     if (!entryId) return { ok: false, error: "No active timer" };
 
     const entry = await apiClient.resumeTimer(entryId);
-    store.setTimerRunning(entry.id, entry.duration || 0, store.getActiveProjectName());
+    store.setTimerRunning(entry.id, entry.duration || 0, store.getActiveProjectName(), store.getActiveTaskName(), store.getActiveDescription());
     pushStateToRenderer();
     return { ok: true, entry };
   } catch (error: any) {

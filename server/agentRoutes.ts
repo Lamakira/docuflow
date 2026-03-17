@@ -704,10 +704,16 @@ export function registerAgentRoutes(app: Express): void {
   app.get("/api/agent/tasks", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     if (!isTasksEnabled()) return res.json({ data: [] });
     try {
+      const userId = req.agentUserId!;
       const { crmProjectId } = req.query as { crmProjectId?: string };
       if (!crmProjectId) return res.status(400).json({ message: "crmProjectId is required" });
       const taskList = await storage.getTasks({ crmProjectId });
-      res.json({ data: taskList.map((t) => ({ id: t.id, name: t.name, status: t.status })) });
+      const now = new Date();
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const endOfDay   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      const taskIds = taskList.map((t) => t.id).filter(Boolean) as string[];
+      const durations = await storage.getTasksDurationToday(userId, taskIds, startOfDay, endOfDay);
+      res.json({ data: taskList.map((t) => ({ id: t.id, name: t.name, status: t.status, durationToday: durations[t.id] ?? 0 })) });
     } catch (error) {
       logError("agent.tasks.list.failed", error);
       res.status(500).json({ message: "Failed to list tasks" });
