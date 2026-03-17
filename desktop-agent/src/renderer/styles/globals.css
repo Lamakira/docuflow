@@ -183,6 +183,7 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.04em;
   color: white;
   flex-shrink: 0;
+  margin-right: 5rem; /* leave room for the FAB */
 }
 .timer-header__controls { display: flex; gap: 0.25rem; flex-shrink: 0; }
 
