@@ -407,7 +407,7 @@ ipcMain.handle("agent:timer-resume", async () => {
     if (!entryId) return { ok: false, error: "No active timer" };
 
     const entry = await apiClient.resumeTimer(entryId);
-    store.setTimerRunning(entry.id, entry.duration || 0, store.getActiveProjectName());
+    store.setTimerRunning(entry.id, entry.duration || 0, store.getActiveProjectName(), store.getActiveTaskName(), store.getActiveDescription());
     pushStateToRenderer();
     return { ok: true, entry };
   } catch (error: any) {

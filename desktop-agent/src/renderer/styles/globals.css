@@ -189,19 +189,19 @@ a:hover { text-decoration: underline; }
 /* ── Pause FAB — à cheval between bar 1 and bar 2 ── */
 .timer-pause-fab-wrap {
   position: absolute;
-  top: -28px;
+  top: -30px;
   right: 1.25rem;
   z-index: 20;
 }
 .timer-pause-fab {
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
-  border: 3px solid var(--bg);
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.3rem;
+  font-size: 1.4rem;
   cursor: pointer;
   background: #dc2626;
   color: #fff;

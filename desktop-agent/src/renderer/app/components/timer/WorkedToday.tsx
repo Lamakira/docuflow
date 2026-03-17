@@ -72,7 +72,7 @@ export function WorkedToday() {
             onClick={handlePauseResume}
             title={status === 'running' ? 'Pause' : 'Resume'}
           >
-            {pauseLoading ? '…' : status === 'running' ? '⏸' : '▶'}
+            {pauseLoading ? '…' : status === 'running' ? '\u23F8\uFE0E' : '\u25B6\uFE0E'}
           </button>
         </div>
       )}

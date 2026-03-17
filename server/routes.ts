@@ -1527,6 +1527,15 @@ Instructions:
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
       
+      // Enforce unique project name per user
+      const existing = await storage.getCrmProjects(userId, { pageSize: 1000 });
+      const nameConflict = existing.data.some(
+        (p: any) => (p.project?.name || p.name || '').trim().toLowerCase() === parsed.data.name.trim().toLowerCase()
+      );
+      if (nameConflict) {
+        return res.status(409).json({ message: `A project named "${parsed.data.name}" already exists` });
+      }
+
       const { project, crmProject } = await storage.createCrmProjectWithBase(
         {
           name: parsed.data.name,
@@ -3546,6 +3555,15 @@ Instructions:
       if (!crmProjectId || !name?.trim()) {
         return res.status(400).json({ message: "crmProjectId and name are required" });
       }
+      // Enforce unique task name within the same project (excluding archived)
+      const existingTasks = await storage.getTasks({ crmProjectId });
+      const taskNameConflict = existingTasks.some(
+        (t) => t.name.trim().toLowerCase() === name.trim().toLowerCase()
+      );
+      if (taskNameConflict) {
+        return res.status(409).json({ message: `A task named "${name}" already exists in this project` });
+      }
+
       const task = await storage.createTask({
         crmProjectId,
         name: name.trim(),
