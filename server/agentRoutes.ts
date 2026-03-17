@@ -684,15 +684,15 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
-  /** Agent: total seconds worked today (stopped entries only — client adds live elapsed for running entry) */
+  /** Agent: total seconds worked today (stopped entries only — client adds live elapsed for running entry).
+   *  Client passes ?start=ISO&end=ISO using local midnight so the window matches the user's clock. */
   app.get("/api/agent/worked-today", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     try {
       const userId = req.agentUserId!;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const stats = await storage.getTimeStats({ userId, startDate: today, endDate: tomorrow });
+      // Prefer client-supplied local-day window; fall back to server UTC day
+      const startDate = req.query.start ? new Date(req.query.start as string) : (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+      const endDate   = req.query.end   ? new Date(req.query.end   as string) : (() => { const d = new Date(); d.setHours(23,59,59,999); return d; })();
+      const stats = await storage.getTimeStats({ userId, startDate, endDate });
       res.json({ total: stats.totalDuration });
     } catch (error) {
       logError("agent.worked-today.failed", error);
