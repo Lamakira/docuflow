@@ -776,7 +776,16 @@ export function registerAgentRoutes(app: Express): void {
 
       logTimeEvent("start", entry.id, userId, { crmProjectId, taskId: taskId || null, deviceId, clientType: "desktop" });
       logInfo("agent.timer.start", { userId, deviceId, entryId: entry.id, crmProjectId });
-      res.json(entry);
+
+      // Return accumulated duration for this task today so the client can resume display from the right offset
+      let taskAccumulatedToday = 0;
+      if (taskId) {
+        const now2 = new Date();
+        const startOfDay = new Date(now2.getFullYear(), now2.getMonth(), now2.getDate(), 0, 0, 0, 0);
+        const endOfDay   = new Date(now2.getFullYear(), now2.getMonth(), now2.getDate(), 23, 59, 59, 999);
+        taskAccumulatedToday = await storage.getTaskDurationToday(userId, taskId, startOfDay, endOfDay);
+      }
+      res.json({ ...entry, taskAccumulatedToday });
     } catch (error) {
       logError("agent.timer.start.failed", error);
       res.status(500).json({ message: "Failed to start timer" });

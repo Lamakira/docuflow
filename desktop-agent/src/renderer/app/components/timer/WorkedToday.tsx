@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAgent } from '../../stores/AgentContext';
 import { formatTime } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
-import { TimerControls } from './TimerControls';
 
 export function WorkedToday() {
-  const { state } = useAgent();
+  const { state, pauseTimer, resumeTimer } = useAgent();
+  const [pauseLoading, setPauseLoading] = useState(false);
   const [stoppedTotal, setStoppedTotal] = useState(0);
   const timer = state.agentState?.timer;
   const status = timer?.status ?? 'stopped';
@@ -55,15 +55,33 @@ export function WorkedToday() {
     }
   }, [timer?.entryId]);
 
+  async function handlePauseResume() {
+    setPauseLoading(true);
+    if (status === 'running') await pauseTimer();
+    else await resumeTimer();
+    setPauseLoading(false);
+  }
+
   return (
-    <div className="worked-today-bar">
+    <div className={`worked-today-bar${isActive ? ' worked-today-bar--active' : ''}`}>
+      {isActive && (
+        <div className="timer-pause-fab-wrap">
+          <button
+            className={`timer-pause-fab${status === 'paused' ? ' timer-pause-fab--resume' : ''}`}
+            disabled={pauseLoading}
+            onClick={handlePauseResume}
+            title={status === 'running' ? 'Pause' : 'Resume'}
+          >
+            {pauseLoading ? '…' : status === 'running' ? '⏸' : '▶'}
+          </button>
+        </div>
+      )}
       <div className="worked-today-bar__left">
         {isActive && <StatusBadge status={status} />}
       </div>
       <div className="worked-today-bar__right">
         <span className="worked-today-bar__label">Worked Today</span>
         <span className="worked-today-bar__value">{formatTime(total)}</span>
-        {isActive && <TimerControls compact />}
       </div>
     </div>
   );
