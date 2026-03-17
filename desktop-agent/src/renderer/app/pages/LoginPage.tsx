@@ -53,7 +53,7 @@ export function LoginPage() {
             className="field__input"
             type="email"
             placeholder="you@example.com"
-            autoComplete="email"
+            autoComplete="off"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={loading}
@@ -67,7 +67,7 @@ export function LoginPage() {
             className="field__input"
             type="password"
             placeholder="Enter your password"
-            autoComplete="current-password"
+            autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={loading}

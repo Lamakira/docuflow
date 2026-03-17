@@ -27,14 +27,14 @@
       "executableName": "docuflow-agent"
     },
     "nsis": {
-      "oneClick": false,
+      "oneClick": true,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "DocuFlow Desktop Agent",
       "uninstallDisplayName": "DocuFlow Desktop Agent",
-      "differentialPackage": false
+      "differentialPackage": false,
+      "runAfterFinish": true
     }
   },
   "devDependencies": {
