@@ -10,7 +10,8 @@ export function WorkedToday() {
   const timer = state.agentState?.timer;
   const status = timer?.status ?? 'stopped';
 
-  const liveElapsed = status !== 'stopped' ? (timer?.elapsed ?? 0) : 0;
+  const isActive = status !== 'stopped' && timer?.entryId != null;
+  const liveElapsed = isActive ? (timer?.elapsed ?? 0) : 0;
 
   // Track entryId changes to carry over elapsed before it resets to 0
   const prevEntryIdRef = useRef<string | null | undefined>(undefined);
@@ -26,7 +27,9 @@ export function WorkedToday() {
   async function refresh() {
     try {
       const result = await window.agentBridge.getWorkedToday();
-      if (result.ok) setStoppedTotal(result.total);
+      // Use Math.max: the daily total can only grow — never let a stale/failed
+      // API response overwrite a higher value already accumulated locally.
+      if (result.ok) setStoppedTotal(s => Math.max(s, result.total));
     } catch { /* non-fatal */ }
   }
 
@@ -55,12 +58,12 @@ export function WorkedToday() {
   return (
     <div className="worked-today-bar">
       <div className="worked-today-bar__left">
-        {status !== 'stopped' && <StatusBadge status={status} />}
+        {isActive && <StatusBadge status={status} />}
       </div>
       <div className="worked-today-bar__right">
         <span className="worked-today-bar__label">Worked Today</span>
         <span className="worked-today-bar__value">{formatTime(total)}</span>
-        {status !== 'stopped' && <TimerControls compact />}
+        {isActive && <TimerControls compact />}
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ export function ActiveTimerHeader() {
   const timer = state.agentState?.timer;
   const status = timer?.status ?? 'stopped';
 
-  if (status === 'stopped') return null;
+  if (status === 'stopped' || !timer?.entryId) return null;
 
   return (
     <div className={`timer-header timer-header--${status}`}>
