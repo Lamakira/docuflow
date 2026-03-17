@@ -89,7 +89,7 @@ import {
   agentActivityEvents,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count } from "drizzle-orm";
+import { eq, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -282,6 +282,8 @@ export interface IStorage {
   }>;
   /** Sum of stopped entry durations for a specific task today (for resume-from-accumulated UX). */
   getTaskDurationToday(userId: string, taskId: string, start: Date, end: Date): Promise<number>;
+  /** Batch: today's stopped duration for multiple tasks — returns map taskId → seconds. */
+  getTasksDurationToday(userId: string, taskIds: string[], start: Date, end: Date): Promise<Record<string, number>>;
 
   // Time Entry Screenshots
   createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot>;
@@ -2381,6 +2383,25 @@ export class DatabaseStorage implements IStorage {
         sql`${timeEntries.startTime} <= ${end}`,
       ));
     return Number(row?.total ?? 0);
+  }
+
+  async getTasksDurationToday(userId: string, taskIds: string[], start: Date, end: Date): Promise<Record<string, number>> {
+    if (taskIds.length === 0) return {};
+    const rows = await db
+      .select({
+        taskId: timeEntries.taskId,
+        total: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)`,
+      })
+      .from(timeEntries)
+      .where(and(
+        eq(timeEntries.userId, userId),
+        inArray(timeEntries.taskId, taskIds),
+        eq(timeEntries.status, "stopped"),
+        sql`${timeEntries.startTime} >= ${start}`,
+        sql`${timeEntries.startTime} <= ${end}`,
+      ))
+      .groupBy(timeEntries.taskId);
+    return Object.fromEntries(rows.map((r) => [r.taskId, Number(r.total)]));
   }
 
   async createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot> {

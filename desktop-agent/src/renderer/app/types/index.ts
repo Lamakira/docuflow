@@ -7,6 +7,7 @@ export interface Task {
   id: string;
   name: string;
   crmProjectId: string;
+  durationToday?: number;
 }
 
 export type TimerStatus = 'running' | 'paused' | 'stopped';

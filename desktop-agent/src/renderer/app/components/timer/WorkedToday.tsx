@@ -72,7 +72,16 @@ export function WorkedToday() {
             onClick={handlePauseResume}
             title={status === 'running' ? 'Pause' : 'Resume'}
           >
-            {pauseLoading ? '…' : status === 'running' ? '\u23F8\uFE0E' : '\u25B6\uFE0E'}
+            {pauseLoading ? '…' : status === 'running' ? (
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <rect x="4" y="3" width="4" height="14" rx="1.5"/>
+                <rect x="12" y="3" width="4" height="14" rx="1.5"/>
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
+                <polygon points="5,2 16,9 5,16"/>
+              </svg>
+            )}
           </button>
         </div>
       )}
