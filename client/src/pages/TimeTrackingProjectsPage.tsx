@@ -53,14 +53,13 @@ export default function TimeTrackingProjectsPage() {
     ? projectsData
     : projectsData?.data ?? [];
 
-  const { data: tasksData, isLoading: tasksLoading } = useQuery<Task[]>({
+  const { data: tasksData, isLoading: tasksLoading } = useQuery<{ data: Task[] }>({
     queryKey: ["/api/tasks", selectedProjectId],
-    queryFn: () =>
-      apiRequest("GET", `/api/tasks?crmProjectId=${selectedProjectId}`).then((r) => r.json?.() ?? r),
+    queryFn: () => apiRequest("GET", `/api/tasks?crmProjectId=${selectedProjectId}`),
     enabled: !!selectedProjectId,
   });
 
-  const tasks = Array.isArray(tasksData) ? tasksData : [];
+  const tasks: Task[] = tasksData?.data ?? [];
   const activeTasks = tasks.filter((t) => t.status !== "archived");
   const archivedTasks = tasks.filter((t) => t.status === "archived");
 

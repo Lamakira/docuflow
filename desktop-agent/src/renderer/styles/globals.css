@@ -189,28 +189,27 @@ a:hover { text-decoration: underline; }
 /* ── Pause FAB — à cheval between bar 1 and bar 2 ── */
 .timer-pause-fab-wrap {
   position: absolute;
-  top: -22px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: -28px;
+  right: 1.25rem;
   z-index: 20;
 }
 .timer-pause-fab {
-  width: 44px;
-  height: 44px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   border: 3px solid var(--bg);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
+  font-size: 1.3rem;
   cursor: pointer;
-  background: #d97706;
+  background: #dc2626;
   color: #fff;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+  box-shadow: 0 3px 14px rgba(0,0,0,0.5);
   transition: filter 0.1s, transform 0.1s;
   flex-shrink: 0;
 }
-.timer-pause-fab:hover:not(:disabled) { filter: brightness(1.12); transform: scale(1.07); }
+.timer-pause-fab:hover:not(:disabled) { filter: brightness(1.12); transform: scale(1.06); }
 .timer-pause-fab:disabled { opacity: 0.55; cursor: default; transform: none; }
 .timer-pause-fab--resume { background: #16a34a; }
 
@@ -226,7 +225,7 @@ a:hover { text-decoration: underline; }
   flex-shrink: 0;
   min-height: 36px;
 }
-.worked-today-bar--active { padding-top: 1.75rem; }
+.worked-today-bar--active { padding-top: 2rem; }
 .worked-today-bar__left {
   display: flex;
   align-items: center;
