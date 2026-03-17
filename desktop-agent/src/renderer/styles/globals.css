@@ -139,7 +139,7 @@ a:hover { text-decoration: underline; }
 }
 .sidebar__dot--connected { background: var(--green); }
 
-/* ── Active timer header ─────────────────────────── */
+/* ── Bar 1 — Active timer (project + elapsed) ────── */
 .timer-header {
   height: var(--header-h);
   border-bottom: 1px solid var(--border-subtle);
@@ -150,69 +150,75 @@ a:hover { text-decoration: underline; }
   padding: 0 1.25rem;
   gap: 1rem;
   flex-shrink: 0;
+  transition: background 0.2s;
 }
+.timer-header--running { background: #14532d; border-bottom-color: #166534; }
+.timer-header--paused  { background: #451a03; border-bottom-color: #78350f; }
 .timer-header__info {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.05rem;
+  gap: 0.1rem;
 }
 .timer-header__project {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: white;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .timer-header__task {
-  font-size: 0.78rem;
-  color: var(--text-muted);
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.7);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.timer-header__right {
+.timer-header__elapsed {
+  font-family: monospace;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: white;
+  flex-shrink: 0;
+}
+.timer-header__controls { display: flex; gap: 0.25rem; flex-shrink: 0; }
+
+/* ── Bar 2 — Worked Today + controls ─────────────── */
+.worked-today-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 1.25rem;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  min-height: 36px;
+}
+.worked-today-bar__left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.worked-today-bar__right {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  flex-shrink: 0;
   margin-left: auto;
 }
-.timer-header__elapsed {
-  font-family: monospace;
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-.timer-header__elapsed--running { color: var(--green); }
-.timer-header__elapsed--paused { color: var(--yellow); }
-.timer-header__today {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-.timer-header__today-label {
-  font-size: 0.6rem;
+.worked-today-bar__label {
+  font-size: 0.72rem;
   color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  font-weight: 600;
-  line-height: 1.2;
+  font-weight: 500;
 }
-.timer-header__today-value {
+.worked-today-bar__value {
   font-family: monospace;
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-muted);
   letter-spacing: 0.04em;
-  line-height: 1.2;
-}
-.timer-header__controls {
-  display: flex;
-  gap: 0.25rem;
-  flex-shrink: 0;
 }
 
 /* ── Buttons ──────────────────────────────────────── */
