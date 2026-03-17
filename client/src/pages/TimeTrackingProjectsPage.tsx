@@ -40,6 +40,7 @@ function getProjectName(p: CrmProject): string {
 export default function TimeTrackingProjectsPage() {
   const { toast } = useToast();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [projectSearch, setProjectSearch] = useState("");
   const [newTaskName, setNewTaskName] = useState("");
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -47,11 +48,18 @@ export default function TimeTrackingProjectsPage() {
 
   const { data: projectsData, isLoading: projectsLoading } = useQuery<any>({
     queryKey: ["/api/crm/projects"],
+    queryFn: () => apiRequest("GET", "/api/crm/projects?pageSize=500"),
   });
 
-  const projects: CrmProject[] = Array.isArray(projectsData)
+  const allProjects: CrmProject[] = Array.isArray(projectsData)
     ? projectsData
     : projectsData?.data ?? [];
+
+  const projects = projectSearch.trim()
+    ? allProjects.filter((p) =>
+        getProjectName(p).toLowerCase().includes(projectSearch.toLowerCase())
+      )
+    : allProjects;
 
   const { data: tasksData, isLoading: tasksLoading } = useQuery<{ data: Task[] }>({
     queryKey: ["/api/tasks", selectedProjectId],
@@ -126,8 +134,14 @@ export default function TimeTrackingProjectsPage() {
       <div className="flex h-full overflow-hidden">
         {/* Left: Projects */}
         <div className="w-64 border-r flex flex-col shrink-0">
-          <div className="px-4 py-3 border-b">
+          <div className="px-4 py-3 border-b space-y-2">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Projects</h2>
+            <Input
+              placeholder="Search…"
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              className="h-7 text-sm"
+            />
           </div>
           <div className="flex-1 overflow-y-auto">
             {projectsLoading ? (
