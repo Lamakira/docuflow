@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAgent } from '../../stores/AgentContext';
-import { formatTime } from '../../types';
+import { formatWorkedToday } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 
 export function WorkedToday() {
@@ -89,8 +89,8 @@ export function WorkedToday() {
         {isActive && <StatusBadge status={status} />}
       </div>
       <div className="worked-today-bar__right">
-        <span className="worked-today-bar__label">Worked Today</span>
-        <span className="worked-today-bar__value">{formatTime(total)}</span>
+        <span className="worked-today-bar__label">Worked Today:</span>
+        <span className="worked-today-bar__value">{formatWorkedToday(total)}</span>
       </div>
     </div>
   );

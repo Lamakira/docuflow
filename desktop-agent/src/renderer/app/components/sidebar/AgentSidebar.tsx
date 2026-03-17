@@ -25,6 +25,7 @@ export function AgentSidebar() {
       <div className="sidebar__avatar" title={userEmail ?? ''}>
         {initial}
       </div>
+      <div className="sidebar__divider" />
       <div className="sidebar__nav">
         {NAV_ITEMS.map((item) => (
           <button

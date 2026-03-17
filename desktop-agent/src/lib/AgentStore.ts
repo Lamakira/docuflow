@@ -32,7 +32,8 @@ interface RuntimeState {
   activeTaskName: string | null;
   activeDescription: string | null;
   timerStatus: "stopped" | "running" | "paused";
-  timerDuration: number; // accumulated seconds from server
+  timerDuration: number; // current entry's accumulated seconds (from server)
+  timerTaskAccumulated: number; // today's stopped entries for this task (offset)
   timerLastActivityAt: number | null; // timestamp ms for local elapsed calc
   clientVersion: string;
 }
@@ -54,6 +55,7 @@ export class AgentStore {
       activeDescription: null,
       timerStatus: "stopped",
       timerDuration: 0,
+      timerTaskAccumulated: 0,
       timerLastActivityAt: null,
       clientVersion: "0.1.0",
     };
@@ -145,10 +147,12 @@ export class AgentStore {
     projectName: string | null,
     taskName?: string | null,
     description?: string | null,
+    taskAccumulated?: number,
   ): void {
     this.runtime.activeEntryId = entryId;
     this.runtime.timerStatus = "running";
     this.runtime.timerDuration = duration;
+    this.runtime.timerTaskAccumulated = taskAccumulated ?? 0;
     this.runtime.timerLastActivityAt = Date.now();
     this.runtime.activeProjectName = projectName;
     this.runtime.activeTaskName = taskName ?? null;
@@ -170,6 +174,7 @@ export class AgentStore {
     this.runtime.activeEntryId = null;
     this.runtime.timerStatus = "stopped";
     this.runtime.timerDuration = 0;
+    this.runtime.timerTaskAccumulated = 0;
     this.runtime.timerLastActivityAt = null;
     this.runtime.activeProjectName = null;
     this.runtime.activeTaskName = null;
@@ -218,11 +223,12 @@ export class AgentStore {
    * Get elapsed seconds (server duration + local delta if running).
    */
   getElapsedSeconds(): number {
+    const base = this.runtime.timerTaskAccumulated + this.runtime.timerDuration;
     if (this.runtime.timerStatus === "running" && this.runtime.timerLastActivityAt) {
       const localDelta = Math.floor((Date.now() - this.runtime.timerLastActivityAt) / 1000);
-      return this.runtime.timerDuration + localDelta;
+      return base + localDelta;
     }
-    return this.runtime.timerDuration;
+    return base;
   }
 
   /**
