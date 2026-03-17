@@ -42,7 +42,11 @@ function resolveApiBase(): { url: string; source: ApiBaseSource } {
         .map(l => l.trim())
         .find(l => l.startsWith("http"));
       if (url) {
-        return { url: url.replace(/\/+$/, ""), source: "file" };
+        const cleaned = url.replace(/\/+$/, "");
+        // If the file points to the same URL as the default (prod), treat it as default
+        // so the DEV/PROD badge reflects the actual environment, not the source.
+        const source: ApiBaseSource = cleaned === DEFAULT_API_URL.replace(/\/+$/, "") ? "default" : "file";
+        return { url: cleaned, source };
       }
     }
   } catch { /* ignore */ }
