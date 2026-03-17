@@ -164,9 +164,7 @@ export function ProjectTaskPicker() {
                 onClick={() => handleStartTask(task)}
               >
                 <span className="picker-task-item__name">{task.name}</span>
-                <span className="picker-task-item__start">
-                  {starting === task.id ? '…' : '▶'}
-                </span>
+                {starting === task.id && <span className="picker-task-item__loading">…</span>}
               </button>
             ))}
           </div>

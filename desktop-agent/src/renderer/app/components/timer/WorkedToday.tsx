@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAgent } from '../../stores/AgentContext';
 import { formatTime } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
@@ -11,6 +11,16 @@ export function WorkedToday() {
   const status = timer?.status ?? 'stopped';
 
   const liveElapsed = status !== 'stopped' ? (timer?.elapsed ?? 0) : 0;
+
+  // Track entryId changes to carry over elapsed before it resets to 0
+  const prevEntryIdRef = useRef<string | null | undefined>(undefined);
+  const capturedElapsedRef = useRef(0);
+
+  // Capture current elapsed during render (only when entryId hasn't changed)
+  if (prevEntryIdRef.current === (timer?.entryId ?? null)) {
+    capturedElapsedRef.current = liveElapsed;
+  }
+
   const total = stoppedTotal + liveElapsed;
 
   async function refresh() {
@@ -29,6 +39,18 @@ export function WorkedToday() {
   useEffect(() => {
     if (status === 'stopped') refresh();
   }, [status]);
+
+  // When entry changes while a timer was running, carry over elapsed optimistically
+  useEffect(() => {
+    const entryId = timer?.entryId ?? null;
+    const prev = prevEntryIdRef.current;
+    prevEntryIdRef.current = entryId;
+
+    if (prev !== undefined && prev !== null && entryId !== prev) {
+      setStoppedTotal(s => s + capturedElapsedRef.current);
+      setTimeout(refresh, 2000);
+    }
+  }, [timer?.entryId]);
 
   return (
     <div className="worked-today-bar">
