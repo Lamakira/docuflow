@@ -10,8 +10,18 @@ import fs from "fs";
 import os from "os";
 import { API_BASE, API_BASE_SOURCE, API_HOST } from "../lib/config";
 
+// ─── Linux / Wayland ───
+// Enable PipeWire-based screen capture so desktopCapturer works under Wayland
+// (Ubuntu 22.04+ defaults to Wayland). Must be called before app.whenReady().
+if (process.platform === "linux") {
+  app.commandLine.appendSwitch("enable-features", "WebRTCPipeWireCapturer");
+}
+
 // ─── File logger ───
-// Writes to %APPDATA%\docuflow-desktop-agent\debug.log — readable without DevTools.
+// Writes to the platform userData dir — readable without DevTools.
+//   Windows : %APPDATA%\docuflow-desktop-agent\debug.log
+//   Linux   : ~/.config/docuflow-desktop-agent/debug.log
+//   macOS   : ~/Library/Application Support/docuflow-desktop-agent/debug.log
 let logStream: fs.WriteStream | null = null;
 function initLogger() {
   try {
