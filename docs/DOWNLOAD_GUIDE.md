@@ -1,137 +1,214 @@
 # DocuFlow Desktop Agent — Download & Distribution Guide
 
 > Current version: **v0.1.3**
-> Official artifact: **`DocuFlowAgentSetup.exe`** (NSIS per-user installer)
 
 ---
 
-## Building the Windows Installer
+## Platform Status
 
-### Prerequisites
-- Windows 10/11 (64-bit)
-- Node.js 18+
-- npm 9+
-- Avast / Defender real-time protection **temporarily disabled** during the build (the NSIS writer gets locked otherwise)
+| Platform | Official artifact | Status | Validation | Build command |
+|----------|------------------|--------|------------|---------------|
+| **Windows** | `DocuFlow-Agent-0.1.3-windows-setup.exe` | ✅ Stable | Tested in production | `npm run dist:win` |
+| **macOS** | `DocuFlow-Agent-0.1.3-macos.dmg` | 🔶 Beta | In testing (real device) | `npm run dist:mac` |
+| **Linux (Ubuntu)** | `DocuFlow-Agent-0.1.3-linux-amd64.deb` | 🧪 Experimental | Build verified, runtime not yet tested on real hardware | `npm run dist:ubuntu` |
 
-### Steps
+---
+
+## Building
+
+### Prerequisites (all platforms)
 
 ```bash
 cd desktop-agent
 npm install
+```
+
+### Windows
+
+```bash
 npm run dist:win
 ```
 
-Output: `desktop-agent/release/DocuFlowAgentSetup.exe` (~65 MB)
+- Must run on **Windows 10/11**
+- Temporarily disable Avast/Defender real-time protection during the build (the NSIS writer gets file-locked otherwise)
+- Output: `desktop-agent/release/DocuFlow-Agent-0.1.3-windows-setup.exe` (~65 MB)
+
+### macOS
+
+```bash
+# Step 1 — generate .icns icon (first time only, on macOS)
+node scripts/gen-icons.js
+
+# Step 2 — build DMG
+npm run dist:mac
+```
+
+- Must run on **macOS** (maker-dmg uses `hdiutil`, macOS-only tool)
+- Output: `desktop-agent/release/DocuFlow-Agent-0.1.3-macos.dmg`
+- No code signing configured — Gatekeeper will warn on first launch
+
+### Linux (Ubuntu)
+
+```bash
+npm run dist:ubuntu
+```
+
+- Must run on **Linux** (electron-forge cannot cross-compile .deb from Windows)
+- Output: `desktop-agent/release/DocuFlow-Agent-0.1.3-linux-amd64.deb`
 
 ---
 
-## Official Artifact
+## User Installation
 
-| Artifact | Path | Status |
-|----------|------|--------|
-| **NSIS installer** | `release/DocuFlowAgentSetup.exe` | ✅ Official — distribute this |
-| ZIP portable | `out/DocuFlow Agent-win32-x64/` | Fallback only — not promoted |
-| `.msi` / Squirrel | — | ❌ Deprecated — do not use |
+### Windows
 
----
-
-## User Installation Instructions
-
-### NSIS Installer (recommended)
-1. Download `DocuFlowAgentSetup.exe`
-2. If SmartScreen warns: click **More info → Run anyway** (app is not code-signed yet)
+1. Download `DocuFlow-Agent-0.1.3-windows-setup.exe`
+2. SmartScreen may warn — click **More info → Run anyway** (app is not yet code-signed)
 3. Follow the setup wizard — no admin rights needed (installs per-user)
 4. Start Menu → **DocuFlow Desktop Agent**
-5. Visible in Settings → Apps as **DocuFlow Desktop Agent**
 
-### ZIP Portable (fallback)
-Use only if the installer is blocked by antivirus or IT policy:
-1. Extract the ZIP anywhere
-2. Right-click the folder → Properties → check **Unblock** → OK
-3. Run `docuflow-agent.exe`
+**Uninstall:** Settings → Apps → DocuFlow Desktop Agent → Uninstall
+or: `powershell -ExecutionPolicy Bypass -File "desktop-agent/scripts/uninstall-agent.ps1"`
+
+### macOS
+
+1. Download `DocuFlow-Agent-0.1.3-macos.dmg`
+2. Open the .dmg, drag **DocuFlow Agent.app** to `/Applications`
+3. **First launch:** right-click the app → **Open** → **Open** (bypasses Gatekeeper for unsigned builds — one-time only)
+4. App appears in the menu bar (system tray equivalent on macOS)
+5. **Screenshots:** macOS will request Screen Recording permission on first capture — allow in System Settings → Privacy & Security → Screen Recording
+
+### Linux (Ubuntu)
+
+```bash
+sudo dpkg -i DocuFlow-Agent-0.1.3-linux-amd64.deb
+```
+
+Launch from the Applications menu or terminal: `docuflow-agent`
+
+**System tray:** requires `libayatana-appindicator3-1` (auto-installed as dependency).
+On GNOME without AppIndicator extension: the tray icon may not appear — the app still runs and can be opened from the app menu.
 
 ---
 
-## First Launch
+## First Launch (all platforms)
 
 1. Open DocuFlow Desktop Agent
 2. Enter your DocuFlow **email** and **password** (same credentials as the web app)
 3. Click **Sign in**
-4. The device appears in the web app: **Devices** page
+4. The device appears in the web app under **Devices**
 
-No pairing codes. No server URL to enter. The server URL is baked into the installer.
+No pairing codes. No server URL to enter. The server URL is baked into the build.
 
 ---
 
-## Updating the Download URL in the Web App
+## URL Override (dev / staging)
 
-After publishing a GitHub Release, update this constant:
+To point the agent at a different server, create `~/.docuflow-url` with the target URL:
 
-**File:** `client/src/pages/DevicesPage.tsx`
-
-```typescript
-const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.3/DocuFlowAgentSetup.exe";
 ```
+# ~/.docuflow-url
+https://your-dev-server.example.com
+```
+
+| OS | Path |
+|----|------|
+| Windows | `C:\Users\<you>\.docuflow-url` |
+| macOS | `/Users/<you>/.docuflow-url` |
+| Linux | `/home/<you>/.docuflow-url` |
+
+Delete the file to revert to the production URL baked into the build.
+
+---
+
+## Logs & Config Paths
+
+| OS | Config (agent-config.json) | Logs (debug.log) |
+|----|---------------------------|-----------------|
+| Windows | `%APPDATA%\docuflow-desktop-agent\` | same dir |
+| macOS | `~/Library/Application Support/docuflow-desktop-agent/` | same dir |
+| Linux | `~/.config/docuflow-desktop-agent/` | same dir |
 
 ---
 
 ## Publishing to GitHub Releases
 
+All three artifacts are published under the same tag:
+
 ```bash
 gh release create desktop-agent-v0.1.3 \
-  "desktop-agent/release/DocuFlowAgentSetup.exe" \
-  --title "Desktop Agent v0.1.3 — Email/password auth, task support" \
+  "desktop-agent/release/DocuFlow-Agent-0.1.3-windows-setup.exe" \
+  "desktop-agent/release/DocuFlow-Agent-0.1.3-macos.dmg" \
+  "desktop-agent/release/DocuFlow-Agent-0.1.3-linux-amd64.deb" \
+  --title "Desktop Agent v0.1.3" \
   --notes "See docs/DESKTOP_RELEASE_LOG.md for full release notes."
 ```
 
-Then delete or archive the old v0.1.1 and v0.1.2 releases.
+After publishing, update the download URL constants in:
+`client/src/pages/TimeTrackingDownloadPage.tsx`
+
+---
+
+## Updating the Download URLs
+
+When a new version is released, update these three constants in `TimeTrackingDownloadPage.tsx`:
+
+```typescript
+const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v{VERSION}/DocuFlow-Agent-{VERSION}-windows-setup.exe";
+const DOWNLOAD_URL_MACOS   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v{VERSION}/DocuFlow-Agent-{VERSION}-macos.dmg";
+const DOWNLOAD_URL_LINUX   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v{VERSION}/DocuFlow-Agent-{VERSION}-linux-amd64.deb";
+const AGENT_VERSION = "v{VERSION}";
+```
 
 ---
 
 ## Version Bumping
 
 1. Update `version` in `desktop-agent/package.json`
-2. Update `DEFAULT_API_URL` in `desktop-agent/src/lib/config.ts` if server URL changed
-3. Rebuild: `cd desktop-agent && npm run dist:win`
-4. Publish GitHub Release (see above)
-5. Update `DOWNLOAD_URL_WINDOWS` in `client/src/pages/DevicesPage.tsx`
-6. Add entry to `docs/DESKTOP_RELEASE_LOG.md`
-
----
-
-## Uninstalling
-
-Run the uninstall script:
-```powershell
-powershell -ExecutionPolicy Bypass -File "desktop-agent/scripts/uninstall-agent.ps1"
-```
-
-Or: Settings → Apps → DocuFlow Agent → Uninstall.
+2. Update `AGENT_VERSION` + all three `DOWNLOAD_URL_*` constants in `TimeTrackingDownloadPage.tsx`
+3. Rebuild all platform artifacts
+4. Publish GitHub Release
+5. Add entry to `docs/DESKTOP_RELEASE_LOG.md`
 
 ---
 
 ## Troubleshooting
 
-### "Windows cannot access the specified device"
-File is blocked after download:
-1. Right-click → Properties → check **Unblock** → OK
+### Windows — "Windows cannot access the specified device"
+File blocked after download → right-click → Properties → check **Unblock** → OK
 
-### Antivirus blocking the installer write during build
-Avast / Defender lock the output `.exe` while scanning:
-- Temporarily disable File Shield (Avast: right-click tray → Avast shields control → Disable for 10 minutes)
-- Run `npm run dist:win` again
+### Windows — Antivirus blocking during build
+Avast/Defender locks the output `.exe` while scanning:
+- Temporarily disable File Shield → re-run `npm run dist:win`
 
-### App not starting after install
+### Windows — App not starting after install
 Delete leftover AppData and reinstall:
 ```
-C:\Users\<you>\AppData\Local\DocuFlow Desktop Agent\
-C:\Users\<you>\AppData\Roaming\DocuFlow Desktop Agent\
+%LOCALAPPDATA%\DocuFlow Desktop Agent\
+%APPDATA%\docuflow-desktop-agent\
 ```
+
+### macOS — "DocuFlow Agent is damaged and can't be opened"
+Quarantine flag from download — run: `xattr -cr /Applications/"DocuFlow Agent.app"`
+
+### Linux — dpkg dependency error
+```bash
+sudo apt-get install -f
+```
+This resolves missing `libayatana-appindicator3-1` or other deps.
+
+### Linux — Screenshots not working (Wayland)
+Ensure `xdg-desktop-portal` and PipeWire are installed (standard on Ubuntu 22.04+).
+The agent enables PipeWire capture automatically on Linux — no manual config needed.
 
 ---
 
-## Known Limitations (MVP)
+## Known Limitations
 
-- **No code signing**: SmartScreen warns on first launch
-- **No auto-update**: Users must download new versions manually
-- **Windows only**: macOS/Linux not yet supported
+| Limitation | Windows | macOS | Linux |
+|-----------|---------|-------|-------|
+| No code signing | ⚠️ SmartScreen warns | ⚠️ Gatekeeper warns | N/A |
+| No auto-update | ⚠️ Manual download | ⚠️ Manual download | ⚠️ Manual download |
+| Screenshots on Wayland | N/A | N/A | ⚠️ Requires xdg-desktop-portal |
+| Tray on GNOME | N/A | N/A | ⚠️ Requires AppIndicator extension |
+| Apple Silicon (arm64) | N/A | ⚠️ Via Rosetta only (x64 build) | N/A |

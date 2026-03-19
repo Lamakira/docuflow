@@ -23,7 +23,7 @@
     "directories": {
       "output": "release"
     },
-    "artifactName": "DocuFlowAgentSetup.exe",
+    "artifactName": "DocuFlow-Agent-${version}-windows-setup.exe",
     "compression": "normal",
     "win": {
       "target": "nsis",

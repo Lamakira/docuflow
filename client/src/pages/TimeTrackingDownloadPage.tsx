@@ -4,14 +4,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Download, Monitor, Apple, Terminal } from "lucide-react";
 
-const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.1/DocuFlowAgentSetup.exe";
-const DOWNLOAD_URL_LINUX = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.3/DocuFlow-Agent-0.1.3-linux-amd64.deb";
 const AGENT_VERSION = "v0.1.3";
+
+// GitHub Release: desktop-agent-v0.1.3
+// All artifacts live under the same tag — publish them together.
+const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.3/DocuFlow-Agent-0.1.3-windows-setup.exe";
+const DOWNLOAD_URL_MACOS   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.3/DocuFlow-Agent-0.1.3-macos.dmg";
+const DOWNLOAD_URL_LINUX   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.3/DocuFlow-Agent-0.1.3-linux-amd64.deb";
 
 export default function TimeTrackingDownloadPage() {
   return (
     <TimeTrackingLayout>
       <div className="p-6 max-w-3xl mx-auto space-y-6">
+
         <div>
           <h1 className="text-2xl font-bold">Download Desktop Agent</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -27,17 +32,25 @@ export default function TimeTrackingDownloadPage() {
           <Badge variant="secondary" className="ml-auto shrink-0">{AGENT_VERSION}</Badge>
         </div>
 
+        {/* OS cards — ordered by validation level: Windows > macOS > Linux */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+
+          {/* Windows — Stable */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-primary/10 p-2">
-                  <Monitor className="h-5 w-5 text-primary" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-primary/10 p-2">
+                    <Monitor className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Windows</CardTitle>
+                    <CardDescription className="text-xs">Windows 10 / 11 (x64)</CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-base">Windows</CardTitle>
-                  <CardDescription className="text-xs">Windows 10 / 11 (x64)</CardDescription>
-                </div>
+                <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 border-0 text-xs">
+                  Stable
+                </Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -46,24 +59,62 @@ export default function TimeTrackingDownloadPage() {
                 onClick={() => window.open(DOWNLOAD_URL_WINDOWS, "_blank", "noopener,noreferrer")}
               >
                 <Download className="h-4 w-4 mr-2" />
-                Download Installer
+                Download .exe
               </Button>
               <p className="text-xs text-muted-foreground">
-                Windows SmartScreen may prompt — click <strong>More info</strong> → <strong>Run anyway</strong>.
+                SmartScreen may prompt — click <strong>More info</strong> → <strong>Run anyway</strong>.
               </p>
             </CardContent>
           </Card>
 
+          {/* macOS — Beta (in testing) */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-primary/10 p-2">
-                  <Terminal className="h-5 w-5 text-primary" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-primary/10 p-2">
+                    <Apple className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">macOS</CardTitle>
+                    <CardDescription className="text-xs">macOS 12+ (x64)</CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-base">Linux</CardTitle>
-                  <CardDescription className="text-xs">Ubuntu 20.04+ (x64)</CardDescription>
+                <Badge className="bg-orange-500/15 text-orange-700 dark:text-orange-400 border-0 text-xs">
+                  Beta
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button
+                className="w-full"
+                onClick={() => window.open(DOWNLOAD_URL_MACOS, "_blank", "noopener,noreferrer")}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download .dmg
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                First launch: <strong>right-click → Open</strong> to bypass Gatekeeper (unsigned build).
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Linux — Experimental */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-primary/10 p-2">
+                    <Terminal className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Linux</CardTitle>
+                    <CardDescription className="text-xs">Ubuntu 20.04+ (x64)</CardDescription>
+                  </div>
                 </div>
+                <Badge variant="outline" className="text-xs">
+                  Experimental
+                </Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -75,31 +126,14 @@ export default function TimeTrackingDownloadPage() {
                 Download .deb
               </Button>
               <p className="text-xs text-muted-foreground">
-                Install with: <strong>sudo dpkg -i DocuFlow-Agent-*.deb</strong>
+                Install: <strong>sudo dpkg -i DocuFlow-Agent-*.deb</strong>
               </p>
             </CardContent>
           </Card>
 
-          <Card className="opacity-60">
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-muted p-2">
-                  <Apple className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">macOS</CardTitle>
-                  <CardDescription className="text-xs">macOS 12+</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Button variant="outline" className="w-full" disabled>
-                Coming soon
-              </Button>
-            </CardContent>
-          </Card>
         </div>
 
+        {/* Setup instructions */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Setup instructions</CardTitle>
@@ -108,8 +142,9 @@ export default function TimeTrackingDownloadPage() {
             <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
               <li>Download the installer for your platform.</li>
               <li>
-                <strong>Windows:</strong> run the .exe installer.{" "}
-                <strong>Linux (Ubuntu):</strong> run <code className="bg-muted px-1 rounded">sudo dpkg -i DocuFlow-Agent-*.deb</code> in a terminal.
+                <strong>Windows:</strong> run the .exe and follow the wizard.{" "}
+                <strong>macOS:</strong> open the .dmg, drag the app to Applications, then right-click → Open on first launch.{" "}
+                <strong>Linux:</strong> run <code className="bg-muted px-1 rounded">sudo dpkg -i DocuFlow-Agent-*.deb</code>.
               </li>
               <li>Open the DocuFlow Agent from your system tray or app menu.</li>
               <li>Sign in with your DocuFlow email and password.</li>
@@ -117,6 +152,7 @@ export default function TimeTrackingDownloadPage() {
             </ol>
           </CardContent>
         </Card>
+
       </div>
     </TimeTrackingLayout>
   );
