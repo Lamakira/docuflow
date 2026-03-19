@@ -10,6 +10,9 @@
     "package": "electron-forge package",
     "dist:win": "node scripts/dist-win.js",
     "dist:win:debug": "node scripts/dist-win.js --debug",
+    "dist:linux": "node scripts/dist-linux.js",
+    "dist:ubuntu": "node scripts/dist-linux.js",
+    "dist:mac": "node scripts/dist-mac.js",
     "dist": "node scripts/dist-win.js",
     "lint": "tsc --noEmit"
   },

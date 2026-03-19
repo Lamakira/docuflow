@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Download, Monitor, Apple, Terminal } from "lucide-react";
 
 const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.1/DocuFlowAgentSetup.exe";
+const DOWNLOAD_URL_LINUX = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.3/DocuFlow-Agent-0.1.3-linux-amd64.deb";
 const AGENT_VERSION = "v0.1.3";
 
 export default function TimeTrackingDownloadPage() {
@@ -53,22 +54,29 @@ export default function TimeTrackingDownloadPage() {
             </CardContent>
           </Card>
 
-          <Card className="opacity-60">
+          <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-muted p-2">
-                  <Terminal className="h-5 w-5 text-muted-foreground" />
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <Terminal className="h-5 w-5 text-primary" />
                 </div>
                 <div>
                   <CardTitle className="text-base">Linux</CardTitle>
-                  <CardDescription className="text-xs">Ubuntu, Debian, Fedora</CardDescription>
+                  <CardDescription className="text-xs">Ubuntu 20.04+ (x64)</CardDescription>
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <Button variant="outline" className="w-full" disabled>
-                Coming soon
+            <CardContent className="space-y-3">
+              <Button
+                className="w-full"
+                onClick={() => window.open(DOWNLOAD_URL_LINUX, "_blank", "noopener,noreferrer")}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download .deb
               </Button>
+              <p className="text-xs text-muted-foreground">
+                Install with: <strong>sudo dpkg -i DocuFlow-Agent-*.deb</strong>
+              </p>
             </CardContent>
           </Card>
 
@@ -98,7 +106,11 @@ export default function TimeTrackingDownloadPage() {
           </CardHeader>
           <CardContent>
             <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-              <li>Download and run the installer for your platform.</li>
+              <li>Download the installer for your platform.</li>
+              <li>
+                <strong>Windows:</strong> run the .exe installer.{" "}
+                <strong>Linux (Ubuntu):</strong> run <code className="bg-muted px-1 rounded">sudo dpkg -i DocuFlow-Agent-*.deb</code> in a terminal.
+              </li>
               <li>Open the DocuFlow Agent from your system tray or app menu.</li>
               <li>Sign in with your DocuFlow email and password.</li>
               <li>Select a project and task, then click <strong>Start</strong> to begin tracking.</li>

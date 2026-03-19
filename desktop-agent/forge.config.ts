@@ -16,6 +16,8 @@ const config: ForgeConfig = {
     executableName: "docuflow-agent",
     asar: true,
     appBundleId: "com.docuflow.agent",
+    // App icon — Forge appends the right extension per OS (.ico win32, .icns darwin, .png linux)
+    icon: "./assets/icon",
     // Copy assets alongside app.asar so they're accessible at process.resourcesPath/assets/
     extraResource: ["./assets"],
     // Remove large Electron binary files that are unnecessary for users.
@@ -45,8 +47,38 @@ const config: ForgeConfig = {
   makers: [
     // ZIP portable — fallback, no install needed
     { name: "@electron-forge/maker-zip", platforms: ["win32", "darwin"] },
-    { name: "@electron-forge/maker-deb", config: {} },
-    { name: "@electron-forge/maker-dmg", config: {} },
+    {
+      name: "@electron-forge/maker-deb",
+      config: {
+        options: {
+          name: "docuflow-agent",
+          productName: "DocuFlow Agent",
+          genericName: "Time Tracker",
+          description: "DocuFlow Desktop Agent — time tracking and activity monitoring",
+          productDescription:
+            "DocuFlow Desktop Agent lets you track time, monitor activity, and capture screenshots. Syncs automatically with your DocuFlow workspace.",
+          categories: ["Utility", "Office"],
+          icon: "./assets/icon.png",
+          maintainer: "DocuFlow <support@docuflow.app>",
+          homepage: "https://techma-doc--masdouk1.replit.app",
+          // libayatana-appindicator3-1: system tray support on Ubuntu 22.04+
+          // libappindicator3-1: fallback for Ubuntu 20.04
+          depends: ["libayatana-appindicator3-1 | libappindicator3-1"],
+          section: "utils",
+        },
+      },
+    },
+    {
+      name: "@electron-forge/maker-dmg",
+      config: {
+        // DMG window name (shown in Finder title bar)
+        name: "DocuFlow Agent",
+        // Compressed read-only format — standard for macOS distribution (macOS 10.11+)
+        format: "ULFO",
+        // Overwrite any existing DMG in out/make/
+        overwrite: true,
+      },
+    },
   ],
   plugins: [
     new WebpackPlugin({

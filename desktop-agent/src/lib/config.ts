@@ -4,7 +4,9 @@
  * API_BASE resolution order (first wins):
  *   1. DOCUFLOW_API_URL environment variable
  *   2. ~/.docuflow-url  (plain text file — not committed, machine-local)
- *      Windows: C:\Users\<you>\.docuflow-url
+ *      Windows : C:\Users\<you>\.docuflow-url
+ *      Linux   : /home/<you>/.docuflow-url
+ *      macOS   : /Users/<you>/.docuflow-url
  *      Content: one URL per line, first line wins. Example:
  *        https://685f78d0-...replit.dev      ← DEV
  *        # https://techma-doc--masdouk1.replit.app  ← PROD (commented)
