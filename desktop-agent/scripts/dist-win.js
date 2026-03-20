@@ -87,7 +87,7 @@ console.log(`\n[dist-win] Packaged app: ${prepackaged}`);
 
 console.log("\n[dist-win] Step 2: electron-builder NSIS (single file)...\n");
 execSync(
-  `npx electron-builder --win nsis --prepackaged "${prepackaged}"`,
+  `npx electron-builder --win nsis --prepackaged "${prepackaged}" --publish never`,
   { cwd: ROOT, stdio: "inherit" }
 );
 

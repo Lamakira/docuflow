@@ -76,7 +76,7 @@ console.log(`\n[dist-mac] Packaged app: ${prepackaged}`);
 
 console.log("\n[dist-mac] Step 2: electron-builder dmg...\n");
 execSync(
-  `npx electron-builder --mac dmg --prepackaged "${prepackaged}"`,
+  `npx electron-builder --mac dmg --prepackaged "${prepackaged}" --publish never`,
   { cwd: ROOT, stdio: "inherit" }
 );
 

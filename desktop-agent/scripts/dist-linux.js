@@ -56,7 +56,7 @@ console.log(`\n[dist-linux] Packaged app: ${prepackaged}`);
 
 console.log("\n[dist-linux] Step 2: electron-builder deb...\n");
 execSync(
-  `npx electron-builder --linux deb --prepackaged "${prepackaged}"`,
+  `npx electron-builder --linux deb --prepackaged "${prepackaged}" --publish never`,
   { cwd: ROOT, stdio: "inherit" }
 );
 
