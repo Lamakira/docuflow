@@ -24,12 +24,12 @@
     "directories": {
       "output": "release"
     },
-    "artifactName": "DocuFlow-Agent-${version}-windows-setup.exe",
     "compression": "normal",
     "win": {
       "target": "nsis",
       "executableName": "docuflow-agent",
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "artifactName": "DocuFlow-Agent-${version}-windows-setup.exe"
     },
     "nsis": {
       "oneClick": true,
@@ -42,19 +42,21 @@
       "runAfterFinish": true
     },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["x64"] }],
-      "icon": "assets/icon.icns",
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "dmg": {
       "artifactName": "DocuFlow-Agent-${version}-macos.dmg"
     },
     "linux": {
-      "target": [{ "target": "deb", "arch": ["x64"] }],
+      "target": "deb",
       "executableName": "docuflow-agent",
-      "icon": "assets/icon.png",
-      "artifactName": "DocuFlow-Agent-${version}-linux-amd64.deb"
+      "icon": "assets/icon.png"
     },
     "deb": {
       "packageName": "docuflow-agent",
-      "depends": ["libayatana-appindicator3-1 | libappindicator3-1"]
+      "artifactName": "DocuFlow-Agent-${version}-linux-amd64.deb",
+      "depends": ["libayatana-appindicator3-1"]
     }
   },
   "devDependencies": {
