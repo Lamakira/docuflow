@@ -9,7 +9,15 @@ import express from "express";
 import type { Express, Request, Response, NextFunction } from "express";
 import { randomBytes, createHash, createHmac } from "crypto";
 import { z } from "zod";
-import sharp from "sharp";
+// sharp is optional — loaded lazily so the server starts even if libvips is unavailable
+let sharpLib: typeof import("sharp") | null = null;
+(async () => {
+  try {
+    sharpLib = (await import("sharp")).default as any;
+  } catch {
+    console.warn("[agentRoutes] sharp not available — screenshot compression disabled, raw PNG will be stored");
+  }
+})();
 import { storage } from "./storage";
 import { isAuthenticated, getUserId, verifyPassword } from "./auth";
 import { logInfo, logError, logTimeEvent } from "./logger";
@@ -574,18 +582,30 @@ export function registerAgentRoutes(app: Express): void {
           return res.status(403).json({ message: "Forbidden" });
         }
 
-        // Compress: resize to max 1920px wide + WebP 75% quality (~80% smaller than raw PNG)
-        const imageBuffer = await sharp(rawBuffer)
-          .resize({ width: 1920, withoutEnlargement: true })
-          .webp({ quality: 75 })
-          .toBuffer();
+        // Compress: resize to max 1920px wide + WebP 75% (falls back to raw PNG if sharp unavailable)
+        let imageBuffer: Buffer;
+        let imageExt: string;
+        let imageMime: string;
 
-        logInfo("agent.screenshots.compress", {
-          screenshotId: id,
-          originalBytes: rawBuffer.length,
-          compressedBytes: imageBuffer.length,
-          ratio: `${Math.round((1 - imageBuffer.length / rawBuffer.length) * 100)}%`,
-        });
+        if (sharpLib) {
+          imageBuffer = await (sharpLib as any)(rawBuffer)
+            .resize({ width: 1920, withoutEnlargement: true })
+            .webp({ quality: 75 })
+            .toBuffer();
+          imageExt = "webp";
+          imageMime = "image/webp";
+          logInfo("agent.screenshots.compress", {
+            screenshotId: id,
+            originalBytes: rawBuffer.length,
+            compressedBytes: imageBuffer.length,
+            ratio: `${Math.round((1 - imageBuffer.length / rawBuffer.length) * 100)}%`,
+          });
+        } else {
+          imageBuffer = rawBuffer;
+          imageExt = "png";
+          imageMime = "image/png";
+          logInfo("agent.screenshots.compress.skipped", { screenshotId: id, reason: "sharp unavailable" });
+        }
 
         // Upload to Object Storage via signed URL (Replit sidecar)
         const privateDir = process.env.PRIVATE_OBJECT_DIR;
@@ -593,8 +613,7 @@ export function registerAgentRoutes(app: Express): void {
           return res.status(503).json({ message: "Object storage not configured" });
         }
 
-        // Full GCS path — .webp extension after compression
-        const objectSubPath = `agent-screenshots/${id}.webp`;
+        const objectSubPath = `agent-screenshots/${id}.${imageExt}`;
         const fullObjectPath = `${privateDir}/${objectSubPath}`;
         const { bucketName, objectName } = parseObjectPath(fullObjectPath);
 
@@ -607,7 +626,7 @@ export function registerAgentRoutes(app: Express): void {
 
         const uploadRes = await fetch(signedPutUrl, {
           method: "PUT",
-          headers: { "Content-Type": "image/webp" },
+          headers: { "Content-Type": imageMime },
           body: imageBuffer,
         });
         if (!uploadRes.ok) {
