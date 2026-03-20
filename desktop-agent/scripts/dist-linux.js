@@ -1,18 +1,12 @@
 /**
- * dist-linux.js — Build Linux .deb package via electron-forge.
+ * dist-linux.js — Build Linux .deb package.
  *
- * Target: Ubuntu 20.04+ (x64)
+ * Same pattern as dist-win.js:
+ *   1. electron-forge package --platform linux  → out/<AppName>-linux-x64/
+ *   2. electron-builder --linux deb --prepackaged → release/DocuFlow-Agent-{v}-linux-amd64.deb
  *
- * Workflow:
- *   1. Clean previous build artifacts (out/ + release/)
- *   2. electron-forge make --platform linux → out/make/deb/x64/*.deb
- *   3. Copy to release/DocuFlow-Agent-{version}-linux-amd64.deb
- *
- * Install on Ubuntu:
- *   sudo dpkg -i release/DocuFlow-Agent-{version}-linux-amd64.deb
- *
- * Note: must be run on Linux (or via WSL/CI runner) — electron-forge cannot
- * cross-compile Linux packages from Windows.
+ * Must run on Linux (Ubuntu recommended).
+ * Output: desktop-agent/release/DocuFlow-Agent-{version}-linux-amd64.deb
  */
 
 const { execSync } = require("child_process");
@@ -22,7 +16,7 @@ const fs = require("fs");
 const ROOT = path.resolve(__dirname, "..");
 const pkg = require(path.join(ROOT, "package.json"));
 
-// ── Step 0: Clean ────────────────────────────────────────────────────────────
+// ── Step 0: Clean release/ ────────────────────────────────────────────────────
 
 console.log("\n[dist-linux] Step 0: cleaning release/...");
 const releaseDir = path.join(ROOT, "release");
@@ -35,41 +29,52 @@ if (fs.existsSync(releaseDir)) {
   }
 }
 
-// ── Step 1: electron-forge make ─────────────────────────────────────────────
+// ── Step 1: electron-forge package ───────────────────────────────────────────
 
-console.log("\n[dist-linux] Step 1: electron-forge make (linux x64, maker-deb)...\n");
+console.log("\n[dist-linux] Step 1: electron-forge package...\n");
+execSync("npx electron-forge package --platform linux --arch x64", {
+  cwd: ROOT,
+  stdio: "inherit",
+});
+
+// ── Locate packaged output ────────────────────────────────────────────────────
+
+const outDir = path.join(ROOT, "out");
+const appFolderName = fs
+  .readdirSync(outDir)
+  .find((name) => name.endsWith("-linux-x64") && !name.startsWith("."));
+
+if (!appFolderName) {
+  console.error("[dist-linux] ERROR: no packaged output found in out/");
+  process.exit(1);
+}
+
+const prepackaged = path.join(outDir, appFolderName);
+console.log(`\n[dist-linux] Packaged app: ${prepackaged}`);
+
+// ── Step 2: electron-builder .deb ────────────────────────────────────────────
+
+console.log("\n[dist-linux] Step 2: electron-builder deb...\n");
 execSync(
-  "npx electron-forge make --platform linux --arch x64",
+  `npx electron-builder --linux deb --prepackaged "${prepackaged}"`,
   { cwd: ROOT, stdio: "inherit" }
 );
 
-// ── Step 2: Locate .deb output ───────────────────────────────────────────────
+// ── Report output ─────────────────────────────────────────────────────────────
 
-const makeDebDir = path.join(ROOT, "out", "make", "deb", "x64");
-if (!fs.existsSync(makeDebDir)) {
-  console.error(`[dist-linux] ERROR: expected output dir not found: ${makeDebDir}`);
+const artifacts = fs.existsSync(releaseDir)
+  ? fs.readdirSync(releaseDir).filter((f) => f.endsWith(".deb"))
+  : [];
+
+if (artifacts.length === 0) {
+  console.error("[dist-linux] ERROR: no .deb found in release/");
   process.exit(1);
 }
 
-const debFiles = fs.readdirSync(makeDebDir).filter((f) => f.endsWith(".deb"));
-if (debFiles.length === 0) {
-  console.error("[dist-linux] ERROR: no .deb file found in out/make/deb/x64/");
-  process.exit(1);
-}
-
-// ── Step 3: Copy to release/ with canonical name ─────────────────────────────
-
-fs.mkdirSync(releaseDir, { recursive: true });
-
-const version = pkg.version;
-const targetName = `DocuFlow-Agent-${version}-linux-amd64.deb`;
-const srcPath = path.join(makeDebDir, debFiles[0]);
-const destPath = path.join(releaseDir, targetName);
-
-fs.copyFileSync(srcPath, destPath);
-
-const sizeBytes = fs.statSync(destPath).size;
-console.log("\n[dist-linux] Done!");
-console.log(`  release/${targetName}  (${(sizeBytes / 1048576).toFixed(0)} MB)`);
+console.log("\n[dist-linux] Done! Artifacts:");
+artifacts.forEach((f) => {
+  const size = fs.statSync(path.join(releaseDir, f)).size;
+  console.log(`  release/${f}  (${(size / 1048576).toFixed(0)} MB)`);
+});
 console.log("\n  Install on Ubuntu:");
-console.log(`  sudo dpkg -i release/${targetName}`);
+console.log(`  sudo dpkg -i release/${artifacts[0]}`);

@@ -39,6 +39,21 @@
       "uninstallDisplayName": "DocuFlow Desktop Agent",
       "differentialPackage": false,
       "runAfterFinish": true
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["x64"] }],
+      "icon": "assets/icon.icns",
+      "artifactName": "DocuFlow-Agent-${version}-macos.dmg"
+    },
+    "linux": {
+      "target": [{ "target": "deb", "arch": ["x64"] }],
+      "executableName": "docuflow-agent",
+      "icon": "assets/icon.png",
+      "artifactName": "DocuFlow-Agent-${version}-linux-amd64.deb"
+    },
+    "deb": {
+      "packageName": "docuflow-agent",
+      "depends": ["libayatana-appindicator3-1 | libappindicator3-1"]
     }
   },
   "devDependencies": {
