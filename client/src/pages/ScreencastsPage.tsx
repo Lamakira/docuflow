@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Camera, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { format, startOfDay, endOfDay, subDays } from "date-fns";
-import type { User } from "@shared/schema";
+import type { SafeUser } from "@shared/schema";
 
 interface Screenshot {
   id: string;
@@ -42,13 +42,31 @@ function formatTime(dateStr: string) {
   return format(new Date(dateStr), "h:mm a");
 }
 
+function displayName(u: SafeUser): string {
+  const full = [u.firstName, u.lastName].filter(Boolean).join(" ");
+  return full || u.email || u.id;
+}
+
 export default function ScreencastsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
-  const [selectedUserId, setSelectedUserId] = useState("all");
+  // undefined = "not yet initialised — waiting for user to load"
+  // user.id   = filter to that specific user
+  // "all"     = no user filter (admin only)
+  const [selectedUserId, setSelectedUserId] = useState<string | undefined>(undefined);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+
+  // Once the current user is known, default the filter to their own ID
+  useEffect(() => {
+    if (user?.id && selectedUserId === undefined) {
+      setSelectedUserId(user.id);
+    }
+  }, [user?.id, selectedUserId]);
+
+  // Resolved filter value used for queries and queryKey
+  const effectiveUserId = selectedUserId ?? user?.id;
 
   const { start, end } = useMemo(() => {
     const now = new Date();
@@ -60,7 +78,7 @@ export default function ScreencastsPage() {
     return { start: startOfDay(subDays(now, 6)), end: endOfDay(now) };
   }, [dateFilter]);
 
-  const { data: usersData } = useQuery<User[]>({
+  const { data: usersData } = useQuery<SafeUser[]>({
     queryKey: ["/api/users"],
     enabled: isAdmin,
   });
@@ -72,15 +90,19 @@ export default function ScreencastsPage() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<ScreenshotsResponse>({
-    queryKey: ["/api/time-tracking/screenshots", dateFilter, selectedUserId],
+    // Include effectiveUserId and isAdmin in key so query refires when either changes
+    queryKey: ["/api/time-tracking/screenshots", dateFilter, effectiveUserId, isAdmin],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({
         startDate: start.toISOString(),
         endDate: end.toISOString(),
         limit: "50",
         offset: String(pageParam ?? 0),
-        ...(isAdmin && selectedUserId !== "all" ? { userId: selectedUserId } : {}),
       });
+      // Admins can filter by a specific user; "all" means no userId param → backend returns all
+      if (isAdmin && effectiveUserId && effectiveUserId !== "all") {
+        params.set("userId", effectiveUserId);
+      }
       const res = await fetch(`/api/time-tracking/screenshots?${params}`, {
         credentials: "include",
       });
@@ -91,6 +113,8 @@ export default function ScreencastsPage() {
       return nextOffset < lastPage.total ? nextOffset : undefined;
     },
     initialPageParam: 0,
+    // Don't fetch until we know who the current user is
+    enabled: !!effectiveUserId,
   });
 
   const allScreenshots = data?.pages.flatMap((p) => p.data) ?? [];
@@ -130,18 +154,26 @@ export default function ScreencastsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {isAdmin && (
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger className="w-44">
-                  <SelectValue placeholder="All users" />
+            {isAdmin && user && (
+              <Select value={effectiveUserId ?? ""} onValueChange={setSelectedUserId}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  {/* Current user — always first */}
+                  <SelectItem value={user.id}>
+                    {displayName(user)} (me)
+                  </SelectItem>
+                  {/* Other users from current DB */}
+                  {usersData
+                    ?.filter((u) => u.id !== user.id)
+                    .map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {displayName(u)}
+                      </SelectItem>
+                    ))}
+                  {/* All users */}
                   <SelectItem value="all">All users</SelectItem>
-                  {usersData?.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.email}
-                    </SelectItem>
-                  ))}
                 </SelectContent>
               </Select>
             )}
