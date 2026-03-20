@@ -1,10 +1,11 @@
 import { Link, useLocation } from "wouter";
-import { Clock, BarChart2, FolderKanban, Monitor, Download } from "lucide-react";
+import { Clock, BarChart2, FolderKanban, Monitor, Download, Camera } from "lucide-react";
 
 const tabs = [
   { label: "Dashboard", href: "/time-tracking/dashboard", icon: BarChart2, match: "/time-tracking/dashboard" },
   { label: "Entries", href: "/time-tracking", icon: Clock, match: "/time-tracking" },
   { label: "Projects & Tasks", href: "/time-tracking/projects", icon: FolderKanban, match: "/time-tracking/projects" },
+  { label: "Screencasts", href: "/time-tracking/screencasts", icon: Camera, match: "/time-tracking/screencasts" },
   { label: "Devices", href: "/time-tracking/devices", icon: Monitor, match: "/time-tracking/devices" },
   { label: "Download", href: "/time-tracking/download", icon: Download, match: "/time-tracking/download" },
 ];

@@ -4084,13 +4084,18 @@ Instructions:
       const userId = getUserId(req)!;
       const user = await storage.getUser(userId);
 
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+
       const filters: {
         timeEntryId?: string;
         userId?: string;
         crmProjectId?: string;
         startDate?: Date;
         endDate?: Date;
-      } = {};
+        limit: number;
+        offset: number;
+      } = { limit, offset };
 
       if (req.query.timeEntryId) filters.timeEntryId = req.query.timeEntryId;
       if (req.query.crmProjectId) filters.crmProjectId = req.query.crmProjectId;
@@ -4103,8 +4108,8 @@ Instructions:
         filters.userId = req.query.userId;
       }
 
-      const screenshots = await storage.getTimeEntryScreenshots(filters);
-      res.json({ data: screenshots });
+      const { data, total } = await storage.getTimeEntryScreenshots(filters);
+      res.json({ data, total, limit, offset });
     } catch (error) {
       console.error("Error fetching screenshots:", error);
       res.status(500).json({ message: "Failed to fetch screenshots" });
