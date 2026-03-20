@@ -96,6 +96,14 @@ const config: ForgeConfig = {
               js: "./src/renderer/preload.ts",
             },
           },
+          {
+            html: "./src/renderer/widget.html",
+            js: "./src/renderer/widget.tsx",
+            name: "widget_window",
+            preload: {
+              js: "./src/renderer/widget-preload.ts",
+            },
+          },
         ],
       },
     }),
