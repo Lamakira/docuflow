@@ -1,14 +1,17 @@
 import { Link, useLocation } from "wouter";
 import { Clock, BarChart2, FolderKanban, Monitor, Download, Camera } from "lucide-react";
+import { flags } from "@/lib/featureFlags";
 
-const tabs = [
-  { label: "Dashboard", href: "/time-tracking/dashboard", icon: BarChart2, match: "/time-tracking/dashboard" },
-  { label: "Entries", href: "/time-tracking", icon: Clock, match: "/time-tracking" },
-  { label: "Projects & Tasks", href: "/time-tracking/projects", icon: FolderKanban, match: "/time-tracking/projects" },
-  { label: "Screencasts", href: "/time-tracking/screencasts", icon: Camera, match: "/time-tracking/screencasts" },
-  { label: "Devices", href: "/time-tracking/devices", icon: Monitor, match: "/time-tracking/devices" },
-  { label: "Download", href: "/time-tracking/download", icon: Download, match: "/time-tracking/download" },
+const allTabs = [
+  { label: "Dashboard", href: "/time-tracking/dashboard", icon: BarChart2, match: "/time-tracking/dashboard", flag: null },
+  { label: "Entries", href: "/time-tracking", icon: Clock, match: "/time-tracking", flag: null },
+  { label: "Projects & Tasks", href: "/time-tracking/projects", icon: FolderKanban, match: "/time-tracking/projects", flag: null },
+  { label: "Screencasts", href: "/time-tracking/screencasts", icon: Camera, match: "/time-tracking/screencasts", flag: "screencasts" as const },
+  { label: "Devices", href: "/time-tracking/devices", icon: Monitor, match: "/time-tracking/devices", flag: null },
+  { label: "Download", href: "/time-tracking/download", icon: Download, match: "/time-tracking/download", flag: null },
 ];
+
+const tabs = allTabs.filter((t) => t.flag === null || flags[t.flag]);
 
 export function TimeTrackingLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();

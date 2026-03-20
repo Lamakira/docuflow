@@ -2120,6 +2120,11 @@ Instructions:
   // Get all users for assignee dropdown
   app.get("/api/users", isAuthenticated, async (req: any, res) => {
     try {
+      const requestingUserId = getUserId(req)!;
+      const requestingUser = await storage.getUser(requestingUserId);
+      if (requestingUser?.role !== "admin") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
       const users = await storage.getAllUsers();
       res.json(users);
     } catch (error) {
