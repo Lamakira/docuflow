@@ -4,7 +4,7 @@
  * Phase 3 MVP — Pairing + Timer control + Workers.
  */
 
-import { app, BrowserWindow, Tray, Menu, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -44,6 +44,8 @@ function initLogger() {
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
+declare const WIDGET_WINDOW_WEBPACK_ENTRY: string;
+declare const WIDGET_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 
 import { AgentStore } from "../lib/AgentStore";
 import { SqliteQueue } from "../lib/SqliteQueue";
@@ -54,7 +56,12 @@ import { SyncWorker } from "../workers/SyncWorker";
 import { ScreenCaptureWorker } from "../workers/ScreenCaptureWorker";
 
 let mainWindow: BrowserWindow | null = null;
+let widgetWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+
+const WIDGET_WIDTH = 310;
+const WIDGET_HEIGHT = 64;
+const WIDGET_MARGIN = 20;
 
 const store = new AgentStore();
 // Pass userData path so SQLite DB survives restarts
@@ -150,6 +157,59 @@ function createMainWindow(): BrowserWindow {
   return win;
 }
 
+// ─── Widget window ───
+
+function createWidgetWindow(): BrowserWindow {
+  const { workArea } = screen.getPrimaryDisplay();
+  const x = workArea.x + workArea.width - WIDGET_WIDTH - WIDGET_MARGIN;
+  const y = workArea.y + workArea.height - WIDGET_HEIGHT - WIDGET_MARGIN;
+
+  const win = new BrowserWindow({
+    width: WIDGET_WIDTH,
+    height: WIDGET_HEIGHT,
+    x,
+    y,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    movable: true,
+    skipTaskbar: true,
+    show: false,
+    hasShadow: false,
+    webPreferences: {
+      preload: WIDGET_WINDOW_PRELOAD_WEBPACK_ENTRY,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  win.loadURL(WIDGET_WINDOW_WEBPACK_ENTRY);
+  win.setAlwaysOnTop(true, "floating");
+
+  win.webContents.on("did-finish-load", () => {
+    console.log("[Widget] renderer ready");
+  });
+
+  // Prevent accidental close
+  win.on("close", (e) => {
+    e.preventDefault();
+    win.hide();
+  });
+
+  return win;
+}
+
+/** Show or hide the widget based on timer status */
+function syncWidgetVisibility(status: string): void {
+  if (!widgetWindow) return;
+  if (status === "running" || status === "paused") {
+    if (!widgetWindow.isVisible()) widgetWindow.show();
+  } else {
+    if (widgetWindow.isVisible()) widgetWindow.hide();
+  }
+}
+
 // ─── Window helpers ───
 
 /**
@@ -217,6 +277,11 @@ function startWorkers(): void {
   screenshotWorker = new ScreenCaptureWorker(queue, store, SCREENSHOTS_ENABLED);
   screenshotWorker.start();
 
+  // Create floating widget if it doesn't exist yet
+  if (!widgetWindow) {
+    widgetWindow = createWidgetWindow();
+  }
+
   startResyncPolling();
   console.log(`[Main] Workers started (screenshots: ${SCREENSHOTS_ENABLED})`);
 }
@@ -231,6 +296,13 @@ function stopWorkers(): void {
   activityWorker = null;
   syncWorker = null;
   screenshotWorker = null;
+
+  // Destroy widget on logout/revoke
+  if (widgetWindow) {
+    widgetWindow.destroy();
+    widgetWindow = null;
+  }
+
   console.log("[Main] Workers stopped");
 }
 
@@ -285,8 +357,10 @@ function stopResyncPolling(): void {
   }
 }
 
-/** Notify renderer of state changes */
+/** Notify renderer(s) of state changes */
 function pushStateToRenderer(): void {
+  const timerState = store.getTimerState();
+
   mainWindow?.webContents.send("agent:state-update", {
     isPaired: store.isPaired(),
     deviceName: store.getDeviceName(),
@@ -294,8 +368,14 @@ function pushStateToRenderer(): void {
     apiHost: API_HOST,
     apiBase: API_BASE,
     apiBaseSource: API_BASE_SOURCE,
-    timer: store.getTimerState(),
+    timer: timerState,
   });
+
+  // Push timer state to widget + sync visibility
+  if (widgetWindow) {
+    widgetWindow.webContents.send("widget:state-update", { timer: timerState });
+    syncWidgetVisibility(timerState.status);
+  }
 }
 
 // ─── IPC: Pairing ───

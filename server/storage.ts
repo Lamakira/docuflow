@@ -294,7 +294,9 @@ export interface IStorage {
     crmProjectId?: string;
     startDate?: Date;
     endDate?: Date;
-  }): Promise<TimeEntryScreenshot[]>;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ data: TimeEntryScreenshot[]; total: number }>;
   updateTimeEntryScreenshot(id: string, data: { storageKey: string }): Promise<TimeEntryScreenshot | undefined>;
   deleteTimeEntryScreenshot(id: string): Promise<void>;
 
@@ -2423,21 +2425,37 @@ export class DatabaseStorage implements IStorage {
     crmProjectId?: string;
     startDate?: Date;
     endDate?: Date;
-  }): Promise<TimeEntryScreenshot[]> {
+    limit?: number;
+    offset?: number;
+  }): Promise<{ data: TimeEntryScreenshot[]; total: number }> {
     const conditions = [];
     if (options.timeEntryId) conditions.push(eq(timeEntryScreenshots.timeEntryId, options.timeEntryId));
     if (options.userId) conditions.push(eq(timeEntryScreenshots.userId, options.userId));
     if (options.crmProjectId) conditions.push(eq(timeEntryScreenshots.crmProjectId, options.crmProjectId));
     if (options.startDate) conditions.push(gt(timeEntryScreenshots.capturedAt, options.startDate));
-    if (options.endDate) {
-      conditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
-    }
+    if (options.endDate) conditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
+    // Exclude pending uploads (upload not yet received from agent)
+    conditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
 
-    return db
-      .select()
-      .from(timeEntryScreenshots)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(timeEntryScreenshots.capturedAt));
+    const where = and(...conditions);
+    const limit = options.limit ?? 50;
+    const offset = options.offset ?? 0;
+
+    const [data, countResult] = await Promise.all([
+      db
+        .select()
+        .from(timeEntryScreenshots)
+        .where(where)
+        .orderBy(desc(timeEntryScreenshots.capturedAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(timeEntryScreenshots)
+        .where(where),
+    ]);
+
+    return { data, total: countResult[0]?.count ?? 0 };
   }
 
   async updateTimeEntryScreenshot(id: string, data: { storageKey: string }): Promise<TimeEntryScreenshot | undefined> {

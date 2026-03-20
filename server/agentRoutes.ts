@@ -9,6 +9,7 @@ import express from "express";
 import type { Express, Request, Response, NextFunction } from "express";
 import { randomBytes, createHash, createHmac } from "crypto";
 import { z } from "zod";
+import sharp from "sharp";
 import { storage } from "./storage";
 import { isAuthenticated, getUserId, verifyPassword } from "./auth";
 import { logInfo, logError, logTimeEvent } from "./logger";
@@ -546,20 +547,20 @@ export function registerAgentRoutes(app: Express): void {
           return res.status(415).json({ message: "Content-Type must be image/png" });
         }
 
-        const imageBuffer: Buffer = req.body;
-        if (!imageBuffer || imageBuffer.length === 0) {
+        const rawBuffer: Buffer = req.body;
+        if (!rawBuffer || rawBuffer.length === 0) {
           return res.status(400).json({ message: "Empty body" });
         }
-        if (imageBuffer.length > MAX_SIZE) {
-          return res.status(413).json({ message: `Screenshot exceeds 5 MB limit (${(imageBuffer.length / 1024 / 1024).toFixed(1)} MB)` });
+        if (rawBuffer.length > MAX_SIZE) {
+          return res.status(413).json({ message: `Screenshot exceeds 5 MB limit (${(rawBuffer.length / 1024 / 1024).toFixed(1)} MB)` });
         }
 
         // Verify PNG magic bytes (89 50 4E 47)
         if (
-          imageBuffer[0] !== 0x89 ||
-          imageBuffer[1] !== 0x50 ||
-          imageBuffer[2] !== 0x4e ||
-          imageBuffer[3] !== 0x47
+          rawBuffer[0] !== 0x89 ||
+          rawBuffer[1] !== 0x50 ||
+          rawBuffer[2] !== 0x4e ||
+          rawBuffer[3] !== 0x47
         ) {
           return res.status(415).json({ message: "Not a valid PNG file" });
         }
@@ -573,14 +574,27 @@ export function registerAgentRoutes(app: Express): void {
           return res.status(403).json({ message: "Forbidden" });
         }
 
+        // Compress: resize to max 1920px wide + WebP 75% quality (~80% smaller than raw PNG)
+        const imageBuffer = await sharp(rawBuffer)
+          .resize({ width: 1920, withoutEnlargement: true })
+          .webp({ quality: 75 })
+          .toBuffer();
+
+        logInfo("agent.screenshots.compress", {
+          screenshotId: id,
+          originalBytes: rawBuffer.length,
+          compressedBytes: imageBuffer.length,
+          ratio: `${Math.round((1 - imageBuffer.length / rawBuffer.length) * 100)}%`,
+        });
+
         // Upload to Object Storage via signed URL (Replit sidecar)
         const privateDir = process.env.PRIVATE_OBJECT_DIR;
         if (!privateDir) {
           return res.status(503).json({ message: "Object storage not configured" });
         }
 
-        // Full GCS path for the actual upload
-        const objectSubPath = `agent-screenshots/${id}.png`;
+        // Full GCS path — .webp extension after compression
+        const objectSubPath = `agent-screenshots/${id}.webp`;
         const fullObjectPath = `${privateDir}/${objectSubPath}`;
         const { bucketName, objectName } = parseObjectPath(fullObjectPath);
 
@@ -593,7 +607,7 @@ export function registerAgentRoutes(app: Express): void {
 
         const uploadRes = await fetch(signedPutUrl, {
           method: "PUT",
-          headers: { "Content-Type": "image/png" },
+          headers: { "Content-Type": "image/webp" },
           body: imageBuffer,
         });
         if (!uploadRes.ok) {

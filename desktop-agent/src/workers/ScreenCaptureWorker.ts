@@ -16,6 +16,8 @@
 import { app, desktopCapturer, nativeImage } from "electron";
 import fs from "fs";
 import path from "path";
+import os from "os";
+import { execSync } from "child_process";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
 
@@ -124,8 +126,9 @@ export class ScreenCaptureWorker {
   }
 
   /**
-   * Capture the primary screen using Electron's desktopCapturer.
-   * Returns a PNG Buffer, or null on failure.
+   * Capture the primary screen.
+   * Tries Electron desktopCapturer first; falls back to PowerShell (Win32 GDI)
+   * on Windows when the thumbnail is empty (GPU/driver issue on some machines).
    */
   private async captureScreen(): Promise<Buffer | null> {
     const sources = await desktopCapturer.getSources({
@@ -138,15 +141,54 @@ export class ScreenCaptureWorker {
       return null;
     }
 
-    // Use first source (primary display)
-    const source = sources[0];
-    const img: ReturnType<typeof nativeImage.createEmpty> = source.thumbnail;
+    const img = sources[0].thumbnail;
 
-    if (img.isEmpty()) {
-      console.warn("[ScreenCaptureWorker] Thumbnail is empty — check screen capture permissions");
-      return null;
+    if (!img.isEmpty()) {
+      return img.toPNG();
     }
 
-    return img.toPNG();
+    // Fallback: Win32 GDI via PowerShell (bypasses Electron GPU sandbox issues)
+    if (process.platform === "win32") {
+      console.warn("[ScreenCaptureWorker] Thumbnail empty — trying PowerShell fallback");
+      return this.captureScreenWindows();
+    }
+
+    console.warn("[ScreenCaptureWorker] Thumbnail is empty — check screen capture permissions");
+    return null;
+  }
+
+  /**
+   * Windows fallback: capture primary screen via PowerShell + System.Drawing (Win32 GDI).
+   * Works on machines where Electron's desktopCapturer returns an empty thumbnail
+   * due to GPU driver or display scaling issues.
+   */
+  private captureScreenWindows(): Buffer | null {
+    const tmpFile = path.join(os.tmpdir(), `docuflow-sc-${Date.now()}.png`);
+    const ps = [
+      "Add-Type -AssemblyName System.Windows.Forms",
+      "Add-Type -AssemblyName System.Drawing",
+      "$s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds",
+      "$bmp = New-Object System.Drawing.Bitmap($s.Width, $s.Height)",
+      "$g = [System.Drawing.Graphics]::FromImage($bmp)",
+      "$g.CopyFromScreen($s.Location, [System.Drawing.Point]::Empty, $s.Size)",
+      `$bmp.Save('${tmpFile.replace(/\\/g, "\\\\")}')`,
+      "$g.Dispose()",
+      "$bmp.Dispose()",
+    ].join("; ");
+
+    try {
+      execSync(`powershell -NoProfile -NonInteractive -Command "${ps}"`, {
+        timeout: 10_000,
+        windowsHide: true,
+      });
+      const buf = fs.readFileSync(tmpFile);
+      fs.unlinkSync(tmpFile);
+      console.log(`[ScreenCaptureWorker] PowerShell fallback succeeded (${(buf.length / 1024).toFixed(0)} KB)`);
+      return buf;
+    } catch (err: any) {
+      console.error("[ScreenCaptureWorker] PowerShell fallback failed:", err.message);
+      try { fs.unlinkSync(tmpFile); } catch {}
+      return null;
+    }
   }
 }
