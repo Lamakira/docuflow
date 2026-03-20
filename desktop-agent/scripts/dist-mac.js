@@ -65,7 +65,7 @@ if (fs.existsSync(releaseDir)) {
 
 console.log("\n[dist-mac] Step 1: electron-forge make (darwin x64, maker-dmg)...\n");
 execSync(
-  "npx electron-forge make --platform darwin --arch x64 --targets @electron-forge/maker-dmg",
+  "npx electron-forge make --platform darwin --arch x64",
   { cwd: ROOT, stdio: "inherit" }
 );
 

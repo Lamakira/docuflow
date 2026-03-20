@@ -39,7 +39,7 @@ if (fs.existsSync(releaseDir)) {
 
 console.log("\n[dist-linux] Step 1: electron-forge make (linux x64, maker-deb)...\n");
 execSync(
-  "npx electron-forge make --platform linux --arch x64 --targets @electron-forge/maker-deb",
+  "npx electron-forge make --platform linux --arch x64",
   { cwd: ROOT, stdio: "inherit" }
 );
 
