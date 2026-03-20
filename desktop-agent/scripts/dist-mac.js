@@ -1,26 +1,17 @@
 /**
- * dist-mac.js — Build macOS .dmg via electron-forge.
+ * dist-mac.js — Build macOS .dmg.
  *
- * Target: macOS 12+ (Monterey), universal binary (Intel + Apple Silicon)
+ * Same pattern as dist-win.js:
+ *   1. electron-forge package --platform darwin  → out/<AppName>-darwin-x64/
+ *   2. electron-builder --mac dmg --prepackaged  → release/DocuFlow-Agent-{v}-macos.dmg
  *
- * IMPORTANT: must be run on macOS — DMG creation requires macOS hdiutil.
- * Cross-compilation from Windows/Linux is not supported by maker-dmg.
- *
- * Workflow:
- *   1. Guard: exit if not running on macOS
- *   2. Warn if assets/icon.icns is missing (run gen-icons.js first)
- *   3. Clean release/
- *   4. electron-forge make --platform darwin --arch x64
- *   5. Copy .dmg to release/DocuFlow-Agent-{version}-macos.dmg
+ * IMPORTANT: must run on macOS — DMG creation requires macOS hdiutil.
  *
  * Code signing:
- *   Not configured here. Without an Apple Developer ID certificate,
- *   macOS Gatekeeper will show a warning on first launch.
- *   Users can bypass via: right-click → Open → Open (once only).
+ *   Not configured. Without Apple Developer ID, Gatekeeper warns on first launch.
+ *   Bypass: right-click → Open → Open (one-time).
  *
- * To sign (future):
- *   Set APPLE_ID, APPLE_ID_PASSWORD, APPLE_TEAM_ID env vars and configure
- *   packagerConfig.osxSign + osxNotarize in forge.config.ts.
+ * Output: desktop-agent/release/DocuFlow-Agent-{version}-macos.dmg
  */
 
 const { execSync } = require("child_process");
@@ -30,22 +21,19 @@ const fs = require("fs");
 // ── Guard: macOS only ─────────────────────────────────────────────────────────
 
 if (process.platform !== "darwin") {
-  console.error("[dist-mac] ERROR: This script must be run on macOS.");
-  console.error("           DMG creation requires macOS hdiutil (not available on Windows/Linux).");
-  console.error("           Run this script on a Mac or in a macOS CI runner (e.g. macos-latest on GitHub Actions).");
+  console.error("[dist-mac] ERROR: This script must run on macOS.");
+  console.error("           DMG creation requires macOS hdiutil.");
   process.exit(1);
 }
 
 const ROOT = path.resolve(__dirname, "..");
 const pkg = require(path.join(ROOT, "package.json"));
 
-// ── Warn if .icns is missing ──────────────────────────────────────────────────
+// ── Warn if .icns missing ─────────────────────────────────────────────────────
 
-const icnsPath = path.join(ROOT, "assets", "icon.icns");
-if (!fs.existsSync(icnsPath)) {
-  console.warn("[dist-mac] WARNING: assets/icon.icns not found.");
-  console.warn("           The app will be built with a default Electron icon.");
-  console.warn("           To generate .icns: node scripts/gen-icons.js  (on macOS)");
+if (!fs.existsSync(path.join(ROOT, "assets", "icon.icns"))) {
+  console.warn("[dist-mac] WARNING: assets/icon.icns not found — app will use default Electron icon.");
+  console.warn("           Run: node scripts/gen-icons.js  (on macOS)");
 }
 
 // ── Step 0: Clean release/ ────────────────────────────────────────────────────
@@ -61,44 +49,54 @@ if (fs.existsSync(releaseDir)) {
   }
 }
 
-// ── Step 1: electron-forge make ──────────────────────────────────────────────
+// ── Step 1: electron-forge package ───────────────────────────────────────────
 
-console.log("\n[dist-mac] Step 1: electron-forge make (darwin x64, maker-dmg)...\n");
+console.log("\n[dist-mac] Step 1: electron-forge package...\n");
+execSync("npx electron-forge package --platform darwin --arch x64", {
+  cwd: ROOT,
+  stdio: "inherit",
+});
+
+// ── Locate packaged output ────────────────────────────────────────────────────
+
+const outDir = path.join(ROOT, "out");
+const appFolderName = fs
+  .readdirSync(outDir)
+  .find((name) => name.endsWith("-darwin-x64") && !name.startsWith("."));
+
+if (!appFolderName) {
+  console.error("[dist-mac] ERROR: no packaged output found in out/");
+  process.exit(1);
+}
+
+const prepackaged = path.join(outDir, appFolderName);
+console.log(`\n[dist-mac] Packaged app: ${prepackaged}`);
+
+// ── Step 2: electron-builder DMG ─────────────────────────────────────────────
+
+console.log("\n[dist-mac] Step 2: electron-builder dmg...\n");
 execSync(
-  "npx electron-forge make --platform darwin --arch x64 --targets @electron-forge/maker-dmg",
+  `npx electron-builder --mac dmg --prepackaged "${prepackaged}" --publish never`,
   { cwd: ROOT, stdio: "inherit" }
 );
 
-// ── Step 2: Locate .dmg output ───────────────────────────────────────────────
+// ── Report output ─────────────────────────────────────────────────────────────
 
-const makeDmgDir = path.join(ROOT, "out", "make");
-if (!fs.existsSync(makeDmgDir)) {
-  console.error(`[dist-mac] ERROR: expected output dir not found: ${makeDmgDir}`);
+const artifacts = fs.existsSync(releaseDir)
+  ? fs.readdirSync(releaseDir).filter((f) => f.endsWith(".dmg"))
+  : [];
+
+if (artifacts.length === 0) {
+  console.error("[dist-mac] ERROR: no .dmg found in release/");
   process.exit(1);
 }
 
-// maker-dmg puts the file directly in out/make/
-const dmgFiles = fs.readdirSync(makeDmgDir).filter((f) => f.endsWith(".dmg"));
-if (dmgFiles.length === 0) {
-  console.error("[dist-mac] ERROR: no .dmg file found in out/make/");
-  process.exit(1);
-}
-
-// ── Step 3: Copy to release/ with canonical name ─────────────────────────────
-
-fs.mkdirSync(releaseDir, { recursive: true });
-
-const version = pkg.version;
-const targetName = `DocuFlow-Agent-${version}-macos.dmg`;
-const srcPath = path.join(makeDmgDir, dmgFiles[0]);
-const destPath = path.join(releaseDir, targetName);
-
-fs.copyFileSync(srcPath, destPath);
-
-const sizeBytes = fs.statSync(destPath).size;
-console.log("\n[dist-mac] Done!");
-console.log(`  release/${targetName}  (${(sizeBytes / 1048576).toFixed(0)} MB)`);
+console.log("\n[dist-mac] Done! Artifacts:");
+artifacts.forEach((f) => {
+  const size = fs.statSync(path.join(releaseDir, f)).size;
+  console.log(`  release/${f}  (${(size / 1048576).toFixed(0)} MB)`);
+});
 console.log("\n  Install on macOS:");
 console.log("  1. Open the .dmg");
 console.log("  2. Drag DocuFlow Agent.app to Applications");
-console.log("  3. First launch: right-click → Open (bypasses Gatekeeper for unsigned builds)");
+console.log("  3. First launch: right-click → Open (bypasses Gatekeeper)");

@@ -40,7 +40,7 @@ import {
 } from "lucide-react";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 
-const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.1/DocuFlowAgentSetup.exe";
+const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.3/DocuFlow-Agent-0.1.3-windows-setup.exe";
 const AGENT_VERSION = "v0.1.3";
 
 interface Device {

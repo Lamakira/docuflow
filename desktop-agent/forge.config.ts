@@ -49,6 +49,7 @@ const config: ForgeConfig = {
     { name: "@electron-forge/maker-zip", platforms: ["win32", "darwin"] },
     {
       name: "@electron-forge/maker-deb",
+      platforms: ["linux"],
       config: {
         options: {
           name: "docuflow-agent",
@@ -70,6 +71,7 @@ const config: ForgeConfig = {
     },
     {
       name: "@electron-forge/maker-dmg",
+      platforms: ["darwin"],
       config: {
         // DMG window name (shown in Finder title bar)
         name: "DocuFlow Agent",

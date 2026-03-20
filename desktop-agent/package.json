@@ -4,6 +4,7 @@
   "description": "DocuFlow Desktop Agent — time tracking, activity monitoring, and screenshot capture",
   "main": ".webpack/main",
   "private": true,
+  "homepage": "https://techma-doc--masdouk1.replit.app",
   "scripts": {
     "predev": "node scripts/kill-port.js 9000",
     "dev": "electron-forge start",
@@ -23,12 +24,12 @@
     "directories": {
       "output": "release"
     },
-    "artifactName": "DocuFlowAgentSetup.exe",
     "compression": "normal",
     "win": {
       "target": "nsis",
       "executableName": "docuflow-agent",
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "artifactName": "DocuFlow-Agent-${version}-windows-setup.exe"
     },
     "nsis": {
       "oneClick": true,
@@ -39,6 +40,24 @@
       "uninstallDisplayName": "DocuFlow Desktop Agent",
       "differentialPackage": false,
       "runAfterFinish": true
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "dmg": {
+      "artifactName": "DocuFlow-Agent-${version}-macos.dmg"
+    },
+    "linux": {
+      "target": "deb",
+      "executableName": "docuflow-agent",
+      "icon": "assets/icon.png"
+    },
+    "deb": {
+      "packageName": "docuflow-agent",
+      "artifactName": "DocuFlow-Agent-${version}-linux-amd64.deb",
+      "depends": ["libayatana-appindicator3-1"],
+      "maintainer": "DocuFlow <support@docuflow.app>"
     }
   },
   "devDependencies": {
