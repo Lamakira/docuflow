@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAgent } from '../../stores/AgentContext';
 import { Project, Task, formatTime } from '../../types';
 
@@ -7,6 +7,13 @@ export function ProjectTaskPicker() {
   const bridge = window.agentBridge;
   const apiBase = state.agentState?.apiBase ?? null;
   const timer = state.agentState?.timer;
+
+  // Track the last known elapsed per taskId so the row of the just-left task
+  // shows its correct value immediately on switch, without waiting for the 1.5s refresh.
+  const taskElapsedRef = useRef<Map<string, number>>(new Map());
+  if (timer?.taskId && timer.status !== 'stopped') {
+    taskElapsedRef.current.set(timer.taskId, timer.elapsed ?? 0);
+  }
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
@@ -158,10 +165,15 @@ export function ProjectTaskPicker() {
             {tasks.map((task) => {
               const isActiveTask =
                 timer?.status !== 'stopped' &&
-                timer?.taskName === task.name &&
-                timer?.projectName === selectedProject?.name;
-              const liveTime = isActiveTask ? (timer?.elapsed ?? 0) : 0;
-              const displayTime = (task.durationToday ?? 0) + liveTime;
+                timer?.taskId === task.id;
+              // Active task: elapsed already encodes total today (entryServerBase + sessions).
+              // Inactive task: prefer the last locally-known elapsed when available
+              // (covers the 1.5s gap before the server refresh catches up after a switch);
+              // fall back to server durationToday once it reflects the stopped entry.
+              const localElapsed = taskElapsedRef.current.get(task.id) ?? 0;
+              const displayTime = isActiveTask
+                ? (timer?.elapsed ?? 0)
+                : Math.max(task.durationToday ?? 0, localElapsed);
               return (
                 <button
                   key={task.id}

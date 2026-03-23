@@ -120,8 +120,13 @@ export default function TimeTrackingPage() {
   // Use projects from context (same source as Sidebar) instead of a duplicate query
   const projects = ctxProjects;
 
-  const { data: usersData } = useQuery<User[]>({
+  const { data: usersData = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
   });
 
   const screenshotDateRange = useMemo(() => {

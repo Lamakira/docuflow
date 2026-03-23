@@ -33,6 +33,10 @@ interface PersistedData {
   activeProjectName: string | null;
   activeTaskName: string | null;
   activeTaskId: string | null;
+  // Server-side accumulated elapsed (seconds) at the moment we first synced this entry.
+  // Non-zero only when the entry was started on another device/client and we have no
+  // local sessions yet. Once local sessions exist, they are authoritative.
+  entryServerBase: number;
   // Source of truth for elapsed / worked-today calculations
   sessions: TrackingSession[];
   // Updated on each heartbeat/state change — used to close orphan sessions after crash
@@ -77,6 +81,7 @@ export class AgentStore {
       activeProjectName: null,
       activeTaskName: null,
       activeTaskId: null,
+      entryServerBase: 0,
       sessions: [],
       lastActivityAt: null,
     };
@@ -163,8 +168,21 @@ export class AgentStore {
     taskId: string | null,
     taskName?: string | null,
     description?: string | null,
+    /**
+     * Stopped-entry history for this task today (seconds), as returned by the
+     * server's timer/start response (`taskAccumulatedToday`). Seeds entryServerBase
+     * so elapsed starts from the accumulated total rather than 0. Only applied
+     * when switching to a new entry — ignored on resume of the same entry.
+     */
+    taskAccumulatedToday = 0,
   ): void {
     this.closeActiveSessions();
+    // On a new entry: initialise server base from the task's stopped history today
+    // (restores the "accumulated time, not 0" UX from the pre-session-based model).
+    // On resume of the same entry: preserve whatever base is already set.
+    if (entryId !== this.data.activeEntryId) {
+      this.data.entryServerBase = taskAccumulatedToday;
+    }
     this.data.sessions.push({
       id: crypto.randomUUID(),
       entryId,
@@ -204,13 +222,15 @@ export class AgentStore {
     this.data.activeProjectName = null;
     this.data.activeTaskName = null;
     this.data.activeTaskId = null;
+    this.data.entryServerBase = 0;
     this.data.lastActivityAt = new Date().toISOString();
     this.saveToDisk();
   }
 
-  /** Record heartbeat/activity timestamp (does not save to disk — call sparingly). */
+  /** Record heartbeat timestamp and persist so crash-recovery end-time is accurate. */
   touchActivity(): void {
     this.data.lastActivityAt = new Date().toISOString();
+    this.saveToDisk();
   }
 
   private closeActiveSessions(): void {
@@ -263,10 +283,19 @@ export class AgentStore {
   /**
    * Apply server-authoritative timer state.
    *
-   * Only updates status/entryId — does NOT override session-derived elapsed.
-   * Reconciles local sessions when server status diverges from local status.
+   * Updates status/entryId and populates project/task names when not already known.
+   * When the entry has no local sessions (e.g. started from web/another device),
+   * seeds elapsed from the server's accumulated duration so the display is correct.
    */
-  syncFromServer(entry: { id: string; status: string; duration: number } | null): void {
+  syncFromServer(entry: {
+    id: string;
+    status: string;
+    duration: number;
+    taskId?: string | null;
+    lastActivityAt?: string | null;
+    projectName?: string | null;
+    taskName?: string | null;
+  } | null): void {
     if (!entry || entry.status === "stopped") {
       if (this.runtime.timerStatus !== "stopped") {
         this.clearTimer();
@@ -278,11 +307,42 @@ export class AgentStore {
     const entryChanged = this.data.activeEntryId !== entry.id;
 
     if (entryChanged) {
-      // New entry from server: close sessions for the old entry
+      // New entry from server: close sessions for the old entry, reset server base,
+      // and clear stale names so the hydration block below can apply server values.
       this.closeActiveSessions();
       this.data.activeEntryId = entry.id;
-      // activeProjectName / activeTaskName were persisted from last setTimerRunning call;
-      // they are still correct if this is the same device after a restart.
+      this.data.entryServerBase = 0;
+      this.data.activeProjectName = null;
+      this.data.activeTaskName = null;
+      this.data.activeTaskId = null;
+    }
+
+    // Populate task/project names from server when not already known locally
+    if (!this.data.activeProjectName && entry.projectName) {
+      this.data.activeProjectName = entry.projectName;
+    }
+    if (!this.data.activeTaskName && entry.taskName) {
+      this.data.activeTaskName = entry.taskName;
+    }
+    if (!this.data.activeTaskId && entry.taskId) {
+      this.data.activeTaskId = entry.taskId;
+    }
+
+    // Seed entryServerBase when we have no local sessions for this entry yet.
+    // This handles timer started on web/another device: desktop would otherwise
+    // show only the ~0s since sync instead of the full accumulated elapsed.
+    const localSessionsForEntry = this.data.sessions.filter((s) => s.entryId === entry.id);
+    if (localSessionsForEntry.length === 0) {
+      const now = Date.now();
+      const lastActivity = entry.lastActivityAt
+        ? new Date(entry.lastActivityAt).getTime()
+        : now;
+      const gapSeconds = Math.max(0, Math.floor((now - lastActivity) / 1000));
+      const computed = (entry.duration ?? 0) + gapSeconds;
+      if (computed > this.data.entryServerBase) {
+        // Always take the larger estimate (improves on every sync until local sessions exist)
+        this.data.entryServerBase = computed;
+      }
     }
 
     if (serverStatus === "running" && this.runtime.timerStatus !== "running") {
@@ -318,21 +378,26 @@ export class AgentStore {
   }
 
   /**
-   * Elapsed seconds for the current entry (sum of all sessions for activeEntryId).
-   * Includes the open session if the timer is running.
+   * Elapsed seconds for the current entry.
+   *
+   * = entryServerBase (server-accumulated before first desktop session)
+   * + sum of local sessions for activeEntryId
+   *
+   * entryServerBase is non-zero only when the entry was started on another
+   * device and we have no local sessions yet. Once local sessions accumulate
+   * they provide the authoritative running total.
    */
   getElapsedSeconds(now = Date.now()): number {
     const entryId = this.data.activeEntryId;
     if (!entryId) return 0;
-    return Math.floor(
-      this.data.sessions
-        .filter((s) => s.entryId === entryId)
-        .reduce((acc, s) => {
-          const start = new Date(s.startTime).getTime();
-          const end = s.endTime ? new Date(s.endTime).getTime() : now;
-          return acc + Math.max(0, end - start);
-        }, 0) / 1000
-    );
+    const sessionMs = this.data.sessions
+      .filter((s) => s.entryId === entryId)
+      .reduce((acc, s) => {
+        const start = new Date(s.startTime).getTime();
+        const end = s.endTime ? new Date(s.endTime).getTime() : now;
+        return acc + Math.max(0, end - start);
+      }, 0);
+    return (this.data.entryServerBase ?? 0) + Math.floor(sessionMs / 1000);
   }
 
   /**
@@ -363,6 +428,7 @@ export class AgentStore {
   getTimerState(): {
     status: string;
     entryId: string | null;
+    taskId: string | null;
     elapsed: number;
     workedToday: number;
     projectName: string | null;
@@ -372,6 +438,7 @@ export class AgentStore {
     return {
       status: this.runtime.timerStatus,
       entryId: this.data.activeEntryId,
+      taskId: this.data.activeTaskId,
       elapsed: this.getElapsedSeconds(),
       workedToday: this.getWorkedTodaySeconds(),
       projectName: this.data.activeProjectName,

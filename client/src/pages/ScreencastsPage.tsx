@@ -78,8 +78,13 @@ export default function ScreencastsPage() {
     return { start: startOfDay(subDays(now, 6)), end: endOfDay(now) };
   }, [dateFilter]);
 
-  const { data: usersData } = useQuery<SafeUser[]>({
+  const { data: usersData = [] } = useQuery<SafeUser[]>({
     queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
     enabled: isAdmin,
   });
 

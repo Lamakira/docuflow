@@ -58,8 +58,10 @@ import { ScreenCaptureWorker } from "../workers/ScreenCaptureWorker";
 let mainWindow: BrowserWindow | null = null;
 let widgetWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+/** Set by the user clicking ×. Cleared when the timer stops so the next session shows the widget again. */
+let widgetDismissed = false;
 
-const WIDGET_WIDTH = 310;
+const WIDGET_WIDTH = 340;
 const WIDGET_HEIGHT = 64;
 const WIDGET_MARGIN = 20;
 
@@ -191,6 +193,15 @@ function createWidgetWindow(): BrowserWindow {
     console.log("[Widget] renderer ready");
   });
 
+  // Clamp position after drag so the widget can never be moved off-screen
+  win.on("moved", () => {
+    const { x, y, width, height } = win.getBounds();
+    const { workArea } = screen.getPrimaryDisplay();
+    const cx = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - width));
+    const cy = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - height));
+    if (cx !== x || cy !== y) win.setPosition(cx, cy);
+  });
+
   // Prevent accidental close
   win.on("close", (e) => {
     e.preventDefault();
@@ -200,13 +211,15 @@ function createWidgetWindow(): BrowserWindow {
   return win;
 }
 
-/** Show or hide the widget based on timer status */
+/** Show or hide the widget based on timer status and dismissed flag. */
 function syncWidgetVisibility(status: string): void {
   if (!widgetWindow) return;
-  if (status === "running" || status === "paused") {
-    if (!widgetWindow.isVisible()) widgetWindow.show();
-  } else {
+  if (status === "stopped") {
+    // Reset dismissed so the widget reappears on the next timer session
+    widgetDismissed = false;
     if (widgetWindow.isVisible()) widgetWindow.hide();
+  } else if (!widgetDismissed) {
+    if (!widgetWindow.isVisible()) widgetWindow.show();
   }
 }
 
@@ -311,12 +324,20 @@ function stopWorkers(): void {
 /**
  * Apply server-authoritative timer state to local store.
  *
- * The server is authoritative for status and entryId only.
- * Elapsed time is derived from local sessions — server duration is ignored.
+ * The server is authoritative for status and entryId. Elapsed is derived from
+ * local sessions, seeded from server base when no local sessions exist yet.
  * Triggers a renderer push only when status or entryId actually diverged.
  */
 function applyServerTimerSync(
-  timerSync: { entryId: string; status: string; duration: number } | null
+  timerSync: {
+    entryId: string;
+    status: string;
+    duration: number;
+    taskId?: string | null;
+    lastActivityAt?: string | null;
+    projectName?: string | null;
+    taskName?: string | null;
+  } | null
 ): void {
   const localStatus = store.getTimerStatus();
   const localEntryId = store.getActiveEntryId();
@@ -329,7 +350,17 @@ function applyServerTimerSync(
     `[Main] Timer resync: local=${localStatus}/${localEntryId ?? "none"} → server=${serverStatus}/${serverEntryId ?? "none"}`
   );
   store.syncFromServer(
-    timerSync ? { id: timerSync.entryId, status: timerSync.status, duration: timerSync.duration } : null
+    timerSync
+      ? {
+          id: timerSync.entryId,
+          status: timerSync.status,
+          duration: timerSync.duration,
+          taskId: timerSync.taskId,
+          lastActivityAt: timerSync.lastActivityAt,
+          projectName: timerSync.projectName,
+          taskName: timerSync.taskName,
+        }
+      : null
   );
   pushStateToRenderer();
 }
@@ -341,7 +372,15 @@ async function syncTimerFromServer(): Promise<void> {
     const active = await apiClient.getActiveEntry();
     const timerSync =
       active && active.status !== "stopped"
-        ? { entryId: active.id, status: active.status, duration: active.duration ?? 0 }
+        ? {
+            entryId: active.id,
+            status: active.status,
+            duration: active.duration ?? 0,
+            taskId: active.taskId ?? null,
+            lastActivityAt: active.lastActivityAt ?? null,
+            projectName: active.projectName ?? null,
+            taskName: active.taskName ?? null,
+          }
         : null;
     applyServerTimerSync(timerSync);
   } catch (err: any) {
@@ -469,13 +508,16 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
 ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description }) => {
   try {
     const entry = await apiClient.startTimer(crmProjectId, taskId || undefined, description);
-    // Close any active session (handles task switching: A → B) and open a new one
+    // taskAccumulatedToday: stopped-entry history for this task today, returned by the server.
+    // Seeds entryServerBase so the timer starts from the accumulated total ("not 0" UX).
+    const taskAccumulatedToday = (entry as any).taskAccumulatedToday || 0;
     store.setTimerRunning(
       entry.id,
       projectName || null,
       taskId || null,
       taskName || null,
       description || null,
+      taskAccumulatedToday,
     );
     console.log(`[Main] timer.start — entry=${entry.id} project="${projectName || ""}" task="${taskName || ""}"`);
     pushStateToRenderer();
@@ -551,6 +593,14 @@ ipcMain.handle("agent:timer-stop", async () => {
 
 ipcMain.handle("agent:timer-state", () => {
   return store.getTimerState();
+});
+
+// ─── IPC: Widget ───
+
+ipcMain.handle("widget:dismiss", () => {
+  widgetDismissed = true;
+  widgetWindow?.hide();
+  console.log("[Widget] dismissed by user");
 });
 
 ipcMain.handle("agent:get-worked-today", () => {

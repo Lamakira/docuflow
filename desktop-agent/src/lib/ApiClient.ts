@@ -30,6 +30,7 @@ export interface TimeEntry {
   id: string;
   userId: string;
   crmProjectId: string;
+  taskId?: string | null;
   description: string | null;
   startTime: string;
   endTime: string | null;
@@ -37,6 +38,9 @@ export interface TimeEntry {
   duration: number;
   idleTime: number;
   lastActivityAt: string | null;
+  // Enriched by /api/agent/timer/active
+  projectName?: string | null;
+  taskName?: string | null;
 }
 
 export interface CrmProjectSummary {

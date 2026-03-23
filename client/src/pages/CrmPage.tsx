@@ -226,6 +226,11 @@ export default function CrmPage() {
   // Fetch users for the user filter
   const { data: users = [] } = useQuery<SafeUser[]>({
     queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
   });
 
   // Fetch project module fields for dynamic status options

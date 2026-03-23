@@ -39,7 +39,7 @@ export function AgentSidebar() {
         ))}
       </div>
       <div className="sidebar__footer">
-        <ConnectionBadge source={apiBaseSource} apiBase={apiBase} />
+        <ConnectionBadge source={apiBaseSource} />
         <div
           className={`sidebar__dot${isPaired ? ' sidebar__dot--connected' : ''}`}
           title={isPaired ? 'Connected' : 'Not connected'}
