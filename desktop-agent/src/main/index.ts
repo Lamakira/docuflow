@@ -310,7 +310,10 @@ function stopWorkers(): void {
 
 /**
  * Apply server-authoritative timer state to local store.
- * Triggers a renderer push only if state actually diverged.
+ *
+ * The server is authoritative for status and entryId only.
+ * Elapsed time is derived from local sessions — server duration is ignored.
+ * Triggers a renderer push only when status or entryId actually diverged.
  */
 function applyServerTimerSync(
   timerSync: { entryId: string; status: string; duration: number } | null
@@ -548,13 +551,9 @@ ipcMain.handle("agent:timer-state", () => {
   return store.getTimerState();
 });
 
-ipcMain.handle("agent:get-worked-today", async () => {
-  try {
-    const total = await apiClient.getWorkedToday();
-    return { ok: true, total };
-  } catch {
-    return { ok: false, total: 0 };
-  }
+ipcMain.handle("agent:get-worked-today", () => {
+  // Sessions are the source of truth — no server round-trip needed.
+  return { ok: true, total: store.getWorkedTodaySeconds() };
 });
 
 // ─── Single instance ───
