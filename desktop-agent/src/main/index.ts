@@ -328,7 +328,9 @@ function applyServerTimerSync(
   console.log(
     `[Main] Timer resync: local=${localStatus}/${localEntryId ?? "none"} → server=${serverStatus}/${serverEntryId ?? "none"}`
   );
-  store.syncFromServer(timerSync);
+  store.syncFromServer(
+    timerSync ? { id: timerSync.entryId, status: timerSync.status, duration: timerSync.duration } : null
+  );
   pushStateToRenderer();
 }
 
