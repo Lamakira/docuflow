@@ -464,15 +464,18 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
 ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description }) => {
   try {
     const entry = await apiClient.startTimer(crmProjectId, taskId || undefined, description);
-    // taskAccumulatedToday: sum of stopped entries for this task today (from server).
-    // Kept separate from entry.duration so syncFromServer() resync never overwrites it.
-    const taskAccumulated = (entry as any).taskAccumulatedToday || 0;
-    store.setTimerRunning(entry.id, entry.duration || 0, projectName || null, taskName || null, description || null, taskAccumulated);
+    // Close any active session (handles task switching: A → B) and open a new one
+    store.setTimerRunning(
+      entry.id,
+      projectName || null,
+      taskId || null,
+      taskName || null,
+      description || null,
+    );
     console.log(`[Main] timer.start — entry=${entry.id} project="${projectName || ""}" task="${taskName || ""}"`);
     pushStateToRenderer();
     return { ok: true, entry };
   } catch (error: any) {
-    // On start failure, resync so UI reflects actual server state
     await syncTimerFromServer();
     return { ok: false, error: error.message };
   }
@@ -484,7 +487,7 @@ ipcMain.handle("agent:timer-pause", async () => {
     if (!entryId) return { ok: false, error: "No active timer" };
 
     const entry = await apiClient.pauseTimer(entryId);
-    store.setTimerPaused(entry.duration || 0);
+    store.setTimerPaused(); // closes active session with endTime=now
     pushStateToRenderer();
     return { ok: true, entry };
   } catch (error: any) {
@@ -502,7 +505,14 @@ ipcMain.handle("agent:timer-resume", async () => {
     if (!entryId) return { ok: false, error: "No active timer" };
 
     const entry = await apiClient.resumeTimer(entryId);
-    store.setTimerRunning(entry.id, entry.duration || 0, store.getActiveProjectName(), store.getActiveTaskName(), store.getActiveDescription());
+    // Resume = new session for the same entry; preserves accumulated elapsed
+    store.setTimerRunning(
+      entry.id,
+      store.getActiveProjectName(),
+      store.getActiveTaskId(),
+      store.getActiveTaskName(),
+      store.getActiveDescription(),
+    );
     pushStateToRenderer();
     return { ok: true, entry };
   } catch (error: any) {
