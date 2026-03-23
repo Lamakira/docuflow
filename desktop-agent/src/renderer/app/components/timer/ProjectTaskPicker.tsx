@@ -159,8 +159,13 @@ export function ProjectTaskPicker() {
               const isActiveTask =
                 timer?.status !== 'stopped' &&
                 timer?.taskId === task.id;
-              const liveTime = isActiveTask ? (timer?.elapsed ?? 0) : 0;
-              const displayTime = (task.durationToday ?? 0) + liveTime;
+              // Active task: show elapsed only — elapsed already includes task's stopped
+              // history today (seeded via entryServerBase = taskAccumulatedToday on start).
+              // Adding durationToday on top would double-count that stopped history.
+              // Inactive tasks: show durationToday (stopped entries only, no live component).
+              const displayTime = isActiveTask
+                ? (timer?.elapsed ?? 0)
+                : (task.durationToday ?? 0);
               return (
                 <button
                   key={task.id}

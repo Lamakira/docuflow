@@ -508,13 +508,16 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
 ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description }) => {
   try {
     const entry = await apiClient.startTimer(crmProjectId, taskId || undefined, description);
-    // Close any active session (handles task switching: A → B) and open a new one
+    // taskAccumulatedToday: stopped-entry history for this task today, returned by the server.
+    // Seeds entryServerBase so the timer starts from the accumulated total ("not 0" UX).
+    const taskAccumulatedToday = (entry as any).taskAccumulatedToday || 0;
     store.setTimerRunning(
       entry.id,
       projectName || null,
       taskId || null,
       taskName || null,
       description || null,
+      taskAccumulatedToday,
     );
     console.log(`[Main] timer.start — entry=${entry.id} project="${projectName || ""}" task="${taskName || ""}"`);
     pushStateToRenderer();

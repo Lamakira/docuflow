@@ -168,12 +168,20 @@ export class AgentStore {
     taskId: string | null,
     taskName?: string | null,
     description?: string | null,
+    /**
+     * Stopped-entry history for this task today (seconds), as returned by the
+     * server's timer/start response (`taskAccumulatedToday`). Seeds entryServerBase
+     * so elapsed starts from the accumulated total rather than 0. Only applied
+     * when switching to a new entry — ignored on resume of the same entry.
+     */
+    taskAccumulatedToday = 0,
   ): void {
     this.closeActiveSessions();
-    // Reset server base when switching to a new entry (desktop-initiated start).
-    // For resume of the same entry, preserve it so elapsed continues from the right offset.
+    // On a new entry: initialise server base from the task's stopped history today
+    // (restores the "accumulated time, not 0" UX from the pre-session-based model).
+    // On resume of the same entry: preserve whatever base is already set.
     if (entryId !== this.data.activeEntryId) {
-      this.data.entryServerBase = 0;
+      this.data.entryServerBase = taskAccumulatedToday;
     }
     this.data.sessions.push({
       id: crypto.randomUUID(),
