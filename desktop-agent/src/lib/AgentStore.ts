@@ -299,10 +299,14 @@ export class AgentStore {
     const entryChanged = this.data.activeEntryId !== entry.id;
 
     if (entryChanged) {
-      // New entry from server: close sessions for the old entry, reset server base
+      // New entry from server: close sessions for the old entry, reset server base,
+      // and clear stale names so the hydration block below can apply server values.
       this.closeActiveSessions();
       this.data.activeEntryId = entry.id;
       this.data.entryServerBase = 0;
+      this.data.activeProjectName = null;
+      this.data.activeTaskName = null;
+      this.data.activeTaskId = null;
     }
 
     // Populate task/project names from server when not already known locally
