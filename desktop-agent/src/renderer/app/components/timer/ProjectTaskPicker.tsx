@@ -158,8 +158,7 @@ export function ProjectTaskPicker() {
             {tasks.map((task) => {
               const isActiveTask =
                 timer?.status !== 'stopped' &&
-                timer?.taskName === task.name &&
-                timer?.projectName === selectedProject?.name;
+                timer?.taskId === task.id;
               const liveTime = isActiveTask ? (timer?.elapsed ?? 0) : 0;
               const displayTime = (task.durationToday ?? 0) + liveTime;
               return (

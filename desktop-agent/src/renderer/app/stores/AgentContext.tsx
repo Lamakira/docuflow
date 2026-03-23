@@ -24,6 +24,7 @@ const defaultTimerState: TimerState = {
   elapsed: 0,
   workedToday: 0,
   entryId: null,
+  taskId: null,
   projectName: null,
   taskName: null,
   description: null,

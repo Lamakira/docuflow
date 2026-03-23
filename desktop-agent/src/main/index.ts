@@ -324,12 +324,20 @@ function stopWorkers(): void {
 /**
  * Apply server-authoritative timer state to local store.
  *
- * The server is authoritative for status and entryId only.
- * Elapsed time is derived from local sessions — server duration is ignored.
+ * The server is authoritative for status and entryId. Elapsed is derived from
+ * local sessions, seeded from server base when no local sessions exist yet.
  * Triggers a renderer push only when status or entryId actually diverged.
  */
 function applyServerTimerSync(
-  timerSync: { entryId: string; status: string; duration: number } | null
+  timerSync: {
+    entryId: string;
+    status: string;
+    duration: number;
+    taskId?: string | null;
+    lastActivityAt?: string | null;
+    projectName?: string | null;
+    taskName?: string | null;
+  } | null
 ): void {
   const localStatus = store.getTimerStatus();
   const localEntryId = store.getActiveEntryId();
@@ -342,7 +350,17 @@ function applyServerTimerSync(
     `[Main] Timer resync: local=${localStatus}/${localEntryId ?? "none"} → server=${serverStatus}/${serverEntryId ?? "none"}`
   );
   store.syncFromServer(
-    timerSync ? { id: timerSync.entryId, status: timerSync.status, duration: timerSync.duration } : null
+    timerSync
+      ? {
+          id: timerSync.entryId,
+          status: timerSync.status,
+          duration: timerSync.duration,
+          taskId: timerSync.taskId,
+          lastActivityAt: timerSync.lastActivityAt,
+          projectName: timerSync.projectName,
+          taskName: timerSync.taskName,
+        }
+      : null
   );
   pushStateToRenderer();
 }
@@ -354,7 +372,15 @@ async function syncTimerFromServer(): Promise<void> {
     const active = await apiClient.getActiveEntry();
     const timerSync =
       active && active.status !== "stopped"
-        ? { entryId: active.id, status: active.status, duration: active.duration ?? 0 }
+        ? {
+            entryId: active.id,
+            status: active.status,
+            duration: active.duration ?? 0,
+            taskId: active.taskId ?? null,
+            lastActivityAt: active.lastActivityAt ?? null,
+            projectName: active.projectName ?? null,
+            taskName: active.taskName ?? null,
+          }
         : null;
     applyServerTimerSync(timerSync);
   } catch (err: any) {
