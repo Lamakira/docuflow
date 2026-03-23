@@ -62,9 +62,9 @@ async function main() {
     const hashed = await bcrypt.hash(password, SALT_ROUNDS);
 
     const result = await pool.query(
-      `INSERT INTO users (email, password, "firstName", "lastName", role, "isMainAdmin")
+      `INSERT INTO users (email, password, first_name, last_name, role, is_main_admin)
        VALUES ($1, $2, $3, $4, 'admin', 1)
-       RETURNING id, email, "firstName", "lastName", role, "isMainAdmin"`,
+       RETURNING id, email, first_name, last_name, role, is_main_admin`,
       [email, hashed, firstName, lastName]
     );
 
@@ -72,10 +72,10 @@ async function main() {
     console.log("\nAdmin user created:");
     console.log(`  id:          ${user.id}`);
     console.log(`  email:       ${user.email}`);
-    console.log(`  firstName:   ${user.firstName}`);
-    console.log(`  lastName:    ${user.lastName}`);
+    console.log(`  first_name:  ${user.first_name}`);
+    console.log(`  last_name:   ${user.last_name}`);
     console.log(`  role:        ${user.role}`);
-    console.log(`  isMainAdmin: ${user.isMainAdmin}`);
+    console.log(`  is_main_admin: ${user.is_main_admin}`);
   } finally {
     await pool.end();
   }
