@@ -40,8 +40,10 @@ import {
 } from "lucide-react";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 
-const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.3/DocuFlow-Agent-0.1.3-windows-setup.exe";
-const AGENT_VERSION = "v0.1.3";
+const AGENT_VERSION = "v0.1.4";
+const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4/DocuFlow-Agent-0.1.4-windows-setup.exe";
+const DOWNLOAD_URL_MACOS   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4/DocuFlow-Agent-0.1.4-macos.dmg";
+const DOWNLOAD_URL_LINUX   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4/DocuFlow-Agent-0.1.4-linux-amd64.deb";
 
 interface Device {
   id: string;
@@ -266,20 +268,32 @@ export default function DevicesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="space-y-3 py-2">
             <Button
               className="w-full"
               onClick={() => window.open(DOWNLOAD_URL_WINDOWS, "_blank", "noopener,noreferrer")}
             >
               <Download className="h-4 w-4 mr-2" />
-              Download Windows Agent (Installer)
+              Windows — Download .exe
             </Button>
-            <p className="text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
-              Windows may show a SmartScreen prompt because this installer is unsigned (MVP).
-              Click <strong>More info</strong> → <strong>Run anyway</strong>.
-            </p>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => window.open(DOWNLOAD_URL_MACOS, "_blank", "noopener,noreferrer")}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              macOS — Download .dmg
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => window.open(DOWNLOAD_URL_LINUX, "_blank", "noopener,noreferrer")}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Linux — Download .deb
+            </Button>
             <p className="text-xs text-muted-foreground text-center">
-              Once installed, open the app and sign in with your DocuFlow account.
+              Once installed, sign in with your DocuFlow account.
               The device will appear in this list automatically.
             </p>
           </div>
