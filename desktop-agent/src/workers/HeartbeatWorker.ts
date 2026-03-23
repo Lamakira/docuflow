@@ -61,6 +61,9 @@ export class HeartbeatWorker {
 
       console.log(`[HeartbeatWorker] OK (server: ${result.serverTime})`);
 
+      // Keep lastActivityAt fresh so orphan reconciliation after a crash is accurate
+      this.store.touchActivity();
+
       // Propagate server's authoritative timer state for immediate resync
       if (this.onTimerSync && "timerSync" in result) {
         this.onTimerSync(result.timerSync ?? null);

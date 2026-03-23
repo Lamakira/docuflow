@@ -310,7 +310,10 @@ function stopWorkers(): void {
 
 /**
  * Apply server-authoritative timer state to local store.
- * Triggers a renderer push only if state actually diverged.
+ *
+ * The server is authoritative for status and entryId only.
+ * Elapsed time is derived from local sessions — server duration is ignored.
+ * Triggers a renderer push only when status or entryId actually diverged.
  */
 function applyServerTimerSync(
   timerSync: { entryId: string; status: string; duration: number } | null
@@ -325,7 +328,9 @@ function applyServerTimerSync(
   console.log(
     `[Main] Timer resync: local=${localStatus}/${localEntryId ?? "none"} → server=${serverStatus}/${serverEntryId ?? "none"}`
   );
-  store.syncFromServer(timerSync);
+  store.syncFromServer(
+    timerSync ? { id: timerSync.entryId, status: timerSync.status, duration: timerSync.duration } : null
+  );
   pushStateToRenderer();
 }
 
@@ -464,15 +469,18 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
 ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description }) => {
   try {
     const entry = await apiClient.startTimer(crmProjectId, taskId || undefined, description);
-    // taskAccumulatedToday: sum of stopped entries for this task today (from server).
-    // Kept separate from entry.duration so syncFromServer() resync never overwrites it.
-    const taskAccumulated = (entry as any).taskAccumulatedToday || 0;
-    store.setTimerRunning(entry.id, entry.duration || 0, projectName || null, taskName || null, description || null, taskAccumulated);
+    // Close any active session (handles task switching: A → B) and open a new one
+    store.setTimerRunning(
+      entry.id,
+      projectName || null,
+      taskId || null,
+      taskName || null,
+      description || null,
+    );
     console.log(`[Main] timer.start — entry=${entry.id} project="${projectName || ""}" task="${taskName || ""}"`);
     pushStateToRenderer();
     return { ok: true, entry };
   } catch (error: any) {
-    // On start failure, resync so UI reflects actual server state
     await syncTimerFromServer();
     return { ok: false, error: error.message };
   }
@@ -484,7 +492,7 @@ ipcMain.handle("agent:timer-pause", async () => {
     if (!entryId) return { ok: false, error: "No active timer" };
 
     const entry = await apiClient.pauseTimer(entryId);
-    store.setTimerPaused(entry.duration || 0);
+    store.setTimerPaused(); // closes active session with endTime=now
     pushStateToRenderer();
     return { ok: true, entry };
   } catch (error: any) {
@@ -502,7 +510,14 @@ ipcMain.handle("agent:timer-resume", async () => {
     if (!entryId) return { ok: false, error: "No active timer" };
 
     const entry = await apiClient.resumeTimer(entryId);
-    store.setTimerRunning(entry.id, entry.duration || 0, store.getActiveProjectName(), store.getActiveTaskName(), store.getActiveDescription());
+    // Resume = new session for the same entry; preserves accumulated elapsed
+    store.setTimerRunning(
+      entry.id,
+      store.getActiveProjectName(),
+      store.getActiveTaskId(),
+      store.getActiveTaskName(),
+      store.getActiveDescription(),
+    );
     pushStateToRenderer();
     return { ok: true, entry };
   } catch (error: any) {
@@ -538,13 +553,9 @@ ipcMain.handle("agent:timer-state", () => {
   return store.getTimerState();
 });
 
-ipcMain.handle("agent:get-worked-today", async () => {
-  try {
-    const total = await apiClient.getWorkedToday();
-    return { ok: true, total };
-  } catch {
-    return { ok: false, total: 0 };
-  }
+ipcMain.handle("agent:get-worked-today", () => {
+  // Sessions are the source of truth — no server round-trip needed.
+  return { ok: true, total: store.getWorkedTodaySeconds() };
 });
 
 // ─── Single instance ───
@@ -567,6 +578,12 @@ app.whenReady().then(() => {
   initLogger();
   Menu.setApplicationMenu(null);
   store.setClientVersion(app.getVersion());
+
+  // Close any sessions that were left open by a crash or force-quit.
+  // Must run before startWorkers() so getElapsedSeconds() / getWorkedTodaySeconds()
+  // are correct when the first state push reaches the renderer.
+  store.reconcileOrphanSessions();
+
   createTray();
   mainWindow = createMainWindow();
 

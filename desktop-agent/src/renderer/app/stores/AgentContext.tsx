@@ -22,6 +22,7 @@ interface State {
 const defaultTimerState: TimerState = {
   status: 'stopped',
   elapsed: 0,
+  workedToday: 0,
   entryId: null,
   projectName: null,
   taskName: null,
