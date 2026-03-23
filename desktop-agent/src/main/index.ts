@@ -58,8 +58,10 @@ import { ScreenCaptureWorker } from "../workers/ScreenCaptureWorker";
 let mainWindow: BrowserWindow | null = null;
 let widgetWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+/** Set by the user clicking ×. Cleared when the timer stops so the next session shows the widget again. */
+let widgetDismissed = false;
 
-const WIDGET_WIDTH = 310;
+const WIDGET_WIDTH = 340;
 const WIDGET_HEIGHT = 64;
 const WIDGET_MARGIN = 20;
 
@@ -191,6 +193,15 @@ function createWidgetWindow(): BrowserWindow {
     console.log("[Widget] renderer ready");
   });
 
+  // Clamp position after drag so the widget can never be moved off-screen
+  win.on("moved", () => {
+    const { x, y, width, height } = win.getBounds();
+    const { workArea } = screen.getPrimaryDisplay();
+    const cx = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - width));
+    const cy = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - height));
+    if (cx !== x || cy !== y) win.setPosition(cx, cy);
+  });
+
   // Prevent accidental close
   win.on("close", (e) => {
     e.preventDefault();
@@ -200,13 +211,15 @@ function createWidgetWindow(): BrowserWindow {
   return win;
 }
 
-/** Show or hide the widget based on timer status */
+/** Show or hide the widget based on timer status and dismissed flag. */
 function syncWidgetVisibility(status: string): void {
   if (!widgetWindow) return;
-  if (status === "running" || status === "paused") {
-    if (!widgetWindow.isVisible()) widgetWindow.show();
-  } else {
+  if (status === "stopped") {
+    // Reset dismissed so the widget reappears on the next timer session
+    widgetDismissed = false;
     if (widgetWindow.isVisible()) widgetWindow.hide();
+  } else if (!widgetDismissed) {
+    if (!widgetWindow.isVisible()) widgetWindow.show();
   }
 }
 
@@ -551,6 +564,14 @@ ipcMain.handle("agent:timer-stop", async () => {
 
 ipcMain.handle("agent:timer-state", () => {
   return store.getTimerState();
+});
+
+// ─── IPC: Widget ───
+
+ipcMain.handle("widget:dismiss", () => {
+  widgetDismissed = true;
+  widgetWindow?.hide();
+  console.log("[Widget] dismissed by user");
 });
 
 ipcMain.handle("agent:get-worked-today", () => {

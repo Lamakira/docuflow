@@ -12,8 +12,10 @@ export function ActiveTimerHeader() {
   return (
     <div className={`timer-header timer-header--${status}`}>
       <div className="timer-header__info">
-        <div className="timer-header__project">{timer?.projectName ?? '—'}</div>
-        {timer?.taskName && (
+        {timer.projectName && (
+          <div className="timer-header__project">{timer.projectName}</div>
+        )}
+        {timer.taskName && (
           <div className="timer-header__task">{timer.taskName}</div>
         )}
       </div>

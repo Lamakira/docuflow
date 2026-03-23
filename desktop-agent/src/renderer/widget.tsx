@@ -7,6 +7,7 @@ declare global {
       getState: () => Promise<any>;
       timerPause: () => Promise<any>;
       timerResume: () => Promise<any>;
+      dismiss: () => Promise<void>;
       onStateUpdate: (cb: (state: any) => void) => void;
     };
   }
@@ -89,19 +90,25 @@ function Widget() {
     }
   }
 
+  async function handleDismiss() {
+    await window.widgetBridge.dismiss();
+  }
+
   const label = timer.taskName || timer.projectName || "Tracking…";
   const sub = timer.taskName && timer.projectName ? timer.projectName : null;
+
+  const noDrag = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
 
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 10,
+        gap: 8,
         background: "rgba(15, 23, 42, 0.96)",
         border: "1px solid rgba(255,255,255,0.1)",
         borderRadius: 14,
-        padding: "10px 14px",
+        padding: "10px 12px",
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         WebkitAppRegion: "drag",
         userSelect: "none",
@@ -174,24 +181,58 @@ function Widget() {
         onClick={handleToggle}
         disabled={pending}
         style={{
-          WebkitAppRegion: "no-drag",
+          ...noDrag,
           flexShrink: 0,
-          width: 30,
-          height: 30,
+          width: 28,
+          height: 28,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           background: isRunning ? "rgba(239,68,68,0.15)" : "rgba(34,197,94,0.15)",
           border: `1px solid ${isRunning ? "rgba(239,68,68,0.35)" : "rgba(34,197,94,0.35)"}`,
-          borderRadius: 8,
+          borderRadius: 7,
           cursor: pending ? "wait" : "pointer",
           color: isRunning ? "#ef4444" : "#22c55e",
-          fontSize: 13,
+          fontSize: 12,
           transition: "background 0.2s, border-color 0.2s",
           opacity: pending ? 0.6 : 1,
-        } as React.CSSProperties}
+        }}
       >
         {isRunning ? "⏸" : "▶"}
+      </button>
+
+      {/* Dismiss button — hides widget, does NOT stop tracking */}
+      <button
+        onClick={handleDismiss}
+        title="Hide widget (tracking continues)"
+        style={{
+          ...noDrag,
+          flexShrink: 0,
+          width: 20,
+          height: 20,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "transparent",
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: 5,
+          cursor: "pointer",
+          color: "rgba(255,255,255,0.35)",
+          fontSize: 11,
+          lineHeight: 1,
+          transition: "border-color 0.2s, color 0.2s",
+          padding: 0,
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.7)";
+          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.35)";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.35)";
+          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)";
+        }}
+      >
+        ✕
       </button>
     </div>
   );

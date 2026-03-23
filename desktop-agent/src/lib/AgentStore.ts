@@ -208,9 +208,10 @@ export class AgentStore {
     this.saveToDisk();
   }
 
-  /** Record heartbeat/activity timestamp (does not save to disk — call sparingly). */
+  /** Record heartbeat timestamp and persist so crash-recovery end-time is accurate. */
   touchActivity(): void {
     this.data.lastActivityAt = new Date().toISOString();
+    this.saveToDisk();
   }
 
   private closeActiveSessions(): void {
