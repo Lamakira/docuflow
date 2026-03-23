@@ -705,12 +705,27 @@ export function registerAgentRoutes(app: Express): void {
     return true;
   }
 
-  /** Agent: get active time entry */
+  /** Agent: get active time entry (enriched with project and task names) */
   app.get("/api/agent/timer/active", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     try {
       const userId = req.agentUserId!;
       const entry = await storage.getActiveTimeEntry(userId);
-      res.json(entry || null);
+      if (!entry) return res.json(null);
+
+      let projectName: string | null = null;
+      let taskName: string | null = null;
+      try {
+        const crmProject = await storage.getCrmProject(entry.crmProjectId);
+        projectName = (crmProject as any)?.project?.name ?? null;
+      } catch { /* non-fatal */ }
+      if (entry.taskId) {
+        try {
+          const task = await storage.getTask(entry.taskId);
+          taskName = task?.name ?? null;
+        } catch { /* non-fatal */ }
+      }
+
+      res.json({ ...entry, projectName, taskName });
     } catch (error) {
       logError("agent.timer.active.failed", error);
       res.status(500).json({ message: "Failed to fetch active entry" });
