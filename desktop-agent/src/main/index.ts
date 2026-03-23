@@ -577,6 +577,12 @@ app.whenReady().then(() => {
   initLogger();
   Menu.setApplicationMenu(null);
   store.setClientVersion(app.getVersion());
+
+  // Close any sessions that were left open by a crash or force-quit.
+  // Must run before startWorkers() so getElapsedSeconds() / getWorkedTodaySeconds()
+  // are correct when the first state push reaches the renderer.
+  store.reconcileOrphanSessions();
+
   createTray();
   mainWindow = createMainWindow();
 
