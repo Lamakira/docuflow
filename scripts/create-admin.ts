@@ -13,7 +13,8 @@
  */
 
 import bcrypt from "bcrypt";
-import { neon } from "@neondatabase/serverless";
+import { Pool, neonConfig } from "@neondatabase/serverless";
+import ws from "ws";
 
 const SALT_ROUNDS = 12;
 
@@ -47,31 +48,37 @@ async function main() {
   const masked = connStr.replace(/:([^@]+)@/, ":<hidden>@");
   console.log(`[DB] Connecting to: ${masked}`);
 
-  const sql = neon(connStr);
+  neonConfig.webSocketConstructor = ws;
+  const pool = new Pool({ connectionString: connStr });
 
-  // Check for duplicate
-  const existing = await sql`SELECT id FROM users WHERE email = ${email}`;
-  if (existing.length > 0) {
-    console.error(`Error: a user with email "${email}" already exists (id=${existing[0].id}).`);
-    process.exit(1);
+  try {
+    // Check for duplicate
+    const existing = await pool.query("SELECT id FROM users WHERE email = $1", [email]);
+    if (existing.rows.length > 0) {
+      console.error(`Error: a user with email "${email}" already exists (id=${existing.rows[0].id}).`);
+      process.exit(1);
+    }
+
+    const hashed = await bcrypt.hash(password, SALT_ROUNDS);
+
+    const result = await pool.query(
+      `INSERT INTO users (email, password, "firstName", "lastName", role, "isMainAdmin")
+       VALUES ($1, $2, $3, $4, 'admin', 1)
+       RETURNING id, email, "firstName", "lastName", role, "isMainAdmin"`,
+      [email, hashed, firstName, lastName]
+    );
+
+    const user = result.rows[0];
+    console.log("\nAdmin user created:");
+    console.log(`  id:          ${user.id}`);
+    console.log(`  email:       ${user.email}`);
+    console.log(`  firstName:   ${user.firstName}`);
+    console.log(`  lastName:    ${user.lastName}`);
+    console.log(`  role:        ${user.role}`);
+    console.log(`  isMainAdmin: ${user.isMainAdmin}`);
+  } finally {
+    await pool.end();
   }
-
-  const hashed = await bcrypt.hash(password, SALT_ROUNDS);
-
-  const rows = await sql`
-    INSERT INTO users (email, password, "firstName", "lastName", role, "isMainAdmin")
-    VALUES (${email}, ${hashed}, ${firstName}, ${lastName}, 'admin', 1)
-    RETURNING id, email, "firstName", "lastName", role, "isMainAdmin"
-  `;
-
-  const user = rows[0];
-  console.log("\nAdmin user created:");
-  console.log(`  id:          ${user.id}`);
-  console.log(`  email:       ${user.email}`);
-  console.log(`  firstName:   ${user.firstName}`);
-  console.log(`  lastName:    ${user.lastName}`);
-  console.log(`  role:        ${user.role}`);
-  console.log(`  isMainAdmin: ${user.isMainAdmin}`);
 }
 
 main().catch((err) => {
