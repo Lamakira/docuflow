@@ -20,7 +20,7 @@ export function ActiveTimerHeader() {
         )}
       </div>
       <span className="timer-header__elapsed">
-        {formatTime(timer?.elapsed ?? 0)}
+        {formatTime(timer?.elapsedToday ?? 0)}
       </span>
     </div>
   );

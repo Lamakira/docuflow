@@ -22,6 +22,7 @@ interface State {
 const defaultTimerState: TimerState = {
   status: 'stopped',
   elapsed: 0,
+  elapsedToday: 0,
   workedToday: 0,
   entryId: null,
   taskId: null,
@@ -101,6 +102,7 @@ function reducer(state: State, action: Action): State {
           timer: {
             ...state.agentState.timer,
             elapsed: state.agentState.timer.elapsed + 1,
+            elapsedToday: state.agentState.timer.elapsedToday + 1,
           },
         },
       };

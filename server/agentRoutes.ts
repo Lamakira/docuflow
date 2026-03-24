@@ -635,7 +635,8 @@ export function registerAgentRoutes(app: Express): void {
 
         // DB storageKey uses /objects/ prefix so getObjectEntityFile() can resolve it
         const storageKey = `/objects/${objectSubPath}`;
-        await storage.updateTimeEntryScreenshot(id, { storageKey });
+        const contentHash = createHash("sha256").update(rawBuffer).digest("hex");
+        await storage.updateTimeEntryScreenshot(id, { storageKey, contentHash });
 
         logInfo("agent.screenshots.upload", {
           screenshotId: id,

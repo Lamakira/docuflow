@@ -16,6 +16,7 @@ declare global {
 interface TimerState {
   status: "stopped" | "running" | "paused";
   elapsed: number;
+  elapsedToday: number;
   taskName: string | null;
   projectName: string | null;
 }
@@ -32,6 +33,7 @@ function Widget() {
   const [timer, setTimer] = useState<TimerState>({
     status: "stopped",
     elapsed: 0,
+    elapsedToday: 0,
     taskName: null,
     projectName: null,
   });
@@ -42,14 +44,16 @@ function Widget() {
 
   function applyState(raw: any) {
     const t = raw.timer ?? raw;
+    const todayElapsed = t.elapsedToday ?? t.elapsed ?? 0;
     setTimer({
       status: t.status,
       elapsed: t.elapsed ?? 0,
+      elapsedToday: todayElapsed,
       taskName: t.taskName ?? null,
       projectName: t.projectName ?? null,
     });
-    syncRef.current = { elapsed: t.elapsed ?? 0, at: Date.now() };
-    setDisplayElapsed(t.elapsed ?? 0);
+    syncRef.current = { elapsed: todayElapsed, at: Date.now() };
+    setDisplayElapsed(todayElapsed);
   }
 
   useEffect(() => {
