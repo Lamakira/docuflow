@@ -310,14 +310,19 @@ export default function TimeTrackingPage() {
   );
 
   const hourlyGroups = useMemo(() => {
-    const byHour: Record<string, { label: string; screenshots: Screenshot[] }> = {};
+    const byHour: Record<string, { key: string; hourLabel: string; dateLabel: string; screenshots: Screenshot[] }> = {};
     for (const s of paginatedScreenshots) {
       const d = new Date(s.capturedAt);
-      const key = `${format(d, "yyyy-MM-dd")}_${d.getHours()}`;
-      if (!byHour[key]) {
-        byHour[key] = { label: format(d, "h a"), screenshots: [] };
+      const rawKey = `${format(d, "yyyy-MM-dd")}_${d.getHours()}`;
+      if (!byHour[rawKey]) {
+        byHour[rawKey] = {
+          key: rawKey,
+          hourLabel: format(d, "h a"),          // "12 PM"
+          dateLabel: format(d, "MMM d, yyyy"),   // "Mar 24, 2026"
+          screenshots: [],
+        };
       }
-      byHour[key].screenshots.push(s);
+      byHour[rawKey].screenshots.push(s);
     }
     return Object.entries(byHour)
       .sort(([a], [b]) => {
@@ -876,17 +881,30 @@ export default function TimeTrackingPage() {
                               .filter(Boolean)
                               .map((n) => n![0].toUpperCase())
                               .join("") || u.email[0].toUpperCase();
+                            // Detect display-name duplicates to show email as disambiguator
+                            const hasDuplicate = users.filter((x) => {
+                              const xn = `${x.firstName || ""} ${x.lastName || ""}`.trim() || x.email;
+                              return xn === name && x.id !== u.id;
+                            }).length > 0;
                             return (
                               <CommandItem
                                 key={u.id}
-                                value={name}
+                                // value must be unique — cmdk uses it for both filtering AND active state.
+                                // Appending the id prevents multiple items sharing the same value
+                                // while still allowing name-based search (cmdk does substring match).
+                                value={`${name} ${u.id}`}
                                 onSelect={() => { setUserFilter(u.id); setScreenshotPage(1); setUserFilterOpen(false); }}
                               >
                                 <Check className={`mr-2 h-4 w-4 shrink-0 ${userFilter === u.id ? "opacity-100" : "opacity-0"}`} />
                                 <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium mr-1.5">
                                   {initials}
                                 </span>
-                                <span className="truncate">{name}</span>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="truncate">{name}</span>
+                                  {hasDuplicate && (
+                                    <span className="text-[10px] text-muted-foreground truncate">{u.email}</span>
+                                  )}
+                                </div>
                               </CommandItem>
                             );
                           })}
@@ -997,12 +1015,16 @@ export default function TimeTrackingPage() {
                 </div>
 
                 {/* Hourly groups */}
-                <div className="space-y-6">
+                <div className="space-y-8">
                   {hourlyGroups.map((group) => (
-                    <div key={group.label}>
-                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 pb-1 border-b">
-                        {group.label}
+                    <div key={group.key} className="flex gap-6">
+                      {/* Left: time label column */}
+                      <div className="w-20 shrink-0 pt-1 select-none">
+                        <div className="text-xl font-bold leading-tight">{group.hourLabel}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{group.dateLabel}</div>
                       </div>
+                      {/* Right: screenshot grid */}
+                      <div className="flex-1 min-w-0">
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                         {group.screenshots.map((screenshot) => {
                           const project = projects.find((p) => p.id === screenshot.crmProjectId);
@@ -1055,6 +1077,7 @@ export default function TimeTrackingPage() {
                           );
                         })}
                       </div>
+                      </div>{/* flex-1 */}
                     </div>
                   ))}
                 </div>
