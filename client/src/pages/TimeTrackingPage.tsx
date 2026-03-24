@@ -33,7 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Clock, Calendar, TrendingUp, Timer, Filter, X, ChevronDown, ChevronRight, LayoutList, Table2, Monitor, ImageIcon, Play, Pause, Square, ChevronLeft, Download, Check } from "lucide-react";
+import { Clock, Calendar, TrendingUp, Timer, Filter, X, ChevronDown, ChevronRight, LayoutList, Table2, Monitor, ImageIcon, Play, Pause, Square, ChevronLeft, Download, Check, LayoutGrid, Grid2x2, Rows3 } from "lucide-react";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, parseISO } from "date-fns";
 import type { TimeEntry, CrmProjectWithDetails, User } from "@shared/schema";
@@ -96,6 +96,9 @@ export default function TimeTrackingPage() {
   const [isDownloadingBatch, setIsDownloadingBatch] = useState(false);
   const [lowActivityFilter, setLowActivityFilter] = useState(false);
   const [identicalFilter, setIdenticalFilter] = useState(false);
+  const [thumbnailSize, setThumbnailSize] = useState<"compact" | "default" | "large">("default");
+
+  const browserTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
   const today = format(new Date(), "yyyy-MM-dd");
   const [customDayDate, setCustomDayDate] = useState<string>(today);
   const [customDateFrom, setCustomDateFrom] = useState<string>(
@@ -369,6 +372,12 @@ export default function TimeTrackingPage() {
       })
       .map(([, group]) => group);
   }, [paginatedScreenshots]);
+
+  const thumbnailGridClass = {
+    compact: "grid-cols-3 md:grid-cols-5 lg:grid-cols-7",
+    default: "grid-cols-2 md:grid-cols-3 lg:grid-cols-4",
+    large:   "grid-cols-1 md:grid-cols-2 lg:grid-cols-3",
+  }[thumbnailSize];
 
   const hasActiveScreenshotFilters = screenshotDateFilter !== "week" || projectFilter !== "all" || userFilter !== "all" || lowActivityFilter || identicalFilter;
 
@@ -975,6 +984,37 @@ export default function TimeTrackingPage() {
                   Identical{identicalIds.size > 0 ? ` (${identicalIds.size})` : ""}
                 </Button>
 
+                {/* Density controls */}
+                <div className="flex items-center border rounded-md">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-8 w-8 rounded-r-none rounded-l-md ${thumbnailSize === "compact" ? "bg-muted" : ""}`}
+                    onClick={() => setThumbnailSize("compact")}
+                    title="Compact"
+                  >
+                    <Grid2x2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-8 w-8 rounded-none border-x ${thumbnailSize === "default" ? "bg-muted" : ""}`}
+                    onClick={() => setThumbnailSize("default")}
+                    title="Default"
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-8 w-8 rounded-l-none rounded-r-md ${thumbnailSize === "large" ? "bg-muted" : ""}`}
+                    onClick={() => setThumbnailSize("large")}
+                    title="Large"
+                  >
+                    <Rows3 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
                 {hasActiveScreenshotFilters && (
                   <Button variant="ghost" size="sm" onClick={clearScreenshotFilters} className="gap-1">
                     <X className="h-3 w-3" />
@@ -985,27 +1025,32 @@ export default function TimeTrackingPage() {
             </div>
 
             {!isLoadingScreenshots && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground pt-1">
-                <ImageIcon className="h-3.5 w-3.5" />
-                <span>
-                  {filteredScreenshots.length === 0
-                    ? "No screenshots"
-                    : `${filteredScreenshots.length} screenshot${filteredScreenshots.length === 1 ? "" : "s"}`}
-                  {screenshotDateFilter !== "all" && (
-                    <span className="ml-1">
-                      · {screenshotDateFilter === "today"
-                        ? "today"
-                        : screenshotDateFilter === "week"
-                        ? "this week"
-                        : screenshotDateFilter === "month"
-                        ? "this month"
-                        : screenshotDateFilter === "day"
-                        ? customDayDate
-                        : screenshotDateFilter === "custom"
-                        ? `${customDateFrom} – ${customDateTo}`
-                        : ""}
-                    </span>
-                  )}
+              <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground pt-1">
+                <div className="flex items-center gap-2">
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  <span>
+                    {filteredScreenshots.length === 0
+                      ? "No screenshots"
+                      : `${filteredScreenshots.length} screenshot${filteredScreenshots.length === 1 ? "" : "s"}`}
+                    {screenshotDateFilter !== "all" && (
+                      <span className="ml-1">
+                        · {screenshotDateFilter === "today"
+                          ? "today"
+                          : screenshotDateFilter === "week"
+                          ? "this week"
+                          : screenshotDateFilter === "month"
+                          ? "this month"
+                          : screenshotDateFilter === "day"
+                          ? customDayDate
+                          : screenshotDateFilter === "custom"
+                          ? `${customDateFrom} – ${customDateTo}`
+                          : ""}
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <span className="text-xs opacity-60" title="Times displayed in your local timezone">
+                  {browserTimezone}
                 </span>
               </div>
             )}
@@ -1013,7 +1058,7 @@ export default function TimeTrackingPage() {
 
           <CardContent>
             {isLoadingScreenshots ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className={`grid ${thumbnailGridClass} gap-4`}>
                 {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                   <Skeleton key={i} className="aspect-video rounded-lg" />
                 ))}
@@ -1086,7 +1131,7 @@ export default function TimeTrackingPage() {
                       </div>
                       {/* Right: screenshot grid */}
                       <div className="flex-1 min-w-0">
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      <div className={`grid ${thumbnailGridClass} gap-4`}>
                         {group.screenshots.map((screenshot) => {
                           const project = projects.find((p) => p.id === screenshot.crmProjectId);
                           const isSelected = selectedScreenshotIds.has(screenshot.id);
@@ -1124,10 +1169,11 @@ export default function TimeTrackingPage() {
                                   loading="lazy"
                                 />
                               </div>
-                              <div className="p-2 space-y-0.5">
+                              <div className={thumbnailSize === "compact" ? "p-1" : "p-2 space-y-0.5"}>
                                 <div className="flex items-center justify-between gap-1">
                                   <div className="text-xs font-medium truncate">
-                                    {project?.project?.name || "Unknown Project"}
+                                    {thumbnailSize !== "compact" && (project?.project?.name || "Unknown Project")}
+                                    {thumbnailSize === "compact" && format(new Date(screenshot.capturedAt), "h:mm a")}
                                   </div>
                                   <div className="flex items-center gap-1 shrink-0">
                                     {isDuplicate && (
@@ -1156,12 +1202,16 @@ export default function TimeTrackingPage() {
                                     })()}
                                   </div>
                                 </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {format(new Date(screenshot.capturedAt), "MMM d, h:mm a")}
-                                </div>
-                                <div className="text-xs text-muted-foreground truncate">
-                                  {getUserName(screenshot.userId)}
-                                </div>
+                                {thumbnailSize !== "compact" && (
+                                  <>
+                                    <div className="text-xs text-muted-foreground">
+                                      {format(new Date(screenshot.capturedAt), "MMM d, h:mm a")}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground truncate">
+                                      {getUserName(screenshot.userId)}
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             </div>
                           );
