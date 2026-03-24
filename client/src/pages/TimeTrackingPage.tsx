@@ -73,6 +73,7 @@ interface Screenshot {
   userId: string;
   crmProjectId: string;
   storageKey: string;
+  contentHash: string | null;
   capturedAt: string;
   createdAt: string;
   entryDuration: number | null;
@@ -94,6 +95,7 @@ export default function TimeTrackingPage() {
   const [userFilterOpen, setUserFilterOpen] = useState(false);
   const [isDownloadingBatch, setIsDownloadingBatch] = useState(false);
   const [lowActivityFilter, setLowActivityFilter] = useState(false);
+  const [identicalFilter, setIdenticalFilter] = useState(false);
   const today = format(new Date(), "yyyy-MM-dd");
   const [customDayDate, setCustomDayDate] = useState<string>(today);
   const [customDateFrom, setCustomDateFrom] = useState<string>(
@@ -307,16 +309,35 @@ export default function TimeTrackingPage() {
 
   const allScreenshots = screenshotsData?.data ?? [];
 
+  // Identical screenshots: same contentHash appears ≥2 times in the current result set
+  const identicalIds = useMemo(() => {
+    const hashCount: Record<string, number> = {};
+    for (const s of allScreenshots) {
+      if (s.contentHash) hashCount[s.contentHash] = (hashCount[s.contentHash] ?? 0) + 1;
+    }
+    return new Set(
+      allScreenshots
+        .filter((s) => s.contentHash && hashCount[s.contentHash] > 1)
+        .map((s) => s.id)
+    );
+  }, [allScreenshots]);
+
   // Low-activity filter: idle > 50% of total tracked time for the entry
   const filteredScreenshots = useMemo(() => {
-    if (!lowActivityFilter) return allScreenshots;
-    return allScreenshots.filter((s) => {
-      const dur = s.entryDuration ?? 0;
-      const idle = s.entryIdleTime ?? 0;
-      const total = dur + idle;
-      return total > 0 && idle / total > 0.5;
-    });
-  }, [allScreenshots, lowActivityFilter]);
+    let result = allScreenshots;
+    if (lowActivityFilter) {
+      result = result.filter((s) => {
+        const dur = s.entryDuration ?? 0;
+        const idle = s.entryIdleTime ?? 0;
+        const total = dur + idle;
+        return total > 0 && idle / total > 0.5;
+      });
+    }
+    if (identicalFilter) {
+      result = result.filter((s) => identicalIds.has(s.id));
+    }
+    return result;
+  }, [allScreenshots, lowActivityFilter, identicalFilter, identicalIds]);
 
   const screenshotTotalPages = Math.max(1, Math.ceil(filteredScreenshots.length / SCREENSHOT_PAGE_SIZE));
   const paginatedScreenshots = filteredScreenshots.slice(
@@ -349,13 +370,14 @@ export default function TimeTrackingPage() {
       .map(([, group]) => group);
   }, [paginatedScreenshots]);
 
-  const hasActiveScreenshotFilters = screenshotDateFilter !== "week" || projectFilter !== "all" || userFilter !== "all" || lowActivityFilter;
+  const hasActiveScreenshotFilters = screenshotDateFilter !== "week" || projectFilter !== "all" || userFilter !== "all" || lowActivityFilter || identicalFilter;
 
   const clearScreenshotFilters = () => {
     setScreenshotDateFilter("week");
     setProjectFilter("all");
     setUserFilter("all");
     setLowActivityFilter(false);
+    setIdenticalFilter(false);
     setScreenshotPage(1);
     setSelectedScreenshotIds(new Set());
   };
@@ -363,7 +385,7 @@ export default function TimeTrackingPage() {
   // Reset selection when filters or tab change
   useEffect(() => {
     setSelectedScreenshotIds(new Set());
-  }, [screenshotDateFilter, projectFilter, userFilter, customDayDate, customDateFrom, customDateTo, activeTab, lowActivityFilter]);
+  }, [screenshotDateFilter, projectFilter, userFilter, customDayDate, customDateFrom, customDateTo, activeTab, lowActivityFilter, identicalFilter]);
 
   async function downloadScreenshot(id: string, capturedAt: string) {
     try {
@@ -941,6 +963,18 @@ export default function TimeTrackingPage() {
                   Low Activity
                 </Button>
 
+                <Button
+                  variant={identicalFilter ? "default" : "outline"}
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => { setIdenticalFilter((v) => !v); setScreenshotPage(1); }}
+                  title="Show only screenshots that appear more than once (same content hash)"
+                  disabled={identicalIds.size === 0}
+                >
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  Identical{identicalIds.size > 0 ? ` (${identicalIds.size})` : ""}
+                </Button>
+
                 {hasActiveScreenshotFilters && (
                   <Button variant="ghost" size="sm" onClick={clearScreenshotFilters} className="gap-1">
                     <X className="h-3 w-3" />
@@ -1056,6 +1090,7 @@ export default function TimeTrackingPage() {
                         {group.screenshots.map((screenshot) => {
                           const project = projects.find((p) => p.id === screenshot.crmProjectId);
                           const isSelected = selectedScreenshotIds.has(screenshot.id);
+                          const isDuplicate = identicalIds.has(screenshot.id);
                           return (
                             <div
                               key={screenshot.id}
@@ -1094,22 +1129,32 @@ export default function TimeTrackingPage() {
                                   <div className="text-xs font-medium truncate">
                                     {project?.project?.name || "Unknown Project"}
                                   </div>
-                                  {(() => {
-                                    const dur = screenshot.entryDuration ?? 0;
-                                    const idle = screenshot.entryIdleTime ?? 0;
-                                    const total = dur + idle;
-                                    if (total === 0) return null;
-                                    const idlePct = Math.round((idle / total) * 100);
-                                    if (idlePct < 20) return null;
-                                    return (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {isDuplicate && (
                                       <span
-                                        className={`shrink-0 text-[10px] px-1 rounded font-medium ${idlePct > 50 ? "bg-orange-500/15 text-orange-700 dark:text-orange-400" : "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400"}`}
-                                        title={`${idlePct}% idle in this session`}
+                                        className="text-[10px] px-1 rounded font-medium bg-blue-500/15 text-blue-700 dark:text-blue-400"
+                                        title="Identical screenshot captured multiple times"
                                       >
-                                        {idlePct}% idle
+                                        dup
                                       </span>
-                                    );
-                                  })()}
+                                    )}
+                                    {(() => {
+                                      const dur = screenshot.entryDuration ?? 0;
+                                      const idle = screenshot.entryIdleTime ?? 0;
+                                      const total = dur + idle;
+                                      if (total === 0) return null;
+                                      const idlePct = Math.round((idle / total) * 100);
+                                      if (idlePct < 20) return null;
+                                      return (
+                                        <span
+                                          className={`text-[10px] px-1 rounded font-medium ${idlePct > 50 ? "bg-orange-500/15 text-orange-700 dark:text-orange-400" : "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400"}`}
+                                          title={`${idlePct}% idle in this session`}
+                                        >
+                                          {idlePct}% idle
+                                        </span>
+                                      );
+                                    })()}
+                                  </div>
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                   {format(new Date(screenshot.capturedAt), "MMM d, h:mm a")}

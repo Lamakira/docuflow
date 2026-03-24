@@ -299,7 +299,7 @@ export interface IStorage {
     limit?: number;
     offset?: number;
   }): Promise<{ data: TimeEntryScreenshot[]; total: number }>;
-  updateTimeEntryScreenshot(id: string, data: { storageKey: string }): Promise<TimeEntryScreenshot | undefined>;
+  updateTimeEntryScreenshot(id: string, data: { storageKey: string; contentHash?: string }): Promise<TimeEntryScreenshot | undefined>;
   deleteTimeEntryScreenshot(id: string): Promise<void>;
 
   // Tasks
@@ -2469,10 +2469,10 @@ export class DatabaseStorage implements IStorage {
     return { data, total: countResult[0]?.count ?? 0 };
   }
 
-  async updateTimeEntryScreenshot(id: string, data: { storageKey: string }): Promise<TimeEntryScreenshot | undefined> {
+  async updateTimeEntryScreenshot(id: string, data: { storageKey: string; contentHash?: string }): Promise<TimeEntryScreenshot | undefined> {
     const [result] = await db
       .update(timeEntryScreenshots)
-      .set({ storageKey: data.storageKey })
+      .set({ storageKey: data.storageKey, ...(data.contentHash ? { contentHash: data.contentHash } : {}) })
       .where(eq(timeEntryScreenshots.id, id))
       .returning();
     return result;
