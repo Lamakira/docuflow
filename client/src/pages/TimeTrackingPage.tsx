@@ -507,11 +507,23 @@ export default function TimeTrackingPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Users</SelectItem>
-                  {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {`${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email}
-                    </SelectItem>
-                  ))}
+                  {users.map((user) => {
+                    const name = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
+                    const initials = [user.firstName, user.lastName]
+                      .filter(Boolean)
+                      .map((n) => n![0].toUpperCase())
+                      .join("") || user.email[0].toUpperCase();
+                    return (
+                      <SelectItem key={user.id} value={user.id}>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
+                            {initials}
+                          </span>
+                          {name}
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
 
@@ -720,11 +732,23 @@ export default function TimeTrackingPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Users</SelectItem>
-                    {users.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {`${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email}
-                      </SelectItem>
-                    ))}
+                    {users.map((user) => {
+                      const name = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
+                      const initials = [user.firstName, user.lastName]
+                        .filter(Boolean)
+                        .map((n) => n![0].toUpperCase())
+                        .join("") || user.email[0].toUpperCase();
+                      return (
+                        <SelectItem key={user.id} value={user.id}>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
+                              {initials}
+                            </span>
+                            {name}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
 

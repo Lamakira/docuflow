@@ -284,7 +284,7 @@ export class AgentStore {
    * Apply server-authoritative timer state.
    *
    * Updates status/entryId and populates project/task names when not already known.
-   * When the entry has no local sessions (e.g. started from web/another device),
+   * When the entry has no local sessions (e.g. started from another device),
    * seeds elapsed from the server's accumulated duration so the display is correct.
    */
   syncFromServer(entry: {
@@ -329,7 +329,7 @@ export class AgentStore {
     }
 
     // Seed entryServerBase when we have no local sessions for this entry yet.
-    // This handles timer started on web/another device: desktop would otherwise
+    // This handles timer started on another device: desktop would otherwise
     // show only the ~0s since sync instead of the full accumulated elapsed.
     const localSessionsForEntry = this.data.sessions.filter((s) => s.entryId === entry.id);
     if (localSessionsForEntry.length === 0) {

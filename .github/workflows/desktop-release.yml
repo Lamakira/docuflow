@@ -73,17 +73,17 @@ jobs:
             | Platform | Artifact | Status |
             |----------|----------|--------|
             | Windows 10/11 | `DocuFlow-Agent-*-windows-setup.exe` | ✅ Stable |
-            | macOS 12+ (Intel x64) | `DocuFlow-Agent-*-macos.dmg` | 🔶 Beta |
+            | macOS 12+ (Apple Silicon / Intel via Rosetta) | `DocuFlow-Agent-*-macos.dmg` | 🔶 Beta |
             | Ubuntu 20.04+ | `DocuFlow-Agent-*-linux-amd64.deb` | 🧪 Experimental |
 
-            > **macOS note:** Built on Intel runner (x64). Apple Silicon users run via Rosetta 2 — native arm64 build planned for a future release.
+            > **macOS note:** Built on Apple Silicon (arm64). Runs natively on M1/M2/M3 and via Rosetta 2 on Intel Macs.
             > **First launch on macOS:** right-click → Open to bypass Gatekeeper (no code signing yet).
 
-  # ── macOS — DMG (Intel x64, runs on macOS 13 for guaranteed Intel runner) ──
+  # ── macOS — DMG (arm64, Apple Silicon native; runs via Rosetta on Intel) ──
   build-macos:
-    # macos-13 = Intel (x64). macos-latest = arm64 (M1) since late 2024.
-    # We build x64 explicitly so the artifact runs natively on Intel and via Rosetta on M1.
-    runs-on: macos-13
+    # macos-13 (Intel) was retired. macos-latest = arm64 (M1/M2).
+    # The arm64 build runs natively on Apple Silicon and via Rosetta 2 on Intel.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 

@@ -148,7 +148,7 @@ export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = 
               <Monitor className="h-8 w-8 text-muted-foreground/40" />
               <p className="text-sm font-medium">Start tracking from the desktop app</p>
               <p className="text-xs text-muted-foreground">
-                Open the DocuFlow Desktop Agent, select a project and task, then click Start Timer.
+                Open the DocuFlow Desktop Agent, select a project and task, and start tracking there.
               </p>
             </div>
           )}
