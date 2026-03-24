@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,15 +14,28 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Clock, Calendar, TrendingUp, Timer, Filter, X, ChevronDown, ChevronRight, LayoutList, Table2, Monitor, ImageIcon, Play, Pause, Square, ChevronLeft } from "lucide-react";
+import { Clock, Calendar, TrendingUp, Timer, Filter, X, ChevronDown, ChevronRight, LayoutList, Table2, Monitor, ImageIcon, Play, Pause, Square, ChevronLeft, Download, Check } from "lucide-react";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, parseISO } from "date-fns";
 import type { TimeEntry, CrmProjectWithDetails, User } from "@shared/schema";
 
 function formatDuration(seconds: number): string {
@@ -48,7 +62,7 @@ function formatDetailedDuration(seconds: number): string {
   return `${secs}s`;
 }
 
-type DateFilter = "today" | "week" | "month" | "all";
+type DateFilter = "today" | "week" | "month" | "all" | "day" | "custom";
 
 type ViewMode = "grouped" | "table";
 type PageTab = "entries" | "screenshots";
@@ -74,6 +88,18 @@ export default function TimeTrackingPage() {
   const [screenshotDateFilter, setScreenshotDateFilter] = useState<DateFilter>("week");
   const [screenshotPage, setScreenshotPage] = useState(1);
   const SCREENSHOT_PAGE_SIZE = 24;
+  const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<Set<string>>(new Set());
+  const [userFilterOpen, setUserFilterOpen] = useState(false);
+  const [isDownloadingBatch, setIsDownloadingBatch] = useState(false);
+  const today = format(new Date(), "yyyy-MM-dd");
+  const [customDayDate, setCustomDayDate] = useState<string>(today);
+  const [customDateFrom, setCustomDateFrom] = useState<string>(
+    format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd")
+  );
+  const [customDateTo, setCustomDateTo] = useState<string>(today);
+
+  const { user: currentUser } = useAuth();
+  const isAdmin = currentUser?.role === "admin";
 
   // ─── Single Source of Truth: same context as Sidebar ───
   const {
@@ -142,8 +168,18 @@ export default function TimeTrackingPage() {
     if (screenshotDateFilter === "month") {
       return { start: startOfMonth(now), end: endOfMonth(now) };
     }
+    if (screenshotDateFilter === "day" && customDayDate) {
+      const start = parseISO(customDayDate); start.setHours(0, 0, 0, 0);
+      const end = parseISO(customDayDate); end.setHours(23, 59, 59, 999);
+      return { start, end };
+    }
+    if (screenshotDateFilter === "custom" && customDateFrom && customDateTo) {
+      const start = parseISO(customDateFrom); start.setHours(0, 0, 0, 0);
+      const end = parseISO(customDateTo); end.setHours(23, 59, 59, 999);
+      return { start, end };
+    }
     return null;
-  }, [screenshotDateFilter]);
+  }, [screenshotDateFilter, customDayDate, customDateFrom, customDateTo]);
 
   const screenshotQueryParams = useMemo(() => {
     const p = new URLSearchParams();
@@ -157,7 +193,7 @@ export default function TimeTrackingPage() {
   }, [projectFilter, userFilter, screenshotDateRange]);
 
   const { data: screenshotsData, isLoading: isLoadingScreenshots } = useQuery<{ data: Screenshot[] }>({
-    queryKey: ["/api/time-tracking/screenshots", projectFilter, userFilter, screenshotDateFilter],
+    queryKey: ["/api/time-tracking/screenshots", projectFilter, userFilter, screenshotDateFilter, customDayDate, customDateFrom, customDateTo],
     queryFn: () => fetch(`/api/time-tracking/screenshots?${screenshotQueryParams.toString()}`).then(r => r.json()),
     enabled: activeTab === "screenshots",
   });
@@ -273,6 +309,26 @@ export default function TimeTrackingPage() {
     screenshotPage * SCREENSHOT_PAGE_SIZE,
   );
 
+  const hourlyGroups = useMemo(() => {
+    const byHour: Record<string, { label: string; screenshots: Screenshot[] }> = {};
+    for (const s of paginatedScreenshots) {
+      const d = new Date(s.capturedAt);
+      const key = `${format(d, "yyyy-MM-dd")}_${d.getHours()}`;
+      if (!byHour[key]) {
+        byHour[key] = { label: format(d, "h a"), screenshots: [] };
+      }
+      byHour[key].screenshots.push(s);
+    }
+    return Object.entries(byHour)
+      .sort(([a], [b]) => {
+        const [da, ha] = a.split("_");
+        const [db, hb] = b.split("_");
+        if (da !== db) return db.localeCompare(da);
+        return parseInt(hb) - parseInt(ha);
+      })
+      .map(([, group]) => group);
+  }, [paginatedScreenshots]);
+
   const hasActiveScreenshotFilters = screenshotDateFilter !== "week" || projectFilter !== "all" || userFilter !== "all";
 
   const clearScreenshotFilters = () => {
@@ -280,7 +336,41 @@ export default function TimeTrackingPage() {
     setProjectFilter("all");
     setUserFilter("all");
     setScreenshotPage(1);
+    setSelectedScreenshotIds(new Set());
   };
+
+  // Reset selection when filters or tab change
+  useEffect(() => {
+    setSelectedScreenshotIds(new Set());
+  }, [screenshotDateFilter, projectFilter, userFilter, customDayDate, customDateFrom, customDateTo, activeTab]);
+
+  async function downloadScreenshot(id: string, capturedAt: string) {
+    try {
+      const res = await fetch(`/api/time-tracking/screenshots/${id}/image`, { credentials: "include" });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `screenshot-${format(new Date(capturedAt), "yyyy-MM-dd_HH-mm-ss")}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Download failed", e);
+    }
+  }
+
+  async function downloadSelectedScreenshots() {
+    setIsDownloadingBatch(true);
+    const toDownload = allScreenshots.filter((s) => selectedScreenshotIds.has(s.id));
+    for (const s of toDownload) {
+      await downloadScreenshot(s.id, s.capturedAt);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    setIsDownloadingBatch(false);
+  }
 
   const getProjectName = (projectId: string) => {
     const project = projects.find((p) => p.id === projectId);
@@ -705,12 +795,39 @@ export default function TimeTrackingPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="day">Day</SelectItem>
                     <SelectItem value="today">Today</SelectItem>
                     <SelectItem value="week">This Week</SelectItem>
                     <SelectItem value="month">This Month</SelectItem>
+                    <SelectItem value="custom">Custom Range</SelectItem>
                     <SelectItem value="all">All Time</SelectItem>
                   </SelectContent>
                 </Select>
+                {screenshotDateFilter === "day" && (
+                  <Input
+                    type="date"
+                    className="h-9 w-36"
+                    value={customDayDate}
+                    onChange={(e) => { setCustomDayDate(e.target.value); setScreenshotPage(1); }}
+                  />
+                )}
+                {screenshotDateFilter === "custom" && (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="date"
+                      className="h-9 w-36"
+                      value={customDateFrom}
+                      onChange={(e) => { setCustomDateFrom(e.target.value); setScreenshotPage(1); }}
+                    />
+                    <span className="text-xs text-muted-foreground">to</span>
+                    <Input
+                      type="date"
+                      className="h-9 w-36"
+                      value={customDateTo}
+                      onChange={(e) => { setCustomDateTo(e.target.value); setScreenshotPage(1); }}
+                    />
+                  </div>
+                )}
 
                 <Select value={projectFilter} onValueChange={(v) => { setProjectFilter(v); setScreenshotPage(1); }}>
                   <SelectTrigger className="w-40" data-testid="select-screenshot-project-filter">
@@ -726,31 +843,58 @@ export default function TimeTrackingPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={userFilter} onValueChange={(v) => { setUserFilter(v); setScreenshotPage(1); }}>
-                  <SelectTrigger className="w-40" data-testid="select-screenshot-user-filter">
-                    <SelectValue placeholder="All Users" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Users</SelectItem>
-                    {users.map((user) => {
-                      const name = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
-                      const initials = [user.firstName, user.lastName]
-                        .filter(Boolean)
-                        .map((n) => n![0].toUpperCase())
-                        .join("") || user.email[0].toUpperCase();
-                      return (
-                        <SelectItem key={user.id} value={user.id}>
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium">
-                              {initials}
-                            </span>
-                            {name}
-                          </div>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+                {isAdmin && (
+                  <Popover open={userFilterOpen} onOpenChange={setUserFilterOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-40 justify-between font-normal"
+                        data-testid="select-screenshot-user-filter"
+                      >
+                        <span className="truncate">
+                          {userFilter === "all" ? "All Users" : getUserName(userFilter)}
+                        </span>
+                        <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-1" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-52 p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search users…" />
+                        <CommandEmpty>No users found</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value="all"
+                            onSelect={() => { setUserFilter("all"); setScreenshotPage(1); setUserFilterOpen(false); }}
+                          >
+                            <Check className={`mr-2 h-4 w-4 shrink-0 ${userFilter === "all" ? "opacity-100" : "opacity-0"}`} />
+                            All Users
+                          </CommandItem>
+                          {users.map((u) => {
+                            const name = `${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email;
+                            const initials = [u.firstName, u.lastName]
+                              .filter(Boolean)
+                              .map((n) => n![0].toUpperCase())
+                              .join("") || u.email[0].toUpperCase();
+                            return (
+                              <CommandItem
+                                key={u.id}
+                                value={name}
+                                onSelect={() => { setUserFilter(u.id); setScreenshotPage(1); setUserFilterOpen(false); }}
+                              >
+                                <Check className={`mr-2 h-4 w-4 shrink-0 ${userFilter === u.id ? "opacity-100" : "opacity-0"}`} />
+                                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium mr-1.5">
+                                  {initials}
+                                </span>
+                                <span className="truncate">{name}</span>
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                )}
 
                 {hasActiveScreenshotFilters && (
                   <Button variant="ghost" size="sm" onClick={clearScreenshotFilters} className="gap-1">
@@ -770,7 +914,17 @@ export default function TimeTrackingPage() {
                     : `${allScreenshots.length} screenshot${allScreenshots.length === 1 ? "" : "s"}`}
                   {screenshotDateFilter !== "all" && (
                     <span className="ml-1">
-                      · {screenshotDateFilter === "today" ? "today" : screenshotDateFilter === "week" ? "this week" : "this month"}
+                      · {screenshotDateFilter === "today"
+                        ? "today"
+                        : screenshotDateFilter === "week"
+                        ? "this week"
+                        : screenshotDateFilter === "month"
+                        ? "this month"
+                        : screenshotDateFilter === "day"
+                        ? customDayDate
+                        : screenshotDateFilter === "custom"
+                        ? `${customDateFrom} – ${customDateTo}`
+                        : ""}
                     </span>
                   )}
                 </span>
@@ -802,38 +956,107 @@ export default function TimeTrackingPage() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {paginatedScreenshots.map((screenshot) => {
-                    const project = projects.find(p => p.id === screenshot.crmProjectId);
-                    return (
-                      <div
-                        key={screenshot.id}
-                        className="group relative rounded-lg border overflow-visible hover-elevate cursor-pointer"
-                        onClick={() => setSelectedScreenshot(screenshot)}
-                        data-testid={`screenshot-${screenshot.id}`}
-                      >
-                        <div className="aspect-video bg-muted overflow-hidden rounded-t-lg">
-                          <img
-                            src={`/api/time-tracking/screenshots/${screenshot.id}/image`}
-                            alt={`Screenshot at ${format(new Date(screenshot.capturedAt), "h:mm a")}`}
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                        </div>
-                        <div className="p-2 space-y-0.5">
-                          <div className="text-xs font-medium truncate">
-                            {project?.project?.name || "Unknown Project"}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {format(new Date(screenshot.capturedAt), "MMM d, h:mm a")}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {getUserName(screenshot.userId)}
-                          </div>
-                        </div>
+                {/* Multi-select toolbar */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={
+                        paginatedScreenshots.length > 0 &&
+                        paginatedScreenshots.every((s) => selectedScreenshotIds.has(s.id))
+                          ? true
+                          : paginatedScreenshots.some((s) => selectedScreenshotIds.has(s.id))
+                          ? "indeterminate"
+                          : false
+                      }
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedScreenshotIds(new Set(paginatedScreenshots.map((s) => s.id)));
+                        } else {
+                          setSelectedScreenshotIds(new Set());
+                        }
+                      }}
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      {selectedScreenshotIds.size > 0
+                        ? `${selectedScreenshotIds.size} selected`
+                        : "Select all"}
+                    </span>
+                  </div>
+                  {selectedScreenshotIds.size > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={downloadSelectedScreenshots}
+                      disabled={isDownloadingBatch}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download{selectedScreenshotIds.size > 1 ? ` (${selectedScreenshotIds.size})` : ""}
+                    </Button>
+                  )}
+                </div>
+
+                {/* Hourly groups */}
+                <div className="space-y-6">
+                  {hourlyGroups.map((group) => (
+                    <div key={group.label}>
+                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 pb-1 border-b">
+                        {group.label}
                       </div>
-                    );
-                  })}
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {group.screenshots.map((screenshot) => {
+                          const project = projects.find((p) => p.id === screenshot.crmProjectId);
+                          const isSelected = selectedScreenshotIds.has(screenshot.id);
+                          return (
+                            <div
+                              key={screenshot.id}
+                              className={`group relative rounded-lg border overflow-visible hover-elevate cursor-pointer ${isSelected ? "ring-2 ring-primary" : ""}`}
+                              onClick={() => setSelectedScreenshot(screenshot)}
+                              data-testid={`screenshot-${screenshot.id}`}
+                            >
+                              {/* Checkbox overlay */}
+                              <div
+                                className="absolute top-2 left-2 z-10"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedScreenshotIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(screenshot.id)) next.delete(screenshot.id);
+                                    else next.add(screenshot.id);
+                                    return next;
+                                  });
+                                }}
+                              >
+                                <Checkbox
+                                  checked={isSelected}
+                                  className="bg-white/90 border-gray-300 shadow-sm"
+                                />
+                              </div>
+                              <div className="aspect-video bg-muted overflow-hidden rounded-t-lg">
+                                <img
+                                  src={`/api/time-tracking/screenshots/${screenshot.id}/image`}
+                                  alt={`Screenshot at ${format(new Date(screenshot.capturedAt), "h:mm a")}`}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                              </div>
+                              <div className="p-2 space-y-0.5">
+                                <div className="text-xs font-medium truncate">
+                                  {project?.project?.name || "Unknown Project"}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {format(new Date(screenshot.capturedAt), "MMM d, h:mm a")}
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {getUserName(screenshot.userId)}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 {screenshotTotalPages > 1 && (
@@ -888,10 +1111,21 @@ export default function TimeTrackingPage() {
                   className="w-full h-auto"
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                <span>{format(new Date(selectedScreenshot.capturedAt), "MMMM d, yyyy 'at' h:mm:ss a")}</span>
-                <span>{getUserName(selectedScreenshot.userId)}</span>
-                <span>{projects.find(p => p.id === selectedScreenshot.crmProjectId)?.project?.name || "Unknown Project"}</span>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                  <span>{format(new Date(selectedScreenshot.capturedAt), "MMMM d, yyyy 'at' h:mm:ss a")}</span>
+                  <span>{getUserName(selectedScreenshot.userId)}</span>
+                  <span>{projects.find(p => p.id === selectedScreenshot.crmProjectId)?.project?.name || "Unknown Project"}</span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 shrink-0"
+                  onClick={() => downloadScreenshot(selectedScreenshot.id, selectedScreenshot.capturedAt)}
+                >
+                  <Download className="h-4 w-4" />
+                  Download
+                </Button>
               </div>
             </div>
           )}
