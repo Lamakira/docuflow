@@ -77,7 +77,7 @@ export default function TimeTrackingDownloadPage() {
                   </div>
                   <div>
                     <CardTitle className="text-base">macOS</CardTitle>
-                    <CardDescription className="text-xs">macOS 12+ (x64)</CardDescription>
+                    <CardDescription className="text-xs">macOS 12+ (Apple Silicon / Intel)</CardDescription>
                   </div>
                 </div>
                 <Badge className="bg-orange-500/15 text-orange-700 dark:text-orange-400 border-0 text-xs">
