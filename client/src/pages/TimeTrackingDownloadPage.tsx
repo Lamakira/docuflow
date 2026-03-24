@@ -6,11 +6,11 @@ import { Download, Monitor, Apple, Terminal } from "lucide-react";
 
 const AGENT_VERSION = "v0.1.4";
 
-// GitHub Release: desktop-agent-v0.1.4.1
+// GitHub Release: desktop-agent-v0.1.4.2
 // All artifacts live under the same tag — publish them together.
-const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.1/DocuFlow-Agent-0.1.4-windows-setup.exe";
-const DOWNLOAD_URL_MACOS   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.1/DocuFlow-Agent-0.1.4-macos.dmg";
-const DOWNLOAD_URL_LINUX   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.1/DocuFlow-Agent-0.1.4-linux-amd64.deb";
+const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.2/DocuFlow-Agent-0.1.4-windows-setup.exe";
+const DOWNLOAD_URL_MACOS   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.2/DocuFlow-Agent-0.1.4-macos.dmg";
+const DOWNLOAD_URL_LINUX   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.2/DocuFlow-Agent-0.1.4-linux-amd64.deb";
 
 export default function TimeTrackingDownloadPage() {
   return (
