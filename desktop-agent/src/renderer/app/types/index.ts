@@ -14,8 +14,9 @@ export type TimerStatus = 'running' | 'paused' | 'stopped';
 
 export interface TimerState {
   status: TimerStatus;
-  elapsed: number;     // seconds for the current entry (session-derived + server base)
-  workedToday: number; // seconds across all tasks today (session-derived)
+  elapsed: number;      // total entry elapsed (unclamped) — for server reconciliation
+  elapsedToday: number; // entry elapsed clamped to current local day — use this for UI display
+  workedToday: number;  // all tasks today, clamped to current local day
   entryId: string | null;
   taskId: string | null;
   projectName: string | null;

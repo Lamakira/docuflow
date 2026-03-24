@@ -378,14 +378,14 @@ export class AgentStore {
   }
 
   /**
-   * Elapsed seconds for the current entry.
+   * Elapsed seconds for the current entry (total, unclamped).
    *
    * = entryServerBase (server-accumulated before first desktop session)
-   * + sum of local sessions for activeEntryId
+   * + sum of ALL local sessions for activeEntryId
    *
-   * entryServerBase is non-zero only when the entry was started on another
-   * device and we have no local sessions yet. Once local sessions accumulate
-   * they provide the authoritative running total.
+   * NOT clamped to the current day. Useful for server reconciliation
+   * and historical context, but should NOT be used for day-boundary UI.
+   * Use getElapsedTodaySeconds() for the header and task row display.
    */
   getElapsedSeconds(now = Date.now()): number {
     const entryId = this.data.activeEntryId;
@@ -398,6 +398,48 @@ export class AgentStore {
         return acc + Math.max(0, end - start);
       }, 0);
     return (this.data.entryServerBase ?? 0) + Math.floor(sessionMs / 1000);
+  }
+
+  /**
+   * Elapsed seconds for the current entry, clamped to the current local day.
+   *
+   * = entryServerBase (only if the entry started today — first local session ≥ midnight)
+   * + sum of local sessions for activeEntryId, clamped to [local midnight, now]
+   *
+   * After midnight, a cross-day entry will show only the time accumulated
+   * since midnight. entryServerBase is excluded for cross-day entries because
+   * it was seeded from yesterday's accumulated task history.
+   *
+   * This is the authoritative value for the header and active task row.
+   */
+  getElapsedTodaySeconds(now = Date.now()): number {
+    const entryId = this.data.activeEntryId;
+    if (!entryId) return 0;
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const midnight = todayStart.getTime();
+
+    const entrySessions = this.data.sessions.filter((s) => s.entryId === entryId);
+
+    // entryServerBase is today-scoped only when the entry's first local session
+    // started today. For entries that span midnight, the base was seeded yesterday
+    // and must not pollute the new day's display.
+    const entryStartedToday =
+      entrySessions.length > 0 &&
+      new Date(entrySessions[0].startTime).getTime() >= midnight;
+    const base = entryStartedToday ? (this.data.entryServerBase ?? 0) : 0;
+
+    const sessionMs = entrySessions.reduce((acc, s) => {
+      const start = new Date(s.startTime).getTime();
+      const end = s.endTime ? new Date(s.endTime).getTime() : now;
+      const cStart = Math.max(start, midnight);
+      const cEnd = Math.min(end, now);
+      if (cEnd <= cStart) return acc;
+      return acc + (cEnd - cStart);
+    }, 0);
+
+    return base + Math.floor(sessionMs / 1000);
   }
 
   /**
@@ -430,6 +472,7 @@ export class AgentStore {
     entryId: string | null;
     taskId: string | null;
     elapsed: number;
+    elapsedToday: number;
     workedToday: number;
     projectName: string | null;
     taskName: string | null;
@@ -440,6 +483,7 @@ export class AgentStore {
       entryId: this.data.activeEntryId,
       taskId: this.data.activeTaskId,
       elapsed: this.getElapsedSeconds(),
+      elapsedToday: this.getElapsedTodaySeconds(),
       workedToday: this.getWorkedTodaySeconds(),
       projectName: this.data.activeProjectName,
       taskName: this.data.activeTaskName,
