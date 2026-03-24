@@ -91,6 +91,7 @@ let activityWorker: ActivityWorker | null = null;
 let syncWorker: SyncWorker | null = null;
 let screenshotWorker: ScreenCaptureWorker | null = null;
 let resyncInterval: ReturnType<typeof setInterval> | null = null;
+let workedTodayInterval: ReturnType<typeof setInterval> | null = null;
 
 // ─── Window ───
 
@@ -296,6 +297,13 @@ function startWorkers(): void {
   }
 
   startResyncPolling();
+
+  // Refresh worked-today server base every 60s so multi-device entries are reflected.
+  workedTodayInterval = setInterval(async () => {
+    await refreshWorkedTodayServerBase();
+    pushStateToRenderer();
+  }, 60_000);
+
   console.log(`[Main] Workers started (screenshots: ${SCREENSHOTS_ENABLED})`);
 }
 
@@ -305,6 +313,10 @@ function stopWorkers(): void {
   syncWorker?.stop();
   screenshotWorker?.stop();
   stopResyncPolling();
+  if (workedTodayInterval) {
+    clearInterval(workedTodayInterval);
+    workedTodayInterval = null;
+  }
   heartbeatWorker = null;
   activityWorker = null;
   syncWorker = null;
@@ -363,6 +375,17 @@ function applyServerTimerSync(
       : null
   );
   pushStateToRenderer();
+}
+
+/** Fetch server's stopped-entries total for today and cache in store. Non-fatal on error. */
+async function refreshWorkedTodayServerBase(): Promise<void> {
+  if (!store.isPaired()) return;
+  try {
+    const total = await apiClient.getWorkedToday();
+    store.setWorkedTodayServerBase(total);
+  } catch (err: any) {
+    console.warn(`[Main] worked-today refresh failed: ${err.message}`);
+  }
 }
 
 /** Fetch active entry from server and reconcile local state. */
@@ -520,6 +543,8 @@ ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskN
       taskAccumulatedToday,
     );
     console.log(`[Main] timer.start — entry=${entry.id} project="${projectName || ""}" task="${taskName || ""}"`);
+    // Refresh server base so workedToday reflects any just-stopped predecessor entries.
+    await refreshWorkedTodayServerBase();
     pushStateToRenderer();
     return { ok: true, entry };
   } catch (error: any) {
@@ -580,6 +605,8 @@ ipcMain.handle("agent:timer-stop", async () => {
     const entry = await apiClient.stopTimer(entryId);
     store.clearTimer();
     console.log(`[Main] timer.stop — entry=${entryId}`);
+    // Refresh server base now that the entry is stopped — it will appear in the server total.
+    await refreshWorkedTodayServerBase();
     pushStateToRenderer();
     return { ok: true, entry };
   } catch (error: any) {
@@ -604,7 +631,6 @@ ipcMain.handle("widget:dismiss", () => {
 });
 
 ipcMain.handle("agent:get-worked-today", () => {
-  // Sessions are the source of truth — no server round-trip needed.
   return { ok: true, total: store.getWorkedTodaySeconds() };
 });
 
@@ -645,6 +671,7 @@ app.whenReady().then(() => {
     // If the device was revoked while offline, ensureAccessToken fires onRevoke
     // (handleDeviceRevoked) which clears session and pushes unpaired state.
     syncTimerFromServer()
+      .then(() => refreshWorkedTodayServerBase())
       .then(() => {
         console.log("[Main] session.restore.success");
       })

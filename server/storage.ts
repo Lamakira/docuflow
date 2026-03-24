@@ -2162,15 +2162,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Time Tracking methods
-  async getTimeEntries(options: { 
-    userId?: string; 
-    crmProjectId?: string; 
-    startDate?: Date; 
+  async getTimeEntries(options: {
+    userId?: string;
+    crmProjectId?: string;
+    startDate?: Date;
     endDate?: Date;
+    /** Filter: endTime >= value. Use for overlap queries (e.g. cross-midnight entries). */
+    endDateGte?: Date;
     status?: string;
   }): Promise<TimeEntryWithDetails[]> {
     const conditions = [];
-    
+
     if (options.userId) {
       conditions.push(eq(timeEntries.userId, options.userId));
     }
@@ -2185,6 +2187,9 @@ export class DatabaseStorage implements IStorage {
     }
     if (options.endDate) {
       conditions.push(sql`${timeEntries.startTime} <= ${options.endDate}`);
+    }
+    if (options.endDateGte) {
+      conditions.push(sql`${timeEntries.endTime} >= ${options.endDateGte}`);
     }
     
     const entries = await db
@@ -2332,31 +2337,53 @@ export class DatabaseStorage implements IStorage {
     byProject: Array<{ crmProjectId: string; projectName: string; totalDuration: number }>;
     byUser: Array<{ userId: string; userName: string; totalDuration: number }>;
   }> {
+    // Use overlap filter: startTime <= endDate AND endTime >= startDate.
+    // This correctly includes cross-midnight entries (started before window, stopped within window).
     const entries = await this.getTimeEntries({
-      ...options,
+      userId: options.userId,
+      crmProjectId: options.crmProjectId,
+      endDate: options.endDate,           // startTime <= endDate
+      endDateGte: options.startDate,      // endTime   >= startDate
       status: "stopped",
     });
-    
-    const totalDuration = entries.reduce((sum, e) => sum + (e.duration || 0), 0);
+
+    // For entries that started before the window (cross-midnight), attribute only the
+    // portion of entry.duration that falls within [startDate, endDate] using proportional
+    // estimation. For entries fully within the window, use entry.duration as-is.
+    const clamp = (e: { startTime: Date | string; endTime: Date | string | null; duration: number | null }): number => {
+      if (!options.startDate || !options.endDate || !e.endTime) return e.duration || 0;
+      const eStart = new Date(e.startTime).getTime();
+      const wStart = options.startDate.getTime();
+      if (eStart >= wStart) return e.duration || 0; // started within window — use as-is
+      const eEnd = new Date(e.endTime).getTime();
+      const wEnd = options.endDate.getTime();
+      const totalMs = eEnd - eStart;
+      if (totalMs <= 0) return 0;
+      const inWindowMs = Math.min(eEnd, wEnd) - wStart;
+      if (inWindowMs <= 0) return 0;
+      return Math.round((e.duration || 0) * inWindowMs / totalMs);
+    };
+
+    const totalDuration = entries.reduce((sum, e) => sum + clamp(e), 0);
     const totalIdleTime = entries.reduce((sum, e) => sum + (e.idleTime || 0), 0);
-    
+
     // Group by project
     const projectMap = new Map<string, { projectName: string; totalDuration: number }>();
     for (const entry of entries) {
       const projectId = entry.crmProjectId;
       const projectName = entry.crmProject?.project?.name || "Unknown Project";
       const existing = projectMap.get(projectId) || { projectName, totalDuration: 0 };
-      existing.totalDuration += entry.duration || 0;
+      existing.totalDuration += clamp(entry);
       projectMap.set(projectId, existing);
     }
-    
+
     // Group by user
     const userMap = new Map<string, { userName: string; totalDuration: number }>();
     for (const entry of entries) {
       const userId = entry.userId;
       const userName = entry.user ? `${entry.user.firstName || ""} ${entry.user.lastName || ""}`.trim() || entry.user.email : "Unknown User";
       const existing = userMap.get(userId) || { userName, totalDuration: 0 };
-      existing.totalDuration += entry.duration || 0;
+      existing.totalDuration += clamp(entry);
       userMap.set(userId, existing);
     }
     

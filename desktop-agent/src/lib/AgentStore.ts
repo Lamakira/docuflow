@@ -48,6 +48,9 @@ interface RuntimeState {
   activeDescription: string | null;
   timerStatus: "stopped" | "running" | "paused";
   clientVersion: string;
+  /** Server's totalDuration for all STOPPED entries today (all devices). Runtime-only.
+   *  getWorkedTodaySeconds() = workedTodayServerBase + getElapsedTodaySeconds() */
+  workedTodayServerBase: number;
 }
 
 const CONFIG_FILENAME = "agent-config.json";
@@ -66,6 +69,7 @@ export class AgentStore {
       activeDescription: null,
       timerStatus: "stopped",
       clientVersion: "0.1.0",
+      workedTodayServerBase: 0,
     };
   }
 
@@ -443,25 +447,19 @@ export class AgentStore {
   }
 
   /**
-   * Total seconds worked today (all tasks, all entries).
-   * Clamps each session to [local midnight, now].
-   * Correctly handles sessions that started before midnight.
+   * Total seconds worked today (all tasks, all devices).
+   * = server's stopped-entries total (set via setWorkedTodayServerBase)
+   * + active entry's today-elapsed (getElapsedTodaySeconds, 0 when stopped).
+   *
+   * The server base is refreshed on startup, after timer start/stop, and every 60s.
    */
-  getWorkedTodaySeconds(now = Date.now()): number {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const midnight = todayStart.getTime();
+  getWorkedTodaySeconds(): number {
+    return this.runtime.workedTodayServerBase + this.getElapsedTodaySeconds();
+  }
 
-    return Math.floor(
-      this.data.sessions.reduce((acc, s) => {
-        const start = new Date(s.startTime).getTime();
-        const end = s.endTime ? new Date(s.endTime).getTime() : now;
-        const cStart = Math.max(start, midnight);
-        const cEnd = Math.min(end, now);
-        if (cEnd <= cStart) return acc;
-        return acc + (cEnd - cStart);
-      }, 0) / 1000
-    );
+  /** Called by main process after fetching /api/agent/worked-today from server. */
+  setWorkedTodayServerBase(seconds: number): void {
+    this.runtime.workedTodayServerBase = seconds;
   }
 
   /**
