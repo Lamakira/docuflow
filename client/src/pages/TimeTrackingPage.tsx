@@ -75,6 +75,8 @@ interface Screenshot {
   storageKey: string;
   capturedAt: string;
   createdAt: string;
+  entryDuration: number | null;
+  entryIdleTime: number | null;
 }
 
 export default function TimeTrackingPage() {
@@ -91,6 +93,7 @@ export default function TimeTrackingPage() {
   const [selectedScreenshotIds, setSelectedScreenshotIds] = useState<Set<string>>(new Set());
   const [userFilterOpen, setUserFilterOpen] = useState(false);
   const [isDownloadingBatch, setIsDownloadingBatch] = useState(false);
+  const [lowActivityFilter, setLowActivityFilter] = useState(false);
   const today = format(new Date(), "yyyy-MM-dd");
   const [customDayDate, setCustomDayDate] = useState<string>(today);
   const [customDateFrom, setCustomDateFrom] = useState<string>(
@@ -303,8 +306,20 @@ export default function TimeTrackingPage() {
   }, [filteredEntries, projects]);
 
   const allScreenshots = screenshotsData?.data ?? [];
-  const screenshotTotalPages = Math.max(1, Math.ceil(allScreenshots.length / SCREENSHOT_PAGE_SIZE));
-  const paginatedScreenshots = allScreenshots.slice(
+
+  // Low-activity filter: idle > 50% of total tracked time for the entry
+  const filteredScreenshots = useMemo(() => {
+    if (!lowActivityFilter) return allScreenshots;
+    return allScreenshots.filter((s) => {
+      const dur = s.entryDuration ?? 0;
+      const idle = s.entryIdleTime ?? 0;
+      const total = dur + idle;
+      return total > 0 && idle / total > 0.5;
+    });
+  }, [allScreenshots, lowActivityFilter]);
+
+  const screenshotTotalPages = Math.max(1, Math.ceil(filteredScreenshots.length / SCREENSHOT_PAGE_SIZE));
+  const paginatedScreenshots = filteredScreenshots.slice(
     (screenshotPage - 1) * SCREENSHOT_PAGE_SIZE,
     screenshotPage * SCREENSHOT_PAGE_SIZE,
   );
@@ -334,12 +349,13 @@ export default function TimeTrackingPage() {
       .map(([, group]) => group);
   }, [paginatedScreenshots]);
 
-  const hasActiveScreenshotFilters = screenshotDateFilter !== "week" || projectFilter !== "all" || userFilter !== "all";
+  const hasActiveScreenshotFilters = screenshotDateFilter !== "week" || projectFilter !== "all" || userFilter !== "all" || lowActivityFilter;
 
   const clearScreenshotFilters = () => {
     setScreenshotDateFilter("week");
     setProjectFilter("all");
     setUserFilter("all");
+    setLowActivityFilter(false);
     setScreenshotPage(1);
     setSelectedScreenshotIds(new Set());
   };
@@ -347,7 +363,7 @@ export default function TimeTrackingPage() {
   // Reset selection when filters or tab change
   useEffect(() => {
     setSelectedScreenshotIds(new Set());
-  }, [screenshotDateFilter, projectFilter, userFilter, customDayDate, customDateFrom, customDateTo, activeTab]);
+  }, [screenshotDateFilter, projectFilter, userFilter, customDayDate, customDateFrom, customDateTo, activeTab, lowActivityFilter]);
 
   async function downloadScreenshot(id: string, capturedAt: string) {
     try {
@@ -369,7 +385,7 @@ export default function TimeTrackingPage() {
 
   async function downloadSelectedScreenshots() {
     setIsDownloadingBatch(true);
-    const toDownload = allScreenshots.filter((s) => selectedScreenshotIds.has(s.id));
+    const toDownload = filteredScreenshots.filter((s) => selectedScreenshotIds.has(s.id));
     for (const s of toDownload) {
       await downloadScreenshot(s.id, s.capturedAt);
       await new Promise((r) => setTimeout(r, 200));
@@ -914,6 +930,17 @@ export default function TimeTrackingPage() {
                   </Popover>
                 )}
 
+                <Button
+                  variant={lowActivityFilter ? "default" : "outline"}
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => { setLowActivityFilter((v) => !v); setScreenshotPage(1); }}
+                  title="Show only screenshots from sessions where idle time exceeded 50% of total time"
+                >
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  Low Activity
+                </Button>
+
                 {hasActiveScreenshotFilters && (
                   <Button variant="ghost" size="sm" onClick={clearScreenshotFilters} className="gap-1">
                     <X className="h-3 w-3" />
@@ -927,9 +954,9 @@ export default function TimeTrackingPage() {
               <div className="flex items-center gap-2 text-sm text-muted-foreground pt-1">
                 <ImageIcon className="h-3.5 w-3.5" />
                 <span>
-                  {allScreenshots.length === 0
+                  {filteredScreenshots.length === 0
                     ? "No screenshots"
-                    : `${allScreenshots.length} screenshot${allScreenshots.length === 1 ? "" : "s"}`}
+                    : `${filteredScreenshots.length} screenshot${filteredScreenshots.length === 1 ? "" : "s"}`}
                   {screenshotDateFilter !== "all" && (
                     <span className="ml-1">
                       · {screenshotDateFilter === "today"
@@ -957,7 +984,7 @@ export default function TimeTrackingPage() {
                   <Skeleton key={i} className="aspect-video rounded-lg" />
                 ))}
               </div>
-            ) : allScreenshots.length === 0 ? (
+            ) : filteredScreenshots.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <ImageIcon className="h-12 w-12 mx-auto mb-4 opacity-20" />
                 <p>{hasActiveScreenshotFilters ? "No screenshots match your filters" : "No screenshots captured yet"}</p>
@@ -1063,8 +1090,26 @@ export default function TimeTrackingPage() {
                                 />
                               </div>
                               <div className="p-2 space-y-0.5">
-                                <div className="text-xs font-medium truncate">
-                                  {project?.project?.name || "Unknown Project"}
+                                <div className="flex items-center justify-between gap-1">
+                                  <div className="text-xs font-medium truncate">
+                                    {project?.project?.name || "Unknown Project"}
+                                  </div>
+                                  {(() => {
+                                    const dur = screenshot.entryDuration ?? 0;
+                                    const idle = screenshot.entryIdleTime ?? 0;
+                                    const total = dur + idle;
+                                    if (total === 0) return null;
+                                    const idlePct = Math.round((idle / total) * 100);
+                                    if (idlePct < 20) return null;
+                                    return (
+                                      <span
+                                        className={`shrink-0 text-[10px] px-1 rounded font-medium ${idlePct > 50 ? "bg-orange-500/15 text-orange-700 dark:text-orange-400" : "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400"}`}
+                                        title={`${idlePct}% idle in this session`}
+                                      >
+                                        {idlePct}% idle
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                   {format(new Date(screenshot.capturedAt), "MMM d, h:mm a")}
@@ -1085,7 +1130,7 @@ export default function TimeTrackingPage() {
                 {screenshotTotalPages > 1 && (
                   <div className="flex items-center justify-between pt-4 border-t mt-4">
                     <p className="text-sm text-muted-foreground">
-                      Page {screenshotPage} of {screenshotTotalPages} · showing {(screenshotPage - 1) * SCREENSHOT_PAGE_SIZE + 1}–{Math.min(screenshotPage * SCREENSHOT_PAGE_SIZE, allScreenshots.length)} of {allScreenshots.length}
+                      Page {screenshotPage} of {screenshotTotalPages} · showing {(screenshotPage - 1) * SCREENSHOT_PAGE_SIZE + 1}–{Math.min(screenshotPage * SCREENSHOT_PAGE_SIZE, filteredScreenshots.length)} of {filteredScreenshots.length}
                     </p>
                     <div className="flex items-center gap-1">
                       <Button

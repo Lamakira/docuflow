@@ -4114,7 +4114,20 @@ Instructions:
       }
 
       const { data, total } = await storage.getTimeEntryScreenshots(filters);
-      res.json({ data, total, limit, offset });
+
+      // Enrich each screenshot with its time entry's duration/idleTime for activity filtering
+      const uniqueEntryIds = [...new Set(data.map((s) => s.timeEntryId))];
+      const entryRows = await storage.getTimeEntriesByIds(uniqueEntryIds);
+      const entryMap: Record<string, { duration: number; idleTime: number }> = {};
+      for (const e of entryRows) entryMap[e.id] = { duration: e.duration, idleTime: e.idleTime };
+
+      const enriched = data.map((s) => ({
+        ...s,
+        entryDuration: entryMap[s.timeEntryId]?.duration ?? null,
+        entryIdleTime: entryMap[s.timeEntryId]?.idleTime ?? null,
+      }));
+
+      res.json({ data: enriched, total, limit, offset });
     } catch (error) {
       console.error("Error fetching screenshots:", error);
       res.status(500).json({ message: "Failed to fetch screenshots" });

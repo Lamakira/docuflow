@@ -284,6 +284,8 @@ export interface IStorage {
   getTaskDurationToday(userId: string, taskId: string, start: Date, end: Date): Promise<number>;
   /** Batch: today's stopped duration for multiple tasks — returns map taskId → seconds. */
   getTasksDurationToday(userId: string, taskIds: string[], start: Date, end: Date): Promise<Record<string, number>>;
+  /** Batch-fetch duration/idleTime for a set of time entry IDs (for screenshot enrichment). */
+  getTimeEntriesByIds(ids: string[]): Promise<Array<{ id: string; duration: number; idleTime: number }>>;
 
   // Time Entry Screenshots
   createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot>;
@@ -2404,6 +2406,15 @@ export class DatabaseStorage implements IStorage {
       ))
       .groupBy(timeEntries.taskId);
     return Object.fromEntries(rows.map((r) => [r.taskId, Number(r.total)]));
+  }
+
+  async getTimeEntriesByIds(ids: string[]): Promise<Array<{ id: string; duration: number; idleTime: number }>> {
+    if (ids.length === 0) return [];
+    const rows = await db
+      .select({ id: timeEntries.id, duration: timeEntries.duration, idleTime: timeEntries.idleTime })
+      .from(timeEntries)
+      .where(inArray(timeEntries.id, ids));
+    return rows.map((r) => ({ id: r.id, duration: r.duration ?? 0, idleTime: r.idleTime ?? 0 }));
   }
 
   async createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot> {
