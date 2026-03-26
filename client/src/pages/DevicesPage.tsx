@@ -40,10 +40,10 @@ import {
 } from "lucide-react";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 
-const AGENT_VERSION = "v0.1.4";
-const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.2/DocuFlow-Agent-0.1.4-windows-setup.exe";
-const DOWNLOAD_URL_MACOS   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.2/DocuFlow-Agent-0.1.4-macos.dmg";
-const DOWNLOAD_URL_LINUX   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.2/DocuFlow-Agent-0.1.4-linux-amd64.deb";
+const AGENT_VERSION = "v0.1.5";
+const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.5/DocuFlow-Agent-0.1.5-windows-setup.exe";
+const DOWNLOAD_URL_MACOS   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.5/DocuFlow-Agent-0.1.5-macos.dmg";
+const DOWNLOAD_URL_LINUX   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.5/DocuFlow-Agent-0.1.5-linux-amd64.deb";
 
 interface Device {
   id: string;
