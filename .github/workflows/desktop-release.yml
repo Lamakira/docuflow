@@ -38,9 +38,9 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -55,7 +55,7 @@ jobs:
         run: npm run dist:win
 
       - name: Upload artifact (always — for inspection)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: windows-installer
           path: desktop-agent/release/DocuFlow-Agent-*-windows-setup.exe
@@ -93,9 +93,9 @@ jobs:
   build-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -217,7 +217,7 @@ jobs:
         run: security delete-keychain "$KEYCHAIN_PATH"
 
       - name: Upload artifact (always — for inspection)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: macos-dmg
           path: desktop-agent/release/DocuFlow-Agent-*-macos.dmg
@@ -234,9 +234,9 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -251,7 +251,7 @@ jobs:
         run: npm run dist:ubuntu
 
       - name: Upload artifact (always — for inspection)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linux-deb
           path: desktop-agent/release/DocuFlow-Agent-*-linux-amd64.deb
