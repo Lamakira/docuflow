@@ -376,6 +376,16 @@ export function registerAgentRoutes(app: Express): void {
     try {
       const body = heartbeatSchema.parse(req.body);
 
+      // Check device revocation before doing anything else.
+      // isAgentAuthenticated only verifies JWT signature + expiry — it does NOT hit the DB.
+      // A valid JWT can survive up to 1h after an admin revokes the device.
+      // Returning 403 here makes the desktop detect revocation within one heartbeat cycle (≤30s)
+      // instead of waiting for JWT expiry. ApiClient handles 403 → onRevoke() → clearSession.
+      const device = await storage.getDevice(body.deviceId);
+      if (!device || device.revokedAt) {
+        return res.status(403).json({ message: "Device has been revoked" });
+      }
+
       // Update device lastSeenAt
       await storage.updateDeviceLastSeen(body.deviceId);
 

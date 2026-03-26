@@ -1,15 +1,25 @@
 /**
- * dist-mac.js — Build macOS .dmg.
+ * dist-mac.js — Build macOS .dmg (signed + notarized).
  *
- * Same pattern as dist-win.js:
+ * Pipeline:
  *   1. electron-forge package --platform darwin  → out/<AppName>-darwin-x64/
- *   2. electron-builder --mac dmg --prepackaged  → release/DocuFlow-Agent-{v}-macos.dmg
+ *   2. electron-builder --mac dmg --prepackaged  → signs app, notarizes, staples ticket
+ *                                                → release/DocuFlow-Agent-{v}-macos.dmg
  *
- * IMPORTANT: must run on macOS — DMG creation requires macOS hdiutil.
+ * IMPORTANT: must run on macOS — DMG creation and code signing require macOS.
  *
  * Code signing:
- *   Not configured. Without Apple Developer ID, Gatekeeper warns on first launch.
- *   Bypass: right-click → Open → Open (one-time).
+ *   Handled by electron-builder via the macOS Keychain.
+ *   Requires a "Developer ID Application" certificate installed in Keychain.
+ *   To override auto-detection: export CSC_NAME="Developer ID Application: Name (TEAMID)"
+ *
+ * Notarization (scripts/notarize.js afterSign hook):
+ *   Requires three env vars — set them before running this script:
+ *     export APPLE_ID="dev@yourcompany.com"
+ *     export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"   # from appleid.apple.com
+ *     export APPLE_TEAM_ID="XXXXXXXXXX"                          # from developer.apple.com
+ *
+ *   If these vars are absent, notarization is skipped (app will be blocked by Gatekeeper).
  *
  * Output: desktop-agent/release/DocuFlow-Agent-{version}-macos.dmg
  */
@@ -52,7 +62,7 @@ if (fs.existsSync(releaseDir)) {
 // ── Step 1: electron-forge package ───────────────────────────────────────────
 
 console.log("\n[dist-mac] Step 1: electron-forge package...\n");
-execSync("npx electron-forge package --platform darwin --arch x64", {
+execSync("npx electron-forge package --platform darwin --arch arm64", {
   cwd: ROOT,
   stdio: "inherit",
 });
@@ -62,7 +72,7 @@ execSync("npx electron-forge package --platform darwin --arch x64", {
 const outDir = path.join(ROOT, "out");
 const appFolderName = fs
   .readdirSync(outDir)
-  .find((name) => name.endsWith("-darwin-x64") && !name.startsWith("."));
+  .find((name) => name.endsWith("-darwin-arm64") && !name.startsWith("."));
 
 if (!appFolderName) {
   console.error("[dist-mac] ERROR: no packaged output found in out/");
@@ -99,4 +109,4 @@ artifacts.forEach((f) => {
 console.log("\n  Install on macOS:");
 console.log("  1. Open the .dmg");
 console.log("  2. Drag DocuFlow Agent.app to Applications");
-console.log("  3. First launch: right-click → Open (bypasses Gatekeeper)");
+console.log("  3. Double-click to launch (no Gatekeeper prompt if signed + notarized)");

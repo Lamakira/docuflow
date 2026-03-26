@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical } from "lucide-react";
+import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore } from "lucide-react";
 import type { SafeUser, CrmModule, CrmModuleField, CrmModuleWithFields, CrmFieldType, crmFieldTypeValues } from "@shared/schema";
 
 interface AdminUserDetails {
@@ -146,6 +146,7 @@ function UserManagementContent() {
   const [editForm, setEditForm] = useState<{ firstName: string; lastName: string; email: string; hoursPerDay: number }>({ firstName: "", lastName: "", email: "", hoursPerDay: 8 });
   const [copiedPassword, setCopiedPassword] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [showArchived, setShowArchived] = useState(false);
   const USERS_PER_PAGE = 10;
 
   const { data: users, isLoading: usersLoading } = useQuery<SafeUser[]>({
@@ -153,9 +154,26 @@ function UserManagementContent() {
     enabled: !!user && user.role === "admin",
   });
 
+  const archiveUserMutation = useMutation({
+    mutationFn: async ({ userId, isArchived }: { userId: string; isArchived: boolean }) => {
+      return await apiRequest("PATCH", `/api/admin/users/${userId}/archive`, { isArchived });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "User updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update user", description: error.message, variant: "destructive" });
+    },
+  });
+
   const sortedUsers = useMemo(() => {
     if (!users) return [];
-    return [...users].sort((a, b) => {
+    const filtered = showArchived ? users : users.filter((u) => !u.isArchived);
+    return [...filtered].sort((a, b) => {
+      // Archived users last
+      if (a.isArchived && !b.isArchived) return 1;
+      if (!a.isArchived && b.isArchived) return -1;
       // Current logged-in admin first
       if (a.id === user?.id) return -1;
       if (b.id === user?.id) return 1;
@@ -167,7 +185,7 @@ function UserManagementContent() {
       const nameB = `${b.firstName || ""} ${b.lastName || ""}`.toLowerCase();
       return nameA.localeCompare(nameB);
     });
-  }, [users, user?.id]);
+  }, [users, user?.id, showArchived]);
 
   const totalPages = Math.ceil((sortedUsers?.length || 0) / USERS_PER_PAGE);
   const paginatedUsers = useMemo(() => {
@@ -288,13 +306,27 @@ function UserManagementContent() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Users className="w-5 h-5" />
-          User Management
-        </CardTitle>
-        <CardDescription>
-          View and manage all users. Create new users, update their info, or reset their passwords.
-        </CardDescription>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              User Management
+            </CardTitle>
+            <CardDescription className="mt-1">
+              View and manage all users. Create new users, update their info, or reset their passwords.
+            </CardDescription>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 text-muted-foreground"
+            onClick={() => { setShowArchived((v) => !v); setCurrentPage(1); }}
+            data-testid="button-toggle-archived"
+          >
+            {showArchived ? <ArchiveRestore className="w-4 h-4 mr-1.5" /> : <Archive className="w-4 h-4 mr-1.5" />}
+            {showArchived ? "Hide archived" : "Show archived"}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
           {!paginatedUsers || paginatedUsers.length === 0 ? (
@@ -340,15 +372,16 @@ function UserManagementContent() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-4">
-                      <Avatar className="w-8 h-8">
+                      <Avatar className={`w-8 h-8 ${u.isArchived ? "opacity-40" : ""}`}>
                         <AvatarImage src={u.profileImageUrl || undefined} />
                         <AvatarFallback className="text-xs">
                           {u.firstName?.[0]}{u.lastName?.[0]}
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <div className="font-medium text-sm">
+                        <div className={`font-medium text-sm flex items-center gap-2 ${u.isArchived ? "text-muted-foreground" : ""}`}>
                           {u.firstName} {u.lastName}
+                          {u.isArchived && <Badge variant="secondary" className="text-[10px] py-0 px-1.5">Archived</Badge>}
                         </div>
                         <div className="text-xs text-muted-foreground flex items-center gap-1">
                           <Mail className="w-3 h-3" />
@@ -504,35 +537,49 @@ function UserManagementContent() {
                         )}
 
                         {u.id !== user?.id && !(u.isMainAdmin === 1 && user?.isMainAdmin !== 1) ? (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button 
-                                size="icon" 
-                                variant="ghost"
-                                disabled={deleteUserMutation.isPending}
-                                data-testid={`button-delete-${u.id}`}
-                              >
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete User</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete {u.firstName} {u.lastName}? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction 
-                                  onClick={() => deleteUserMutation.mutate(u.id)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              title={u.isArchived ? "Unarchive user" : "Archive user"}
+                              disabled={archiveUserMutation.isPending}
+                              onClick={() => archiveUserMutation.mutate({ userId: u.id, isArchived: !u.isArchived })}
+                              data-testid={`button-archive-${u.id}`}
+                            >
+                              {u.isArchived
+                                ? <ArchiveRestore className="w-4 h-4 text-muted-foreground" />
+                                : <Archive className="w-4 h-4 text-muted-foreground" />}
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  disabled={deleteUserMutation.isPending}
+                                  data-testid={`button-delete-${u.id}`}
                                 >
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete User</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to delete {u.firstName} {u.lastName}? This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => deleteUserMutation.mutate(u.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </>
                         ) : (
                           <div className="w-9 h-9" />
                         )}

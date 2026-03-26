@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Electron requires these four entitlements to run under Hardened Runtime.
+    Without them the app crashes or fails signature verification.
+
+    com.apple.security.cs.allow-jit
+      V8 JIT compiler needs the executable+writable memory pages flag.
+
+    com.apple.security.cs.allow-unsigned-executable-memory
+      Electron's renderer process allocates unsigned executable memory.
+
+    com.apple.security.cs.disable-library-validation
+      Electron loads third-party native modules (.node files) that are not
+      signed by the same Developer ID — library validation would block them.
+
+    com.apple.security.network.client
+      Outbound network access (HTTP to DocuFlow backend).
+
+    If screenshot capture is added via native module, add:
+      com.apple.security.device.camera (if webcam too)
+      com.apple.security.screen-recording is NOT an entitlement —
+        it must be granted by the user via System Settings > Privacy.
+  -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>

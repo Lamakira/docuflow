@@ -222,6 +222,9 @@ export class AgentStore {
     this.closeActiveSessions();
     this.runtime.timerStatus = "stopped";
     this.runtime.activeDescription = null;
+    // Reset the server base so stale yesterday-data doesn't inflate the new day's
+    // "Worked Today" display. The heartbeat will repopulate this within 30 s.
+    this.runtime.workedTodayServerBase = 0;
     this.data.activeEntryId = null;
     this.data.activeProjectName = null;
     this.data.activeTaskName = null;
@@ -426,11 +429,17 @@ export class AgentStore {
 
     const entrySessions = this.data.sessions.filter((s) => s.entryId === entryId);
 
-    // entryServerBase is today-scoped only when the entry's first local session
-    // started today. For entries that span midnight, the base was seeded yesterday
-    // and must not pollute the new day's display.
+    // entryServerBase is today-scoped when:
+    //   (a) the entry's first local session started today, OR
+    //   (b) there are no local sessions at all — meaning the entry was synced from
+    //       the server on startup (syncFromServer seeds entryServerBase from the
+    //       server's elapsedToday, which is already day-scoped). Without this branch
+    //       the "Worked Today" header would show 0 after an app restart even when
+    //       hours have already been accumulated.
+    // For entries whose first local session predates midnight (cross-midnight case),
+    // the base was seeded for yesterday and must not pollute the new day's display.
     const entryStartedToday =
-      entrySessions.length > 0 &&
+      entrySessions.length === 0 ||
       new Date(entrySessions[0].startTime).getTime() >= midnight;
     const base = entryStartedToday ? (this.data.entryServerBase ?? 0) : 0;
 

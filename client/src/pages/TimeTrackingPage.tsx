@@ -96,6 +96,7 @@ export default function TimeTrackingPage() {
   const [isDownloadingBatch, setIsDownloadingBatch] = useState(false);
   const [lowActivityFilter, setLowActivityFilter] = useState(false);
   const [identicalFilter, setIdenticalFilter] = useState(false);
+  const [includeArchivedUsers, setIncludeArchivedUsers] = useState(false);
   const [thumbnailSize, setThumbnailSize] = useState<"compact" | "default" | "large">("default");
 
   const browserTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
@@ -155,9 +156,10 @@ export default function TimeTrackingPage() {
   const projects = ctxProjects;
 
   const { data: usersData = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users", includeArchivedUsers],
     queryFn: async () => {
-      const res = await fetch("/api/users", { credentials: "include" });
+      const params = includeArchivedUsers ? "?includeArchived=true" : "";
+      const res = await fetch(`/api/users${params}`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
@@ -956,6 +958,16 @@ export default function TimeTrackingPage() {
                             );
                           })}
                         </CommandGroup>
+                        <div className="border-t px-2 py-1.5">
+                          <button
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                            onClick={() => { setIncludeArchivedUsers((v) => !v); setScreenshotPage(1); }}
+                            data-testid="toggle-include-archived-users"
+                          >
+                            <Check className={`h-3 w-3 shrink-0 ${includeArchivedUsers ? "opacity-100" : "opacity-0"}`} />
+                            Include archived users
+                          </button>
+                        </div>
                       </Command>
                     </PopoverContent>
                   </Popover>
