@@ -113,7 +113,7 @@ export function ProjectTaskPicker() {
                   <a
                     href="#"
                     style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem' }}
-                    onClick={(e) => { e.preventDefault(); window.agentBridge.openExternal(apiBase!); }}
+                    onClick={(e) => { e.preventDefault(); window.agentBridge.openExternal(`${apiBase}/crm`); }}
                   >
                     Open web app
                   </a>
@@ -155,7 +155,7 @@ export function ProjectTaskPicker() {
                   <a
                     href="#"
                     style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem' }}
-                    onClick={(e) => { e.preventDefault(); window.agentBridge.openExternal(apiBase!); }}
+                    onClick={(e) => { e.preventDefault(); window.agentBridge.openExternal(`${apiBase}/crm/project/${selectedProjectId}`); }}
                   >
                     Create tasks in web app
                   </a>
