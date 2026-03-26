@@ -4,13 +4,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Download, Monitor, Apple, Terminal } from "lucide-react";
 
-const AGENT_VERSION = "v0.1.4";
+const AGENT_VERSION = "v0.1.5";
 
-// GitHub Release: desktop-agent-v0.1.4.2
+// GitHub Release: desktop-agent-v0.1.5
 // All artifacts live under the same tag — publish them together.
-const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.2/DocuFlow-Agent-0.1.4-windows-setup.exe";
-const DOWNLOAD_URL_MACOS   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.2/DocuFlow-Agent-0.1.4-macos.dmg";
-const DOWNLOAD_URL_LINUX   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.4.2/DocuFlow-Agent-0.1.4-linux-amd64.deb";
+const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.5/DocuFlow-Agent-0.1.5-windows-setup.exe";
+const DOWNLOAD_URL_MACOS   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.5/DocuFlow-Agent-0.1.5-macos.dmg";
+const DOWNLOAD_URL_LINUX   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v0.1.5/DocuFlow-Agent-0.1.5-linux-amd64.deb";
 
 export default function TimeTrackingDownloadPage() {
   return (
@@ -143,7 +143,7 @@ export default function TimeTrackingDownloadPage() {
               <li>Download the installer for your platform.</li>
               <li>
                 <strong>Windows:</strong> run the .exe and follow the wizard.{" "}
-                <strong>macOS:</strong> open the .dmg, drag the app to Applications, then right-click → Open on first launch.{" "}
+                <strong>macOS:</strong> open the .dmg, drag the app to Applications, then double-click to launch.{" "}
                 <strong>Linux:</strong> run <code className="bg-muted px-1 rounded">sudo dpkg -i DocuFlow-Agent-*.deb</code>.
               </li>
               <li>Open the DocuFlow Agent from your system tray or app menu.</li>

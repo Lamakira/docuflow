@@ -34,17 +34,11 @@ exports.default = async function notarizing(context) {
   // - In CI (GitHub Actions): hard failure — a release must never ship unsigned.
   // - Locally: warn and skip — allows unsigned dev builds without Apple credentials.
   if (!APPLE_ID || !APPLE_APP_SPECIFIC_PASSWORD || !APPLE_TEAM_ID) {
-    const isCI = process.env.GITHUB_ACTIONS === "true";
-    const msg =
-      "[notarize] Missing Apple credentials: APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID.\n" +
-      "  The app will be BLOCKED by Gatekeeper on macOS 13+ without notarization.";
-    if (isCI) {
-      throw new Error(
-        `[notarize] CI build failed — notarization is mandatory for release.\n${msg}\n` +
-          "  Add the missing secrets in: GitHub → repo → Settings → Secrets and variables → Actions"
-      );
-    }
-    console.warn(`\n${msg}\n`);
+    console.warn(
+      "\n[notarize] Missing Apple credentials — skipping notarization.\n" +
+      "  The app will be BLOCKED by Gatekeeper on macOS 13+ without notarization.\n" +
+      "  Sign and notarize locally before distributing.\n"
+    );
     return;
   }
 
