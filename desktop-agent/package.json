@@ -25,6 +25,7 @@
       "output": "release"
     },
     "compression": "normal",
+    "afterSign": "scripts/notarize.js",
     "win": {
       "target": "nsis",
       "executableName": "docuflow-agent",
@@ -43,7 +44,11 @@
     },
     "mac": {
       "target": "dmg",
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist"
     },
     "dmg": {
       "artifactName": "DocuFlow-Agent-${version}-macos.dmg"
@@ -64,6 +69,7 @@
     "@babel/core": "^7.29.0",
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.28.5",
+    "@electron/notarize": "^2.5.0",
     "@electron-forge/cli": "^7.0.0",
     "@electron-forge/maker-deb": "^7.0.0",
     "@electron-forge/maker-dmg": "^7.0.0",

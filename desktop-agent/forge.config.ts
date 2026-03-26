@@ -69,6 +69,12 @@ const config: ForgeConfig = {
         },
       },
     },
+    // NOTE: maker-dmg is declared here for completeness but is NOT used by the
+    // release pipeline. dist-mac.js calls `electron-forge package` (not `make`),
+    // then passes the packaged .app to electron-builder which creates the DMG.
+    // electron-builder is used because it handles code signing and notarization
+    // via the afterSign hook (scripts/notarize.js).
+    // This entry exists so `forge make` would work in isolation if needed.
     {
       name: "@electron-forge/maker-dmg",
       platforms: ["darwin"],
