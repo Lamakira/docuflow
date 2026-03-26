@@ -311,7 +311,7 @@ export class ApiClient {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
     }
 
-    const res = await fetch(fullURL, { method: "PUT", headers, body: imageBuffer });
+    const res = await fetch(fullURL, { method: "PUT", headers, body: imageBuffer as unknown as BodyInit });
     if (!res.ok) {
       const body = await res.json().catch(() => ({ message: res.statusText }));
       throw new Error(`Screenshot upload failed: ${res.status} — ${body.message ?? res.statusText}`);
