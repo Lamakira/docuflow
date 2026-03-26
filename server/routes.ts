@@ -2117,7 +2117,7 @@ Instructions:
     }
   });
 
-  // Get all users for assignee dropdown
+  // Get all users for assignee dropdown / screenshots filter
   app.get("/api/users", isAuthenticated, async (req: any, res) => {
     try {
       const requestingUserId = getUserId(req)!;
@@ -2125,7 +2125,8 @@ Instructions:
       if (requestingUser?.role !== "admin") {
         return res.status(403).json({ message: "Admin access required" });
       }
-      const users = await storage.getAllUsers();
+      const includeArchived = req.query.includeArchived === "true";
+      const users = await storage.getAllUsers({ includeArchived });
       res.json(users);
     } catch (error) {
       console.error("Error fetching users:", error);
@@ -3109,6 +3110,23 @@ Instructions:
   });
 
   // Update user info (admin only)
+  // Archive / unarchive a user (soft delete — data is preserved)
+  app.patch("/api/admin/users/:id/archive", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser) return res.status(404).json({ message: "User not found" });
+      if (targetUser.isMainAdmin) return res.status(403).json({ message: "Cannot archive the SuperAdmin" });
+      if (targetUser.id === getUserId(req)) return res.status(400).json({ message: "Cannot archive yourself" });
+
+      const { isArchived } = z.object({ isArchived: z.boolean() }).parse(req.body);
+      const updated = await storage.archiveUser(req.params.id, isArchived);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error archiving user:", error);
+      res.status(500).json({ message: "Failed to archive user" });
+    }
+  });
+
   app.patch("/api/admin/users/:id", isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       // Check if target user is SuperAdmin
@@ -3116,7 +3134,7 @@ Instructions:
       if (targetUser?.isMainAdmin && targetUser.id !== getUserId(req)) {
         return res.status(403).json({ message: "Cannot modify the SuperAdmin" });
       }
-      
+
       const updateUserSchema = z.object({
         email: z.string().email().optional(),
         firstName: z.string().min(1).optional(),

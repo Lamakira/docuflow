@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { relations } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   index,
   integer,
   jsonb,
@@ -41,6 +42,7 @@ export const users = pgTable("users", {
   hoursPerDay: integer("hours_per_day").notNull().default(8),
   lastGeneratedPassword: varchar("last_generated_password", { length: 255 }),
   lastLoginAt: timestamp("last_login_at"),
+  isArchived: boolean("is_archived").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
