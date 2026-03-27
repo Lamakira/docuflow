@@ -1042,6 +1042,8 @@ export const timeEntries = pgTable("time_entries", {
   idleTime: integer("idle_time").default(0), // Total idle time in seconds
   status: varchar("status", { length: 20 }).notNull().default("running"),
   lastActivityAt: timestamp("last_activity_at"),
+  // Idempotency key for desktop agent offline-first timer commands
+  clientCommandId: varchar("client_command_id", { length: 64 }).unique(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [

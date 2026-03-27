@@ -224,7 +224,7 @@ export class ApiClient {
     return res?.data ?? [];
   }
 
-  async startTimer(crmProjectId: string, taskId?: string, description?: string): Promise<TimeEntry> {
+  async startTimer(crmProjectId: string, taskId?: string, description?: string, clientCommandId?: string): Promise<TimeEntry> {
     return this.authenticatedRequest("/api/agent/timer/start", {
       method: "POST",
       body: JSON.stringify({
@@ -234,6 +234,7 @@ export class ApiClient {
         deviceId: this.store.getDeviceId(),
         clientType: "desktop",
         clientVersion: this.store.getClientVersion(),
+        ...(clientCommandId ? { clientCommandId } : {}),
       }),
     });
   }

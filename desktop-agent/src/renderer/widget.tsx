@@ -41,6 +41,8 @@ function Widget() {
   const syncRef = useRef<{ elapsed: number; at: number } | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [pending, setPending] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function applyState(raw: any) {
     const t = raw.timer ?? raw;
@@ -80,14 +82,21 @@ function Widget() {
 
   const isRunning = timer.status === "running";
 
+  function showError(msg: string) {
+    setActionError(msg);
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => setActionError(null), 3000);
+  }
+
   async function handleToggle() {
     if (pending) return;
     setPending(true);
     try {
-      if (isRunning) {
-        await window.widgetBridge.timerPause();
-      } else {
-        await window.widgetBridge.timerResume();
+      const result = isRunning
+        ? await window.widgetBridge.timerPause()
+        : await window.widgetBridge.timerResume();
+      if (result && !result.ok && result.error) {
+        showError(result.error);
       }
     } finally {
       setPending(false);
@@ -104,6 +113,30 @@ function Widget() {
   const noDrag = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
 
   return (
+    <div style={{ position: "relative", height: "100%" }}>
+      {actionError && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 6px)",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(239,68,68,0.95)",
+            color: "#fff",
+            fontSize: 11,
+            fontWeight: 500,
+            padding: "4px 10px",
+            borderRadius: 6,
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+            zIndex: 9999,
+          }}
+        >
+          {actionError}
+        </div>
+      )}
     <div
       style={{
         display: "flex",
@@ -238,6 +271,7 @@ function Widget() {
       >
         ✕
       </button>
+    </div>
     </div>
   );
 }

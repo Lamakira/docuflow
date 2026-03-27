@@ -8,6 +8,7 @@ import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen } from "electron
 import path from "path";
 import fs from "fs";
 import os from "os";
+import { randomUUID } from "node:crypto";
 import { API_BASE, API_BASE_SOURCE, API_HOST } from "../lib/config";
 
 // ─── Linux / Wayland ───
@@ -351,6 +352,10 @@ function applyServerTimerSync(
     taskName?: string | null;
   } | null
 ): void {
+  // Don't override locally-applied state while commands are waiting to sync.
+  // The queue is the source of truth until all commands reach the server.
+  if (queue.pendingTimerCommandCount() > 0) return;
+
   const localStatus = store.getTimerStatus();
   const localEntryId = store.getActiveEntryId();
   const serverEntryId = timerSync?.entryId ?? null;
@@ -536,93 +541,74 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
 // ─── IPC: Timer ───
 
 ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description }) => {
-  try {
-    const entry = await apiClient.startTimer(crmProjectId, taskId || undefined, description);
-    // taskAccumulatedToday: stopped-entry history for this task today, returned by the server.
-    // Seeds entryServerBase so the timer starts from the accumulated total ("not 0" UX).
-    const taskAccumulatedToday = (entry as any).taskAccumulatedToday || 0;
-    store.setTimerRunning(
-      entry.id,
-      projectName || null,
-      taskId || null,
-      taskName || null,
-      description || null,
-      taskAccumulatedToday,
-    );
-    console.log(`[Main] timer.start — entry=${entry.id} project="${projectName || ""}" task="${taskName || ""}"`);
-    // Refresh server base so workedToday reflects any just-stopped predecessor entries.
-    await refreshWorkedTodayServerBase();
-    pushStateToRenderer();
-    return { ok: true, entry };
-  } catch (error: any) {
-    await syncTimerFromServer();
-    return { ok: false, error: error.message };
-  }
+  // Local-first: apply state immediately, enqueue for background sync.
+  const clientCommandId = randomUUID();
+  const localEntryId = `local-${randomUUID()}`;
+
+  store.setTimerRunning(
+    localEntryId,
+    projectName || null,
+    taskId || null,
+    taskName || null,
+    description || null,
+    0, // taskAccumulatedToday: server will return the real value when the start command syncs
+  );
+  queue.enqueueTimerCommand({
+    clientCommandId,
+    type: "start",
+    entryId: localEntryId,
+    crmProjectId,
+    taskId: taskId || null,
+    description: description || null,
+  });
+  widgetDismissed = false;
+  console.log(`[Main] timer.start (local) — localEntryId=${localEntryId} project="${projectName || ""}" task="${taskName || ""}"`);
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  return { ok: true };
 });
 
 ipcMain.handle("agent:timer-pause", async () => {
-  try {
-    const entryId = store.getActiveEntryId();
-    if (!entryId) return { ok: false, error: "No active timer" };
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return { ok: false, error: "No active timer" };
 
-    const entry = await apiClient.pauseTimer(entryId);
-    store.setTimerPaused(); // closes active session with endTime=now
-    pushStateToRenderer();
-    return { ok: true, entry };
-  } catch (error: any) {
-    const msg: string = error.message ?? "";
-    await syncTimerFromServer();
-    // If the server already paused it (e.g. initiated from web), that's the desired outcome.
-    if (store.getTimerStatus() === "paused") return { ok: true };
-    return { ok: false, error: msg };
-  }
+  const clientCommandId = randomUUID();
+  store.setTimerPaused();
+  queue.enqueueTimerCommand({ clientCommandId, type: "pause", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  return { ok: true };
 });
 
 ipcMain.handle("agent:timer-resume", async () => {
-  try {
-    const entryId = store.getActiveEntryId();
-    if (!entryId) return { ok: false, error: "No active timer" };
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return { ok: false, error: "No active timer" };
 
-    const entry = await apiClient.resumeTimer(entryId);
-    // Resume = new session for the same entry; preserves accumulated elapsed
-    store.setTimerRunning(
-      entry.id,
-      store.getActiveProjectName(),
-      store.getActiveTaskId(),
-      store.getActiveTaskName(),
-      store.getActiveDescription(),
-    );
-    pushStateToRenderer();
-    return { ok: true, entry };
-  } catch (error: any) {
-    const msg: string = error.message ?? "";
-    if (msg.includes("not running") || msg.includes("already stopped") || msg.includes("not paused")) {
-      console.log(`[Main] Timer conflict on resume ("${msg}") — resyncing from server`);
-      await syncTimerFromServer();
-    }
-    return { ok: false, error: msg };
-  }
+  const clientCommandId = randomUUID();
+  store.setTimerRunning(
+    entryId,
+    store.getActiveProjectName(),
+    store.getActiveTaskId(),
+    store.getActiveTaskName(),
+    store.getActiveDescription(),
+  );
+  queue.enqueueTimerCommand({ clientCommandId, type: "resume", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  return { ok: true };
 });
 
 ipcMain.handle("agent:timer-stop", async () => {
-  try {
-    const entryId = store.getActiveEntryId();
-    if (!entryId) return { ok: false, error: "No active timer" };
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return { ok: false, error: "No active timer" };
 
-    const entry = await apiClient.stopTimer(entryId);
-    store.clearTimer();
-    console.log(`[Main] timer.stop — entry=${entryId}`);
-    // Refresh server base now that the entry is stopped — it will appear in the server total.
-    await refreshWorkedTodayServerBase();
-    pushStateToRenderer();
-    return { ok: true, entry };
-  } catch (error: any) {
-    const msg: string = error.message ?? "";
-    await syncTimerFromServer();
-    // If the server already stopped it (e.g. initiated from web), that's the desired outcome.
-    if (!store.getActiveEntryId()) return { ok: true };
-    return { ok: false, error: msg };
-  }
+  const clientCommandId = randomUUID();
+  store.clearTimer();
+  queue.enqueueTimerCommand({ clientCommandId, type: "stop", entryId });
+  console.log(`[Main] timer.stop (local) — entry=${entryId}`);
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  return { ok: true };
 });
 
 ipcMain.handle("agent:timer-state", () => {
@@ -640,6 +626,40 @@ ipcMain.handle("widget:dismiss", () => {
 ipcMain.handle("agent:get-worked-today", () => {
   return { ok: true, total: store.getWorkedTodaySeconds() };
 });
+
+// ─── Auto-resume from offline queue ───
+
+/**
+ * Restore timer running/paused state from the pending command queue after a restart.
+ *
+ * Called after reconcileOrphanSessions() (which already closed open sessions and set
+ * timerStatus = "stopped"). If the last unsynced command was start/resume, we reopen
+ * the timer without counting the offline gap between lastActivityAt and now.
+ */
+function autoResumeFromQueue(): void {
+  const intent = queue.getTimerIntent();
+  if (intent === "stopped") return;
+
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return;
+
+  if (intent === "running") {
+    // Create a fresh session starting now — the PC-off gap is excluded because
+    // reconcileOrphanSessions() already closed the previous session at lastActivityAt.
+    store.setTimerRunning(
+      entryId,
+      store.getActiveProjectName(),
+      store.getActiveTaskId(),
+      store.getActiveTaskName(),
+      null,
+    );
+    console.log(`[Main] timer.autoResume (running) — entry=${entryId}`);
+  } else if (intent === "paused") {
+    // The last command was pause — no open sessions to reconcile. Just restore status.
+    store.setTimerPaused();
+    console.log(`[Main] timer.autoResume (paused) — entry=${entryId}`);
+  }
+}
 
 // ─── Single instance ───
 
@@ -662,10 +682,18 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   store.setClientVersion(app.getVersion());
 
+  // Register for OS autostart (packaged builds only — avoids polluting dev registry).
+  if (app.isPackaged) {
+    app.setLoginItemSettings({ openAtLogin: true });
+  }
+
   // Close any sessions that were left open by a crash or force-quit.
-  // Must run before startWorkers() so getElapsedSeconds() / getWorkedTodaySeconds()
-  // are correct when the first state push reaches the renderer.
+  // Must run before autoResumeFromQueue() so getElapsedSeconds() starts from a clean state.
   store.reconcileOrphanSessions();
+
+  // Restore timer running/paused state from any pending offline commands.
+  // Must run before startWorkers() so the renderer gets the correct status on first push.
+  autoResumeFromQueue();
 
   createTray();
   mainWindow = createMainWindow();

@@ -285,6 +285,23 @@ export class AgentStore {
     this.saveToDisk();
   }
 
+  /**
+   * Update local placeholder entry ID to the real server-assigned ID.
+   * Called by SyncWorker after a start command syncs successfully.
+   * Updates activeEntryId and all sessions that reference the old placeholder.
+   */
+  updateActiveEntryId(oldId: string, newId: string): void {
+    if (this.data.activeEntryId === oldId) {
+      this.data.activeEntryId = newId;
+    }
+    for (const session of this.data.sessions) {
+      if (session.entryId === oldId) {
+        session.entryId = newId;
+      }
+    }
+    this.saveToDisk();
+  }
+
   // ─── Server sync ───
 
   /**

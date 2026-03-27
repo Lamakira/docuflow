@@ -838,12 +838,21 @@ export function registerAgentRoutes(app: Express): void {
       if (!(await requireActiveDevice(req, res))) return;
 
       const userId = req.agentUserId!;
-      const { crmProjectId, description, deviceId } = req.body;
+      const { crmProjectId, description, deviceId, clientCommandId } = req.body;
       // Strip taskId if migration 002 hasn't been applied yet
       const taskId = isTasksEnabled() ? (req.body.taskId || null) : null;
 
       if (!crmProjectId) {
         return res.status(400).json({ message: "crmProjectId is required" });
+      }
+
+      // Idempotency: if we've already processed this command, return the existing entry
+      if (clientCommandId) {
+        const existing = await storage.getTimeEntryByClientCommandId(clientCommandId);
+        if (existing) {
+          logInfo("agent.timer.start.idempotent", { userId, clientCommandId, entryId: existing.id });
+          return res.json({ ...existing, taskAccumulatedToday: 0 });
+        }
       }
 
       // Auto-stop any existing active entry
@@ -872,6 +881,7 @@ export function registerAgentRoutes(app: Express): void {
         lastActivityAt: new Date(),
         duration: 0,
         idleTime: 0,
+        ...(clientCommandId ? { clientCommandId } : {}),
       });
 
       logTimeEvent("start", entry.id, userId, { crmProjectId, taskId: taskId || null, deviceId, clientType: "desktop" });

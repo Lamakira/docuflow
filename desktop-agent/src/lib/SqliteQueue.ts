@@ -34,14 +34,30 @@ export interface PendingScreenshot {
   createdAt: number; // epoch ms
 }
 
+export interface PendingTimerCommand {
+  clientCommandId: string;  // UUID — idempotency key sent to server
+  type: "start" | "pause" | "resume" | "stop";
+  /** Local placeholder "local-{uuid}" for starts; real server entry ID for pause/resume/stop.
+   *  Updated to the real server ID by markTimerCommandSynced() once start syncs. */
+  entryId: string | null;
+  crmProjectId?: string;
+  taskId?: string | null;
+  description?: string | null;
+  createdAt: number;        // epoch ms — sort key for FIFO ordering
+  syncedAt: number | null;  // epoch ms — null = not yet synced
+  failedAt: number | null;  // epoch ms — null = not failed
+  errorMessage: string | null;
+}
+
 interface QueueData {
   nextEventId: number;
   events: QueuedEvent[];
   screenshots: PendingScreenshot[];
+  timerCommands: PendingTimerCommand[];
 }
 
 function emptyData(): QueueData {
-  return { nextEventId: 1, events: [], screenshots: [] };
+  return { nextEventId: 1, events: [], screenshots: [], timerCommands: [] };
 }
 
 export class SqliteQueue {
@@ -66,6 +82,7 @@ export class SqliteQueue {
         nextEventId: parsed.nextEventId ?? 1,
         events: parsed.events ?? [],
         screenshots: parsed.screenshots ?? [],
+        timerCommands: parsed.timerCommands ?? [],
       };
     } catch (err) {
       console.warn("[Queue] Failed to load, starting fresh:", (err as Error).message);
@@ -219,6 +236,104 @@ export class SqliteQueue {
     this.data.screenshots = this.data.screenshots.filter(
       (s) => s.createdAt >= sevenDaysAgo
     );
+    this.scheduleSave();
+  }
+
+  // ═══════════════════════════════════════
+  // Timer Commands (offline-first)
+  // ═══════════════════════════════════════
+
+  /** Enqueue a timer command for background server sync. */
+  enqueueTimerCommand(
+    cmd: Omit<PendingTimerCommand, "createdAt" | "syncedAt" | "failedAt" | "errorMessage">
+  ): void {
+    const entry: PendingTimerCommand = {
+      ...cmd,
+      createdAt: Date.now(),
+      syncedAt: null,
+      failedAt: null,
+      errorMessage: null,
+    };
+    this.data.timerCommands.push(entry);
+    this.scheduleSave();
+    console.log(`[Queue] TimerCommand enqueue: ${cmd.type} clientCommandId=${cmd.clientCommandId.slice(0, 8)}`);
+  }
+
+  /** All pending (not synced, not failed) timer commands in FIFO order. */
+  getPendingTimerCommands(): PendingTimerCommand[] {
+    return this.data.timerCommands
+      .filter((c) => c.syncedAt === null && c.failedAt === null)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /** The next timer command to sync (oldest pending). */
+  getNextPendingTimerCommand(): PendingTimerCommand | null {
+    return this.getPendingTimerCommands()[0] ?? null;
+  }
+
+  /**
+   * Mark a command as synced.
+   * If `resolvedEntryId` is provided (start command resolved a local placeholder),
+   * update the entryId on all subsequent pending commands that reference the old placeholder.
+   */
+  markTimerCommandSynced(clientCommandId: string, resolvedEntryId?: string): void {
+    const cmd = this.data.timerCommands.find((c) => c.clientCommandId === clientCommandId);
+    if (!cmd) return;
+
+    const oldEntryId = cmd.entryId;
+    cmd.syncedAt = Date.now();
+
+    // Propagate real server entry ID to subsequent commands that had the local placeholder
+    if (resolvedEntryId && oldEntryId && oldEntryId !== resolvedEntryId) {
+      for (const c of this.data.timerCommands) {
+        if (c.syncedAt === null && c.failedAt === null && c.entryId === oldEntryId) {
+          c.entryId = resolvedEntryId;
+        }
+      }
+    }
+
+    this.scheduleSave();
+    console.log(`[Queue] TimerCommand synced: ${clientCommandId.slice(0, 8)}${resolvedEntryId ? ` → ${resolvedEntryId.slice(0, 8)}` : ""}`);
+  }
+
+  /** Mark a command as permanently failed. */
+  failTimerCommand(clientCommandId: string, errorMessage: string): void {
+    const cmd = this.data.timerCommands.find((c) => c.clientCommandId === clientCommandId);
+    if (cmd) {
+      cmd.failedAt = Date.now();
+      cmd.errorMessage = errorMessage;
+      this.scheduleSave();
+    }
+    console.error(`[Queue] TimerCommand failed: ${clientCommandId.slice(0, 8)} — ${errorMessage}`);
+  }
+
+  /** Number of pending (not synced, not failed) timer commands. */
+  pendingTimerCommandCount(): number {
+    return this.data.timerCommands.filter((c) => c.syncedAt === null && c.failedAt === null).length;
+  }
+
+  /**
+   * Derive the user's intended timer state from the last unsynced command.
+   * Used to restore timer state on app restart without counting offline gaps.
+   */
+  getTimerIntent(): "running" | "paused" | "stopped" {
+    const pending = this.getPendingTimerCommands();
+    if (pending.length === 0) return "stopped";
+    const last = pending[pending.length - 1];
+    if (last.type === "start" || last.type === "resume") return "running";
+    if (last.type === "pause") return "paused";
+    return "stopped"; // stop
+  }
+
+  /** Remove synced timer commands older than 7 days and all failed commands older than 1 day. */
+  pruneTimerCommands(): void {
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    this.data.timerCommands = this.data.timerCommands.filter((c) => {
+      if (c.syncedAt !== null) return c.syncedAt > sevenDaysAgo;
+      if (c.failedAt !== null) return c.failedAt > oneDayAgo;
+      return true; // pending — always keep
+    });
     this.scheduleSave();
   }
 

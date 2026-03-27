@@ -268,6 +268,7 @@ export interface IStorage {
     status?: string;
   }): Promise<TimeEntryWithDetails[]>;
   getTimeEntry(id: string): Promise<TimeEntryWithDetails | undefined>;
+  getTimeEntryByClientCommandId(clientCommandId: string): Promise<TimeEntry | undefined>;
   getActiveTimeEntry(userId: string): Promise<TimeEntry | undefined>;
   /** Find running entries whose lastActivityAt is older than `staleThreshold` */
   getStaleRunningEntries(staleThreshold: Date): Promise<TimeEntry[]>;
@@ -2278,6 +2279,15 @@ export class DatabaseStorage implements IStorage {
         client: clientDetails,
       } : undefined,
     };
+  }
+
+  async getTimeEntryByClientCommandId(clientCommandId: string): Promise<TimeEntry | undefined> {
+    const [entry] = await db
+      .select()
+      .from(timeEntries)
+      .where(eq(timeEntries.clientCommandId, clientCommandId))
+      .limit(1);
+    return entry;
   }
 
   async getActiveTimeEntry(userId: string): Promise<TimeEntry | undefined> {
