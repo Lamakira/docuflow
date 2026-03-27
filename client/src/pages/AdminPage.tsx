@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore } from "lucide-react";
+import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore, BarChart2 } from "lucide-react";
 import type { SafeUser, CrmModule, CrmModuleField, CrmModuleWithFields, CrmFieldType, crmFieldTypeValues } from "@shared/schema";
 
 interface AdminUserDetails {
@@ -110,6 +110,10 @@ function AdminMainPage() {
               <Plus className="w-4 h-4" />
             </Button>
           )}
+          <Button size="sm" variant="outline" onClick={() => setLocation("/admin/analytics")} data-testid="button-admin-analytics" className="gap-2">
+            <BarChart2 className="w-4 h-4" />
+            Analytics
+          </Button>
           <Button size="icon" variant="outline" onClick={() => setLocation("/")} data-testid="button-back-admin">
             <ArrowLeft className="w-4 h-4" />
           </Button>

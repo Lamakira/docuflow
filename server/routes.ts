@@ -3507,6 +3507,136 @@ Instructions:
     }
   });
 
+  // ─── Admin: Analytics ───
+
+  const parseDateRange = (query: any): { start: Date; end: Date } => {
+    const end = query.end ? new Date(query.end as string) : new Date();
+    const start = query.start
+      ? new Date(query.start as string)
+      : new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    return { start, end };
+  };
+
+  app.get("/api/admin/analytics/overview", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getAdminOverview({ startDate: start, endDate: end });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin overview:", error);
+      res.status(500).json({ message: "Failed to fetch overview" });
+    }
+  });
+
+  app.get("/api/admin/analytics/productivity", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getAdminProductivity({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+        crmProjectId: (req.query.crmProjectId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin productivity:", error);
+      res.status(500).json({ message: "Failed to fetch productivity data" });
+    }
+  });
+
+  app.get("/api/admin/analytics/activity", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getAdminActivityStats({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin activity:", error);
+      res.status(500).json({ message: "Failed to fetch activity data" });
+    }
+  });
+
+  app.get("/api/admin/analytics/screenshots", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getAdminScreenshotStats({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin screenshots:", error);
+      res.status(500).json({ message: "Failed to fetch screenshots data" });
+    }
+  });
+
+  app.get("/api/admin/analytics/alerts", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getAdminAlerts({ startDate: start, endDate: end });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin alerts:", error);
+      res.status(500).json({ message: "Failed to fetch alerts" });
+    }
+  });
+
+  app.get("/api/admin/analytics/devices", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const data = await storage.getAdminAllDevices();
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin devices:", error);
+      res.status(500).json({ message: "Failed to fetch devices" });
+    }
+  });
+
+  app.get("/api/admin/analytics/export", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const entries = await storage.getTimeEntries({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+        crmProjectId: (req.query.crmProjectId as string) || undefined,
+        status: "stopped",
+      });
+
+      // Batch-fetch task names
+      const taskIdsSet = new Set(entries.map(e => e.taskId).filter(Boolean) as string[]);
+      const tasksMap = new Map<string, string>();
+      for (const tid of taskIdsSet) {
+        const task = await storage.getTask(tid);
+        if (task) tasksMap.set(tid, task.name);
+      }
+
+      const escape = (s: string) => `"${(s || "").replace(/"/g, '""')}"`;
+      const rows = [
+        ["Date", "User", "Project", "Task", "Description", "Duration (h)", "Idle (h)"].join(","),
+        ...entries.map(e => [
+          new Date(e.startTime).toISOString().slice(0, 10),
+          escape(e.user ? (`${e.user.firstName || ""} ${e.user.lastName || ""}`.trim() || e.user.email) : ""),
+          escape(e.crmProject?.project?.name || ""),
+          escape((e.taskId && tasksMap.get(e.taskId)) || ""),
+          escape(e.description || ""),
+          (e.duration ? (e.duration / 3600).toFixed(2) : "0.00"),
+          (e.idleTime ? (e.idleTime / 3600).toFixed(2) : "0.00"),
+        ].join(","))
+      ];
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="docuflow-export-${start.toISOString().slice(0, 10)}.csv"`);
+      res.send(rows.join("\n"));
+    } catch (error) {
+      console.error("Error exporting:", error);
+      res.status(500).json({ message: "Failed to export" });
+    }
+  });
+
   // ==================== Notifications ====================
   
   app.get("/api/notifications", isAuthenticated, async (req: any, res) => {
