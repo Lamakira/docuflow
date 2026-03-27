@@ -483,10 +483,17 @@ ipcMain.handle("agent:login", async (event, { email, password }) => {
     });
 
     store.setSession(result.deviceId, result.deviceToken, deviceName, result.user.email);
+    // Clear any timer state from a previous user session so workedTodayServerBase
+    // and active entry context cannot leak to the new user.
+    store.clearTimer();
 
     console.log(`[Main] auth.login.success — user=${result.user.email} device=${result.deviceId}`);
     startWorkers();
     await syncTimerFromServer().catch(() => { /* non-fatal */ });
+    // Populate workedTodayServerBase immediately for the new user instead of
+    // waiting for the 60s interval. Runs after syncTimerFromServer so the
+    // active entry is known before we fetch the stopped-entries total.
+    await refreshWorkedTodayServerBase().catch(() => { /* non-fatal */ });
     pushStateToRenderer();
     return { ok: true };
   } catch (error: any) {

@@ -118,7 +118,7 @@ interface AgentAuthRequest extends Request {
   agentUserId?: string;
 }
 
-function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: NextFunction): void {
+async function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
     res.status(401).json({ message: "Missing or invalid Authorization header" });
@@ -135,6 +135,20 @@ function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: NextFu
 
   if (Math.floor(Date.now() / 1000) > payload.exp) {
     res.status(401).json({ message: "Access token expired" });
+    return;
+  }
+
+  // Verify device is not revoked. JWT signature alone cannot detect revocation
+  // since a valid token can live up to 1h after an admin revokes the device.
+  // Checking here applies uniformly to all agent routes, not just heartbeat.
+  try {
+    const device = await storage.getDevice(payload.sub);
+    if (!device || device.revokedAt) {
+      res.status(403).json({ message: "Device has been revoked" });
+      return;
+    }
+  } catch {
+    res.status(500).json({ message: "Authentication check failed" });
     return;
   }
 
@@ -409,12 +423,33 @@ export function registerAgentRoutes(app: Express): void {
         // Updating it would corrupt the elapsed calculation at resume time.
       }
 
-      // Get server-authoritative timer state for desktop resync
+      // Get server-authoritative timer state for desktop resync (enriched with names
+      // so the desktop can hydrate project/task display without a separate request)
       const serverActive = await storage.getActiveTimeEntry(req.agentUserId!);
-      const timerSync =
-        serverActive && serverActive.status !== "stopped"
-          ? { entryId: serverActive.id, status: serverActive.status, duration: serverActive.duration ?? 0 }
-          : null;
+      let timerSync = null;
+      if (serverActive && serverActive.status !== "stopped") {
+        let projectName: string | null = null;
+        let taskName: string | null = null;
+        try {
+          const crmProject = await storage.getCrmProject(serverActive.crmProjectId);
+          projectName = (crmProject as any)?.project?.name ?? null;
+        } catch { /* non-fatal */ }
+        if (serverActive.taskId) {
+          try {
+            const task = await storage.getTask(serverActive.taskId);
+            taskName = task?.name ?? null;
+          } catch { /* non-fatal */ }
+        }
+        timerSync = {
+          entryId: serverActive.id,
+          status: serverActive.status,
+          duration: serverActive.duration ?? 0,
+          taskId: serverActive.taskId ?? null,
+          lastActivityAt: serverActive.lastActivityAt ?? null,
+          projectName,
+          taskName,
+        };
+      }
 
       logInfo("agent.heartbeat", {
         deviceId: body.deviceId,

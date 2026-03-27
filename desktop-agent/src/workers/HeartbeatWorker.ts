@@ -14,7 +14,15 @@ import { AgentStore } from "../lib/AgentStore";
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
 type TimerSyncCallback = (
-  sync: { entryId: string; status: string; duration: number } | null
+  sync: {
+    entryId: string;
+    status: string;
+    duration: number;
+    taskId?: string | null;
+    lastActivityAt?: string | null;
+    projectName?: string | null;
+    taskName?: string | null;
+  } | null
 ) => void;
 
 export class HeartbeatWorker {

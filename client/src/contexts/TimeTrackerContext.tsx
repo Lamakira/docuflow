@@ -17,15 +17,13 @@ interface TimeTrackerState {
   selectedProjectId: string;
   selectedTaskId: string;
   description: string;
-  showIdleDialog: boolean;
-  idleCountdown: number;
   isCapturing: boolean;
   captureError: string | null;
   startMutationPending: boolean;
   pauseMutationPending: boolean;
   resumeMutationPending: boolean;
   stopMutationPending: boolean;
-  /** Whether this tab is the multi-tab leader (runs idle/heartbeat/screenshots) */
+  /** Whether this tab is the multi-tab leader (runs heartbeat/screenshots) */
   isTabLeader: boolean;
 }
 
@@ -37,10 +35,7 @@ interface TimeTrackerActions {
   handlePause: () => void;
   handleResume: () => void;
   handleStop: () => void;
-  handleStillWorking: () => void;
-  handleNotWorking: () => void;
   handleToggleCapture: () => void;
-  setShowIdleDialog: (show: boolean) => void;
 }
 
 type TimeTrackerContextType = TimeTrackerState & TimeTrackerActions;
@@ -55,28 +50,16 @@ export function useTimeTracker() {
   return ctx;
 }
 
-const IDLE_TIMEOUT_SECONDS = 180;
 const HEARTBEAT_INTERVAL_SECONDS = 60;
-const IDLE_COUNTDOWN_SECONDS = 30;
-// If the time between two ticks exceeds this, assume sleep/wake occurred
-const SLEEP_WAKE_THRESHOLD_MS = 30_000;
 
 export function TimeTrackerProvider({ children }: { children: ReactNode }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedTaskId, setSelectedTaskId] = useState<string>("");
   const [description, setDescription] = useState("");
   const [displayDuration, setDisplayDuration] = useState(0);
-  const [showIdleDialog, setShowIdleDialog] = useState(false);
-  const [idleCountdown, setIdleCountdown] = useState(IDLE_COUNTDOWN_SECONDS);
   const [isTabLeader, setIsTabLeader] = useState(false);
 
-  const lastActivityRef = useRef<number>(Date.now());
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const idleCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const idleCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isIdleRef = useRef(false);
-  const lastTickRef = useRef<number>(Date.now());
-  const isDocumentVisibleRef = useRef(!document.hidden);
 
   // Screen capture service (extracted — see ScreenCaptureWebService.ts)
   const [isCapturing, setIsCapturing] = useState(false);
@@ -199,10 +182,6 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
         // Follower receives state from leader — update display duration
         setDisplayDuration(payload.displayDuration);
       },
-      onActivityPing: () => {
-        // Another tab had user activity — update local lastActivity
-        lastActivityRef.current = Date.now();
-      },
     });
 
     coordinatorRef.current = coordinator;
@@ -261,22 +240,10 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     }
   }, [activeEntry]);
 
-  // ─── Activity detection & idle handling (LEADER ONLY) ───
-  const handleActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    // Broadcast activity to other tabs so their lastActivity stays fresh
-    coordinatorRef.current?.broadcastActivity();
-  }, []);
-
-  const resetIdleState = useCallback(() => {
-    isIdleRef.current = false;
-    lastActivityRef.current = Date.now();
-  }, []);
-
-  const isRunning = activeEntry?.status === "running";
-
+  // ─── Heartbeat (LEADER ONLY) ───
+  // Keeps lastActivityAt fresh on the server so duration display stays accurate.
+  // Idle/machine-activity detection is the desktop agent's responsibility.
   useEffect(() => {
-    // Only the leader runs idle detection and heartbeat
     if (!isTabLeader) return;
 
     if (!activeEntry?.id || activeEntry.status !== "running") {
@@ -284,21 +251,8 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
       }
-      if (idleCheckIntervalRef.current) {
-        clearInterval(idleCheckIntervalRef.current);
-        idleCheckIntervalRef.current = null;
-      }
       return;
     }
-
-    isIdleRef.current = false;
-    lastActivityRef.current = Date.now();
-    lastTickRef.current = Date.now();
-
-    const events = ["mousemove", "keydown", "mousedown", "touchstart", "scroll", "wheel"];
-    events.forEach((event) => {
-      window.addEventListener(event, handleActivity, { passive: true });
-    });
 
     heartbeatIntervalRef.current = setInterval(() => {
       if (activeEntry?.id && activeEntry.status === "running") {
@@ -306,103 +260,20 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
       }
     }, HEARTBEAT_INTERVAL_SECONDS * 1000);
 
-    idleCheckIntervalRef.current = setInterval(() => {
-      const now = Date.now();
-      const tickDelta = now - lastTickRef.current;
-      lastTickRef.current = now;
-
-      // Sleep/wake detection: if tick delta is too large, the system was asleep.
-      // Don't auto-stop — just resync with the server.
-      if (tickDelta > SLEEP_WAKE_THRESHOLD_MS) {
-        console.log(`[IdleDetect] Sleep/wake detected (delta: ${Math.round(tickDelta / 1000)}s). Resyncing.`);
-        lastActivityRef.current = now; // Reset activity to avoid false idle
-        invalidateAll(); // Resync with server
-        return;
-      }
-
-      // Don't trigger idle auto-stop when tab is hidden (visibility handler will resync)
-      if (!isDocumentVisibleRef.current) return;
-
-      const idleTime = (now - lastActivityRef.current) / 1000;
-      if (idleTime >= IDLE_TIMEOUT_SECONDS && !isIdleRef.current) {
-        isIdleRef.current = true;
-        setShowIdleDialog(true);
-        setIdleCountdown(IDLE_COUNTDOWN_SECONDS);
-      }
-    }, 5000);
-
     return () => {
-      events.forEach((event) => {
-        window.removeEventListener(event, handleActivity);
-      });
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
       }
-      if (idleCheckIntervalRef.current) {
-        clearInterval(idleCheckIntervalRef.current);
-        idleCheckIntervalRef.current = null;
-      }
     };
-  }, [activeEntry?.id, activeEntry?.status, handleActivity, isTabLeader, invalidateAll]);
-
-  // ─── Idle countdown → auto-STOP (LEADER ONLY) ───
-  const stopMutationRef = useRef(stopMutation);
-  stopMutationRef.current = stopMutation;
-
-  useEffect(() => {
-    if (showIdleDialog && isTabLeader) {
-      setIdleCountdown(IDLE_COUNTDOWN_SECONDS);
-
-      if (idleCountdownRef.current) {
-        clearInterval(idleCountdownRef.current);
-      }
-
-      idleCountdownRef.current = setInterval(() => {
-        setIdleCountdown((prev) => {
-          if (prev <= 1) {
-            if (idleCountdownRef.current) {
-              clearInterval(idleCountdownRef.current);
-              idleCountdownRef.current = null;
-            }
-            const entry = activeEntryRef.current;
-            if (entry) {
-              stopMutationRef.current.mutate(entry.id);
-            }
-            setShowIdleDialog(false);
-            return IDLE_COUNTDOWN_SECONDS;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-
-      return () => {
-        if (idleCountdownRef.current) {
-          clearInterval(idleCountdownRef.current);
-          idleCountdownRef.current = null;
-        }
-      };
-    }
-  }, [showIdleDialog, isTabLeader]);
+  }, [activeEntry?.id, activeEntry?.status, isTabLeader]);
 
   // ─── Visibility change handling ───
   useEffect(() => {
     const handleVisibilityChange = () => {
-      const isVisible = !document.hidden;
-      isDocumentVisibleRef.current = isVisible;
-
-      if (isVisible) {
+      if (!document.hidden) {
         // Tab became visible — resync with server
-        console.log("[Visibility] Tab visible — resyncing");
-        lastActivityRef.current = Date.now();
-        lastTickRef.current = Date.now();
         invalidateAll();
-
-        // If idle dialog was showing but we were hidden, don't auto-stop
-        // (the user might have been working in another app)
-      } else {
-        // Tab hidden — suppress aggressive idle detection (handled in idle check)
-        console.log("[Visibility] Tab hidden — suppressing idle auto-stop");
       }
     };
 
@@ -412,31 +283,9 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     };
   }, [invalidateAll]);
 
-  const handleStillWorking = useCallback(() => {
-    setShowIdleDialog(false);
-    if (idleCountdownRef.current) {
-      clearInterval(idleCountdownRef.current);
-      idleCountdownRef.current = null;
-    }
-    resetIdleState();
-    if (activeEntry) {
-      activityMutation.mutate(activeEntry.id);
-    }
-  }, [resetIdleState, activeEntry]);
-
-  const handleNotWorking = useCallback(() => {
-    setShowIdleDialog(false);
-    if (idleCountdownRef.current) {
-      clearInterval(idleCountdownRef.current);
-      idleCountdownRef.current = null;
-    }
-    if (activeEntry) {
-      stopMutation.mutate(activeEntry.id);
-    }
-  }, [activeEntry]);
-
   // ─── Screen Capture via service (LEADER ONLY for scheduling) ───
-  // Pause/resume capture scheduling based on running state
+  const isRunning = activeEntry?.status === "running";
+
   useEffect(() => {
     const service = screenCaptureRef.current;
     if (!service) return;
@@ -504,8 +353,6 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     selectedProjectId,
     selectedTaskId,
     description,
-    showIdleDialog,
-    idleCountdown,
     isCapturing,
     captureError,
     isTabLeader,
@@ -520,10 +367,7 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     handlePause,
     handleResume,
     handleStop,
-    handleStillWorking,
-    handleNotWorking,
     handleToggleCapture,
-    setShowIdleDialog,
   };
 
   return (

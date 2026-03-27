@@ -16,18 +16,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Play, Pause, Square, Clock, ChevronDown, ChevronUp, AlertCircle, Check, ChevronsUpDown, Timer, Monitor, Plus, X, Loader2 } from "lucide-react";
+import { Play, Pause, Square, Clock, ChevronDown, ChevronUp, AlertCircle, Check, ChevronsUpDown, Monitor, Plus, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function formatDuration(seconds: number): string {
@@ -64,8 +54,6 @@ export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = 
     selectedProjectId,
     selectedTaskId,
     description,
-    showIdleDialog,
-    idleCountdown,
     isCapturing,
     captureError,
     startMutationPending,
@@ -79,10 +67,7 @@ export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = 
     handlePause,
     handleResume,
     handleStop,
-    handleStillWorking,
-    handleNotWorking,
     handleToggleCapture,
-    setShowIdleDialog,
   } = useTimeTracker();
 
   const createTaskMutation = useMutation({
@@ -110,7 +95,6 @@ export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = 
   }
 
   return (
-    <>
     <Popover open={isExpanded} onOpenChange={setIsExpanded}>
       <PopoverTrigger asChild>
         <Button
@@ -158,13 +142,6 @@ export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = 
                 <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-950/30 rounded-lg p-2 text-sm">
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   <span>Timer is paused</span>
-                </div>
-              )}
-              {/* Idle is a UI-only state (showIdleDialog), not a DB status */}
-              {showIdleDialog && activeEntry.status === "running" && (
-                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-950/30 rounded-lg p-2 text-sm">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>Inactivity detected — are you still working?</span>
                 </div>
               )}
 
@@ -225,34 +202,5 @@ export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = 
         </div>
       </PopoverContent>
     </Popover>
-
-    <AlertDialog open={showIdleDialog} onOpenChange={setShowIdleDialog}>
-      <AlertDialogContent data-testid="dialog-idle-check">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <Timer className="h-5 w-5 text-amber-500" />
-            Are you still working?
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            No activity detected for the last 3 minutes. The timer will stop automatically in {idleCountdown} seconds if there's no response.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel
-            onClick={handleNotWorking}
-            data-testid="button-idle-no"
-          >
-            No, stop timer
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={handleStillWorking}
-            data-testid="button-idle-yes"
-          >
-            Yes, still working
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-    </>
   );
 }

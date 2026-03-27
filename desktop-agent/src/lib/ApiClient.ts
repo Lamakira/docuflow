@@ -333,7 +333,15 @@ export class ApiClient {
   async sendHeartbeat(data: Record<string, unknown>): Promise<{
     ok: boolean;
     serverTime: string;
-    timerSync?: { entryId: string; status: string; duration: number } | null;
+    timerSync?: {
+      entryId: string;
+      status: string;
+      duration: number;
+      taskId?: string | null;
+      lastActivityAt?: string | null;
+      projectName?: string | null;
+      taskName?: string | null;
+    } | null;
   }> {
     return this.authenticatedRequest("/api/agent/heartbeat", {
       method: "POST",
