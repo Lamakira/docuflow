@@ -652,10 +652,9 @@ function ExportTab({ startISO, endISO, userFilter, projectFilter }: {
   );
 }
 
-// ─── Main page ───
+// ─── Analytics content (reusable — embedded as tab in AdminPage or as standalone page) ───
 
-export default function AdminAnalyticsPage() {
-  const [, setLocation] = useLocation();
+export function AnalyticsContent() {
   const { user } = useAuth();
 
   const [preset, setPreset] = useState<Preset>("last7");
@@ -672,7 +671,6 @@ export default function AdminAnalyticsPage() {
   const startISO = start.toISOString();
   const endISO = end.toISOString();
 
-  // Users and projects for filters
   const { data: usersData } = useQuery<any>({
     queryKey: ["/api/admin/users"],
     queryFn: () => fetch("/api/admin/users").then(r => r.json()),
@@ -697,22 +695,7 @@ export default function AdminAnalyticsPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <BarChart2 className="w-6 h-6 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold">Analytics</h1>
-            <p className="text-sm text-muted-foreground">Time tracking data — admin view</p>
-          </div>
-        </div>
-        <Button size="icon" variant="outline" onClick={() => setLocation("/admin")}>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
-      </div>
-
-      {/* Filters */}
+    <div className="space-y-6">
       <DateRangeBar
         preset={preset} setPreset={setPreset}
         customStart={customStart} setCustomStart={setCustomStart}
@@ -723,7 +706,6 @@ export default function AdminAnalyticsPage() {
         projects={projects}
       />
 
-      {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid grid-cols-3 sm:grid-cols-6 max-w-2xl">
           <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
@@ -753,6 +735,30 @@ export default function AdminAnalyticsPage() {
           <ExportTab startISO={startISO} endISO={endISO} userFilter={userFilter} projectFilter={projectFilter} />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// ─── Standalone page (direct URL /admin/analytics — keeps header + back button) ───
+
+export default function AdminAnalyticsPage() {
+  const [, setLocation] = useLocation();
+
+  return (
+    <div className="p-4 sm:p-6 space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <BarChart2 className="w-6 h-6 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold">Analytics</h1>
+            <p className="text-sm text-muted-foreground">Time tracking data — admin view</p>
+          </div>
+        </div>
+        <Button size="icon" variant="outline" onClick={() => setLocation("/admin")}>
+          <ArrowLeft className="w-4 h-4" />
+        </Button>
+      </div>
+      <AnalyticsContent />
     </div>
   );
 }

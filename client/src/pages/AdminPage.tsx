@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore, BarChart2 } from "lucide-react";
+import { AnalyticsContent } from "./AdminAnalyticsPage";
 import type { SafeUser, CrmModule, CrmModuleField, CrmModuleWithFields, CrmFieldType, crmFieldTypeValues } from "@shared/schema";
 
 interface AdminUserDetails {
@@ -110,10 +111,6 @@ function AdminMainPage() {
               <Plus className="w-4 h-4" />
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={() => setLocation("/admin/analytics")} data-testid="button-admin-analytics" className="gap-2">
-            <BarChart2 className="w-4 h-4" />
-            Analytics
-          </Button>
           <Button size="icon" variant="outline" onClick={() => setLocation("/")} data-testid="button-back-admin">
             <ArrowLeft className="w-4 h-4" />
           </Button>
@@ -121,7 +118,7 @@ function AdminMainPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
+        <TabsList className="grid w-full grid-cols-3 max-w-xl">
           <TabsTrigger value="users" className="flex items-center gap-2" data-testid="tab-users">
             <Users className="w-4 h-4" />
             User Management
@@ -130,12 +127,19 @@ function AdminMainPage() {
             <Settings2 className="w-4 h-4" />
             Modules & Fields
           </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex items-center gap-2" data-testid="tab-analytics">
+            <BarChart2 className="w-4 h-4" />
+            Analytics
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-6">
           <UserManagementContent />
         </TabsContent>
         <TabsContent value="modules" className="mt-6">
           <ModulesFieldsContent />
+        </TabsContent>
+        <TabsContent value="analytics" className="mt-6">
+          <AnalyticsContent />
         </TabsContent>
       </Tabs>
     </div>
