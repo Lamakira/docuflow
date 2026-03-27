@@ -630,18 +630,23 @@ ipcMain.handle("agent:get-worked-today", () => {
 // ─── Auto-resume from offline queue ───
 
 /**
- * Restore timer running/paused state from the pending command queue after a restart.
+ * Restore timer running/paused state on restart.
  *
- * Called after reconcileOrphanSessions() (which already closed open sessions and set
- * timerStatus = "stopped"). If the last unsynced command was start/resume, we reopen
- * the timer without counting the offline gap between lastActivityAt and now.
+ * Called after reconcileOrphanSessions() which already closed open sessions.
+ * Uses the pending queue intent when commands are still waiting to sync (offline case),
+ * or falls back to the persisted timerStatus when the queue is empty (normal case:
+ * commands already synced before shutdown but timer was still active).
  */
 function autoResumeFromQueue(): void {
-  const intent = queue.getTimerIntent();
-  if (intent === "stopped") return;
-
   const entryId = store.getActiveEntryId();
   if (!entryId) return;
+
+  // Use pending queue intent when available (offline case — commands not yet synced).
+  // Fall back to persisted timerStatus when the queue is empty, which is the common
+  // case after a clean PC restart: the start command already synced before shutdown,
+  // leaving the queue empty, but the timer was still active.
+  const queueIntent = queue.getTimerIntent();
+  const intent = queueIntent !== "stopped" ? queueIntent : store.getTimerStatus();
 
   if (intent === "running") {
     // Create a fresh session starting now — the PC-off gap is excluded because

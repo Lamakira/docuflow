@@ -41,12 +41,14 @@ interface PersistedData {
   sessions: TrackingSession[];
   // Updated on each heartbeat/state change — used to close orphan sessions after crash
   lastActivityAt: string | null;
+  // Persisted so autoResumeFromQueue() can restore the correct status on restart
+  // even when all timer commands were already synced before shutdown (queue empty).
+  timerStatus: "stopped" | "running" | "paused";
 }
 
 // Runtime-only state (not persisted)
 interface RuntimeState {
   activeDescription: string | null;
-  timerStatus: "stopped" | "running" | "paused";
   clientVersion: string;
   /** Server's totalDuration for all STOPPED entries today (all devices). Runtime-only.
    *  getWorkedTodaySeconds() = workedTodayServerBase + getElapsedTodaySeconds() */
@@ -67,7 +69,6 @@ export class AgentStore {
     this.data = this.loadFromDisk();
     this.runtime = {
       activeDescription: null,
-      timerStatus: "stopped",
       clientVersion: "0.1.0",
       workedTodayServerBase: 0,
     };
@@ -88,6 +89,7 @@ export class AgentStore {
       entryServerBase: 0,
       sessions: [],
       lastActivityAt: null,
+      timerStatus: "stopped",
     };
     try {
       if (!fs.existsSync(this.configPath)) return empty;
@@ -97,6 +99,7 @@ export class AgentStore {
         ...empty,
         ...parsed,
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+        timerStatus: parsed.timerStatus ?? "stopped",
       };
     } catch (err) {
       console.warn("[AgentStore] Failed to load config, using defaults:", (err as Error).message);
@@ -155,7 +158,7 @@ export class AgentStore {
   // ─── Timer state ───
 
   getActiveEntryId(): string | null { return this.data.activeEntryId; }
-  getTimerStatus(): string { return this.runtime.timerStatus; }
+  getTimerStatus(): string { return this.data.timerStatus; }
   getActiveProjectName(): string | null { return this.data.activeProjectName; }
   getActiveTaskName(): string | null { return this.data.activeTaskName; }
   getActiveTaskId(): string | null { return this.data.activeTaskId; }
@@ -196,7 +199,7 @@ export class AgentStore {
     });
     this.pruneSessions();
 
-    this.runtime.timerStatus = "running";
+    this.data.timerStatus = "running";
     this.runtime.activeDescription = description ?? null;
     this.data.activeEntryId = entryId;
     this.data.activeProjectName = projectName;
@@ -212,7 +215,7 @@ export class AgentStore {
    */
   setTimerPaused(): void {
     this.closeActiveSessions();
-    this.runtime.timerStatus = "paused";
+    this.data.timerStatus = "paused";
     this.data.lastActivityAt = new Date().toISOString();
     this.saveToDisk();
   }
@@ -220,7 +223,7 @@ export class AgentStore {
   /** Stop the timer and clear all active context. */
   clearTimer(): void {
     this.closeActiveSessions();
-    this.runtime.timerStatus = "stopped";
+    this.data.timerStatus = "stopped";
     this.runtime.activeDescription = null;
     // Reset the server base so stale yesterday-data doesn't inflate the new day's
     // "Worked Today" display. The heartbeat will repopulate this within 30 s.
@@ -280,8 +283,8 @@ export class AgentStore {
     console.log(
       `[AgentStore] Reconciled ${orphans.length} orphan session(s) (lastActivityAt=${fallback})`
     );
-    // Status will be overwritten by syncTimerFromServer() shortly after startup
-    this.runtime.timerStatus = "stopped";
+    // timerStatus is NOT reset here — it stays at its persisted value ("running" if the
+    // timer was active at shutdown). autoResumeFromQueue() reads it to reopen the timer.
     this.saveToDisk();
   }
 
@@ -321,7 +324,7 @@ export class AgentStore {
     taskName?: string | null;
   } | null): void {
     if (!entry || entry.status === "stopped") {
-      if (this.runtime.timerStatus !== "stopped") {
+      if (this.data.timerStatus !== "stopped") {
         this.clearTimer();
       }
       return;
@@ -369,7 +372,7 @@ export class AgentStore {
       }
     }
 
-    if (serverStatus === "running" && this.runtime.timerStatus !== "running") {
+    if (serverStatus === "running" && this.data.timerStatus !== "running") {
       // Server is running but we are not — open a new session
       this.data.sessions.push({
         id: crypto.randomUUID(),
@@ -378,13 +381,13 @@ export class AgentStore {
         startTime: new Date().toISOString(),
         endTime: null,
       });
-      this.runtime.timerStatus = "running";
-    } else if (serverStatus === "paused" && this.runtime.timerStatus === "running") {
+      this.data.timerStatus = "running";
+    } else if (serverStatus === "paused" && this.data.timerStatus === "running") {
       // Server is paused but we are running — close the active session
       this.closeActiveSessions();
-      this.runtime.timerStatus = "paused";
+      this.data.timerStatus = "paused";
     } else {
-      this.runtime.timerStatus = serverStatus;
+      this.data.timerStatus = serverStatus;
     }
 
     this.data.lastActivityAt = new Date().toISOString();
@@ -503,7 +506,7 @@ export class AgentStore {
     description: string | null;
   } {
     return {
-      status: this.runtime.timerStatus,
+      status: this.data.timerStatus,
       entryId: this.data.activeEntryId,
       taskId: this.data.activeTaskId,
       elapsed: this.getElapsedSeconds(),
