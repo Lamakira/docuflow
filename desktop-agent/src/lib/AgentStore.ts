@@ -53,6 +53,9 @@ interface RuntimeState {
   /** Server's totalDuration for all STOPPED entries today (all devices). Runtime-only.
    *  getWorkedTodaySeconds() = workedTodayServerBase + getElapsedTodaySeconds() */
   workedTodayServerBase: number;
+  /** Unix ms timestamp of when the Electron process started. Set once by main via
+   *  setSessionStartedAt(). Used to compute "This session" elapsed. */
+  sessionStartedAt: number;
 }
 
 const CONFIG_FILENAME = "agent-config.json";
@@ -71,6 +74,7 @@ export class AgentStore {
       activeDescription: null,
       clientVersion: "0.1.0",
       workedTodayServerBase: 0,
+      sessionStartedAt: Date.now(),
     };
   }
 
@@ -99,7 +103,9 @@ export class AgentStore {
         ...empty,
         ...parsed,
         sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
-        timerStatus: parsed.timerStatus ?? "stopped",
+        // Migration: pre-March-27 JSON has no timerStatus field.
+        // If activeEntryId is set, the timer was active at last shutdown → infer "running".
+        timerStatus: parsed.timerStatus ?? (parsed.activeEntryId ? "running" : "stopped"),
       };
     } catch (err) {
       console.warn("[AgentStore] Failed to load config, using defaults:", (err as Error).message);
@@ -213,8 +219,13 @@ export class AgentStore {
    * Pause the running timer.
    * Closes the active session; elapsed is preserved in the closed session.
    */
-  setTimerPaused(): void {
-    this.closeActiveSessions();
+  /**
+   * Pause the running timer.
+   * @param at  Optional: close the active session at this timestamp (used for idle
+   *            auto-pause so the idle period is excluded from elapsed).
+   */
+  setTimerPaused(at?: Date): void {
+    this.closeActiveSessions(at);
     this.data.timerStatus = "paused";
     this.data.lastActivityAt = new Date().toISOString();
     this.saveToDisk();
@@ -243,10 +254,10 @@ export class AgentStore {
     this.saveToDisk();
   }
 
-  private closeActiveSessions(): void {
-    const now = new Date().toISOString();
+  private closeActiveSessions(at?: Date): void {
+    const ts = (at ?? new Date()).toISOString();
     for (const s of this.data.sessions) {
-      if (s.endTime === null) s.endTime = now;
+      if (s.endTime === null) s.endTime = ts;
     }
   }
 
@@ -302,6 +313,16 @@ export class AgentStore {
         session.entryId = newId;
       }
     }
+    this.saveToDisk();
+  }
+
+  /**
+   * Called by SyncWorker after a start command syncs successfully.
+   * Seeds entryServerBase from the server's taskAccumulatedToday so the UI
+   * shows accumulated task time (e.g. 30:00) instead of 0:00 when restarting a task.
+   */
+  applyTaskAccumulatedToday(seconds: number): void {
+    this.data.entryServerBase = seconds;
     this.saveToDisk();
   }
 
@@ -491,6 +512,28 @@ export class AgentStore {
     this.runtime.workedTodayServerBase = seconds;
   }
 
+  /** Called once by main process at startup to anchor the session boundary. */
+  setSessionStartedAt(ts: number): void {
+    this.runtime.sessionStartedAt = ts;
+  }
+
+  /**
+   * Seconds the timer was actively running since this app launch (all entries).
+   * = sum of local sessions with startTime >= sessionStartedAt.
+   * Not day-scoped. Resets to 0 on app/PC restart.
+   */
+  getThisSessionSeconds(now = Date.now()): number {
+    const anchor = this.runtime.sessionStartedAt;
+    return Math.floor(
+      this.data.sessions.reduce((acc, s) => {
+        if (new Date(s.startTime).getTime() < anchor) return acc;
+        const start = new Date(s.startTime).getTime();
+        const end = s.endTime ? new Date(s.endTime).getTime() : now;
+        return acc + Math.max(0, end - start);
+      }, 0) / 1000
+    );
+  }
+
   /**
    * Full state snapshot for IPC push to renderer(s).
    */
@@ -501,6 +544,7 @@ export class AgentStore {
     elapsed: number;
     elapsedToday: number;
     workedToday: number;
+    thisSession: number;
     projectName: string | null;
     taskName: string | null;
     description: string | null;
@@ -512,6 +556,7 @@ export class AgentStore {
       elapsed: this.getElapsedSeconds(),
       elapsedToday: this.getElapsedTodaySeconds(),
       workedToday: this.getWorkedTodaySeconds(),
+      thisSession: this.getThisSessionSeconds(),
       projectName: this.data.activeProjectName,
       taskName: this.data.activeTaskName,
       description: this.runtime.activeDescription,

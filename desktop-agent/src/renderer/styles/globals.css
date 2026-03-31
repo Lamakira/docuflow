@@ -243,8 +243,17 @@ a:hover { text-decoration: underline; }
 .worked-today-bar__right {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 1rem;
   margin-right: 5rem; /* align right edge with timer elapsed */
+}
+.worked-today-bar__metric {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.worked-today-bar__metric--session {
+  border-left: 1px solid rgba(255,255,255,0.1);
+  padding-left: 1rem;
 }
 .worked-today-bar__label {
   font-size: 0.8rem;
@@ -257,6 +266,10 @@ a:hover { text-decoration: underline; }
   font-weight: 700;
   color: white;
   letter-spacing: 0.02em;
+}
+.worked-today-bar__value--session {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.65);
 }
 
 /* ── Buttons ──────────────────────────────────────── */
@@ -656,3 +669,133 @@ a:hover { text-decoration: underline; }
 .gap-2 { gap: 0.5rem; }
 .flex-1 { flex: 1; }
 .page-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; }
+
+/* ─── Idle / break prompt ─── */
+.idle-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.idle-card {
+  background: var(--surface, #1e1e2e);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.idle-card__title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.idle-card__idle-time {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.idle-card__idle-time strong { color: var(--text); }
+.idle-card__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+.idle-btn {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.15s;
+}
+.idle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.idle-btn--break {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-muted);
+}
+.idle-btn--break:hover:not(:disabled) { background: rgba(255,255,255,0.13); }
+.idle-btn--resume {
+  background: #6366f1;
+  color: #fff;
+}
+.idle-btn--resume:hover:not(:disabled) { background: #4f46e5; }
+
+/* ─── Today's Activity breakdown ─── */
+.activity-loading { font-size: 0.8rem; color: var(--text-muted); padding: 1rem 0; }
+.activity-error { font-size: 0.8rem; color: #ef4444; padding: 0.5rem 0; }
+
+.breakdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin-bottom: 0.75rem;
+}
+.breakdown-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+.breakdown-table td {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+  white-space: nowrap;
+}
+.breakdown-row--active td { background: rgba(99,102,241,0.08); }
+.breakdown-no-task { color: var(--text-muted); }
+.breakdown-active-badge { color: #6366f1; font-size: 0.75rem; }
+.breakdown-total { font-weight: 600; }
+.breakdown-footer td { font-weight: 700; border-top: 1px solid var(--border); border-bottom: none; padding-top: 0.4rem; }
+.breakdown-empty { color: var(--text-muted); text-align: center; padding: 1rem 0; }
+.breakdown-legacy-task { color: #eab308; font-size: 0.75rem; font-style: italic; }
+.breakdown-legacy-warning {
+  font-size: 0.75rem;
+  color: #eab308;
+  background: rgba(234,179,8,0.08);
+  border: 1px solid rgba(234,179,8,0.2);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.breakdown-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+.breakdown-check--ok { background: rgba(34,197,94,0.1); color: #22c55e; }
+.breakdown-check--warn { background: rgba(234,179,8,0.1); color: #eab308; }
+.breakdown-check strong { font-weight: 700; }
+
+.breakdown-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+.breakdown-definition { font-style: italic; }
+.breakdown-refresh {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+.breakdown-refresh:hover { color: var(--text); }

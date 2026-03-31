@@ -12,6 +12,7 @@ export function WorkedToday() {
 
   // workedToday is session-derived and pushed from main on every state update
   const total = timer?.workedToday ?? 0;
+  const thisSession = timer?.thisSession ?? 0;
 
   async function handlePauseResume() {
     setPauseLoading(true);
@@ -47,8 +48,14 @@ export function WorkedToday() {
         {isActive && <StatusBadge status={status} />}
       </div>
       <div className="worked-today-bar__right">
-        <span className="worked-today-bar__label">Worked Today:</span>
-        <span className="worked-today-bar__value">{formatWorkedToday(total)}</span>
+        <div className="worked-today-bar__metric">
+          <span className="worked-today-bar__label">Worked Today:</span>
+          <span className="worked-today-bar__value">{formatWorkedToday(total)}</span>
+        </div>
+        <div className="worked-today-bar__metric worked-today-bar__metric--session">
+          <span className="worked-today-bar__label">This session:</span>
+          <span className="worked-today-bar__value worked-today-bar__value--session">{formatWorkedToday(thisSession)}</span>
+        </div>
       </div>
     </div>
   );

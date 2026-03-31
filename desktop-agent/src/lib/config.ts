@@ -8,7 +8,7 @@
  *      Linux   : /home/<you>/.docuflow-url
  *      macOS   : /Users/<you>/.docuflow-url
  *      Content: one URL per line, first line wins. Example:
- *        https://685f78d0-...replit.dev      ← DEV
+ *        https://685f78d0-eb71-48b3-ad3d-cfc7079d359b-00-1ew2ty1yeevg0.spock.replit.dev  ← DEV
  *        # https://techma-doc--masdouk1.replit.app  ← PROD (commented)
  *   3. DEFAULT_API_URL baked in at build time (PROD)
  *

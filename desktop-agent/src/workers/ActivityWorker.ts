@@ -16,7 +16,8 @@ import { AgentStore } from "../lib/AgentStore";
 
 const IDLE_CHECK_INTERVAL_MS = 5_000;
 const ACTIVE_WINDOW_INTERVAL_MS = 10_000;
-const IDLE_THRESHOLD_SECONDS = 180;
+const IDLE_THRESHOLD_SECONDS = 180;    // analytics events (idle_start / idle_end)
+const IDLE_UX_THRESHOLD_SECONDS = 600; // 10 min → auto-pause + user prompt
 
 export class ActivityWorker {
   private queue: SqliteQueue;
@@ -24,13 +25,20 @@ export class ActivityWorker {
   private idleInterval: ReturnType<typeof setInterval> | null = null;
   private windowInterval: ReturnType<typeof setInterval> | null = null;
   private wasIdle = false;
+  private idleUxTriggered = false; // true once UX prompt has fired for this idle stretch
   private lastWindowInfo: string | null = null;
   private suspendHandler: (() => void) | null = null;
   private resumeHandler: (() => void) | null = null;
+  private onIdleUxCb: ((idleSeconds: number) => void) | null = null;
 
   constructor(queue: SqliteQueue, store: AgentStore) {
     this.queue = queue;
     this.store = store;
+  }
+
+  /** Register callback fired when idle crosses the UX threshold (10 min). */
+  setIdleUxCallback(cb: (idleSeconds: number) => void): void {
+    this.onIdleUxCb = cb;
   }
 
   start(): void {
@@ -80,14 +88,27 @@ export class ActivityWorker {
   private checkIdle(): void {
     const idleSeconds = powerMonitor.getSystemIdleTime();
 
+    // Analytics threshold (3 min)
     if (idleSeconds >= IDLE_THRESHOLD_SECONDS && !this.wasIdle) {
       this.wasIdle = true;
       this.queue.enqueue("idle_start", new Date(), { idleSeconds });
       console.log(`[ActivityWorker] Idle started (${idleSeconds}s)`);
     } else if (idleSeconds < IDLE_THRESHOLD_SECONDS && this.wasIdle) {
       this.wasIdle = false;
+      this.idleUxTriggered = false; // reset so next idle stretch can fire again
       this.queue.enqueue("idle_end", new Date(), { idleSeconds });
       console.log(`[ActivityWorker] Idle ended (${idleSeconds}s)`);
+    }
+
+    // UX threshold (10 min) — fire once per idle stretch, only when timer is running
+    if (
+      idleSeconds >= IDLE_UX_THRESHOLD_SECONDS &&
+      !this.idleUxTriggered &&
+      this.store.getTimerStatus() === "running"
+    ) {
+      this.idleUxTriggered = true;
+      console.log(`[ActivityWorker] Idle UX threshold reached (${idleSeconds}s) — notifying main`);
+      this.onIdleUxCb?.(idleSeconds);
     }
   }
 

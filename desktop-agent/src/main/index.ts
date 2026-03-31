@@ -66,7 +66,9 @@ const WIDGET_WIDTH = 340;
 const WIDGET_HEIGHT = 64;
 const WIDGET_MARGIN = 20;
 
+const SESSION_STARTED_AT = Date.now(); // anchors "This session" elapsed; resets on restart
 const store = new AgentStore();
+store.setSessionStartedAt(SESSION_STARTED_AT);
 // Pass userData path so SQLite DB survives restarts
 const queue = new SqliteQueue(app.getPath("userData"));
 
@@ -284,6 +286,7 @@ function startWorkers(): void {
   heartbeatWorker.start();
 
   activityWorker = new ActivityWorker(queue, store);
+  activityWorker.setIdleUxCallback((idleSeconds) => handleIdleUx(idleSeconds));
   activityWorker.start();
 
   syncWorker = new SyncWorker(apiClient, queue, store);
@@ -541,6 +544,13 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
 // ─── IPC: Timer ───
 
 ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description }) => {
+  // A task is always required. The UI enforces this, but we guard here too so
+  // no path (IPC replay, future renderers) can create a task-less entry.
+  if (!taskId) {
+    console.warn("[Main] timer.start rejected — taskId is required");
+    return { ok: false, error: "A task must be selected to start the timer." };
+  }
+
   // Local-first: apply state immediately, enqueue for background sync.
   const clientCommandId = randomUUID();
   const localEntryId = `local-${randomUUID()}`;
@@ -627,6 +637,109 @@ ipcMain.handle("agent:get-worked-today", () => {
   return { ok: true, total: store.getWorkedTodaySeconds() };
 });
 
+ipcMain.handle("agent:today-breakdown", async () => {
+  if (!store.isPaired()) return { ok: false, rows: [] };
+  try {
+    const rows = await apiClient.getTodayBreakdown();
+    // Overlay live elapsed for the active entry onto its matching row
+    const timerState = store.getTimerState();
+    if (timerState.status !== "stopped" && timerState.taskId) {
+      const activeRow = rows.find((r) => r.taskId === timerState.taskId);
+      if (activeRow) {
+        (activeRow as any).activeSeconds = timerState.elapsedToday;
+      } else {
+        rows.push({
+          projectName: timerState.projectName ?? "Unknown Project",
+          taskId: timerState.taskId,
+          taskName: timerState.taskName,
+          stoppedSeconds: 0,
+          activeSeconds: timerState.elapsedToday,
+        } as any);
+      }
+    } else if (timerState.status !== "stopped" && !timerState.taskId) {
+      // Timer running with no task — show as its own row
+      rows.push({
+        projectName: timerState.projectName ?? "Unknown Project",
+        taskId: null,
+        taskName: null,
+        stoppedSeconds: 0,
+        activeSeconds: timerState.elapsedToday,
+      } as any);
+    }
+    return { ok: true, rows };
+  } catch (err: any) {
+    return { ok: false, rows: [], error: err.message };
+  }
+});
+
+// ─── Idle / break UX ───
+
+let idlePromptDismissTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Called by ActivityWorker when idle crosses 10 min while timer is running.
+ * Auto-pauses the timer (retroactively, excluding idle time) then pushes a
+ * prompt to the renderer so the user can choose break or resume.
+ */
+function handleIdleUx(idleSeconds: number): void {
+  if (store.getTimerStatus() !== "running") return; // already paused/stopped
+
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return;
+
+  // Retroactively close the session at the moment idle started so that idle
+  // time is NOT counted in elapsedToday / Worked Today.
+  const idleStartedAt = new Date(Date.now() - idleSeconds * 1000);
+  store.setTimerPaused(idleStartedAt);
+  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+
+  console.log(`[Main] idle.autoPause — idleSeconds=${idleSeconds}, sessionClosedAt=${idleStartedAt.toISOString()}`);
+
+  // Push prompt to renderer
+  mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds });
+
+  // Auto-dismiss after 5 min with no response (timer stays paused — safe)
+  if (idlePromptDismissTimeout) clearTimeout(idlePromptDismissTimeout);
+  idlePromptDismissTimeout = setTimeout(() => {
+    mainWindow?.webContents.send("agent:idle-dismiss");
+    idlePromptDismissTimeout = null;
+    console.log("[Main] idle.prompt auto-dismissed (no response)");
+  }, 5 * 60_000);
+}
+
+/** Renderer: user chose "I'm on break" — timer stays paused, dismiss prompt. */
+ipcMain.handle("agent:idle-break", () => {
+  if (idlePromptDismissTimeout) { clearTimeout(idlePromptDismissTimeout); idlePromptDismissTimeout = null; }
+  mainWindow?.webContents.send("agent:idle-dismiss");
+  console.log("[Main] idle.break confirmed by user");
+  return { ok: true };
+});
+
+/** Renderer: user chose "Back to work" — resume timer. */
+ipcMain.handle("agent:idle-resume", () => {
+  if (idlePromptDismissTimeout) { clearTimeout(idlePromptDismissTimeout); idlePromptDismissTimeout = null; }
+  mainWindow?.webContents.send("agent:idle-dismiss");
+
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return { ok: false, error: "No active timer" };
+  if (store.getTimerStatus() !== "paused") return { ok: true }; // already running
+
+  store.setTimerRunning(
+    entryId,
+    store.getActiveProjectName(),
+    store.getActiveTaskId(),
+    store.getActiveTaskName(),
+    store.getActiveDescription(),
+  );
+  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  console.log("[Main] idle.resume confirmed by user");
+  return { ok: true };
+});
+
 // ─── Auto-resume from offline queue ───
 
 /**
@@ -639,7 +752,12 @@ ipcMain.handle("agent:get-worked-today", () => {
  */
 function autoResumeFromQueue(): void {
   const entryId = store.getActiveEntryId();
-  if (!entryId) return;
+  if (!entryId) {
+    // Defensive: if entryId is gone but timerStatus is stale (e.g. external disk
+    // corruption), clear it so the store stays consistent.
+    if (store.getTimerStatus() !== "stopped") store.clearTimer();
+    return;
+  }
 
   // Use pending queue intent when available (offline case — commands not yet synced).
   // Fall back to persisted timerStatus when the queue is empty, which is the common

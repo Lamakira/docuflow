@@ -24,6 +24,7 @@ const defaultTimerState: TimerState = {
   elapsed: 0,
   elapsedToday: 0,
   workedToday: 0,
+  thisSession: 0,
   entryId: null,
   taskId: null,
   projectName: null,
@@ -103,6 +104,7 @@ function reducer(state: State, action: Action): State {
             ...state.agentState.timer,
             elapsed: state.agentState.timer.elapsed + 1,
             elapsedToday: state.agentState.timer.elapsedToday + 1,
+            thisSession: state.agentState.timer.thisSession + 1,
           },
         },
       };

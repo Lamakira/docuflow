@@ -41,6 +41,9 @@ export interface TimeEntry {
   // Enriched by /api/agent/timer/active
   projectName?: string | null;
   taskName?: string | null;
+  // Returned by /api/agent/timer/start: total stopped duration for this task today (seconds).
+  // Used to seed the elapsed display so Task A shows 30:00 when restarted, not 0:00.
+  taskAccumulatedToday?: number;
 }
 
 export interface CrmProjectSummary {
@@ -282,6 +285,22 @@ export class ApiClient {
       { method: "GET" }
     );
     return data?.total ?? 0;
+  }
+
+  async getTodayBreakdown(): Promise<Array<{
+    projectName: string;
+    taskId: string | null;
+    taskName: string | null;
+    stoppedSeconds: number;
+  }>> {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const data = await this.authenticatedRequest(
+      `/api/agent/today-breakdown?start=${encodeURIComponent(startOfDay.toISOString())}&end=${encodeURIComponent(endOfDay.toISOString())}`,
+      { method: "GET" }
+    );
+    return data?.rows ?? [];
   }
 
   // ─── Screenshots ───

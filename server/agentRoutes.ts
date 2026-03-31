@@ -794,6 +794,65 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
+  /**
+   * Agent: today's time breakdown grouped by (project, task).
+   * Returns stopped-entry totals only; the client overlays the active entry's live elapsed.
+   * Same day-window logic as /api/agent/worked-today (client-supplied local midnight).
+   */
+  app.get("/api/agent/today-breakdown", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
+    try {
+      const userId = req.agentUserId!;
+      const startDate = req.query.start ? new Date(req.query.start as string) : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+      const endDate   = req.query.end   ? new Date(req.query.end   as string) : (() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; })();
+
+      const entries = await storage.getTimeEntries({
+        userId,
+        endDate,
+        endDateGte: startDate,
+        status: "stopped",
+      });
+
+      // Clamp cross-midnight entries proportionally (same as getTimeStats)
+      const clamp = (e: { startTime: Date | string; endTime: Date | string | null; duration: number | null }): number => {
+        if (!e.endTime) return e.duration || 0;
+        const eStart = new Date(e.startTime).getTime();
+        const wStart = startDate.getTime();
+        if (eStart >= wStart) return e.duration || 0;
+        const eEnd = new Date(e.endTime).getTime();
+        const totalMs = eEnd - eStart;
+        if (totalMs <= 0) return 0;
+        const inWindowMs = Math.min(eEnd, endDate.getTime()) - wStart;
+        if (inWindowMs <= 0) return 0;
+        return Math.round((e.duration || 0) * inWindowMs / totalMs);
+      };
+
+      // Batch-fetch task names for all unique taskIds
+      const taskIds = [...new Set(entries.map(e => e.taskId).filter(Boolean) as string[])];
+      const taskNames = new Map<string, string>();
+      await Promise.all(taskIds.map(async (id) => {
+        const t = await storage.getTask(id);
+        if (t) taskNames.set(id, t.name);
+      }));
+
+      // Group by (crmProjectId, taskId)
+      type Row = { projectName: string; taskId: string | null; taskName: string | null; stoppedSeconds: number };
+      const map = new Map<string, Row>();
+      for (const entry of entries) {
+        const key = `${entry.crmProjectId}::${entry.taskId ?? ""}`;
+        const projectName = (entry as any).crmProject?.project?.name || "Unknown Project";
+        const taskName = entry.taskId ? (taskNames.get(entry.taskId) ?? null) : null;
+        const existing = map.get(key) ?? { projectName, taskId: entry.taskId ?? null, taskName, stoppedSeconds: 0 };
+        existing.stoppedSeconds += clamp(entry);
+        map.set(key, existing);
+      }
+
+      res.json({ rows: Array.from(map.values()) });
+    } catch (error) {
+      logError("agent.today-breakdown.failed", error);
+      res.status(500).json({ message: "Failed to fetch today breakdown" });
+    }
+  });
+
   /** Agent: list tasks for a CRM project (for timer start dropdown) */
   app.get("/api/agent/tasks", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     if (!isTasksEnabled()) return res.json({ data: [] });
@@ -844,6 +903,9 @@ export function registerAgentRoutes(app: Express): void {
 
       if (!crmProjectId) {
         return res.status(400).json({ message: "crmProjectId is required" });
+      }
+      if (isTasksEnabled() && !taskId) {
+        return res.status(400).json({ message: "taskId is required" });
       }
 
       // Idempotency: if we've already processed this command, return the existing entry

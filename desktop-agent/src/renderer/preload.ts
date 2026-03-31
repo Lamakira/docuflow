@@ -29,6 +29,21 @@ contextBridge.exposeInMainWorld("agentBridge", {
 
   // Daily totals
   getWorkedToday: () => ipcRenderer.invoke("agent:get-worked-today"),
+  getTodayBreakdown: () => ipcRenderer.invoke("agent:today-breakdown"),
+
+  // Idle / break
+  idleBreak: () => ipcRenderer.invoke("agent:idle-break"),
+  idleResume: () => ipcRenderer.invoke("agent:idle-resume"),
+  onIdlePrompt: (callback: (data: { idleSeconds: number }) => void) => {
+    const handler = (_event: any, data: { idleSeconds: number }) => callback(data);
+    ipcRenderer.on("agent:idle-prompt", handler);
+    return () => ipcRenderer.off("agent:idle-prompt", handler);
+  },
+  onIdleDismiss: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("agent:idle-dismiss", handler);
+    return () => ipcRenderer.off("agent:idle-dismiss", handler);
+  },
 
   // Login progress events pushed from main during waitForBackend + loginWithPassword
   onLoginProgress: (callback: (data: { message: string }) => void) => {

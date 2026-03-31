@@ -105,8 +105,13 @@ export class SyncWorker {
           if (cmd.entryId && cmd.entryId !== entry.id) {
             this.store.updateActiveEntryId(cmd.entryId, entry.id);
           }
+          // Seed elapsed from server's accumulated task history today so the UI
+          // shows e.g. 30:00 instead of 0:00 when the user restarts a task mid-day.
+          if (entry.taskAccumulatedToday) {
+            this.store.applyTaskAccumulatedToday(entry.taskAccumulatedToday);
+          }
           this.queue.markTimerCommandSynced(cmd.clientCommandId, entry.id);
-          console.log(`[SyncWorker] timer.start synced → serverEntryId=${entry.id}`);
+          console.log(`[SyncWorker] timer.start synced → serverEntryId=${entry.id} taskAccumulatedToday=${entry.taskAccumulatedToday ?? 0}s`);
 
         } else if (cmd.type === "pause") {
           await this.apiClient.pauseTimer(cmd.entryId!);
