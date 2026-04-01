@@ -142,6 +142,7 @@ interface AgentContextValue {
     taskName?: string;
     projectName: string;
     description?: string;
+    taskDurationToday?: number;
   }) => Promise<{ ok: boolean; error?: string }>;
   pauseTimer: () => Promise<{ ok: boolean; error?: string }>;
   resumeTimer: () => Promise<{ ok: boolean; error?: string }>;
@@ -207,6 +208,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     taskName?: string;
     projectName: string;
     description?: string;
+    taskDurationToday?: number;
   }) => {
     const result = await bridge.timerStart(args);
     if (result.ok) {

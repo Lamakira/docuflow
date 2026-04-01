@@ -543,7 +543,7 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
 
 // ─── IPC: Timer ───
 
-ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description }) => {
+ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description, taskDurationToday }) => {
   // A task is always required. The UI enforces this, but we guard here too so
   // no path (IPC replay, future renderers) can create a task-less entry.
   if (!taskId) {
@@ -561,7 +561,10 @@ ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskN
     taskId || null,
     taskName || null,
     description || null,
-    0, // taskAccumulatedToday: server will return the real value when the start command syncs
+    // Seed entryServerBase from the renderer's already-known task total so that
+    // elapsedToday displays correctly from the first tick, without waiting for
+    // the ~30s server sync response (avoids the 0→jump UX regression).
+    typeof taskDurationToday === "number" ? taskDurationToday : 0,
   );
   queue.enqueueTimerCommand({
     clientCommandId,

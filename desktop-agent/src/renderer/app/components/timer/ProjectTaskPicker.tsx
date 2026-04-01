@@ -78,6 +78,9 @@ export function ProjectTaskPicker() {
       projectName: selectedProject.name,
       taskId: task.id,
       taskName: task.name,
+      // Pass already-known today total so elapsedToday is correct immediately,
+      // without waiting ~30s for the server start response (avoids 0→jump UX).
+      taskDurationToday: task.durationToday ?? 0,
     });
     setStarting(null);
     if (!result.ok) {

@@ -65,6 +65,7 @@ export interface AgentBridge {
     taskName?: string;
     projectName: string;
     description?: string;
+    taskDurationToday?: number; // seeds elapsedToday immediately, avoids 0→jump on restart
   }) => Promise<{ ok: boolean; entry?: any; error?: string }>;
   timerPause: () => Promise<{ ok: boolean; error?: string }>;
   timerResume: () => Promise<{ ok: boolean; error?: string }>;
