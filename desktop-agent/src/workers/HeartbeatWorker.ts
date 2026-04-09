@@ -22,6 +22,7 @@ type TimerSyncCallback = (
     lastActivityAt?: string | null;
     projectName?: string | null;
     taskName?: string | null;
+    startTime?: string | null;
   } | null
 ) => void;
 

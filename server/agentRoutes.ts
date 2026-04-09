@@ -448,6 +448,7 @@ export function registerAgentRoutes(app: Express): void {
           lastActivityAt: serverActive.lastActivityAt ?? null,
           projectName,
           taskName,
+          startTime: new Date(serverActive.startTime).toISOString(),
         };
       }
 

@@ -353,6 +353,7 @@ function applyServerTimerSync(
     lastActivityAt?: string | null;
     projectName?: string | null;
     taskName?: string | null;
+    startTime?: string | null;
   } | null
 ): void {
   // Don't override locally-applied state while commands are waiting to sync.
@@ -379,6 +380,7 @@ function applyServerTimerSync(
           lastActivityAt: timerSync.lastActivityAt,
           projectName: timerSync.projectName,
           taskName: timerSync.taskName,
+          startTime: timerSync.startTime ?? null,
         }
       : null
   );
@@ -411,6 +413,7 @@ async function syncTimerFromServer(): Promise<void> {
             lastActivityAt: active.lastActivityAt ?? null,
             projectName: active.projectName ?? null,
             taskName: active.taskName ?? null,
+            startTime: active.startTime ?? null,
           }
         : null;
     applyServerTimerSync(timerSync);

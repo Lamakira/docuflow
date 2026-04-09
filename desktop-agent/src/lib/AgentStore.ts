@@ -44,6 +44,8 @@ interface PersistedData {
   // Persisted so autoResumeFromQueue() can restore the correct status on restart
   // even when all timer commands were already synced before shutdown (queue empty).
   timerStatus: "stopped" | "running" | "paused";
+  /** Wall-clock start of the active time entry (ISO). Used to apportion active duration into "today" without inflating Worked Today on cross-midnight entries. */
+  activeEntryStartTime: string | null;
 }
 
 // Runtime-only state (not persisted)
@@ -94,6 +96,7 @@ export class AgentStore {
       sessions: [],
       lastActivityAt: null,
       timerStatus: "stopped",
+      activeEntryStartTime: null,
     };
     try {
       if (!fs.existsSync(this.configPath)) return empty;
@@ -106,6 +109,8 @@ export class AgentStore {
         // Migration: pre-March-27 JSON has no timerStatus field.
         // If activeEntryId is set, the timer was active at last shutdown → infer "running".
         timerStatus: parsed.timerStatus ?? (parsed.activeEntryId ? "running" : "stopped"),
+        activeEntryStartTime:
+          typeof parsed.activeEntryStartTime === "string" ? parsed.activeEntryStartTime : null,
       };
     } catch (err) {
       console.warn("[AgentStore] Failed to load config, using defaults:", (err as Error).message);
@@ -193,7 +198,8 @@ export class AgentStore {
     // On a new entry: initialise server base from the task's stopped history today
     // (restores the "accumulated time, not 0" UX from the pre-session-based model).
     // On resume of the same entry: preserve whatever base is already set.
-    if (entryId !== this.data.activeEntryId) {
+    const isNewEntry = entryId !== this.data.activeEntryId;
+    if (isNewEntry) {
       this.data.entryServerBase = taskAccumulatedToday;
     }
     this.data.sessions.push({
@@ -204,6 +210,11 @@ export class AgentStore {
       endTime: null,
     });
     this.pruneSessions();
+
+    if (isNewEntry) {
+      const last = this.data.sessions[this.data.sessions.length - 1];
+      this.data.activeEntryStartTime = last.startTime;
+    }
 
     this.data.timerStatus = "running";
     this.runtime.activeDescription = description ?? null;
@@ -244,6 +255,7 @@ export class AgentStore {
     this.data.activeTaskName = null;
     this.data.activeTaskId = null;
     this.data.entryServerBase = 0;
+    this.data.activeEntryStartTime = null;
     this.data.lastActivityAt = new Date().toISOString();
     this.saveToDisk();
   }
@@ -343,6 +355,8 @@ export class AgentStore {
     lastActivityAt?: string | null;
     projectName?: string | null;
     taskName?: string | null;
+    /** Wall-clock start of the entry — required for correct elapsed-today when entry spans calendar days */
+    startTime?: string | Date | null;
   } | null): void {
     if (!entry || entry.status === "stopped") {
       if (this.data.timerStatus !== "stopped") {
@@ -363,6 +377,14 @@ export class AgentStore {
       this.data.activeProjectName = null;
       this.data.activeTaskName = null;
       this.data.activeTaskId = null;
+      this.data.activeEntryStartTime = null;
+    }
+
+    if (entry.startTime) {
+      this.data.activeEntryStartTime =
+        typeof entry.startTime === "string"
+          ? entry.startTime
+          : entry.startTime.toISOString();
     }
 
     // Populate task/project names from server when not already known locally
@@ -449,16 +471,29 @@ export class AgentStore {
   }
 
   /**
+   * Wall end (ms) of the active entry's tracked span: last session end, or now if running,
+   * or lastActivityAt if paused with no sessions yet. Used so "today" apportioning does not
+   * shrink as wall clock advances during idle after a pause.
+   */
+  private getActiveSpanWallEndMs(entryId: string, now: number): number {
+    const se = this.data.sessions.filter((s) => s.entryId === entryId);
+    if (se.length === 0) {
+      if (this.data.timerStatus === "paused" && this.data.lastActivityAt) {
+        return new Date(this.data.lastActivityAt).getTime();
+      }
+      return now;
+    }
+    return Math.max(...se.map((s) => new Date(s.endTime || now).getTime()));
+  }
+
+  /**
    * Elapsed seconds for the current entry, clamped to the current local day.
    *
-   * = entryServerBase (only if the entry started today — first local session ≥ midnight)
-   * + sum of local sessions for activeEntryId, clamped to [local midnight, now]
+   * When `activeEntryStartTime` is set: apportions **total** active seconds (getElapsedSeconds)
+   * into "today" using the overlap of [entry wall start, span end] with [local midnight, end of day],
+   * matching server-side stopped-entry clamping for cross-midnight entries.
    *
-   * After midnight, a cross-day entry will show only the time accumulated
-   * since midnight. entryServerBase is excluded for cross-day entries because
-   * it was seeded from yesterday's accumulated task history.
-   *
-   * This is the authoritative value for the header and active task row.
+   * Legacy fallback (no `activeEntryStartTime` in persisted JSON): previous base+session-day-clamp.
    */
   getElapsedTodaySeconds(now = Date.now()): number {
     const entryId = this.data.activeEntryId;
@@ -467,18 +502,24 @@ export class AgentStore {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const midnight = todayStart.getTime();
+    const endOfDay = new Date(todayStart);
+    endOfDay.setHours(23, 59, 59, 999);
+    const endMs = endOfDay.getTime();
+
+    if (this.data.activeEntryStartTime) {
+      const startMs = new Date(this.data.activeEntryStartTime).getTime();
+      const totalActive = this.getElapsedSeconds(now);
+      const spanEnd = this.getActiveSpanWallEndMs(entryId, now);
+      const totalWallMs = Math.max(1, spanEnd - startMs);
+      const overlapStart = Math.max(startMs, midnight);
+      const overlapEnd = Math.min(spanEnd, endMs, now);
+      const inWindowMs = Math.max(0, overlapEnd - overlapStart);
+      if (inWindowMs <= 0) return 0;
+      return Math.round(totalActive * (inWindowMs / totalWallMs));
+    }
 
     const entrySessions = this.data.sessions.filter((s) => s.entryId === entryId);
 
-    // entryServerBase is today-scoped when:
-    //   (a) the entry's first local session started today, OR
-    //   (b) there are no local sessions at all — meaning the entry was synced from
-    //       the server on startup (syncFromServer seeds entryServerBase from the
-    //       server's elapsedToday, which is already day-scoped). Without this branch
-    //       the "Worked Today" header would show 0 after an app restart even when
-    //       hours have already been accumulated.
-    // For entries whose first local session predates midnight (cross-midnight case),
-    // the base was seeded for yesterday and must not pollute the new day's display.
     const entryStartedToday =
       entrySessions.length === 0 ||
       new Date(entrySessions[0].startTime).getTime() >= midnight;
