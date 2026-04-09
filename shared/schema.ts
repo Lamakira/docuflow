@@ -1196,3 +1196,34 @@ export const agentActivityEvents = pgTable("agent_activity_events", {
   index("idx_agent_events_user_time").on(table.userId, table.timestamp),
   index("idx_agent_events_batch").on(table.batchId),
 ]);
+
+// ─── Org-wide settings (single-row, id = "default") ───
+
+export interface ScreenshotPolicy {
+  screenshotsEnabled: boolean;
+  /** Minimum capture interval in minutes (default 3) */
+  captureIntervalMinMin: number;
+  /** Maximum capture interval in minutes (default 5) */
+  captureIntervalMaxMin: number;
+  /** Whether to restrict captures to a time window */
+  activeHoursEnabled: boolean;
+  /** Start of capture window, "HH:mm" 24 h (default "08:00") */
+  activeHoursStart: string;
+  /** End of capture window, "HH:mm" 24 h (default "18:00") */
+  activeHoursEnd: string;
+}
+
+export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
+  screenshotsEnabled: true,
+  captureIntervalMinMin: 3,
+  captureIntervalMaxMin: 5,
+  activeHoursEnabled: false,
+  activeHoursStart: "08:00",
+  activeHoursEnd: "18:00",
+};
+
+export const orgSettings = pgTable("org_settings", {
+  id: varchar("id").primaryKey().default("default"),
+  screenshotPolicy: jsonb("screenshot_policy").$type<ScreenshotPolicy>(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});

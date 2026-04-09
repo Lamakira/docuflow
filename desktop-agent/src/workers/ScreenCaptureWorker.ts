@@ -24,11 +24,16 @@ import { AgentStore } from "../lib/AgentStore";
 const CAPTURE_MIN_MS = 3 * 60 * 1000; // 3 minutes
 const CAPTURE_MAX_MS = 5 * 60 * 1000; // 5 minutes
 
-/** Returns a random delay uniformly distributed between MIN and MAX. */
-function randomCaptureDelay(): number {
-  return CAPTURE_MIN_MS + Math.random() * (CAPTURE_MAX_MS - CAPTURE_MIN_MS);
+const MAX_PNG_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB hard limit
+
+export interface ScreenshotPolicyPayload {
+  screenshotsEnabled: boolean;
+  captureIntervalMinMin: number;
+  captureIntervalMaxMin: number;
+  activeHoursEnabled: boolean;
+  activeHoursStart: string; // "HH:mm"
+  activeHoursEnd: string;   // "HH:mm"
 }
-const MAX_PNG_SIZE_BYTES = 5 * 1024 * 1024;      // 5 MB hard limit
 
 export class ScreenCaptureWorker {
   private queue: SqliteQueue;
@@ -37,6 +42,11 @@ export class ScreenCaptureWorker {
   private enabled: boolean;
   private totalCaptured = 0;
   private screenshotDir: string;
+  private captureMinMs = CAPTURE_MIN_MS;
+  private captureMaxMs = CAPTURE_MAX_MS;
+  private activeHoursEnabled = false;
+  private activeHoursStart = "08:00";
+  private activeHoursEnd = "18:00";
 
   constructor(queue: SqliteQueue, store: AgentStore, enabled = false) {
     this.queue = queue;
@@ -64,8 +74,43 @@ export class ScreenCaptureWorker {
     console.log(`[ScreenCaptureWorker] Stopped (captured: ${this.totalCaptured})`);
   }
 
+  /**
+   * Apply a screenshot policy received from the server via heartbeat.
+   * Takes effect immediately — no restart required.
+   */
+  applyPolicy(policy: ScreenshotPolicyPayload): void {
+    const wasEnabled = this.enabled;
+    this.enabled = policy.screenshotsEnabled;
+    this.captureMinMs = Math.max(1, policy.captureIntervalMinMin) * 60 * 1000;
+    this.captureMaxMs = Math.max(this.captureMinMs, policy.captureIntervalMaxMin * 60 * 1000);
+    this.activeHoursEnabled = policy.activeHoursEnabled;
+    this.activeHoursStart = policy.activeHoursStart;
+    this.activeHoursEnd = policy.activeHoursEnd;
+    console.log(
+      `[ScreenCaptureWorker] Policy applied: enabled=${this.enabled}, ` +
+      `interval=${policy.captureIntervalMinMin}–${policy.captureIntervalMaxMin}min, ` +
+      `activeHours=${this.activeHoursEnabled ? `${this.activeHoursStart}–${this.activeHoursEnd}` : "off"}`
+    );
+    // Start if newly enabled; stop if newly disabled
+    if (!wasEnabled && this.enabled) {
+      this.start();
+    } else if (wasEnabled && !this.enabled) {
+      this.stop();
+    }
+  }
+
+  /** Returns true if the current local time is within the configured active-hours window. */
+  private isWithinActiveHours(): boolean {
+    if (!this.activeHoursEnabled) return true;
+    const now = new Date();
+    const current = now.getHours() * 60 + now.getMinutes();
+    const [sh, sm] = this.activeHoursStart.split(":").map(Number);
+    const [eh, em] = this.activeHoursEnd.split(":").map(Number);
+    return current >= sh * 60 + sm && current < eh * 60 + em;
+  }
+
   private scheduleNext(): void {
-    const delay = randomCaptureDelay();
+    const delay = this.captureMinMs + Math.random() * (this.captureMaxMs - this.captureMinMs);
     this.timeout = setTimeout(() => this.captureAndEnqueue(), delay);
   }
 
@@ -74,6 +119,15 @@ export class ScreenCaptureWorker {
       // Only capture when timer is actively running
       if (this.store.getTimerStatus() !== "running") {
         console.log("[ScreenCaptureWorker] Skipping — timer not running");
+        this.scheduleNext();
+        return;
+      }
+
+      // Respect active-hours window
+      if (!this.isWithinActiveHours()) {
+        console.log(
+          `[ScreenCaptureWorker] Skipping — outside active hours (${this.activeHoursStart}–${this.activeHoursEnd})`
+        );
         this.scheduleNext();
         return;
       }

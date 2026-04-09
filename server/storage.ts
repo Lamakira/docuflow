@@ -87,6 +87,9 @@ import {
   agentPairingCodes,
   agentProcessedBatches,
   agentActivityEvents,
+  orgSettings,
+  type ScreenshotPolicy,
+  DEFAULT_SCREENSHOT_POLICY,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray } from "drizzle-orm";
@@ -327,6 +330,10 @@ export interface IStorage {
   revokeDevice(id: string): Promise<void>;
   revokeDevicesByMachine(userId: string, name: string, os: string | null): Promise<void>;
   getUserDevices(userId: string): Promise<Device[]>;
+
+  // Org settings
+  getScreenshotPolicy(): Promise<ScreenshotPolicy>;
+  upsertScreenshotPolicy(policy: Partial<ScreenshotPolicy>): Promise<void>;
 
   // Agent batch idempotency
   isAgentBatchProcessed(batchId: string): Promise<boolean>;
@@ -2660,6 +2667,23 @@ export class DatabaseStorage implements IStorage {
       .from(devices)
       .where(eq(devices.userId, userId))
       .orderBy(desc(devices.createdAt));
+  }
+
+  async getScreenshotPolicy(): Promise<ScreenshotPolicy> {
+    const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
+    return { ...DEFAULT_SCREENSHOT_POLICY, ...(row?.screenshotPolicy ?? {}) };
+  }
+
+  async upsertScreenshotPolicy(policy: Partial<ScreenshotPolicy>): Promise<void> {
+    const current = await this.getScreenshotPolicy();
+    const merged: ScreenshotPolicy = { ...current, ...policy };
+    await db
+      .insert(orgSettings)
+      .values({ id: "default", screenshotPolicy: merged, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: orgSettings.id,
+        set: { screenshotPolicy: merged, updatedAt: new Date() },
+      });
   }
 
   async isAgentBatchProcessed(batchId: string): Promise<boolean> {

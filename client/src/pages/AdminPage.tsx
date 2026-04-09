@@ -21,9 +21,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore, BarChart2 } from "lucide-react";
+import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore, BarChart2, Camera } from "lucide-react";
 import { AnalyticsContent } from "./AdminAnalyticsPage";
-import type { SafeUser, CrmModule, CrmModuleField, CrmModuleWithFields, CrmFieldType, crmFieldTypeValues } from "@shared/schema";
+import type { SafeUser, CrmModule, CrmModuleField, CrmModuleWithFields, CrmFieldType, crmFieldTypeValues, ScreenshotPolicy } from "@shared/schema";
+import { DEFAULT_SCREENSHOT_POLICY } from "@shared/schema";
 
 interface AdminUserDetails {
   id: string;
@@ -118,7 +119,7 @@ function AdminMainPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 max-w-xl">
+        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
           <TabsTrigger value="users" className="flex items-center gap-2" data-testid="tab-users">
             <Users className="w-4 h-4" />
             User Management
@@ -131,6 +132,10 @@ function AdminMainPage() {
             <BarChart2 className="w-4 h-4" />
             Analytics
           </TabsTrigger>
+          <TabsTrigger value="settings" className="flex items-center gap-2" data-testid="tab-settings">
+            <Camera className="w-4 h-4" />
+            Settings
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-6">
           <UserManagementContent />
@@ -140,6 +145,9 @@ function AdminMainPage() {
         </TabsContent>
         <TabsContent value="analytics" className="mt-6">
           <AnalyticsContent />
+        </TabsContent>
+        <TabsContent value="settings" className="mt-6">
+          <OrgSettingsContent />
         </TabsContent>
       </Tabs>
     </div>
@@ -1988,6 +1996,183 @@ function FieldDetailView({ field, module, onBack }: { field: CrmModuleField; mod
             {updateFieldMutation.isPending ? "Saving..." : "Save Changes"}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Org Settings (Screenshot Policy) ───────────────────────────────────────
+
+function OrgSettingsContent() {
+  const { toast } = useToast();
+
+  const { data, isLoading } = useQuery<{ screenshotPolicy: ScreenshotPolicy }>({
+    queryKey: ["/api/admin/org-settings"],
+  });
+
+  const [policy, setPolicy] = useState<ScreenshotPolicy>(DEFAULT_SCREENSHOT_POLICY);
+
+  // Sync server data → local form once loaded
+  useEffect(() => {
+    if (data?.screenshotPolicy) {
+      setPolicy({ ...DEFAULT_SCREENSHOT_POLICY, ...data.screenshotPolicy });
+    }
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("PATCH", "/api/admin/org-settings", { screenshotPolicy: policy }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/org-settings"] });
+      toast({ title: "Settings saved", description: "Screenshot policy updated successfully." });
+    },
+    onError: () => {
+      toast({ title: "Save failed", variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-xl space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Screenshot Policy</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Configure when and how often the desktop agent captures screenshots.
+          Changes are pushed to connected agents on their next heartbeat (≤ 60 s).
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="pt-6 space-y-6">
+          {/* Global enable/disable */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Enable screenshots</Label>
+              <p className="text-xs text-muted-foreground">
+                Master switch — disabling stops all captures immediately
+              </p>
+            </div>
+            <Switch
+              checked={policy.screenshotsEnabled}
+              onCheckedChange={(v) => setPolicy((p) => ({ ...p, screenshotsEnabled: v }))}
+              data-testid="switch-screenshots-enabled"
+            />
+          </div>
+
+          <div className={`space-y-6 ${!policy.screenshotsEnabled ? "opacity-40 pointer-events-none" : ""}`}>
+            {/* Capture interval */}
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Capture interval</Label>
+              <p className="text-xs text-muted-foreground">
+                A random delay between Min and Max is used between captures.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Min (minutes)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={policy.captureIntervalMaxMin}
+                    value={policy.captureIntervalMinMin}
+                    onChange={(e) =>
+                      setPolicy((p) => ({
+                        ...p,
+                        captureIntervalMinMin: Math.max(1, parseInt(e.target.value) || 1),
+                      }))
+                    }
+                    data-testid="input-interval-min"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Max (minutes)</Label>
+                  <Input
+                    type="number"
+                    min={policy.captureIntervalMinMin}
+                    max={60}
+                    value={policy.captureIntervalMaxMin}
+                    onChange={(e) =>
+                      setPolicy((p) => ({
+                        ...p,
+                        captureIntervalMaxMin: Math.max(p.captureIntervalMinMin, parseInt(e.target.value) || p.captureIntervalMinMin),
+                      }))
+                    }
+                    data-testid="input-interval-max"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Active hours */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">Restrict to active hours</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Captures only happen within the defined time window
+                  </p>
+                </div>
+                <Switch
+                  checked={policy.activeHoursEnabled}
+                  onCheckedChange={(v) => setPolicy((p) => ({ ...p, activeHoursEnabled: v }))}
+                  data-testid="switch-active-hours"
+                />
+              </div>
+
+              {policy.activeHoursEnabled && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Start time</Label>
+                    <Input
+                      type="time"
+                      value={policy.activeHoursStart}
+                      onChange={(e) =>
+                        setPolicy((p) => ({ ...p, activeHoursStart: e.target.value }))
+                      }
+                      data-testid="input-hours-start"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">End time</Label>
+                    <Input
+                      type="time"
+                      value={policy.activeHoursEnd}
+                      onChange={(e) =>
+                        setPolicy((p) => ({ ...p, activeHoursEnd: e.target.value }))
+                      }
+                      data-testid="input-hours-end"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+              data-testid="button-save-screenshot-policy"
+            >
+              {saveMutation.isPending ? "Saving…" : "Save policy"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-300 space-y-1">
+        <p className="font-medium">This is a true capture policy, not a display filter.</p>
+        <p>
+          Once saved, the policy is pushed to every connected desktop agent on its next heartbeat
+          (≤ 60 s). The agent will start/stop capturing and adjust its interval immediately.
+          No agent restart required.
+        </p>
       </div>
     </div>
   );

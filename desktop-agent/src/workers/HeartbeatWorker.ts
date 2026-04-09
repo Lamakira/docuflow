@@ -10,6 +10,7 @@
 import { app } from "electron";
 import { ApiClient } from "../lib/ApiClient";
 import { AgentStore } from "../lib/AgentStore";
+import type { ScreenshotPolicyPayload } from "./ScreenCaptureWorker";
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
@@ -26,16 +27,25 @@ type TimerSyncCallback = (
   } | null
 ) => void;
 
+type PolicySyncCallback = (policy: ScreenshotPolicyPayload) => void;
+
 export class HeartbeatWorker {
   private apiClient: ApiClient;
   private store: AgentStore;
   private interval: ReturnType<typeof setInterval> | null = null;
   private onTimerSync: TimerSyncCallback | null;
+  private onPolicySync: PolicySyncCallback | null;
 
-  constructor(apiClient: ApiClient, store: AgentStore, onTimerSync?: TimerSyncCallback) {
+  constructor(
+    apiClient: ApiClient,
+    store: AgentStore,
+    onTimerSync?: TimerSyncCallback,
+    onPolicySync?: PolicySyncCallback
+  ) {
     this.apiClient = apiClient;
     this.store = store;
     this.onTimerSync = onTimerSync ?? null;
+    this.onPolicySync = onPolicySync ?? null;
   }
 
   start(): void {
@@ -76,6 +86,11 @@ export class HeartbeatWorker {
       // Propagate server's authoritative timer state for immediate resync
       if (this.onTimerSync && "timerSync" in result) {
         this.onTimerSync(result.timerSync ?? null);
+      }
+
+      // Propagate screenshot policy so ScreenCaptureWorker updates without restart
+      if (this.onPolicySync && (result as any).screenshotPolicy) {
+        this.onPolicySync((result as any).screenshotPolicy);
       }
     } catch (error: any) {
       console.error("[HeartbeatWorker] Failed:", error.message);

@@ -2980,6 +2980,31 @@ Instructions:
     next();
   };
 
+  // Org settings — screenshot policy
+  app.get("/api/admin/org-settings", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const screenshotPolicy = await storage.getScreenshotPolicy();
+      res.json({ screenshotPolicy });
+    } catch (error) {
+      console.error("Error fetching org settings:", error);
+      res.status(500).json({ message: "Failed to fetch org settings" });
+    }
+  });
+
+  app.patch("/api/admin/org-settings", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { screenshotPolicy } = req.body;
+      if (!screenshotPolicy || typeof screenshotPolicy !== "object") {
+        return res.status(400).json({ message: "screenshotPolicy object is required" });
+      }
+      await storage.upsertScreenshotPolicy(screenshotPolicy);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error updating org settings:", error);
+      res.status(500).json({ message: "Failed to update org settings" });
+    }
+  });
+
   // Get all users (admin only)
   app.get("/api/admin/users", isAuthenticated, isAdmin, async (req: any, res) => {
     try {

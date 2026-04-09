@@ -282,7 +282,9 @@ function createTray(): void {
 function startWorkers(): void {
   if (!store.isPaired()) return;
 
-  heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync);
+  heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync, (policy) => {
+    screenshotWorker?.applyPolicy(policy);
+  });
   heartbeatWorker.start();
 
   activityWorker = new ActivityWorker(queue, store);

@@ -469,6 +469,9 @@ export function registerAgentRoutes(app: Express): void {
         };
       }
 
+      // Fetch org screenshot policy to push to desktop agent
+      const screenshotPolicy = await storage.getScreenshotPolicy();
+
       logInfo("agent.heartbeat", {
         deviceId: body.deviceId,
         timeEntryId: body.timeEntryId ?? null,
@@ -477,7 +480,7 @@ export function registerAgentRoutes(app: Express): void {
         timerSyncStatus: timerSync?.status ?? "none",
       });
 
-      res.json({ ok: true, serverTime: new Date().toISOString(), timerSync });
+      res.json({ ok: true, serverTime: new Date().toISOString(), timerSync, screenshotPolicy });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid request", errors: error.errors });
