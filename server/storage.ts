@@ -324,6 +324,7 @@ export interface IStorage {
   getDeviceByTokenHash(deviceId: string, tokenHash: string): Promise<Device | undefined>;
   updateDeviceLastSeen(id: string): Promise<void>;
   revokeDevice(id: string): Promise<void>;
+  revokeDevicesByMachine(userId: string, name: string, os: string | null): Promise<void>;
   getUserDevices(userId: string): Promise<Device[]>;
 
   // Agent batch idempotency
@@ -2622,6 +2623,20 @@ export class DatabaseStorage implements IStorage {
       .update(devices)
       .set({ revokedAt: new Date() })
       .where(eq(devices.id, id));
+  }
+
+  async revokeDevicesByMachine(userId: string, name: string, os: string | null): Promise<void> {
+    await db
+      .update(devices)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(devices.userId, userId),
+          eq(devices.name, name),
+          os ? eq(devices.os, os) : isNull(devices.os),
+          isNull(devices.revokedAt)
+        )
+      );
   }
 
   async getUserDevices(userId: string): Promise<Device[]> {

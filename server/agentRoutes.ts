@@ -369,6 +369,23 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
+  /** Web: revoke all tokens for a logical machine (identified by name+os) */
+  app.post("/api/agent/devices/revoke-machine", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const { name, os } = req.body;
+      if (!name || typeof name !== "string") {
+        return res.status(400).json({ message: "name is required" });
+      }
+      await storage.revokeDevicesByMachine(userId, name, os ?? null);
+      logInfo("agent.device.revoke-machine", { userId, name, os });
+      res.json({ ok: true });
+    } catch (error) {
+      logError("agent.device.revoke-machine.failed", error);
+      res.status(500).json({ message: "Failed to revoke machine devices" });
+    }
+  });
+
   /** Web: list user's devices */
   app.get("/api/agent/devices", isAuthenticated, async (req: any, res) => {
     try {
