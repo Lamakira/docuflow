@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -11,7 +13,14 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Camera, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Keyboard,
+  MousePointer2,
+  LayoutGrid,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { format, startOfDay, endOfDay, subDays } from "date-fns";
 import type { SafeUser } from "@shared/schema";
@@ -23,6 +32,8 @@ interface Screenshot {
   crmProjectId: string;
   storageKey: string;
   capturedAt: string;
+  entryDuration: number | null;
+  entryIdleTime: number | null;
 }
 
 interface ScreenshotsResponse {
@@ -47,16 +58,30 @@ function displayName(u: SafeUser): string {
   return full || u.email || u.id;
 }
 
+/** Tailwind grid-cols class from column count (must be static strings for purge). */
+const COLS_CLASS: Record<number, string> = {
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-4",
+  5: "grid-cols-5",
+  6: "grid-cols-6",
+  7: "grid-cols-7",
+  8: "grid-cols-8",
+};
+
 export default function ScreencastsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
-  // undefined = "not yet initialised — waiting for user to load"
-  // user.id   = filter to that specific user
-  // "all"     = no user filter (admin only)
   const [selectedUserId, setSelectedUserId] = useState<string | undefined>(undefined);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Thumbnail density: 2–8 columns (default 5)
+  const [thumbnailCols, setThumbnailCols] = useState(5);
 
   // Once the current user is known, default the filter to their own ID
   useEffect(() => {
@@ -65,7 +90,6 @@ export default function ScreencastsPage() {
     }
   }, [user?.id, selectedUserId]);
 
-  // Resolved filter value used for queries and queryKey
   const effectiveUserId = selectedUserId ?? user?.id;
 
   const { start, end } = useMemo(() => {
@@ -95,7 +119,6 @@ export default function ScreencastsPage() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<ScreenshotsResponse>({
-    // Include effectiveUserId and isAdmin in key so query refires when either changes
     queryKey: ["/api/time-tracking/screenshots", dateFilter, effectiveUserId, isAdmin],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({
@@ -104,7 +127,6 @@ export default function ScreencastsPage() {
         limit: "50",
         offset: String(pageParam ?? 0),
       });
-      // Admins can filter by a specific user; "all" means no userId param → backend returns all
       if (isAdmin && effectiveUserId && effectiveUserId !== "all") {
         params.set("userId", effectiveUserId);
       }
@@ -118,12 +140,33 @@ export default function ScreencastsPage() {
       return nextOffset < lastPage.total ? nextOffset : undefined;
     },
     initialPageParam: 0,
-    // Don't fetch until we know who the current user is
     enabled: !!effectiveUserId,
   });
 
   const allScreenshots = data?.pages.flatMap((p) => p.data) ?? [];
   const total = data?.pages[0]?.total ?? 0;
+
+  // Selection helpers
+  const allIds = allScreenshots.map((s) => s.id);
+  const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.has(id));
+  const someSelected = !allSelected && allIds.some((id) => selectedIds.has(id));
+
+  function toggleId(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (allSelected || someSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allIds));
+    }
+  }
 
   // Group screenshots by hour, sorted chronologically
   const grouped = useMemo(() => {
@@ -141,10 +184,11 @@ export default function ScreencastsPage() {
   }, [allScreenshots]);
 
   const previewScreenshot = previewIndex !== null ? allScreenshots[previewIndex] : null;
+  const gridClass = COLS_CLASS[thumbnailCols] ?? "grid-cols-5";
 
   return (
     <TimeTrackingLayout>
-      <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="p-6 max-w-7xl mx-auto space-y-4">
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -165,11 +209,9 @@ export default function ScreencastsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* Current user — always first */}
                   <SelectItem value={user.id}>
                     {displayName(user)} (me)
                   </SelectItem>
-                  {/* Other users from current DB */}
                   {usersData
                     ?.filter((u) => u.id !== user.id)
                     .map((u) => (
@@ -177,7 +219,6 @@ export default function ScreencastsPage() {
                         {displayName(u)}
                       </SelectItem>
                     ))}
-                  {/* All users */}
                   <SelectItem value="all">All users</SelectItem>
                 </SelectContent>
               </Select>
@@ -197,6 +238,39 @@ export default function ScreencastsPage() {
             </Select>
           </div>
         </div>
+
+        {/* Toolbar: select-all + density slider */}
+        {!isLoading && allScreenshots.length > 0 && (
+          <div className="flex items-center justify-between gap-4 py-1">
+            {/* Left: select all */}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                onCheckedChange={toggleSelectAll}
+                aria-label="Select all screenshots"
+              />
+              <span className="text-sm text-muted-foreground select-none">
+                {selectedIds.size > 0
+                  ? `${selectedIds.size} selected`
+                  : "Select all"}
+              </span>
+            </div>
+
+            {/* Right: density slider */}
+            <div className="flex items-center gap-2">
+              <LayoutGrid className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Slider
+                min={2}
+                max={8}
+                step={1}
+                value={[thumbnailCols]}
+                onValueChange={([v]) => setThumbnailCols(v)}
+                className="w-28"
+                aria-label="Thumbnail size"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Loading skeleton */}
         {isLoading && (
@@ -242,28 +316,105 @@ export default function ScreencastsPage() {
                 {shots.length} screenshot{shots.length > 1 ? "s" : ""}
               </span>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            <div className={`grid ${gridClass} gap-3`}>
               {shots.map((s) => {
                 const idx = allScreenshots.indexOf(s);
+                const isChecked = selectedIds.has(s.id);
+
+                // Activity ratio from time entry (entry-level approximation)
+                const dur = s.entryDuration ?? 0;
+                const idle = s.entryIdleTime ?? 0;
+                const total = dur + idle;
+                const actPct = total > 0 ? Math.round((dur / total) * 100) : null;
+
                 return (
-                  <button
+                  <div
                     key={s.id}
-                    onClick={() => setPreviewIndex(idx)}
-                    className="group relative aspect-video rounded-lg overflow-hidden bg-muted border border-border hover:border-primary/50 hover:shadow-md transition-all"
+                    className={`group rounded-lg border overflow-hidden transition-all hover:shadow-md ${
+                      isChecked
+                        ? "border-primary ring-1 ring-primary"
+                        : "border-border hover:border-primary/50"
+                    }`}
                   >
-                    <img
-                      src={`/api/time-tracking/screenshots/${s.id}/image`}
-                      alt={`Screenshot at ${formatTime(s.capturedAt)}`}
-                      loading="lazy"
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                    <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                      <p className="text-white text-xs font-medium">
-                        {formatTime(s.capturedAt)}
-                      </p>
+                    {/* Image area */}
+                    <div
+                      className="relative aspect-video bg-muted cursor-pointer"
+                      onClick={() => setPreviewIndex(idx)}
+                    >
+                      <img
+                        src={`/api/time-tracking/screenshots/${s.id}/image`}
+                        alt={`Screenshot at ${formatTime(s.capturedAt)}`}
+                        loading="lazy"
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Hover overlay */}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                      {/* Checkbox — top-left */}
+                      <div
+                        className="absolute top-1.5 left-1.5 z-10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleId(s.id);
+                        }}
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          className="bg-white/90 border-gray-300 shadow-sm data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                          aria-label={`Select screenshot at ${formatTime(s.capturedAt)}`}
+                        />
+                      </div>
                     </div>
-                  </button>
+
+                    {/* Meta block */}
+                    <div className="bg-card px-2 py-1.5 space-y-1">
+                      {/* Time */}
+                      <div className="text-xs font-medium text-foreground">
+                        {formatTime(s.capturedAt)}
+                      </div>
+
+                      {/* Activity bar */}
+                      {actPct !== null && (
+                        <div
+                          className="flex items-center gap-1.5"
+                          title={`Session activity: ${actPct}% active (entry-level estimate)`}
+                        >
+                          <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                actPct >= 70
+                                  ? "bg-green-500"
+                                  : actPct >= 40
+                                  ? "bg-yellow-500"
+                                  : "bg-orange-500"
+                              }`}
+                              style={{ width: `${actPct}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-muted-foreground shrink-0">
+                            {actPct}%
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Keyboard + Mouse indicators */}
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="flex items-center gap-0.5 text-[10px] text-muted-foreground/50"
+                          title="Keyboard activity — not tracked by current agent version"
+                        >
+                          <Keyboard className="h-2.5 w-2.5" />
+                          <span>—</span>
+                        </span>
+                        <span
+                          className="flex items-center gap-0.5 text-[10px] text-muted-foreground/50"
+                          title="Mouse activity — not tracked by current agent version"
+                        >
+                          <MousePointer2 className="h-2.5 w-2.5" />
+                          <span>—</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 );
               })}
             </div>
