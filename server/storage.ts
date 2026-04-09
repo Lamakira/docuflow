@@ -279,6 +279,7 @@ export interface IStorage {
     totalDuration: number;
     totalIdleTime: number;
     entriesCount: number;
+    screenshotCount: number;
     byProject: Array<{ crmProjectId: string; projectName: string; totalDuration: number }>;
     byUser: Array<{ userId: string; userName: string; totalDuration: number }>;
   }>;
@@ -2350,15 +2351,16 @@ export class DatabaseStorage implements IStorage {
     await db.delete(timeEntries).where(eq(timeEntries.id, id));
   }
 
-  async getTimeStats(options: { 
-    userId?: string; 
-    crmProjectId?: string; 
-    startDate?: Date; 
-    endDate?: Date 
+  async getTimeStats(options: {
+    userId?: string;
+    crmProjectId?: string;
+    startDate?: Date;
+    endDate?: Date
   }): Promise<{
     totalDuration: number;
     totalIdleTime: number;
     entriesCount: number;
+    screenshotCount: number;
     byProject: Array<{ crmProjectId: string; projectName: string; totalDuration: number }>;
     byUser: Array<{ userId: string; userName: string; totalDuration: number }>;
   }> {
@@ -2412,10 +2414,23 @@ export class DatabaseStorage implements IStorage {
       userMap.set(userId, existing);
     }
     
+    // Count screenshots in the same window
+    const screenshotConditions = [];
+    if (options.userId) screenshotConditions.push(eq(timeEntryScreenshots.userId, options.userId));
+    if (options.startDate) screenshotConditions.push(gt(timeEntryScreenshots.capturedAt, options.startDate));
+    if (options.endDate) screenshotConditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
+    screenshotConditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
+    const [screenshotRow] = await db
+      .select({ cnt: count() })
+      .from(timeEntryScreenshots)
+      .where(screenshotConditions.length > 0 ? and(...screenshotConditions) : undefined);
+    const screenshotCount = screenshotRow?.cnt ?? 0;
+
     return {
       totalDuration,
       totalIdleTime,
       entriesCount: entries.length,
+      screenshotCount,
       byProject: Array.from(projectMap.entries()).map(([crmProjectId, data]) => ({
         crmProjectId,
         ...data,
