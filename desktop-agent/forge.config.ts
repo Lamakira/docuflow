@@ -11,6 +11,13 @@ import path from "path";
 import fs from "fs";
 
 const config: ForgeConfig = {
+  // uiohook-napi ships prebuilt binaries via node-gyp-build and does not need
+  // to be recompiled against Electron headers. Skipping the rebuild step lets
+  // node-gyp-build pick up the correct prebuilt at runtime without requiring
+  // Visual Studio to be installed.
+  rebuildConfig: {
+    onlyModules: [],
+  },
   packagerConfig: {
     name: "DocuFlow Agent",
     executableName: "docuflow-agent",
