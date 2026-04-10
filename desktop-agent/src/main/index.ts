@@ -295,6 +295,7 @@ function startWorkers(): void {
   syncWorker.start();
 
   screenshotWorker = new ScreenCaptureWorker(queue, store, SCREENSHOTS_ENABLED);
+  if (activityWorker) screenshotWorker.setActivityWorker(activityWorker);
   screenshotWorker.start();
 
   // Create floating widget if it doesn't exist yet

@@ -1095,6 +1095,10 @@ export const timeEntryScreenshots = pgTable("time_entry_screenshots", {
   crmProjectId: varchar("crm_project_id").notNull().references(() => crmProjects.id, { onDelete: "cascade" }),
   storageKey: varchar("storage_key", { length: 500 }).notNull(),
   contentHash: varchar("content_hash", { length: 64 }),
+  /** % of the 60-second window before capture where keyboard input was detected (0–100). */
+  keyboardActivityPercent: integer("keyboard_activity_percent"),
+  /** % of the 60-second window before capture where mouse/pointer input was detected (0–100). */
+  mouseActivityPercent: integer("mouse_activity_percent"),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [

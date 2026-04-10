@@ -34,6 +34,8 @@ interface Screenshot {
   capturedAt: string;
   entryDuration: number | null;
   entryIdleTime: number | null;
+  keyboardActivityPercent: number | null;
+  mouseActivityPercent: number | null;
 }
 
 interface ScreenshotsResponse {
@@ -303,7 +305,7 @@ export default function ScreencastsPage() {
             </div>
             <p className="text-lg font-medium">No screenshots yet</p>
             <p className="text-sm text-muted-foreground mt-1">
-              Screenshots are captured every 3–5 minutes while the timer is running.
+              Screenshots are captured while the timer is running.
             </p>
           </div>
         )}
@@ -400,22 +402,60 @@ export default function ScreencastsPage() {
                         </div>
                       )}
 
-                      {/* Keyboard + Mouse indicators */}
-                      <div className="flex items-center gap-3">
-                        <span
-                          className="flex items-center gap-0.5 text-[10px] text-muted-foreground/50"
-                          title="Keyboard activity — not tracked by current agent version"
+                      {/* Keyboard + Mouse activity bars */}
+                      <div className="space-y-0.5">
+                        {/* Keyboard */}
+                        <div
+                          className="flex items-center gap-1"
+                          title={
+                            s.keyboardActivityPercent !== null
+                              ? `Keyboard activity: ${s.keyboardActivityPercent}% (input detected in last 60s)`
+                              : "Keyboard activity — no data (update desktop agent)"
+                          }
                         >
-                          <Keyboard className="h-2.5 w-2.5" />
-                          <span>—</span>
-                        </span>
-                        <span
-                          className="flex items-center gap-0.5 text-[10px] text-muted-foreground/50"
-                          title="Mouse activity — not tracked by current agent version"
+                          <Keyboard className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
+                          {s.keyboardActivityPercent !== null ? (
+                            <>
+                              <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-blue-500 transition-all"
+                                  style={{ width: `${s.keyboardActivityPercent}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-muted-foreground shrink-0 w-6 text-right">
+                                {s.keyboardActivityPercent}%
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground/40 ml-0.5">—</span>
+                          )}
+                        </div>
+                        {/* Mouse */}
+                        <div
+                          className="flex items-center gap-1"
+                          title={
+                            s.mouseActivityPercent !== null
+                              ? `Mouse activity: ${s.mouseActivityPercent}% (pointer/click/scroll in last 60s)`
+                              : "Mouse activity — no data (update desktop agent)"
+                          }
                         >
-                          <MousePointer2 className="h-2.5 w-2.5" />
-                          <span>—</span>
-                        </span>
+                          <MousePointer2 className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
+                          {s.mouseActivityPercent !== null ? (
+                            <>
+                              <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-violet-500 transition-all"
+                                  style={{ width: `${s.mouseActivityPercent}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-muted-foreground shrink-0 w-6 text-right">
+                                {s.mouseActivityPercent}%
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground/40 ml-0.5">—</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

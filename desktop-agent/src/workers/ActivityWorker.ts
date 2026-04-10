@@ -19,17 +19,29 @@ const ACTIVE_WINDOW_INTERVAL_MS = 10_000;
 const IDLE_THRESHOLD_SECONDS = 180;    // analytics events (idle_start / idle_end)
 const IDLE_UX_THRESHOLD_SECONDS = 600; // 10 min → auto-pause + user prompt
 
+/** Sample window for per-screenshot activity metric (seconds). */
+const ACTIVITY_WINDOW_SECONDS = 60;
+/** Polling interval for the activity sample buffer (ms). */
+const ACTIVITY_SAMPLE_MS = 1_000;
+/** Idle seconds below which a sample counts as "active input". */
+const ACTIVITY_IDLE_THRESHOLD = 2;
+
 export class ActivityWorker {
   private queue: SqliteQueue;
   private store: AgentStore;
   private idleInterval: ReturnType<typeof setInterval> | null = null;
   private windowInterval: ReturnType<typeof setInterval> | null = null;
+  private sampleInterval: ReturnType<typeof setInterval> | null = null;
   private wasIdle = false;
   private idleUxTriggered = false; // true once UX prompt has fired for this idle stretch
   private lastWindowInfo: string | null = null;
   private suspendHandler: (() => void) | null = null;
   private resumeHandler: (() => void) | null = null;
   private onIdleUxCb: ((idleSeconds: number) => void) | null = null;
+
+  /** Circular buffer of 1-second activity samples: 1 = input detected, 0 = idle. */
+  private activitySamples = new Array<number>(ACTIVITY_WINDOW_SECONDS).fill(0);
+  private activitySamplePtr = 0;
 
   constructor(queue: SqliteQueue, store: AgentStore) {
     this.queue = queue;
@@ -46,6 +58,9 @@ export class ActivityWorker {
 
     // Idle detection
     this.idleInterval = setInterval(() => this.checkIdle(), IDLE_CHECK_INTERVAL_MS);
+
+    // Activity sample buffer: 1-second polling for per-screenshot metrics
+    this.sampleInterval = setInterval(() => this.sampleActivity(), ACTIVITY_SAMPLE_MS);
 
     // Active window detection (every 10s)
     this.windowInterval = setInterval(() => this.captureActiveWindow(), ACTIVE_WINDOW_INTERVAL_MS);
@@ -70,6 +85,10 @@ export class ActivityWorker {
       clearInterval(this.idleInterval);
       this.idleInterval = null;
     }
+    if (this.sampleInterval) {
+      clearInterval(this.sampleInterval);
+      this.sampleInterval = null;
+    }
     if (this.windowInterval) {
       clearInterval(this.windowInterval);
       this.windowInterval = null;
@@ -83,6 +102,30 @@ export class ActivityWorker {
       this.resumeHandler = null;
     }
     console.log("[ActivityWorker] Stopped");
+  }
+
+  /**
+   * Record one second in the sliding window.
+   * A sample is "active" when the OS idle counter is below 2 seconds —
+   * meaning keyboard or mouse input occurred in the last ~2 seconds.
+   */
+  private sampleActivity(): void {
+    const idleSeconds = powerMonitor.getSystemIdleTime();
+    this.activitySamples[this.activitySamplePtr] = idleSeconds < ACTIVITY_IDLE_THRESHOLD ? 1 : 0;
+    this.activitySamplePtr = (this.activitySamplePtr + 1) % ACTIVITY_WINDOW_SECONDS;
+  }
+
+  /**
+   * Returns the fraction of the last 60 seconds during which global input
+   * (keyboard or pointer) was detected, as a 0–100 integer.
+   *
+   * This is the source for per-screenshot keyboard/mouse activity metrics.
+   * Both metrics use the same OS-level idle signal (powerMonitor.getSystemIdleTime)
+   * because Electron does not expose per-device-type event counts without a native hook.
+   */
+  getActivityPercent(): number {
+    const active = this.activitySamples.reduce((sum, v) => sum + v, 0);
+    return Math.round((active / ACTIVITY_WINDOW_SECONDS) * 100);
   }
 
   private checkIdle(): void {

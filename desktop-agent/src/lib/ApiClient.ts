@@ -311,6 +311,8 @@ export class ApiClient {
     capturedAt: string;
     clientType: string;
     clientVersion: string;
+    keyboardActivityPercent?: number | null;
+    mouseActivityPercent?: number | null;
   }): Promise<{ screenshotId: string; uploadURL: string; expiresAt: string }> {
     return this.authenticatedRequest("/api/agent/screenshots/presign", {
       method: "POST",

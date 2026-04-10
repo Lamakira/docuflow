@@ -214,6 +214,8 @@ export class SyncWorker {
         capturedAt: string;
         deviceId?: string;
         clientVersion?: string;
+        keyboardActivityPercent?: number | null;
+        mouseActivityPercent?: number | null;
       };
 
       // Skip screenshots taken while the timer start command hasn't synced yet.
@@ -233,6 +235,8 @@ export class SyncWorker {
         capturedAt: meta.capturedAt,
         clientType: "electron",
         clientVersion: meta.clientVersion ?? this.store.getClientVersion(),
+        keyboardActivityPercent: meta.keyboardActivityPercent ?? null,
+        mouseActivityPercent: meta.mouseActivityPercent ?? null,
       });
 
       // Step 2: Upload binary (async to avoid blocking event loop)
