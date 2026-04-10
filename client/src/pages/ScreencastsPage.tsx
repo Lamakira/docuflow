@@ -57,9 +57,6 @@ function formatTime(dateStr: string) {
   return format(new Date(dateStr), "h:mm a");
 }
 
-function formatTimeWithSeconds(dateStr: string) {
-  return format(new Date(dateStr), "h:mm:ss a");
-}
 
 function displayName(u: SafeUser): string {
   const full = [u.firstName, u.lastName].filter(Boolean).join(" ");
@@ -374,17 +371,17 @@ export default function ScreencastsPage() {
                     </div>
 
                     {/* Meta block */}
-                    <div className="bg-card px-2 py-1.5 space-y-1">
+                    <div className="bg-muted/30 border-t border-border px-2 py-2 space-y-1.5">
                       {/* Time */}
                       <div className="text-xs font-medium text-foreground">
-                        {formatTimeWithSeconds(s.capturedAt)}
+                        {formatTime(s.capturedAt)}
                       </div>
 
                       {/* Keyboard + Mouse — side by side, no percentage text */}
                       <div className="flex items-center gap-2">
                         {/* Keyboard */}
                         <div
-                          className="flex items-center gap-1 flex-1 min-w-0"
+                          className="flex items-center gap-1.5 flex-1 min-w-0"
                           title={
                             s.keyboardActivityPercent !== null
                               ? s.keyboardCount !== null
@@ -393,8 +390,8 @@ export default function ScreencastsPage() {
                               : "Keyboard — no data (update desktop agent)"
                           }
                         >
-                          <Keyboard className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-                          <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
+                          <Keyboard className="h-3 w-3 text-muted-foreground shrink-0" />
+                          <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full bg-primary transition-all"
                               style={{ width: `${s.keyboardActivityPercent ?? 0}%` }}
@@ -403,7 +400,7 @@ export default function ScreencastsPage() {
                         </div>
                         {/* Mouse */}
                         <div
-                          className="flex items-center gap-1 flex-1 min-w-0"
+                          className="flex items-center gap-1.5 flex-1 min-w-0"
                           title={
                             s.mouseActivityPercent !== null
                               ? s.mouseCount !== null
@@ -412,8 +409,8 @@ export default function ScreencastsPage() {
                               : "Mouse — no data (update desktop agent)"
                           }
                         >
-                          <Mouse className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-                          <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
+                          <Mouse className="h-3 w-3 text-muted-foreground shrink-0" />
+                          <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
                             <div
                               className="h-full rounded-full bg-primary transition-all"
                               style={{ width: `${s.mouseActivityPercent ?? 0}%` }}
