@@ -217,6 +217,8 @@ const presignSchema = z.object({
   clientVersion: z.string(),
   keyboardActivityPercent: z.number().int().min(0).max(100).nullish(),
   mouseActivityPercent: z.number().int().min(0).max(100).nullish(),
+  keyboardCount: z.number().int().min(0).nullish(),
+  mouseCount: z.number().int().min(0).nullish(),
 });
 
 const confirmSchema = z.object({
@@ -583,6 +585,8 @@ export function registerAgentRoutes(app: Express): void {
         capturedAt: new Date(body.capturedAt),
         keyboardActivityPercent: body.keyboardActivityPercent ?? null,
         mouseActivityPercent: body.mouseActivityPercent ?? null,
+        keyboardCount: body.keyboardCount ?? null,
+        mouseCount: body.mouseCount ?? null,
       });
 
       // Upload URL points to our server endpoint (server-side relay to GCS)

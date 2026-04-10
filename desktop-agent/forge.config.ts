@@ -20,6 +20,9 @@ const config: ForgeConfig = {
     icon: "./assets/icon",
     // Copy assets alongside app.asar so they're accessible at process.resourcesPath/assets/
     extraResource: ["./assets"],
+    // uiohook-napi ships platform-specific .node binaries that cannot live inside the asar archive.
+    // Electron's require() transparently redirects lookups to app.asar.unpacked/ for these paths.
+    asarUnpack: ["**/uiohook-napi/**", "**/uiohook-napi-*/**"],
     // Remove large Electron binary files that are unnecessary for users.
     // NOTE: we use afterComplete (not ignore) to avoid overriding the webpack plugin's
     // default ignore function (which excludes everything except .webpack/).

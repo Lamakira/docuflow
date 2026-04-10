@@ -1,47 +1,135 @@
 /**
- * Activity detection worker — monitors idle state and active windows.
+ * Activity detection worker — monitors idle state, active windows, and per-type input events.
  *
- * - Idle detection via Electron powerMonitor.getSystemIdleTime()
- * - System suspend/resume events
- * - Active window detection via [PLACEHOLDER] cross-platform lib
- *   For MVP: emits simulated "active_window" events using process info
- * - All events queued in SqliteQueue for async batch sync
+ * Input monitoring strategy (two modes):
  *
- * Phase 3 MVP
+ * ① uiohook mode (preferred)
+ *   Uses uiohook-napi, a native global hook library, to receive system-wide
+ *   keydown / mousedown / mousemove / wheel events. This provides genuinely
+ *   separate keyboard and mouse signals, matching Time Doctor behaviour.
+ *
+ * ② powerMonitor fallback
+ *   Used when uiohook-napi is unavailable (binary not installed, macOS
+ *   Accessibility permission denied, or any runtime error on start).
+ *   Both keyboard and mouse metrics share the same unified OS idle signal
+ *   from powerMonitor.getSystemIdleTime().
+ *
+ * Both modes expose the same public API: getActivityMetrics().
+ *
+ * Metric model (60-second sliding window, per-second granularity):
+ *   keyboardActivityPercent = (seconds with ≥1 keydown) / 60 × 100
+ *   mouseActivityPercent    = (seconds with ≥1 pointer event) / 60 × 100
+ *   keyboardCount           = total keydown events in the window
+ *   mouseCount              = total pointer events in the window
+ *
+ * Idle detection (powerMonitor.getSystemIdleTime) is UNCHANGED — it still
+ * drives the 3-min idle_start/idle_end analytics events and the 10-min
+ * auto-pause UX flow. Activity bars are intensity metrics, not idle flags.
+ *
+ * Phase 4.4
  */
 
 import { powerMonitor } from "electron";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
 
+// ─── Timing constants ───
 const IDLE_CHECK_INTERVAL_MS = 5_000;
 const ACTIVE_WINDOW_INTERVAL_MS = 10_000;
-const IDLE_THRESHOLD_SECONDS = 180;    // analytics events (idle_start / idle_end)
+const IDLE_THRESHOLD_SECONDS = 180;    // analytics: idle_start / idle_end events
 const IDLE_UX_THRESHOLD_SECONDS = 600; // 10 min → auto-pause + user prompt
 
-/** Sample window for per-screenshot activity metric (seconds). */
-const ACTIVITY_WINDOW_SECONDS = 60;
-/** Polling interval for the activity sample buffer (ms). */
-const ACTIVITY_SAMPLE_MS = 1_000;
-/** Idle seconds below which a sample counts as "active input". */
-const ACTIVITY_IDLE_THRESHOLD = 2;
+const ACTIVITY_WINDOW_SECONDS = 60;   // sliding window for per-screenshot metrics
+const ACTIVITY_SAMPLE_MS = 1_000;     // fallback poll interval
+const ACTIVITY_IDLE_THRESHOLD = 2;    // fallback: idle < 2s = active sample
+const MOUSEMOVE_THROTTLE_MS = 100;    // cap mousemove callbacks to 10 Hz
+
+// ─── uiohook-napi dynamic load ───
+// Loaded once at module initialisation. A missing or incompatible binary is
+// caught here so the rest of the module always loads successfully.
+
+interface UiohookApi {
+  uIOhook: {
+    on(event: string, cb: (...args: unknown[]) => void): void;
+    off(event: string, cb: (...args: unknown[]) => void): void;
+    start(): void;
+    stop(): void;
+  };
+}
+
+let uiohookMod: UiohookApi | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  uiohookMod = require("uiohook-napi") as UiohookApi;
+  console.log("[ActivityWorker] uiohook-napi loaded — true keyboard/mouse tracking available");
+} catch {
+  console.warn(
+    "[ActivityWorker] uiohook-napi not available — will use powerMonitor fallback for activity metrics"
+  );
+}
+
+// ─── Public types ───
+
+export interface ActivityMetrics {
+  /** 0–100: fraction of the last 60 s with ≥1 keydown per second (uiohook mode)
+   *         or any OS input per second (fallback). */
+  keyboardActivityPercent: number;
+  /** 0–100: fraction of the last 60 s with ≥1 pointer event per second (uiohook mode)
+   *         or any OS input per second (fallback). */
+  mouseActivityPercent: number;
+  /** Total keydown events in the last 60 s, or null in fallback mode. */
+  keyboardCount: number | null;
+  /** Total pointer events (mousedown + mousemove + wheel) in the last 60 s,
+   *  or null in fallback mode. */
+  mouseCount: number | null;
+  /** true = uiohook mode (separate signals), false = powerMonitor fallback (unified signal) */
+  uiohookActive: boolean;
+}
+
+// ─── Worker ───
 
 export class ActivityWorker {
   private queue: SqliteQueue;
   private store: AgentStore;
+
+  // ─── Timers ───
   private idleInterval: ReturnType<typeof setInterval> | null = null;
   private windowInterval: ReturnType<typeof setInterval> | null = null;
   private sampleInterval: ReturnType<typeof setInterval> | null = null;
+
+  // ─── Idle detection state ───
   private wasIdle = false;
-  private idleUxTriggered = false; // true once UX prompt has fired for this idle stretch
+  private idleUxTriggered = false;
   private lastWindowInfo: string | null = null;
   private suspendHandler: (() => void) | null = null;
   private resumeHandler: (() => void) | null = null;
   private onIdleUxCb: ((idleSeconds: number) => void) | null = null;
 
-  /** Circular buffer of 1-second activity samples: 1 = input detected, 0 = idle. */
+  // ─── uiohook mode: per-second circular buffers ───
+  /** 60-slot ring buffer. Slot = 1 if ≥1 keydown event occurred in that second, else 0. */
+  private kbBuffer = new Uint8Array(ACTIVITY_WINDOW_SECONDS);
+  /** 60-slot ring buffer. Slot = 1 if ≥1 pointer event occurred in that second, else 0. */
+  private msBuffer = new Uint8Array(ACTIVITY_WINDOW_SECONDS);
+  /** The calendar second (Math.floor(Date.now()/1000)) most recently written to the buffers. */
+  private lastBufferSecond = Math.floor(Date.now() / 1000);
+
+  /** Rolling timestamp lists for raw event counts (bounded, pruned on read). */
+  private kbTimes: number[] = [];
+  private msTimes: number[] = [];
+  private lastMouseMoveMs = 0;
+
+  // ─── Fallback mode: unified powerMonitor sliding window ───
   private activitySamples = new Array<number>(ACTIVITY_WINDOW_SECONDS).fill(0);
   private activitySamplePtr = 0;
+
+  // ─── Mode flag ───
+  private _uiohookActive = false;
+
+  // ─── uiohook handler references (needed for .off()) ───
+  private kbDownHandler: ((...args: unknown[]) => void) | null = null;
+  private mouseDownHandler: ((...args: unknown[]) => void) | null = null;
+  private mouseMoveHandler: ((...args: unknown[]) => void) | null = null;
+  private wheelHandler: ((...args: unknown[]) => void) | null = null;
 
   constructor(queue: SqliteQueue, store: AgentStore) {
     this.queue = queue;
@@ -56,13 +144,10 @@ export class ActivityWorker {
   start(): void {
     if (this.idleInterval) return;
 
-    // Idle detection
+    // Idle detection (drives analytics events + auto-pause — unchanged)
     this.idleInterval = setInterval(() => this.checkIdle(), IDLE_CHECK_INTERVAL_MS);
 
-    // Activity sample buffer: 1-second polling for per-screenshot metrics
-    this.sampleInterval = setInterval(() => this.sampleActivity(), ACTIVITY_SAMPLE_MS);
-
-    // Active window detection (every 10s)
+    // Active window detection
     this.windowInterval = setInterval(() => this.captureActiveWindow(), ACTIVE_WINDOW_INTERVAL_MS);
 
     // System suspend/resume
@@ -77,73 +162,196 @@ export class ActivityWorker {
     powerMonitor.on("suspend", this.suspendHandler);
     powerMonitor.on("resume", this.resumeHandler);
 
-    console.log("[ActivityWorker] Started (idle: 5s, window: 10s)");
+    // Input tracking
+    if (uiohookMod) {
+      this.startUiohook();
+    }
+    if (!this._uiohookActive) {
+      // Either uiohookMod is null or start() threw — use powerMonitor sampling
+      this.sampleInterval = setInterval(() => this.sampleActivity(), ACTIVITY_SAMPLE_MS);
+    }
+
+    const mode = this._uiohookActive ? "uiohook (keyboard+mouse separated)" : "powerMonitor fallback (unified)";
+    console.log(`[ActivityWorker] Started — idle: 5s, window: 10s, activity: ${mode}`);
+  }
+
+  private startUiohook(): void {
+    if (!uiohookMod) return;
+    try {
+      this.kbDownHandler = () => {
+        const now = Date.now();
+        this.markKbSecond(now);
+        this.kbTimes.push(now);
+        if (this.kbTimes.length > 10_000) this.kbTimes.splice(0, 5_000);
+      };
+
+      this.mouseDownHandler = () => {
+        const now = Date.now();
+        this.markMsSecond(now);
+        this.msTimes.push(now);
+        if (this.msTimes.length > 10_000) this.msTimes.splice(0, 5_000);
+      };
+
+      // Throttle mousemove to 10 Hz — the event fires hundreds of times per second
+      this.mouseMoveHandler = () => {
+        const now = Date.now();
+        if (now - this.lastMouseMoveMs < MOUSEMOVE_THROTTLE_MS) return;
+        this.lastMouseMoveMs = now;
+        this.markMsSecond(now);
+        this.msTimes.push(now);
+        if (this.msTimes.length > 10_000) this.msTimes.splice(0, 5_000);
+      };
+
+      this.wheelHandler = () => {
+        const now = Date.now();
+        this.markMsSecond(now);
+        this.msTimes.push(now);
+        if (this.msTimes.length > 10_000) this.msTimes.splice(0, 5_000);
+      };
+
+      uiohookMod.uIOhook.on("keydown", this.kbDownHandler);
+      uiohookMod.uIOhook.on("mousedown", this.mouseDownHandler);
+      uiohookMod.uIOhook.on("mousemove", this.mouseMoveHandler);
+      uiohookMod.uIOhook.on("wheel", this.wheelHandler);
+      uiohookMod.uIOhook.start();
+
+      this._uiohookActive = true;
+      console.log("[ActivityWorker] uiohook running — keyboard and mouse tracked separately");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[ActivityWorker] uiohook.start() failed (${msg}) — falling back to powerMonitor`);
+      this._uiohookActive = false;
+      // Clean up any handlers that were registered before the error
+      this.removeUiohookListeners();
+    }
   }
 
   stop(): void {
-    if (this.idleInterval) {
-      clearInterval(this.idleInterval);
-      this.idleInterval = null;
+    if (this.idleInterval) { clearInterval(this.idleInterval); this.idleInterval = null; }
+    if (this.sampleInterval) { clearInterval(this.sampleInterval); this.sampleInterval = null; }
+    if (this.windowInterval) { clearInterval(this.windowInterval); this.windowInterval = null; }
+
+    if (this.suspendHandler) { powerMonitor.removeListener("suspend", this.suspendHandler); this.suspendHandler = null; }
+    if (this.resumeHandler) { powerMonitor.removeListener("resume", this.resumeHandler); this.resumeHandler = null; }
+
+    if (uiohookMod && this._uiohookActive) {
+      try {
+        this.removeUiohookListeners();
+        uiohookMod.uIOhook.stop();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[ActivityWorker] uiohook.stop() error: ${msg}`);
+      }
+      this._uiohookActive = false;
     }
-    if (this.sampleInterval) {
-      clearInterval(this.sampleInterval);
-      this.sampleInterval = null;
-    }
-    if (this.windowInterval) {
-      clearInterval(this.windowInterval);
-      this.windowInterval = null;
-    }
-    if (this.suspendHandler) {
-      powerMonitor.removeListener("suspend", this.suspendHandler);
-      this.suspendHandler = null;
-    }
-    if (this.resumeHandler) {
-      powerMonitor.removeListener("resume", this.resumeHandler);
-      this.resumeHandler = null;
-    }
+
     console.log("[ActivityWorker] Stopped");
   }
 
-  /**
-   * Record one second in the sliding window.
-   * A sample is "active" when the OS idle counter is below 2 seconds —
-   * meaning keyboard or mouse input occurred in the last ~2 seconds.
-   */
+  private removeUiohookListeners(): void {
+    if (!uiohookMod) return;
+    if (this.kbDownHandler) { uiohookMod.uIOhook.off("keydown", this.kbDownHandler); this.kbDownHandler = null; }
+    if (this.mouseDownHandler) { uiohookMod.uIOhook.off("mousedown", this.mouseDownHandler); this.mouseDownHandler = null; }
+    if (this.mouseMoveHandler) { uiohookMod.uIOhook.off("mousemove", this.mouseMoveHandler); this.mouseMoveHandler = null; }
+    if (this.wheelHandler) { uiohookMod.uIOhook.off("wheel", this.wheelHandler); this.wheelHandler = null; }
+  }
+
+  // ─── uiohook mode: circular buffer helpers ───
+
+  private markKbSecond(nowMs: number): void {
+    const sec = Math.floor(nowMs / 1000);
+    this.advanceBuffers(sec);
+    this.kbBuffer[sec % ACTIVITY_WINDOW_SECONDS] = 1;
+  }
+
+  private markMsSecond(nowMs: number): void {
+    const sec = Math.floor(nowMs / 1000);
+    this.advanceBuffers(sec);
+    this.msBuffer[sec % ACTIVITY_WINDOW_SECONDS] = 1;
+  }
+
+  /** Zero out buffer slots for elapsed seconds and advance the watermark. */
+  private advanceBuffers(newSec: number): void {
+    const gap = newSec - this.lastBufferSecond;
+    if (gap <= 0) return;
+    const clearCount = Math.min(gap, ACTIVITY_WINDOW_SECONDS);
+    for (let i = 1; i <= clearCount; i++) {
+      const slot = (this.lastBufferSecond + i) % ACTIVITY_WINDOW_SECONDS;
+      this.kbBuffer[slot] = 0;
+      this.msBuffer[slot] = 0;
+    }
+    this.lastBufferSecond = newSec;
+  }
+
+  // ─── Fallback mode: powerMonitor sampling ───
+
   private sampleActivity(): void {
     const idleSeconds = powerMonitor.getSystemIdleTime();
     this.activitySamples[this.activitySamplePtr] = idleSeconds < ACTIVITY_IDLE_THRESHOLD ? 1 : 0;
     this.activitySamplePtr = (this.activitySamplePtr + 1) % ACTIVITY_WINDOW_SECONDS;
   }
 
+  // ─── Public API ───
+
   /**
-   * Returns the fraction of the last 60 seconds during which global input
-   * (keyboard or pointer) was detected, as a 0–100 integer.
-   *
-   * This is the source for per-screenshot keyboard/mouse activity metrics.
-   * Both metrics use the same OS-level idle signal (powerMonitor.getSystemIdleTime)
-   * because Electron does not expose per-device-type event counts without a native hook.
+   * Returns per-screenshot activity metrics for the last 60 seconds.
+   * Called by ScreenCaptureWorker at the moment a screenshot is taken.
    */
-  getActivityPercent(): number {
-    const active = this.activitySamples.reduce((sum, v) => sum + v, 0);
-    return Math.round((active / ACTIVITY_WINDOW_SECONDS) * 100);
+  getActivityMetrics(): ActivityMetrics {
+    if (this._uiohookActive) {
+      const now = Date.now();
+      const sec = Math.floor(now / 1000);
+      // Advance the buffer to the current second so idle seconds are zeroed
+      this.advanceBuffers(sec);
+
+      const kbPercent = Math.round(
+        (this.kbBuffer.reduce((s, v) => s + v, 0) / ACTIVITY_WINDOW_SECONDS) * 100
+      );
+      const msPercent = Math.round(
+        (this.msBuffer.reduce((s, v) => s + v, 0) / ACTIVITY_WINDOW_SECONDS) * 100
+      );
+
+      const cutoff = now - ACTIVITY_WINDOW_SECONDS * 1000;
+      const kbCount = this.kbTimes.filter(t => t >= cutoff).length;
+      const msCount = this.msTimes.filter(t => t >= cutoff).length;
+
+      return {
+        keyboardActivityPercent: kbPercent,
+        mouseActivityPercent: msPercent,
+        keyboardCount: kbCount,
+        mouseCount: msCount,
+        uiohookActive: true,
+      };
+    }
+
+    // Fallback: unified powerMonitor signal for both metrics
+    const active = this.activitySamples.reduce((s, v) => s + v, 0);
+    const pct = Math.round((active / ACTIVITY_WINDOW_SECONDS) * 100);
+    return {
+      keyboardActivityPercent: pct,
+      mouseActivityPercent: pct,
+      keyboardCount: null,
+      mouseCount: null,
+      uiohookActive: false,
+    };
   }
+
+  // ─── Idle detection (unchanged — drives auto-pause and analytics) ───
 
   private checkIdle(): void {
     const idleSeconds = powerMonitor.getSystemIdleTime();
 
-    // Analytics threshold (3 min)
     if (idleSeconds >= IDLE_THRESHOLD_SECONDS && !this.wasIdle) {
       this.wasIdle = true;
       this.queue.enqueue("idle_start", new Date(), { idleSeconds });
       console.log(`[ActivityWorker] Idle started (${idleSeconds}s)`);
     } else if (idleSeconds < IDLE_THRESHOLD_SECONDS && this.wasIdle) {
       this.wasIdle = false;
-      this.idleUxTriggered = false; // reset so next idle stretch can fire again
+      this.idleUxTriggered = false;
       this.queue.enqueue("idle_end", new Date(), { idleSeconds });
       console.log(`[ActivityWorker] Idle ended (${idleSeconds}s)`);
     }
 
-    // UX threshold (10 min) — fire once per idle stretch, only when timer is running
     if (
       idleSeconds >= IDLE_UX_THRESHOLD_SECONDS &&
       !this.idleUxTriggered &&
@@ -156,17 +364,7 @@ export class ActivityWorker {
   }
 
   private captureActiveWindow(): void {
-    // Only capture when timer is running
     if (this.store.getTimerStatus() !== "running") return;
-
-    // [PLACEHOLDER]: Cross-platform active window detection
-    // In production, use a native module like:
-    //   - @aspect-build/active-win (macOS/Windows/Linux)
-    //   - node-active-window
-    //   - Custom native addon
-    //
-    // For MVP demo, emit a placeholder event with process platform info.
-    // This demonstrates the pipeline works end-to-end.
 
     const windowInfo = `${process.platform}-desktop`;
     if (windowInfo !== this.lastWindowInfo) {
@@ -177,7 +375,6 @@ export class ActivityWorker {
         platform: process.platform,
       });
     } else {
-      // Still emit periodic activity event even if same window
       this.queue.enqueue("input_activity", new Date(), {
         source: "periodic",
         platform: process.platform,

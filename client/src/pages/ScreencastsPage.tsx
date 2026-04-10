@@ -36,6 +36,8 @@ interface Screenshot {
   entryIdleTime: number | null;
   keyboardActivityPercent: number | null;
   mouseActivityPercent: number | null;
+  keyboardCount: number | null;
+  mouseCount: number | null;
 }
 
 interface ScreenshotsResponse {
@@ -409,7 +411,9 @@ export default function ScreencastsPage() {
                           className="flex items-center gap-1"
                           title={
                             s.keyboardActivityPercent !== null
-                              ? `Keyboard activity: ${s.keyboardActivityPercent}% (input detected in last 60s)`
+                              ? s.keyboardCount !== null
+                                ? `Keyboard: ${s.keyboardActivityPercent}% — ${s.keyboardCount} keystroke${s.keyboardCount !== 1 ? "s" : ""} in last 60s`
+                                : `Keyboard: ${s.keyboardActivityPercent}% active in last 60s`
                               : "Keyboard activity — no data (update desktop agent)"
                           }
                         >
@@ -430,12 +434,14 @@ export default function ScreencastsPage() {
                             <span className="text-[10px] text-muted-foreground/40 ml-0.5">—</span>
                           )}
                         </div>
-                        {/* Mouse */}
+                        {/* Mouse / pointer */}
                         <div
                           className="flex items-center gap-1"
                           title={
                             s.mouseActivityPercent !== null
-                              ? `Mouse activity: ${s.mouseActivityPercent}% (pointer/click/scroll in last 60s)`
+                              ? s.mouseCount !== null
+                                ? `Mouse/pointer: ${s.mouseActivityPercent}% — ${s.mouseCount} event${s.mouseCount !== 1 ? "s" : ""} (clicks, moves, scroll) in last 60s`
+                                : `Mouse/pointer: ${s.mouseActivityPercent}% active in last 60s`
                               : "Mouse activity — no data (update desktop agent)"
                           }
                         >

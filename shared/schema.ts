@@ -1099,6 +1099,10 @@ export const timeEntryScreenshots = pgTable("time_entry_screenshots", {
   keyboardActivityPercent: integer("keyboard_activity_percent"),
   /** % of the 60-second window before capture where mouse/pointer input was detected (0–100). */
   mouseActivityPercent: integer("mouse_activity_percent"),
+  /** Raw keydown event count in the 60-second window (null when uiohook unavailable). */
+  keyboardCount: integer("keyboard_count"),
+  /** Raw pointer event count (mousedown + throttled mousemove + wheel) in the 60-second window. */
+  mouseCount: integer("mouse_count"),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [

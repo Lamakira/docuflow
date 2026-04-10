@@ -20,7 +20,7 @@ import os from "os";
 import { execSync } from "child_process";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
-import type { ActivityWorker } from "./ActivityWorker";
+import type { ActivityWorker, ActivityMetrics } from "./ActivityWorker";
 
 const CAPTURE_MIN_MS = 3 * 60 * 1000; // 3 minutes
 const CAPTURE_MAX_MS = 5 * 60 * 1000; // 5 minutes
@@ -146,9 +146,10 @@ export class ScreenCaptureWorker {
       }
 
       const capturedAt = new Date().toISOString();
-      // Snapshot activity metrics from the last 60s before the screenshot.
-      // Both keyboard and mouse use the same OS-level idle signal from powerMonitor.
-      const activityPct = this.activityWorker?.getActivityPercent() ?? null;
+      // Snapshot activity metrics for the last 60 seconds before this screenshot.
+      // In uiohook mode: keyboard and mouse are genuinely separate signals.
+      // In fallback mode: both share the same powerMonitor idle signal.
+      const metrics: ActivityMetrics | null = this.activityWorker?.getActivityMetrics() ?? null;
       const png = await this.captureScreen();
 
       if (!png || png.length === 0) {
@@ -173,14 +174,16 @@ export class ScreenCaptureWorker {
       await fs.promises.writeFile(filePath, png);
       console.log(`[ScreenCapture] Saved to ${filePath} (${(png.length / 1024).toFixed(0)} KB)`);
 
-      // Enqueue for upload (includes activity metrics for UI display)
+      // Enqueue for upload — activity metrics attached for Screencasts UI
       this.queue.enqueueScreenshot(filePath, {
         timeEntryId: entryId,
         capturedAt,
         deviceId: this.store.getDeviceId(),
         clientVersion: this.store.getClientVersion(),
-        keyboardActivityPercent: activityPct,
-        mouseActivityPercent: activityPct,
+        keyboardActivityPercent: metrics?.keyboardActivityPercent ?? null,
+        mouseActivityPercent: metrics?.mouseActivityPercent ?? null,
+        keyboardCount: metrics?.keyboardCount ?? null,
+        mouseCount: metrics?.mouseCount ?? null,
       });
       this.totalCaptured++;
       console.log(`[ScreenCapture] Enqueued upload (total: ${this.totalCaptured})`);
