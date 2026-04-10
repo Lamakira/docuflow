@@ -3014,6 +3014,10 @@ Instructions:
           if (p.idleTimeoutMinutes < 3 || p.idleTimeoutMinutes > 60)
             return res.status(400).json({ message: "Idle timeout must be between 3 and 60 minutes" });
         }
+        if (typeof p.idleCountdownSeconds === "number") {
+          if (p.idleCountdownSeconds < 15 || p.idleCountdownSeconds > 120)
+            return res.status(400).json({ message: "Idle countdown must be between 15 and 120 seconds" });
+        }
         ops.push(storage.upsertScreenshotPolicy(screenshotPolicy));
       }
       if (Array.isArray(allowedTimezones)) {

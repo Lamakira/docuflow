@@ -38,6 +38,8 @@ export interface ScreenshotPolicyPayload {
   idlePromptEnabled: boolean;
   /** Minutes of inactivity before the idle prompt fires (3–60). */
   idleTimeoutMinutes: number;
+  /** Seconds of countdown before the timer is auto-stopped (15–120). */
+  idleCountdownSeconds: number;
 }
 
 export class ScreenCaptureWorker {

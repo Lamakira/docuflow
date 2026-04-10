@@ -34,8 +34,8 @@ contextBridge.exposeInMainWorld("agentBridge", {
   // Idle / break
   idleBreak: () => ipcRenderer.invoke("agent:idle-break"),
   idleResume: () => ipcRenderer.invoke("agent:idle-resume"),
-  onIdlePrompt: (callback: (data: { idleSeconds: number }) => void) => {
-    const handler = (_event: any, data: { idleSeconds: number }) => callback(data);
+  onIdlePrompt: (callback: (data: { idleSeconds: number; countdownSeconds: number }) => void) => {
+    const handler = (_event: any, data: { idleSeconds: number; countdownSeconds: number }) => callback(data);
     ipcRenderer.on("agent:idle-prompt", handler);
     return () => ipcRenderer.off("agent:idle-prompt", handler);
   },

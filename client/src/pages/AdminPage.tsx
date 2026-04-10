@@ -2200,6 +2200,21 @@ function DesktopAgentPanel() {
               <p className="text-xs text-muted-foreground">Timer pauses after this period. Default: 10 min.</p>
             </div>
           )}
+          {(policy.idlePromptEnabled ?? true) && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Auto-stop countdown (seconds, 15–120)</Label>
+              <Input
+                type="number" min={15} max={120}
+                value={policy.idleCountdownSeconds ?? 60}
+                onChange={(e) => setPolicy((p) => ({
+                  ...p, idleCountdownSeconds: Math.min(120, Math.max(15, parseInt(e.target.value) || 60)),
+                }))}
+                className="w-32"
+                data-testid="input-idle-countdown"
+              />
+              <p className="text-xs text-muted-foreground">Timer stops automatically if no response. Default: 60 s.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 

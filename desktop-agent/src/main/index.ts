@@ -285,6 +285,7 @@ function startWorkers(): void {
   heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync, (policy) => {
     screenshotWorker?.applyPolicy(policy);
     // Idle prompt policy — takes effect on next idle-check cycle (≤ 5 s)
+    idleCountdownSeconds = policy.idleCountdownSeconds ?? 60;
     activityWorker?.applyIdlePolicy(
       policy.idlePromptEnabled ?? true,
       policy.idleTimeoutMinutes ?? 10
@@ -689,11 +690,18 @@ ipcMain.handle("agent:today-breakdown", async () => {
 // ─── Idle / break UX ───
 
 let idlePromptDismissTimeout: ReturnType<typeof setTimeout> | null = null;
+/** Countdown seconds before the timer is auto-stopped. Updated by heartbeat policy. */
+let idleCountdownSeconds = 60;
+
+function clearIdleTimeout(): void {
+  if (idlePromptDismissTimeout) { clearTimeout(idlePromptDismissTimeout); idlePromptDismissTimeout = null; }
+}
 
 /**
- * Called by ActivityWorker when idle crosses 10 min while timer is running.
+ * Called by ActivityWorker when idle crosses the configured threshold while timer is running.
  * Auto-pauses the timer (retroactively, excluding idle time) then pushes a
  * prompt to the renderer so the user can choose break or resume.
+ * If no action is taken within `idleCountdownSeconds`, the timer is auto-stopped.
  */
 function handleIdleUx(idleSeconds: number): void {
   if (store.getTimerStatus() !== "running") return; // already paused/stopped
@@ -709,31 +717,46 @@ function handleIdleUx(idleSeconds: number): void {
   pushStateToRenderer();
   syncWorker?.triggerSync();
 
-  console.log(`[Main] idle.autoPause — idleSeconds=${idleSeconds}, sessionClosedAt=${idleStartedAt.toISOString()}`);
+  const countdown = idleCountdownSeconds;
+  console.log(`[Main] idle.autoPause — idleSeconds=${idleSeconds}, countdown=${countdown}s, sessionClosedAt=${idleStartedAt.toISOString()}`);
 
-  // Push prompt to renderer
-  mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds });
+  // Push prompt to renderer with countdown info
+  mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds, countdownSeconds: countdown });
 
-  // Auto-dismiss after 5 min with no response (timer stays paused — safe)
-  if (idlePromptDismissTimeout) clearTimeout(idlePromptDismissTimeout);
+  // Auto-stop after countdown — timer stays off, prompt dismissed
+  clearIdleTimeout();
   idlePromptDismissTimeout = setTimeout(() => {
-    mainWindow?.webContents.send("agent:idle-dismiss");
     idlePromptDismissTimeout = null;
-    console.log("[Main] idle.prompt auto-dismissed (no response)");
-  }, 5 * 60_000);
+    const currentEntryId = store.getActiveEntryId();
+    if (currentEntryId && store.getTimerStatus() === "paused") {
+      store.clearTimer();
+      queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId: currentEntryId });
+      pushStateToRenderer();
+      syncWorker?.triggerSync();
+      console.log("[Main] idle.autoStop — countdown expired, timer stopped");
+    }
+    mainWindow?.webContents.send("agent:idle-dismiss");
+  }, countdown * 1000);
 }
 
-/** Renderer: user chose "I'm on break" — timer stays paused, dismiss prompt. */
+/** Renderer: user chose "I'm on break" — stop timer and dismiss prompt. */
 ipcMain.handle("agent:idle-break", () => {
-  if (idlePromptDismissTimeout) { clearTimeout(idlePromptDismissTimeout); idlePromptDismissTimeout = null; }
+  clearIdleTimeout();
+  const entryId = store.getActiveEntryId();
+  if (entryId && store.getTimerStatus() === "paused") {
+    store.clearTimer();
+    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
+    pushStateToRenderer();
+    syncWorker?.triggerSync();
+  }
   mainWindow?.webContents.send("agent:idle-dismiss");
-  console.log("[Main] idle.break confirmed by user");
+  console.log("[Main] idle.break confirmed by user — timer stopped");
   return { ok: true };
 });
 
 /** Renderer: user chose "Back to work" — resume timer. */
 ipcMain.handle("agent:idle-resume", () => {
-  if (idlePromptDismissTimeout) { clearTimeout(idlePromptDismissTimeout); idlePromptDismissTimeout = null; }
+  clearIdleTimeout();
   mainWindow?.webContents.send("agent:idle-dismiss");
 
   const entryId = store.getActiveEntryId();

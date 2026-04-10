@@ -1223,6 +1223,8 @@ export interface ScreenshotPolicy {
   idlePromptEnabled: boolean;
   /** Minutes of inactivity before the idle prompt fires. Range: 3–60. */
   idleTimeoutMinutes: number;
+  /** Seconds of countdown before the timer is auto-stopped. Range: 15–120. */
+  idleCountdownSeconds: number;
 }
 
 export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
@@ -1234,6 +1236,7 @@ export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
   activeHoursEnd: "18:00",
   idlePromptEnabled: true,
   idleTimeoutMinutes: 10,
+  idleCountdownSeconds: 60,
 };
 
 /** IANA timezone strings the admin allows in the Screencasts timezone selector.

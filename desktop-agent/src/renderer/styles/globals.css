@@ -701,6 +701,16 @@ a:hover { text-decoration: underline; }
   color: var(--text-muted);
 }
 .idle-card__idle-time strong { color: var(--text); }
+.idle-card__countdown {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 0.25rem 0.5rem;
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+  text-align: center;
+}
+.idle-card__countdown strong { color: var(--text); }
+.idle-card__countdown--urgent strong { color: #f87171; }
 .idle-card__actions {
   display: flex;
   gap: 0.5rem;
