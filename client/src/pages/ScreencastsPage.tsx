@@ -53,6 +53,10 @@ function formatTime(dateStr: string) {
   return format(new Date(dateStr), "h:mm a");
 }
 
+function formatTimeWithSeconds(dateStr: string) {
+  return format(new Date(dateStr), "h:mm:ss a");
+}
+
 function displayName(u: SafeUser): string {
   const full = [u.firstName, u.lastName].filter(Boolean).join(" ");
   return full || u.email || u.id;
@@ -178,13 +182,13 @@ export default function ScreencastsPage() {
     }
     return Array.from(map.entries()).sort(
       (a, b) =>
-        new Date(a[1][0].capturedAt).getTime() -
-        new Date(b[1][0].capturedAt).getTime()
+        new Date(b[1][0].capturedAt).getTime() -
+        new Date(a[1][0].capturedAt).getTime()
     );
   }, [allScreenshots]);
 
   const previewScreenshot = previewIndex !== null ? allScreenshots[previewIndex] : null;
-  const gridClass = COLS_CLASS[thumbnailCols] ?? "grid-cols-5";
+  const gridClass = COLS_CLASS[10 - thumbnailCols] ?? "grid-cols-5";
 
   return (
     <TimeTrackingLayout>
@@ -369,7 +373,7 @@ export default function ScreencastsPage() {
                     <div className="bg-card px-2 py-1.5 space-y-1">
                       {/* Time */}
                       <div className="text-xs font-medium text-foreground">
-                        {formatTime(s.capturedAt)}
+                        {formatTimeWithSeconds(s.capturedAt)}
                       </div>
 
                       {/* Activity bar */}
