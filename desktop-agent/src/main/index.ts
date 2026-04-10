@@ -284,6 +284,11 @@ function startWorkers(): void {
 
   heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync, (policy) => {
     screenshotWorker?.applyPolicy(policy);
+    // Idle prompt policy — takes effect on next idle-check cycle (≤ 5 s)
+    activityWorker?.applyIdlePolicy(
+      policy.idlePromptEnabled ?? true,
+      policy.idleTimeoutMinutes ?? 10
+    );
   });
   heartbeatWorker.start();
 

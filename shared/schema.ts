@@ -1209,9 +1209,9 @@ export const agentActivityEvents = pgTable("agent_activity_events", {
 
 export interface ScreenshotPolicy {
   screenshotsEnabled: boolean;
-  /** Minimum capture interval in minutes (default 3) */
+  /** Minimum capture interval in minutes. Must be >= 3. */
   captureIntervalMinMin: number;
-  /** Maximum capture interval in minutes (default 5) */
+  /** Maximum capture interval in minutes. Must be <= 15. */
   captureIntervalMaxMin: number;
   /** Whether to restrict captures to a time window */
   activeHoursEnabled: boolean;
@@ -1219,6 +1219,10 @@ export interface ScreenshotPolicy {
   activeHoursStart: string;
   /** End of capture window, "HH:mm" 24 h (default "18:00") */
   activeHoursEnd: string;
+  /** Whether the idle-prompt overlay is shown after inactivity */
+  idlePromptEnabled: boolean;
+  /** Minutes of inactivity before the idle prompt fires. Range: 3–60. */
+  idleTimeoutMinutes: number;
 }
 
 export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
@@ -1228,6 +1232,8 @@ export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
   activeHoursEnabled: false,
   activeHoursStart: "08:00",
   activeHoursEnd: "18:00",
+  idlePromptEnabled: true,
+  idleTimeoutMinutes: 10,
 };
 
 /** IANA timezone strings the admin allows in the Screencasts timezone selector.

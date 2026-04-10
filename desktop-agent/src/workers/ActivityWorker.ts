@@ -105,6 +105,10 @@ export class ActivityWorker {
   private resumeHandler: (() => void) | null = null;
   private onIdleUxCb: ((idleSeconds: number) => void) | null = null;
 
+  // ─── Idle UX policy (admin-configurable, updated via applyIdlePolicy()) ───
+  private idleUxEnabled = true;
+  private idleUxThresholdSeconds = IDLE_UX_THRESHOLD_SECONDS;
+
   // ─── uiohook mode: per-second circular buffers ───
   /** 60-slot ring buffer. Slot = 1 if ≥1 keydown event occurred in that second, else 0. */
   private kbBuffer = new Uint8Array(ACTIVITY_WINDOW_SECONDS);
@@ -136,9 +140,22 @@ export class ActivityWorker {
     this.store = store;
   }
 
-  /** Register callback fired when idle crosses the UX threshold (10 min). */
+  /** Register callback fired when idle crosses the UX threshold. */
   setIdleUxCallback(cb: (idleSeconds: number) => void): void {
     this.onIdleUxCb = cb;
+  }
+
+  /**
+   * Apply admin-managed idle prompt policy.
+   * Called by HeartbeatWorker on every heartbeat response.
+   * Takes effect on the next idle-check cycle (≤ 5 s).
+   */
+  applyIdlePolicy(enabled: boolean, timeoutMinutes: number): void {
+    this.idleUxEnabled = enabled;
+    this.idleUxThresholdSeconds = Math.max(3, Math.min(60, timeoutMinutes)) * 60;
+    console.log(
+      `[ActivityWorker] Idle policy updated: enabled=${enabled}, timeout=${timeoutMinutes}min (${this.idleUxThresholdSeconds}s)`
+    );
   }
 
   start(): void {
@@ -353,12 +370,13 @@ export class ActivityWorker {
     }
 
     if (
-      idleSeconds >= IDLE_UX_THRESHOLD_SECONDS &&
+      this.idleUxEnabled &&
+      idleSeconds >= this.idleUxThresholdSeconds &&
       !this.idleUxTriggered &&
       this.store.getTimerStatus() === "running"
     ) {
       this.idleUxTriggered = true;
-      console.log(`[ActivityWorker] Idle UX threshold reached (${idleSeconds}s) — notifying main`);
+      console.log(`[ActivityWorker] Idle UX threshold reached (${idleSeconds}s ≥ ${this.idleUxThresholdSeconds}s) — notifying main`);
       this.onIdleUxCb?.(idleSeconds);
     }
   }

@@ -2999,6 +2999,21 @@ Instructions:
       const { screenshotPolicy, allowedTimezones } = req.body;
       const ops: Promise<void>[] = [];
       if (screenshotPolicy && typeof screenshotPolicy === "object") {
+        const p = screenshotPolicy;
+        // ── Screenshot interval validation ──────────────────────────────────
+        if (typeof p.captureIntervalMinMin === "number") {
+          if (p.captureIntervalMinMin < 3)
+            return res.status(400).json({ message: "Minimum capture interval must be at least 3 minutes (1 minute is not allowed)" });
+          if (p.captureIntervalMaxMin !== undefined && p.captureIntervalMaxMin > 15)
+            return res.status(400).json({ message: "Maximum capture interval cannot exceed 15 minutes" });
+          if (p.captureIntervalMaxMin !== undefined && p.captureIntervalMinMin > p.captureIntervalMaxMin)
+            return res.status(400).json({ message: "Min capture interval cannot exceed max" });
+        }
+        // ── Idle policy validation ───────────────────────────────────────────
+        if (typeof p.idleTimeoutMinutes === "number") {
+          if (p.idleTimeoutMinutes < 3 || p.idleTimeoutMinutes > 60)
+            return res.status(400).json({ message: "Idle timeout must be between 3 and 60 minutes" });
+        }
         ops.push(storage.upsertScreenshotPolicy(screenshotPolicy));
       }
       if (Array.isArray(allowedTimezones)) {

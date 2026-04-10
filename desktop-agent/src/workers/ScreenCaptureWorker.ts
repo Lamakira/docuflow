@@ -34,6 +34,10 @@ export interface ScreenshotPolicyPayload {
   activeHoursEnabled: boolean;
   activeHoursStart: string; // "HH:mm"
   activeHoursEnd: string;   // "HH:mm"
+  /** Whether the idle-prompt overlay is enabled. */
+  idlePromptEnabled: boolean;
+  /** Minutes of inactivity before the idle prompt fires (3–60). */
+  idleTimeoutMinutes: number;
 }
 
 export class ScreenCaptureWorker {
@@ -88,7 +92,7 @@ export class ScreenCaptureWorker {
   applyPolicy(policy: ScreenshotPolicyPayload): void {
     const wasEnabled = this.enabled;
     this.enabled = policy.screenshotsEnabled;
-    this.captureMinMs = Math.max(1, policy.captureIntervalMinMin) * 60 * 1000;
+    this.captureMinMs = Math.max(3, policy.captureIntervalMinMin) * 60 * 1000;
     this.captureMaxMs = Math.max(this.captureMinMs, policy.captureIntervalMaxMin * 60 * 1000);
     this.activeHoursEnabled = policy.activeHoursEnabled;
     this.activeHoursStart = policy.activeHoursStart;

@@ -88,9 +88,9 @@ export class HeartbeatWorker {
         this.onTimerSync(result.timerSync ?? null);
       }
 
-      // Propagate screenshot policy so ScreenCaptureWorker updates without restart
+      // Propagate full policy (screenshot + idle) so workers update without restart
       if (this.onPolicySync && (result as any).screenshotPolicy) {
-        this.onPolicySync((result as any).screenshotPolicy);
+        this.onPolicySync((result as any).screenshotPolicy as ScreenshotPolicyPayload);
       }
     } catch (error: any) {
       console.error("[HeartbeatWorker] Failed:", error.message);

@@ -2110,36 +2110,36 @@ function OrgSettingsContent() {
             <div className="space-y-3">
               <Label className="text-sm font-medium">Capture interval</Label>
               <p className="text-xs text-muted-foreground">
-                A random delay between Min and Max is used between captures.
+                A random delay between Min and Max is used between captures. Min: 3 min — Max: 15 min.
               </p>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Min (minutes)</Label>
+                  <Label className="text-xs text-muted-foreground">Min (minutes, 3–15)</Label>
                   <Input
                     type="number"
-                    min={1}
-                    max={policy.captureIntervalMaxMin}
+                    min={3}
+                    max={15}
                     value={policy.captureIntervalMinMin}
                     onChange={(e) =>
                       setPolicy((p) => ({
                         ...p,
-                        captureIntervalMinMin: Math.max(1, parseInt(e.target.value) || 1),
+                        captureIntervalMinMin: Math.min(15, Math.max(3, parseInt(e.target.value) || 3)),
                       }))
                     }
                     data-testid="input-interval-min"
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Max (minutes)</Label>
+                  <Label className="text-xs text-muted-foreground">Max (minutes, 3–15)</Label>
                   <Input
                     type="number"
                     min={policy.captureIntervalMinMin}
-                    max={60}
+                    max={15}
                     value={policy.captureIntervalMaxMin}
                     onChange={(e) =>
                       setPolicy((p) => ({
                         ...p,
-                        captureIntervalMaxMin: Math.max(p.captureIntervalMinMin, parseInt(e.target.value) || p.captureIntervalMinMin),
+                        captureIntervalMaxMin: Math.min(15, Math.max(p.captureIntervalMinMin, parseInt(e.target.value) || p.captureIntervalMinMin)),
                       }))
                     }
                     data-testid="input-interval-max"
@@ -2191,6 +2191,49 @@ function OrgSettingsContent() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Idle prompt policy */}
+          <div className="space-y-3 border-t pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-medium">Idle prompt</Label>
+                <p className="text-xs text-muted-foreground">
+                  Show "Are you still working?" when the user is inactive while the timer is running
+                </p>
+              </div>
+              <Switch
+                checked={policy.idlePromptEnabled ?? true}
+                onCheckedChange={(v) => setPolicy((p) => ({ ...p, idlePromptEnabled: v }))}
+                data-testid="switch-idle-prompt"
+              />
+            </div>
+
+            {(policy.idlePromptEnabled ?? true) && (
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  Idle timeout (minutes, 3–60)
+                </Label>
+                <Input
+                  type="number"
+                  min={3}
+                  max={60}
+                  value={policy.idleTimeoutMinutes ?? 10}
+                  onChange={(e) =>
+                    setPolicy((p) => ({
+                      ...p,
+                      idleTimeoutMinutes: Math.min(60, Math.max(3, parseInt(e.target.value) || 10)),
+                    }))
+                  }
+                  className="w-32"
+                  data-testid="input-idle-timeout"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Timer auto-pauses and the prompt appears after this many minutes of inactivity.
+                  Default: 10 min.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end pt-2">
