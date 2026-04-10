@@ -90,6 +90,7 @@ import {
   orgSettings,
   type ScreenshotPolicy,
   DEFAULT_SCREENSHOT_POLICY,
+  DEFAULT_ALLOWED_TIMEZONES,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray } from "drizzle-orm";
@@ -334,6 +335,8 @@ export interface IStorage {
   // Org settings
   getScreenshotPolicy(): Promise<ScreenshotPolicy>;
   upsertScreenshotPolicy(policy: Partial<ScreenshotPolicy>): Promise<void>;
+  getAllowedTimezones(): Promise<string[]>;
+  upsertAllowedTimezones(timezones: string[]): Promise<void>;
 
   // Agent batch idempotency
   isAgentBatchProcessed(batchId: string): Promise<boolean>;
@@ -2683,6 +2686,21 @@ export class DatabaseStorage implements IStorage {
       .onConflictDoUpdate({
         target: orgSettings.id,
         set: { screenshotPolicy: merged, updatedAt: new Date() },
+      });
+  }
+
+  async getAllowedTimezones(): Promise<string[]> {
+    const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
+    return row?.allowedTimezones ?? DEFAULT_ALLOWED_TIMEZONES;
+  }
+
+  async upsertAllowedTimezones(timezones: string[]): Promise<void> {
+    await db
+      .insert(orgSettings)
+      .values({ id: "default", allowedTimezones: timezones, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: orgSettings.id,
+        set: { allowedTimezones: timezones, updatedAt: new Date() },
       });
   }
 

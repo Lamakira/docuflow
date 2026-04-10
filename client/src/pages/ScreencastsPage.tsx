@@ -22,7 +22,7 @@ import {
   LayoutGrid,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { format, startOfDay, endOfDay, subDays } from "date-fns";
+import { startOfDay, endOfDay, subDays } from "date-fns";
 import type { SafeUser } from "@shared/schema";
 
 interface Screenshot {
@@ -49,14 +49,23 @@ interface ScreenshotsResponse {
 
 type DateFilter = "today" | "yesterday" | "week";
 
-function formatHour(dateStr: string) {
-  return format(new Date(dateStr), "h:00 a");
+/** Format the hour portion of a date in the given IANA timezone, e.g. "2:00 PM". */
+function formatHour(dateStr: string, tz: string): string {
+  const d = new Date(dateStr);
+  // "numeric" hour gives "2 PM" in en-US; replace the space to produce "2:00 PM"
+  const h = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, timeZone: tz }).format(d);
+  return h.replace(" ", ":00 ");
 }
 
-function formatTime(dateStr: string) {
-  return format(new Date(dateStr), "h:mm a");
+/** Format time as h:mm a in the given IANA timezone, e.g. "2:34 PM". */
+function formatTime(dateStr: string, tz: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: tz,
+  }).format(new Date(dateStr));
 }
-
 
 function displayName(u: SafeUser): string {
   const full = [u.firstName, u.lastName].filter(Boolean).join(" ");
@@ -87,6 +96,26 @@ export default function ScreencastsPage() {
 
   // Thumbnail density: 2–8 columns (default 5)
   const [thumbnailCols, setThumbnailCols] = useState(5);
+
+  // Timezone selector — driven by admin-configured allow-list
+  const localTz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
+  const [selectedTz, setSelectedTz] = useState<string>(localTz);
+
+  const { data: tzData } = useQuery<{ allowedTimezones: string[] }>({
+    queryKey: ["/api/screencasts/timezones"],
+    queryFn: async () => {
+      const res = await fetch("/api/screencasts/timezones", { credentials: "include" });
+      return res.json();
+    },
+  });
+  const allowedTimezones = tzData?.allowedTimezones ?? [];
+
+  // When the allow-list loads, keep selectedTz if it's in the list; else reset to browser tz
+  useEffect(() => {
+    if (allowedTimezones.length > 0 && !allowedTimezones.includes(selectedTz)) {
+      setSelectedTz(allowedTimezones.includes(localTz) ? localTz : allowedTimezones[0]);
+    }
+  }, [allowedTimezones, localTz]);
 
   // Once the current user is known, default the filter to their own ID
   useEffect(() => {
@@ -173,11 +202,11 @@ export default function ScreencastsPage() {
     }
   }
 
-  // Group screenshots by hour, sorted chronologically
+  // Group screenshots by hour in the selected timezone, sorted newest-first
   const grouped = useMemo(() => {
     const map = new Map<string, Screenshot[]>();
     for (const s of allScreenshots) {
-      const hour = formatHour(s.capturedAt);
+      const hour = formatHour(s.capturedAt, selectedTz);
       if (!map.has(hour)) map.set(hour, []);
       map.get(hour)!.push(s);
     }
@@ -241,6 +270,21 @@ export default function ScreencastsPage() {
                 <SelectItem value="week">Last 7 days</SelectItem>
               </SelectContent>
             </Select>
+            {/* Timezone selector — only shown when admin has configured an allow-list */}
+            {allowedTimezones.length > 0 && (
+              <Select value={selectedTz} onValueChange={setSelectedTz}>
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {allowedTimezones.map((tz) => (
+                    <SelectItem key={tz} value={tz}>
+                      {tz}{tz === localTz ? " (yours)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </div>
 
@@ -348,7 +392,7 @@ export default function ScreencastsPage() {
                     >
                       <img
                         src={`/api/time-tracking/screenshots/${s.id}/image`}
-                        alt={`Screenshot at ${formatTime(s.capturedAt)}`}
+                        alt={`Screenshot at ${formatTime(s.capturedAt, selectedTz)}`}
                         loading="lazy"
                         className="w-full h-full object-cover"
                       />
@@ -365,7 +409,7 @@ export default function ScreencastsPage() {
                         <Checkbox
                           checked={isChecked}
                           className="bg-white/90 border-gray-300 shadow-sm data-[state=checked]:bg-primary data-[state=checked]:border-primary"
-                          aria-label={`Select screenshot at ${formatTime(s.capturedAt)}`}
+                          aria-label={`Select screenshot at ${formatTime(s.capturedAt, selectedTz)}`}
                         />
                       </div>
                     </div>
@@ -374,7 +418,7 @@ export default function ScreencastsPage() {
                     <div className="bg-muted/30 border-t border-border px-2 py-2 space-y-1.5">
                       {/* Time */}
                       <div className="text-xs font-medium text-foreground">
-                        {formatTime(s.capturedAt)}
+                        {formatTime(s.capturedAt, selectedTz)}
                       </div>
 
                       {/* Keyboard + Mouse — side by side, no percentage text */}
@@ -457,7 +501,11 @@ export default function ScreencastsPage() {
               {/* Info bar */}
               <div className="absolute bottom-0 left-0 right-0 px-4 py-3 bg-black/60 flex items-center justify-between">
                 <span className="text-white text-sm">
-                  {format(new Date(previewScreenshot.capturedAt), "PPp")}
+                  {new Intl.DateTimeFormat("en-US", {
+                    year: "numeric", month: "short", day: "numeric",
+                    hour: "numeric", minute: "2-digit", hour12: true,
+                    timeZone: selectedTz,
+                  }).format(new Date(previewScreenshot.capturedAt))}
                 </span>
                 <span className="text-white/60 text-xs">
                   {previewIndex! + 1} / {allScreenshots.length}

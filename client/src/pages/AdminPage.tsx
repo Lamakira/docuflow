@@ -2001,30 +2001,69 @@ function FieldDetailView({ field, module, onBack }: { field: CrmModuleField; mod
   );
 }
 
-// ─── Org Settings (Screenshot Policy) ───────────────────────────────────────
+// ─── Org Settings (Screenshot Policy + Timezone Allow-list) ─────────────────
 
 function OrgSettingsContent() {
   const { toast } = useToast();
 
-  const { data, isLoading } = useQuery<{ screenshotPolicy: ScreenshotPolicy }>({
+  const { data, isLoading } = useQuery<{ screenshotPolicy: ScreenshotPolicy; allowedTimezones: string[] }>({
     queryKey: ["/api/admin/org-settings"],
   });
 
   const [policy, setPolicy] = useState<ScreenshotPolicy>(DEFAULT_SCREENSHOT_POLICY);
+  const [allowedTimezones, setAllowedTimezones] = useState<string[]>([]);
+  const [tzInput, setTzInput] = useState("");
+  const [tzError, setTzError] = useState("");
 
   // Sync server data → local form once loaded
   useEffect(() => {
     if (data?.screenshotPolicy) {
       setPolicy({ ...DEFAULT_SCREENSHOT_POLICY, ...data.screenshotPolicy });
     }
+    if (data?.allowedTimezones) {
+      setAllowedTimezones(data.allowedTimezones);
+    }
   }, [data]);
 
-  const saveMutation = useMutation({
+  function handleAddTimezone() {
+    const tz = tzInput.trim();
+    if (!tz) return;
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: tz });
+    } catch {
+      setTzError(`"${tz}" is not a valid IANA timezone (e.g. Europe/Paris, America/New_York)`);
+      return;
+    }
+    if (allowedTimezones.includes(tz)) {
+      setTzError(`"${tz}" is already in the list`);
+      return;
+    }
+    setAllowedTimezones((prev) => [...prev, tz]);
+    setTzInput("");
+    setTzError("");
+  }
+
+  const savePolicyMutation = useMutation({
     mutationFn: () =>
       apiRequest("PATCH", "/api/admin/org-settings", { screenshotPolicy: policy }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/org-settings"] });
       toast({ title: "Settings saved", description: "Screenshot policy updated successfully." });
+    },
+    onError: () => {
+      toast({ title: "Save failed", variant: "destructive" });
+    },
+  });
+
+  const saveMutation = savePolicyMutation;
+
+  const saveTzMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("PATCH", "/api/admin/org-settings", { allowedTimezones }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/org-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/screencasts/timezones"] });
+      toast({ title: "Timezones saved", description: "Screencasts timezone list updated." });
     },
     onError: () => {
       toast({ title: "Save failed", variant: "destructive" });
@@ -2174,6 +2213,66 @@ function OrgSettingsContent() {
           No agent restart required.
         </p>
       </div>
+
+      {/* ── Screencasts timezone allow-list ── */}
+      <div>
+        <h2 className="text-lg font-semibold">Screencasts timezone options</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Curate which timezones appear in the Screencasts page dropdown.
+          Leave the list empty to hide the selector (each user's browser timezone is used).
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="pt-6 space-y-4">
+          {/* Add input */}
+          <div className="space-y-1">
+            <Label className="text-sm font-medium">Add a timezone</Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="e.g. Europe/Paris, America/New_York"
+                value={tzInput}
+                onChange={(e) => { setTzInput(e.target.value); setTzError(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddTimezone(); } }}
+              />
+              <Button variant="outline" onClick={handleAddTimezone} type="button">
+                <Plus className="h-4 w-4 mr-1" /> Add
+              </Button>
+            </div>
+            {tzError && <p className="text-xs text-destructive mt-1">{tzError}</p>}
+          </div>
+
+          {/* Current list */}
+          {allowedTimezones.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic">No timezones configured — dropdown hidden for all users.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {allowedTimezones.map((tz) => (
+                <div key={tz} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                  <span className="font-mono">{tz}</span>
+                  <button
+                    onClick={() => setAllowedTimezones((prev) => prev.filter((t) => t !== tz))}
+                    className="text-muted-foreground hover:text-destructive transition-colors"
+                    aria-label={`Remove ${tz}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={() => saveTzMutation.mutate()}
+              disabled={saveTzMutation.isPending}
+              data-testid="button-save-timezones"
+            >
+              {saveTzMutation.isPending ? "Saving…" : "Save timezones"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

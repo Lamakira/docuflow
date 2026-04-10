@@ -1230,8 +1230,15 @@ export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
   activeHoursEnd: "18:00",
 };
 
+/** IANA timezone strings the admin allows in the Screencasts timezone selector.
+ *  Empty array = no restriction (each user's browser timezone is used). */
+export const DEFAULT_ALLOWED_TIMEZONES: string[] = [];
+
 export const orgSettings = pgTable("org_settings", {
   id: varchar("id").primaryKey().default("default"),
   screenshotPolicy: jsonb("screenshot_policy").$type<ScreenshotPolicy>(),
+  /** Admin-curated list of IANA timezone strings for the Screencasts dropdown.
+   *  Null / empty = no dropdown shown; browser local timezone is used. */
+  allowedTimezones: jsonb("allowed_timezones").$type<string[]>(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

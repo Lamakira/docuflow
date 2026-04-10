@@ -2980,11 +2980,14 @@ Instructions:
     next();
   };
 
-  // Org settings — screenshot policy
+  // Org settings — screenshot policy + timezone allow-list
   app.get("/api/admin/org-settings", isAuthenticated, isAdmin, async (_req, res) => {
     try {
-      const screenshotPolicy = await storage.getScreenshotPolicy();
-      res.json({ screenshotPolicy });
+      const [screenshotPolicy, allowedTimezones] = await Promise.all([
+        storage.getScreenshotPolicy(),
+        storage.getAllowedTimezones(),
+      ]);
+      res.json({ screenshotPolicy, allowedTimezones });
     } catch (error) {
       console.error("Error fetching org settings:", error);
       res.status(500).json({ message: "Failed to fetch org settings" });
@@ -2993,15 +2996,34 @@ Instructions:
 
   app.patch("/api/admin/org-settings", isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      const { screenshotPolicy } = req.body;
-      if (!screenshotPolicy || typeof screenshotPolicy !== "object") {
-        return res.status(400).json({ message: "screenshotPolicy object is required" });
+      const { screenshotPolicy, allowedTimezones } = req.body;
+      const ops: Promise<void>[] = [];
+      if (screenshotPolicy && typeof screenshotPolicy === "object") {
+        ops.push(storage.upsertScreenshotPolicy(screenshotPolicy));
       }
-      await storage.upsertScreenshotPolicy(screenshotPolicy);
+      if (Array.isArray(allowedTimezones)) {
+        // Each entry must be a non-empty string (IANA tz validation happens client-side)
+        const valid = allowedTimezones.every((t) => typeof t === "string" && t.length > 0);
+        if (!valid) return res.status(400).json({ message: "allowedTimezones must be an array of non-empty strings" });
+        ops.push(storage.upsertAllowedTimezones(allowedTimezones));
+      }
+      if (ops.length === 0) return res.status(400).json({ message: "Nothing to update" });
+      await Promise.all(ops);
       res.json({ ok: true });
     } catch (error) {
       console.error("Error updating org settings:", error);
       res.status(500).json({ message: "Failed to update org settings" });
+    }
+  });
+
+  // Public (any authenticated user) — Screencasts page reads this to populate timezone dropdown
+  app.get("/api/screencasts/timezones", isAuthenticated, async (_req, res) => {
+    try {
+      const allowedTimezones = await storage.getAllowedTimezones();
+      res.json({ allowedTimezones });
+    } catch (error) {
+      console.error("Error fetching timezone options:", error);
+      res.status(500).json({ message: "Failed to fetch timezone options" });
     }
   });
 
