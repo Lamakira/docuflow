@@ -18,7 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Keyboard,
-  MousePointer2,
+  Mouse,
   LayoutGrid,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -380,87 +380,45 @@ export default function ScreencastsPage() {
                         {formatTimeWithSeconds(s.capturedAt)}
                       </div>
 
-                      {/* Activity bar */}
-                      {actPct !== null && (
-                        <div
-                          className="flex items-center gap-1.5"
-                          title={`Session activity: ${actPct}% active (entry-level estimate)`}
-                        >
-                          <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                actPct >= 70
-                                  ? "bg-green-500"
-                                  : actPct >= 40
-                                  ? "bg-yellow-500"
-                                  : "bg-orange-500"
-                              }`}
-                              style={{ width: `${actPct}%` }}
-                            />
-                          </div>
-                          <span className="text-[10px] text-muted-foreground shrink-0">
-                            {actPct}%
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Keyboard + Mouse activity bars */}
-                      <div className="space-y-0.5">
+                      {/* Keyboard + Mouse — side by side, no percentage text */}
+                      <div className="flex items-center gap-2">
                         {/* Keyboard */}
                         <div
-                          className="flex items-center gap-1"
+                          className="flex items-center gap-1 flex-1 min-w-0"
                           title={
                             s.keyboardActivityPercent !== null
                               ? s.keyboardCount !== null
                                 ? `Keyboard: ${s.keyboardActivityPercent}% — ${s.keyboardCount} keystroke${s.keyboardCount !== 1 ? "s" : ""} in last 60s`
                                 : `Keyboard: ${s.keyboardActivityPercent}% active in last 60s`
-                              : "Keyboard activity — no data (update desktop agent)"
+                              : "Keyboard — no data (update desktop agent)"
                           }
                         >
                           <Keyboard className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-                          {s.keyboardActivityPercent !== null ? (
-                            <>
-                              <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
-                                <div
-                                  className="h-full rounded-full bg-blue-500 transition-all"
-                                  style={{ width: `${s.keyboardActivityPercent}%` }}
-                                />
-                              </div>
-                              <span className="text-[10px] text-muted-foreground shrink-0 w-6 text-right">
-                                {s.keyboardActivityPercent}%
-                              </span>
-                            </>
-                          ) : (
-                            <span className="text-[10px] text-muted-foreground/40 ml-0.5">—</span>
-                          )}
+                          <div className={`h-1 flex-1 bg-muted rounded-full overflow-hidden${s.keyboardActivityPercent === null ? " opacity-40" : ""}`}>
+                            <div
+                              className="h-full rounded-full bg-blue-500 transition-all"
+                              style={{ width: `${s.keyboardActivityPercent ?? 0}%` }}
+                            />
+                          </div>
                         </div>
-                        {/* Mouse / pointer */}
+                        {/* Mouse */}
                         <div
-                          className="flex items-center gap-1"
+                          className="flex items-center gap-1 flex-1 min-w-0"
                           title={
                             s.mouseActivityPercent !== null
                               ? s.mouseCount !== null
-                                ? `Mouse/pointer: ${s.mouseActivityPercent}% — ${s.mouseCount} event${s.mouseCount !== 1 ? "s" : ""} (clicks, moves, scroll) in last 60s`
-                                : `Mouse/pointer: ${s.mouseActivityPercent}% active in last 60s`
-                              : "Mouse activity — no data (update desktop agent)"
+                                ? `Mouse: ${s.mouseActivityPercent}% — ${s.mouseCount} event${s.mouseCount !== 1 ? "s" : ""} (clicks, moves, scroll) in last 60s`
+                                : `Mouse: ${s.mouseActivityPercent}% active in last 60s`
+                              : "Mouse — no data (update desktop agent)"
                           }
                         >
-                          <MousePointer2 className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-                          {s.mouseActivityPercent !== null ? (
-                            <>
-                              <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
-                                <div
-                                  className="h-full rounded-full bg-violet-500 transition-all"
-                                  style={{ width: `${s.mouseActivityPercent}%` }}
-                                />
-                              </div>
-                              <span className="text-[10px] text-muted-foreground shrink-0 w-6 text-right">
-                                {s.mouseActivityPercent}%
-                              </span>
-                            </>
-                          ) : (
-                            <span className="text-[10px] text-muted-foreground/40 ml-0.5">—</span>
-                          )}
+                          <Mouse className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
+                          <div className={`h-1 flex-1 bg-muted rounded-full overflow-hidden${s.mouseActivityPercent === null ? " opacity-40" : ""}`}>
+                            <div
+                              className="h-full rounded-full bg-green-500 transition-all"
+                              style={{ width: `${s.mouseActivityPercent ?? 0}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
