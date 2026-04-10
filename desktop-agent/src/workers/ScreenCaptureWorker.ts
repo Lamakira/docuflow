@@ -20,15 +20,27 @@ import os from "os";
 import { execSync } from "child_process";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
+import type { ActivityWorker, ActivityMetrics } from "./ActivityWorker";
 
 const CAPTURE_MIN_MS = 3 * 60 * 1000; // 3 minutes
 const CAPTURE_MAX_MS = 5 * 60 * 1000; // 5 minutes
 
-/** Returns a random delay uniformly distributed between MIN and MAX. */
-function randomCaptureDelay(): number {
-  return CAPTURE_MIN_MS + Math.random() * (CAPTURE_MAX_MS - CAPTURE_MIN_MS);
+const MAX_PNG_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB hard limit
+
+export interface ScreenshotPolicyPayload {
+  screenshotsEnabled: boolean;
+  captureIntervalMinMin: number;
+  captureIntervalMaxMin: number;
+  activeHoursEnabled: boolean;
+  activeHoursStart: string; // "HH:mm"
+  activeHoursEnd: string;   // "HH:mm"
+  /** Whether the idle-prompt overlay is enabled. */
+  idlePromptEnabled: boolean;
+  /** Minutes of inactivity before the idle prompt fires (3–60). */
+  idleTimeoutMinutes: number;
+  /** Seconds of countdown before the timer is auto-stopped (15–120). */
+  idleCountdownSeconds: number;
 }
-const MAX_PNG_SIZE_BYTES = 5 * 1024 * 1024;      // 5 MB hard limit
 
 export class ScreenCaptureWorker {
   private queue: SqliteQueue;
@@ -37,6 +49,12 @@ export class ScreenCaptureWorker {
   private enabled: boolean;
   private totalCaptured = 0;
   private screenshotDir: string;
+  private captureMinMs = CAPTURE_MIN_MS;
+  private captureMaxMs = CAPTURE_MAX_MS;
+  private activeHoursEnabled = false;
+  private activeHoursStart = "08:00";
+  private activeHoursEnd = "18:00";
+  private activityWorker: ActivityWorker | null = null;
 
   constructor(queue: SqliteQueue, store: AgentStore, enabled = false) {
     this.queue = queue;
@@ -44,6 +62,11 @@ export class ScreenCaptureWorker {
     this.enabled = enabled;
     // Use app userData dir (not os.tmpdir) — survives reboots, app-private, not world-readable
     this.screenshotDir = path.join(app.getPath("userData"), "screenshots");
+  }
+
+  /** Wire the ActivityWorker so captures include real activity metrics. */
+  setActivityWorker(w: ActivityWorker): void {
+    this.activityWorker = w;
   }
 
   start(): void {
@@ -64,8 +87,43 @@ export class ScreenCaptureWorker {
     console.log(`[ScreenCaptureWorker] Stopped (captured: ${this.totalCaptured})`);
   }
 
+  /**
+   * Apply a screenshot policy received from the server via heartbeat.
+   * Takes effect immediately — no restart required.
+   */
+  applyPolicy(policy: ScreenshotPolicyPayload): void {
+    const wasEnabled = this.enabled;
+    this.enabled = policy.screenshotsEnabled;
+    this.captureMinMs = Math.max(3, policy.captureIntervalMinMin) * 60 * 1000;
+    this.captureMaxMs = Math.max(this.captureMinMs, policy.captureIntervalMaxMin * 60 * 1000);
+    this.activeHoursEnabled = policy.activeHoursEnabled;
+    this.activeHoursStart = policy.activeHoursStart;
+    this.activeHoursEnd = policy.activeHoursEnd;
+    console.log(
+      `[ScreenCaptureWorker] Policy applied: enabled=${this.enabled}, ` +
+      `interval=${policy.captureIntervalMinMin}–${policy.captureIntervalMaxMin}min, ` +
+      `activeHours=${this.activeHoursEnabled ? `${this.activeHoursStart}–${this.activeHoursEnd}` : "off"}`
+    );
+    // Start if newly enabled; stop if newly disabled
+    if (!wasEnabled && this.enabled) {
+      this.start();
+    } else if (wasEnabled && !this.enabled) {
+      this.stop();
+    }
+  }
+
+  /** Returns true if the current local time is within the configured active-hours window. */
+  private isWithinActiveHours(): boolean {
+    if (!this.activeHoursEnabled) return true;
+    const now = new Date();
+    const current = now.getHours() * 60 + now.getMinutes();
+    const [sh, sm] = this.activeHoursStart.split(":").map(Number);
+    const [eh, em] = this.activeHoursEnd.split(":").map(Number);
+    return current >= sh * 60 + sm && current < eh * 60 + em;
+  }
+
   private scheduleNext(): void {
-    const delay = randomCaptureDelay();
+    const delay = this.captureMinMs + Math.random() * (this.captureMaxMs - this.captureMinMs);
     this.timeout = setTimeout(() => this.captureAndEnqueue(), delay);
   }
 
@@ -78,6 +136,15 @@ export class ScreenCaptureWorker {
         return;
       }
 
+      // Respect active-hours window
+      if (!this.isWithinActiveHours()) {
+        console.log(
+          `[ScreenCaptureWorker] Skipping — outside active hours (${this.activeHoursStart}–${this.activeHoursEnd})`
+        );
+        this.scheduleNext();
+        return;
+      }
+
       const entryId = this.store.getActiveEntryId();
       if (!entryId) {
         this.scheduleNext();
@@ -85,6 +152,10 @@ export class ScreenCaptureWorker {
       }
 
       const capturedAt = new Date().toISOString();
+      // Snapshot activity metrics for the last 60 seconds before this screenshot.
+      // In uiohook mode: keyboard and mouse are genuinely separate signals.
+      // In fallback mode: both share the same powerMonitor idle signal.
+      const metrics: ActivityMetrics | null = this.activityWorker?.getActivityMetrics() ?? null;
       const png = await this.captureScreen();
 
       if (!png || png.length === 0) {
@@ -109,12 +180,16 @@ export class ScreenCaptureWorker {
       await fs.promises.writeFile(filePath, png);
       console.log(`[ScreenCapture] Saved to ${filePath} (${(png.length / 1024).toFixed(0)} KB)`);
 
-      // Enqueue for upload
+      // Enqueue for upload — activity metrics attached for Screencasts UI
       this.queue.enqueueScreenshot(filePath, {
         timeEntryId: entryId,
         capturedAt,
         deviceId: this.store.getDeviceId(),
         clientVersion: this.store.getClientVersion(),
+        keyboardActivityPercent: metrics?.keyboardActivityPercent ?? null,
+        mouseActivityPercent: metrics?.mouseActivityPercent ?? null,
+        keyboardCount: metrics?.keyboardCount ?? null,
+        mouseCount: metrics?.mouseCount ?? null,
       });
       this.totalCaptured++;
       console.log(`[ScreenCapture] Enqueued upload (total: ${this.totalCaptured})`);

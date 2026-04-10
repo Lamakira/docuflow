@@ -41,7 +41,7 @@ export interface TimeTrackingSyncPayload {
 export interface MultiTabCoordinatorOptions {
   onRoleChange: (role: TabRole) => void;
   onStateSync: (payload: TimeTrackingSyncPayload) => void;
-  onActivityPing: () => void;
+  onActivityPing?: () => void;
 }
 
 export class MultiTabCoordinator {
@@ -153,7 +153,7 @@ export class MultiTabCoordinator {
         break;
 
       case "activity-ping":
-        this.options.onActivityPing();
+        this.options.onActivityPing?.();
         break;
     }
   }

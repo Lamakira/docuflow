@@ -3,6 +3,7 @@ import { useAgent } from '../stores/AgentContext';
 import { AgentSidebar } from '../components/sidebar/AgentSidebar';
 import { ActiveTimerHeader } from '../components/timer/ActiveTimerHeader';
 import { WorkedToday } from '../components/timer/WorkedToday';
+import { IdlePrompt } from '../components/timer/IdlePrompt';
 import { TimerPage } from '../pages/TimerPage';
 import { ActivityPage } from '../pages/ActivityPage';
 import { ScreenshotsPage } from '../pages/ScreenshotsPage';
@@ -25,6 +26,7 @@ export function AgentLayout() {
           {page === 'settings' && <SettingsPage />}
         </div>
       </div>
+      <IdlePrompt />
     </div>
   );
 }

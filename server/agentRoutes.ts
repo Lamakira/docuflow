@@ -118,7 +118,7 @@ interface AgentAuthRequest extends Request {
   agentUserId?: string;
 }
 
-function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: NextFunction): void {
+async function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
     res.status(401).json({ message: "Missing or invalid Authorization header" });
@@ -135,6 +135,20 @@ function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: NextFu
 
   if (Math.floor(Date.now() / 1000) > payload.exp) {
     res.status(401).json({ message: "Access token expired" });
+    return;
+  }
+
+  // Verify device is not revoked. JWT signature alone cannot detect revocation
+  // since a valid token can live up to 1h after an admin revokes the device.
+  // Checking here applies uniformly to all agent routes, not just heartbeat.
+  try {
+    const device = await storage.getDevice(payload.sub);
+    if (!device || device.revokedAt) {
+      res.status(403).json({ message: "Device has been revoked" });
+      return;
+    }
+  } catch {
+    res.status(500).json({ message: "Authentication check failed" });
     return;
   }
 
@@ -201,6 +215,10 @@ const presignSchema = z.object({
   capturedAt: z.string(),
   clientType: z.string(),
   clientVersion: z.string(),
+  keyboardActivityPercent: z.number().int().min(0).max(100).nullish(),
+  mouseActivityPercent: z.number().int().min(0).max(100).nullish(),
+  keyboardCount: z.number().int().min(0).nullish(),
+  mouseCount: z.number().int().min(0).nullish(),
 });
 
 const confirmSchema = z.object({
@@ -355,6 +373,23 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
+  /** Web: revoke all tokens for a logical machine (identified by name+os) */
+  app.post("/api/agent/devices/revoke-machine", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const { name, os } = req.body;
+      if (!name || typeof name !== "string") {
+        return res.status(400).json({ message: "name is required" });
+      }
+      await storage.revokeDevicesByMachine(userId, name, os ?? null);
+      logInfo("agent.device.revoke-machine", { userId, name, os });
+      res.json({ ok: true });
+    } catch (error) {
+      logError("agent.device.revoke-machine.failed", error);
+      res.status(500).json({ message: "Failed to revoke machine devices" });
+    }
+  });
+
   /** Web: list user's devices */
   app.get("/api/agent/devices", isAuthenticated, async (req: any, res) => {
     try {
@@ -409,12 +444,37 @@ export function registerAgentRoutes(app: Express): void {
         // Updating it would corrupt the elapsed calculation at resume time.
       }
 
-      // Get server-authoritative timer state for desktop resync
+      // Get server-authoritative timer state for desktop resync (enriched with names
+      // so the desktop can hydrate project/task display without a separate request)
       const serverActive = await storage.getActiveTimeEntry(req.agentUserId!);
-      const timerSync =
-        serverActive && serverActive.status !== "stopped"
-          ? { entryId: serverActive.id, status: serverActive.status, duration: serverActive.duration ?? 0 }
-          : null;
+      let timerSync = null;
+      if (serverActive && serverActive.status !== "stopped") {
+        let projectName: string | null = null;
+        let taskName: string | null = null;
+        try {
+          const crmProject = await storage.getCrmProject(serverActive.crmProjectId);
+          projectName = (crmProject as any)?.project?.name ?? null;
+        } catch { /* non-fatal */ }
+        if (serverActive.taskId) {
+          try {
+            const task = await storage.getTask(serverActive.taskId);
+            taskName = task?.name ?? null;
+          } catch { /* non-fatal */ }
+        }
+        timerSync = {
+          entryId: serverActive.id,
+          status: serverActive.status,
+          duration: serverActive.duration ?? 0,
+          taskId: serverActive.taskId ?? null,
+          lastActivityAt: serverActive.lastActivityAt ?? null,
+          projectName,
+          taskName,
+          startTime: new Date(serverActive.startTime).toISOString(),
+        };
+      }
+
+      // Fetch org screenshot policy to push to desktop agent
+      const screenshotPolicy = await storage.getScreenshotPolicy();
 
       logInfo("agent.heartbeat", {
         deviceId: body.deviceId,
@@ -424,7 +484,7 @@ export function registerAgentRoutes(app: Express): void {
         timerSyncStatus: timerSync?.status ?? "none",
       });
 
-      res.json({ ok: true, serverTime: new Date().toISOString(), timerSync });
+      res.json({ ok: true, serverTime: new Date().toISOString(), timerSync, screenshotPolicy });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid request", errors: error.errors });
@@ -523,6 +583,10 @@ export function registerAgentRoutes(app: Express): void {
         crmProjectId: timeEntry.crmProjectId,
         storageKey: `pending-${Date.now()}`, // Replaced on upload
         capturedAt: new Date(body.capturedAt),
+        keyboardActivityPercent: body.keyboardActivityPercent ?? null,
+        mouseActivityPercent: body.mouseActivityPercent ?? null,
+        keyboardCount: body.keyboardCount ?? null,
+        mouseCount: body.mouseCount ?? null,
       });
 
       // Upload URL points to our server endpoint (server-side relay to GCS)
@@ -759,6 +823,65 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
+  /**
+   * Agent: today's time breakdown grouped by (project, task).
+   * Returns stopped-entry totals only; the client overlays the active entry's live elapsed.
+   * Same day-window logic as /api/agent/worked-today (client-supplied local midnight).
+   */
+  app.get("/api/agent/today-breakdown", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
+    try {
+      const userId = req.agentUserId!;
+      const startDate = req.query.start ? new Date(req.query.start as string) : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+      const endDate   = req.query.end   ? new Date(req.query.end   as string) : (() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; })();
+
+      const entries = await storage.getTimeEntries({
+        userId,
+        endDate,
+        endDateGte: startDate,
+        status: "stopped",
+      });
+
+      // Clamp cross-midnight entries proportionally (same as getTimeStats)
+      const clamp = (e: { startTime: Date | string; endTime: Date | string | null; duration: number | null }): number => {
+        if (!e.endTime) return e.duration || 0;
+        const eStart = new Date(e.startTime).getTime();
+        const wStart = startDate.getTime();
+        if (eStart >= wStart) return e.duration || 0;
+        const eEnd = new Date(e.endTime).getTime();
+        const totalMs = eEnd - eStart;
+        if (totalMs <= 0) return 0;
+        const inWindowMs = Math.min(eEnd, endDate.getTime()) - wStart;
+        if (inWindowMs <= 0) return 0;
+        return Math.round((e.duration || 0) * inWindowMs / totalMs);
+      };
+
+      // Batch-fetch task names for all unique taskIds
+      const taskIds = [...new Set(entries.map(e => e.taskId).filter(Boolean) as string[])];
+      const taskNames = new Map<string, string>();
+      await Promise.all(taskIds.map(async (id) => {
+        const t = await storage.getTask(id);
+        if (t) taskNames.set(id, t.name);
+      }));
+
+      // Group by (crmProjectId, taskId)
+      type Row = { projectName: string; taskId: string | null; taskName: string | null; stoppedSeconds: number };
+      const map = new Map<string, Row>();
+      for (const entry of entries) {
+        const key = `${entry.crmProjectId}::${entry.taskId ?? ""}`;
+        const projectName = (entry as any).crmProject?.project?.name || "Unknown Project";
+        const taskName = entry.taskId ? (taskNames.get(entry.taskId) ?? null) : null;
+        const existing = map.get(key) ?? { projectName, taskId: entry.taskId ?? null, taskName, stoppedSeconds: 0 };
+        existing.stoppedSeconds += clamp(entry);
+        map.set(key, existing);
+      }
+
+      res.json({ rows: Array.from(map.values()) });
+    } catch (error) {
+      logError("agent.today-breakdown.failed", error);
+      res.status(500).json({ message: "Failed to fetch today breakdown" });
+    }
+  });
+
   /** Agent: list tasks for a CRM project (for timer start dropdown) */
   app.get("/api/agent/tasks", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     if (!isTasksEnabled()) return res.json({ data: [] });
@@ -803,12 +926,24 @@ export function registerAgentRoutes(app: Express): void {
       if (!(await requireActiveDevice(req, res))) return;
 
       const userId = req.agentUserId!;
-      const { crmProjectId, description, deviceId } = req.body;
+      const { crmProjectId, description, deviceId, clientCommandId } = req.body;
       // Strip taskId if migration 002 hasn't been applied yet
       const taskId = isTasksEnabled() ? (req.body.taskId || null) : null;
 
       if (!crmProjectId) {
         return res.status(400).json({ message: "crmProjectId is required" });
+      }
+      if (isTasksEnabled() && !taskId) {
+        return res.status(400).json({ message: "taskId is required" });
+      }
+
+      // Idempotency: if we've already processed this command, return the existing entry
+      if (clientCommandId) {
+        const existing = await storage.getTimeEntryByClientCommandId(clientCommandId);
+        if (existing) {
+          logInfo("agent.timer.start.idempotent", { userId, clientCommandId, entryId: existing.id });
+          return res.json({ ...existing, taskAccumulatedToday: 0 });
+        }
       }
 
       // Auto-stop any existing active entry
@@ -837,6 +972,7 @@ export function registerAgentRoutes(app: Express): void {
         lastActivityAt: new Date(),
         duration: 0,
         idleTime: 0,
+        ...(clientCommandId ? { clientCommandId } : {}),
       });
 
       logTimeEvent("start", entry.id, userId, { crmProjectId, taskId: taskId || null, deviceId, clientType: "desktop" });

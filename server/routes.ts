@@ -2980,6 +2980,72 @@ Instructions:
     next();
   };
 
+  // Org settings — screenshot policy + timezone allow-list
+  app.get("/api/admin/org-settings", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const [screenshotPolicy, allowedTimezones] = await Promise.all([
+        storage.getScreenshotPolicy(),
+        storage.getAllowedTimezones(),
+      ]);
+      res.json({ screenshotPolicy, allowedTimezones });
+    } catch (error) {
+      console.error("Error fetching org settings:", error);
+      res.status(500).json({ message: "Failed to fetch org settings" });
+    }
+  });
+
+  app.patch("/api/admin/org-settings", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { screenshotPolicy, allowedTimezones } = req.body;
+      const ops: Promise<void>[] = [];
+      if (screenshotPolicy && typeof screenshotPolicy === "object") {
+        const p = screenshotPolicy;
+        // ── Screenshot interval validation ──────────────────────────────────
+        if (typeof p.captureIntervalMinMin === "number") {
+          if (p.captureIntervalMinMin < 3)
+            return res.status(400).json({ message: "Minimum capture interval must be at least 3 minutes (1 minute is not allowed)" });
+          if (p.captureIntervalMaxMin !== undefined && p.captureIntervalMaxMin > 15)
+            return res.status(400).json({ message: "Maximum capture interval cannot exceed 15 minutes" });
+          if (p.captureIntervalMaxMin !== undefined && p.captureIntervalMinMin > p.captureIntervalMaxMin)
+            return res.status(400).json({ message: "Min capture interval cannot exceed max" });
+        }
+        // ── Idle policy validation ───────────────────────────────────────────
+        if (typeof p.idleTimeoutMinutes === "number") {
+          if (p.idleTimeoutMinutes < 3 || p.idleTimeoutMinutes > 60)
+            return res.status(400).json({ message: "Idle timeout must be between 3 and 60 minutes" });
+        }
+        if (typeof p.idleCountdownSeconds === "number") {
+          if (p.idleCountdownSeconds < 15 || p.idleCountdownSeconds > 120)
+            return res.status(400).json({ message: "Idle countdown must be between 15 and 120 seconds" });
+        }
+        ops.push(storage.upsertScreenshotPolicy(screenshotPolicy));
+      }
+      if (Array.isArray(allowedTimezones)) {
+        // Each entry must be a non-empty string (IANA tz validation happens client-side)
+        const valid = allowedTimezones.every((t) => typeof t === "string" && t.length > 0);
+        if (!valid) return res.status(400).json({ message: "allowedTimezones must be an array of non-empty strings" });
+        ops.push(storage.upsertAllowedTimezones(allowedTimezones));
+      }
+      if (ops.length === 0) return res.status(400).json({ message: "Nothing to update" });
+      await Promise.all(ops);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error updating org settings:", error);
+      res.status(500).json({ message: "Failed to update org settings" });
+    }
+  });
+
+  // Public (any authenticated user) — Screencasts page reads this to populate timezone dropdown
+  app.get("/api/screencasts/timezones", isAuthenticated, async (_req, res) => {
+    try {
+      const allowedTimezones = await storage.getAllowedTimezones();
+      res.json({ allowedTimezones });
+    } catch (error) {
+      console.error("Error fetching timezone options:", error);
+      res.status(500).json({ message: "Failed to fetch timezone options" });
+    }
+  });
+
   // Get all users (admin only)
   app.get("/api/admin/users", isAuthenticated, isAdmin, async (req: any, res) => {
     try {
@@ -3504,6 +3570,136 @@ Instructions:
     } catch (error) {
       console.error("Error deleting field:", error);
       res.status(500).json({ message: "Failed to delete field" });
+    }
+  });
+
+  // ─── Admin: Analytics ───
+
+  const parseDateRange = (query: any): { start: Date; end: Date } => {
+    const end = query.end ? new Date(query.end as string) : new Date();
+    const start = query.start
+      ? new Date(query.start as string)
+      : new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+    return { start, end };
+  };
+
+  app.get("/api/admin/analytics/overview", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getAdminOverview({ startDate: start, endDate: end });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin overview:", error);
+      res.status(500).json({ message: "Failed to fetch overview" });
+    }
+  });
+
+  app.get("/api/admin/analytics/productivity", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getAdminProductivity({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+        crmProjectId: (req.query.crmProjectId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin productivity:", error);
+      res.status(500).json({ message: "Failed to fetch productivity data" });
+    }
+  });
+
+  app.get("/api/admin/analytics/activity", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getAdminActivityStats({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin activity:", error);
+      res.status(500).json({ message: "Failed to fetch activity data" });
+    }
+  });
+
+  app.get("/api/admin/analytics/screenshots", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getAdminScreenshotStats({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin screenshots:", error);
+      res.status(500).json({ message: "Failed to fetch screenshots data" });
+    }
+  });
+
+  app.get("/api/admin/analytics/alerts", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getAdminAlerts({ startDate: start, endDate: end });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin alerts:", error);
+      res.status(500).json({ message: "Failed to fetch alerts" });
+    }
+  });
+
+  app.get("/api/admin/analytics/devices", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const data = await storage.getAdminAllDevices();
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching admin devices:", error);
+      res.status(500).json({ message: "Failed to fetch devices" });
+    }
+  });
+
+  app.get("/api/admin/analytics/export", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const entries = await storage.getTimeEntries({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+        crmProjectId: (req.query.crmProjectId as string) || undefined,
+        status: "stopped",
+      });
+
+      // Batch-fetch task names
+      const taskIdsSet = new Set(entries.map(e => e.taskId).filter(Boolean) as string[]);
+      const tasksMap = new Map<string, string>();
+      for (const tid of taskIdsSet) {
+        const task = await storage.getTask(tid);
+        if (task) tasksMap.set(tid, task.name);
+      }
+
+      const escape = (s: string) => `"${(s || "").replace(/"/g, '""')}"`;
+      const rows = [
+        ["Date", "User", "Project", "Task", "Description", "Duration (h)", "Idle (h)"].join(","),
+        ...entries.map(e => [
+          new Date(e.startTime).toISOString().slice(0, 10),
+          escape(e.user ? (`${e.user.firstName || ""} ${e.user.lastName || ""}`.trim() || e.user.email) : ""),
+          escape(e.crmProject?.project?.name || ""),
+          escape((e.taskId && tasksMap.get(e.taskId)) || ""),
+          escape(e.description || ""),
+          (e.duration ? (e.duration / 3600).toFixed(2) : "0.00"),
+          (e.idleTime ? (e.idleTime / 3600).toFixed(2) : "0.00"),
+        ].join(","))
+      ];
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="docuflow-export-${start.toISOString().slice(0, 10)}.csv"`);
+      res.send(rows.join("\n"));
+    } catch (error) {
+      console.error("Error exporting:", error);
+      res.status(500).json({ message: "Failed to export" });
     }
   });
 

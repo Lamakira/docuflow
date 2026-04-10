@@ -41,6 +41,9 @@ export interface TimeEntry {
   // Enriched by /api/agent/timer/active
   projectName?: string | null;
   taskName?: string | null;
+  // Returned by /api/agent/timer/start: total stopped duration for this task today (seconds).
+  // Used to seed the elapsed display so Task A shows 30:00 when restarted, not 0:00.
+  taskAccumulatedToday?: number;
 }
 
 export interface CrmProjectSummary {
@@ -224,7 +227,7 @@ export class ApiClient {
     return res?.data ?? [];
   }
 
-  async startTimer(crmProjectId: string, taskId?: string, description?: string): Promise<TimeEntry> {
+  async startTimer(crmProjectId: string, taskId?: string, description?: string, clientCommandId?: string): Promise<TimeEntry> {
     return this.authenticatedRequest("/api/agent/timer/start", {
       method: "POST",
       body: JSON.stringify({
@@ -234,6 +237,7 @@ export class ApiClient {
         deviceId: this.store.getDeviceId(),
         clientType: "desktop",
         clientVersion: this.store.getClientVersion(),
+        ...(clientCommandId ? { clientCommandId } : {}),
       }),
     });
   }
@@ -283,6 +287,22 @@ export class ApiClient {
     return data?.total ?? 0;
   }
 
+  async getTodayBreakdown(): Promise<Array<{
+    projectName: string;
+    taskId: string | null;
+    taskName: string | null;
+    stoppedSeconds: number;
+  }>> {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const data = await this.authenticatedRequest(
+      `/api/agent/today-breakdown?start=${encodeURIComponent(startOfDay.toISOString())}&end=${encodeURIComponent(endOfDay.toISOString())}`,
+      { method: "GET" }
+    );
+    return data?.rows ?? [];
+  }
+
   // ─── Screenshots ───
 
   async presignScreenshot(data: {
@@ -291,6 +311,10 @@ export class ApiClient {
     capturedAt: string;
     clientType: string;
     clientVersion: string;
+    keyboardActivityPercent?: number | null;
+    mouseActivityPercent?: number | null;
+    keyboardCount?: number | null;
+    mouseCount?: number | null;
   }): Promise<{ screenshotId: string; uploadURL: string; expiresAt: string }> {
     return this.authenticatedRequest("/api/agent/screenshots/presign", {
       method: "POST",
@@ -333,7 +357,15 @@ export class ApiClient {
   async sendHeartbeat(data: Record<string, unknown>): Promise<{
     ok: boolean;
     serverTime: string;
-    timerSync?: { entryId: string; status: string; duration: number } | null;
+    timerSync?: {
+      entryId: string;
+      status: string;
+      duration: number;
+      taskId?: string | null;
+      lastActivityAt?: string | null;
+      projectName?: string | null;
+      taskName?: string | null;
+    } | null;
   }> {
     return this.authenticatedRequest("/api/agent/heartbeat", {
       method: "POST",

@@ -1042,6 +1042,8 @@ export const timeEntries = pgTable("time_entries", {
   idleTime: integer("idle_time").default(0), // Total idle time in seconds
   status: varchar("status", { length: 20 }).notNull().default("running"),
   lastActivityAt: timestamp("last_activity_at"),
+  // Idempotency key for desktop agent offline-first timer commands
+  clientCommandId: varchar("client_command_id", { length: 64 }).unique(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -1093,6 +1095,14 @@ export const timeEntryScreenshots = pgTable("time_entry_screenshots", {
   crmProjectId: varchar("crm_project_id").notNull().references(() => crmProjects.id, { onDelete: "cascade" }),
   storageKey: varchar("storage_key", { length: 500 }).notNull(),
   contentHash: varchar("content_hash", { length: 64 }),
+  /** % of the 60-second window before capture where keyboard input was detected (0–100). */
+  keyboardActivityPercent: integer("keyboard_activity_percent"),
+  /** % of the 60-second window before capture where mouse/pointer input was detected (0–100). */
+  mouseActivityPercent: integer("mouse_activity_percent"),
+  /** Raw keydown event count in the 60-second window (null when uiohook unavailable). */
+  keyboardCount: integer("keyboard_count"),
+  /** Raw pointer event count (mousedown + throttled mousemove + wheel) in the 60-second window. */
+  mouseCount: integer("mouse_count"),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
@@ -1194,3 +1204,50 @@ export const agentActivityEvents = pgTable("agent_activity_events", {
   index("idx_agent_events_user_time").on(table.userId, table.timestamp),
   index("idx_agent_events_batch").on(table.batchId),
 ]);
+
+// ─── Org-wide settings (single-row, id = "default") ───
+
+export interface ScreenshotPolicy {
+  screenshotsEnabled: boolean;
+  /** Minimum capture interval in minutes. Must be >= 3. */
+  captureIntervalMinMin: number;
+  /** Maximum capture interval in minutes. Must be <= 15. */
+  captureIntervalMaxMin: number;
+  /** Whether to restrict captures to a time window */
+  activeHoursEnabled: boolean;
+  /** Start of capture window, "HH:mm" 24 h (default "08:00") */
+  activeHoursStart: string;
+  /** End of capture window, "HH:mm" 24 h (default "18:00") */
+  activeHoursEnd: string;
+  /** Whether the idle-prompt overlay is shown after inactivity */
+  idlePromptEnabled: boolean;
+  /** Minutes of inactivity before the idle prompt fires. Range: 3–60. */
+  idleTimeoutMinutes: number;
+  /** Seconds of countdown before the timer is auto-stopped. Range: 15–120. */
+  idleCountdownSeconds: number;
+}
+
+export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
+  screenshotsEnabled: true,
+  captureIntervalMinMin: 3,
+  captureIntervalMaxMin: 5,
+  activeHoursEnabled: false,
+  activeHoursStart: "08:00",
+  activeHoursEnd: "18:00",
+  idlePromptEnabled: true,
+  idleTimeoutMinutes: 10,
+  idleCountdownSeconds: 60,
+};
+
+/** IANA timezone strings the admin allows in the Screencasts timezone selector.
+ *  Empty array = no restriction (each user's browser timezone is used). */
+export const DEFAULT_ALLOWED_TIMEZONES: string[] = [];
+
+export const orgSettings = pgTable("org_settings", {
+  id: varchar("id").primaryKey().default("default"),
+  screenshotPolicy: jsonb("screenshot_policy").$type<ScreenshotPolicy>(),
+  /** Admin-curated list of IANA timezone strings for the Screencasts dropdown.
+   *  Null / empty = no dropdown shown; browser local timezone is used. */
+  allowedTimezones: jsonb("allowed_timezones").$type<string[]>(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});

@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -11,9 +13,16 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Camera, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Keyboard,
+  Mouse,
+  LayoutGrid,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { format, startOfDay, endOfDay, subDays } from "date-fns";
+import { startOfDay, endOfDay, subDays } from "date-fns";
 import type { SafeUser } from "@shared/schema";
 
 interface Screenshot {
@@ -23,6 +32,12 @@ interface Screenshot {
   crmProjectId: string;
   storageKey: string;
   capturedAt: string;
+  entryDuration: number | null;
+  entryIdleTime: number | null;
+  keyboardActivityPercent: number | null;
+  mouseActivityPercent: number | null;
+  keyboardCount: number | null;
+  mouseCount: number | null;
 }
 
 interface ScreenshotsResponse {
@@ -34,12 +49,22 @@ interface ScreenshotsResponse {
 
 type DateFilter = "today" | "yesterday" | "week";
 
-function formatHour(dateStr: string) {
-  return format(new Date(dateStr), "h:00 a");
+/** Format the hour portion of a date in the given IANA timezone, e.g. "2:00 PM". */
+function formatHour(dateStr: string, tz: string): string {
+  const d = new Date(dateStr);
+  // "numeric" hour gives "2 PM" in en-US; replace the space to produce "2:00 PM"
+  const h = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: true, timeZone: tz }).format(d);
+  return h.replace(" ", ":00 ");
 }
 
-function formatTime(dateStr: string) {
-  return format(new Date(dateStr), "h:mm a");
+/** Format time as h:mm a in the given IANA timezone, e.g. "2:34 PM". */
+function formatTime(dateStr: string, tz: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: tz,
+  }).format(new Date(dateStr));
 }
 
 function displayName(u: SafeUser): string {
@@ -47,16 +72,50 @@ function displayName(u: SafeUser): string {
   return full || u.email || u.id;
 }
 
+/** Tailwind grid-cols class from column count (must be static strings for purge). */
+const COLS_CLASS: Record<number, string> = {
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-4",
+  5: "grid-cols-5",
+  6: "grid-cols-6",
+  7: "grid-cols-7",
+  8: "grid-cols-8",
+};
+
 export default function ScreencastsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
-  // undefined = "not yet initialised — waiting for user to load"
-  // user.id   = filter to that specific user
-  // "all"     = no user filter (admin only)
   const [selectedUserId, setSelectedUserId] = useState<string | undefined>(undefined);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Thumbnail density: 2–8 columns (default 5)
+  const [thumbnailCols, setThumbnailCols] = useState(5);
+
+  // Timezone selector — driven by admin-configured allow-list
+  const localTz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
+  const [selectedTz, setSelectedTz] = useState<string>(localTz);
+
+  const { data: tzData } = useQuery<{ allowedTimezones: string[] }>({
+    queryKey: ["/api/screencasts/timezones"],
+    queryFn: async () => {
+      const res = await fetch("/api/screencasts/timezones", { credentials: "include" });
+      return res.json();
+    },
+  });
+  const allowedTimezones = tzData?.allowedTimezones ?? [];
+
+  // When the allow-list loads, keep selectedTz if it's in the list; else reset to browser tz
+  useEffect(() => {
+    if (allowedTimezones.length > 0 && !allowedTimezones.includes(selectedTz)) {
+      setSelectedTz(allowedTimezones.includes(localTz) ? localTz : allowedTimezones[0]);
+    }
+  }, [allowedTimezones, localTz]);
 
   // Once the current user is known, default the filter to their own ID
   useEffect(() => {
@@ -65,7 +124,6 @@ export default function ScreencastsPage() {
     }
   }, [user?.id, selectedUserId]);
 
-  // Resolved filter value used for queries and queryKey
   const effectiveUserId = selectedUserId ?? user?.id;
 
   const { start, end } = useMemo(() => {
@@ -95,7 +153,6 @@ export default function ScreencastsPage() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery<ScreenshotsResponse>({
-    // Include effectiveUserId and isAdmin in key so query refires when either changes
     queryKey: ["/api/time-tracking/screenshots", dateFilter, effectiveUserId, isAdmin],
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({
@@ -104,7 +161,6 @@ export default function ScreencastsPage() {
         limit: "50",
         offset: String(pageParam ?? 0),
       });
-      // Admins can filter by a specific user; "all" means no userId param → backend returns all
       if (isAdmin && effectiveUserId && effectiveUserId !== "all") {
         params.set("userId", effectiveUserId);
       }
@@ -118,33 +174,55 @@ export default function ScreencastsPage() {
       return nextOffset < lastPage.total ? nextOffset : undefined;
     },
     initialPageParam: 0,
-    // Don't fetch until we know who the current user is
     enabled: !!effectiveUserId,
   });
 
   const allScreenshots = data?.pages.flatMap((p) => p.data) ?? [];
   const total = data?.pages[0]?.total ?? 0;
 
-  // Group screenshots by hour, sorted chronologically
+  // Selection helpers
+  const allIds = allScreenshots.map((s) => s.id);
+  const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.has(id));
+  const someSelected = !allSelected && allIds.some((id) => selectedIds.has(id));
+
+  function toggleId(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (allSelected || someSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allIds));
+    }
+  }
+
+  // Group screenshots by hour in the selected timezone, sorted newest-first
   const grouped = useMemo(() => {
     const map = new Map<string, Screenshot[]>();
     for (const s of allScreenshots) {
-      const hour = formatHour(s.capturedAt);
+      const hour = formatHour(s.capturedAt, selectedTz);
       if (!map.has(hour)) map.set(hour, []);
       map.get(hour)!.push(s);
     }
     return Array.from(map.entries()).sort(
       (a, b) =>
-        new Date(a[1][0].capturedAt).getTime() -
-        new Date(b[1][0].capturedAt).getTime()
+        new Date(b[1][0].capturedAt).getTime() -
+        new Date(a[1][0].capturedAt).getTime()
     );
   }, [allScreenshots]);
 
   const previewScreenshot = previewIndex !== null ? allScreenshots[previewIndex] : null;
+  const gridClass = COLS_CLASS[10 - thumbnailCols] ?? "grid-cols-5";
 
   return (
     <TimeTrackingLayout>
-      <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="p-6 max-w-7xl mx-auto space-y-4">
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -165,11 +243,9 @@ export default function ScreencastsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* Current user — always first */}
                   <SelectItem value={user.id}>
                     {displayName(user)} (me)
                   </SelectItem>
-                  {/* Other users from current DB */}
                   {usersData
                     ?.filter((u) => u.id !== user.id)
                     .map((u) => (
@@ -177,7 +253,6 @@ export default function ScreencastsPage() {
                         {displayName(u)}
                       </SelectItem>
                     ))}
-                  {/* All users */}
                   <SelectItem value="all">All users</SelectItem>
                 </SelectContent>
               </Select>
@@ -195,8 +270,56 @@ export default function ScreencastsPage() {
                 <SelectItem value="week">Last 7 days</SelectItem>
               </SelectContent>
             </Select>
+            {/* Timezone selector — only shown when admin has configured an allow-list */}
+            {allowedTimezones.length > 0 && (
+              <Select value={selectedTz} onValueChange={setSelectedTz}>
+                <SelectTrigger className="w-44">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {allowedTimezones.map((tz) => (
+                    <SelectItem key={tz} value={tz}>
+                      {tz}{tz === localTz ? " (yours)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </div>
+
+        {/* Toolbar: select-all + density slider */}
+        {!isLoading && allScreenshots.length > 0 && (
+          <div className="flex items-center justify-between gap-4 py-1">
+            {/* Left: select all */}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                onCheckedChange={toggleSelectAll}
+                aria-label="Select all screenshots"
+              />
+              <span className="text-sm text-muted-foreground select-none">
+                {selectedIds.size > 0
+                  ? `${selectedIds.size} selected`
+                  : "Select all"}
+              </span>
+            </div>
+
+            {/* Right: density slider */}
+            <div className="flex items-center gap-2">
+              <LayoutGrid className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Slider
+                min={2}
+                max={8}
+                step={1}
+                value={[thumbnailCols]}
+                onValueChange={([v]) => setThumbnailCols(v)}
+                className="w-28"
+                aria-label="Thumbnail size"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Loading skeleton */}
         {isLoading && (
@@ -225,7 +348,7 @@ export default function ScreencastsPage() {
             </div>
             <p className="text-lg font-medium">No screenshots yet</p>
             <p className="text-sm text-muted-foreground mt-1">
-              Screenshots are captured every 3–5 minutes while the timer is running.
+              Screenshots are captured while the timer is running.
             </p>
           </div>
         )}
@@ -242,28 +365,105 @@ export default function ScreencastsPage() {
                 {shots.length} screenshot{shots.length > 1 ? "s" : ""}
               </span>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            <div className={`grid ${gridClass} gap-3`}>
               {shots.map((s) => {
                 const idx = allScreenshots.indexOf(s);
+                const isChecked = selectedIds.has(s.id);
+
+                // Activity ratio from time entry (entry-level approximation)
+                const dur = s.entryDuration ?? 0;
+                const idle = s.entryIdleTime ?? 0;
+                const total = dur + idle;
+                const actPct = total > 0 ? Math.round((dur / total) * 100) : null;
+
                 return (
-                  <button
+                  <div
                     key={s.id}
-                    onClick={() => setPreviewIndex(idx)}
-                    className="group relative aspect-video rounded-lg overflow-hidden bg-muted border border-border hover:border-primary/50 hover:shadow-md transition-all"
+                    className={`group rounded-lg border overflow-hidden transition-all hover:shadow-md ${
+                      isChecked
+                        ? "border-primary ring-1 ring-primary"
+                        : "border-border hover:border-primary/50"
+                    }`}
                   >
-                    <img
-                      src={`/api/time-tracking/screenshots/${s.id}/image`}
-                      alt={`Screenshot at ${formatTime(s.capturedAt)}`}
-                      loading="lazy"
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                    <div className="absolute bottom-0 left-0 right-0 p-1.5 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                      <p className="text-white text-xs font-medium">
-                        {formatTime(s.capturedAt)}
-                      </p>
+                    {/* Image area */}
+                    <div
+                      className="relative aspect-video bg-muted cursor-pointer"
+                      onClick={() => setPreviewIndex(idx)}
+                    >
+                      <img
+                        src={`/api/time-tracking/screenshots/${s.id}/image`}
+                        alt={`Screenshot at ${formatTime(s.capturedAt, selectedTz)}`}
+                        loading="lazy"
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Hover overlay */}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                      {/* Checkbox — top-left */}
+                      <div
+                        className="absolute top-1.5 left-1.5 z-10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleId(s.id);
+                        }}
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          className="bg-white/90 border-gray-300 shadow-sm data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                          aria-label={`Select screenshot at ${formatTime(s.capturedAt, selectedTz)}`}
+                        />
+                      </div>
                     </div>
-                  </button>
+
+                    {/* Meta block */}
+                    <div className="bg-muted/30 border-t border-border px-2 py-2 space-y-1.5">
+                      {/* Time */}
+                      <div className="text-xs font-medium text-foreground">
+                        {formatTime(s.capturedAt, selectedTz)}
+                      </div>
+
+                      {/* Keyboard + Mouse — side by side, no percentage text */}
+                      <div className="flex items-center gap-2">
+                        {/* Keyboard */}
+                        <div
+                          className="flex items-center gap-1.5 flex-1 min-w-0"
+                          title={
+                            s.keyboardActivityPercent !== null
+                              ? s.keyboardCount !== null
+                                ? `Keyboard: ${s.keyboardActivityPercent}% — ${s.keyboardCount} keystroke${s.keyboardCount !== 1 ? "s" : ""} in last 60s`
+                                : `Keyboard: ${s.keyboardActivityPercent}% active in last 60s`
+                              : "Keyboard — no data (update desktop agent)"
+                          }
+                        >
+                          <Keyboard className="h-3 w-3 text-muted-foreground shrink-0" />
+                          <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all"
+                              style={{ width: `${s.keyboardActivityPercent ?? 0}%` }}
+                            />
+                          </div>
+                        </div>
+                        {/* Mouse */}
+                        <div
+                          className="flex items-center gap-1.5 flex-1 min-w-0"
+                          title={
+                            s.mouseActivityPercent !== null
+                              ? s.mouseCount !== null
+                                ? `Mouse: ${s.mouseActivityPercent}% — ${s.mouseCount} event${s.mouseCount !== 1 ? "s" : ""} (clicks, moves, scroll) in last 60s`
+                                : `Mouse: ${s.mouseActivityPercent}% active in last 60s`
+                              : "Mouse — no data (update desktop agent)"
+                          }
+                        >
+                          <Mouse className="h-3 w-3 text-muted-foreground shrink-0" />
+                          <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-primary transition-all"
+                              style={{ width: `${s.mouseActivityPercent ?? 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -301,7 +501,11 @@ export default function ScreencastsPage() {
               {/* Info bar */}
               <div className="absolute bottom-0 left-0 right-0 px-4 py-3 bg-black/60 flex items-center justify-between">
                 <span className="text-white text-sm">
-                  {format(new Date(previewScreenshot.capturedAt), "PPp")}
+                  {new Intl.DateTimeFormat("en-US", {
+                    year: "numeric", month: "short", day: "numeric",
+                    hour: "numeric", minute: "2-digit", hour12: true,
+                    timeZone: selectedTz,
+                  }).format(new Date(previewScreenshot.capturedAt))}
                 </span>
                 <span className="text-white/60 text-xs">
                   {previewIndex! + 1} / {allScreenshots.length}

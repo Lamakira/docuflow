@@ -8,6 +8,7 @@ import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen } from "electron
 import path from "path";
 import fs from "fs";
 import os from "os";
+import { randomUUID } from "node:crypto";
 import { API_BASE, API_BASE_SOURCE, API_HOST } from "../lib/config";
 
 // ─── Linux / Wayland ───
@@ -65,7 +66,9 @@ const WIDGET_WIDTH = 340;
 const WIDGET_HEIGHT = 64;
 const WIDGET_MARGIN = 20;
 
+const SESSION_STARTED_AT = Date.now(); // anchors "This session" elapsed; resets on restart
 const store = new AgentStore();
+store.setSessionStartedAt(SESSION_STARTED_AT);
 // Pass userData path so SQLite DB survives restarts
 const queue = new SqliteQueue(app.getPath("userData"));
 
@@ -279,16 +282,26 @@ function createTray(): void {
 function startWorkers(): void {
   if (!store.isPaired()) return;
 
-  heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync);
+  heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync, (policy) => {
+    screenshotWorker?.applyPolicy(policy);
+    // Idle prompt policy — takes effect on next idle-check cycle (≤ 5 s)
+    idleCountdownSeconds = policy.idleCountdownSeconds ?? 60;
+    activityWorker?.applyIdlePolicy(
+      policy.idlePromptEnabled ?? true,
+      policy.idleTimeoutMinutes ?? 10
+    );
+  });
   heartbeatWorker.start();
 
   activityWorker = new ActivityWorker(queue, store);
+  activityWorker.setIdleUxCallback((idleSeconds) => handleIdleUx(idleSeconds));
   activityWorker.start();
 
   syncWorker = new SyncWorker(apiClient, queue, store);
   syncWorker.start();
 
   screenshotWorker = new ScreenCaptureWorker(queue, store, SCREENSHOTS_ENABLED);
+  if (activityWorker) screenshotWorker.setActivityWorker(activityWorker);
   screenshotWorker.start();
 
   // Create floating widget if it doesn't exist yet
@@ -349,8 +362,13 @@ function applyServerTimerSync(
     lastActivityAt?: string | null;
     projectName?: string | null;
     taskName?: string | null;
+    startTime?: string | null;
   } | null
 ): void {
+  // Don't override locally-applied state while commands are waiting to sync.
+  // The queue is the source of truth until all commands reach the server.
+  if (queue.pendingTimerCommandCount() > 0) return;
+
   const localStatus = store.getTimerStatus();
   const localEntryId = store.getActiveEntryId();
   const serverEntryId = timerSync?.entryId ?? null;
@@ -371,6 +389,7 @@ function applyServerTimerSync(
           lastActivityAt: timerSync.lastActivityAt,
           projectName: timerSync.projectName,
           taskName: timerSync.taskName,
+          startTime: timerSync.startTime ?? null,
         }
       : null
   );
@@ -403,6 +422,7 @@ async function syncTimerFromServer(): Promise<void> {
             lastActivityAt: active.lastActivityAt ?? null,
             projectName: active.projectName ?? null,
             taskName: active.taskName ?? null,
+            startTime: active.startTime ?? null,
           }
         : null;
     applyServerTimerSync(timerSync);
@@ -483,10 +503,17 @@ ipcMain.handle("agent:login", async (event, { email, password }) => {
     });
 
     store.setSession(result.deviceId, result.deviceToken, deviceName, result.user.email);
+    // Clear any timer state from a previous user session so workedTodayServerBase
+    // and active entry context cannot leak to the new user.
+    store.clearTimer();
 
     console.log(`[Main] auth.login.success — user=${result.user.email} device=${result.deviceId}`);
     startWorkers();
     await syncTimerFromServer().catch(() => { /* non-fatal */ });
+    // Populate workedTodayServerBase immediately for the new user instead of
+    // waiting for the 60s interval. Runs after syncTimerFromServer so the
+    // active entry is known before we fetch the stopped-entries total.
+    await refreshWorkedTodayServerBase().catch(() => { /* non-fatal */ });
     pushStateToRenderer();
     return { ok: true };
   } catch (error: any) {
@@ -528,94 +555,85 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
 
 // ─── IPC: Timer ───
 
-ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description }) => {
-  try {
-    const entry = await apiClient.startTimer(crmProjectId, taskId || undefined, description);
-    // taskAccumulatedToday: stopped-entry history for this task today, returned by the server.
-    // Seeds entryServerBase so the timer starts from the accumulated total ("not 0" UX).
-    const taskAccumulatedToday = (entry as any).taskAccumulatedToday || 0;
-    store.setTimerRunning(
-      entry.id,
-      projectName || null,
-      taskId || null,
-      taskName || null,
-      description || null,
-      taskAccumulatedToday,
-    );
-    console.log(`[Main] timer.start — entry=${entry.id} project="${projectName || ""}" task="${taskName || ""}"`);
-    // Refresh server base so workedToday reflects any just-stopped predecessor entries.
-    await refreshWorkedTodayServerBase();
-    pushStateToRenderer();
-    return { ok: true, entry };
-  } catch (error: any) {
-    await syncTimerFromServer();
-    return { ok: false, error: error.message };
+ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description, taskDurationToday }) => {
+  // A task is always required. The UI enforces this, but we guard here too so
+  // no path (IPC replay, future renderers) can create a task-less entry.
+  if (!taskId) {
+    console.warn("[Main] timer.start rejected — taskId is required");
+    return { ok: false, error: "A task must be selected to start the timer." };
   }
+
+  // Local-first: apply state immediately, enqueue for background sync.
+  const clientCommandId = randomUUID();
+  const localEntryId = `local-${randomUUID()}`;
+
+  store.setTimerRunning(
+    localEntryId,
+    projectName || null,
+    taskId || null,
+    taskName || null,
+    description || null,
+    // Seed entryServerBase from the renderer's already-known task total so that
+    // elapsedToday displays correctly from the first tick, without waiting for
+    // the ~30s server sync response (avoids the 0→jump UX regression).
+    typeof taskDurationToday === "number" ? taskDurationToday : 0,
+  );
+  queue.enqueueTimerCommand({
+    clientCommandId,
+    type: "start",
+    entryId: localEntryId,
+    crmProjectId,
+    taskId: taskId || null,
+    description: description || null,
+  });
+  widgetDismissed = false;
+  console.log(`[Main] timer.start (local) — localEntryId=${localEntryId} project="${projectName || ""}" task="${taskName || ""}"`);
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  return { ok: true };
 });
 
 ipcMain.handle("agent:timer-pause", async () => {
-  try {
-    const entryId = store.getActiveEntryId();
-    if (!entryId) return { ok: false, error: "No active timer" };
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return { ok: false, error: "No active timer" };
 
-    const entry = await apiClient.pauseTimer(entryId);
-    store.setTimerPaused(); // closes active session with endTime=now
-    pushStateToRenderer();
-    return { ok: true, entry };
-  } catch (error: any) {
-    const msg: string = error.message ?? "";
-    await syncTimerFromServer();
-    // If the server already paused it (e.g. initiated from web), that's the desired outcome.
-    if (store.getTimerStatus() === "paused") return { ok: true };
-    return { ok: false, error: msg };
-  }
+  const clientCommandId = randomUUID();
+  store.setTimerPaused();
+  queue.enqueueTimerCommand({ clientCommandId, type: "pause", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  return { ok: true };
 });
 
 ipcMain.handle("agent:timer-resume", async () => {
-  try {
-    const entryId = store.getActiveEntryId();
-    if (!entryId) return { ok: false, error: "No active timer" };
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return { ok: false, error: "No active timer" };
 
-    const entry = await apiClient.resumeTimer(entryId);
-    // Resume = new session for the same entry; preserves accumulated elapsed
-    store.setTimerRunning(
-      entry.id,
-      store.getActiveProjectName(),
-      store.getActiveTaskId(),
-      store.getActiveTaskName(),
-      store.getActiveDescription(),
-    );
-    pushStateToRenderer();
-    return { ok: true, entry };
-  } catch (error: any) {
-    const msg: string = error.message ?? "";
-    if (msg.includes("not running") || msg.includes("already stopped") || msg.includes("not paused")) {
-      console.log(`[Main] Timer conflict on resume ("${msg}") — resyncing from server`);
-      await syncTimerFromServer();
-    }
-    return { ok: false, error: msg };
-  }
+  const clientCommandId = randomUUID();
+  store.setTimerRunning(
+    entryId,
+    store.getActiveProjectName(),
+    store.getActiveTaskId(),
+    store.getActiveTaskName(),
+    store.getActiveDescription(),
+  );
+  queue.enqueueTimerCommand({ clientCommandId, type: "resume", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  return { ok: true };
 });
 
 ipcMain.handle("agent:timer-stop", async () => {
-  try {
-    const entryId = store.getActiveEntryId();
-    if (!entryId) return { ok: false, error: "No active timer" };
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return { ok: false, error: "No active timer" };
 
-    const entry = await apiClient.stopTimer(entryId);
-    store.clearTimer();
-    console.log(`[Main] timer.stop — entry=${entryId}`);
-    // Refresh server base now that the entry is stopped — it will appear in the server total.
-    await refreshWorkedTodayServerBase();
-    pushStateToRenderer();
-    return { ok: true, entry };
-  } catch (error: any) {
-    const msg: string = error.message ?? "";
-    await syncTimerFromServer();
-    // If the server already stopped it (e.g. initiated from web), that's the desired outcome.
-    if (!store.getActiveEntryId()) return { ok: true };
-    return { ok: false, error: msg };
-  }
+  const clientCommandId = randomUUID();
+  store.clearTimer();
+  queue.enqueueTimerCommand({ clientCommandId, type: "stop", entryId });
+  console.log(`[Main] timer.stop (local) — entry=${entryId}`);
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  return { ok: true };
 });
 
 ipcMain.handle("agent:timer-state", () => {
@@ -633,6 +651,175 @@ ipcMain.handle("widget:dismiss", () => {
 ipcMain.handle("agent:get-worked-today", () => {
   return { ok: true, total: store.getWorkedTodaySeconds() };
 });
+
+ipcMain.handle("agent:today-breakdown", async () => {
+  if (!store.isPaired()) return { ok: false, rows: [] };
+  try {
+    const rows = await apiClient.getTodayBreakdown();
+    // Overlay live elapsed for the active entry onto its matching row
+    const timerState = store.getTimerState();
+    if (timerState.status !== "stopped" && timerState.taskId) {
+      const activeRow = rows.find((r) => r.taskId === timerState.taskId);
+      if (activeRow) {
+        (activeRow as any).activeSeconds = timerState.elapsedToday;
+      } else {
+        rows.push({
+          projectName: timerState.projectName ?? "Unknown Project",
+          taskId: timerState.taskId,
+          taskName: timerState.taskName,
+          stoppedSeconds: 0,
+          activeSeconds: timerState.elapsedToday,
+        } as any);
+      }
+    } else if (timerState.status !== "stopped" && !timerState.taskId) {
+      // Timer running with no task — show as its own row
+      rows.push({
+        projectName: timerState.projectName ?? "Unknown Project",
+        taskId: null,
+        taskName: null,
+        stoppedSeconds: 0,
+        activeSeconds: timerState.elapsedToday,
+      } as any);
+    }
+    return { ok: true, rows };
+  } catch (err: any) {
+    return { ok: false, rows: [], error: err.message };
+  }
+});
+
+// ─── Idle / break UX ───
+
+let idlePromptDismissTimeout: ReturnType<typeof setTimeout> | null = null;
+/** Countdown seconds before the timer is auto-stopped. Updated by heartbeat policy. */
+let idleCountdownSeconds = 60;
+
+function clearIdleTimeout(): void {
+  if (idlePromptDismissTimeout) { clearTimeout(idlePromptDismissTimeout); idlePromptDismissTimeout = null; }
+}
+
+/**
+ * Called by ActivityWorker when idle crosses the configured threshold while timer is running.
+ * Auto-pauses the timer (retroactively, excluding idle time) then pushes a
+ * prompt to the renderer so the user can choose break or resume.
+ * If no action is taken within `idleCountdownSeconds`, the timer is auto-stopped.
+ */
+function handleIdleUx(idleSeconds: number): void {
+  if (store.getTimerStatus() !== "running") return; // already paused/stopped
+
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return;
+
+  // Retroactively close the session at the moment idle started so that idle
+  // time is NOT counted in elapsedToday / Worked Today.
+  const idleStartedAt = new Date(Date.now() - idleSeconds * 1000);
+  store.setTimerPaused(idleStartedAt);
+  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+
+  const countdown = idleCountdownSeconds;
+  console.log(`[Main] idle.autoPause — idleSeconds=${idleSeconds}, countdown=${countdown}s, sessionClosedAt=${idleStartedAt.toISOString()}`);
+
+  // Push prompt to renderer with countdown info
+  mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds, countdownSeconds: countdown });
+
+  // Auto-stop after countdown — timer stays off, prompt dismissed
+  clearIdleTimeout();
+  idlePromptDismissTimeout = setTimeout(() => {
+    idlePromptDismissTimeout = null;
+    const currentEntryId = store.getActiveEntryId();
+    if (currentEntryId && store.getTimerStatus() === "paused") {
+      store.clearTimer();
+      queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId: currentEntryId });
+      pushStateToRenderer();
+      syncWorker?.triggerSync();
+      console.log("[Main] idle.autoStop — countdown expired, timer stopped");
+    }
+    mainWindow?.webContents.send("agent:idle-dismiss");
+  }, countdown * 1000);
+}
+
+/** Renderer: user chose "I'm on break" — stop timer and dismiss prompt. */
+ipcMain.handle("agent:idle-break", () => {
+  clearIdleTimeout();
+  const entryId = store.getActiveEntryId();
+  if (entryId && store.getTimerStatus() === "paused") {
+    store.clearTimer();
+    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
+    pushStateToRenderer();
+    syncWorker?.triggerSync();
+  }
+  mainWindow?.webContents.send("agent:idle-dismiss");
+  console.log("[Main] idle.break confirmed by user — timer stopped");
+  return { ok: true };
+});
+
+/** Renderer: user chose "Back to work" — resume timer. */
+ipcMain.handle("agent:idle-resume", () => {
+  clearIdleTimeout();
+  mainWindow?.webContents.send("agent:idle-dismiss");
+
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return { ok: false, error: "No active timer" };
+  if (store.getTimerStatus() !== "paused") return { ok: true }; // already running
+
+  store.setTimerRunning(
+    entryId,
+    store.getActiveProjectName(),
+    store.getActiveTaskId(),
+    store.getActiveTaskName(),
+    store.getActiveDescription(),
+  );
+  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  console.log("[Main] idle.resume confirmed by user");
+  return { ok: true };
+});
+
+// ─── Auto-resume from offline queue ───
+
+/**
+ * Restore timer running/paused state on restart.
+ *
+ * Called after reconcileOrphanSessions() which already closed open sessions.
+ * Uses the pending queue intent when commands are still waiting to sync (offline case),
+ * or falls back to the persisted timerStatus when the queue is empty (normal case:
+ * commands already synced before shutdown but timer was still active).
+ */
+function autoResumeFromQueue(): void {
+  const entryId = store.getActiveEntryId();
+  if (!entryId) {
+    // Defensive: if entryId is gone but timerStatus is stale (e.g. external disk
+    // corruption), clear it so the store stays consistent.
+    if (store.getTimerStatus() !== "stopped") store.clearTimer();
+    return;
+  }
+
+  // Use pending queue intent when available (offline case — commands not yet synced).
+  // Fall back to persisted timerStatus when the queue is empty, which is the common
+  // case after a clean PC restart: the start command already synced before shutdown,
+  // leaving the queue empty, but the timer was still active.
+  const queueIntent = queue.getTimerIntent();
+  const intent = queueIntent !== "stopped" ? queueIntent : store.getTimerStatus();
+
+  if (intent === "running") {
+    // Create a fresh session starting now — the PC-off gap is excluded because
+    // reconcileOrphanSessions() already closed the previous session at lastActivityAt.
+    store.setTimerRunning(
+      entryId,
+      store.getActiveProjectName(),
+      store.getActiveTaskId(),
+      store.getActiveTaskName(),
+      null,
+    );
+    console.log(`[Main] timer.autoResume (running) — entry=${entryId}`);
+  } else if (intent === "paused") {
+    // The last command was pause — no open sessions to reconcile. Just restore status.
+    store.setTimerPaused();
+    console.log(`[Main] timer.autoResume (paused) — entry=${entryId}`);
+  }
+}
 
 // ─── Single instance ───
 
@@ -655,10 +842,18 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   store.setClientVersion(app.getVersion());
 
+  // Register for OS autostart (packaged builds only — avoids polluting dev registry).
+  if (app.isPackaged) {
+    app.setLoginItemSettings({ openAtLogin: true });
+  }
+
   // Close any sessions that were left open by a crash or force-quit.
-  // Must run before startWorkers() so getElapsedSeconds() / getWorkedTodaySeconds()
-  // are correct when the first state push reaches the renderer.
+  // Must run before autoResumeFromQueue() so getElapsedSeconds() starts from a clean state.
   store.reconcileOrphanSessions();
+
+  // Restore timer running/paused state from any pending offline commands.
+  // Must run before startWorkers() so the renderer gets the correct status on first push.
+  autoResumeFromQueue();
 
   createTray();
   mainWindow = createMainWindow();

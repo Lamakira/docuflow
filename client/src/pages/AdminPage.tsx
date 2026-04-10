@@ -21,8 +21,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore } from "lucide-react";
-import type { SafeUser, CrmModule, CrmModuleField, CrmModuleWithFields, CrmFieldType, crmFieldTypeValues } from "@shared/schema";
+import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore, BarChart2, Camera, Monitor } from "lucide-react";
+import { AnalyticsContent } from "./AdminAnalyticsPage";
+import type { SafeUser, CrmModule, CrmModuleField, CrmModuleWithFields, CrmFieldType, crmFieldTypeValues, ScreenshotPolicy } from "@shared/schema";
+import { DEFAULT_SCREENSHOT_POLICY } from "@shared/schema";
 
 interface AdminUserDetails {
   id: string;
@@ -117,7 +119,7 @@ function AdminMainPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
+        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
           <TabsTrigger value="users" className="flex items-center gap-2" data-testid="tab-users">
             <Users className="w-4 h-4" />
             User Management
@@ -126,12 +128,26 @@ function AdminMainPage() {
             <Settings2 className="w-4 h-4" />
             Modules & Fields
           </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex items-center gap-2" data-testid="tab-analytics">
+            <BarChart2 className="w-4 h-4" />
+            Analytics
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="flex items-center gap-2" data-testid="tab-settings">
+            <Settings2 className="w-4 h-4" />
+            Settings
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="users" className="mt-6">
           <UserManagementContent />
         </TabsContent>
         <TabsContent value="modules" className="mt-6">
           <ModulesFieldsContent />
+        </TabsContent>
+        <TabsContent value="analytics" className="mt-6">
+          <AnalyticsContent />
+        </TabsContent>
+        <TabsContent value="settings" className="mt-6">
+          <OrgSettingsContent />
         </TabsContent>
       </Tabs>
     </div>
@@ -1981,6 +1997,343 @@ function FieldDetailView({ field, module, onBack }: { field: CrmModuleField; mod
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Settings shell — vertical sidebar + domain panels ───────────────────────
+
+function OrgSettingsContent() {
+  const [activeSection, setActiveSection] = useState("desktop-agent");
+
+  return (
+    <div className="flex gap-8 min-h-[480px]">
+      {/* Left sidebar nav */}
+      <nav className="w-44 shrink-0 space-y-0.5 border-r pr-4">
+        {[
+          { value: "desktop-agent", label: "Desktop Agent", icon: Monitor },
+          { value: "screencasts",   label: "Screencasts",   icon: Camera  },
+        ].map(({ value, label, icon: Icon }) => (
+          <button
+            key={value}
+            onClick={() => setActiveSection(value)}
+            className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+              activeSection === value
+                ? "bg-primary/10 text-primary font-medium"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {/* Content area */}
+      <div className="flex-1 min-w-0">
+        {activeSection === "desktop-agent" && <DesktopAgentPanel />}
+        {activeSection === "screencasts"   && <ScreencastsPanel />}
+      </div>
+    </div>
+  );
+}
+
+// ─── Desktop Agent settings panel ────────────────────────────────────────────
+// Covers: screenshot capture policy + idle prompt behavior.
+// Both are pushed to connected agents on their next heartbeat (≤ 60 s).
+
+function DesktopAgentPanel() {
+  const { toast } = useToast();
+
+  const { data, isLoading } = useQuery<{ screenshotPolicy: ScreenshotPolicy }>({
+    queryKey: ["/api/admin/org-settings"],
+  });
+
+  const [policy, setPolicy] = useState<ScreenshotPolicy>(DEFAULT_SCREENSHOT_POLICY);
+
+  useEffect(() => {
+    if (data?.screenshotPolicy) {
+      setPolicy({ ...DEFAULT_SCREENSHOT_POLICY, ...data.screenshotPolicy });
+    }
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("PATCH", "/api/admin/org-settings", { screenshotPolicy: policy }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/org-settings"] });
+      toast({ title: "Policy saved", description: "Desktop agent policy updated." });
+    },
+    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+  });
+
+  if (isLoading) return <Skeleton className="h-64 w-full" />;
+
+  return (
+    <div className="max-w-xl space-y-6">
+
+      {/* ── Section header ── */}
+      <div>
+        <h2 className="text-base font-semibold">Desktop Agent</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Policy pushed to every connected agent on its next heartbeat (≤ 60 s).
+          No agent restart required.
+        </p>
+      </div>
+
+      {/* ── Screenshot capture ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">Screenshot capture</CardTitle>
+          <CardDescription>
+            Controls when and how often screenshots are taken.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Enable screenshots</p>
+              <p className="text-xs text-muted-foreground">Master switch — disabling stops all captures immediately</p>
+            </div>
+            <Switch
+              checked={policy.screenshotsEnabled}
+              onCheckedChange={(v) => setPolicy((p) => ({ ...p, screenshotsEnabled: v }))}
+              data-testid="switch-screenshots-enabled"
+            />
+          </div>
+
+          <div className={`space-y-5 ${!policy.screenshotsEnabled ? "opacity-40 pointer-events-none" : ""}`}>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Capture interval</p>
+              <p className="text-xs text-muted-foreground">A random delay between Min and Max is used between captures (3–15 min).</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Min (minutes)</Label>
+                  <Input
+                    type="number" min={3} max={15}
+                    value={policy.captureIntervalMinMin}
+                    onChange={(e) => setPolicy((p) => ({
+                      ...p, captureIntervalMinMin: Math.min(15, Math.max(3, parseInt(e.target.value) || 3)),
+                    }))}
+                    data-testid="input-interval-min"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Max (minutes)</Label>
+                  <Input
+                    type="number" min={policy.captureIntervalMinMin} max={15}
+                    value={policy.captureIntervalMaxMin}
+                    onChange={(e) => setPolicy((p) => ({
+                      ...p, captureIntervalMaxMin: Math.min(15, Math.max(p.captureIntervalMinMin, parseInt(e.target.value) || p.captureIntervalMinMin)),
+                    }))}
+                    data-testid="input-interval-max"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Restrict to active hours</p>
+                  <p className="text-xs text-muted-foreground">Captures only happen within the defined time window</p>
+                </div>
+                <Switch
+                  checked={policy.activeHoursEnabled}
+                  onCheckedChange={(v) => setPolicy((p) => ({ ...p, activeHoursEnabled: v }))}
+                  data-testid="switch-active-hours"
+                />
+              </div>
+              {policy.activeHoursEnabled && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Start time</Label>
+                    <Input type="time" value={policy.activeHoursStart}
+                      onChange={(e) => setPolicy((p) => ({ ...p, activeHoursStart: e.target.value }))}
+                      data-testid="input-hours-start" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">End time</Label>
+                    <Input type="time" value={policy.activeHoursEnd}
+                      onChange={(e) => setPolicy((p) => ({ ...p, activeHoursEnd: e.target.value }))}
+                      data-testid="input-hours-end" />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Idle behavior ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">Idle behavior</CardTitle>
+          <CardDescription>
+            When the timer is running and no input is detected, the agent auto-pauses and prompts the user.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Enable idle prompt</p>
+              <p className="text-xs text-muted-foreground">Show "Are you still working?" after inactivity</p>
+            </div>
+            <Switch
+              checked={policy.idlePromptEnabled ?? true}
+              onCheckedChange={(v) => setPolicy((p) => ({ ...p, idlePromptEnabled: v }))}
+              data-testid="switch-idle-prompt"
+            />
+          </div>
+          {(policy.idlePromptEnabled ?? true) && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Idle timeout (minutes, 3–60)</Label>
+              <Input
+                type="number" min={3} max={60}
+                value={policy.idleTimeoutMinutes ?? 10}
+                onChange={(e) => setPolicy((p) => ({
+                  ...p, idleTimeoutMinutes: Math.min(60, Math.max(3, parseInt(e.target.value) || 10)),
+                }))}
+                className="w-32"
+                data-testid="input-idle-timeout"
+              />
+              <p className="text-xs text-muted-foreground">Timer pauses after this period. Default: 10 min.</p>
+            </div>
+          )}
+          {(policy.idlePromptEnabled ?? true) && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Auto-stop countdown (seconds, 15–120)</Label>
+              <Input
+                type="number" min={15} max={120}
+                value={policy.idleCountdownSeconds ?? 60}
+                onChange={(e) => setPolicy((p) => ({
+                  ...p, idleCountdownSeconds: Math.min(120, Math.max(15, parseInt(e.target.value) || 60)),
+                }))}
+                className="w-32"
+                data-testid="input-idle-countdown"
+              />
+              <p className="text-xs text-muted-foreground">Timer stops automatically if no response. Default: 60 s.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-xs text-muted-foreground">
+          Changes take effect on the agent's next heartbeat (≤ 60 s).
+        </p>
+        <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+          data-testid="button-save-screenshot-policy">
+          {saveMutation.isPending ? "Saving…" : "Save policy"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Screencasts settings panel ───────────────────────────────────────────────
+// Display & timezone preferences for the Screencasts page.
+// These are not pushed to agents — they affect the web UI only.
+
+function ScreencastsPanel() {
+  const { toast } = useToast();
+
+  const { data, isLoading } = useQuery<{ allowedTimezones: string[] }>({
+    queryKey: ["/api/admin/org-settings"],
+  });
+
+  const [allowedTimezones, setAllowedTimezones] = useState<string[]>([]);
+  const [tzInput, setTzInput] = useState("");
+  const [tzError, setTzError] = useState("");
+
+  useEffect(() => {
+    if (data?.allowedTimezones) setAllowedTimezones(data.allowedTimezones);
+  }, [data]);
+
+  function handleAddTimezone() {
+    const tz = tzInput.trim();
+    if (!tz) return;
+    try { Intl.DateTimeFormat(undefined, { timeZone: tz }); }
+    catch { setTzError(`"${tz}" is not a valid IANA timezone (e.g. Europe/Paris, America/New_York)`); return; }
+    if (allowedTimezones.includes(tz)) { setTzError(`"${tz}" is already in the list`); return; }
+    setAllowedTimezones((prev) => [...prev, tz]);
+    setTzInput("");
+    setTzError("");
+  }
+
+  const saveTzMutation = useMutation({
+    mutationFn: () => apiRequest("PATCH", "/api/admin/org-settings", { allowedTimezones }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/org-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/screencasts/timezones"] });
+      toast({ title: "Timezones saved", description: "Screencasts timezone list updated." });
+    },
+    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+  });
+
+  if (isLoading) return <Skeleton className="h-48 w-full" />;
+
+  return (
+    <div className="max-w-xl space-y-6">
+
+      <div>
+        <h2 className="text-base font-semibold">Screencasts</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Display preferences for the Screencasts page. These are not pushed to agents.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">Timezone options</CardTitle>
+          <CardDescription>
+            Curate which timezones appear in the Screencasts dropdown.
+            Leave empty to hide the selector (browser timezone used per user).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <Input
+                placeholder="e.g. Europe/Paris, America/New_York"
+                value={tzInput}
+                onChange={(e) => { setTzInput(e.target.value); setTzError(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddTimezone(); } }}
+              />
+              <Button variant="outline" onClick={handleAddTimezone} type="button">
+                <Plus className="h-4 w-4 mr-1" /> Add
+              </Button>
+            </div>
+            {tzError && <p className="text-xs text-destructive mt-1">{tzError}</p>}
+          </div>
+
+          {allowedTimezones.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic">No timezones configured — dropdown hidden for all users.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {allowedTimezones.map((tz) => (
+                <div key={tz} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                  <span className="font-mono">{tz}</span>
+                  <button
+                    onClick={() => setAllowedTimezones((prev) => prev.filter((t) => t !== tz))}
+                    className="text-muted-foreground hover:text-destructive transition-colors"
+                    aria-label={`Remove ${tz}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-1">
+            <Button onClick={() => saveTzMutation.mutate()} disabled={saveTzMutation.isPending}
+              data-testid="button-save-timezones">
+              {saveTzMutation.isPending ? "Saving…" : "Save timezones"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -24,6 +24,7 @@ const defaultTimerState: TimerState = {
   elapsed: 0,
   elapsedToday: 0,
   workedToday: 0,
+  thisSession: 0,
   entryId: null,
   taskId: null,
   projectName: null,
@@ -103,6 +104,7 @@ function reducer(state: State, action: Action): State {
             ...state.agentState.timer,
             elapsed: state.agentState.timer.elapsed + 1,
             elapsedToday: state.agentState.timer.elapsedToday + 1,
+            thisSession: state.agentState.timer.thisSession + 1,
           },
         },
       };
@@ -140,6 +142,7 @@ interface AgentContextValue {
     taskName?: string;
     projectName: string;
     description?: string;
+    taskDurationToday?: number;
   }) => Promise<{ ok: boolean; error?: string }>;
   pauseTimer: () => Promise<{ ok: boolean; error?: string }>;
   resumeTimer: () => Promise<{ ok: boolean; error?: string }>;
@@ -205,6 +208,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     taskName?: string;
     projectName: string;
     description?: string;
+    taskDurationToday?: number;
   }) => {
     const result = await bridge.timerStart(args);
     if (result.ok) {

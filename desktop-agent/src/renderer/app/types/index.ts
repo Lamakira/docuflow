@@ -16,7 +16,8 @@ export interface TimerState {
   status: TimerStatus;
   elapsed: number;      // total entry elapsed (unclamped) — for server reconciliation
   elapsedToday: number; // entry elapsed clamped to current local day — use this for UI display
-  workedToday: number;  // all tasks today, clamped to current local day
+  workedToday: number;  // all tasks today, clamped to current local day (all devices)
+  thisSession: number;  // total tracked since this app launch (all tasks, not day-scoped)
   entryId: string | null;
   taskId: string | null;
   projectName: string | null;
@@ -44,6 +45,14 @@ export interface RecentTask {
 
 export type AppPage = 'timer' | 'activity' | 'screenshots' | 'settings';
 
+export interface BreakdownRow {
+  projectName: string;
+  taskId: string | null;
+  taskName: string | null;
+  stoppedSeconds: number;
+  activeSeconds?: number; // only on the currently running row, overlaid by main process
+}
+
 export interface AgentBridge {
   getState: () => Promise<AgentState>;
   login: (data: { email: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
@@ -56,6 +65,7 @@ export interface AgentBridge {
     taskName?: string;
     projectName: string;
     description?: string;
+    taskDurationToday?: number; // seeds elapsedToday immediately, avoids 0→jump on restart
   }) => Promise<{ ok: boolean; entry?: any; error?: string }>;
   timerPause: () => Promise<{ ok: boolean; error?: string }>;
   timerResume: () => Promise<{ ok: boolean; error?: string }>;
@@ -63,6 +73,11 @@ export interface AgentBridge {
   timerState: () => Promise<TimerState>;
   openExternal: (url: string) => void;
   getWorkedToday: () => Promise<{ ok: boolean; total: number }>;
+  idleBreak: () => Promise<{ ok: boolean }>;
+  idleResume: () => Promise<{ ok: boolean; error?: string }>;
+  onIdlePrompt: (cb: (data: { idleSeconds: number; countdownSeconds: number }) => void) => () => void;
+  onIdleDismiss: (cb: () => void) => () => void;
+  getTodayBreakdown: () => Promise<{ ok: boolean; rows: BreakdownRow[]; error?: string }>;
   onLoginProgress: (cb: (data: { message: string }) => void) => () => void;
   onStateUpdate: (cb: (state: any) => void) => void;
 }

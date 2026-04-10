@@ -7,8 +7,8 @@ name: Desktop Agent — Release
 # The release is created as a draft — publish it manually after reviewing all artifacts.
 #
 # Usage (tag-based release):
-#   git tag desktop-agent-v0.1.4
-#   git push origin desktop-agent-v0.1.4
+#   git tag desktop-agent-v0.1.6
+#   git push origin desktop-agent-v0.1.6
 #
 # Usage (manual dry-run, no release upload):
 #   GitHub → Actions → Desktop Agent — Release → Run workflow
@@ -68,15 +68,21 @@ jobs:
           draft: true
           files: desktop-agent/release/DocuFlow-Agent-*-windows-setup.exe
           body: |
-            See [docs/DESKTOP_RELEASE_LOG.md](https://github.com/CarineEpitech/docuflow/blob/main/docs/DESKTOP_RELEASE_LOG.md) for full release notes and installation instructions.
+            ## v0.1.6 — Idle alert + auto-stop flow
+
+            **What's new:**
+            - Idle prompt now shows a live countdown (configurable 15–120 s, default 60 s)
+            - Timer auto-stops when countdown reaches zero — idle time is never counted as work
+            - "I'm on break" immediately stops the timer; "Back to work" resumes correctly
+            - Admin can configure idle timeout, countdown, and screenshot intervals in Settings → Desktop Agent
 
             | Platform | Artifact | Status |
             |----------|----------|--------|
-            | Windows 10/11 | `DocuFlow-Agent-*-windows-setup.exe` | ✅ Stable |
-            | macOS 12+ (Apple Silicon / Intel via Rosetta) | `DocuFlow-Agent-*-macos.dmg` | 🔶 Beta |
-            | Ubuntu 20.04+ | `DocuFlow-Agent-*-linux-amd64.deb` | 🧪 Experimental |
+            | Windows 10/11 | `DocuFlow-Agent-0.1.6-windows-setup.exe` | ✅ Stable |
+            | macOS 12+ (Apple Silicon / Intel via Rosetta) | `DocuFlow-Agent-0.1.6-macos.dmg` | 🔶 Beta |
+            | Ubuntu 20.04+ | `DocuFlow-Agent-0.1.6-linux-amd64.deb` | 🧪 Experimental |
 
-            > **macOS note:** Built on Apple Silicon (arm64). Runs natively on M1/M2/M3 and via Rosetta 2 on Intel Macs. Signed and notarized — opens without Gatekeeper prompt.
+            > **macOS note:** Built on Apple Silicon (arm64). Runs natively on M1/M2/M3 and via Rosetta 2 on Intel Macs.
 
   # ── macOS — DMG (arm64, unsigned) ─────────────────────────────────────────
   #

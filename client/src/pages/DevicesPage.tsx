@@ -82,10 +82,52 @@ function DeviceStatusBadge({ device }: { device: Device }) {
   return <Badge variant="secondary" className="text-xs">Offline</Badge>;
 }
 
+interface MachineGroup {
+  key: string;
+  name: string;
+  os: string | null;
+  /** Most recently active non-revoked device, or most recent overall */
+  representative: Device;
+  isFullyRevoked: boolean;
+}
+
+/** Group raw device rows by (name, os). One row per logical machine. */
+function groupByMachine(rawDevices: Device[]): MachineGroup[] {
+  const map = new Map<string, Device[]>();
+  for (const d of rawDevices) {
+    const key = `${d.name}||${d.os ?? ""}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(d);
+  }
+  const groups: MachineGroup[] = [];
+  for (const [key, members] of map) {
+    const active = members.filter(d => !d.revokedAt);
+    // Representative: most-recently-seen non-revoked, else most-recently-seen overall
+    const pool = active.length > 0 ? active : members;
+    const representative = pool.reduce((best, d) => {
+      const ts = (x: Device) => x.lastSeenAt ? new Date(x.lastSeenAt).getTime() : 0;
+      return ts(d) > ts(best) ? d : best;
+    });
+    groups.push({
+      key,
+      name: representative.name,
+      os: representative.os,
+      representative,
+      isFullyRevoked: active.length === 0,
+    });
+  }
+  // Sort: active first, then by lastSeenAt desc
+  return groups.sort((a, b) => {
+    if (a.isFullyRevoked !== b.isFullyRevoked) return a.isFullyRevoked ? 1 : -1;
+    const ts = (g: MachineGroup) => g.representative.lastSeenAt ? new Date(g.representative.lastSeenAt).getTime() : 0;
+    return ts(b) - ts(a);
+  });
+}
+
 export default function DevicesPage() {
   const { toast } = useToast();
   const [showConnectDialog, setShowConnectDialog] = useState(false);
-  const [revokeDeviceId, setRevokeDeviceId] = useState<string | null>(null);
+  const [revokeMachineKey, setRevokeMachineKey] = useState<string | null>(null);
 
   // Fetch devices
   const { data: devicesResponse, isLoading } = useQuery<{ data: Device[] }>({
@@ -93,26 +135,27 @@ export default function DevicesPage() {
     refetchInterval: 15000,
   });
 
-  const devices = devicesResponse?.data ?? [];
-  const activeDevices = devices.filter(d => !d.revokedAt);
-  const revokedDevices = devices.filter(d => d.revokedAt);
+  const rawDevices = devicesResponse?.data ?? [];
+  const machineGroups = groupByMachine(rawDevices);
+  const activeGroups = machineGroups.filter(g => !g.isFullyRevoked);
+  const revokedGroups = machineGroups.filter(g => g.isFullyRevoked);
 
-  // Revoke device
+  // Revoke all tokens for a machine
   const revokeMutation = useMutation({
-    mutationFn: async (deviceId: string) => {
-      return apiRequest("POST", "/api/agent/device/revoke", { deviceId });
+    mutationFn: async ({ name, os }: { name: string; os: string | null }) => {
+      return apiRequest("POST", "/api/agent/devices/revoke-machine", { name, os });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/agent/devices"] });
       toast({ title: "Device revoked successfully" });
-      setRevokeDeviceId(null);
+      setRevokeMachineKey(null);
     },
     onError: () => {
       toast({ title: "Failed to revoke device", variant: "destructive" });
     },
   });
 
-  const deviceToRevoke = devices.find(d => d.id === revokeDeviceId);
+  const groupToRevoke = machineGroups.find(g => g.key === revokeMachineKey);
 
   return (
     <TimeTrackingLayout>
@@ -151,7 +194,7 @@ export default function DevicesPage() {
                 <Monitor className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{isLoading ? "-" : activeDevices.length}</p>
+                <p className="text-2xl font-bold">{isLoading ? "-" : activeGroups.length}</p>
                 <p className="text-xs text-muted-foreground">Active devices</p>
               </div>
             </div>
@@ -165,9 +208,9 @@ export default function DevicesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  {isLoading ? "-" : activeDevices.filter(d => {
-                    if (!d.lastSeenAt) return false;
-                    return (Date.now() - new Date(d.lastSeenAt).getTime()) < 5 * 60000;
+                  {isLoading ? "-" : activeGroups.filter(g => {
+                    if (!g.representative.lastSeenAt) return false;
+                    return (Date.now() - new Date(g.representative.lastSeenAt).getTime()) < 5 * 60000;
                   }).length}
                 </p>
                 <p className="text-xs text-muted-foreground">Online now</p>
@@ -182,7 +225,7 @@ export default function DevicesPage() {
                 <ShieldX className="h-5 w-5 text-destructive" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{isLoading ? "-" : revokedDevices.length}</p>
+                <p className="text-2xl font-bold">{isLoading ? "-" : revokedGroups.length}</p>
                 <p className="text-xs text-muted-foreground">Revoked</p>
               </div>
             </div>
@@ -209,7 +252,7 @@ export default function DevicesPage() {
                 </div>
               ))}
             </div>
-          ) : devices.length === 0 ? (
+          ) : machineGroups.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Smartphone className="h-12 w-12 mx-auto mb-4 opacity-20" />
               <p className="font-medium">No devices connected</p>
@@ -217,11 +260,11 @@ export default function DevicesPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {devices.map(device => (
+              {machineGroups.map(group => (
                 <div
-                  key={device.id}
+                  key={group.key}
                   className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
-                    device.revokedAt ? "opacity-50" : "hover:bg-muted/50"
+                    group.isFullyRevoked ? "opacity-50" : "hover:bg-muted/50"
                   }`}
                 >
                   <div className="rounded-lg bg-muted p-2.5">
@@ -229,24 +272,24 @@ export default function DevicesPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm truncate">{device.name}</span>
-                      <DeviceStatusBadge device={device} />
+                      <span className="font-medium text-sm truncate">{group.name}</span>
+                      <DeviceStatusBadge device={group.representative} />
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                      {device.os && <span>{device.os}</span>}
-                      {device.clientVersion && <span>v{device.clientVersion}</span>}
+                      {group.os && <span>{group.os}</span>}
+                      {group.representative.clientVersion && <span>v{group.representative.clientVersion}</span>}
                       <span className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
-                        Last seen {formatRelativeTime(device.lastSeenAt)}
+                        Last seen {formatRelativeTime(group.representative.lastSeenAt)}
                       </span>
                     </div>
                   </div>
-                  {!device.revokedAt && (
+                  {!group.isFullyRevoked && (
                     <Button
                       variant="ghost"
                       size="sm"
                       className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => setRevokeDeviceId(device.id)}
+                      onClick={() => setRevokeMachineKey(group.key)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -301,12 +344,12 @@ export default function DevicesPage() {
       </Dialog>
 
       {/* Revoke Confirmation */}
-      <AlertDialog open={!!revokeDeviceId} onOpenChange={(open) => !open && setRevokeDeviceId(null)}>
+      <AlertDialog open={!!revokeMachineKey} onOpenChange={(open) => !open && setRevokeMachineKey(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Revoke device?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will disconnect "{deviceToRevoke?.name}" and prevent it from syncing data.
+              This will disconnect "{groupToRevoke?.name}" and prevent it from syncing data.
               The device will need to sign in again to reconnect.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -314,7 +357,7 @@ export default function DevicesPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => revokeDeviceId && revokeMutation.mutate(revokeDeviceId)}
+              onClick={() => groupToRevoke && revokeMutation.mutate({ name: groupToRevoke.name, os: groupToRevoke.os })}
               disabled={revokeMutation.isPending}
             >
               {revokeMutation.isPending ? "Revoking..." : "Revoke"}
