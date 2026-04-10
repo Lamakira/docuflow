@@ -394,9 +394,9 @@ export default function ScreencastsPage() {
                           }
                         >
                           <Keyboard className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-                          <div className={`h-1 flex-1 bg-muted rounded-full overflow-hidden${s.keyboardActivityPercent === null ? " opacity-40" : ""}`}>
+                          <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-blue-500 transition-all"
+                              className="h-full rounded-full bg-primary transition-all"
                               style={{ width: `${s.keyboardActivityPercent ?? 0}%` }}
                             />
                           </div>
@@ -413,9 +413,9 @@ export default function ScreencastsPage() {
                           }
                         >
                           <Mouse className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-                          <div className={`h-1 flex-1 bg-muted rounded-full overflow-hidden${s.mouseActivityPercent === null ? " opacity-40" : ""}`}>
+                          <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-green-500 transition-all"
+                              className="h-full rounded-full bg-primary transition-all"
                               style={{ width: `${s.mouseActivityPercent ?? 0}%` }}
                             />
                           </div>
