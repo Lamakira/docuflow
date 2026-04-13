@@ -7,6 +7,7 @@ import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { registerAgentRoutes } from "./agentRoutes";
+import { registerDownloadRoutes } from "./downloadRoutes";
 import mammoth from "mammoth";
 import { 
   insertProjectSchema, 
@@ -89,6 +90,9 @@ export async function registerRoutes(
 
   // Desktop Agent routes (pairing, auth, ingestion)
   registerAgentRoutes(app);
+
+  // Desktop installer download + CI publish endpoints
+  registerDownloadRoutes(app);
 
   // Auth user endpoint - returns current user info or null if not authenticated
   app.get("/api/auth/user", async (req: Request, res) => {
@@ -3651,6 +3655,57 @@ Instructions:
     }
   });
 
+  // Data quality report — evidence completeness flags, never redefines tracked time
+  app.get("/api/admin/analytics/data-quality", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getDataQualityReport({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching data quality report:", error);
+      res.status(500).json({ message: "Failed to fetch data quality report" });
+    }
+  });
+
+  // Screenshot coverage report — evidence completeness vs tracked time
+  // Coverage is purely observational. Tracked time is never modified by this endpoint.
+  app.get("/api/admin/analytics/coverage", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getScreenshotCoverageReport({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+        crmProjectId: (req.query.crmProjectId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching coverage report:", error);
+      res.status(500).json({ message: "Failed to fetch coverage report" });
+    }
+  });
+
+  // Evidence quality score — per-user composite score (0–100).
+  // NEVER modifies or replaces tracked time; purely observational.
+  app.get("/api/admin/analytics/evidence-quality", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getEvidenceQualityReport({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching evidence quality report:", error);
+      res.status(500).json({ message: "Failed to fetch evidence quality report" });
+    }
+  });
+
   app.get("/api/admin/analytics/devices", isAuthenticated, isAdmin, async (_req, res) => {
     try {
       const data = await storage.getAdminAllDevices();
@@ -4352,15 +4407,20 @@ Instructions:
     try {
       const userId = getUserId(req)!;
       const user = await storage.getUser(userId);
-      
+
       const screenshot = await storage.getTimeEntryScreenshotById(req.params.id);
-      
+
       if (!screenshot) {
         return res.status(404).json({ message: "Screenshot not found" });
       }
 
       if (user?.role !== "admin" && screenshot.userId !== userId) {
         return res.status(403).json({ message: "Not authorized" });
+      }
+
+      // Tombstoned screenshots — evidence has been removed by an admin
+      if (screenshot.deletedAt !== null) {
+        return res.status(410).json({ message: "Screenshot has been removed", deletedAt: screenshot.deletedAt });
       }
 
       const objectStorageService = new ObjectStorageService();
@@ -4372,6 +4432,43 @@ Instructions:
         return res.status(404).json({ message: "Screenshot file not found" });
       }
       res.status(500).json({ message: "Failed to serve screenshot" });
+    }
+  });
+
+  // Admin: soft-delete (tombstone) a screenshot
+  // DELETE /api/time-tracking/screenshots/:id
+  // Body: { reason?: string }
+  app.delete("/api/time-tracking/screenshots/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const user = await storage.getUser(userId);
+      if (user?.role !== "admin") {
+        return res.status(403).json({ message: "Admin only" });
+      }
+
+      const { reason } = req.body ?? {};
+      const tombstone = await storage.softDeleteTimeEntryScreenshot(
+        req.params.id,
+        userId,
+        typeof reason === "string" ? reason.slice(0, 500) : undefined,
+      );
+
+      if (!tombstone) {
+        // Either not found or already tombstoned
+        const existing = await storage.getTimeEntryScreenshotById(req.params.id);
+        if (!existing) return res.status(404).json({ message: "Screenshot not found" });
+        return res.status(409).json({ message: "Screenshot already deleted", deletedAt: existing.deletedAt });
+      }
+
+      return res.json({
+        id: tombstone.id,
+        deletedAt: tombstone.deletedAt,
+        deletedBy: tombstone.deletedBy,
+        deleteReason: tombstone.deleteReason,
+      });
+    } catch (error) {
+      console.error("Error soft-deleting screenshot:", error);
+      res.status(500).json({ message: "Failed to delete screenshot" });
     }
   });
 

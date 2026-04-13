@@ -15,7 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
 import {
   ArrowLeft, Clock, Users, Camera, AlertTriangle, TrendingUp, Activity,
-  Monitor, Download, Wifi, WifiOff, BarChart2,
+  Monitor, Download, Wifi, WifiOff, BarChart2, ShieldCheck, Fingerprint,
 } from "lucide-react";
 
 // ─── Helpers ───
@@ -652,6 +652,432 @@ function ExportTab({ startISO, endISO, userFilter, projectFilter }: {
   );
 }
 
+// ─── Coverage bar ───
+// Visual indicator for screenshot coverage %. Distinct colour palette from
+// the idle-ratio bar so admins never confuse the two metrics.
+
+function CoverageBar({ pct }: { pct: number | null }) {
+  if (pct === null) return <span className="text-xs text-muted-foreground">—</span>;
+  const color = pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-400" : "bg-red-500";
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+        <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+      <span className="text-xs font-mono w-8 text-right">{pct}%</span>
+    </div>
+  );
+}
+
+// ─── Coverage tab ───
+// All metrics here are EVIDENCE metrics — they describe screenshot completeness
+// relative to tracked time. They do not affect or redefine tracked time.
+
+function CoverageTab({ startISO, endISO, userFilter, projectFilter }: {
+  startISO: string; endISO: string; userFilter: string; projectFilter: string;
+}) {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/analytics/coverage", startISO, endISO, userFilter, projectFilter],
+    queryFn: () => fetch(buildUrl("/api/admin/analytics/coverage", {
+      start: startISO, end: endISO,
+      userId: userFilter || undefined,
+      crmProjectId: projectFilter || undefined,
+    })).then(r => r.json()),
+  });
+
+  if (isLoading) return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-24" />)}
+      </div>
+      <Skeleton className="h-48" />
+      <Skeleton className="h-48" />
+    </div>
+  );
+  if (!data) return null;
+
+  const { summary, byUser, byProject, byDay } = data as {
+    summary: {
+      coveragePercent: number | null;
+      entriesWithoutScreenshots: number;
+      lowCoverageEntries: number;
+      totalEntries: number;
+      totalScreenshots: number;
+      expectedScreenshots: number;
+      totalTrackedSeconds: number;
+    };
+    byUser: Array<{
+      userId: string; userName: string; trackedSeconds: number;
+      entriesCount: number; entriesWithoutScreenshots: number;
+      screenshotCount: number; expectedScreenshots: number; coveragePct: number | null;
+    }>;
+    byProject: Array<{
+      crmProjectId: string; projectName: string; trackedSeconds: number;
+      entriesCount: number; entriesWithoutScreenshots: number;
+      screenshotCount: number; expectedScreenshots: number; coveragePct: number | null;
+    }>;
+    byDay: Array<{
+      date: string; trackedSeconds: number; screenshotCount: number;
+      expectedScreenshots: number; coveragePct: number | null;
+    }>;
+  };
+
+  const dayChartData = byDay.map(d => ({
+    date: d.date?.slice(5) ?? "",
+    coverage: d.coveragePct ?? 0,
+    screenshots: d.screenshotCount,
+    expected: d.expectedScreenshots,
+  }));
+
+  return (
+    <div className="space-y-6">
+      {/* Boundary label — makes it explicit these are not time metrics */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/60 border border-border/50 text-xs text-muted-foreground">
+        <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+        Evidence quality metrics — screenshot completeness relative to tracked time.
+        Tracked time is <strong className="text-foreground">never</strong> modified by these values.
+      </div>
+
+      {/* KPI row */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <StatCard
+          icon={Camera}
+          label="Org coverage rate"
+          value={summary.coveragePercent !== null ? `${summary.coveragePercent}%` : "—"}
+          sub={`${summary.totalScreenshots} of ~${summary.expectedScreenshots} expected`}
+          color={
+            summary.coveragePercent === null ? "text-muted-foreground"
+            : summary.coveragePercent >= 80 ? "text-emerald-600"
+            : summary.coveragePercent >= 50 ? "text-amber-500"
+            : "text-red-500"
+          }
+        />
+        <StatCard
+          icon={AlertTriangle}
+          label="Entries without screenshots"
+          value={summary.entriesWithoutScreenshots}
+          sub={`of ${summary.totalEntries} stopped entries`}
+          color={summary.entriesWithoutScreenshots > 0 ? "text-amber-500" : "text-muted-foreground"}
+        />
+        <StatCard
+          icon={ShieldCheck}
+          label="Low-coverage entries"
+          value={summary.lowCoverageEntries}
+          sub="< 50% of expected screenshots"
+          color={summary.lowCoverageEntries > 0 ? "text-red-500" : "text-muted-foreground"}
+        />
+      </div>
+
+      {/* Coverage by day chart */}
+      {dayChartData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" /> Coverage Rate by Day
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={dayChartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} unit="%" domain={[0, 100]} width={36} />
+                <Tooltip
+                  formatter={(v: any, name: string) =>
+                    name === "coverage" ? [`${v}%`, "Coverage"] : [v, name]
+                  }
+                />
+                <Bar dataKey="coverage" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* By user */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Users className="w-4 h-4" /> Coverage by User
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">User</th>
+                  <th className="text-right px-4 py-2 font-medium text-muted-foreground">Shots</th>
+                  <th className="text-right px-4 py-2 font-medium text-muted-foreground">No shots</th>
+                  <th className="px-4 py-2 font-medium text-muted-foreground w-36">Coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byUser.map(row => (
+                  <tr key={row.userId} className="border-b last:border-0 hover:bg-muted/30">
+                    <td className="px-4 py-2 font-medium truncate max-w-[140px]">{row.userName}</td>
+                    <td className="px-4 py-2 text-right font-mono text-xs">
+                      {row.screenshotCount}<span className="text-muted-foreground">/{row.expectedScreenshots}</span>
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {row.entriesWithoutScreenshots > 0
+                        ? <Badge variant="destructive" className="text-xs">{row.entriesWithoutScreenshots}</Badge>
+                        : <span className="text-muted-foreground text-xs">—</span>
+                      }
+                    </td>
+                    <td className="px-4 py-2"><CoverageBar pct={row.coveragePct} /></td>
+                  </tr>
+                ))}
+                {byUser.length === 0 && (
+                  <tr><td colSpan={4} className="px-4 py-6 text-center text-muted-foreground text-xs">No data for this period</td></tr>
+                )}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+
+        {/* By project */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <BarChart2 className="w-4 h-4" /> Coverage by Project
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Project</th>
+                  <th className="text-right px-4 py-2 font-medium text-muted-foreground">Shots</th>
+                  <th className="text-right px-4 py-2 font-medium text-muted-foreground">No shots</th>
+                  <th className="px-4 py-2 font-medium text-muted-foreground w-36">Coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byProject.map(row => (
+                  <tr key={row.crmProjectId} className="border-b last:border-0 hover:bg-muted/30">
+                    <td className="px-4 py-2 font-medium truncate max-w-[140px]">{row.projectName}</td>
+                    <td className="px-4 py-2 text-right font-mono text-xs">
+                      {row.screenshotCount}<span className="text-muted-foreground">/{row.expectedScreenshots}</span>
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {row.entriesWithoutScreenshots > 0
+                        ? <Badge variant="destructive" className="text-xs">{row.entriesWithoutScreenshots}</Badge>
+                        : <span className="text-muted-foreground text-xs">—</span>
+                      }
+                    </td>
+                    <td className="px-4 py-2"><CoverageBar pct={row.coveragePct} /></td>
+                  </tr>
+                ))}
+                {byProject.length === 0 && (
+                  <tr><td colSpan={4} className="px-4 py-6 text-center text-muted-foreground text-xs">No data for this period</td></tr>
+                )}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ─── Evidence Quality Tab ───
+// Displays a per-user evidence score (0–100) composed of four signals:
+//   Coverage (0-40), Quality (0-30), Events (0-20), Device (0-10)
+//
+// IMPORTANT: This score describes evidence completeness only.
+// It does NOT reflect worked time or productivity and must never be used
+// to approve, dispute, or modify tracked duration.
+
+type EvidenceGrade = "strong" | "moderate" | "weak" | "insufficient";
+
+const GRADE_META: Record<EvidenceGrade, { label: string; color: string; bg: string }> = {
+  strong:      { label: "Strong",      color: "text-emerald-700", bg: "bg-emerald-100" },
+  moderate:    { label: "Moderate",    color: "text-blue-700",    bg: "bg-blue-100"    },
+  weak:        { label: "Weak",        color: "text-amber-700",   bg: "bg-amber-100"   },
+  insufficient:{ label: "Insufficient",color: "text-red-700",     bg: "bg-red-100"     },
+};
+
+function GradeBadge({ grade }: { grade: EvidenceGrade }) {
+  const m = GRADE_META[grade];
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${m.bg} ${m.color}`}>
+      {m.label}
+    </span>
+  );
+}
+
+function ScoreBar({ score, max, color }: { score: number; max: number; color: string }) {
+  const pct = max > 0 ? Math.min(100, Math.round((score / max) * 100)) : 0;
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+        <div className={`h-full ${color} rounded-full`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs font-mono text-muted-foreground">{score}/{max}</span>
+    </div>
+  );
+}
+
+function EvidenceTab({ startISO, endISO, userFilter }: {
+  startISO: string; endISO: string; userFilter: string;
+}) {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/analytics/evidence-quality", startISO, endISO, userFilter],
+    queryFn: () => fetch(buildUrl("/api/admin/analytics/evidence-quality", {
+      start: startISO, end: endISO,
+      userId: userFilter || undefined,
+    })).then(r => r.json()),
+  });
+
+  if (isLoading) return (
+    <div className="space-y-3">
+      {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full rounded" />)}
+    </div>
+  );
+
+  const dist = data?.gradeDistribution ?? { strong: 0, moderate: 0, weak: 0, insufficient: 0 };
+  const byUser: any[] = data?.byUser ?? [];
+  const total = byUser.length;
+
+  return (
+    <div className="space-y-6">
+
+      {/* Boundary label */}
+      <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+        <Fingerprint className="h-3.5 w-3.5 shrink-0" />
+        Evidence quality score — measures how well sessions are supported by observable signals (screenshots, events, device heartbeat).
+        This score does <strong>not</strong> represent worked time or productivity.
+      </div>
+
+      {/* Grade distribution KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {(["strong", "moderate", "weak", "insufficient"] as EvidenceGrade[]).map(g => {
+          const m = GRADE_META[g];
+          const n = dist[g] ?? 0;
+          const pct = total > 0 ? Math.round((n / total) * 100) : 0;
+          return (
+            <Card key={g}>
+              <CardContent className="pt-4 pb-3">
+                <p className={`text-xs font-medium uppercase tracking-wide ${m.color}`}>{m.label}</p>
+                <p className="text-2xl font-bold mt-1">{n}</p>
+                <p className="text-xs text-muted-foreground">{pct}% of users</p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Score breakdown header */}
+      <div>
+        <h3 className="text-sm font-semibold mb-1">Score breakdown — by user</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Coverage (0–40) · Quality (0–30) · Events (0–20) · Device (0–10)
+        </p>
+      </div>
+
+      {byUser.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No stopped entries in this period.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="min-w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium text-xs">User</th>
+                <th className="px-4 py-2 text-left font-medium text-xs">Grade</th>
+                <th className="px-4 py-2 text-left font-medium text-xs">Total</th>
+                <th className="px-4 py-2 text-left font-medium text-xs">Coverage</th>
+                <th className="px-4 py-2 text-left font-medium text-xs">Quality</th>
+                <th className="px-4 py-2 text-left font-medium text-xs">Events</th>
+                <th className="px-4 py-2 text-left font-medium text-xs">Device</th>
+                <th className="px-4 py-2 text-left font-medium text-xs">Entries</th>
+                <th className="px-4 py-2 text-left font-medium text-xs">Tracked</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {byUser.map((row: any) => (
+                <tr key={row.userId} className="hover:bg-muted/30">
+                  <td className="px-4 py-2 font-medium">{row.userName}</td>
+                  <td className="px-4 py-2"><GradeBadge grade={row.grade} /></td>
+                  <td className="px-4 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${row.totalScore >= 75 ? "bg-emerald-500" : row.totalScore >= 50 ? "bg-blue-400" : row.totalScore >= 25 ? "bg-amber-400" : "bg-red-500"}`}
+                          style={{ width: `${row.totalScore}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-mono">{row.totalScore}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2"><ScoreBar score={row.coverageScore} max={40} color="bg-emerald-400" /></td>
+                  <td className="px-4 py-2"><ScoreBar score={row.qualityScore}  max={30} color="bg-blue-400"    /></td>
+                  <td className="px-4 py-2"><ScoreBar score={row.eventsScore}   max={20} color="bg-violet-400"  /></td>
+                  <td className="px-4 py-2"><ScoreBar score={row.deviceScore}   max={10} color="bg-orange-400"  /></td>
+                  <td className="px-4 py-2 text-muted-foreground">{row.entryCount}</td>
+                  <td className="px-4 py-2 text-muted-foreground">{fmtHours(row.trackedSeconds)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Raw signal transparency table */}
+      {byUser.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold mb-1">Raw evidence signals</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            Inputs used to compute each component score. Tracked time is not shown here — it is unaffected by this report.
+          </p>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="min-w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium text-xs">User</th>
+                  <th className="px-4 py-2 text-left font-medium text-xs">Screenshots</th>
+                  <th className="px-4 py-2 text-left font-medium text-xs">Expected</th>
+                  <th className="px-4 py-2 text-left font-medium text-xs">Dup ratio</th>
+                  <th className="px-4 py-2 text-left font-medium text-xs">Avg activity</th>
+                  <th className="px-4 py-2 text-left font-medium text-xs">Events</th>
+                  <th className="px-4 py-2 text-left font-medium text-xs">Device last seen</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {byUser.map((row: any) => (
+                  <tr key={row.userId} className="hover:bg-muted/30">
+                    <td className="px-4 py-2 font-medium">{row.userName}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{row.screenshotCount}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{row.expectedScreenshots}</td>
+                    <td className="px-4 py-2 font-mono text-xs">
+                      {row.dupRatio > 0 ? (
+                        <span className={row.dupRatio >= 0.2 ? "text-amber-600" : ""}>{Math.round(row.dupRatio * 100)}%</span>
+                      ) : "—"}
+                    </td>
+                    <td className="px-4 py-2 font-mono text-xs">
+                      {row.avgActivityPct !== null ? `${row.avgActivityPct}%` : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-4 py-2">
+                      {row.hasEvents ? <span className="text-emerald-600 text-xs">yes</span> : <span className="text-muted-foreground text-xs">no</span>}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-muted-foreground">
+                      {row.deviceLastSeenDaysAgo !== null
+                        ? row.deviceLastSeenDaysAgo === 0 ? "today"
+                        : row.deviceLastSeenDaysAgo === 1 ? "yesterday"
+                        : `${row.deviceLastSeenDaysAgo}d ago`
+                        : <span>—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Analytics content (reusable — embedded as tab in AdminPage or as standalone page) ───
 
 export function AnalyticsContent() {
@@ -707,11 +1133,13 @@ export function AnalyticsContent() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-3 sm:grid-cols-6 max-w-2xl">
+        <TabsList className="grid grid-cols-4 sm:grid-cols-8 max-w-4xl">
           <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
           <TabsTrigger value="productivity" className="text-xs sm:text-sm">Productivity</TabsTrigger>
           <TabsTrigger value="activity" className="text-xs sm:text-sm">Activity</TabsTrigger>
           <TabsTrigger value="screenshots" className="text-xs sm:text-sm">Screenshots</TabsTrigger>
+          <TabsTrigger value="coverage" className="text-xs sm:text-sm">Coverage</TabsTrigger>
+          <TabsTrigger value="evidence" className="text-xs sm:text-sm">Evidence</TabsTrigger>
           <TabsTrigger value="alerts" className="text-xs sm:text-sm">Alerts</TabsTrigger>
           <TabsTrigger value="export" className="text-xs sm:text-sm">Export</TabsTrigger>
         </TabsList>
@@ -727,6 +1155,12 @@ export function AnalyticsContent() {
         </TabsContent>
         <TabsContent value="screenshots" className="mt-6">
           <ScreenshotsTab startISO={startISO} endISO={endISO} userFilter={userFilter} />
+        </TabsContent>
+        <TabsContent value="coverage" className="mt-6">
+          <CoverageTab startISO={startISO} endISO={endISO} userFilter={userFilter} projectFilter={projectFilter} />
+        </TabsContent>
+        <TabsContent value="evidence" className="mt-6">
+          <EvidenceTab startISO={startISO} endISO={endISO} userFilter={userFilter} />
         </TabsContent>
         <TabsContent value="alerts" className="mt-6">
           <AlertsTab startISO={startISO} endISO={endISO} />

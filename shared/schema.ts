@@ -1105,11 +1105,25 @@ export const timeEntryScreenshots = pgTable("time_entry_screenshots", {
   mouseCount: integer("mouse_count"),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── Soft-delete tombstone ───────────────────────────────────────────────────
+  // null = live screenshot.  non-null = tombstoned (removed operationally).
+  // The row is NEVER physically deleted via the public API; only via FK cascade
+  // when the parent time entry / user / project is itself deleted.
+  // The GCS storage object is NOT deleted by the soft-delete endpoint — the
+  // storageKey is preserved as an audit trail; a separate purge job handles GCS.
+  /** When the screenshot was soft-deleted; null means it is still live. */
+  deletedAt: timestamp("deleted_at"),
+  /** User ID of the admin who performed the deletion; SET NULL when user is deleted. */
+  deletedBy: varchar("deleted_by").references(() => users.id, { onDelete: "set null" }),
+  /** Optional free-text reason recorded at deletion time. */
+  deleteReason: varchar("delete_reason", { length: 500 }),
 }, (table) => [
   index("idx_screenshots_time_entry").on(table.timeEntryId),
   index("idx_screenshots_user").on(table.userId),
   index("idx_screenshots_project").on(table.crmProjectId),
   index("idx_screenshots_captured").on(table.capturedAt),
+  // Partial index — only indexes tombstoned rows; zero cost for live rows
+  index("idx_screenshots_deleted").on(table.deletedAt),
 ]);
 
 export const timeEntryScreenshotsRelations = relations(timeEntryScreenshots, ({ one }) => ({
@@ -1251,3 +1265,85 @@ export const orgSettings = pgTable("org_settings", {
   allowedTimezones: jsonb("allowed_timezones").$type<string[]>(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Desktop installer release registry.
+// CI writes one row per build artifact. The backend serves stable download
+// URLs that redirect to the storage URL, insulating users from GCS paths.
+export const desktopReleases = pgTable(
+  "desktop_releases",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    /** Semver string, e.g. "0.1.6" */
+    version: varchar("version", { length: 50 }).notNull(),
+    /** One of: windows | macos | linux */
+    platform: varchar("platform", { length: 20 }).notNull(),
+    /** Original artifact filename, e.g. "DocuFlow-Agent-0.1.6-windows-setup.exe" */
+    filename: varchar("filename", { length: 255 }).notNull(),
+    /** Public GCS object URL — permanent direct-download link */
+    storageUrl: text("storage_url").notNull(),
+    fileSize: bigint("file_size", { mode: "number" }),
+    sha256: varchar("sha256", { length: 64 }),
+    /** True for exactly one row per platform at any time */
+    isLatest: boolean("is_latest").notNull().default(false),
+    publishedAt: timestamp("published_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_desktop_releases_platform_latest").on(table.platform, table.isLatest),
+  ]
+);
+
+export type DesktopRelease = typeof desktopReleases.$inferSelect;
+
+// ─── Evidence Quality Score ───
+//
+// A per-user (or per-entry) composite score (0–100) that measures how well
+// a tracked session is supported by observable evidence.
+//
+// IMPORTANT: This score never modifies or replaces tracked time (duration /
+// idleTime). It is purely an observational label on evidence completeness.
+//
+// Score components:
+//   coverageScore  (0–40) — screenshot count vs 1-per-10-min expectation
+//   qualityScore   (0–30) — deductions for duplicate / low-activity screenshots
+//   eventsScore    (0–20) — presence of linked activity events
+//   deviceScore    (0–10) — device heartbeat freshness
+//
+// Grade thresholds:
+//   strong       ≥ 75
+//   moderate     50–74
+//   weak         25–49
+//   insufficient  0–24
+
+export type EvidenceGrade = "strong" | "moderate" | "weak" | "insufficient";
+
+export interface EvidenceUserScore {
+  userId: string;
+  userName: string;
+  entryCount: number;
+  trackedSeconds: number;
+  // Score components (sum = totalScore)
+  coverageScore: number;
+  qualityScore: number;
+  eventsScore: number;
+  deviceScore: number;
+  totalScore: number;
+  grade: EvidenceGrade;
+  // Raw inputs (transparency — never used to rewrite time)
+  screenshotCount: number;
+  expectedScreenshots: number;
+  dupRatio: number;
+  avgActivityPct: number | null;
+  hasEvents: boolean;
+  deviceLastSeenDaysAgo: number | null;
+}
+
+export interface EvidenceQualityReport {
+  gradeDistribution: {
+    strong: number;
+    moderate: number;
+    weak: number;
+    insufficient: number;
+  };
+  byUser: EvidenceUserScore[];
+}

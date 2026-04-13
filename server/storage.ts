@@ -91,6 +91,8 @@ import {
   type ScreenshotPolicy,
   DEFAULT_SCREENSHOT_POLICY,
   DEFAULT_ALLOWED_TIMEZONES,
+  type EvidenceGrade,
+  type EvidenceQualityReport,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray } from "drizzle-orm";
@@ -296,7 +298,9 @@ export interface IStorage {
 
   // Time Entry Screenshots
   createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot>;
+  /** Returns the row regardless of soft-delete status (callers must check deletedAt). */
   getTimeEntryScreenshotById(id: string): Promise<TimeEntryScreenshot | undefined>;
+  /** Lists live (non-deleted) screenshots only. */
   getTimeEntryScreenshots(options: {
     timeEntryId?: string;
     userId?: string;
@@ -307,7 +311,18 @@ export interface IStorage {
     offset?: number;
   }): Promise<{ data: TimeEntryScreenshot[]; total: number }>;
   updateTimeEntryScreenshot(id: string, data: { storageKey: string; contentHash?: string }): Promise<TimeEntryScreenshot | undefined>;
+  /** Hard delete — for internal use only (e.g. tests). Public API must use softDeleteTimeEntryScreenshot. */
   deleteTimeEntryScreenshot(id: string): Promise<void>;
+  /**
+   * Soft delete: marks the row as tombstoned, preserving metadata for analytics.
+   * The GCS storage object is NOT deleted — storageKey is kept as an audit trail.
+   * Returns the updated row, or undefined if not found or already deleted.
+   */
+  softDeleteTimeEntryScreenshot(
+    id: string,
+    deletedBy: string,
+    reason?: string,
+  ): Promise<TimeEntryScreenshot | undefined>;
 
   // Tasks
   getTasks(options: { crmProjectId: string; includeArchived?: boolean }): Promise<Task[]>;
@@ -352,6 +367,15 @@ export interface IStorage {
     timestamp: Date;
     data?: Record<string, unknown>;
   }>): Promise<void>;
+
+  // ─── Evidence Quality Report ───
+  // Computes a composite evidence score (0–100) per user for the given window.
+  // Score NEVER modifies tracked time — it is a read-only observational label.
+  getEvidenceQualityReport(opts: {
+    startDate: Date;
+    endDate: Date;
+    userId?: string;
+  }): Promise<EvidenceQualityReport>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2424,12 +2448,13 @@ export class DatabaseStorage implements IStorage {
       userMap.set(userId, existing);
     }
     
-    // Count screenshots in the same window
+    // Count live (non-deleted, non-pending) screenshots in the same window
     const screenshotConditions = [];
     if (options.userId) screenshotConditions.push(eq(timeEntryScreenshots.userId, options.userId));
     if (options.startDate) screenshotConditions.push(gt(timeEntryScreenshots.capturedAt, options.startDate));
     if (options.endDate) screenshotConditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
     screenshotConditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
+    screenshotConditions.push(isNull(timeEntryScreenshots.deletedAt));
     const [screenshotRow] = await db
       .select({ cnt: count() })
       .from(timeEntryScreenshots)
@@ -2524,6 +2549,8 @@ export class DatabaseStorage implements IStorage {
     if (options.endDate) conditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
     // Exclude pending uploads (upload not yet received from agent)
     conditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
+    // Exclude soft-deleted tombstones — they are invisible to all user-facing views
+    conditions.push(isNull(timeEntryScreenshots.deletedAt));
 
     const where = and(...conditions);
     const limit = options.limit ?? 50;
@@ -2557,6 +2584,30 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTimeEntryScreenshot(id: string): Promise<void> {
     await db.delete(timeEntryScreenshots).where(eq(timeEntryScreenshots.id, id));
+  }
+
+  async softDeleteTimeEntryScreenshot(
+    id: string,
+    deletedBy: string,
+    reason?: string,
+  ): Promise<TimeEntryScreenshot | undefined> {
+    // Refuse to re-tombstone an already-deleted row
+    const [existing] = await db
+      .select({ deletedAt: timeEntryScreenshots.deletedAt })
+      .from(timeEntryScreenshots)
+      .where(eq(timeEntryScreenshots.id, id));
+    if (!existing || existing.deletedAt !== null) return undefined;
+
+    const [updated] = await db
+      .update(timeEntryScreenshots)
+      .set({
+        deletedAt: new Date(),
+        deletedBy,
+        deleteReason: reason ?? null,
+      })
+      .where(eq(timeEntryScreenshots.id, id))
+      .returning();
+    return updated;
   }
 
   // ═══════════════════════════════════════
@@ -2770,6 +2821,7 @@ export class DatabaseStorage implements IStorage {
       sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
       sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
       sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      isNull(timeEntryScreenshots.deletedAt),
     ));
 
     const [revokedCount] = await db.select({
@@ -2967,6 +3019,7 @@ export class DatabaseStorage implements IStorage {
     byUser: Array<{ userId: string; userName: string; count: number }>;
     hourlyDistribution: Array<{ hour: number; count: number }>;
     duplicates: Array<{ contentHash: string; count: number }>;
+    deletedCount: number;
   }> {
     const { startDate, endDate, userId } = opts;
 
@@ -2974,6 +3027,7 @@ export class DatabaseStorage implements IStorage {
       sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
       sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
       sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      isNull(timeEntryScreenshots.deletedAt),
     ];
     if (userId) conds.push(eq(timeEntryScreenshots.userId, userId));
 
@@ -3016,11 +3070,24 @@ export class DatabaseStorage implements IStorage {
       .orderBy(sql`COUNT(*) DESC`)
       .limit(20);
 
+    // Count tombstoned screenshots in the same time window (evidence removed by an admin)
+    const deletedConds: any[] = [
+      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
+      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
+      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
+    ];
+    if (userId) deletedConds.push(eq(timeEntryScreenshots.userId, userId));
+    const [deletedResult] = await db.select({
+      count: sql<number>`COUNT(*)::int`,
+    }).from(timeEntryScreenshots).where(and(...deletedConds));
+
     return {
       totalCount: countResult?.count ?? 0,
       byUser,
       hourlyDistribution: hourlyRaw,
       duplicates: duplicatesRaw.map(r => ({ contentHash: r.contentHash!, count: r.count })),
+      deletedCount: deletedResult?.count ?? 0,
     };
   }
 
@@ -3061,6 +3128,7 @@ export class DatabaseStorage implements IStorage {
         .where(and(
           eq(timeEntryScreenshots.timeEntryId, entry.id),
           sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+          isNull(timeEntryScreenshots.deletedAt),
         ))
         .orderBy(desc(timeEntryScreenshots.capturedAt))
         .limit(1);
@@ -3116,6 +3184,656 @@ export class DatabaseStorage implements IStorage {
         startedAt: r.startedAt,
       })),
     };
+  }
+
+  // ─── Data Quality Report ───
+  //
+  // Computes evidence-layer quality flags per user, relative to their tracked
+  // time. Business metrics (duration, idle time) are NEVER modified here.
+  // Quality flags are purely observational: they describe evidence completeness,
+  // not whether tracked time is valid.
+  //
+  // Quality flag definitions:
+  //   low_coverage      — fewer than 1 screenshot per 10 min of tracked time
+  //   duplicate_heavy   — ≥ 20% of screenshots share a contentHash with another
+  //   events_missing    — user has tracked time but zero activity events recorded
+  //   stale_device      — user's most recent device hasn't been seen in 7+ days
+  async getDataQualityReport(opts: {
+    startDate: Date;
+    endDate: Date;
+    userId?: string;
+  }): Promise<{
+    byUser: Array<{
+      userId: string;
+      userName: string;
+      /** Business truth: tracked seconds from time_entries only */
+      trackedSeconds: number;
+      /** Evidence count: screenshots in window (independent of tracked time) */
+      screenshotCount: number;
+      /** Expected screenshots at 1 per 10 min; null when trackedSeconds = 0 */
+      expectedScreenshots: number | null;
+      /** screenshotCount / expectedScreenshots × 100; null when expected = null */
+      screenshotCoveragePercent: number | null;
+      /** Duplicate screenshot count (same contentHash) */
+      duplicateScreenshots: number;
+      /** Activity events recorded for this user in window */
+      activityEventCount: number;
+      /** Quality flags raised for this user */
+      flags: string[];
+    }>;
+    org: {
+      /** Stopped entries in window that have zero associated screenshots */
+      entriesWithoutAnyScreenshot: number;
+      /** Total duplicate screenshot rows (contentHash repeated) */
+      orgDuplicateScreenshots: number;
+      /** Non-revoked devices not seen in 7+ days */
+      stalledDevices: number;
+      /** Screenshots tombstoned (soft-deleted by an admin) in this window */
+      deletedScreenshots: number;
+    };
+  }> {
+    const { startDate, endDate, userId } = opts;
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // ── 1. Business truth: tracked seconds per user (time_entries ONLY) ──────
+    const entryConds: any[] = [
+      eq(timeEntries.status, "stopped"),
+      sql`${timeEntries.startTime} >= ${startDate}`,
+      sql`${timeEntries.startTime} <= ${endDate}`,
+    ];
+    if (userId) entryConds.push(eq(timeEntries.userId, userId));
+
+    const trackedPerUser = await db.select({
+      userId: timeEntries.userId,
+      trackedSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
+    }).from(timeEntries).where(and(...entryConds)).groupBy(timeEntries.userId);
+
+    if (trackedPerUser.length === 0) {
+      return { byUser: [], org: { entriesWithoutAnyScreenshot: 0, orgDuplicateScreenshots: 0, stalledDevices: 0, deletedScreenshots: 0 } };
+    }
+
+    const allUserIds = trackedPerUser.map(r => r.userId);
+
+    // ── 2. Evidence: screenshots per user in window ───────────────────────────
+    const shotConds: any[] = [
+      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
+      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
+      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      isNull(timeEntryScreenshots.deletedAt),
+      inArray(timeEntryScreenshots.userId, allUserIds),
+    ];
+    const shotsPerUser = await db.select({
+      userId: timeEntryScreenshots.userId,
+      screenshotCount: sql<number>`COUNT(*)::int`,
+    }).from(timeEntryScreenshots).where(and(...shotConds)).groupBy(timeEntryScreenshots.userId);
+    const shotCountMap = new Map(shotsPerUser.map(r => [r.userId, r.screenshotCount]));
+
+    // ── 3. Evidence: duplicate screenshots per user ───────────────────────────
+    const dupRows = await db.select({
+      userId: timeEntryScreenshots.userId,
+      dupCount: sql<number>`(COUNT(*) - COUNT(DISTINCT ${timeEntryScreenshots.contentHash}))::int`,
+    }).from(timeEntryScreenshots)
+      .where(and(...shotConds, sql`${timeEntryScreenshots.contentHash} IS NOT NULL`))
+      .groupBy(timeEntryScreenshots.userId);
+    const dupMap = new Map(dupRows.map(r => [r.userId, r.dupCount]));
+
+    // ── 4. Evidence: activity events per user ────────────────────────────────
+    const evtConds: any[] = [
+      sql`${agentActivityEvents.timestamp} >= ${startDate}`,
+      sql`${agentActivityEvents.timestamp} <= ${endDate}`,
+      inArray(agentActivityEvents.userId, allUserIds),
+    ];
+    const eventsPerUser = await db.select({
+      userId: agentActivityEvents.userId,
+      eventCount: sql<number>`COUNT(*)::int`,
+    }).from(agentActivityEvents).where(and(...evtConds)).groupBy(agentActivityEvents.userId);
+    const evtMap = new Map(eventsPerUser.map(r => [r.userId, r.eventCount]));
+
+    // ── 5. Evidence: most-recent device lastSeenAt per user ──────────────────
+    const deviceRows = await db.select({
+      userId: devices.userId,
+      lastSeenAt: sql<Date | null>`MAX(${devices.lastSeenAt})`,
+    }).from(devices)
+      .where(and(isNull(devices.revokedAt), inArray(devices.userId, allUserIds)))
+      .groupBy(devices.userId);
+    const deviceMap = new Map(deviceRows.map(r => [r.userId, r.lastSeenAt]));
+
+    // ── 6. Org-level: stopped entries with zero live (non-tombstoned) screenshots
+    const [entriesNoShotRow] = await db.select({
+      count: sql<number>`COUNT(*)::int`,
+    }).from(timeEntries)
+      .where(and(
+        ...entryConds,
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${timeEntryScreenshots}
+          WHERE ${timeEntryScreenshots.timeEntryId} = ${timeEntries.id}
+            AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'
+            AND ${timeEntryScreenshots.deletedAt} IS NULL
+        )`,
+      ));
+
+    // ── 7. Org-level: total duplicate screenshots (live only) ────────────────
+    const [orgDupRow] = await db.select({
+      dupCount: sql<number>`(COUNT(*) - COUNT(DISTINCT ${timeEntryScreenshots.contentHash}))::int`,
+    }).from(timeEntryScreenshots)
+      .where(and(
+        sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
+        sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
+        sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+        isNull(timeEntryScreenshots.deletedAt),
+        sql`${timeEntryScreenshots.contentHash} IS NOT NULL`,
+      ));
+
+    // ── 7b. Org-level: tombstoned screenshots (evidence removed by admins) ───
+    const [deletedShotRow] = await db.select({
+      count: sql<number>`COUNT(*)::int`,
+    }).from(timeEntryScreenshots)
+      .where(and(
+        sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
+        sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
+        sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
+      ));
+
+    // ── 8. Org-level: stalled devices ────────────────────────────────────────
+    const [stalledRow] = await db.select({
+      count: sql<number>`COUNT(*)::int`,
+    }).from(devices).where(and(
+      isNull(devices.revokedAt),
+      sql`${devices.lastSeenAt} IS NOT NULL`,
+      sql`${devices.lastSeenAt} < ${sevenDaysAgo}`,
+    ));
+
+    // ── 9. Resolve user names ────────────────────────────────────────────────
+    const usersList = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
+      .from(users).where(inArray(users.id, allUserIds));
+    const usersMap = new Map(usersList.map(u => [u.id, u]));
+    const nameOf = (uid: string) => {
+      const u = usersMap.get(uid);
+      return u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown";
+    };
+
+    // ── 10. Assemble per-user report ─────────────────────────────────────────
+    const byUser = trackedPerUser.map(r => {
+      const trackedSeconds = r.trackedSeconds;
+      const screenshotCount = shotCountMap.get(r.userId) ?? 0;
+      const duplicateScreenshots = dupMap.get(r.userId) ?? 0;
+      const activityEventCount = evtMap.get(r.userId) ?? 0;
+      const lastSeen = deviceMap.get(r.userId) ?? null;
+
+      // Expected: 1 screenshot per 10 min of tracked time
+      const expectedScreenshots = trackedSeconds > 0 ? Math.ceil(trackedSeconds / 600) : null;
+      const screenshotCoveragePercent =
+        expectedScreenshots !== null && expectedScreenshots > 0
+          ? Math.round((screenshotCount / expectedScreenshots) * 100)
+          : null;
+
+      const flags: string[] = [];
+      // low_coverage: < 50% of expected screenshots
+      if (screenshotCoveragePercent !== null && screenshotCoveragePercent < 50) {
+        flags.push("low_coverage");
+      }
+      // duplicate_heavy: ≥ 20% of screenshots are duplicates
+      if (screenshotCount > 0 && duplicateScreenshots / screenshotCount >= 0.2) {
+        flags.push("duplicate_heavy");
+      }
+      // events_missing: tracked time but zero activity events
+      if (trackedSeconds > 0 && activityEventCount === 0) {
+        flags.push("events_missing");
+      }
+      // stale_device: most-recent device not seen in 7+ days
+      if (lastSeen !== null && new Date(lastSeen) < sevenDaysAgo) {
+        flags.push("stale_device");
+      }
+
+      return {
+        userId: r.userId,
+        userName: nameOf(r.userId),
+        trackedSeconds,
+        screenshotCount,
+        expectedScreenshots,
+        screenshotCoveragePercent,
+        duplicateScreenshots,
+        activityEventCount,
+        flags,
+      };
+    });
+
+    return {
+      byUser,
+      org: {
+        entriesWithoutAnyScreenshot: entriesNoShotRow?.count ?? 0,
+        orgDuplicateScreenshots: orgDupRow?.dupCount ?? 0,
+        stalledDevices: stalledRow?.count ?? 0,
+        deletedScreenshots: deletedShotRow?.count ?? 0,
+      },
+    };
+  }
+
+  // ─── Screenshot Coverage Report ───
+  //
+  // Measures evidence completeness relative to tracked time.
+  // Business truth (duration, idleTime) is NEVER modified here.
+  //
+  // Coverage model:
+  //   expected = ceil(trackedSeconds / 600)   — 1 screenshot per 10 min
+  //   coveragePct = min(100, round(actual / expected × 100))
+  //   low_coverage = coveragePct < 50
+  //   no_coverage  = actual == 0 (entry has zero screenshots)
+  //
+  // Each query uses a LEFT JOIN so entries with zero screenshots are still
+  // counted — their screenshotCount is simply 0, not excluded.
+  async getScreenshotCoverageReport(opts: {
+    startDate: Date;
+    endDate: Date;
+    userId?: string;
+    crmProjectId?: string;
+  }): Promise<{
+    summary: {
+      totalTrackedSeconds: number;
+      totalScreenshots: number;
+      expectedScreenshots: number;
+      coveragePercent: number | null;
+      totalEntries: number;
+      entriesWithoutScreenshots: number;
+      lowCoverageEntries: number;
+      /** Screenshots tombstoned (soft-deleted by an admin) in this window */
+      deletedScreenshots: number;
+    };
+    byUser: Array<{
+      userId: string;
+      userName: string;
+      trackedSeconds: number;
+      entriesCount: number;
+      entriesWithoutScreenshots: number;
+      screenshotCount: number;
+      expectedScreenshots: number;
+      coveragePct: number | null;
+    }>;
+    byProject: Array<{
+      crmProjectId: string;
+      projectName: string;
+      trackedSeconds: number;
+      entriesCount: number;
+      entriesWithoutScreenshots: number;
+      screenshotCount: number;
+      expectedScreenshots: number;
+      coveragePct: number | null;
+    }>;
+    byDay: Array<{
+      date: string;
+      trackedSeconds: number;
+      screenshotCount: number;
+      expectedScreenshots: number;
+      coveragePct: number | null;
+    }>;
+  }> {
+    const { startDate, endDate, userId, crmProjectId } = opts;
+
+    // Shared filter conditions on time_entries (business truth source)
+    const entryConds: any[] = [
+      eq(timeEntries.status, "stopped"),
+      sql`${timeEntries.startTime} >= ${startDate}`,
+      sql`${timeEntries.startTime} <= ${endDate}`,
+    ];
+    if (userId) entryConds.push(eq(timeEntries.userId, userId));
+    if (crmProjectId) entryConds.push(eq(timeEntries.crmProjectId, crmProjectId));
+
+    // LEFT JOIN condition: only count live (non-pending, non-tombstoned) screenshots
+    const shotJoinCond = and(
+      eq(timeEntryScreenshots.timeEntryId, timeEntries.id),
+      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      isNull(timeEntryScreenshots.deletedAt),
+    );
+
+    // ── Run 4 aggregation queries in parallel ──────────────────────────────
+    const [perUserRaw, perProjectRaw, perDayRaw, lowCovRow] = await Promise.all([
+
+      // Q1: Per-user — tracked seconds, entry count, screenshot count, entries-with-shots
+      // LEFT JOIN ensures entries with zero screenshots appear with screenshotCount = 0
+      db.select({
+        userId: timeEntries.userId,
+        trackedSeconds:  sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
+        entriesCount:    sql<number>`COUNT(DISTINCT ${timeEntries.id})::int`,
+        screenshotCount: sql<number>`COUNT(${timeEntryScreenshots.id})::int`,
+        entriesWithShots: sql<number>`COUNT(DISTINCT CASE WHEN ${timeEntryScreenshots.id} IS NOT NULL THEN ${timeEntries.id} END)::int`,
+      }).from(timeEntries)
+        .leftJoin(timeEntryScreenshots, shotJoinCond)
+        .where(and(...entryConds))
+        .groupBy(timeEntries.userId),
+
+      // Q2: Per-project — same shape as Q1
+      db.select({
+        crmProjectId:    timeEntries.crmProjectId,
+        trackedSeconds:  sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
+        entriesCount:    sql<number>`COUNT(DISTINCT ${timeEntries.id})::int`,
+        screenshotCount: sql<number>`COUNT(${timeEntryScreenshots.id})::int`,
+        entriesWithShots: sql<number>`COUNT(DISTINCT CASE WHEN ${timeEntryScreenshots.id} IS NOT NULL THEN ${timeEntries.id} END)::int`,
+      }).from(timeEntries)
+        .leftJoin(timeEntryScreenshots, shotJoinCond)
+        .where(and(...entryConds))
+        .groupBy(timeEntries.crmProjectId),
+
+      // Q3: Per-day — grouped by DATE(start_time) so the day axis matches tracked time
+      db.select({
+        date:            sql<string>`DATE(${timeEntries.startTime})::text`,
+        trackedSeconds:  sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
+        screenshotCount: sql<number>`COUNT(${timeEntryScreenshots.id})::int`,
+      }).from(timeEntries)
+        .leftJoin(timeEntryScreenshots, shotJoinCond)
+        .where(and(...entryConds))
+        .groupBy(sql`DATE(${timeEntries.startTime})`)
+        .orderBy(sql`DATE(${timeEntries.startTime}) ASC`),
+
+      // Q4: Count entries where live screenshot coverage < 50% of expected
+      //     (correlated subquery — acceptable for a single count row)
+      db.select({
+        count: sql<number>`COUNT(*)::int`,
+      }).from(timeEntries)
+        .where(and(
+          ...entryConds,
+          sql`${timeEntries.duration} > 0`,
+          sql`(
+            SELECT COUNT(*) FROM ${timeEntryScreenshots}
+            WHERE ${timeEntryScreenshots.timeEntryId} = ${timeEntries.id}
+              AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'
+              AND ${timeEntryScreenshots.deletedAt} IS NULL
+          ) < CEIL(${timeEntries.duration}::numeric / 600) * 0.5`,
+        )),
+    ]);
+
+    // ── Count tombstoned screenshots in the window (runs in parallel above ideally,
+    //    but kept separate to avoid complicating the LEFT-JOIN shape) ──────────
+    const deletedCondsCoverage: any[] = [
+      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
+      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
+      sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
+    ];
+    if (userId) deletedCondsCoverage.push(eq(timeEntryScreenshots.userId, userId));
+    const [deletedShotCovRow] = await db.select({
+      count: sql<number>`COUNT(*)::int`,
+    }).from(timeEntryScreenshots).where(and(...deletedCondsCoverage));
+
+    // ── Resolve user names ─────────────────────────────────────────────────
+    const allUserIds = [...new Set(perUserRaw.map(r => r.userId))];
+    const usersList = allUserIds.length > 0
+      ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
+          .from(users).where(inArray(users.id, allUserIds))
+      : [];
+    const usersMap = new Map(usersList.map(u => [u.id, u]));
+    const nameOf = (uid: string) => {
+      const u = usersMap.get(uid);
+      return u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown";
+    };
+
+    // ── Resolve project names ──────────────────────────────────────────────
+    const allProjectIds = [...new Set(perProjectRaw.map(r => r.crmProjectId))];
+    const projectNameMap = new Map<string, string>();
+    if (allProjectIds.length > 0) {
+      const crmList = await db.select({ id: crmProjects.id, projectId: crmProjects.projectId })
+        .from(crmProjects).where(inArray(crmProjects.id, allProjectIds));
+      const wikiIds = crmList.map(p => p.projectId).filter(Boolean) as string[];
+      if (wikiIds.length > 0) {
+        const wikiList = await db.select({ id: projects.id, name: projects.name })
+          .from(projects).where(inArray(projects.id, wikiIds));
+        const wikiMap = new Map(wikiList.map(p => [p.id, p.name]));
+        for (const cp of crmList) {
+          projectNameMap.set(cp.id, (cp.projectId && wikiMap.get(cp.projectId)) || "Unknown Project");
+        }
+      }
+    }
+
+    // ── Helper: compute coverage % ─────────────────────────────────────────
+    const coveragePct = (shots: number, tracked: number): number | null => {
+      const expected = Math.ceil(tracked / 600);
+      if (expected === 0) return null;
+      return Math.min(100, Math.round((shots / expected) * 100));
+    };
+
+    // ── Assemble byUser ────────────────────────────────────────────────────
+    const byUser = perUserRaw
+      .map(r => ({
+        userId: r.userId,
+        userName: nameOf(r.userId),
+        trackedSeconds: r.trackedSeconds,
+        entriesCount: r.entriesCount,
+        entriesWithoutScreenshots: r.entriesCount - r.entriesWithShots,
+        screenshotCount: r.screenshotCount,
+        expectedScreenshots: r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0,
+        coveragePct: r.trackedSeconds > 0 ? coveragePct(r.screenshotCount, r.trackedSeconds) : null,
+      }))
+      .sort((a, b) => {
+        // Sort: no-coverage first, then ascending coverage %, then by name
+        const aP = a.coveragePct ?? -1;
+        const bP = b.coveragePct ?? -1;
+        return aP - bP;
+      });
+
+    // ── Assemble byProject ─────────────────────────────────────────────────
+    const byProject = perProjectRaw
+      .map(r => ({
+        crmProjectId: r.crmProjectId,
+        projectName: projectNameMap.get(r.crmProjectId) || "Unknown Project",
+        trackedSeconds: r.trackedSeconds,
+        entriesCount: r.entriesCount,
+        entriesWithoutScreenshots: r.entriesCount - r.entriesWithShots,
+        screenshotCount: r.screenshotCount,
+        expectedScreenshots: r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0,
+        coveragePct: r.trackedSeconds > 0 ? coveragePct(r.screenshotCount, r.trackedSeconds) : null,
+      }))
+      .sort((a, b) => {
+        const aP = a.coveragePct ?? -1;
+        const bP = b.coveragePct ?? -1;
+        return aP - bP;
+      });
+
+    // ── Assemble byDay ─────────────────────────────────────────────────────
+    const byDay = perDayRaw.map(r => {
+      const expected = r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0;
+      return {
+        date: r.date,
+        trackedSeconds: r.trackedSeconds,
+        screenshotCount: r.screenshotCount,
+        expectedScreenshots: expected,
+        coveragePct: r.trackedSeconds > 0 ? coveragePct(r.screenshotCount, r.trackedSeconds) : null,
+      };
+    });
+
+    // ── Assemble summary (derived from byUser — no extra query needed) ─────
+    const totalTrackedSeconds = perUserRaw.reduce((s, r) => s + r.trackedSeconds, 0);
+    const totalEntries = perUserRaw.reduce((s, r) => s + r.entriesCount, 0);
+    const totalScreenshots = perUserRaw.reduce((s, r) => s + r.screenshotCount, 0);
+    const totalEntriesWithShots = perUserRaw.reduce((s, r) => s + r.entriesWithShots, 0);
+    const expectedScreenshots = totalTrackedSeconds > 0 ? Math.ceil(totalTrackedSeconds / 600) : 0;
+
+    return {
+      summary: {
+        totalTrackedSeconds,
+        totalScreenshots,
+        expectedScreenshots,
+        coveragePercent: expectedScreenshots > 0
+          ? Math.min(100, Math.round((totalScreenshots / expectedScreenshots) * 100))
+          : null,
+        totalEntries,
+        entriesWithoutScreenshots: totalEntries - totalEntriesWithShots,
+        lowCoverageEntries: lowCovRow[0]?.count ?? 0,
+        deletedScreenshots: deletedShotCovRow?.count ?? 0,
+      },
+      byUser,
+      byProject,
+      byDay,
+    };
+  }
+
+  // ─── Evidence Quality Report ───
+  //
+  // Produces a composite 0–100 score per user describing how well their
+  // tracked sessions are supported by observable evidence.
+  //
+  // IMPORTANT: This method is READ-ONLY with respect to business metrics.
+  // duration / idleTime on time_entries is NEVER modified, recalculated,
+  // or referenced as output.  The score is an observational label only.
+  //
+  // Score components:
+  //   coverageScore  (0–40)  screenshot count vs 1-per-10-min expectation
+  //   qualityScore   (0–30)  deductions: dup ratio + low physical-activity screenshots
+  //   eventsScore    (0–20)  activity events linked to entries exist
+  //   deviceScore    (0–10)  device heartbeat freshness
+  //
+  async getEvidenceQualityReport(opts: {
+    startDate: Date;
+    endDate: Date;
+    userId?: string;
+  }): Promise<EvidenceQualityReport> {
+    const { startDate, endDate, userId } = opts;
+
+    const entryConds: any[] = [
+      eq(timeEntries.status, "stopped"),
+      sql`${timeEntries.startTime} >= ${startDate}`,
+      sql`${timeEntries.startTime} <= ${endDate}`,
+    ];
+    if (userId) entryConds.push(eq(timeEntries.userId, userId));
+
+    // ── Q1+Q2 combined: per-user entry stats + screenshot signals (single LEFT JOIN) ──
+    // Aggregate by user across all stopped entries in the window:
+    //   – entry count + total tracked seconds (from time_entries)
+    //   – live screenshot count + unique content_hash count (dedupe signal)
+    //   – avg keyboard & mouse activity % (low-activity screenshot signal)
+    const perUserRaw = await db.select({
+      userId:         timeEntries.userId,
+      entryCount:     sql<number>`COUNT(DISTINCT ${timeEntries.id})::int`,
+      trackedSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
+      shotCount:      sql<number>`COUNT(${timeEntryScreenshots.id})
+                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
+                          AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%')`,
+      uniqueHashes:   sql<number>`COUNT(DISTINCT ${timeEntryScreenshots.contentHash})
+                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
+                          AND ${timeEntryScreenshots.contentHash} IS NOT NULL)`,
+      avgKeyboardPct: sql<number | null>`AVG(${timeEntryScreenshots.keyboardActivityPercent})
+                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
+                          AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%')`,
+      avgMousePct:    sql<number | null>`AVG(${timeEntryScreenshots.mouseActivityPercent})
+                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
+                          AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%')`,
+    }).from(timeEntries)
+      .leftJoin(timeEntryScreenshots, eq(timeEntryScreenshots.timeEntryId, timeEntries.id))
+      .where(and(...entryConds))
+      .groupBy(timeEntries.userId);
+
+    if (perUserRaw.length === 0) {
+      return { gradeDistribution: { strong: 0, moderate: 0, weak: 0, insufficient: 0 }, byUser: [] };
+    }
+
+    const allUserIds = perUserRaw.map(r => r.userId);
+
+    // ── Q3: activity event count per user ──────────────────────────────────────
+    const eventsRaw = await db.select({
+      userId:     agentActivityEvents.userId,
+      eventCount: sql<number>`COUNT(*)::int`,
+    }).from(agentActivityEvents)
+      .where(and(
+        sql`${agentActivityEvents.timestamp} >= ${startDate}`,
+        sql`${agentActivityEvents.timestamp} <= ${endDate}`,
+        inArray(agentActivityEvents.userId, allUserIds),
+      ))
+      .groupBy(agentActivityEvents.userId);
+    const evtMap = new Map(eventsRaw.map(r => [r.userId, r.eventCount]));
+
+    // ── Q4: device freshness per user (most recent non-revoked lastSeenAt) ─────
+    const deviceRaw = await db.select({
+      userId:      devices.userId,
+      lastSeenAt:  sql<Date | null>`MAX(${devices.lastSeenAt})`,
+    }).from(devices)
+      .where(and(isNull(devices.revokedAt), inArray(devices.userId, allUserIds)))
+      .groupBy(devices.userId);
+    const deviceMap = new Map(deviceRaw.map(r => [r.userId, r.lastSeenAt]));
+
+    // ── Q5: resolve user display names ──────────────────────────────────────────
+    const usersList = await db.select({
+      id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email,
+    }).from(users).where(inArray(users.id, allUserIds));
+    const usersMap = new Map(usersList.map(u => [u.id, u]));
+    const nameOf = (uid: string) => {
+      const u = usersMap.get(uid);
+      return u ? (`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email) : "Unknown";
+    };
+
+    // ── Scoring ────────────────────────────────────────────────────────────────
+    const oneDayMs  = 86_400_000;
+    const sevenDaysMs = 7 * oneDayMs;
+
+    const byUser = perUserRaw.map(r => {
+      const shotCount    = r.shotCount    ?? 0;
+      const uniqueHashes = r.uniqueHashes ?? 0;
+      const eventCount   = evtMap.get(r.userId) ?? 0;
+      const lastSeen     = deviceMap.get(r.userId) ?? null;
+
+      // 1. Coverage (0–40): expected = 1 screenshot per 10 min of tracked time
+      const expected = r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0;
+      const coveragePct = expected > 0 ? Math.min(1, shotCount / expected) : 0;
+      const coverageScore = Math.round(40 * coveragePct);
+
+      // 2. Quality (0–30): deductions for duplicates and low-activity screenshots
+      const dupCount  = Math.max(0, shotCount - uniqueHashes);
+      const dupRatio  = shotCount > 0 ? dupCount / shotCount : 0;
+      // Full dup penalty (15 pts) at ≥ 50% duplicate ratio
+      const dupPenalty = Math.round(15 * Math.min(1, dupRatio * 2));
+      // Activity penalty: avg (keyboard + mouse) < 20% → points lost
+      const avgKeyboard = typeof r.avgKeyboardPct === "number" ? r.avgKeyboardPct : null;
+      const avgMouse    = typeof r.avgMousePct    === "number" ? r.avgMousePct    : null;
+      const avgActivity = (avgKeyboard !== null || avgMouse !== null)
+        ? ((avgKeyboard ?? 0) + (avgMouse ?? 0)) / 2
+        : null;
+      // No screenshots → no activity signal → no penalty (don't double-penalise)
+      const activityPenalty = avgActivity !== null
+        ? Math.round(15 * Math.max(0, 1 - avgActivity / 20))
+        : 0;
+      const qualityScore = Math.max(0, 30 - dupPenalty - activityPenalty);
+
+      // 3. Events (0–20): any linked activity events in window
+      const eventsScore = eventCount > 0 ? 20 : 0;
+
+      // 4. Device freshness (0–10)
+      let deviceScore = 0;
+      if (lastSeen) {
+        const ageMs = Date.now() - new Date(lastSeen).getTime();
+        if (ageMs <= oneDayMs)    deviceScore = 10;
+        else if (ageMs <= sevenDaysMs) deviceScore = 5;
+      }
+
+      const totalScore = coverageScore + qualityScore + eventsScore + deviceScore;
+      const grade: EvidenceGrade =
+        totalScore >= 75 ? "strong" :
+        totalScore >= 50 ? "moderate" :
+        totalScore >= 25 ? "weak" : "insufficient";
+
+      const deviceLastSeenDaysAgo = lastSeen
+        ? Math.floor((Date.now() - new Date(lastSeen).getTime()) / oneDayMs)
+        : null;
+
+      return {
+        userId:              r.userId,
+        userName:            nameOf(r.userId),
+        entryCount:          r.entryCount,
+        trackedSeconds:      r.trackedSeconds,
+        coverageScore,
+        qualityScore,
+        eventsScore,
+        deviceScore,
+        totalScore,
+        grade,
+        screenshotCount:     shotCount,
+        expectedScreenshots: expected,
+        dupRatio:            Math.round(dupRatio * 100) / 100,
+        avgActivityPct:      avgActivity !== null ? Math.round(avgActivity) : null,
+        hasEvents:           eventCount > 0,
+        deviceLastSeenDaysAgo,
+      };
+    }).sort((a, b) => a.totalScore - b.totalScore); // worst first
+
+    const gradeDistribution = { strong: 0, moderate: 0, weak: 0, insufficient: 0 };
+    for (const u of byUser) gradeDistribution[u.grade]++;
+
+    return { gradeDistribution, byUser };
   }
 
   async getAdminAllDevices(): Promise<Array<{
