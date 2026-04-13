@@ -1,17 +1,35 @@
 name: Desktop Agent — Release
 
-# Triggered by pushing a tag: desktop-agent-v0.1.x
-# Can also be triggered manually via workflow_dispatch (no release created).
+# Triggered by pushing a version tag: desktop-agent-v0.1.x
+# Can also be triggered manually (dry_run=true by default = build only, no publish).
 #
-# Each OS builds its artifact in parallel, then uploads to the same GitHub Release.
-# The release is created as a draft — publish it manually after reviewing all artifacts.
+# Pipeline per platform:
+#   1. Build installer artifact
+#   2. Upload to GitHub Actions artifacts (always, 7-day retention, for inspection)
+#   3. On tag push only:
+#      a. Compute SHA-256 + file size
+#      b. Upload artifact to GCS public bucket  (gcs: installers/v{VERSION}/{FILENAME})
+#      c. Register metadata in DocuFlow backend (POST /api/internal/desktop-releases)
 #
-# Usage (tag-based release):
-#   git tag desktop-agent-v0.1.6
-#   git push origin desktop-agent-v0.1.6
+# The backend then serves:
+#   GET /api/downloads/desktop/latest?platform=windows  → 302 to GCS URL
 #
-# Usage (manual dry-run, no release upload):
-#   GitHub → Actions → Desktop Agent — Release → Run workflow
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#   GCS_RELEASE_SA_KEY         — Service account JSON key (storage.objectCreator on bucket)
+#   INSTALLER_GCS_BUCKET       — GCS bucket name only, e.g.  docuflow-installers
+#   DOCUFLOW_API_URL           — Production backend URL,  e.g.  https://app.docuflow.com
+#   DESKTOP_RELEASE_CI_TOKEN   — Long random token; matches DESKTOP_RELEASE_CI_TOKEN env var on server
+#
+# GCS bucket must have:
+#   - allUsers: roles/storage.objectViewer  (public read — so the 302 redirect works)
+#   - CORS: allow GET from * (needed for direct browser download progress bars)
+#
+# Usage (release):
+#   git tag desktop-agent-v0.1.7
+#   git push origin desktop-agent-v0.1.7
+#
+# Usage (dry run — build only, no upload):
+#   GitHub → Actions → Desktop Agent — Release → Run workflow  (dry_run = true)
 
 on:
   push:
@@ -20,21 +38,26 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run — build only, do not upload to release'
+        description: 'Dry run — build only, do not upload or register'
         required: false
         default: 'true'
         type: boolean
 
+# No GitHub Release created → no contents:write needed.
 permissions:
-  contents: write
+  contents: read
 
 env:
-  # Opt into Node.js 24 runner actions now to avoid forced migration on 2026-06-02
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# ── Reusable condition ────────────────────────────────────────────────────────
+# Publish = tag-triggered push OR workflow_dispatch with dry_run explicitly false.
+# Referenced as: ${{ env.SHOULD_PUBLISH == 'true' }} in step `if` clauses
+# (env context is not available in job-level `if`, only step-level)
 
 jobs:
 
-  # ── Windows — NSIS .exe ────────────────────────────────────────────────────
+  # ── Windows — NSIS .exe ─────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
     steps:
@@ -61,38 +84,85 @@ jobs:
           path: desktop-agent/release/DocuFlow-Agent-*-windows-setup.exe
           retention-days: 7
 
-      - name: Upload to GitHub Release (draft)
+      # ── Publish steps — tag push only ────────────────────────────────────
+
+      - name: Resolve artifact metadata
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        id: meta
+        shell: pwsh
+        run: |
+          $file = Get-ChildItem "desktop-agent/release" -Filter "*-windows-setup.exe" |
+                    Sort-Object LastWriteTime -Descending |
+                    Select-Object -First 1
+          if (-not $file) { Write-Error "No .exe found in desktop-agent/release"; exit 1 }
+
+          $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
+          $size = $file.Length
+          $version = "${{ github.ref_name }}" -replace '^desktop-agent-v', ''
+
+          "filename=$($file.Name)"  | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          "sha256=$hash"            | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          "size=$size"              | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          "version=$version"        | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+
+          Write-Output "Artifact : $($file.Name)"
+          Write-Output "SHA-256  : $hash"
+          Write-Output "Size     : $size bytes"
+          Write-Output "Version  : $version"
+
+      - name: Authenticate to Google Cloud
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: google-github-actions/auth@v2
         with:
-          draft: true
-          files: desktop-agent/release/DocuFlow-Agent-*-windows-setup.exe
-          body: |
-            ## v0.1.6 — Idle alert + auto-stop flow
+          credentials_json: ${{ secrets.GCS_RELEASE_SA_KEY }}
 
-            **What's new:**
-            - Idle prompt now shows a live countdown (configurable 15–120 s, default 60 s)
-            - Timer auto-stops when countdown reaches zero — idle time is never counted as work
-            - "I'm on break" immediately stops the timer; "Back to work" resumes correctly
-            - Admin can configure idle timeout, countdown, and screenshot intervals in Settings → Desktop Agent
+      - name: Upload installer to GCS
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: google-github-actions/upload-cloud-storage@v2
+        with:
+          path: desktop-agent/release/${{ steps.meta.outputs.filename }}
+          destination: ${{ secrets.INSTALLER_GCS_BUCKET }}/installers/v${{ steps.meta.outputs.version }}
+          headers: |-
+            content-type: application/octet-stream
+            cache-control: public, max-age=31536000, immutable
 
-            | Platform | Artifact | Status |
-            |----------|----------|--------|
-            | Windows 10/11 | `DocuFlow-Agent-0.1.6-windows-setup.exe` | ✅ Stable |
-            | macOS 12+ (Apple Silicon / Intel via Rosetta) | `DocuFlow-Agent-0.1.6-macos.dmg` | 🔶 Beta |
-            | Ubuntu 20.04+ | `DocuFlow-Agent-0.1.6-linux-amd64.deb` | 🧪 Experimental |
+      - name: Register release in DocuFlow
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          DOCUFLOW_API_URL:           ${{ secrets.DOCUFLOW_API_URL }}
+          DESKTOP_RELEASE_CI_TOKEN:   ${{ secrets.DESKTOP_RELEASE_CI_TOKEN }}
+          INSTALLER_GCS_BUCKET:       ${{ secrets.INSTALLER_GCS_BUCKET }}
+        run: |
+          $body = @{
+            version    = "${{ steps.meta.outputs.version }}"
+            platform   = "windows"
+            filename   = "${{ steps.meta.outputs.filename }}"
+            storageUrl = "https://storage.googleapis.com/$env:INSTALLER_GCS_BUCKET/installers/v${{ steps.meta.outputs.version }}/${{ steps.meta.outputs.filename }}"
+            fileSize   = [int64]"${{ steps.meta.outputs.size }}"
+            sha256     = "${{ steps.meta.outputs.sha256 }}"
+          } | ConvertTo-Json -Compress
 
-            > **macOS note:** Built on Apple Silicon (arm64). Runs natively on M1/M2/M3 and via Rosetta 2 on Intel Macs.
+          Write-Output "Registering with DocuFlow backend..."
+          $response = Invoke-RestMethod `
+            -Uri        "$env:DOCUFLOW_API_URL/api/internal/desktop-releases" `
+            -Method     POST `
+            -Headers    @{ Authorization = "Bearer $env:DESKTOP_RELEASE_CI_TOKEN"; "Content-Type" = "application/json" } `
+            -Body       $body `
+            -ErrorAction Stop
 
-  # ── macOS — DMG (arm64, unsigned) ─────────────────────────────────────────
+          Write-Output "Registered: $($response | ConvertTo-Json -Compress)"
+
+
+  # ── macOS — DMG (arm64, unsigned in CI) ─────────────────────────────────────
   #
-  # CI produces an unsigned DMG artifact.
-  # Final signing + notarization is done locally on a Mac before distribution.
+  # CI produces an unsigned DMG. Signing + notarization requires a paid Apple
+  # Developer account and a "Developer ID Application" certificate. If you add
+  # Apple secrets (APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID,
+  # CSC_NAME) to the repo, the notarize.js afterSign hook runs automatically.
   #
-  # To sign locally:
-  #   export CSC_NAME="Developer ID Application: Your Name (TEAMID)"
-  #   export APPLE_ID=... APPLE_APP_SPECIFIC_PASSWORD=... APPLE_TEAM_ID=...
-  #   cd desktop-agent && npm run dist:mac
+  # Without Apple secrets the DMG is usable but macOS Gatekeeper will show
+  # "unidentified developer" — users must right-click → Open the first time.
   build-macos:
     runs-on: macos-latest
     steps:
@@ -112,8 +182,14 @@ jobs:
         working-directory: desktop-agent
         run: node scripts/gen-icons.js
 
-      - name: Build macOS DMG (arm64, unsigned)
+      - name: Build macOS DMG (arm64)
         working-directory: desktop-agent
+        env:
+          # Apple signing/notarization — optional. If absent, unsigned DMG is produced.
+          APPLE_ID:                   ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID:              ${{ secrets.APPLE_TEAM_ID }}
+          CSC_NAME:                   ${{ secrets.CSC_NAME }}
         run: npm run dist:mac
 
       - name: Upload artifact (always — for inspection)
@@ -123,14 +199,75 @@ jobs:
           path: desktop-agent/release/DocuFlow-Agent-*-macos.dmg
           retention-days: 7
 
-      - name: Upload to GitHub Release (draft)
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          files: desktop-agent/release/DocuFlow-Agent-*-macos.dmg
+      # ── Publish steps — tag push only ────────────────────────────────────
 
-  # ── Linux — .deb (Ubuntu) ──────────────────────────────────────────────────
+      - name: Resolve artifact metadata
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        id: meta
+        run: |
+          FILE=$(ls desktop-agent/release/DocuFlow-Agent-*-macos.dmg 2>/dev/null | head -1)
+          if [ -z "$FILE" ]; then echo "No .dmg found in desktop-agent/release" >&2; exit 1; fi
+
+          FILENAME=$(basename "$FILE")
+          SHA256=$(shasum -a 256 "$FILE" | awk '{print $1}')
+          SIZE=$(stat -f%z "$FILE")
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#desktop-agent-v}"
+
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256"     >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE"         >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+
+          echo "Artifact : $FILENAME"
+          echo "SHA-256  : $SHA256"
+          echo "Size     : $SIZE bytes"
+          echo "Version  : $VERSION"
+
+      - name: Authenticate to Google Cloud
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCS_RELEASE_SA_KEY }}
+
+      - name: Upload installer to GCS
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: google-github-actions/upload-cloud-storage@v2
+        with:
+          path: desktop-agent/release/${{ steps.meta.outputs.filename }}
+          destination: ${{ secrets.INSTALLER_GCS_BUCKET }}/installers/v${{ steps.meta.outputs.version }}
+          headers: |-
+            content-type: application/octet-stream
+            cache-control: public, max-age=31536000, immutable
+
+      - name: Register release in DocuFlow
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          DOCUFLOW_API_URL:           ${{ secrets.DOCUFLOW_API_URL }}
+          DESKTOP_RELEASE_CI_TOKEN:   ${{ secrets.DESKTOP_RELEASE_CI_TOKEN }}
+          INSTALLER_GCS_BUCKET:       ${{ secrets.INSTALLER_GCS_BUCKET }}
+        run: |
+          STORAGE_URL="https://storage.googleapis.com/${INSTALLER_GCS_BUCKET}/installers/v${{ steps.meta.outputs.version }}/${{ steps.meta.outputs.filename }}"
+
+          curl -sS --fail-with-body \
+            -X POST "${DOCUFLOW_API_URL}/api/internal/desktop-releases" \
+            -H "Authorization: Bearer ${DESKTOP_RELEASE_CI_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary "$(jq -n \
+              --arg version  "${{ steps.meta.outputs.version }}" \
+              --arg platform "macos" \
+              --arg filename "${{ steps.meta.outputs.filename }}" \
+              --arg url      "$STORAGE_URL" \
+              --argjson size "${{ steps.meta.outputs.size }}" \
+              --arg sha256   "${{ steps.meta.outputs.sha256 }}" \
+              '{version:$version, platform:$platform, filename:$filename, storageUrl:$url, fileSize:$size, sha256:$sha256}'
+            )"
+
+          echo ""
+          echo "macOS release registered at ${STORAGE_URL}"
+
+
+  # ── Linux — .deb (Ubuntu) ───────────────────────────────────────────────────
   build-linux:
     runs-on: ubuntu-latest
     steps:
@@ -157,9 +294,69 @@ jobs:
           path: desktop-agent/release/DocuFlow-Agent-*-linux-amd64.deb
           retention-days: 7
 
-      - name: Upload to GitHub Release (draft)
+      # ── Publish steps — tag push only ────────────────────────────────────
+
+      - name: Resolve artifact metadata
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        id: meta
+        run: |
+          FILE=$(ls desktop-agent/release/DocuFlow-Agent-*-linux-amd64.deb 2>/dev/null | head -1)
+          if [ -z "$FILE" ]; then echo "No .deb found in desktop-agent/release" >&2; exit 1; fi
+
+          FILENAME=$(basename "$FILE")
+          SHA256=$(sha256sum "$FILE" | awk '{print $1}')
+          SIZE=$(stat -c%s "$FILE")
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#desktop-agent-v}"
+
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256"     >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE"         >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+
+          echo "Artifact : $FILENAME"
+          echo "SHA-256  : $SHA256"
+          echo "Size     : $SIZE bytes"
+          echo "Version  : $VERSION"
+
+      - name: Authenticate to Google Cloud
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: google-github-actions/auth@v2
         with:
-          draft: true
-          files: desktop-agent/release/DocuFlow-Agent-*-linux-amd64.deb
+          credentials_json: ${{ secrets.GCS_RELEASE_SA_KEY }}
+
+      - name: Upload installer to GCS
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: google-github-actions/upload-cloud-storage@v2
+        with:
+          path: desktop-agent/release/${{ steps.meta.outputs.filename }}
+          destination: ${{ secrets.INSTALLER_GCS_BUCKET }}/installers/v${{ steps.meta.outputs.version }}
+          headers: |-
+            content-type: application/octet-stream
+            cache-control: public, max-age=31536000, immutable
+
+      - name: Register release in DocuFlow
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          DOCUFLOW_API_URL:           ${{ secrets.DOCUFLOW_API_URL }}
+          DESKTOP_RELEASE_CI_TOKEN:   ${{ secrets.DESKTOP_RELEASE_CI_TOKEN }}
+          INSTALLER_GCS_BUCKET:       ${{ secrets.INSTALLER_GCS_BUCKET }}
+        run: |
+          STORAGE_URL="https://storage.googleapis.com/${INSTALLER_GCS_BUCKET}/installers/v${{ steps.meta.outputs.version }}/${{ steps.meta.outputs.filename }}"
+
+          curl -sS --fail-with-body \
+            -X POST "${DOCUFLOW_API_URL}/api/internal/desktop-releases" \
+            -H "Authorization: Bearer ${DESKTOP_RELEASE_CI_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data-binary "$(jq -n \
+              --arg version  "${{ steps.meta.outputs.version }}" \
+              --arg platform "linux" \
+              --arg filename "${{ steps.meta.outputs.filename }}" \
+              --arg url      "$STORAGE_URL" \
+              --argjson size "${{ steps.meta.outputs.size }}" \
+              --arg sha256   "${{ steps.meta.outputs.sha256 }}" \
+              '{version:$version, platform:$platform, filename:$filename, storageUrl:$url, fileSize:$size, sha256:$sha256}'
+            )"
+
+          echo ""
+          echo "Linux release registered at ${STORAGE_URL}"
