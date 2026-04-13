@@ -1251,3 +1251,32 @@ export const orgSettings = pgTable("org_settings", {
   allowedTimezones: jsonb("allowed_timezones").$type<string[]>(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Desktop installer release registry.
+// CI writes one row per build artifact. The backend serves stable download
+// URLs that redirect to the storage URL, insulating users from GCS paths.
+export const desktopReleases = pgTable(
+  "desktop_releases",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    /** Semver string, e.g. "0.1.6" */
+    version: varchar("version", { length: 50 }).notNull(),
+    /** One of: windows | macos | linux */
+    platform: varchar("platform", { length: 20 }).notNull(),
+    /** Original artifact filename, e.g. "DocuFlow-Agent-0.1.6-windows-setup.exe" */
+    filename: varchar("filename", { length: 255 }).notNull(),
+    /** Public GCS object URL — permanent direct-download link */
+    storageUrl: text("storage_url").notNull(),
+    fileSize: bigint("file_size", { mode: "number" }),
+    sha256: varchar("sha256", { length: 64 }),
+    /** True for exactly one row per platform at any time */
+    isLatest: boolean("is_latest").notNull().default(false),
+    publishedAt: timestamp("published_at").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_desktop_releases_platform_latest").on(table.platform, table.isLatest),
+  ]
+);
+
+export type DesktopRelease = typeof desktopReleases.$inferSelect;

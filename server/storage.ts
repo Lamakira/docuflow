@@ -3118,6 +3118,213 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  // ─── Data Quality Report ───
+  //
+  // Computes evidence-layer quality flags per user, relative to their tracked
+  // time. Business metrics (duration, idle time) are NEVER modified here.
+  // Quality flags are purely observational: they describe evidence completeness,
+  // not whether tracked time is valid.
+  //
+  // Quality flag definitions:
+  //   low_coverage      — fewer than 1 screenshot per 10 min of tracked time
+  //   duplicate_heavy   — ≥ 20% of screenshots share a contentHash with another
+  //   events_missing    — user has tracked time but zero activity events recorded
+  //   stale_device      — user's most recent device hasn't been seen in 7+ days
+  async getDataQualityReport(opts: {
+    startDate: Date;
+    endDate: Date;
+    userId?: string;
+  }): Promise<{
+    byUser: Array<{
+      userId: string;
+      userName: string;
+      /** Business truth: tracked seconds from time_entries only */
+      trackedSeconds: number;
+      /** Evidence count: screenshots in window (independent of tracked time) */
+      screenshotCount: number;
+      /** Expected screenshots at 1 per 10 min; null when trackedSeconds = 0 */
+      expectedScreenshots: number | null;
+      /** screenshotCount / expectedScreenshots × 100; null when expected = null */
+      screenshotCoveragePercent: number | null;
+      /** Duplicate screenshot count (same contentHash) */
+      duplicateScreenshots: number;
+      /** Activity events recorded for this user in window */
+      activityEventCount: number;
+      /** Quality flags raised for this user */
+      flags: string[];
+    }>;
+    org: {
+      /** Stopped entries in window that have zero associated screenshots */
+      entriesWithoutAnyScreenshot: number;
+      /** Total duplicate screenshot rows (contentHash repeated) */
+      orgDuplicateScreenshots: number;
+      /** Non-revoked devices not seen in 7+ days */
+      stalledDevices: number;
+    };
+  }> {
+    const { startDate, endDate, userId } = opts;
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    // ── 1. Business truth: tracked seconds per user (time_entries ONLY) ──────
+    const entryConds: any[] = [
+      eq(timeEntries.status, "stopped"),
+      sql`${timeEntries.startTime} >= ${startDate}`,
+      sql`${timeEntries.startTime} <= ${endDate}`,
+    ];
+    if (userId) entryConds.push(eq(timeEntries.userId, userId));
+
+    const trackedPerUser = await db.select({
+      userId: timeEntries.userId,
+      trackedSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
+    }).from(timeEntries).where(and(...entryConds)).groupBy(timeEntries.userId);
+
+    if (trackedPerUser.length === 0) {
+      return { byUser: [], org: { entriesWithoutAnyScreenshot: 0, orgDuplicateScreenshots: 0, stalledDevices: 0 } };
+    }
+
+    const allUserIds = trackedPerUser.map(r => r.userId);
+
+    // ── 2. Evidence: screenshots per user in window ───────────────────────────
+    const shotConds: any[] = [
+      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
+      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
+      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      inArray(timeEntryScreenshots.userId, allUserIds),
+    ];
+    const shotsPerUser = await db.select({
+      userId: timeEntryScreenshots.userId,
+      screenshotCount: sql<number>`COUNT(*)::int`,
+    }).from(timeEntryScreenshots).where(and(...shotConds)).groupBy(timeEntryScreenshots.userId);
+    const shotCountMap = new Map(shotsPerUser.map(r => [r.userId, r.screenshotCount]));
+
+    // ── 3. Evidence: duplicate screenshots per user ───────────────────────────
+    const dupRows = await db.select({
+      userId: timeEntryScreenshots.userId,
+      dupCount: sql<number>`(COUNT(*) - COUNT(DISTINCT ${timeEntryScreenshots.contentHash}))::int`,
+    }).from(timeEntryScreenshots)
+      .where(and(...shotConds, sql`${timeEntryScreenshots.contentHash} IS NOT NULL`))
+      .groupBy(timeEntryScreenshots.userId);
+    const dupMap = new Map(dupRows.map(r => [r.userId, r.dupCount]));
+
+    // ── 4. Evidence: activity events per user ────────────────────────────────
+    const evtConds: any[] = [
+      sql`${agentActivityEvents.timestamp} >= ${startDate}`,
+      sql`${agentActivityEvents.timestamp} <= ${endDate}`,
+      inArray(agentActivityEvents.userId, allUserIds),
+    ];
+    const eventsPerUser = await db.select({
+      userId: agentActivityEvents.userId,
+      eventCount: sql<number>`COUNT(*)::int`,
+    }).from(agentActivityEvents).where(and(...evtConds)).groupBy(agentActivityEvents.userId);
+    const evtMap = new Map(eventsPerUser.map(r => [r.userId, r.eventCount]));
+
+    // ── 5. Evidence: most-recent device lastSeenAt per user ──────────────────
+    const deviceRows = await db.select({
+      userId: devices.userId,
+      lastSeenAt: sql<Date | null>`MAX(${devices.lastSeenAt})`,
+    }).from(devices)
+      .where(and(isNull(devices.revokedAt), inArray(devices.userId, allUserIds)))
+      .groupBy(devices.userId);
+    const deviceMap = new Map(deviceRows.map(r => [r.userId, r.lastSeenAt]));
+
+    // ── 6. Org-level: stopped entries with zero screenshots ──────────────────
+    const [entriesNoShotRow] = await db.select({
+      count: sql<number>`COUNT(*)::int`,
+    }).from(timeEntries)
+      .where(and(
+        ...entryConds,
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${timeEntryScreenshots}
+          WHERE ${timeEntryScreenshots.timeEntryId} = ${timeEntries.id}
+            AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'
+        )`,
+      ));
+
+    // ── 7. Org-level: total duplicate screenshots ─────────────────────────────
+    const [orgDupRow] = await db.select({
+      dupCount: sql<number>`(COUNT(*) - COUNT(DISTINCT ${timeEntryScreenshots.contentHash}))::int`,
+    }).from(timeEntryScreenshots)
+      .where(and(
+        sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
+        sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
+        sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+        sql`${timeEntryScreenshots.contentHash} IS NOT NULL`,
+      ));
+
+    // ── 8. Org-level: stalled devices ────────────────────────────────────────
+    const [stalledRow] = await db.select({
+      count: sql<number>`COUNT(*)::int`,
+    }).from(devices).where(and(
+      isNull(devices.revokedAt),
+      sql`${devices.lastSeenAt} IS NOT NULL`,
+      sql`${devices.lastSeenAt} < ${sevenDaysAgo}`,
+    ));
+
+    // ── 9. Resolve user names ────────────────────────────────────────────────
+    const usersList = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
+      .from(users).where(inArray(users.id, allUserIds));
+    const usersMap = new Map(usersList.map(u => [u.id, u]));
+    const nameOf = (uid: string) => {
+      const u = usersMap.get(uid);
+      return u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown";
+    };
+
+    // ── 10. Assemble per-user report ─────────────────────────────────────────
+    const byUser = trackedPerUser.map(r => {
+      const trackedSeconds = r.trackedSeconds;
+      const screenshotCount = shotCountMap.get(r.userId) ?? 0;
+      const duplicateScreenshots = dupMap.get(r.userId) ?? 0;
+      const activityEventCount = evtMap.get(r.userId) ?? 0;
+      const lastSeen = deviceMap.get(r.userId) ?? null;
+
+      // Expected: 1 screenshot per 10 min of tracked time
+      const expectedScreenshots = trackedSeconds > 0 ? Math.ceil(trackedSeconds / 600) : null;
+      const screenshotCoveragePercent =
+        expectedScreenshots !== null && expectedScreenshots > 0
+          ? Math.round((screenshotCount / expectedScreenshots) * 100)
+          : null;
+
+      const flags: string[] = [];
+      // low_coverage: < 50% of expected screenshots
+      if (screenshotCoveragePercent !== null && screenshotCoveragePercent < 50) {
+        flags.push("low_coverage");
+      }
+      // duplicate_heavy: ≥ 20% of screenshots are duplicates
+      if (screenshotCount > 0 && duplicateScreenshots / screenshotCount >= 0.2) {
+        flags.push("duplicate_heavy");
+      }
+      // events_missing: tracked time but zero activity events
+      if (trackedSeconds > 0 && activityEventCount === 0) {
+        flags.push("events_missing");
+      }
+      // stale_device: most-recent device not seen in 7+ days
+      if (lastSeen !== null && new Date(lastSeen) < sevenDaysAgo) {
+        flags.push("stale_device");
+      }
+
+      return {
+        userId: r.userId,
+        userName: nameOf(r.userId),
+        trackedSeconds,
+        screenshotCount,
+        expectedScreenshots,
+        screenshotCoveragePercent,
+        duplicateScreenshots,
+        activityEventCount,
+        flags,
+      };
+    });
+
+    return {
+      byUser,
+      org: {
+        entriesWithoutAnyScreenshot: entriesNoShotRow?.count ?? 0,
+        orgDuplicateScreenshots: orgDupRow?.dupCount ?? 0,
+        stalledDevices: stalledRow?.count ?? 0,
+      },
+    };
+  }
+
   async getAdminAllDevices(): Promise<Array<{
     id: string;
     userId: string;

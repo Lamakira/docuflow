@@ -7,6 +7,7 @@ import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { registerAgentRoutes } from "./agentRoutes";
+import { registerDownloadRoutes } from "./downloadRoutes";
 import mammoth from "mammoth";
 import { 
   insertProjectSchema, 
@@ -89,6 +90,9 @@ export async function registerRoutes(
 
   // Desktop Agent routes (pairing, auth, ingestion)
   registerAgentRoutes(app);
+
+  // Desktop installer download + CI publish endpoints
+  registerDownloadRoutes(app);
 
   // Auth user endpoint - returns current user info or null if not authenticated
   app.get("/api/auth/user", async (req: Request, res) => {
@@ -3648,6 +3652,22 @@ Instructions:
     } catch (error) {
       console.error("Error fetching admin alerts:", error);
       res.status(500).json({ message: "Failed to fetch alerts" });
+    }
+  });
+
+  // Data quality report — evidence completeness flags, never redefines tracked time
+  app.get("/api/admin/analytics/data-quality", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getDataQualityReport({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching data quality report:", error);
+      res.status(500).json({ message: "Failed to fetch data quality report" });
     }
   });
 
