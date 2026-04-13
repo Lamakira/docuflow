@@ -3325,6 +3325,244 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  // ─── Screenshot Coverage Report ───
+  //
+  // Measures evidence completeness relative to tracked time.
+  // Business truth (duration, idleTime) is NEVER modified here.
+  //
+  // Coverage model:
+  //   expected = ceil(trackedSeconds / 600)   — 1 screenshot per 10 min
+  //   coveragePct = min(100, round(actual / expected × 100))
+  //   low_coverage = coveragePct < 50
+  //   no_coverage  = actual == 0 (entry has zero screenshots)
+  //
+  // Each query uses a LEFT JOIN so entries with zero screenshots are still
+  // counted — their screenshotCount is simply 0, not excluded.
+  async getScreenshotCoverageReport(opts: {
+    startDate: Date;
+    endDate: Date;
+    userId?: string;
+    crmProjectId?: string;
+  }): Promise<{
+    summary: {
+      totalTrackedSeconds: number;
+      totalScreenshots: number;
+      expectedScreenshots: number;
+      coveragePercent: number | null;
+      totalEntries: number;
+      entriesWithoutScreenshots: number;
+      lowCoverageEntries: number;
+    };
+    byUser: Array<{
+      userId: string;
+      userName: string;
+      trackedSeconds: number;
+      entriesCount: number;
+      entriesWithoutScreenshots: number;
+      screenshotCount: number;
+      expectedScreenshots: number;
+      coveragePct: number | null;
+    }>;
+    byProject: Array<{
+      crmProjectId: string;
+      projectName: string;
+      trackedSeconds: number;
+      entriesCount: number;
+      entriesWithoutScreenshots: number;
+      screenshotCount: number;
+      expectedScreenshots: number;
+      coveragePct: number | null;
+    }>;
+    byDay: Array<{
+      date: string;
+      trackedSeconds: number;
+      screenshotCount: number;
+      expectedScreenshots: number;
+      coveragePct: number | null;
+    }>;
+  }> {
+    const { startDate, endDate, userId, crmProjectId } = opts;
+
+    // Shared filter conditions on time_entries (business truth source)
+    const entryConds: any[] = [
+      eq(timeEntries.status, "stopped"),
+      sql`${timeEntries.startTime} >= ${startDate}`,
+      sql`${timeEntries.startTime} <= ${endDate}`,
+    ];
+    if (userId) entryConds.push(eq(timeEntries.userId, userId));
+    if (crmProjectId) entryConds.push(eq(timeEntries.crmProjectId, crmProjectId));
+
+    // LEFT JOIN condition: only count non-pending screenshots
+    const shotJoinCond = and(
+      eq(timeEntryScreenshots.timeEntryId, timeEntries.id),
+      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+    );
+
+    // ── Run 4 aggregation queries in parallel ──────────────────────────────
+    const [perUserRaw, perProjectRaw, perDayRaw, lowCovRow] = await Promise.all([
+
+      // Q1: Per-user — tracked seconds, entry count, screenshot count, entries-with-shots
+      // LEFT JOIN ensures entries with zero screenshots appear with screenshotCount = 0
+      db.select({
+        userId: timeEntries.userId,
+        trackedSeconds:  sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
+        entriesCount:    sql<number>`COUNT(DISTINCT ${timeEntries.id})::int`,
+        screenshotCount: sql<number>`COUNT(${timeEntryScreenshots.id})::int`,
+        entriesWithShots: sql<number>`COUNT(DISTINCT CASE WHEN ${timeEntryScreenshots.id} IS NOT NULL THEN ${timeEntries.id} END)::int`,
+      }).from(timeEntries)
+        .leftJoin(timeEntryScreenshots, shotJoinCond)
+        .where(and(...entryConds))
+        .groupBy(timeEntries.userId),
+
+      // Q2: Per-project — same shape as Q1
+      db.select({
+        crmProjectId:    timeEntries.crmProjectId,
+        trackedSeconds:  sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
+        entriesCount:    sql<number>`COUNT(DISTINCT ${timeEntries.id})::int`,
+        screenshotCount: sql<number>`COUNT(${timeEntryScreenshots.id})::int`,
+        entriesWithShots: sql<number>`COUNT(DISTINCT CASE WHEN ${timeEntryScreenshots.id} IS NOT NULL THEN ${timeEntries.id} END)::int`,
+      }).from(timeEntries)
+        .leftJoin(timeEntryScreenshots, shotJoinCond)
+        .where(and(...entryConds))
+        .groupBy(timeEntries.crmProjectId),
+
+      // Q3: Per-day — grouped by DATE(start_time) so the day axis matches tracked time
+      db.select({
+        date:            sql<string>`DATE(${timeEntries.startTime})::text`,
+        trackedSeconds:  sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
+        screenshotCount: sql<number>`COUNT(${timeEntryScreenshots.id})::int`,
+      }).from(timeEntries)
+        .leftJoin(timeEntryScreenshots, shotJoinCond)
+        .where(and(...entryConds))
+        .groupBy(sql`DATE(${timeEntries.startTime})`)
+        .orderBy(sql`DATE(${timeEntries.startTime}) ASC`),
+
+      // Q4: Count entries where screenshot coverage < 50% of expected
+      //     (correlated subquery — acceptable for a single count row)
+      db.select({
+        count: sql<number>`COUNT(*)::int`,
+      }).from(timeEntries)
+        .where(and(
+          ...entryConds,
+          sql`${timeEntries.duration} > 0`,
+          sql`(
+            SELECT COUNT(*) FROM ${timeEntryScreenshots}
+            WHERE ${timeEntryScreenshots.timeEntryId} = ${timeEntries.id}
+              AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'
+          ) < CEIL(${timeEntries.duration}::numeric / 600) * 0.5`,
+        )),
+    ]);
+
+    // ── Resolve user names ─────────────────────────────────────────────────
+    const allUserIds = [...new Set(perUserRaw.map(r => r.userId))];
+    const usersList = allUserIds.length > 0
+      ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
+          .from(users).where(inArray(users.id, allUserIds))
+      : [];
+    const usersMap = new Map(usersList.map(u => [u.id, u]));
+    const nameOf = (uid: string) => {
+      const u = usersMap.get(uid);
+      return u ? (`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email) : "Unknown";
+    };
+
+    // ── Resolve project names ──────────────────────────────────────────────
+    const allProjectIds = [...new Set(perProjectRaw.map(r => r.crmProjectId))];
+    const projectNameMap = new Map<string, string>();
+    if (allProjectIds.length > 0) {
+      const crmList = await db.select({ id: crmProjects.id, projectId: crmProjects.projectId })
+        .from(crmProjects).where(inArray(crmProjects.id, allProjectIds));
+      const wikiIds = crmList.map(p => p.projectId).filter(Boolean) as string[];
+      if (wikiIds.length > 0) {
+        const wikiList = await db.select({ id: projects.id, name: projects.name })
+          .from(projects).where(inArray(projects.id, wikiIds));
+        const wikiMap = new Map(wikiList.map(p => [p.id, p.name]));
+        for (const cp of crmList) {
+          projectNameMap.set(cp.id, (cp.projectId && wikiMap.get(cp.projectId)) || "Unknown Project");
+        }
+      }
+    }
+
+    // ── Helper: compute coverage % ─────────────────────────────────────────
+    const coveragePct = (shots: number, tracked: number): number | null => {
+      const expected = Math.ceil(tracked / 600);
+      if (expected === 0) return null;
+      return Math.min(100, Math.round((shots / expected) * 100));
+    };
+
+    // ── Assemble byUser ────────────────────────────────────────────────────
+    const byUser = perUserRaw
+      .map(r => ({
+        userId: r.userId,
+        userName: nameOf(r.userId),
+        trackedSeconds: r.trackedSeconds,
+        entriesCount: r.entriesCount,
+        entriesWithoutScreenshots: r.entriesCount - r.entriesWithShots,
+        screenshotCount: r.screenshotCount,
+        expectedScreenshots: r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0,
+        coveragePct: r.trackedSeconds > 0 ? coveragePct(r.screenshotCount, r.trackedSeconds) : null,
+      }))
+      .sort((a, b) => {
+        // Sort: no-coverage first, then ascending coverage %, then by name
+        const aP = a.coveragePct ?? -1;
+        const bP = b.coveragePct ?? -1;
+        return aP - bP;
+      });
+
+    // ── Assemble byProject ─────────────────────────────────────────────────
+    const byProject = perProjectRaw
+      .map(r => ({
+        crmProjectId: r.crmProjectId,
+        projectName: projectNameMap.get(r.crmProjectId) || "Unknown Project",
+        trackedSeconds: r.trackedSeconds,
+        entriesCount: r.entriesCount,
+        entriesWithoutScreenshots: r.entriesCount - r.entriesWithShots,
+        screenshotCount: r.screenshotCount,
+        expectedScreenshots: r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0,
+        coveragePct: r.trackedSeconds > 0 ? coveragePct(r.screenshotCount, r.trackedSeconds) : null,
+      }))
+      .sort((a, b) => {
+        const aP = a.coveragePct ?? -1;
+        const bP = b.coveragePct ?? -1;
+        return aP - bP;
+      });
+
+    // ── Assemble byDay ─────────────────────────────────────────────────────
+    const byDay = perDayRaw.map(r => {
+      const expected = r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0;
+      return {
+        date: r.date,
+        trackedSeconds: r.trackedSeconds,
+        screenshotCount: r.screenshotCount,
+        expectedScreenshots: expected,
+        coveragePct: r.trackedSeconds > 0 ? coveragePct(r.screenshotCount, r.trackedSeconds) : null,
+      };
+    });
+
+    // ── Assemble summary (derived from byUser — no extra query needed) ─────
+    const totalTrackedSeconds = perUserRaw.reduce((s, r) => s + r.trackedSeconds, 0);
+    const totalEntries = perUserRaw.reduce((s, r) => s + r.entriesCount, 0);
+    const totalScreenshots = perUserRaw.reduce((s, r) => s + r.screenshotCount, 0);
+    const totalEntriesWithShots = perUserRaw.reduce((s, r) => s + r.entriesWithShots, 0);
+    const expectedScreenshots = totalTrackedSeconds > 0 ? Math.ceil(totalTrackedSeconds / 600) : 0;
+
+    return {
+      summary: {
+        totalTrackedSeconds,
+        totalScreenshots,
+        expectedScreenshots,
+        coveragePercent: expectedScreenshots > 0
+          ? Math.min(100, Math.round((totalScreenshots / expectedScreenshots) * 100))
+          : null,
+        totalEntries,
+        entriesWithoutScreenshots: totalEntries - totalEntriesWithShots,
+        lowCoverageEntries: lowCovRow[0]?.count ?? 0,
+      },
+      byUser,
+      byProject,
+      byDay,
+    };
+  }
+
   async getAdminAllDevices(): Promise<Array<{
     id: string;
     userId: string;

@@ -3671,6 +3671,24 @@ Instructions:
     }
   });
 
+  // Screenshot coverage report — evidence completeness vs tracked time
+  // Coverage is purely observational. Tracked time is never modified by this endpoint.
+  app.get("/api/admin/analytics/coverage", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getScreenshotCoverageReport({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+        crmProjectId: (req.query.crmProjectId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching coverage report:", error);
+      res.status(500).json({ message: "Failed to fetch coverage report" });
+    }
+  });
+
   app.get("/api/admin/analytics/devices", isAuthenticated, isAdmin, async (_req, res) => {
     try {
       const data = await storage.getAdminAllDevices();
