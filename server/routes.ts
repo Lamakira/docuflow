@@ -4390,15 +4390,20 @@ Instructions:
     try {
       const userId = getUserId(req)!;
       const user = await storage.getUser(userId);
-      
+
       const screenshot = await storage.getTimeEntryScreenshotById(req.params.id);
-      
+
       if (!screenshot) {
         return res.status(404).json({ message: "Screenshot not found" });
       }
 
       if (user?.role !== "admin" && screenshot.userId !== userId) {
         return res.status(403).json({ message: "Not authorized" });
+      }
+
+      // Tombstoned screenshots — evidence has been removed by an admin
+      if (screenshot.deletedAt !== null) {
+        return res.status(410).json({ message: "Screenshot has been removed", deletedAt: screenshot.deletedAt });
       }
 
       const objectStorageService = new ObjectStorageService();
@@ -4410,6 +4415,43 @@ Instructions:
         return res.status(404).json({ message: "Screenshot file not found" });
       }
       res.status(500).json({ message: "Failed to serve screenshot" });
+    }
+  });
+
+  // Admin: soft-delete (tombstone) a screenshot
+  // DELETE /api/time-tracking/screenshots/:id
+  // Body: { reason?: string }
+  app.delete("/api/time-tracking/screenshots/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const user = await storage.getUser(userId);
+      if (user?.role !== "admin") {
+        return res.status(403).json({ message: "Admin only" });
+      }
+
+      const { reason } = req.body ?? {};
+      const tombstone = await storage.softDeleteTimeEntryScreenshot(
+        req.params.id,
+        userId,
+        typeof reason === "string" ? reason.slice(0, 500) : undefined,
+      );
+
+      if (!tombstone) {
+        // Either not found or already tombstoned
+        const existing = await storage.getTimeEntryScreenshotById(req.params.id);
+        if (!existing) return res.status(404).json({ message: "Screenshot not found" });
+        return res.status(409).json({ message: "Screenshot already deleted", deletedAt: existing.deletedAt });
+      }
+
+      return res.json({
+        id: tombstone.id,
+        deletedAt: tombstone.deletedAt,
+        deletedBy: tombstone.deletedBy,
+        deleteReason: tombstone.deleteReason,
+      });
+    } catch (error) {
+      console.error("Error soft-deleting screenshot:", error);
+      res.status(500).json({ message: "Failed to delete screenshot" });
     }
   });
 

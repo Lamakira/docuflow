@@ -1105,11 +1105,25 @@ export const timeEntryScreenshots = pgTable("time_entry_screenshots", {
   mouseCount: integer("mouse_count"),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
+  // ── Soft-delete tombstone ───────────────────────────────────────────────────
+  // null = live screenshot.  non-null = tombstoned (removed operationally).
+  // The row is NEVER physically deleted via the public API; only via FK cascade
+  // when the parent time entry / user / project is itself deleted.
+  // The GCS storage object is NOT deleted by the soft-delete endpoint — the
+  // storageKey is preserved as an audit trail; a separate purge job handles GCS.
+  /** When the screenshot was soft-deleted; null means it is still live. */
+  deletedAt: timestamp("deleted_at"),
+  /** User ID of the admin who performed the deletion; SET NULL when user is deleted. */
+  deletedBy: varchar("deleted_by").references(() => users.id, { onDelete: "set null" }),
+  /** Optional free-text reason recorded at deletion time. */
+  deleteReason: varchar("delete_reason", { length: 500 }),
 }, (table) => [
   index("idx_screenshots_time_entry").on(table.timeEntryId),
   index("idx_screenshots_user").on(table.userId),
   index("idx_screenshots_project").on(table.crmProjectId),
   index("idx_screenshots_captured").on(table.capturedAt),
+  // Partial index — only indexes tombstoned rows; zero cost for live rows
+  index("idx_screenshots_deleted").on(table.deletedAt),
 ]);
 
 export const timeEntryScreenshotsRelations = relations(timeEntryScreenshots, ({ one }) => ({

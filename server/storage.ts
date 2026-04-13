@@ -296,7 +296,9 @@ export interface IStorage {
 
   // Time Entry Screenshots
   createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot>;
+  /** Returns the row regardless of soft-delete status (callers must check deletedAt). */
   getTimeEntryScreenshotById(id: string): Promise<TimeEntryScreenshot | undefined>;
+  /** Lists live (non-deleted) screenshots only. */
   getTimeEntryScreenshots(options: {
     timeEntryId?: string;
     userId?: string;
@@ -307,7 +309,18 @@ export interface IStorage {
     offset?: number;
   }): Promise<{ data: TimeEntryScreenshot[]; total: number }>;
   updateTimeEntryScreenshot(id: string, data: { storageKey: string; contentHash?: string }): Promise<TimeEntryScreenshot | undefined>;
+  /** Hard delete — for internal use only (e.g. tests). Public API must use softDeleteTimeEntryScreenshot. */
   deleteTimeEntryScreenshot(id: string): Promise<void>;
+  /**
+   * Soft delete: marks the row as tombstoned, preserving metadata for analytics.
+   * The GCS storage object is NOT deleted — storageKey is kept as an audit trail.
+   * Returns the updated row, or undefined if not found or already deleted.
+   */
+  softDeleteTimeEntryScreenshot(
+    id: string,
+    deletedBy: string,
+    reason?: string,
+  ): Promise<TimeEntryScreenshot | undefined>;
 
   // Tasks
   getTasks(options: { crmProjectId: string; includeArchived?: boolean }): Promise<Task[]>;
@@ -2424,12 +2437,13 @@ export class DatabaseStorage implements IStorage {
       userMap.set(userId, existing);
     }
     
-    // Count screenshots in the same window
+    // Count live (non-deleted, non-pending) screenshots in the same window
     const screenshotConditions = [];
     if (options.userId) screenshotConditions.push(eq(timeEntryScreenshots.userId, options.userId));
     if (options.startDate) screenshotConditions.push(gt(timeEntryScreenshots.capturedAt, options.startDate));
     if (options.endDate) screenshotConditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
     screenshotConditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
+    screenshotConditions.push(isNull(timeEntryScreenshots.deletedAt));
     const [screenshotRow] = await db
       .select({ cnt: count() })
       .from(timeEntryScreenshots)
@@ -2524,6 +2538,8 @@ export class DatabaseStorage implements IStorage {
     if (options.endDate) conditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
     // Exclude pending uploads (upload not yet received from agent)
     conditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
+    // Exclude soft-deleted tombstones — they are invisible to all user-facing views
+    conditions.push(isNull(timeEntryScreenshots.deletedAt));
 
     const where = and(...conditions);
     const limit = options.limit ?? 50;
@@ -2557,6 +2573,30 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTimeEntryScreenshot(id: string): Promise<void> {
     await db.delete(timeEntryScreenshots).where(eq(timeEntryScreenshots.id, id));
+  }
+
+  async softDeleteTimeEntryScreenshot(
+    id: string,
+    deletedBy: string,
+    reason?: string,
+  ): Promise<TimeEntryScreenshot | undefined> {
+    // Refuse to re-tombstone an already-deleted row
+    const [existing] = await db
+      .select({ deletedAt: timeEntryScreenshots.deletedAt })
+      .from(timeEntryScreenshots)
+      .where(eq(timeEntryScreenshots.id, id));
+    if (!existing || existing.deletedAt !== null) return undefined;
+
+    const [updated] = await db
+      .update(timeEntryScreenshots)
+      .set({
+        deletedAt: new Date(),
+        deletedBy,
+        deleteReason: reason ?? null,
+      })
+      .where(eq(timeEntryScreenshots.id, id))
+      .returning();
+    return updated;
   }
 
   // ═══════════════════════════════════════
@@ -2770,6 +2810,7 @@ export class DatabaseStorage implements IStorage {
       sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
       sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
       sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      isNull(timeEntryScreenshots.deletedAt),
     ));
 
     const [revokedCount] = await db.select({
@@ -2967,6 +3008,7 @@ export class DatabaseStorage implements IStorage {
     byUser: Array<{ userId: string; userName: string; count: number }>;
     hourlyDistribution: Array<{ hour: number; count: number }>;
     duplicates: Array<{ contentHash: string; count: number }>;
+    deletedCount: number;
   }> {
     const { startDate, endDate, userId } = opts;
 
@@ -2974,6 +3016,7 @@ export class DatabaseStorage implements IStorage {
       sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
       sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
       sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      isNull(timeEntryScreenshots.deletedAt),
     ];
     if (userId) conds.push(eq(timeEntryScreenshots.userId, userId));
 
@@ -3016,11 +3059,24 @@ export class DatabaseStorage implements IStorage {
       .orderBy(sql`COUNT(*) DESC`)
       .limit(20);
 
+    // Count tombstoned screenshots in the same time window (evidence removed by an admin)
+    const deletedConds: any[] = [
+      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
+      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
+      sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
+    ];
+    if (userId) deletedConds.push(eq(timeEntryScreenshots.userId, userId));
+    const [deletedResult] = await db.select({
+      count: sql<number>`COUNT(*)::int`,
+    }).from(timeEntryScreenshots).where(and(...deletedConds));
+
     return {
       totalCount: countResult?.count ?? 0,
       byUser,
       hourlyDistribution: hourlyRaw,
       duplicates: duplicatesRaw.map(r => ({ contentHash: r.contentHash!, count: r.count })),
+      deletedCount: deletedResult?.count ?? 0,
     };
   }
 
@@ -3061,6 +3117,7 @@ export class DatabaseStorage implements IStorage {
         .where(and(
           eq(timeEntryScreenshots.timeEntryId, entry.id),
           sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+          isNull(timeEntryScreenshots.deletedAt),
         ))
         .orderBy(desc(timeEntryScreenshots.capturedAt))
         .limit(1);
@@ -3160,6 +3217,8 @@ export class DatabaseStorage implements IStorage {
       orgDuplicateScreenshots: number;
       /** Non-revoked devices not seen in 7+ days */
       stalledDevices: number;
+      /** Screenshots tombstoned (soft-deleted by an admin) in this window */
+      deletedScreenshots: number;
     };
   }> {
     const { startDate, endDate, userId } = opts;
@@ -3179,7 +3238,7 @@ export class DatabaseStorage implements IStorage {
     }).from(timeEntries).where(and(...entryConds)).groupBy(timeEntries.userId);
 
     if (trackedPerUser.length === 0) {
-      return { byUser: [], org: { entriesWithoutAnyScreenshot: 0, orgDuplicateScreenshots: 0, stalledDevices: 0 } };
+      return { byUser: [], org: { entriesWithoutAnyScreenshot: 0, orgDuplicateScreenshots: 0, stalledDevices: 0, deletedScreenshots: 0 } };
     }
 
     const allUserIds = trackedPerUser.map(r => r.userId);
@@ -3189,6 +3248,7 @@ export class DatabaseStorage implements IStorage {
       sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
       sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
       sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      isNull(timeEntryScreenshots.deletedAt),
       inArray(timeEntryScreenshots.userId, allUserIds),
     ];
     const shotsPerUser = await db.select({
@@ -3227,7 +3287,7 @@ export class DatabaseStorage implements IStorage {
       .groupBy(devices.userId);
     const deviceMap = new Map(deviceRows.map(r => [r.userId, r.lastSeenAt]));
 
-    // ── 6. Org-level: stopped entries with zero screenshots ──────────────────
+    // ── 6. Org-level: stopped entries with zero live (non-tombstoned) screenshots
     const [entriesNoShotRow] = await db.select({
       count: sql<number>`COUNT(*)::int`,
     }).from(timeEntries)
@@ -3237,10 +3297,11 @@ export class DatabaseStorage implements IStorage {
           SELECT 1 FROM ${timeEntryScreenshots}
           WHERE ${timeEntryScreenshots.timeEntryId} = ${timeEntries.id}
             AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'
+            AND ${timeEntryScreenshots.deletedAt} IS NULL
         )`,
       ));
 
-    // ── 7. Org-level: total duplicate screenshots ─────────────────────────────
+    // ── 7. Org-level: total duplicate screenshots (live only) ────────────────
     const [orgDupRow] = await db.select({
       dupCount: sql<number>`(COUNT(*) - COUNT(DISTINCT ${timeEntryScreenshots.contentHash}))::int`,
     }).from(timeEntryScreenshots)
@@ -3248,7 +3309,18 @@ export class DatabaseStorage implements IStorage {
         sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
         sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
         sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+        isNull(timeEntryScreenshots.deletedAt),
         sql`${timeEntryScreenshots.contentHash} IS NOT NULL`,
+      ));
+
+    // ── 7b. Org-level: tombstoned screenshots (evidence removed by admins) ───
+    const [deletedShotRow] = await db.select({
+      count: sql<number>`COUNT(*)::int`,
+    }).from(timeEntryScreenshots)
+      .where(and(
+        sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
+        sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
+        sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
       ));
 
     // ── 8. Org-level: stalled devices ────────────────────────────────────────
@@ -3321,6 +3393,7 @@ export class DatabaseStorage implements IStorage {
         entriesWithoutAnyScreenshot: entriesNoShotRow?.count ?? 0,
         orgDuplicateScreenshots: orgDupRow?.dupCount ?? 0,
         stalledDevices: stalledRow?.count ?? 0,
+        deletedScreenshots: deletedShotRow?.count ?? 0,
       },
     };
   }
@@ -3352,6 +3425,8 @@ export class DatabaseStorage implements IStorage {
       totalEntries: number;
       entriesWithoutScreenshots: number;
       lowCoverageEntries: number;
+      /** Screenshots tombstoned (soft-deleted by an admin) in this window */
+      deletedScreenshots: number;
     };
     byUser: Array<{
       userId: string;
@@ -3392,10 +3467,11 @@ export class DatabaseStorage implements IStorage {
     if (userId) entryConds.push(eq(timeEntries.userId, userId));
     if (crmProjectId) entryConds.push(eq(timeEntries.crmProjectId, crmProjectId));
 
-    // LEFT JOIN condition: only count non-pending screenshots
+    // LEFT JOIN condition: only count live (non-pending, non-tombstoned) screenshots
     const shotJoinCond = and(
       eq(timeEntryScreenshots.timeEntryId, timeEntries.id),
       sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
+      isNull(timeEntryScreenshots.deletedAt),
     );
 
     // ── Run 4 aggregation queries in parallel ──────────────────────────────
@@ -3437,7 +3513,7 @@ export class DatabaseStorage implements IStorage {
         .groupBy(sql`DATE(${timeEntries.startTime})`)
         .orderBy(sql`DATE(${timeEntries.startTime}) ASC`),
 
-      // Q4: Count entries where screenshot coverage < 50% of expected
+      // Q4: Count entries where live screenshot coverage < 50% of expected
       //     (correlated subquery — acceptable for a single count row)
       db.select({
         count: sql<number>`COUNT(*)::int`,
@@ -3449,9 +3525,22 @@ export class DatabaseStorage implements IStorage {
             SELECT COUNT(*) FROM ${timeEntryScreenshots}
             WHERE ${timeEntryScreenshots.timeEntryId} = ${timeEntries.id}
               AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'
+              AND ${timeEntryScreenshots.deletedAt} IS NULL
           ) < CEIL(${timeEntries.duration}::numeric / 600) * 0.5`,
         )),
     ]);
+
+    // ── Count tombstoned screenshots in the window (runs in parallel above ideally,
+    //    but kept separate to avoid complicating the LEFT-JOIN shape) ──────────
+    const deletedCondsCoverage: any[] = [
+      sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
+      sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
+      sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
+    ];
+    if (userId) deletedCondsCoverage.push(eq(timeEntryScreenshots.userId, userId));
+    const [deletedShotCovRow] = await db.select({
+      count: sql<number>`COUNT(*)::int`,
+    }).from(timeEntryScreenshots).where(and(...deletedCondsCoverage));
 
     // ── Resolve user names ─────────────────────────────────────────────────
     const allUserIds = [...new Set(perUserRaw.map(r => r.userId))];
@@ -3556,6 +3645,7 @@ export class DatabaseStorage implements IStorage {
         totalEntries,
         entriesWithoutScreenshots: totalEntries - totalEntriesWithShots,
         lowCoverageEntries: lowCovRow[0]?.count ?? 0,
+        deletedScreenshots: deletedShotCovRow?.count ?? 0,
       },
       byUser,
       byProject,
