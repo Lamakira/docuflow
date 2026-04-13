@@ -1294,3 +1294,56 @@ export const desktopReleases = pgTable(
 );
 
 export type DesktopRelease = typeof desktopReleases.$inferSelect;
+
+// ─── Evidence Quality Score ───
+//
+// A per-user (or per-entry) composite score (0–100) that measures how well
+// a tracked session is supported by observable evidence.
+//
+// IMPORTANT: This score never modifies or replaces tracked time (duration /
+// idleTime). It is purely an observational label on evidence completeness.
+//
+// Score components:
+//   coverageScore  (0–40) — screenshot count vs 1-per-10-min expectation
+//   qualityScore   (0–30) — deductions for duplicate / low-activity screenshots
+//   eventsScore    (0–20) — presence of linked activity events
+//   deviceScore    (0–10) — device heartbeat freshness
+//
+// Grade thresholds:
+//   strong       ≥ 75
+//   moderate     50–74
+//   weak         25–49
+//   insufficient  0–24
+
+export type EvidenceGrade = "strong" | "moderate" | "weak" | "insufficient";
+
+export interface EvidenceUserScore {
+  userId: string;
+  userName: string;
+  entryCount: number;
+  trackedSeconds: number;
+  // Score components (sum = totalScore)
+  coverageScore: number;
+  qualityScore: number;
+  eventsScore: number;
+  deviceScore: number;
+  totalScore: number;
+  grade: EvidenceGrade;
+  // Raw inputs (transparency — never used to rewrite time)
+  screenshotCount: number;
+  expectedScreenshots: number;
+  dupRatio: number;
+  avgActivityPct: number | null;
+  hasEvents: boolean;
+  deviceLastSeenDaysAgo: number | null;
+}
+
+export interface EvidenceQualityReport {
+  gradeDistribution: {
+    strong: number;
+    moderate: number;
+    weak: number;
+    insufficient: number;
+  };
+  byUser: EvidenceUserScore[];
+}

@@ -91,6 +91,8 @@ import {
   type ScreenshotPolicy,
   DEFAULT_SCREENSHOT_POLICY,
   DEFAULT_ALLOWED_TIMEZONES,
+  type EvidenceGrade,
+  type EvidenceQualityReport,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray } from "drizzle-orm";
@@ -365,6 +367,15 @@ export interface IStorage {
     timestamp: Date;
     data?: Record<string, unknown>;
   }>): Promise<void>;
+
+  // ─── Evidence Quality Report ───
+  // Computes a composite evidence score (0–100) per user for the given window.
+  // Score NEVER modifies tracked time — it is a read-only observational label.
+  getEvidenceQualityReport(opts: {
+    startDate: Date;
+    endDate: Date;
+    userId?: string;
+  }): Promise<EvidenceQualityReport>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3651,6 +3662,178 @@ export class DatabaseStorage implements IStorage {
       byProject,
       byDay,
     };
+  }
+
+  // ─── Evidence Quality Report ───
+  //
+  // Produces a composite 0–100 score per user describing how well their
+  // tracked sessions are supported by observable evidence.
+  //
+  // IMPORTANT: This method is READ-ONLY with respect to business metrics.
+  // duration / idleTime on time_entries is NEVER modified, recalculated,
+  // or referenced as output.  The score is an observational label only.
+  //
+  // Score components:
+  //   coverageScore  (0–40)  screenshot count vs 1-per-10-min expectation
+  //   qualityScore   (0–30)  deductions: dup ratio + low physical-activity screenshots
+  //   eventsScore    (0–20)  activity events linked to entries exist
+  //   deviceScore    (0–10)  device heartbeat freshness
+  //
+  async getEvidenceQualityReport(opts: {
+    startDate: Date;
+    endDate: Date;
+    userId?: string;
+  }): Promise<EvidenceQualityReport> {
+    const { startDate, endDate, userId } = opts;
+
+    const entryConds: any[] = [
+      eq(timeEntries.status, "stopped"),
+      sql`${timeEntries.startTime} >= ${startDate}`,
+      sql`${timeEntries.startTime} <= ${endDate}`,
+    ];
+    if (userId) entryConds.push(eq(timeEntries.userId, userId));
+
+    // ── Q1+Q2 combined: per-user entry stats + screenshot signals (single LEFT JOIN) ──
+    // Aggregate by user across all stopped entries in the window:
+    //   – entry count + total tracked seconds (from time_entries)
+    //   – live screenshot count + unique content_hash count (dedupe signal)
+    //   – avg keyboard & mouse activity % (low-activity screenshot signal)
+    const perUserRaw = await db.select({
+      userId:         timeEntries.userId,
+      entryCount:     sql<number>`COUNT(DISTINCT ${timeEntries.id})::int`,
+      trackedSeconds: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)::int`,
+      shotCount:      sql<number>`COUNT(${timeEntryScreenshots.id})
+                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
+                          AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%')`,
+      uniqueHashes:   sql<number>`COUNT(DISTINCT ${timeEntryScreenshots.contentHash})
+                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
+                          AND ${timeEntryScreenshots.contentHash} IS NOT NULL)`,
+      avgKeyboardPct: sql<number | null>`AVG(${timeEntryScreenshots.keyboardActivityPercent})
+                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
+                          AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%')`,
+      avgMousePct:    sql<number | null>`AVG(${timeEntryScreenshots.mouseActivityPercent})
+                        FILTER (WHERE ${timeEntryScreenshots.deletedAt} IS NULL
+                          AND ${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%')`,
+    }).from(timeEntries)
+      .leftJoin(timeEntryScreenshots, eq(timeEntryScreenshots.timeEntryId, timeEntries.id))
+      .where(and(...entryConds))
+      .groupBy(timeEntries.userId);
+
+    if (perUserRaw.length === 0) {
+      return { gradeDistribution: { strong: 0, moderate: 0, weak: 0, insufficient: 0 }, byUser: [] };
+    }
+
+    const allUserIds = perUserRaw.map(r => r.userId);
+
+    // ── Q3: activity event count per user ──────────────────────────────────────
+    const eventsRaw = await db.select({
+      userId:     agentActivityEvents.userId,
+      eventCount: sql<number>`COUNT(*)::int`,
+    }).from(agentActivityEvents)
+      .where(and(
+        sql`${agentActivityEvents.timestamp} >= ${startDate}`,
+        sql`${agentActivityEvents.timestamp} <= ${endDate}`,
+        inArray(agentActivityEvents.userId, allUserIds),
+      ))
+      .groupBy(agentActivityEvents.userId);
+    const evtMap = new Map(eventsRaw.map(r => [r.userId, r.eventCount]));
+
+    // ── Q4: device freshness per user (most recent non-revoked lastSeenAt) ─────
+    const deviceRaw = await db.select({
+      userId:      devices.userId,
+      lastSeenAt:  sql<Date | null>`MAX(${devices.lastSeenAt})`,
+    }).from(devices)
+      .where(and(isNull(devices.revokedAt), inArray(devices.userId, allUserIds)))
+      .groupBy(devices.userId);
+    const deviceMap = new Map(deviceRaw.map(r => [r.userId, r.lastSeenAt]));
+
+    // ── Q5: resolve user display names ──────────────────────────────────────────
+    const usersList = await db.select({
+      id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email,
+    }).from(users).where(inArray(users.id, allUserIds));
+    const usersMap = new Map(usersList.map(u => [u.id, u]));
+    const nameOf = (uid: string) => {
+      const u = usersMap.get(uid);
+      return u ? (`${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || u.email) : "Unknown";
+    };
+
+    // ── Scoring ────────────────────────────────────────────────────────────────
+    const oneDayMs  = 86_400_000;
+    const sevenDaysMs = 7 * oneDayMs;
+
+    const byUser = perUserRaw.map(r => {
+      const shotCount    = r.shotCount    ?? 0;
+      const uniqueHashes = r.uniqueHashes ?? 0;
+      const eventCount   = evtMap.get(r.userId) ?? 0;
+      const lastSeen     = deviceMap.get(r.userId) ?? null;
+
+      // 1. Coverage (0–40): expected = 1 screenshot per 10 min of tracked time
+      const expected = r.trackedSeconds > 0 ? Math.ceil(r.trackedSeconds / 600) : 0;
+      const coveragePct = expected > 0 ? Math.min(1, shotCount / expected) : 0;
+      const coverageScore = Math.round(40 * coveragePct);
+
+      // 2. Quality (0–30): deductions for duplicates and low-activity screenshots
+      const dupCount  = Math.max(0, shotCount - uniqueHashes);
+      const dupRatio  = shotCount > 0 ? dupCount / shotCount : 0;
+      // Full dup penalty (15 pts) at ≥ 50% duplicate ratio
+      const dupPenalty = Math.round(15 * Math.min(1, dupRatio * 2));
+      // Activity penalty: avg (keyboard + mouse) < 20% → points lost
+      const avgKeyboard = typeof r.avgKeyboardPct === "number" ? r.avgKeyboardPct : null;
+      const avgMouse    = typeof r.avgMousePct    === "number" ? r.avgMousePct    : null;
+      const avgActivity = (avgKeyboard !== null || avgMouse !== null)
+        ? ((avgKeyboard ?? 0) + (avgMouse ?? 0)) / 2
+        : null;
+      // No screenshots → no activity signal → no penalty (don't double-penalise)
+      const activityPenalty = avgActivity !== null
+        ? Math.round(15 * Math.max(0, 1 - avgActivity / 20))
+        : 0;
+      const qualityScore = Math.max(0, 30 - dupPenalty - activityPenalty);
+
+      // 3. Events (0–20): any linked activity events in window
+      const eventsScore = eventCount > 0 ? 20 : 0;
+
+      // 4. Device freshness (0–10)
+      let deviceScore = 0;
+      if (lastSeen) {
+        const ageMs = Date.now() - new Date(lastSeen).getTime();
+        if (ageMs <= oneDayMs)    deviceScore = 10;
+        else if (ageMs <= sevenDaysMs) deviceScore = 5;
+      }
+
+      const totalScore = coverageScore + qualityScore + eventsScore + deviceScore;
+      const grade: EvidenceGrade =
+        totalScore >= 75 ? "strong" :
+        totalScore >= 50 ? "moderate" :
+        totalScore >= 25 ? "weak" : "insufficient";
+
+      const deviceLastSeenDaysAgo = lastSeen
+        ? Math.floor((Date.now() - new Date(lastSeen).getTime()) / oneDayMs)
+        : null;
+
+      return {
+        userId:              r.userId,
+        userName:            nameOf(r.userId),
+        entryCount:          r.entryCount,
+        trackedSeconds:      r.trackedSeconds,
+        coverageScore,
+        qualityScore,
+        eventsScore,
+        deviceScore,
+        totalScore,
+        grade,
+        screenshotCount:     shotCount,
+        expectedScreenshots: expected,
+        dupRatio:            Math.round(dupRatio * 100) / 100,
+        avgActivityPct:      avgActivity !== null ? Math.round(avgActivity) : null,
+        hasEvents:           eventCount > 0,
+        deviceLastSeenDaysAgo,
+      };
+    }).sort((a, b) => a.totalScore - b.totalScore); // worst first
+
+    const gradeDistribution = { strong: 0, moderate: 0, weak: 0, insufficient: 0 };
+    for (const u of byUser) gradeDistribution[u.grade]++;
+
+    return { gradeDistribution, byUser };
   }
 
   async getAdminAllDevices(): Promise<Array<{

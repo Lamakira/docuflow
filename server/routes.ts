@@ -3689,6 +3689,23 @@ Instructions:
     }
   });
 
+  // Evidence quality score — per-user composite score (0–100).
+  // NEVER modifies or replaces tracked time; purely observational.
+  app.get("/api/admin/analytics/evidence-quality", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { start, end } = parseDateRange(req.query);
+      const data = await storage.getEvidenceQualityReport({
+        startDate: start,
+        endDate: end,
+        userId: (req.query.userId as string) || undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error("Error fetching evidence quality report:", error);
+      res.status(500).json({ message: "Failed to fetch evidence quality report" });
+    }
+  });
+
   app.get("/api/admin/analytics/devices", isAuthenticated, isAdmin, async (_req, res) => {
     try {
       const data = await storage.getAdminAllDevices();
