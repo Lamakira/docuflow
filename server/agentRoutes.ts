@@ -10,10 +10,12 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { randomBytes, createHash, createHmac } from "crypto";
 import { z } from "zod";
 // sharp is optional — loaded lazily so the server starts even if libvips is unavailable
-let sharpLib: typeof import("sharp") | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let sharpLib: ((input: Buffer) => any) | null = null;
 (async () => {
   try {
-    sharpLib = (await import("sharp")).default as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    sharpLib = ((await import("sharp" as any)) as any).default;
   } catch {
     console.warn("[agentRoutes] sharp not available — screenshot compression disabled, raw PNG will be stored");
   }
