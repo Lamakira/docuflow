@@ -154,7 +154,7 @@ export default function ScreencastsPage() {
     isFetchingNextPage,
   } = useInfiniteQuery<ScreenshotsResponse>({
     queryKey: ["/api/time-tracking/screenshots", dateFilter, effectiveUserId, isAdmin],
-    queryFn: async ({ pageParam }) => {
+    queryFn: async ({ pageParam }): Promise<ScreenshotsResponse> => {
       const params = new URLSearchParams({
         startDate: start.toISOString(),
         endDate: end.toISOString(),
@@ -167,17 +167,32 @@ export default function ScreencastsPage() {
       const res = await fetch(`/api/time-tracking/screenshots?${params}`, {
         credentials: "include",
       });
-      return res.json();
+      if (!res.ok) {
+        // Normalize error responses to an empty page so getNextPageParam never
+        // receives a payload without data / offset.
+        return { data: [], total: 0, limit: 50, offset: Number(pageParam ?? 0) };
+      }
+      const json = await res.json();
+      // Defensive normalisation: backend may omit fields in edge cases
+      return {
+        data:   Array.isArray(json?.data)   ? json.data   : [],
+        total:  typeof json?.total  === "number" ? json.total  : 0,
+        limit:  typeof json?.limit  === "number" ? json.limit  : 50,
+        offset: typeof json?.offset === "number" ? json.offset : Number(pageParam ?? 0),
+      };
     },
     getNextPageParam: (lastPage) => {
-      const nextOffset = lastPage.offset + lastPage.data.length;
-      return nextOffset < lastPage.total ? nextOffset : undefined;
+      const items      = lastPage?.data   ?? [];
+      const pageOffset = lastPage?.offset ?? 0;
+      const pageTotal  = lastPage?.total  ?? 0;
+      const nextOffset = pageOffset + items.length;
+      return nextOffset < pageTotal ? nextOffset : undefined;
     },
     initialPageParam: 0,
     enabled: !!effectiveUserId,
   });
 
-  const allScreenshots = data?.pages.flatMap((p) => p.data) ?? [];
+  const allScreenshots = data?.pages.flatMap((p) => p.data ?? []) ?? [];
   const total = data?.pages[0]?.total ?? 0;
 
   // Selection helpers
