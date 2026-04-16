@@ -5,6 +5,9 @@ server/public
 vite.config.ts.*
 *.tar.gz
 
+# Installer binaries — uploaded to Replit filesystem, never committed
+installers/
+
 # Claude Code
 .claude/
 CLAUDE.md
