@@ -41,9 +41,8 @@ import {
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 
 const AGENT_VERSION = "v0.1.6";
-const DOWNLOAD_URL_WINDOWS = "/downloads/windows";
-const DOWNLOAD_URL_MACOS   = "/downloads/macos";
-const DOWNLOAD_URL_LINUX   = "/downloads/linux";
+
+interface Availability { windows: boolean; macos: boolean; linux: boolean; }
 
 interface Device {
   id: string;
@@ -134,6 +133,13 @@ export default function DevicesPage() {
     queryKey: ["/api/agent/devices"],
     refetchInterval: 15000,
   });
+
+  // Which platforms have an installer file uploaded
+  const { data: avail } = useQuery<Availability>({
+    queryKey: ["/downloads/availability"],
+    staleTime: 60_000,
+  });
+  const platformReady = (p: keyof Availability) => avail == null || avail[p];
 
   const rawDevices = devicesResponse?.data ?? [];
   const machineGroups = groupByMachine(rawDevices);
@@ -312,29 +318,39 @@ export default function DevicesPage() {
           </DialogHeader>
 
           <div className="space-y-3 py-2">
-            <Button
-              className="w-full"
-              onClick={() => window.open(DOWNLOAD_URL_WINDOWS, "_blank", "noopener,noreferrer")}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Windows — Download .exe
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => window.open(DOWNLOAD_URL_MACOS, "_blank", "noopener,noreferrer")}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              macOS — Download .dmg
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => window.open(DOWNLOAD_URL_LINUX, "_blank", "noopener,noreferrer")}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Linux — Download .deb
-            </Button>
+            {platformReady("windows") ? (
+              <Button className="w-full" onClick={() => window.open("/downloads/windows", "_self")}>
+                <Download className="h-4 w-4 mr-2" />
+                Windows — Download .exe
+              </Button>
+            ) : (
+              <Button variant="outline" className="w-full opacity-60" disabled>
+                <Clock className="h-4 w-4 mr-2" />
+                Windows — Coming soon
+              </Button>
+            )}
+            {platformReady("macos") ? (
+              <Button variant="outline" className="w-full" onClick={() => window.open("/downloads/macos", "_self")}>
+                <Download className="h-4 w-4 mr-2" />
+                macOS — Download .dmg
+              </Button>
+            ) : (
+              <Button variant="outline" className="w-full opacity-60" disabled>
+                <Clock className="h-4 w-4 mr-2" />
+                macOS — Coming soon
+              </Button>
+            )}
+            {platformReady("linux") ? (
+              <Button variant="outline" className="w-full" onClick={() => window.open("/downloads/linux", "_self")}>
+                <Download className="h-4 w-4 mr-2" />
+                Linux — Download .deb
+              </Button>
+            ) : (
+              <Button variant="outline" className="w-full opacity-60" disabled>
+                <Clock className="h-4 w-4 mr-2" />
+                Linux — Coming soon
+              </Button>
+            )}
             <p className="text-xs text-muted-foreground text-center">
               Once installed, sign in with your DocuFlow account.
               The device will appear in this list automatically.

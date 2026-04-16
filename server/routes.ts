@@ -1,8 +1,6 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { randomBytes } from "crypto";
-import path from "path";
-import fs from "fs";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, getUserId, hashPassword, verifyPassword, regenerateSession } from "./auth";
 import { z } from "zod";
@@ -4473,36 +4471,6 @@ Instructions:
       res.status(500).json({ message: "Failed to delete screenshot" });
     }
   });
-
-  // ── Public installer downloads ──────────────────────────────────────────────
-  // Files live in <cwd>/installers/ (not committed, added to .gitignore).
-  // Upload them to the Replit filesystem after each release.
-  const INSTALLER_VERSION = "0.1.6";
-  const installersDir = path.resolve(process.cwd(), "installers");
-
-  const installerFiles: Record<string, string> = {
-    windows: `DocuFlow-Agent-${INSTALLER_VERSION}-windows-setup.exe`,
-    macos:   `DocuFlow-Agent-${INSTALLER_VERSION}-macos.dmg`,
-    linux:   `DocuFlow-Agent-${INSTALLER_VERSION}-linux-amd64.deb`,
-  };
-
-  for (const [platform, filename] of Object.entries(installerFiles)) {
-    app.get(`/downloads/${platform}`, (_req, res) => {
-      const filePath = path.join(installersDir, filename);
-      if (!fs.existsSync(filePath)) {
-        res.status(404).send(
-          `<!DOCTYPE html><html><head><title>File not available</title></head><body>` +
-          `<h2>Installer not yet available</h2>` +
-          `<p>The ${platform} installer (<code>${filename}</code>) has not been uploaded to the server yet.</p>` +
-          `<p>Please check back shortly or contact your administrator.</p>` +
-          `</body></html>`
-        );
-        return;
-      }
-      res.download(filePath, filename);
-    });
-  }
-  // ────────────────────────────────────────────────────────────────────────────
 
   return httpServer;
 }
