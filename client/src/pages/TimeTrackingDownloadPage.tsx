@@ -15,9 +15,9 @@ export default function TimeTrackingDownloadPage() {
     staleTime: 60_000,
   });
 
-  // True while the availability response hasn't arrived yet — show buttons as
-  // enabled by default so there's no flicker for platforms that ARE available.
-  const ready = (platform: keyof Availability) => avail == null || avail[platform];
+  // Only true once the server confirms the file exists — defaults to false
+  // while loading so cards never flash active then immediately go unavailable.
+  const ready = (platform: keyof Availability) => avail?.[platform] === true;
 
   function DownloadButton({ platform, label, url }: { platform: keyof Availability; label: string; url: string }) {
     if (ready(platform)) {
@@ -56,6 +56,9 @@ export default function TimeTrackingDownloadPage() {
           <p className="text-sm text-muted-foreground mt-1">
             Install the DocuFlow Desktop Agent to track time from your computer.
           </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Installers are published per platform as they become available.
+          </p>
         </div>
 
         <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg px-4 py-3">
@@ -63,7 +66,6 @@ export default function TimeTrackingDownloadPage() {
           <span>
             Once installed, sign in with your DocuFlow account. The agent runs in your system tray and syncs automatically.
           </span>
-          <Badge variant="secondary" className="ml-auto shrink-0">{AGENT_VERSION}</Badge>
         </div>
 
         {/* OS cards — ordered by validation level: Windows > macOS > Linux */}
@@ -92,9 +94,12 @@ export default function TimeTrackingDownloadPage() {
             <CardContent className="space-y-3">
               <DownloadButton platform="windows" label="Download .exe" url="/downloads/windows" />
               {ready("windows") && (
-                <p className="text-xs text-muted-foreground">
-                  SmartScreen may prompt — click <strong>More info</strong> → <strong>Run anyway</strong>.
-                </p>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    SmartScreen may prompt — click <strong>More info</strong> → <strong>Run anyway</strong>.
+                  </p>
+                  <p className="text-xs text-muted-foreground">{AGENT_VERSION}</p>
+                </div>
               )}
             </CardContent>
           </Card>
