@@ -40,8 +40,6 @@ import {
 } from "lucide-react";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 
-const AGENT_VERSION = "v0.1.6";
-
 interface Availability { windows: boolean; macos: boolean; linux: boolean; }
 
 interface Device {
@@ -139,7 +137,7 @@ export default function DevicesPage() {
     queryKey: ["/downloads/availability"],
     staleTime: 60_000,
   });
-  const platformReady = (p: keyof Availability) => avail == null || avail[p];
+  const platformReady = (p: keyof Availability) => avail?.[p] === true;
 
   const rawDevices = devicesResponse?.data ?? [];
   const machineGroups = groupByMachine(rawDevices);
@@ -186,9 +184,6 @@ export default function DevicesPage() {
         <span>
           Install the desktop app and sign in with your DocuFlow account to connect this device.
         </span>
-        <Badge variant="secondary" className="text-xs ml-auto shrink-0">
-          {AGENT_VERSION}
-        </Badge>
       </div>
 
       {/* Stats */}
