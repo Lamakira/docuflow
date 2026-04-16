@@ -1,8 +1,6 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { randomBytes } from "crypto";
-import path from "path";
-import fs from "fs";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, getUserId, hashPassword, verifyPassword, regenerateSession } from "./auth";
 import { z } from "zod";
@@ -4473,44 +4471,6 @@ Instructions:
       res.status(500).json({ message: "Failed to delete screenshot" });
     }
   });
-
-  // ── Public installer downloads ──────────────────────────────────────────────
-  // Files live in <cwd>/installers/ (not committed, added to .gitignore).
-  // Upload them to the Replit filesystem after each release.
-  const INSTALLER_VERSION = "0.1.6";
-  const installersDir = path.resolve(process.cwd(), "installers");
-
-  const installerFiles: Record<string, string> = {
-    windows: `DocuFlow-Agent-${INSTALLER_VERSION}-windows-setup.exe`,
-    macos:   `DocuFlow-Agent-${INSTALLER_VERSION}-macos.dmg`,
-    linux:   `DocuFlow-Agent-${INSTALLER_VERSION}-linux-amd64.deb`,
-  };
-
-  // Availability probe — lets the UI know which platforms are ready.
-  // Returns e.g. { windows: true, macos: false, linux: false }
-  app.get("/downloads/availability", (_req, res) => {
-    const result: Record<string, boolean> = {};
-    for (const [platform, filename] of Object.entries(installerFiles)) {
-      result[platform] = fs.existsSync(path.join(installersDir, filename));
-    }
-    res.json(result);
-  });
-
-  for (const [platform, filename] of Object.entries(installerFiles)) {
-    app.get(`/downloads/${platform}`, (_req, res) => {
-      const filePath = path.join(installersDir, filename);
-      if (!fs.existsSync(filePath)) {
-        // JSON response so programmatic callers get structured data.
-        // The UI never reaches this path because it checks /downloads/availability first.
-        return res.status(404).json({
-          error: `Installer not yet available for platform: ${platform}`,
-          filename,
-        });
-      }
-      res.download(filePath, filename);
-    });
-  }
-  // ────────────────────────────────────────────────────────────────────────────
 
   return httpServer;
 }
