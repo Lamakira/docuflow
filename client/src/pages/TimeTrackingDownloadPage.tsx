@@ -1,16 +1,52 @@
+import { useQuery } from "@tanstack/react-query";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Download, Monitor, Apple, Terminal } from "lucide-react";
+import { Clock, Download, Monitor, Apple, Terminal } from "lucide-react";
 
 const AGENT_VERSION = "v0.1.6";
 
-const DOWNLOAD_URL_WINDOWS = "/downloads/windows";
-const DOWNLOAD_URL_MACOS   = "/downloads/macos";
-const DOWNLOAD_URL_LINUX   = "/downloads/linux";
+interface Availability { windows: boolean; macos: boolean; linux: boolean; }
 
 export default function TimeTrackingDownloadPage() {
+  const { data: avail } = useQuery<Availability>({
+    queryKey: ["/downloads/availability"],
+    staleTime: 60_000,
+  });
+
+  // True while the availability response hasn't arrived yet — show buttons as
+  // enabled by default so there's no flicker for platforms that ARE available.
+  const ready = (platform: keyof Availability) => avail == null || avail[platform];
+
+  function DownloadButton({ platform, label, url }: { platform: keyof Availability; label: string; url: string }) {
+    if (ready(platform)) {
+      return (
+        <Button className="w-full" onClick={() => window.open(url, "_self")}>
+          <Download className="h-4 w-4 mr-2" />
+          {label}
+        </Button>
+      );
+    }
+    return (
+      <Button className="w-full" variant="outline" disabled>
+        <Clock className="h-4 w-4 mr-2" />
+        Coming soon
+      </Button>
+    );
+  }
+
+  function PlatformBadge({ platform, readyLabel, readyClass }: {
+    platform: keyof Availability;
+    readyLabel: string;
+    readyClass: string;
+  }) {
+    if (!ready(platform)) {
+      return <Badge variant="secondary" className="text-xs">Not yet available</Badge>;
+    }
+    return <Badge className={`${readyClass} border-0 text-xs`}>{readyLabel}</Badge>;
+  }
+
   return (
     <TimeTrackingLayout>
       <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -33,8 +69,8 @@ export default function TimeTrackingDownloadPage() {
         {/* OS cards — ordered by validation level: Windows > macOS > Linux */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
-          {/* Windows — Stable */}
-          <Card>
+          {/* Windows */}
+          <Card className={!ready("windows") ? "opacity-60" : undefined}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -46,27 +82,25 @@ export default function TimeTrackingDownloadPage() {
                     <CardDescription className="text-xs">Windows 10 / 11 (x64)</CardDescription>
                   </div>
                 </div>
-                <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 border-0 text-xs">
-                  Stable
-                </Badge>
+                <PlatformBadge
+                  platform="windows"
+                  readyLabel="Stable"
+                  readyClass="bg-green-500/15 text-green-700 dark:text-green-400"
+                />
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button
-                className="w-full"
-                onClick={() => window.open(DOWNLOAD_URL_WINDOWS, "_blank", "noopener,noreferrer")}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download .exe
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                SmartScreen may prompt — click <strong>More info</strong> → <strong>Run anyway</strong>.
-              </p>
+              <DownloadButton platform="windows" label="Download .exe" url="/downloads/windows" />
+              {ready("windows") && (
+                <p className="text-xs text-muted-foreground">
+                  SmartScreen may prompt — click <strong>More info</strong> → <strong>Run anyway</strong>.
+                </p>
+              )}
             </CardContent>
           </Card>
 
-          {/* macOS — Beta (in testing) */}
-          <Card>
+          {/* macOS */}
+          <Card className={!ready("macos") ? "opacity-60" : undefined}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -78,27 +112,25 @@ export default function TimeTrackingDownloadPage() {
                     <CardDescription className="text-xs">macOS 12+ (Apple Silicon / Intel)</CardDescription>
                   </div>
                 </div>
-                <Badge className="bg-orange-500/15 text-orange-700 dark:text-orange-400 border-0 text-xs">
-                  Beta
-                </Badge>
+                <PlatformBadge
+                  platform="macos"
+                  readyLabel="Beta"
+                  readyClass="bg-orange-500/15 text-orange-700 dark:text-orange-400"
+                />
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button
-                className="w-full"
-                onClick={() => window.open(DOWNLOAD_URL_MACOS, "_blank", "noopener,noreferrer")}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download .dmg
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                First launch: <strong>right-click → Open</strong> to bypass Gatekeeper (unsigned build).
-              </p>
+              <DownloadButton platform="macos" label="Download .dmg" url="/downloads/macos" />
+              {ready("macos") && (
+                <p className="text-xs text-muted-foreground">
+                  First launch: <strong>right-click → Open</strong> to bypass Gatekeeper (unsigned build).
+                </p>
+              )}
             </CardContent>
           </Card>
 
-          {/* Linux — Experimental */}
-          <Card>
+          {/* Linux */}
+          <Card className={!ready("linux") ? "opacity-60" : undefined}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -110,22 +142,20 @@ export default function TimeTrackingDownloadPage() {
                     <CardDescription className="text-xs">Ubuntu 20.04+ (x64)</CardDescription>
                   </div>
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  Experimental
-                </Badge>
+                <PlatformBadge
+                  platform="linux"
+                  readyLabel="Experimental"
+                  readyClass="bg-muted text-muted-foreground"
+                />
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button
-                className="w-full"
-                onClick={() => window.open(DOWNLOAD_URL_LINUX, "_blank", "noopener,noreferrer")}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download .deb
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Install: <strong>sudo dpkg -i DocuFlow-Agent-*.deb</strong>
-              </p>
+              <DownloadButton platform="linux" label="Download .deb" url="/downloads/linux" />
+              {ready("linux") && (
+                <p className="text-xs text-muted-foreground">
+                  Install: <strong>sudo dpkg -i DocuFlow-Agent-*.deb</strong>
+                </p>
+              )}
             </CardContent>
           </Card>
 

@@ -4486,18 +4486,26 @@ Instructions:
     linux:   `DocuFlow-Agent-${INSTALLER_VERSION}-linux-amd64.deb`,
   };
 
+  // Availability probe — lets the UI know which platforms are ready.
+  // Returns e.g. { windows: true, macos: false, linux: false }
+  app.get("/downloads/availability", (_req, res) => {
+    const result: Record<string, boolean> = {};
+    for (const [platform, filename] of Object.entries(installerFiles)) {
+      result[platform] = fs.existsSync(path.join(installersDir, filename));
+    }
+    res.json(result);
+  });
+
   for (const [platform, filename] of Object.entries(installerFiles)) {
     app.get(`/downloads/${platform}`, (_req, res) => {
       const filePath = path.join(installersDir, filename);
       if (!fs.existsSync(filePath)) {
-        res.status(404).send(
-          `<!DOCTYPE html><html><head><title>File not available</title></head><body>` +
-          `<h2>Installer not yet available</h2>` +
-          `<p>The ${platform} installer (<code>${filename}</code>) has not been uploaded to the server yet.</p>` +
-          `<p>Please check back shortly or contact your administrator.</p>` +
-          `</body></html>`
-        );
-        return;
+        // JSON response so programmatic callers get structured data.
+        // The UI never reaches this path because it checks /downloads/availability first.
+        return res.status(404).json({
+          error: `Installer not yet available for platform: ${platform}`,
+          filename,
+        });
       }
       res.download(filePath, filename);
     });
