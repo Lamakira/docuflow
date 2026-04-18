@@ -360,8 +360,12 @@ export function registerDownloadRoutes(app: Express): void {
     if (!FILENAME_RE.test(filename)) {
       return res.status(400).json({ error: "Invalid filename" });
     }
-    if (!/^https:\/\/storage\.googleapis\.com\//.test(storageUrl)) {
-      return res.status(400).json({ error: "storageUrl must be a GCS HTTPS URL" });
+    const isGcsUrl = /^https:\/\/storage\.googleapis\.com\//.test(storageUrl);
+    const isLocalUrl = /^\/downloads\/(windows|macos|linux)$/.test(storageUrl);
+    if (!isGcsUrl && !isLocalUrl) {
+      return res.status(400).json({
+        error: "storageUrl must be a GCS HTTPS URL or a local /downloads/:platform path",
+      });
     }
 
     try {
