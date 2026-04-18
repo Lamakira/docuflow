@@ -20,10 +20,20 @@
  *   POST /api/internal/desktop-releases/upload
  *     → binary upload (manual/local workflow, no GCS):
  *       writes file to installers/ + atomically registers as latest for its platform
+ *       NOTE: blocked by Replit's reverse proxy for files > ~50 MB; prefer upload-chunk.
+ *
+ *   POST /api/internal/desktop-releases/upload-chunk
+ *     → chunked binary upload — bypasses Replit's proxy body-size limit.
+ *       Send the file in ≤ 20 MB slices; server reassembles, verifies SHA256,
+ *       writes installers/<filename>, and registers the DB row on the final chunk.
+ *       Required headers on every chunk:
+ *         Authorization, X-Upload-Id, X-Chunk-Index, X-Total-Chunks,
+ *         X-Version, X-Platform, X-Filename, X-File-Size, X-SHA256
+ *       Returns 200 for intermediate chunks, 201 + release JSON for the last.
  *
  *   POST /api/internal/desktop-releases
  *     → metadata-only registration (CI/GCS workflow):
- *       no file upload; storageUrl must be a GCS HTTPS URL
+ *       no file upload; storageUrl must be a GCS HTTPS URL or /downloads/:platform
  *
  * Per-platform independence:
  *   Each platform (windows / macos / linux) has exactly one is_latest=true row
@@ -327,6 +337,180 @@ export function registerDownloadRoutes(app: Express): void {
       } catch (err) {
         console.error("[downloadRoutes] Error uploading release:", err);
         return res.status(500).json({ error: "Internal server error" });
+      }
+    }
+  );
+
+  // ── Internal: chunked upload (local Windows workflow) ────────────────────
+  // Splits the installer into ≤ 20 MB slices to stay under Replit's proxy
+  // body-size limit. Each chunk is stored in installers/.tmp/<uploadId>/.
+  // When the final chunk arrives the server reassembles the file, verifies
+  // the SHA256, writes it to installers/<filename>, and atomically registers
+  // the release in the DB — exactly like the single-shot upload endpoint.
+  //
+  // Required headers on every request:
+  //   Authorization: Bearer <DESKTOP_RELEASE_CI_TOKEN>
+  //   Content-Type:  application/octet-stream
+  //   X-Upload-Id:   <uuid>            — shared across all chunks
+  //   X-Chunk-Index: <0-based integer> — this chunk's position
+  //   X-Total-Chunks:<integer>         — total number of chunks
+  //   X-Version:     <semver>
+  //   X-Platform:    windows|macos|linux
+  //   X-Filename:    <artifact filename>
+  //   X-File-Size:   <total bytes>
+  //   X-SHA256:      <hex>             — SHA256 of the complete file
+  app.post(
+    "/api/internal/desktop-releases/upload-chunk",
+    express.raw({ type: "application/octet-stream", limit: "25mb" }),
+    async (req: Request, res: Response) => {
+      if (!isCiAuthorized(req)) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const uploadId    = (req.headers["x-upload-id"]    as string | undefined)?.trim();
+      const chunkIndex  = parseInt((req.headers["x-chunk-index"]   as string) ?? "", 10);
+      const totalChunks = parseInt((req.headers["x-total-chunks"]  as string) ?? "", 10);
+      const version     = (req.headers["x-version"]   as string | undefined)?.trim();
+      const platform    = (req.headers["x-platform"]  as string | undefined)?.trim();
+      const filename    = (req.headers["x-filename"]  as string | undefined)?.trim();
+      const fileSize    = parseInt((req.headers["x-file-size"]    as string) ?? "0", 10);
+      const sha256      = (req.headers["x-sha256"]    as string | undefined)?.trim().toLowerCase();
+
+      if (!uploadId || isNaN(chunkIndex) || isNaN(totalChunks) || !version || !platform || !filename || !sha256) {
+        return res.status(400).json({
+          error: "Missing required headers: X-Upload-Id, X-Chunk-Index, X-Total-Chunks, X-Version, X-Platform, X-Filename, X-File-Size, X-SHA256",
+        });
+      }
+      if (!VALID_PLATFORMS.includes(platform as Platform)) {
+        return res.status(400).json({ error: "Invalid platform" });
+      }
+      if (!VERSION_RE.test(version)) {
+        return res.status(400).json({ error: "Invalid version format (semver expected)" });
+      }
+      if (!FILENAME_RE.test(filename)) {
+        return res.status(400).json({ error: "Invalid filename" });
+      }
+      if (!/^[a-f0-9]{64}$/.test(sha256)) {
+        return res.status(400).json({ error: "Invalid X-SHA256 — must be 64-char hex" });
+      }
+      if (chunkIndex < 0 || chunkIndex >= totalChunks) {
+        return res.status(400).json({ error: "X-Chunk-Index out of range" });
+      }
+
+      const chunk = req.body as Buffer;
+      if (!Buffer.isBuffer(chunk) || chunk.length === 0) {
+        return res.status(400).json({ error: "Empty chunk body" });
+      }
+
+      // Sanitize uploadId to prevent path traversal
+      if (!/^[a-zA-Z0-9_-]{8,64}$/.test(uploadId)) {
+        return res.status(400).json({ error: "Invalid X-Upload-Id format" });
+      }
+
+      const tmpDir = path.join(installersDir, ".tmp", uploadId);
+
+      try {
+        fs.mkdirSync(tmpDir, { recursive: true });
+        fs.writeFileSync(path.join(tmpDir, `chunk-${chunkIndex}`), chunk);
+      } catch (err) {
+        console.error("[downloadRoutes] Failed to write chunk:", err);
+        return res.status(500).json({ error: "Failed to store chunk" });
+      }
+
+      // Not the last chunk — acknowledge and wait for the rest
+      if (chunkIndex < totalChunks - 1) {
+        return res.json({ received: chunkIndex + 1, total: totalChunks, status: "partial" });
+      }
+
+      // ── Last chunk received — reassemble ─────────────────────────────────
+      try {
+        fs.mkdirSync(installersDir, { recursive: true });
+        const destPath = path.join(installersDir, filename);
+
+        // Concatenate chunks in order
+        const parts: Buffer[] = [];
+        for (let i = 0; i < totalChunks; i++) {
+          const chunkPath = path.join(tmpDir, `chunk-${i}`);
+          if (!fs.existsSync(chunkPath)) {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+            return res.status(400).json({ error: `Missing chunk ${i} during reassembly` });
+          }
+          parts.push(fs.readFileSync(chunkPath));
+        }
+        const assembled = Buffer.concat(parts);
+
+        // Verify integrity
+        const actualSha256 = createHash("sha256").update(assembled).digest("hex");
+        if (actualSha256 !== sha256) {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+          return res.status(400).json({
+            error: "SHA256 mismatch after reassembly — upload may be corrupted",
+            expected: sha256,
+            actual: actualSha256,
+          });
+        }
+
+        fs.writeFileSync(destPath, assembled);
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+
+        // Find old latest for cleanup
+        const [oldRelease] = await db
+          .select({ filename: desktopReleases.filename })
+          .from(desktopReleases)
+          .where(and(eq(desktopReleases.platform, platform), eq(desktopReleases.isLatest, true)))
+          .limit(1);
+
+        // Atomically demote old → insert new
+        const release = await db.transaction(async (tx) => {
+          await tx
+            .update(desktopReleases)
+            .set({ isLatest: false })
+            .where(and(eq(desktopReleases.platform, platform), eq(desktopReleases.isLatest, true)));
+
+          const [inserted] = await tx
+            .insert(desktopReleases)
+            .values({
+              version,
+              platform,
+              filename,
+              storageUrl: `/downloads/${platform}`,
+              fileSize: fileSize || assembled.length,
+              sha256: actualSha256,
+              isLatest: true,
+            })
+            .returning();
+
+          return inserted;
+        });
+
+        // Delete old installer from disk — non-fatal
+        if (oldRelease && oldRelease.filename !== filename) {
+          const oldPath = path.join(installersDir, oldRelease.filename);
+          try {
+            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+          } catch (cleanupErr) {
+            console.warn("[downloadRoutes] Could not delete old installer:", cleanupErr);
+          }
+        }
+
+        console.log(
+          `[downloadRoutes] Chunked upload complete: ${platform} v${version} — ${filename}` +
+          ` (${(assembled.length / 1024 / 1024).toFixed(1)} MB in ${totalChunks} chunks, sha256=${actualSha256.slice(0, 12)}...)`
+        );
+
+        return res.status(201).json({
+          version: release.version,
+          platform: release.platform,
+          filename: release.filename,
+          fileSize: release.fileSize,
+          sha256: release.sha256,
+          storageUrl: release.storageUrl,
+          publishedAt: release.publishedAt,
+        });
+      } catch (err) {
+        console.error("[downloadRoutes] Error during chunk reassembly:", err);
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+        return res.status(500).json({ error: "Internal server error during reassembly" });
       }
     }
   );
