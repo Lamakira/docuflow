@@ -44,6 +44,11 @@ contextBridge.exposeInMainWorld("agentBridge", {
     ipcRenderer.on("agent:idle-dismiss", handler);
     return () => ipcRenderer.off("agent:idle-dismiss", handler);
   },
+  onIdleStopped: (callback: (data: { idleSeconds: number; idleStartedAt: string }) => void) => {
+    const handler = (_event: any, data: { idleSeconds: number; idleStartedAt: string }) => callback(data);
+    ipcRenderer.on("agent:idle-stopped", handler);
+    return () => ipcRenderer.off("agent:idle-stopped", handler);
+  },
 
   // Login progress events pushed from main during waitForBackend + loginWithPassword
   onLoginProgress: (callback: (data: { message: string }) => void) => {

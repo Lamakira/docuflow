@@ -77,6 +77,7 @@ export interface AgentBridge {
   idleResume: () => Promise<{ ok: boolean; error?: string }>;
   onIdlePrompt: (cb: (data: { idleSeconds: number; countdownSeconds: number }) => void) => () => void;
   onIdleDismiss: (cb: () => void) => () => void;
+  onIdleStopped: (cb: (data: { idleSeconds: number; idleStartedAt: string }) => void) => () => void;
   getTodayBreakdown: () => Promise<{ ok: boolean; rows: BreakdownRow[]; error?: string }>;
   onLoginProgress: (cb: (data: { message: string }) => void) => () => void;
   onStateUpdate: (cb: (state: any) => void) => void;
