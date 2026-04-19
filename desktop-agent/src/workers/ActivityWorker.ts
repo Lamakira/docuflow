@@ -149,12 +149,25 @@ export class ActivityWorker {
    * Apply admin-managed idle prompt policy.
    * Called by HeartbeatWorker on every heartbeat response.
    * Takes effect on the next idle-check cycle (≤ 5 s).
+   *
+   * Test override: set DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES in the environment to
+   * bypass the production floor of 3 minutes (minimum 1 minute accepted).
+   * This env var is only honoured in the desktop agent process and has no effect
+   * on server-side validation or the admin UI. Never set it in production.
    */
   applyIdlePolicy(enabled: boolean, timeoutMinutes: number): void {
     this.idleUxEnabled = enabled;
-    this.idleUxThresholdSeconds = Math.max(3, Math.min(60, timeoutMinutes)) * 60;
+
+    const testOverride = process.env.DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES;
+    const effectiveMinutes = testOverride
+      ? Math.max(1, parseInt(testOverride, 10) || 1)
+      : Math.max(3, Math.min(60, timeoutMinutes));
+
+    this.idleUxThresholdSeconds = effectiveMinutes * 60;
     console.log(
-      `[ActivityWorker] Idle policy updated: enabled=${enabled}, timeout=${timeoutMinutes}min (${this.idleUxThresholdSeconds}s)`
+      `[ActivityWorker] Idle policy updated: enabled=${enabled}, timeout=${effectiveMinutes}min` +
+      (testOverride ? ` [TEST OVERRIDE — DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES=${testOverride}]` : "") +
+      ` (${this.idleUxThresholdSeconds}s)`
     );
   }
 

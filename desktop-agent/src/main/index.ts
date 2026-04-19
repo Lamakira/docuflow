@@ -284,8 +284,19 @@ function startWorkers(): void {
 
   heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync, (policy) => {
     screenshotWorker?.applyPolicy(policy);
-    // Idle prompt policy — takes effect on next idle-check cycle (≤ 5 s)
-    idleCountdownSeconds = policy.idleCountdownSeconds ?? 60;
+
+    // Idle prompt policy — takes effect on next idle-check cycle (≤ 5 s).
+    // Test override: DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS bypasses the production
+    // bounds of 15–120 s. Minimum accepted: 5 s. Never set in production.
+    const testCountdown = process.env.DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS;
+    idleCountdownSeconds = testCountdown
+      ? Math.max(5, parseInt(testCountdown, 10) || 30)
+      : (policy.idleCountdownSeconds ?? 60);
+
+    if (testCountdown) {
+      console.log(`[Main] Idle countdown override: ${idleCountdownSeconds}s [DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS=${testCountdown}]`);
+    }
+
     activityWorker?.applyIdlePolicy(
       policy.idlePromptEnabled ?? true,
       policy.idleTimeoutMinutes ?? 10
