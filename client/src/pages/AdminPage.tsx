@@ -2187,12 +2187,12 @@ function DesktopAgentPanel() {
           </div>
           {(policy.idlePromptEnabled ?? true) && (
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Idle timeout (minutes, 3–60)</Label>
+              <Label className="text-xs text-muted-foreground">Idle timeout (minutes, 1–60)</Label>
               <Input
-                type="number" min={3} max={60}
+                type="number" min={1} max={60}
                 value={policy.idleTimeoutMinutes ?? 10}
                 onChange={(e) => setPolicy((p) => ({
-                  ...p, idleTimeoutMinutes: Math.min(60, Math.max(3, parseInt(e.target.value) || 10)),
+                  ...p, idleTimeoutMinutes: Math.min(60, Math.max(1, parseInt(e.target.value) || 10)),
                 }))}
                 className="w-32"
                 data-testid="input-idle-timeout"
