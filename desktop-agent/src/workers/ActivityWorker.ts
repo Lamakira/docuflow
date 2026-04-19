@@ -385,8 +385,7 @@ export class ActivityWorker {
     const idleSeconds = powerMonitor.getSystemIdleTime();
     const timerStatus = this.store.getTimerStatus();
 
-    // Diagnostic log — printed every 5 s so we can see exactly which condition blocks.
-    // Remove once idle UX is confirmed working.
+    // Diagnostic log every 5 s — shows all four conditions at once.
     if (process.env.DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES) {
       console.log(
         `[ActivityWorker][TEST] idle=${idleSeconds}s threshold=${this.idleUxThresholdSeconds}s` +
@@ -394,15 +393,25 @@ export class ActivityWorker {
       );
     }
 
+    // Analytics idle events (3-min threshold — unchanged)
     if (idleSeconds >= IDLE_THRESHOLD_SECONDS && !this.wasIdle) {
       this.wasIdle = true;
       this.queue.enqueue("idle_start", new Date(), { idleSeconds });
       console.log(`[ActivityWorker] Idle started (${idleSeconds}s)`);
     } else if (idleSeconds < IDLE_THRESHOLD_SECONDS && this.wasIdle) {
       this.wasIdle = false;
-      this.idleUxTriggered = false;
       this.queue.enqueue("idle_end", new Date(), { idleSeconds });
       console.log(`[ActivityWorker] Idle ended (${idleSeconds}s)`);
+    }
+
+    // Reset UX trigger flag independently of the analytics wasIdle flag.
+    // Previously this was gated on wasIdle (3-min threshold), which meant the UX
+    // threshold flag could never reset in test mode (1-min override) because
+    // wasIdle never flipped true within the same test window. Now it resets as
+    // soon as idle drops back below the UX threshold, regardless of wasIdle state.
+    if (idleSeconds < this.idleUxThresholdSeconds && this.idleUxTriggered) {
+      this.idleUxTriggered = false;
+      console.log(`[ActivityWorker] idleUxTriggered reset (idle=${idleSeconds}s < threshold=${this.idleUxThresholdSeconds}s)`);
     }
 
     if (
@@ -412,8 +421,16 @@ export class ActivityWorker {
       timerStatus === "running"
     ) {
       this.idleUxTriggered = true;
-      console.log(`[ActivityWorker] Idle UX threshold reached (${idleSeconds}s ≥ ${this.idleUxThresholdSeconds}s) — notifying main`);
+      console.log(`[ActivityWorker] Idle UX threshold reached (${idleSeconds}s ≥ ${this.idleUxThresholdSeconds}s) — firing callback`);
       this.onIdleUxCb?.(idleSeconds);
+    } else if (
+      this.idleUxEnabled &&
+      idleSeconds >= this.idleUxThresholdSeconds &&
+      !this.idleUxTriggered &&
+      timerStatus !== "running" &&
+      process.env.DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES
+    ) {
+      console.log(`[ActivityWorker][TEST] BLOCKED — threshold met (idle=${idleSeconds}s) but timer="${timerStatus}" (need "running")`);
     }
   }
 

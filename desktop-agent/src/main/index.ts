@@ -720,10 +720,18 @@ function clearIdleTimeout(): void {
  * If no action is taken within `idleCountdownSeconds`, the timer is auto-stopped.
  */
 function handleIdleUx(idleSeconds: number): void {
-  if (store.getTimerStatus() !== "running") return; // already paused/stopped
-
+  const timerStatus = store.getTimerStatus();
   const entryId = store.getActiveEntryId();
-  if (!entryId) return;
+  console.log(`[Main] handleIdleUx — idleSeconds=${idleSeconds} timerStatus=${timerStatus} entryId=${entryId ?? "none"} mainWindow=${!!mainWindow}`);
+
+  if (timerStatus !== "running") {
+    console.log(`[Main] handleIdleUx — skipped: timer is "${timerStatus}" (must be "running")`);
+    return;
+  }
+  if (!entryId) {
+    console.log("[Main] handleIdleUx — skipped: no active entry");
+    return;
+  }
 
   // Retroactively close the session at the moment idle started so that idle
   // time is NOT counted in elapsedToday / Worked Today.
@@ -734,9 +742,10 @@ function handleIdleUx(idleSeconds: number): void {
   syncWorker?.triggerSync();
 
   const countdown = idleCountdownSeconds;
-  console.log(`[Main] idle.autoPause — idleSeconds=${idleSeconds}, countdown=${countdown}s, sessionClosedAt=${idleStartedAt.toISOString()}`);
+  console.log(`[Main] idle.autoPause — idleSeconds=${idleSeconds} countdown=${countdown}s sessionClosedAt=${idleStartedAt.toISOString()}`);
 
   // Push prompt to renderer with countdown info
+  console.log(`[Main] sending agent:idle-prompt to renderer — idleSeconds=${idleSeconds} countdownSeconds=${countdown}`);
   mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds, countdownSeconds: countdown });
 
   // Auto-stop after countdown — timer stays off, prompt dismissed
