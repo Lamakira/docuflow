@@ -34,6 +34,7 @@ export function IdlePrompt() {
 
   useEffect(() => {
     const offPrompt = window.agentBridge.onIdlePrompt(({ idleSeconds, countdownSeconds }) => {
+      console.log(`[IdlePrompt] prompt received — idleSeconds=${idleSeconds} countdownSeconds=${countdownSeconds}`);
       setIdleSeconds(idleSeconds);
       setLoading(null);
       startCountdown(countdownSeconds ?? 60);

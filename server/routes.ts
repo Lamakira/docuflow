@@ -3015,8 +3015,8 @@ Instructions:
         }
         // ── Idle policy validation ───────────────────────────────────────────
         if (typeof p.idleTimeoutMinutes === "number") {
-          if (p.idleTimeoutMinutes < 3 || p.idleTimeoutMinutes > 60)
-            return res.status(400).json({ message: "Idle timeout must be between 3 and 60 minutes" });
+          if (p.idleTimeoutMinutes < 1 || p.idleTimeoutMinutes > 60)
+            return res.status(400).json({ message: "Idle timeout must be between 1 and 60 minutes" });
         }
         if (typeof p.idleCountdownSeconds === "number") {
           if (p.idleCountdownSeconds < 15 || p.idleCountdownSeconds > 120)

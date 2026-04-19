@@ -282,10 +282,26 @@ function createTray(): void {
 function startWorkers(): void {
   if (!store.isPaired()) return;
 
+  // Apply countdown override immediately — do NOT wait for first heartbeat.
+  // If heartbeat fails (server down, auth error) the override would never take
+  // effect otherwise. The heartbeat callback below keeps it applied on every
+  // subsequent sync so the server policy cannot silently override it back.
+  const _testCountdown = process.env.DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS;
+  if (_testCountdown) {
+    idleCountdownSeconds = Math.max(5, parseInt(_testCountdown, 10) || 30);
+    console.log(`[Main] Idle countdown override at startup: ${idleCountdownSeconds}s [DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS=${_testCountdown}]`);
+  }
+
   heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync, (policy) => {
     screenshotWorker?.applyPolicy(policy);
-    // Idle prompt policy — takes effect on next idle-check cycle (≤ 5 s)
-    idleCountdownSeconds = policy.idleCountdownSeconds ?? 60;
+
+    // Re-apply countdown override on every heartbeat so the server policy cannot
+    // silently clobber the test value. Fall back to server policy if no override.
+    const testCountdown = process.env.DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS;
+    idleCountdownSeconds = testCountdown
+      ? Math.max(5, parseInt(testCountdown, 10) || 30)
+      : (policy.idleCountdownSeconds ?? 60);
+
     activityWorker?.applyIdlePolicy(
       policy.idlePromptEnabled ?? true,
       policy.idleTimeoutMinutes ?? 10
@@ -704,10 +720,18 @@ function clearIdleTimeout(): void {
  * If no action is taken within `idleCountdownSeconds`, the timer is auto-stopped.
  */
 function handleIdleUx(idleSeconds: number): void {
-  if (store.getTimerStatus() !== "running") return; // already paused/stopped
-
+  const timerStatus = store.getTimerStatus();
   const entryId = store.getActiveEntryId();
-  if (!entryId) return;
+  console.log(`[Main] handleIdleUx — idleSeconds=${idleSeconds} timerStatus=${timerStatus} entryId=${entryId ?? "none"} mainWindow=${!!mainWindow}`);
+
+  if (timerStatus !== "running") {
+    console.log(`[Main] handleIdleUx — skipped: timer is "${timerStatus}" (must be "running")`);
+    return;
+  }
+  if (!entryId) {
+    console.log("[Main] handleIdleUx — skipped: no active entry");
+    return;
+  }
 
   // Retroactively close the session at the moment idle started so that idle
   // time is NOT counted in elapsedToday / Worked Today.
@@ -718,9 +742,10 @@ function handleIdleUx(idleSeconds: number): void {
   syncWorker?.triggerSync();
 
   const countdown = idleCountdownSeconds;
-  console.log(`[Main] idle.autoPause — idleSeconds=${idleSeconds}, countdown=${countdown}s, sessionClosedAt=${idleStartedAt.toISOString()}`);
+  console.log(`[Main] idle.autoPause — idleSeconds=${idleSeconds} countdown=${countdown}s sessionClosedAt=${idleStartedAt.toISOString()}`);
 
   // Push prompt to renderer with countdown info
+  console.log(`[Main] sending agent:idle-prompt to renderer — idleSeconds=${idleSeconds} countdownSeconds=${countdown}`);
   mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds, countdownSeconds: countdown });
 
   // Auto-stop after countdown — timer stays off, prompt dismissed
@@ -839,6 +864,22 @@ if (!gotLock) {
 
 app.whenReady().then(() => {
   initLogger();
+
+  // Print test overrides in the very first log output so env propagation is
+  // confirmed before any worker starts. If these lines are absent the vars
+  // are not visible to the Electron process (shell scope issue, not a code bug).
+  const _testIdleMin = process.env.DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES;
+  const _testCountdown = process.env.DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS;
+  if (_testIdleMin || _testCountdown) {
+    console.log(
+      `[Main] TEST OVERRIDES active:` +
+      (_testIdleMin    ? ` IDLE_TIMEOUT_MINUTES=${_testIdleMin}`       : "") +
+      (_testCountdown  ? ` IDLE_COUNTDOWN_SECONDS=${_testCountdown}`   : "")
+    );
+  } else {
+    console.log("[Main] No test overrides detected (DOCUFLOW_TEST_* vars not set)");
+  }
+
   Menu.setApplicationMenu(null);
   store.setClientVersion(app.getVersion());
 

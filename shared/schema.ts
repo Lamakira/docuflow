@@ -1235,7 +1235,7 @@ export interface ScreenshotPolicy {
   activeHoursEnd: string;
   /** Whether the idle-prompt overlay is shown after inactivity */
   idlePromptEnabled: boolean;
-  /** Minutes of inactivity before the idle prompt fires. Range: 3–60. */
+  /** Minutes of inactivity before the idle prompt fires. Range: 1–60. */
   idleTimeoutMinutes: number;
   /** Seconds of countdown before the timer is auto-stopped. Range: 15–120. */
   idleCountdownSeconds: number;
