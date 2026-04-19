@@ -174,6 +174,19 @@ export class ActivityWorker {
   start(): void {
     if (this.idleInterval) return;
 
+    // Apply test override immediately — do NOT wait for the first heartbeat response.
+    // The heartbeat fires 2 s after start but can fail (server down, auth error).
+    // Without this, the override is never applied if the heartbeat never succeeds.
+    const testOverride = process.env.DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES;
+    if (testOverride) {
+      const mins = Math.max(1, parseInt(testOverride, 10) || 1);
+      this.idleUxThresholdSeconds = mins * 60;
+      console.log(
+        `[ActivityWorker] Started — TEST OVERRIDE: idle=${mins}min (${this.idleUxThresholdSeconds}s)` +
+        ` [DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES=${testOverride}]`
+      );
+    }
+
     // Idle detection (drives analytics events + auto-pause — unchanged)
     this.idleInterval = setInterval(() => this.checkIdle(), IDLE_CHECK_INTERVAL_MS);
 
