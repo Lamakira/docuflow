@@ -383,6 +383,16 @@ export class ActivityWorker {
 
   private checkIdle(): void {
     const idleSeconds = powerMonitor.getSystemIdleTime();
+    const timerStatus = this.store.getTimerStatus();
+
+    // Diagnostic log — printed every 5 s so we can see exactly which condition blocks.
+    // Remove once idle UX is confirmed working.
+    if (process.env.DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES) {
+      console.log(
+        `[ActivityWorker][TEST] idle=${idleSeconds}s threshold=${this.idleUxThresholdSeconds}s` +
+        ` enabled=${this.idleUxEnabled} triggered=${this.idleUxTriggered} timer=${timerStatus}`
+      );
+    }
 
     if (idleSeconds >= IDLE_THRESHOLD_SECONDS && !this.wasIdle) {
       this.wasIdle = true;
@@ -399,7 +409,7 @@ export class ActivityWorker {
       this.idleUxEnabled &&
       idleSeconds >= this.idleUxThresholdSeconds &&
       !this.idleUxTriggered &&
-      this.store.getTimerStatus() === "running"
+      timerStatus === "running"
     ) {
       this.idleUxTriggered = true;
       console.log(`[ActivityWorker] Idle UX threshold reached (${idleSeconds}s ≥ ${this.idleUxThresholdSeconds}s) — notifying main`);
