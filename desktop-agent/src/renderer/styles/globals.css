@@ -674,7 +674,7 @@ a:hover { text-decoration: underline; }
 .idle-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.65);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -683,73 +683,118 @@ a:hover { text-decoration: underline; }
 .idle-card {
   background: var(--surface, #1e1e2e);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1.5rem;
-  width: 280px;
+  border-radius: 14px;
+  padding: 1.75rem 1.5rem 1.5rem;
+  width: 296px;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-}
-.idle-card__title {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--text);
-}
-.idle-card__idle-time {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-.idle-card__idle-time strong { color: var(--text); }
-.idle-card__running-notice {
-  font-size: 0.72rem;
-  color: #4ade80;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-.idle-card__stopped-detail {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-.idle-card__stopped-detail strong { color: var(--text); }
-.idle-card__actions--single { justify-content: flex-end; }
-.idle-card__countdown {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  padding: 0.25rem 0.5rem;
-  background: rgba(255,255,255,0.05);
-  border-radius: 4px;
+  align-items: center;
+  gap: 0;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
   text-align: center;
 }
-.idle-card__countdown strong { color: var(--text); }
-.idle-card__countdown--urgent strong { color: #f87171; }
+
+/* Warning variant */
+.idle-card--warning { gap: 0; }
+
+/* Stopped variant */
+.idle-card--stopped { gap: 0.75rem; }
+
+.idle-card__title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+}
+.idle-card__subtitle {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 1.25rem;
+}
+.idle-card__subtitle strong { color: var(--text); }
+
+/* Countdown ring */
+.idle-ring {
+  width: 88px;
+  height: 88px;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
+}
+.idle-ring__track {
+  fill: none;
+  stroke: rgba(255,255,255,0.08);
+  stroke-width: 6;
+}
+.idle-ring__fill {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.5s linear, stroke 0.3s;
+}
+.idle-ring__label {
+  font-size: 15px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  transition: fill 0.3s;
+}
+.idle-ring__label--urgent { fill: #f87171 !important; }
+
+.idle-card__hint {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-bottom: 1.25rem;
+  opacity: 0.7;
+}
+
+/* Stopped icon */
+.idle-card__stopped-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+.idle-card__stopped-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+.idle-card__stopped-row { display: block; }
+.idle-card__stopped-row strong { color: var(--text); font-weight: 600; }
+.idle-card__stopped-row--muted { color: var(--text-muted); font-size: 0.75rem; }
+
+/* Actions */
 .idle-card__actions {
   display: flex;
+  flex-direction: column;
   gap: 0.5rem;
+  width: 100%;
   margin-top: 0.25rem;
 }
 .idle-btn {
-  flex: 1;
-  padding: 0.5rem 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
   border-radius: 8px;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
   border: none;
-  transition: opacity 0.15s;
+  transition: background 0.15s, opacity 0.15s;
 }
 .idle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.idle-btn--break {
-  background: rgba(255,255,255,0.08);
-  color: var(--text-muted);
-}
-.idle-btn--break:hover:not(:disabled) { background: rgba(255,255,255,0.13); }
 .idle-btn--resume {
   background: #6366f1;
   color: #fff;
 }
 .idle-btn--resume:hover:not(:disabled) { background: #4f46e5; }
+.idle-btn--break {
+  background: rgba(255,255,255,0.07);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.idle-btn--break:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
 
 /* ─── Today's Activity breakdown ─── */
 .activity-loading { font-size: 0.8rem; color: var(--text-muted); padding: 1rem 0; }

@@ -15,9 +15,36 @@ function fmtTime(isoString: string): string {
   return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Arc SVG countdown ring — r=36, so circumference ≈ 226 */
+function CountdownRing({ remaining, total }: { remaining: number; total: number }) {
+  const r = 36;
+  const circ = 2 * Math.PI * r;
+  const progress = total > 0 ? remaining / total : 0;
+  const dash = circ * progress;
+  const urgent = remaining <= 10;
+  const color = urgent ? '#f87171' : '#6366f1';
+  return (
+    <svg className="idle-ring" viewBox="0 0 88 88" aria-hidden="true">
+      <circle cx="44" cy="44" r={r} className="idle-ring__track" />
+      <circle
+        cx="44" cy="44" r={r}
+        className="idle-ring__fill"
+        stroke={color}
+        strokeDasharray={`${dash} ${circ}`}
+        strokeDashoffset="0"
+        transform="rotate(-90 44 44)"
+      />
+      <text x="44" y="44" className={`idle-ring__label${urgent ? ' idle-ring__label--urgent' : ''}`} style={{ fill: color }}>
+        {remaining}s
+      </text>
+    </svg>
+  );
+}
+
 export function IdlePrompt() {
   const [phase, setPhase] = useState<IdlePhase>(null);
   const [remaining, setRemaining] = useState<number>(60);
+  const [total, setTotal] = useState<number>(60);
   const [loading, setLoading] = useState<'break' | 'resume' | null>(null);
   const deadlineRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -25,6 +52,7 @@ export function IdlePrompt() {
   function startCountdown(countdownSeconds: number) {
     const deadline = Date.now() + countdownSeconds * 1000;
     deadlineRef.current = deadline;
+    setTotal(countdownSeconds);
     setRemaining(countdownSeconds);
     if (tickRef.current) clearInterval(tickRef.current);
     tickRef.current = setInterval(() => {
@@ -81,35 +109,35 @@ export function IdlePrompt() {
       await window.agentBridge.idleResume();
     }
 
-    const urgent = remaining <= 10;
-
     return (
       <div className="idle-overlay">
-        <div className="idle-card">
-          <div className="idle-card__title">Are you still there?</div>
-          <div className="idle-card__idle-time">
-            No activity for <strong>{fmtDuration(phase.idleSeconds)}</strong>
-          </div>
-          <div className="idle-card__running-notice">
+        <div className="idle-card idle-card--warning">
+          <div className="idle-card__title">Are you still working?</div>
+          <div className="idle-card__subtitle">
+            No activity for <strong>{fmtDuration(phase.idleSeconds)}</strong>.
             Your timer is still running.
           </div>
-          <div className={`idle-card__countdown${urgent ? ' idle-card__countdown--urgent' : ''}`}>
-            Stops automatically in <strong>{remaining}s</strong>
+
+          <CountdownRing remaining={remaining} total={total} />
+
+          <div className="idle-card__hint">
+            Timer stops automatically when the countdown reaches zero.
           </div>
+
           <div className="idle-card__actions">
-            <button
-              className="idle-btn idle-btn--break"
-              onClick={handleBreak}
-              disabled={loading !== null}
-            >
-              {loading === 'break' ? '…' : "I'm on break"}
-            </button>
             <button
               className="idle-btn idle-btn--resume"
               onClick={handleResume}
               disabled={loading !== null}
             >
-              {loading === 'resume' ? '…' : 'Back to work'}
+              {loading === 'resume' ? '…' : 'Yes, keep tracking'}
+            </button>
+            <button
+              className="idle-btn idle-btn--break"
+              onClick={handleBreak}
+              disabled={loading !== null}
+            >
+              {loading === 'break' ? '…' : 'Stop — I was on a break'}
             </button>
           </div>
         </div>
@@ -120,20 +148,23 @@ export function IdlePrompt() {
   // ── Stopped confirmation phase ────────────────────────────────────────────────
   return (
     <div className="idle-overlay">
-      <div className="idle-card">
+      <div className="idle-card idle-card--stopped">
+        <div className="idle-card__stopped-icon" aria-hidden="true">⏹</div>
         <div className="idle-card__title">Timer stopped</div>
-        <div className="idle-card__idle-time">
-          You were away for <strong>{fmtDuration(phase.idleSeconds)}</strong>.
+        <div className="idle-card__stopped-summary">
+          <span className="idle-card__stopped-row">
+            Inactive since <strong>{fmtTime(phase.idleStartedAt)}</strong>
+          </span>
+          <span className="idle-card__stopped-row idle-card__stopped-row--muted">
+            {fmtDuration(phase.idleSeconds)} of inactivity was not counted.
+          </span>
         </div>
-        <div className="idle-card__stopped-detail">
-          Inactive since <strong>{fmtTime(phase.idleStartedAt)}</strong> — this time was not counted.
-        </div>
-        <div className="idle-card__actions idle-card__actions--single">
+        <div className="idle-card__actions">
           <button
             className="idle-btn idle-btn--resume"
             onClick={() => setPhase(null)}
           >
-            OK
+            Got it
           </button>
         </div>
       </div>
