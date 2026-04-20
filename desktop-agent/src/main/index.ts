@@ -61,6 +61,8 @@ let widgetWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 /** Set by the user clicking ×. Cleared when the timer stops so the next session shows the widget again. */
 let widgetDismissed = false;
+/** Last org policy received from heartbeat — exposed to renderer via settings:get-org-policy. */
+let lastKnownPolicy: import("../workers/ScreenCaptureWorker").ScreenshotPolicyPayload | null = null;
 
 const WIDGET_WIDTH = 380;
 const WIDGET_HEIGHT = 44;
@@ -293,6 +295,7 @@ function startWorkers(): void {
   }
 
   heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync, (policy) => {
+    lastKnownPolicy = policy;
     screenshotWorker?.applyPolicy(policy);
 
     // Re-apply countdown override on every heartbeat so the server policy cannot
@@ -667,6 +670,33 @@ ipcMain.handle("widget:dismiss", () => {
 ipcMain.handle("widget:open-main", () => {
   console.log("[Widget] open-main requested");
   showMainWindow();
+});
+
+// ─── IPC: Settings ───
+
+ipcMain.handle("settings:get-local-prefs", () => {
+  const loginSettings = app.getLoginItemSettings();
+  return {
+    openAtLogin: loginSettings.openAtLogin,
+    isPackaged: app.isPackaged,
+    appVersion: app.getVersion(),
+  };
+});
+
+ipcMain.handle("settings:set-open-at-login", (_event, value: boolean) => {
+  app.setLoginItemSettings({ openAtLogin: value });
+  console.log(`[Settings] openAtLogin → ${value}`);
+  return { ok: true };
+});
+
+ipcMain.handle("settings:get-org-policy", () => {
+  if (!lastKnownPolicy) return null;
+  return {
+    screenshotsEnabled: lastKnownPolicy.screenshotsEnabled,
+    idlePromptEnabled: lastKnownPolicy.idlePromptEnabled,
+    idleTimeoutMinutes: lastKnownPolicy.idleTimeoutMinutes,
+    idleCountdownSeconds: lastKnownPolicy.idleCountdownSeconds,
+  };
 });
 
 ipcMain.handle("agent:get-worked-today", () => {

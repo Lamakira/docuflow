@@ -81,6 +81,14 @@ export interface AgentBridge {
   getTodayBreakdown: () => Promise<{ ok: boolean; rows: BreakdownRow[]; error?: string }>;
   onLoginProgress: (cb: (data: { message: string }) => void) => () => void;
   onStateUpdate: (cb: (state: any) => void) => void;
+  getLocalPrefs: () => Promise<{ openAtLogin: boolean; isPackaged: boolean; appVersion: string }>;
+  setOpenAtLogin: (value: boolean) => Promise<{ ok: boolean }>;
+  getOrgPolicy: () => Promise<{
+    screenshotsEnabled: boolean;
+    idlePromptEnabled: boolean;
+    idleTimeoutMinutes: number;
+    idleCountdownSeconds: number;
+  } | null>;
 }
 
 declare global {
