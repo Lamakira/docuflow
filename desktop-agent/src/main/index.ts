@@ -62,8 +62,8 @@ let tray: Tray | null = null;
 /** Set by the user clicking ×. Cleared when the timer stops so the next session shows the widget again. */
 let widgetDismissed = false;
 
-const WIDGET_WIDTH = 340;
-const WIDGET_HEIGHT = 64;
+const WIDGET_WIDTH = 380;
+const WIDGET_HEIGHT = 44;
 const WIDGET_MARGIN = 20;
 
 const SESSION_STARTED_AT = Date.now(); // anchors "This session" elapsed; resets on restart
@@ -662,6 +662,11 @@ ipcMain.handle("widget:dismiss", () => {
   widgetDismissed = true;
   widgetWindow?.hide();
   console.log("[Widget] dismissed by user");
+});
+
+ipcMain.handle("widget:open-main", () => {
+  console.log("[Widget] open-main requested");
+  showMainWindow();
 });
 
 ipcMain.handle("agent:get-worked-today", () => {
