@@ -729,6 +729,22 @@ function clearIdleTimeout(): void {
  * Worked Today correctness: sessions are closed at idleStartedAt (not at stop time),
  * so idle time is never counted regardless of when the user actually responds.
  */
+/** Bring mainWindow above all other windows for the duration of the idle prompt. */
+function raiseForIdlePrompt(): void {
+  if (!mainWindow) return;
+  mainWindow.setAlwaysOnTop(true, "screen-saver"); // highest level on Windows/macOS
+  mainWindow.showInactive();                        // make visible without stealing keyboard focus
+  mainWindow.moveTop();                             // ensure z-order
+  console.log("[Main] idle — window raised to top");
+}
+
+/** Restore normal z-order after the idle prompt is resolved. */
+function releaseIdleOnTop(): void {
+  if (!mainWindow) return;
+  mainWindow.setAlwaysOnTop(false);
+  console.log("[Main] idle — alwaysOnTop released");
+}
+
 function handleIdleUx(idleSeconds: number): void {
   const timerStatus = store.getTimerStatus();
   const entryId = store.getActiveEntryId();
@@ -750,6 +766,9 @@ function handleIdleUx(idleSeconds: number): void {
   const countdown = idleCountdownSeconds;
   console.log(`[Main] idle.warning — idleSeconds=${idleSeconds} countdown=${countdown}s idleStartedAt=${idleStartedAt.toISOString()}`);
 
+  // Bring the window above all other windows so the prompt is visible regardless of focus
+  raiseForIdlePrompt();
+
   console.log(`[Main] sending agent:idle-prompt to renderer — idleSeconds=${idleSeconds} countdownSeconds=${countdown}`);
   mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds, countdownSeconds: countdown });
 
@@ -761,6 +780,7 @@ function handleIdleUx(idleSeconds: number): void {
     const capturedIdleStartedAt = idleStartedAt;
     idleStartedAt = null;
 
+    releaseIdleOnTop();
     if (currentEntryId && store.getTimerStatus() === "running" && capturedIdleStartedAt) {
       // Retroactively close session at when idle started, then stop
       store.setTimerPaused(capturedIdleStartedAt);
@@ -780,9 +800,10 @@ function handleIdleUx(idleSeconds: number): void {
   }, countdown * 1000);
 }
 
-/** Renderer: user chose "I'm on break" — stop timer retroactively and dismiss prompt. */
+/** Renderer: user chose "Stop — I was on a break" — stop timer retroactively and dismiss prompt. */
 ipcMain.handle("agent:idle-break", () => {
   clearIdleTimeout();
+  releaseIdleOnTop();
   const entryId = store.getActiveEntryId();
   const capturedIdleStartedAt = idleStartedAt;
   idleStartedAt = null;
@@ -807,9 +828,10 @@ ipcMain.handle("agent:idle-break", () => {
   return { ok: true };
 });
 
-/** Renderer: user chose "Back to work" — timer was never paused, just dismiss the prompt. */
+/** Renderer: user chose "Yes, keep tracking" — timer was never paused, just dismiss the prompt. */
 ipcMain.handle("agent:idle-resume", () => {
   clearIdleTimeout();
+  releaseIdleOnTop();
   idleStartedAt = null;
   mainWindow?.webContents.send("agent:idle-dismiss");
   console.log("[Main] idle.resume confirmed — timer continues running");
