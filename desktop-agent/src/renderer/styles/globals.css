@@ -701,6 +701,19 @@ a:hover { text-decoration: underline; }
   color: var(--text-muted);
 }
 .idle-card__idle-time strong { color: var(--text); }
+.idle-card__running-notice {
+  font-size: 0.72rem;
+  color: #4ade80;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.idle-card__stopped-detail {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.idle-card__stopped-detail strong { color: var(--text); }
+.idle-card__actions--single { justify-content: flex-end; }
 .idle-card__countdown {
   font-size: 0.75rem;
   color: var(--text-muted);

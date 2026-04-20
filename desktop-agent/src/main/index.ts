@@ -708,6 +708,8 @@ ipcMain.handle("agent:today-breakdown", async () => {
 let idlePromptDismissTimeout: ReturnType<typeof setTimeout> | null = null;
 /** Countdown seconds before the timer is auto-stopped. Updated by heartbeat policy. */
 let idleCountdownSeconds = 60;
+/** Wall-clock time when the user went idle — set by handleIdleUx, cleared on any resolution. */
+let idleStartedAt: Date | null = null;
 
 function clearIdleTimeout(): void {
   if (idlePromptDismissTimeout) { clearTimeout(idlePromptDismissTimeout); idlePromptDismissTimeout = null; }
@@ -715,9 +717,17 @@ function clearIdleTimeout(): void {
 
 /**
  * Called by ActivityWorker when idle crosses the configured threshold while timer is running.
- * Auto-pauses the timer (retroactively, excluding idle time) then pushes a
- * prompt to the renderer so the user can choose break or resume.
- * If no action is taken within `idleCountdownSeconds`, the timer is auto-stopped.
+ *
+ * New flow (Time-Doctor style):
+ *   1. Record when the user went idle — do NOT pause the timer yet.
+ *   2. Push the warning prompt — timer keeps running visually during the countdown.
+ *   3. If the user responds before the countdown expires → just dismiss ("Back to work")
+ *      or stop retroactively ("I'm on break").
+ *   4. If countdown expires → retroactively stop at idleStartedAt so idle time is
+ *      excluded from Worked Today, then push a stopped-confirmation event.
+ *
+ * Worked Today correctness: sessions are closed at idleStartedAt (not at stop time),
+ * so idle time is never counted regardless of when the user actually responds.
  */
 function handleIdleUx(idleSeconds: number): void {
   const timerStatus = store.getTimerStatus();
@@ -733,72 +743,77 @@ function handleIdleUx(idleSeconds: number): void {
     return;
   }
 
-  // Retroactively close the session at the moment idle started so that idle
-  // time is NOT counted in elapsedToday / Worked Today.
-  const idleStartedAt = new Date(Date.now() - idleSeconds * 1000);
-  store.setTimerPaused(idleStartedAt);
-  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
-  pushStateToRenderer();
-  syncWorker?.triggerSync();
+  // Capture idle start time — used for retroactive session close if the timer stops.
+  // The timer is NOT paused here; it keeps running so the UI remains active.
+  idleStartedAt = new Date(Date.now() - idleSeconds * 1000);
 
   const countdown = idleCountdownSeconds;
-  console.log(`[Main] idle.autoPause — idleSeconds=${idleSeconds} countdown=${countdown}s sessionClosedAt=${idleStartedAt.toISOString()}`);
+  console.log(`[Main] idle.warning — idleSeconds=${idleSeconds} countdown=${countdown}s idleStartedAt=${idleStartedAt.toISOString()}`);
 
-  // Push prompt to renderer with countdown info
   console.log(`[Main] sending agent:idle-prompt to renderer — idleSeconds=${idleSeconds} countdownSeconds=${countdown}`);
   mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds, countdownSeconds: countdown });
 
-  // Auto-stop after countdown — timer stays off, prompt dismissed
+  // Auto-stop after countdown expires — retroactively excludes idle time from Worked Today
   clearIdleTimeout();
   idlePromptDismissTimeout = setTimeout(() => {
     idlePromptDismissTimeout = null;
     const currentEntryId = store.getActiveEntryId();
-    if (currentEntryId && store.getTimerStatus() === "paused") {
+    const capturedIdleStartedAt = idleStartedAt;
+    idleStartedAt = null;
+
+    if (currentEntryId && store.getTimerStatus() === "running" && capturedIdleStartedAt) {
+      // Retroactively close session at when idle started, then stop
+      store.setTimerPaused(capturedIdleStartedAt);
       store.clearTimer();
       queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId: currentEntryId });
       pushStateToRenderer();
       syncWorker?.triggerSync();
-      console.log("[Main] idle.autoStop — countdown expired, timer stopped");
+      console.log(`[Main] idle.autoStop — countdown expired, timer stopped retroactively at ${capturedIdleStartedAt.toISOString()}`);
+      // Push stopped-confirmation so renderer shows the second modal
+      mainWindow?.webContents.send("agent:idle-stopped", {
+        idleSeconds,
+        idleStartedAt: capturedIdleStartedAt.toISOString(),
+      });
+    } else {
+      mainWindow?.webContents.send("agent:idle-dismiss");
     }
-    mainWindow?.webContents.send("agent:idle-dismiss");
   }, countdown * 1000);
 }
 
-/** Renderer: user chose "I'm on break" — stop timer and dismiss prompt. */
+/** Renderer: user chose "I'm on break" — stop timer retroactively and dismiss prompt. */
 ipcMain.handle("agent:idle-break", () => {
   clearIdleTimeout();
   const entryId = store.getActiveEntryId();
-  if (entryId && store.getTimerStatus() === "paused") {
+  const capturedIdleStartedAt = idleStartedAt;
+  idleStartedAt = null;
+
+  if (entryId && store.getTimerStatus() === "running") {
+    // Retroactively close session at when idle started so idle time is not counted
+    store.setTimerPaused(capturedIdleStartedAt ?? undefined);
     store.clearTimer();
     queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
     pushStateToRenderer();
     syncWorker?.triggerSync();
+    console.log(`[Main] idle.break confirmed — timer stopped retroactively at ${capturedIdleStartedAt?.toISOString() ?? "now"}`);
+  } else if (entryId && store.getTimerStatus() === "paused") {
+    // Fallback: timer already paused by another code path
+    store.clearTimer();
+    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
+    pushStateToRenderer();
+    syncWorker?.triggerSync();
+    console.log("[Main] idle.break confirmed — timer stopped (was already paused)");
   }
   mainWindow?.webContents.send("agent:idle-dismiss");
-  console.log("[Main] idle.break confirmed by user — timer stopped");
   return { ok: true };
 });
 
-/** Renderer: user chose "Back to work" — resume timer. */
+/** Renderer: user chose "Back to work" — timer was never paused, just dismiss the prompt. */
 ipcMain.handle("agent:idle-resume", () => {
   clearIdleTimeout();
+  idleStartedAt = null;
   mainWindow?.webContents.send("agent:idle-dismiss");
-
-  const entryId = store.getActiveEntryId();
-  if (!entryId) return { ok: false, error: "No active timer" };
-  if (store.getTimerStatus() !== "paused") return { ok: true }; // already running
-
-  store.setTimerRunning(
-    entryId,
-    store.getActiveProjectName(),
-    store.getActiveTaskId(),
-    store.getActiveTaskName(),
-    store.getActiveDescription(),
-  );
-  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
-  pushStateToRenderer();
-  syncWorker?.triggerSync();
-  console.log("[Main] idle.resume confirmed by user");
+  console.log("[Main] idle.resume confirmed — timer continues running");
+  // Timer was not paused during the warning countdown, so no resume action is needed.
   return { ok: true };
 });
 
