@@ -45,7 +45,12 @@ function CountdownRing({ remaining, total }: { remaining: number; total: number 
 function fmtAgo(seconds: number): string {
   if (seconds < 60) return 'just now';
   const m = Math.floor(seconds / 60);
-  return m === 1 ? '1 min ago' : `${m} min ago`;
+  if (m < 60) return m === 1 ? '1 min ago' : `${m} min ago`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0
+    ? (h === 1 ? '1 hr ago' : `${h} hr ago`)
+    : `${h}h ${rem}m ago`;
 }
 
 export function IdlePrompt() {
@@ -136,17 +141,22 @@ export function IdlePrompt() {
     return () => { offPrompt(); offStopped(); offDismiss(); stopCountdown(); };
   }, []);
 
-  // Live "Stopped X min ago" ticker — starts when the stopped confirmation appears
+  // Live "Stopped X min ago" ticker — anchored to idleStartedAt (when tracking retroactively stopped),
+  // NOT to when the modal appeared. Without this anchor the initial value is always "just now"
+  // even if the user comes back 15 minutes after tracking stopped.
   useEffect(() => {
     if (phase?.kind !== 'stopped') {
       if (stoppedTickRef.current) { clearInterval(stoppedTickRef.current); stoppedTickRef.current = null; }
       stoppedAtRef.current = null;
       return;
     }
-    stoppedAtRef.current = Date.now();
-    setStoppedAgoSeconds(0);
+    const epoch = new Date(phase.idleStartedAt).getTime();
+    stoppedAtRef.current = epoch;
+    setStoppedAgoSeconds(Math.floor((Date.now() - epoch) / 1000));
     stoppedTickRef.current = setInterval(() => {
-      if (stoppedAtRef.current) setStoppedAgoSeconds(Math.floor((Date.now() - stoppedAtRef.current) / 1000));
+      if (stoppedAtRef.current !== null) {
+        setStoppedAgoSeconds(Math.floor((Date.now() - stoppedAtRef.current) / 1000));
+      }
     }, 1000);
     return () => {
       if (stoppedTickRef.current) { clearInterval(stoppedTickRef.current); stoppedTickRef.current = null; }
@@ -220,17 +230,22 @@ export function IdlePrompt() {
       <div className="idle-card idle-card--stopped">
         <div className="idle-card__stopped-icon" aria-hidden="true">⏸</div>
         <div className="idle-card__title">Tracking paused</div>
-        <div className="idle-card__stopped-summary">
-          <span className="idle-card__stopped-row idle-card__stopped-row--live">
-            Stopped {fmtAgo(stoppedAgoSeconds)}
-          </span>
-          <span className="idle-card__stopped-row">
-            Inactive since <strong>{fmtTime(phase.idleStartedAt)}</strong>
-          </span>
-          <span className="idle-card__stopped-row idle-card__stopped-row--muted">
-            {fmtDuration(phase.idleSeconds)} of inactivity was not counted.
-          </span>
+
+        {/* Layer A — live: how long ago tracking stopped (updates every second) */}
+        <div className="idle-card__stopped-headline">
+          Stopped {fmtAgo(stoppedAgoSeconds)}
         </div>
+
+        {/* Layer B — historical: when it happened and how much was excluded */}
+        <div className="idle-card__stopped-facts">
+          <div>
+            Inactive since <strong>{fmtTime(phase.idleStartedAt)}</strong>
+          </div>
+          <div className="idle-card__stopped-facts--muted">
+            {fmtDuration(phase.idleSeconds)} of idle time excluded
+          </div>
+        </div>
+
         <div className="idle-card__actions">
           {state.recentTasks.length > 0 && (
             <button

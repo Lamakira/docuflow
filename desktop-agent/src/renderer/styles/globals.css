@@ -828,23 +828,30 @@ a:hover { text-decoration: underline; }
   line-height: 1;
   margin-bottom: 0.25rem;
 }
-.idle-card__stopped-summary {
+
+/* Layer A — live headline: "Stopped 15 min ago" — primary signal, updates every second */
+.idle-card__stopped-headline {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+  line-height: 1.3;
+}
+
+/* Layer B — historical facts: when it happened + how much was excluded */
+.idle-card__stopped-facts {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.2rem;
+  text-align: center;
   font-size: 0.8rem;
-  color: var(--text);
+  color: var(--text-muted);
+  padding: 0.55rem 0;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  border-bottom: 1px solid rgba(255,255,255,0.07);
 }
-.idle-card__stopped-row { display: block; }
-.idle-card__stopped-row strong { color: var(--text); font-weight: 600; }
-.idle-card__stopped-row--muted { color: var(--text-muted); font-size: 0.75rem; }
-.idle-card__stopped-row--live {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #818cf8;
-  letter-spacing: 0.02em;
-  margin-bottom: 0.2rem;
-}
+.idle-card__stopped-facts strong { color: var(--text); font-weight: 600; }
+.idle-card__stopped-facts--muted { font-size: 0.72rem; color: var(--text-dim); }
 
 /* Actions */
 .idle-card__actions {
