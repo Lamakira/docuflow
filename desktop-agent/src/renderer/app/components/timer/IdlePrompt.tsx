@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useAgent } from '../../stores/AgentContext';
 
 type IdlePhase =
   | { kind: 'warning'; idleSeconds: number }
@@ -44,14 +45,21 @@ function CountdownRing({ remaining, total }: { remaining: number; total: number 
 function fmtAgo(seconds: number): string {
   if (seconds < 60) return 'just now';
   const m = Math.floor(seconds / 60);
-  return m === 1 ? '1 min ago' : `${m} min ago`;
+  if (m < 60) return m === 1 ? '1 min ago' : `${m} min ago`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0
+    ? (h === 1 ? '1 hr ago' : `${h} hr ago`)
+    : `${h}h ${rem}m ago`;
 }
 
 export function IdlePrompt() {
+  const { state, startTimer } = useAgent();
   const [phase, setPhase] = useState<IdlePhase>(null);
   const [remaining, setRemaining] = useState<number>(60);
   const [total, setTotal] = useState<number>(60);
   const [loading, setLoading] = useState<'break' | 'resume' | null>(null);
+  const [resumeLoading, setResumeLoading] = useState(false);
   const [stoppedAgoSeconds, setStoppedAgoSeconds] = useState(0);
   const deadlineRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -96,6 +104,22 @@ export function IdlePrompt() {
     await window.agentBridge.idleBreak();
   }
 
+  async function doStoppedResume() {
+    if (resumeLoading) return;
+    const recent = state.recentTasks[0];
+    if (!recent) { setPhase(null); return; }
+    setResumeLoading(true);
+    await startTimer({
+      crmProjectId: recent.crmProjectId,
+      taskId: recent.taskId ?? undefined,
+      taskName: recent.taskName ?? undefined,
+      projectName: recent.projectName,
+      description: recent.description ?? undefined,
+    });
+    setResumeLoading(false);
+    setPhase(null);
+  }
+
   // IPC events from main process
   useEffect(() => {
     const offPrompt = window.agentBridge.onIdlePrompt(({ idleSeconds, countdownSeconds }) => {
@@ -117,17 +141,22 @@ export function IdlePrompt() {
     return () => { offPrompt(); offStopped(); offDismiss(); stopCountdown(); };
   }, []);
 
-  // Live "Stopped X min ago" ticker — starts when the stopped confirmation appears
+  // Live "Stopped X min ago" ticker — anchored to idleStartedAt (when tracking retroactively stopped),
+  // NOT to when the modal appeared. Without this anchor the initial value is always "just now"
+  // even if the user comes back 15 minutes after tracking stopped.
   useEffect(() => {
     if (phase?.kind !== 'stopped') {
       if (stoppedTickRef.current) { clearInterval(stoppedTickRef.current); stoppedTickRef.current = null; }
       stoppedAtRef.current = null;
       return;
     }
-    stoppedAtRef.current = Date.now();
-    setStoppedAgoSeconds(0);
+    const epoch = new Date(phase.idleStartedAt).getTime();
+    stoppedAtRef.current = epoch;
+    setStoppedAgoSeconds(Math.floor((Date.now() - epoch) / 1000));
     stoppedTickRef.current = setInterval(() => {
-      if (stoppedAtRef.current) setStoppedAgoSeconds(Math.floor((Date.now() - stoppedAtRef.current) / 1000));
+      if (stoppedAtRef.current !== null) {
+        setStoppedAgoSeconds(Math.floor((Date.now() - stoppedAtRef.current) / 1000));
+      }
     }, 1000);
     return () => {
       if (stoppedTickRef.current) { clearInterval(stoppedTickRef.current); stoppedTickRef.current = null; }
@@ -199,23 +228,38 @@ export function IdlePrompt() {
   return (
     <div className="idle-overlay">
       <div className="idle-card idle-card--stopped">
-        <div className="idle-card__stopped-icon" aria-hidden="true">⏹</div>
-        <div className="idle-card__title">Timer stopped</div>
-        <div className="idle-card__stopped-summary">
-          <span className="idle-card__stopped-row idle-card__stopped-row--live">
-            Stopped {fmtAgo(stoppedAgoSeconds)}
-          </span>
-          <span className="idle-card__stopped-row">
-            Inactive since <strong>{fmtTime(phase.idleStartedAt)}</strong>
-          </span>
-          <span className="idle-card__stopped-row idle-card__stopped-row--muted">
-            {fmtDuration(phase.idleSeconds)} of inactivity was not counted.
-          </span>
+        <div className="idle-card__stopped-icon" aria-hidden="true">⏸</div>
+        <div className="idle-card__title">Tracking paused</div>
+
+        {/* Layer A — live: how long ago tracking stopped (updates every second) */}
+        <div className="idle-card__stopped-headline">
+          Stopped {fmtAgo(stoppedAgoSeconds)}
         </div>
+
+        {/* Layer B — historical: when it happened and how much was excluded */}
+        <div className="idle-card__stopped-facts">
+          <div>
+            Inactive since <strong>{fmtTime(phase.idleStartedAt)}</strong>
+          </div>
+          <div className="idle-card__stopped-facts--muted">
+            {fmtDuration(phase.idleSeconds)} of idle time excluded
+          </div>
+        </div>
+
         <div className="idle-card__actions">
+          {state.recentTasks.length > 0 && (
+            <button
+              className="idle-btn idle-btn--resume"
+              onClick={doStoppedResume}
+              disabled={resumeLoading}
+            >
+              {resumeLoading ? '…' : 'Resume tracking'}
+            </button>
+          )}
           <button
-            className="idle-btn idle-btn--resume"
+            className="idle-btn idle-btn--break"
             onClick={() => setPhase(null)}
+            disabled={resumeLoading}
           >
             Got it
           </button>

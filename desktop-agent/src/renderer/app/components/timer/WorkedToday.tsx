@@ -4,11 +4,13 @@ import { formatWorkedToday } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 
 export function WorkedToday() {
-  const { state, pauseTimer, resumeTimer } = useAgent();
+  const { state, pauseTimer, resumeTimer, startTimer } = useAgent();
   const [pauseLoading, setPauseLoading] = useState(false);
+  const [restartLoading, setRestartLoading] = useState(false);
   const timer = state.agentState?.timer;
   const status = timer?.status ?? 'stopped';
   const isActive = status !== 'stopped' && timer?.entryId != null;
+  const canRestart = status === 'stopped' && state.recentTasks.length > 0;
 
   // workedToday is session-derived and pushed from main on every state update
   const total = timer?.workedToday ?? 0;
@@ -21,8 +23,22 @@ export function WorkedToday() {
     setPauseLoading(false);
   }
 
+  async function handleRestart() {
+    const recent = state.recentTasks[0];
+    if (!recent) return;
+    setRestartLoading(true);
+    await startTimer({
+      crmProjectId: recent.crmProjectId,
+      taskId: recent.taskId ?? undefined,
+      taskName: recent.taskName ?? undefined,
+      projectName: recent.projectName,
+      description: recent.description ?? undefined,
+    });
+    setRestartLoading(false);
+  }
+
   return (
-    <div className={`worked-today-bar${isActive ? ' worked-today-bar--active' : ''}`}>
+    <div className={`worked-today-bar${isActive || canRestart ? ' worked-today-bar--active' : ''}`}>
       {isActive && (
         <div className="timer-pause-fab-wrap">
           <button
@@ -37,6 +53,22 @@ export function WorkedToday() {
                 <rect x="12" y="3" width="4" height="14" rx="1.5"/>
               </svg>
             ) : (
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
+                <polygon points="5,2 16,9 5,16"/>
+              </svg>
+            )}
+          </button>
+        </div>
+      )}
+      {!isActive && canRestart && (
+        <div className="timer-pause-fab-wrap">
+          <button
+            className="timer-pause-fab timer-pause-fab--resume"
+            disabled={restartLoading}
+            onClick={handleRestart}
+            title="Resume tracking"
+          >
+            {restartLoading ? '…' : (
               <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
                 <polygon points="5,2 16,9 5,16"/>
               </svg>

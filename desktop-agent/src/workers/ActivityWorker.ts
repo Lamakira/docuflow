@@ -104,6 +104,8 @@ export class ActivityWorker {
   private suspendHandler: (() => void) | null = null;
   private resumeHandler: (() => void) | null = null;
   private onIdleUxCb: ((idleSeconds: number) => void) | null = null;
+  /** Fired on the next keydown or mousedown while the idle warning is showing. mousemove excluded intentionally. */
+  private idleInputCb: (() => void) | null = null;
 
   // ─── Idle UX policy (admin-configurable, updated via applyIdlePolicy()) ───
   private idleUxEnabled = true;
@@ -143,6 +145,15 @@ export class ActivityWorker {
   /** Register callback fired when idle crosses the UX threshold. */
   setIdleUxCallback(cb: (idleSeconds: number) => void): void {
     this.onIdleUxCb = cb;
+  }
+
+  /**
+   * Set (or clear) a one-time callback invoked on the next global keydown or mousedown.
+   * mousemove and wheel are excluded — only intentional input counts.
+   * Used by main to dismiss the idle warning when the user acts outside the DocuFlow window.
+   */
+  setIdleInputCallback(cb: (() => void) | null): void {
+    this.idleInputCb = cb;
   }
 
   /**
@@ -215,6 +226,7 @@ export class ActivityWorker {
         this.markKbSecond(now);
         this.kbTimes.push(now);
         if (this.kbTimes.length > 10_000) this.kbTimes.splice(0, 5_000);
+        if (this.idleInputCb) { const cb = this.idleInputCb; this.idleInputCb = null; cb(); }
       };
 
       this.mouseDownHandler = () => {
@@ -222,6 +234,7 @@ export class ActivityWorker {
         this.markMsSecond(now);
         this.msTimes.push(now);
         if (this.msTimes.length > 10_000) this.msTimes.splice(0, 5_000);
+        if (this.idleInputCb) { const cb = this.idleInputCb; this.idleInputCb = null; cb(); }
       };
 
       // Throttle mousemove to 10 Hz — the event fires hundreds of times per second
