@@ -872,17 +872,42 @@ a:hover { text-decoration: underline; }
   transition: background 0.15s, opacity 0.15s;
 }
 .idle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Warning phase — keep tracking (indigo, confident) */
 .idle-btn--resume {
   background: #6366f1;
   color: #fff;
 }
 .idle-btn--resume:hover:not(:disabled) { background: #4f46e5; }
+
+/* Warning phase — stop/break (muted) */
 .idle-btn--break {
   background: rgba(255,255,255,0.07);
   color: var(--text-muted);
   font-weight: 500;
 }
 .idle-btn--break:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
+
+/* Stopped phase — resume is the primary CTA: green, bold, unmissable */
+.idle-btn--resume-strong {
+  background: #16a34a;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 0.75rem 0.75rem;
+  letter-spacing: 0.01em;
+}
+.idle-btn--resume-strong:hover:not(:disabled) { background: #15803d; }
+
+/* Stopped phase — "Got it" dismiss: ghost, clearly subordinate */
+.idle-btn--ghost {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid rgba(255,255,255,0.1);
+  font-weight: 400;
+  font-size: 0.78rem;
+  padding: 0.45rem 0.75rem;
+}
+.idle-btn--ghost:hover:not(:disabled) { background: rgba(255,255,255,0.05); color: var(--text-muted); border-color: rgba(255,255,255,0.18); }
 
 /* ─── Today's Activity breakdown ─── */
 .activity-loading { font-size: 0.8rem; color: var(--text-muted); padding: 1rem 0; }

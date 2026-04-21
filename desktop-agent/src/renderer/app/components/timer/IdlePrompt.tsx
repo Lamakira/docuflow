@@ -247,22 +247,31 @@ export function IdlePrompt() {
         </div>
 
         <div className="idle-card__actions">
-          {state.recentTasks.length > 0 && (
+          {state.recentTasks.length > 0 ? (
+            <>
+              <button
+                className="idle-btn idle-btn--resume-strong"
+                onClick={doStoppedResume}
+                disabled={resumeLoading}
+              >
+                {resumeLoading ? '…' : 'Resume tracking'}
+              </button>
+              <button
+                className="idle-btn idle-btn--ghost"
+                onClick={() => setPhase(null)}
+                disabled={resumeLoading}
+              >
+                Got it
+              </button>
+            </>
+          ) : (
             <button
-              className="idle-btn idle-btn--resume"
-              onClick={doStoppedResume}
-              disabled={resumeLoading}
+              className="idle-btn idle-btn--break"
+              onClick={() => setPhase(null)}
             >
-              {resumeLoading ? '…' : 'Resume tracking'}
+              Got it
             </button>
           )}
-          <button
-            className="idle-btn idle-btn--break"
-            onClick={() => setPhase(null)}
-            disabled={resumeLoading}
-          >
-            Got it
-          </button>
         </div>
       </div>
     </div>
