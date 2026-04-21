@@ -195,31 +195,7 @@ a:hover { text-decoration: underline; }
 }
 .timer-header__controls { display: flex; gap: 0.25rem; flex-shrink: 0; }
 
-/* Play / restart button in the persistent stopped header */
-.timer-header__play-btn {
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1px solid rgba(34,197,94,0.35);
-  background: rgba(34,197,94,0.12);
-  color: #4ade80;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
-  margin-left: 0.625rem;
-  margin-right: 0.25rem;
-}
-.timer-header__play-btn:hover:not(:disabled) {
-  background: rgba(34,197,94,0.22);
-  transform: scale(1.08);
-}
-.timer-header__play-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-
-/* When stopped, reclaim the space reserved for the floating FAB */
+/* Truly-stopped header (no recent task): reclaim FAB margin since no FAB is shown */
 .timer-header--stopped .timer-header__elapsed { margin-right: 0; }
 
 /* ── Pause FAB — à cheval between bar 1 and bar 2 ── */

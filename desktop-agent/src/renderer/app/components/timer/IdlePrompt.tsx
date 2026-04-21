@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useAgent } from '../../stores/AgentContext';
 
 type IdlePhase =
   | { kind: 'warning'; idleSeconds: number }
@@ -48,10 +49,12 @@ function fmtAgo(seconds: number): string {
 }
 
 export function IdlePrompt() {
+  const { state, startTimer } = useAgent();
   const [phase, setPhase] = useState<IdlePhase>(null);
   const [remaining, setRemaining] = useState<number>(60);
   const [total, setTotal] = useState<number>(60);
   const [loading, setLoading] = useState<'break' | 'resume' | null>(null);
+  const [resumeLoading, setResumeLoading] = useState(false);
   const [stoppedAgoSeconds, setStoppedAgoSeconds] = useState(0);
   const deadlineRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -94,6 +97,22 @@ export function IdlePrompt() {
     setLoading('break');
     stopCountdown();
     await window.agentBridge.idleBreak();
+  }
+
+  async function doStoppedResume() {
+    if (resumeLoading) return;
+    const recent = state.recentTasks[0];
+    if (!recent) { setPhase(null); return; }
+    setResumeLoading(true);
+    await startTimer({
+      crmProjectId: recent.crmProjectId,
+      taskId: recent.taskId ?? undefined,
+      taskName: recent.taskName ?? undefined,
+      projectName: recent.projectName,
+      description: recent.description ?? undefined,
+    });
+    setResumeLoading(false);
+    setPhase(null);
   }
 
   // IPC events from main process
@@ -199,8 +218,8 @@ export function IdlePrompt() {
   return (
     <div className="idle-overlay">
       <div className="idle-card idle-card--stopped">
-        <div className="idle-card__stopped-icon" aria-hidden="true">⏹</div>
-        <div className="idle-card__title">Timer stopped</div>
+        <div className="idle-card__stopped-icon" aria-hidden="true">⏸</div>
+        <div className="idle-card__title">Tracking paused</div>
         <div className="idle-card__stopped-summary">
           <span className="idle-card__stopped-row idle-card__stopped-row--live">
             Stopped {fmtAgo(stoppedAgoSeconds)}
@@ -213,9 +232,19 @@ export function IdlePrompt() {
           </span>
         </div>
         <div className="idle-card__actions">
+          {state.recentTasks.length > 0 && (
+            <button
+              className="idle-btn idle-btn--resume"
+              onClick={doStoppedResume}
+              disabled={resumeLoading}
+            >
+              {resumeLoading ? '…' : 'Resume tracking'}
+            </button>
+          )}
           <button
-            className="idle-btn idle-btn--resume"
+            className="idle-btn idle-btn--break"
             onClick={() => setPhase(null)}
+            disabled={resumeLoading}
           >
             Got it
           </button>
