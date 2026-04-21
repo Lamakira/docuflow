@@ -68,4 +68,7 @@ contextBridge.exposeInMainWorld("agentBridge", {
 
   // Org policy (read-only, from last heartbeat)
   getOrgPolicy: () => ipcRenderer.invoke("settings:get-org-policy"),
+
+  // Widget utilities
+  resetWidgetPosition: () => ipcRenderer.invoke("widget:reset-position"),
 });

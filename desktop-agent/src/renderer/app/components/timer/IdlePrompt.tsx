@@ -41,13 +41,22 @@ function CountdownRing({ remaining, total }: { remaining: number; total: number 
   );
 }
 
+function fmtAgo(seconds: number): string {
+  if (seconds < 60) return 'just now';
+  const m = Math.floor(seconds / 60);
+  return m === 1 ? '1 min ago' : `${m} min ago`;
+}
+
 export function IdlePrompt() {
   const [phase, setPhase] = useState<IdlePhase>(null);
   const [remaining, setRemaining] = useState<number>(60);
   const [total, setTotal] = useState<number>(60);
   const [loading, setLoading] = useState<'break' | 'resume' | null>(null);
+  const [stoppedAgoSeconds, setStoppedAgoSeconds] = useState(0);
   const deadlineRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stoppedAtRef = useRef<number | null>(null);
+  const stoppedTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Mirror loading in a ref so the input-listener closure always sees the current value
   const loadingRef = useRef<'break' | 'resume' | null>(null);
   loadingRef.current = loading;
@@ -107,6 +116,23 @@ export function IdlePrompt() {
     });
     return () => { offPrompt(); offStopped(); offDismiss(); stopCountdown(); };
   }, []);
+
+  // Live "Stopped X min ago" ticker — starts when the stopped confirmation appears
+  useEffect(() => {
+    if (phase?.kind !== 'stopped') {
+      if (stoppedTickRef.current) { clearInterval(stoppedTickRef.current); stoppedTickRef.current = null; }
+      stoppedAtRef.current = null;
+      return;
+    }
+    stoppedAtRef.current = Date.now();
+    setStoppedAgoSeconds(0);
+    stoppedTickRef.current = setInterval(() => {
+      if (stoppedAtRef.current) setStoppedAgoSeconds(Math.floor((Date.now() - stoppedAtRef.current) / 1000));
+    }, 1000);
+    return () => {
+      if (stoppedTickRef.current) { clearInterval(stoppedTickRef.current); stoppedTickRef.current = null; }
+    };
+  }, [phase?.kind]);
 
   // Any keyboard input or mouse click outside the modal card = "I'm still working"
   useEffect(() => {
@@ -176,6 +202,9 @@ export function IdlePrompt() {
         <div className="idle-card__stopped-icon" aria-hidden="true">⏹</div>
         <div className="idle-card__title">Timer stopped</div>
         <div className="idle-card__stopped-summary">
+          <span className="idle-card__stopped-row idle-card__stopped-row--live">
+            Stopped {fmtAgo(stoppedAgoSeconds)}
+          </span>
           <span className="idle-card__stopped-row">
             Inactive since <strong>{fmtTime(phase.idleStartedAt)}</strong>
           </span>
