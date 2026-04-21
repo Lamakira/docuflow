@@ -821,6 +821,14 @@ function handleIdleUx(idleSeconds: number): void {
     console.log("[Main] handleIdleUx — skipped: no active entry");
     return;
   }
+  // Guard: if a prompt is already showing, ignore re-triggers caused by mouse movement
+  // resetting the OS idle timer. Without this, each mouse move while the prompt is visible
+  // would call clearIdleTimeout() (killing the ActivityWorker callback + auto-stop timer)
+  // and reset the countdown, effectively dismissing on mouse movement.
+  if (idleStartedAt !== null) {
+    console.log(`[Main] handleIdleUx — skipped: prompt already active (idleStartedAt=${idleStartedAt.toISOString()})`);
+    return;
+  }
 
   // Capture idle start time — used for retroactive session close if the timer stops.
   // The timer is NOT paused here; it keeps running so the UI remains active.
