@@ -680,6 +680,16 @@ ipcMain.handle("widget:get-window-pos", () => {
   return widgetWindow?.getPosition() ?? [0, 0];
 });
 
+ipcMain.handle("widget:reset-position", () => {
+  if (!widgetWindow) return { ok: false };
+  const { workArea } = screen.getPrimaryDisplay();
+  const x = workArea.x + workArea.width - WIDGET_WIDTH - WIDGET_MARGIN;
+  const y = workArea.y + workArea.height - WIDGET_HEIGHT - WIDGET_MARGIN;
+  widgetWindow.setPosition(x, y);
+  console.log("[Widget] position reset to default corner");
+  return { ok: true };
+});
+
 // ─── IPC: Settings ───
 
 ipcMain.handle("settings:get-local-prefs", () => {

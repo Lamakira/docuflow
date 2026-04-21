@@ -83,6 +83,7 @@ export interface AgentBridge {
   onStateUpdate: (cb: (state: any) => void) => void;
   getLocalPrefs: () => Promise<{ openAtLogin: boolean; isPackaged: boolean; appVersion: string }>;
   setOpenAtLogin: (value: boolean) => Promise<{ ok: boolean }>;
+  resetWidgetPosition: () => Promise<{ ok: boolean }>;
   getOrgPolicy: () => Promise<{
     screenshotsEnabled: boolean;
     idlePromptEnabled: boolean;
