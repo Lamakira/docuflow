@@ -8,6 +8,9 @@ declare global {
       timerPause: () => Promise<any>;
       timerResume: () => Promise<any>;
       dismiss: () => Promise<void>;
+      openMain: () => Promise<void>;
+      moveWindow: (x: number, y: number) => void;
+      getWindowPos: () => Promise<[number, number]>;
       onStateUpdate: (cb: (state: any) => void) => void;
     };
   }
@@ -29,6 +32,8 @@ function formatTime(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+const DRAG_THRESHOLD = 4; // px — below this = click, above = drag
+
 function Widget() {
   const [timer, setTimer] = useState<TimerState>({
     status: "stopped",
@@ -43,6 +48,16 @@ function Widget() {
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Custom drag state — no WebkitAppRegion used anywhere
+  const mouseDownRef = useRef<{
+    mouseX: number;
+    mouseY: number;
+    winX: number;
+    winY: number;
+    resolved: boolean;
+  } | null>(null);
+  const hasDraggedRef = useRef(false);
 
   function applyState(raw: any) {
     const t = raw.timer ?? raw;
@@ -63,7 +78,6 @@ function Widget() {
     window.widgetBridge.onStateUpdate(applyState);
   }, []);
 
-  // Local tick when running
   useEffect(() => {
     if (tickRef.current) clearInterval(tickRef.current);
     if (timer.status === "running" && syncRef.current) {
@@ -78,9 +92,39 @@ function Widget() {
     };
   }, [timer.status, timer.elapsed]);
 
+  // Global drag handlers — mounted once, use refs so they never go stale
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      const info = mouseDownRef.current;
+      if (!info || !info.resolved || e.buttons !== 1) return;
+      const dx = e.screenX - info.mouseX;
+      const dy = e.screenY - info.mouseY;
+      if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+        hasDraggedRef.current = true;
+        window.widgetBridge.moveWindow(info.winX + dx, info.winY + dy);
+      }
+    }
+    function onMouseUp() {
+      const info = mouseDownRef.current;
+      mouseDownRef.current = null;
+      // If mouse was pressed and released without dragging → treat as click → open main
+      if (info && !hasDraggedRef.current) {
+        void window.widgetBridge.openMain();
+      }
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
   if (timer.status === "stopped") return null;
 
   const isRunning = timer.status === "running";
+  const label = timer.taskName || timer.projectName || "Tracking…";
+  const sub = timer.taskName && timer.projectName ? timer.projectName : null;
 
   function showError(msg: string) {
     setActionError(msg);
@@ -88,190 +132,202 @@ function Widget() {
     errorTimerRef.current = setTimeout(() => setActionError(null), 3000);
   }
 
-  async function handleToggle() {
+  // Start drag tracking — fetch window position async; click detection works even
+  // if position isn't resolved yet (mouseup before resolution = treated as click)
+  async function handleCardMouseDown(e: React.MouseEvent) {
+    if (e.button !== 0) return;
+    hasDraggedRef.current = false;
+    // Mark as pending (resolved=false) so mousemove skips until position is ready
+    mouseDownRef.current = { mouseX: e.screenX, mouseY: e.screenY, winX: 0, winY: 0, resolved: false };
+    const pos = await window.widgetBridge.getWindowPos();
+    if (mouseDownRef.current) {
+      mouseDownRef.current.winX = pos[0];
+      mouseDownRef.current.winY = pos[1];
+      mouseDownRef.current.resolved = true;
+    }
+  }
+
+  async function handleToggle(e: React.MouseEvent) {
+    e.stopPropagation();
     if (pending) return;
     setPending(true);
     try {
       const result = isRunning
         ? await window.widgetBridge.timerPause()
         : await window.widgetBridge.timerResume();
-      if (result && !result.ok && result.error) {
-        showError(result.error);
-      }
+      if (result && !result.ok && result.error) showError(result.error);
     } finally {
       setPending(false);
     }
   }
 
-  async function handleDismiss() {
+  async function handleDismiss(e: React.MouseEvent) {
+    e.stopPropagation();
     await window.widgetBridge.dismiss();
   }
 
-  const label = timer.taskName || timer.projectName || "Tracking…";
-  const sub = timer.taskName && timer.projectName ? timer.projectName : null;
-
-  const noDrag = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
+  // Buttons stop mousedown propagation so card drag never starts from a button press
+  function stopDragStart(e: React.MouseEvent) {
+    e.stopPropagation();
+  }
 
   return (
     <div style={{ position: "relative", height: "100%" }}>
+      {/* Error tooltip */}
       {actionError && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "calc(100% + 6px)",
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "rgba(239,68,68,0.95)",
-            color: "#fff",
-            fontSize: 11,
-            fontWeight: 500,
-            padding: "4px 10px",
-            borderRadius: 6,
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
-            zIndex: 9999,
-          }}
-        >
+        <div style={{
+          position: "absolute",
+          bottom: "calc(100% + 6px)",
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "rgba(239,68,68,0.95)",
+          color: "#fff",
+          fontSize: 10,
+          fontWeight: 500,
+          padding: "3px 8px",
+          borderRadius: 5,
+          whiteSpace: "nowrap",
+          pointerEvents: "none",
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+          zIndex: 9999,
+        }}>
           {actionError}
         </div>
       )}
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        background: "rgba(15, 23, 42, 0.96)",
-        border: "1px solid rgba(255,255,255,0.1)",
-        borderRadius: 14,
-        padding: "10px 12px",
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        WebkitAppRegion: "drag",
-        userSelect: "none",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3)",
-        cursor: "move",
-        height: "100%",
-      } as React.CSSProperties}
-    >
-      {/* Status dot */}
+
+      {/* Strip — draggable from any non-button surface, click opens main window */}
       <div
+        onMouseDown={handleCardMouseDown}
         style={{
-          width: 8,
-          height: 8,
+          display: "flex",
+          alignItems: "center",
+          height: "100%",
+          background: "rgba(13, 20, 36, 0.97)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 10,
+          paddingLeft: 10,
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          userSelect: "none",
+          boxShadow: "0 4px 18px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3)",
+          cursor: "move",
+          overflow: "hidden",
+        }}
+      >
+        {/* Status dot */}
+        <div style={{
+          width: 6,
+          height: 6,
           borderRadius: "50%",
           flexShrink: 0,
           background: isRunning ? "#22c55e" : "#f59e0b",
-          boxShadow: isRunning ? "0 0 8px #22c55e88" : "0 0 8px #f59e0b88",
+          boxShadow: isRunning ? "0 0 5px #22c55e99" : "0 0 5px #f59e0b99",
           transition: "background 0.3s, box-shadow 0.3s",
-        }}
-      />
+        }} />
 
-      {/* Task / project name */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 12,
+        {/* Task / project name */}
+        <div style={{ flex: 1, minWidth: 0, marginLeft: 8 }}>
+          <div style={{
+            fontSize: 11,
             fontWeight: 600,
-            color: "#f8fafc",
+            color: "#f1f5f9",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            lineHeight: 1.3,
-          }}
-        >
-          {label}
-        </div>
-        {sub && (
-          <div
-            style={{
-              fontSize: 10,
-              color: "#64748b",
+            lineHeight: 1.25,
+          }}>
+            {label}
+          </div>
+          {sub && (
+            <div style={{
+              fontSize: 9.5,
+              color: "#475569",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
-              lineHeight: 1.3,
+              lineHeight: 1.2,
               marginTop: 1,
-            }}
-          >
-            {sub}
-          </div>
-        )}
-      </div>
+            }}>
+              {sub}
+            </div>
+          )}
+        </div>
 
-      {/* Elapsed time */}
-      <div
-        style={{
-          fontSize: 13,
+        {/* Elapsed time */}
+        <div style={{
+          fontSize: 12,
           fontWeight: 700,
-          color: "#f8fafc",
-          letterSpacing: "0.04em",
+          color: "#e2e8f0",
+          letterSpacing: "0.06em",
           fontVariantNumeric: "tabular-nums",
           flexShrink: 0,
-        }}
-      >
-        {formatTime(displayElapsed)}
+          marginLeft: 10,
+          marginRight: 8,
+        }}>
+          {formatTime(displayElapsed)}
+        </div>
+
+        {/* Pause / Resume — stopPropagation on mousedown prevents drag from starting */}
+        <button
+          onMouseDown={stopDragStart}
+          onClick={handleToggle}
+          disabled={pending}
+          title={isRunning ? "Pause" : "Resume"}
+          style={{
+            flexShrink: 0,
+            width: 22,
+            height: 22,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: isRunning ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)",
+            border: `1px solid ${isRunning ? "rgba(239,68,68,0.28)" : "rgba(34,197,94,0.28)"}`,
+            borderRadius: 6,
+            cursor: pending ? "wait" : "pointer",
+            color: isRunning ? "#f87171" : "#4ade80",
+            fontSize: 9,
+            transition: "background 0.2s, border-color 0.2s",
+            opacity: pending ? 0.6 : 1,
+            padding: 0,
+          }}
+        >
+          {isRunning ? "⏸" : "▶"}
+        </button>
+
+        {/* Dismiss — stopPropagation on mousedown prevents drag from starting */}
+        <button
+          onMouseDown={stopDragStart}
+          onClick={handleDismiss}
+          title="Hide widget (tracking continues)"
+          style={{
+            flexShrink: 0,
+            width: 14,
+            height: 14,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "transparent",
+            border: "none",
+            borderRadius: 3,
+            cursor: "pointer",
+            color: "rgba(255,255,255,0.22)",
+            fontSize: 8,
+            lineHeight: 1,
+            marginLeft: 6,
+            marginRight: 8,
+            padding: 0,
+            transition: "color 0.2s",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.6)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.22)";
+          }}
+        >
+          ✕
+        </button>
       </div>
-
-      {/* Pause / Resume button */}
-      <button
-        onClick={handleToggle}
-        disabled={pending}
-        style={{
-          ...noDrag,
-          flexShrink: 0,
-          width: 28,
-          height: 28,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: isRunning ? "rgba(239,68,68,0.15)" : "rgba(34,197,94,0.15)",
-          border: `1px solid ${isRunning ? "rgba(239,68,68,0.35)" : "rgba(34,197,94,0.35)"}`,
-          borderRadius: 7,
-          cursor: pending ? "wait" : "pointer",
-          color: isRunning ? "#ef4444" : "#22c55e",
-          fontSize: 12,
-          transition: "background 0.2s, border-color 0.2s",
-          opacity: pending ? 0.6 : 1,
-        }}
-      >
-        {isRunning ? "⏸" : "▶"}
-      </button>
-
-      {/* Dismiss button — hides widget, does NOT stop tracking */}
-      <button
-        onClick={handleDismiss}
-        title="Hide widget (tracking continues)"
-        style={{
-          ...noDrag,
-          flexShrink: 0,
-          width: 20,
-          height: 20,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "transparent",
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: 5,
-          cursor: "pointer",
-          color: "rgba(255,255,255,0.35)",
-          fontSize: 11,
-          lineHeight: 1,
-          transition: "border-color 0.2s, color 0.2s",
-          padding: 0,
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.7)";
-          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.35)";
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.35)";
-          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)";
-        }}
-      >
-        ✕
-      </button>
-    </div>
     </div>
   );
 }

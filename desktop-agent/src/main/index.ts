@@ -61,9 +61,11 @@ let widgetWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 /** Set by the user clicking ×. Cleared when the timer stops so the next session shows the widget again. */
 let widgetDismissed = false;
+/** Last org policy received from heartbeat — exposed to renderer via settings:get-org-policy. */
+let lastKnownPolicy: import("../workers/ScreenCaptureWorker").ScreenshotPolicyPayload | null = null;
 
-const WIDGET_WIDTH = 340;
-const WIDGET_HEIGHT = 64;
+const WIDGET_WIDTH = 380;
+const WIDGET_HEIGHT = 44;
 const WIDGET_MARGIN = 20;
 
 const SESSION_STARTED_AT = Date.now(); // anchors "This session" elapsed; resets on restart
@@ -293,6 +295,7 @@ function startWorkers(): void {
   }
 
   heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync, (policy) => {
+    lastKnownPolicy = policy;
     screenshotWorker?.applyPolicy(policy);
 
     // Re-apply countdown override on every heartbeat so the server policy cannot
@@ -664,6 +667,46 @@ ipcMain.handle("widget:dismiss", () => {
   console.log("[Widget] dismissed by user");
 });
 
+ipcMain.handle("widget:open-main", () => {
+  console.log("[Widget] open-main requested");
+  showMainWindow();
+});
+
+ipcMain.on("widget:move-window", (_event, x: number, y: number) => {
+  widgetWindow?.setPosition(Math.round(x), Math.round(y));
+});
+
+ipcMain.handle("widget:get-window-pos", () => {
+  return widgetWindow?.getPosition() ?? [0, 0];
+});
+
+// ─── IPC: Settings ───
+
+ipcMain.handle("settings:get-local-prefs", () => {
+  const loginSettings = app.getLoginItemSettings();
+  return {
+    openAtLogin: loginSettings.openAtLogin,
+    isPackaged: app.isPackaged,
+    appVersion: app.getVersion(),
+  };
+});
+
+ipcMain.handle("settings:set-open-at-login", (_event, value: boolean) => {
+  app.setLoginItemSettings({ openAtLogin: value });
+  console.log(`[Settings] openAtLogin → ${value}`);
+  return { ok: true };
+});
+
+ipcMain.handle("settings:get-org-policy", () => {
+  if (!lastKnownPolicy) return null;
+  return {
+    screenshotsEnabled: lastKnownPolicy.screenshotsEnabled,
+    idlePromptEnabled: lastKnownPolicy.idlePromptEnabled,
+    idleTimeoutMinutes: lastKnownPolicy.idleTimeoutMinutes,
+    idleCountdownSeconds: lastKnownPolicy.idleCountdownSeconds,
+  };
+});
+
 ipcMain.handle("agent:get-worked-today", () => {
   return { ok: true, total: store.getWorkedTodaySeconds() };
 });
@@ -729,6 +772,22 @@ function clearIdleTimeout(): void {
  * Worked Today correctness: sessions are closed at idleStartedAt (not at stop time),
  * so idle time is never counted regardless of when the user actually responds.
  */
+/** Bring mainWindow above all other windows for the duration of the idle prompt. */
+function raiseForIdlePrompt(): void {
+  if (!mainWindow) return;
+  mainWindow.setAlwaysOnTop(true, "screen-saver"); // highest level on Windows/macOS
+  mainWindow.showInactive();                        // make visible without stealing keyboard focus
+  mainWindow.moveTop();                             // ensure z-order
+  console.log("[Main] idle — window raised to top");
+}
+
+/** Restore normal z-order after the idle prompt is resolved. */
+function releaseIdleOnTop(): void {
+  if (!mainWindow) return;
+  mainWindow.setAlwaysOnTop(false);
+  console.log("[Main] idle — alwaysOnTop released");
+}
+
 function handleIdleUx(idleSeconds: number): void {
   const timerStatus = store.getTimerStatus();
   const entryId = store.getActiveEntryId();
@@ -750,6 +809,9 @@ function handleIdleUx(idleSeconds: number): void {
   const countdown = idleCountdownSeconds;
   console.log(`[Main] idle.warning — idleSeconds=${idleSeconds} countdown=${countdown}s idleStartedAt=${idleStartedAt.toISOString()}`);
 
+  // Bring the window above all other windows so the prompt is visible regardless of focus
+  raiseForIdlePrompt();
+
   console.log(`[Main] sending agent:idle-prompt to renderer — idleSeconds=${idleSeconds} countdownSeconds=${countdown}`);
   mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds, countdownSeconds: countdown });
 
@@ -761,6 +823,7 @@ function handleIdleUx(idleSeconds: number): void {
     const capturedIdleStartedAt = idleStartedAt;
     idleStartedAt = null;
 
+    releaseIdleOnTop();
     if (currentEntryId && store.getTimerStatus() === "running" && capturedIdleStartedAt) {
       // Retroactively close session at when idle started, then stop
       store.setTimerPaused(capturedIdleStartedAt);
@@ -768,10 +831,13 @@ function handleIdleUx(idleSeconds: number): void {
       queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId: currentEntryId });
       pushStateToRenderer();
       syncWorker?.triggerSync();
-      console.log(`[Main] idle.autoStop — countdown expired, timer stopped retroactively at ${capturedIdleStartedAt.toISOString()}`);
+      // Compute actual idle duration from idleStartedAt to now — more accurate than
+      // the threshold-crossing idleSeconds which was captured earlier.
+      const actualIdleSeconds = Math.round((Date.now() - capturedIdleStartedAt.getTime()) / 1000);
+      console.log(`[Main] idle.autoStop — countdown expired, timer stopped retroactively at ${capturedIdleStartedAt.toISOString()} (actualIdleSeconds=${actualIdleSeconds})`);
       // Push stopped-confirmation so renderer shows the second modal
       mainWindow?.webContents.send("agent:idle-stopped", {
-        idleSeconds,
+        idleSeconds: actualIdleSeconds,
         idleStartedAt: capturedIdleStartedAt.toISOString(),
       });
     } else {
@@ -780,9 +846,10 @@ function handleIdleUx(idleSeconds: number): void {
   }, countdown * 1000);
 }
 
-/** Renderer: user chose "I'm on break" — stop timer retroactively and dismiss prompt. */
+/** Renderer: user chose "Stop — I was on a break" — stop timer retroactively and dismiss prompt. */
 ipcMain.handle("agent:idle-break", () => {
   clearIdleTimeout();
+  releaseIdleOnTop();
   const entryId = store.getActiveEntryId();
   const capturedIdleStartedAt = idleStartedAt;
   idleStartedAt = null;
@@ -807,9 +874,10 @@ ipcMain.handle("agent:idle-break", () => {
   return { ok: true };
 });
 
-/** Renderer: user chose "Back to work" — timer was never paused, just dismiss the prompt. */
+/** Renderer: user chose "Yes, keep tracking" — timer was never paused, just dismiss the prompt. */
 ipcMain.handle("agent:idle-resume", () => {
   clearIdleTimeout();
+  releaseIdleOnTop();
   idleStartedAt = null;
   mainWindow?.webContents.send("agent:idle-dismiss");
   console.log("[Main] idle.resume confirmed — timer continues running");

@@ -61,4 +61,11 @@ contextBridge.exposeInMainWorld("agentBridge", {
   onStateUpdate: (callback: (state: any) => void) => {
     ipcRenderer.on("agent:state-update", (_event, state) => callback(state));
   },
+
+  // Local settings
+  getLocalPrefs: () => ipcRenderer.invoke("settings:get-local-prefs"),
+  setOpenAtLogin: (value: boolean) => ipcRenderer.invoke("settings:set-open-at-login", value),
+
+  // Org policy (read-only, from last heartbeat)
+  getOrgPolicy: () => ipcRenderer.invoke("settings:get-org-policy"),
 });
