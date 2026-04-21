@@ -9,6 +9,8 @@ declare global {
       timerResume: () => Promise<any>;
       dismiss: () => Promise<void>;
       openMain: () => Promise<void>;
+      moveWindow: (x: number, y: number) => void;
+      getWindowPos: () => Promise<[number, number]>;
       onStateUpdate: (cb: (state: any) => void) => void;
     };
   }
@@ -30,7 +32,7 @@ function formatTime(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-const noDrag = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
+const DRAG_THRESHOLD = 4; // px — below this = click, above = drag
 
 function Widget() {
   const [timer, setTimer] = useState<TimerState>({
@@ -46,6 +48,16 @@ function Widget() {
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Custom drag state — no WebkitAppRegion used anywhere
+  const mouseDownRef = useRef<{
+    mouseX: number;
+    mouseY: number;
+    winX: number;
+    winY: number;
+    resolved: boolean;
+  } | null>(null);
+  const hasDraggedRef = useRef(false);
 
   function applyState(raw: any) {
     const t = raw.timer ?? raw;
@@ -80,6 +92,34 @@ function Widget() {
     };
   }, [timer.status, timer.elapsed]);
 
+  // Global drag handlers — mounted once, use refs so they never go stale
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      const info = mouseDownRef.current;
+      if (!info || !info.resolved || e.buttons !== 1) return;
+      const dx = e.screenX - info.mouseX;
+      const dy = e.screenY - info.mouseY;
+      if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+        hasDraggedRef.current = true;
+        window.widgetBridge.moveWindow(info.winX + dx, info.winY + dy);
+      }
+    }
+    function onMouseUp() {
+      const info = mouseDownRef.current;
+      mouseDownRef.current = null;
+      // If mouse was pressed and released without dragging → treat as click → open main
+      if (info && !hasDraggedRef.current) {
+        void window.widgetBridge.openMain();
+      }
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
   if (timer.status === "stopped") return null;
 
   const isRunning = timer.status === "running";
@@ -90,6 +130,21 @@ function Widget() {
     setActionError(msg);
     if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     errorTimerRef.current = setTimeout(() => setActionError(null), 3000);
+  }
+
+  // Start drag tracking — fetch window position async; click detection works even
+  // if position isn't resolved yet (mouseup before resolution = treated as click)
+  async function handleCardMouseDown(e: React.MouseEvent) {
+    if (e.button !== 0) return;
+    hasDraggedRef.current = false;
+    // Mark as pending (resolved=false) so mousemove skips until position is ready
+    mouseDownRef.current = { mouseX: e.screenX, mouseY: e.screenY, winX: 0, winY: 0, resolved: false };
+    const pos = await window.widgetBridge.getWindowPos();
+    if (mouseDownRef.current) {
+      mouseDownRef.current.winX = pos[0];
+      mouseDownRef.current.winY = pos[1];
+      mouseDownRef.current.resolved = true;
+    }
   }
 
   async function handleToggle(e: React.MouseEvent) {
@@ -111,8 +166,9 @@ function Widget() {
     await window.widgetBridge.dismiss();
   }
 
-  async function handleOpenMain() {
-    await window.widgetBridge.openMain();
+  // Buttons stop mousedown propagation so card drag never starts from a button press
+  function stopDragStart(e: React.MouseEvent) {
+    e.stopPropagation();
   }
 
   return (
@@ -140,9 +196,9 @@ function Widget() {
         </div>
       )}
 
-      {/* Strip — click anywhere except buttons to open main window */}
+      {/* Strip — draggable from any non-button surface, click opens main window */}
       <div
-        onClick={handleOpenMain}
+        onMouseDown={handleCardMouseDown}
         style={{
           display: "flex",
           alignItems: "center",
@@ -150,43 +206,20 @@ function Widget() {
           background: "rgba(13, 20, 36, 0.97)",
           border: "1px solid rgba(255,255,255,0.08)",
           borderRadius: 10,
+          paddingLeft: 10,
           fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
           userSelect: "none",
           boxShadow: "0 4px 18px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3)",
-          cursor: "pointer",
-          overflow: "hidden",
-        } as React.CSSProperties}
-      >
-        {/* Drag grip — only draggable region */}
-        <div style={{
-          WebkitAppRegion: "drag",
           cursor: "move",
-          width: 16,
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          borderRight: "1px solid rgba(255,255,255,0.05)",
-        } as React.CSSProperties}>
-          <span style={{
-            color: "rgba(255,255,255,0.15)",
-            fontSize: 8,
-            letterSpacing: "1px",
-            lineHeight: 1,
-            pointerEvents: "none",
-          }}>
-            ⠿
-          </span>
-        </div>
-
+          overflow: "hidden",
+        }}
+      >
         {/* Status dot */}
         <div style={{
           width: 6,
           height: 6,
           borderRadius: "50%",
           flexShrink: 0,
-          marginLeft: 9,
           background: isRunning ? "#22c55e" : "#f59e0b",
           boxShadow: isRunning ? "0 0 5px #22c55e99" : "0 0 5px #f59e0b99",
           transition: "background 0.3s, box-shadow 0.3s",
@@ -222,7 +255,6 @@ function Widget() {
 
         {/* Elapsed time */}
         <div style={{
-          ...noDrag,
           fontSize: 12,
           fontWeight: 700,
           color: "#e2e8f0",
@@ -235,13 +267,13 @@ function Widget() {
           {formatTime(displayElapsed)}
         </div>
 
-        {/* Pause / Resume */}
+        {/* Pause / Resume — stopPropagation on mousedown prevents drag from starting */}
         <button
+          onMouseDown={stopDragStart}
           onClick={handleToggle}
           disabled={pending}
           title={isRunning ? "Pause" : "Resume"}
           style={{
-            ...noDrag,
             flexShrink: 0,
             width: 22,
             height: 22,
@@ -262,12 +294,12 @@ function Widget() {
           {isRunning ? "⏸" : "▶"}
         </button>
 
-        {/* Dismiss */}
+        {/* Dismiss — stopPropagation on mousedown prevents drag from starting */}
         <button
+          onMouseDown={stopDragStart}
           onClick={handleDismiss}
           title="Hide widget (tracking continues)"
           style={{
-            ...noDrag,
             flexShrink: 0,
             width: 14,
             height: 14,

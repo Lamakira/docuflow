@@ -672,6 +672,14 @@ ipcMain.handle("widget:open-main", () => {
   showMainWindow();
 });
 
+ipcMain.on("widget:move-window", (_event, x: number, y: number) => {
+  widgetWindow?.setPosition(Math.round(x), Math.round(y));
+});
+
+ipcMain.handle("widget:get-window-pos", () => {
+  return widgetWindow?.getPosition() ?? [0, 0];
+});
+
 // ─── IPC: Settings ───
 
 ipcMain.handle("settings:get-local-prefs", () => {
