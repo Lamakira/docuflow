@@ -34,6 +34,23 @@ function formatTime(seconds: number): string {
 
 const DRAG_THRESHOLD = 4; // px — below this = click, above = drag
 
+// 9-dot drag grip rendered as a 3×3 grid of circles
+function DragGrip() {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(3, 3px)",
+      gridTemplateRows: "repeat(3, 3px)",
+      gap: "2.5px",
+      flexShrink: 0,
+    }}>
+      {Array.from({ length: 9 }).map((_, i) => (
+        <div key={i} style={{ width: 3, height: 3, borderRadius: "50%", background: "rgba(255,255,255,0.35)" }} />
+      ))}
+    </div>
+  );
+}
+
 function Widget() {
   const [timer, setTimer] = useState<TimerState>({
     status: "stopped",
@@ -49,7 +66,7 @@ function Widget() {
   const [actionError, setActionError] = useState<string | null>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Custom drag state — no WebkitAppRegion used anywhere
+  // Drag state — only the grip initiates drag; rest of the card is click-to-open
   const mouseDownRef = useRef<{
     mouseX: number;
     mouseY: number;
@@ -107,7 +124,7 @@ function Widget() {
     function onMouseUp() {
       const info = mouseDownRef.current;
       mouseDownRef.current = null;
-      // If mouse was pressed and released without dragging → treat as click → open main
+      // Grip pressed and released without dragging → open main window
       if (info && !hasDraggedRef.current) {
         void window.widgetBridge.openMain();
       }
@@ -132,12 +149,10 @@ function Widget() {
     errorTimerRef.current = setTimeout(() => setActionError(null), 3000);
   }
 
-  // Start drag tracking — fetch window position async; click detection works even
-  // if position isn't resolved yet (mouseup before resolution = treated as click)
-  async function handleCardMouseDown(e: React.MouseEvent) {
+  // Grip mousedown — fetch window position async for drag calculations
+  async function handleGripMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return;
     hasDraggedRef.current = false;
-    // Mark as pending (resolved=false) so mousemove skips until position is ready
     mouseDownRef.current = { mouseX: e.screenX, mouseY: e.screenY, winX: 0, winY: 0, resolved: false };
     const pos = await window.widgetBridge.getWindowPos();
     if (mouseDownRef.current) {
@@ -145,6 +160,11 @@ function Widget() {
       mouseDownRef.current.winY = pos[1];
       mouseDownRef.current.resolved = true;
     }
+  }
+
+  // Non-grip card areas — direct click opens main window
+  function handleOpenMain() {
+    void window.widgetBridge.openMain();
   }
 
   async function handleToggle(e: React.MouseEvent) {
@@ -166,10 +186,12 @@ function Widget() {
     await window.widgetBridge.dismiss();
   }
 
-  // Buttons stop mousedown propagation so card drag never starts from a button press
+  // Buttons stop mousedown propagation (defensive, no drag starts from buttons)
   function stopDragStart(e: React.MouseEvent) {
     e.stopPropagation();
   }
+
+  const font = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
   return (
     <div style={{ position: "relative", height: "100%" }}>
@@ -188,7 +210,7 @@ function Widget() {
           borderRadius: 5,
           whiteSpace: "nowrap",
           pointerEvents: "none",
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          fontFamily: font,
           boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
           zIndex: 9999,
         }}>
@@ -196,134 +218,114 @@ function Widget() {
         </div>
       )}
 
-      {/* Strip — draggable from any non-button surface, click opens main window */}
-      <div
-        onMouseDown={handleCardMouseDown}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          height: "100%",
-          background: "rgba(13, 20, 36, 0.97)",
-          border: "1px solid rgba(255,255,255,0.08)",
-          borderRadius: 10,
-          paddingLeft: 10,
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-          userSelect: "none",
-          boxShadow: "0 4px 18px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3)",
-          cursor: "move",
-          overflow: "hidden",
-        }}
-      >
-        {/* Status dot */}
-        <div style={{
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          flexShrink: 0,
-          background: isRunning ? "#22c55e" : "#f59e0b",
-          boxShadow: isRunning ? "0 0 5px #22c55e99" : "0 0 5px #f59e0b99",
-          transition: "background 0.3s, box-shadow 0.3s",
-        }} />
+      {/* Strip — fixed size, no resize */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        height: "100%",
+        background: "rgba(13, 20, 36, 0.97)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: 10,
+        fontFamily: font,
+        userSelect: "none",
+        boxShadow: "0 4px 18px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3)",
+        overflow: "hidden",
+      }}>
 
-        {/* Task / project name */}
-        <div style={{ flex: 1, minWidth: 0, marginLeft: 8 }}>
+        {/* 9-dot grip — ONLY drag initiator; click also opens main (via global onMouseUp) */}
+        <div
+          onMouseDown={handleGripMouseDown}
+          title="Drag to move"
+          style={{
+            flexShrink: 0,
+            cursor: "move",
+            padding: "0 8px 0 10px",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <DragGrip />
+        </div>
+
+        {/* Status dot — click opens main */}
+        <div
+          onClick={handleOpenMain}
+          style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+            background: isRunning ? "#22c55e" : "#f59e0b",
+            boxShadow: isRunning ? "0 0 5px #22c55e99" : "0 0 5px #f59e0b99",
+            transition: "background 0.3s, box-shadow 0.3s",
+          }}
+        />
+
+        {/* Task / project name — click opens main */}
+        <div
+          onClick={handleOpenMain}
+          style={{ flex: 1, minWidth: 0, marginLeft: 8, cursor: "pointer" }}
+        >
           <div style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: "#f1f5f9",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            lineHeight: 1.25,
+            fontSize: 11, fontWeight: 600, color: "#f1f5f9",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.25,
           }}>
             {label}
           </div>
           {sub && (
             <div style={{
-              fontSize: 9.5,
-              color: "#475569",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              lineHeight: 1.2,
-              marginTop: 1,
+              fontSize: 9.5, color: "#475569",
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.2, marginTop: 1,
             }}>
               {sub}
             </div>
           )}
         </div>
 
-        {/* Elapsed time */}
-        <div style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: "#e2e8f0",
-          letterSpacing: "0.06em",
-          fontVariantNumeric: "tabular-nums",
-          flexShrink: 0,
-          marginLeft: 10,
-          marginRight: 8,
-        }}>
+        {/* Elapsed time — click opens main */}
+        <div
+          onClick={handleOpenMain}
+          style={{
+            fontSize: 12, fontWeight: 700, color: "#e2e8f0",
+            letterSpacing: "0.06em", fontVariantNumeric: "tabular-nums",
+            flexShrink: 0, marginLeft: 10, marginRight: 8, cursor: "pointer",
+          }}
+        >
           {formatTime(displayElapsed)}
         </div>
 
-        {/* Pause / Resume — stopPropagation on mousedown prevents drag from starting */}
+        {/* Pause / Resume */}
         <button
           onMouseDown={stopDragStart}
           onClick={handleToggle}
           disabled={pending}
           title={isRunning ? "Pause" : "Resume"}
           style={{
-            flexShrink: 0,
-            width: 22,
-            height: 22,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            flexShrink: 0, width: 22, height: 22, display: "flex",
+            alignItems: "center", justifyContent: "center",
             background: isRunning ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)",
             border: `1px solid ${isRunning ? "rgba(239,68,68,0.28)" : "rgba(34,197,94,0.28)"}`,
-            borderRadius: 6,
-            cursor: pending ? "wait" : "pointer",
+            borderRadius: 6, cursor: pending ? "wait" : "pointer",
             color: isRunning ? "#f87171" : "#4ade80",
-            fontSize: 9,
-            transition: "background 0.2s, border-color 0.2s",
-            opacity: pending ? 0.6 : 1,
-            padding: 0,
+            fontSize: 9, transition: "background 0.2s, border-color 0.2s",
+            opacity: pending ? 0.6 : 1, padding: 0,
           }}
         >
           {isRunning ? "⏸" : "▶"}
         </button>
 
-        {/* Dismiss — stopPropagation on mousedown prevents drag from starting */}
+        {/* Dismiss */}
         <button
           onMouseDown={stopDragStart}
           onClick={handleDismiss}
           title="Hide widget (tracking continues)"
           style={{
-            flexShrink: 0,
-            width: 14,
-            height: 14,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "transparent",
-            border: "none",
-            borderRadius: 3,
-            cursor: "pointer",
-            color: "rgba(255,255,255,0.22)",
-            fontSize: 8,
-            lineHeight: 1,
-            marginLeft: 6,
-            marginRight: 8,
-            padding: 0,
+            flexShrink: 0, width: 14, height: 14, display: "flex",
+            alignItems: "center", justifyContent: "center",
+            background: "transparent", border: "none", borderRadius: 3,
+            cursor: "pointer", color: "rgba(255,255,255,0.22)", fontSize: 8,
+            lineHeight: 1, marginLeft: 6, marginRight: 8, padding: 0,
             transition: "color 0.2s",
           }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.6)";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.22)";
-          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.6)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.22)"; }}
         >
           ✕
         </button>

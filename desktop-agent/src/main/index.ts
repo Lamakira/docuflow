@@ -4,7 +4,7 @@
  * Phase 3 MVP — Pairing + Timer control + Workers.
  */
 
-import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen } from "electron";
+import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen, powerMonitor } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -749,13 +749,20 @@ ipcMain.handle("agent:today-breakdown", async () => {
 // ─── Idle / break UX ───
 
 let idlePromptDismissTimeout: ReturnType<typeof setTimeout> | null = null;
+/** Polls powerMonitor while the idle warning is showing to detect outside-window activity. */
+let idleActivityCheckInterval: ReturnType<typeof setInterval> | null = null;
 /** Countdown seconds before the timer is auto-stopped. Updated by heartbeat policy. */
 let idleCountdownSeconds = 60;
 /** Wall-clock time when the user went idle — set by handleIdleUx, cleared on any resolution. */
 let idleStartedAt: Date | null = null;
 
+function clearIdleActivityCheck(): void {
+  if (idleActivityCheckInterval) { clearInterval(idleActivityCheckInterval); idleActivityCheckInterval = null; }
+}
+
 function clearIdleTimeout(): void {
   if (idlePromptDismissTimeout) { clearTimeout(idlePromptDismissTimeout); idlePromptDismissTimeout = null; }
+  clearIdleActivityCheck();
 }
 
 /**
@@ -815,10 +822,25 @@ function handleIdleUx(idleSeconds: number): void {
   console.log(`[Main] sending agent:idle-prompt to renderer — idleSeconds=${idleSeconds} countdownSeconds=${countdown}`);
   mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds, countdownSeconds: countdown });
 
-  // Auto-stop after countdown expires — retroactively excludes idle time from Worked Today
+  // Poll powerMonitor every 500ms while the warning is shown.
+  // If the OS reports recent activity (idle reset), the user acted outside DocuFlow — auto-resume.
   clearIdleTimeout();
+  idleActivityCheckInterval = setInterval(() => {
+    if (!idleStartedAt) { clearIdleActivityCheck(); return; }
+    const currentIdle = powerMonitor.getSystemIdleTime();
+    if (currentIdle < 2) {
+      console.log(`[Main] idle.globalActivity — OS idle reset to ${currentIdle}s, dismissing prompt as resume`);
+      clearIdleTimeout();
+      releaseIdleOnTop();
+      idleStartedAt = null;
+      mainWindow?.webContents.send("agent:idle-dismiss");
+    }
+  }, 500);
+
+  // Auto-stop after countdown expires — retroactively excludes idle time from Worked Today
   idlePromptDismissTimeout = setTimeout(() => {
     idlePromptDismissTimeout = null;
+    clearIdleActivityCheck();
     const currentEntryId = store.getActiveEntryId();
     const capturedIdleStartedAt = idleStartedAt;
     idleStartedAt = null;
