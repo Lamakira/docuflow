@@ -104,6 +104,33 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
   );
 }
 
+function CopyableInfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleCopy() {
+    if (!value || value === '—') return;
+    window.agentBridge.copyToClipboard(value);
+    setCopied(true);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <div className="sp-row sp-row--info">
+      <span className="sp-row__label">{label}</span>
+      <div className="sp-row__right--gap">
+        <span className={`sp-row__value${mono ? ' sp-row__value--mono' : ''}`}>{value}</span>
+        {value && value !== '—' && (
+          <button className="sp-copy-btn" onClick={handleCopy} title="Copy to clipboard">
+            {copied ? '✓' : '⎘'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PolicyBlock({ policy }: { policy: OrgPolicy | null }) {
   return (
     <div className="sp-policy-block">
@@ -212,13 +239,13 @@ function ActivityBarSection() {
     <>
       <SectionHead
         title="Activity Bar"
-        desc="The activity bar is a compact floating widget that stays on screen while tracking. Drag the grip to reposition it anywhere on your display."
+        desc="The activity bar is a compact floating widget that stays on screen while the timer is running. When tracking pauses, the main DocuFlow window keeps your last task and a resume control visible."
       />
 
       <Group label="Position">
         <Row
           label="Widget position"
-          hint="Drag the grip (⠿) to move the widget. Resets to the bottom-right corner of your primary display."
+          hint="Drag the nine-dot grip (⠿) on the left of the widget to reposition it anywhere. It snaps inside the screen boundary and is saved between sessions."
           right={
             <button
               className="btn btn--ghost btn--sm"
@@ -231,31 +258,45 @@ function ActivityBarSection() {
         />
       </Group>
 
-      <Group label="Behaviour">
+      <Group label="Floating widget">
         <Row
           label="Click widget opens DocuFlow"
-          hint="Clicking anywhere on the bar (outside the pause / close buttons) brings DocuFlow to the front."
+          hint="Clicking anywhere on the bar (outside the pause and close buttons) brings the DocuFlow window to the front."
           right={<FixedBadge label="Always on" />}
         />
         <Row
           label="Visible while tracking"
-          hint="The widget appears automatically when a timer is running and hides when it stops."
+          hint="The widget appears automatically when a timer starts and hides when it stops."
           right={<FixedBadge label="Always on" />}
         />
         <Row
-          label="Drag grip"
-          hint="The nine-dot grip is always visible on the left side of the widget."
+          label="Nine-dot drag grip"
+          hint="The grip is always visible on the left edge of the widget. Only the grip initiates a drag — the rest of the bar opens DocuFlow on click."
           right={<FixedBadge label="Always on" />}
+        />
+        <Row
+          label="Keep floating bar visible after stop"
+          hint="Show the floating activity bar in a paused state after the timer ends, so you can resume without opening DocuFlow."
+          right={<SoonBadge />}
+          dimmed
         />
         <Row
           label="Custom widget size or theme"
           right={<SoonBadge />}
           dimmed
         />
+      </Group>
+
+      <Group label="Main window">
         <Row
-          label="Keep widget visible after stop"
-          right={<SoonBadge />}
-          dimmed
+          label="Persistent header after tracking pauses"
+          hint="The DocuFlow window keeps your last project and task visible with a warm header and a one-click resume control — even when the floating widget is hidden."
+          right={<FixedBadge label="Always on" />}
+        />
+        <Row
+          label="Window raised during idle prompt"
+          hint="When the 'Are you still working?' prompt appears, DocuFlow is raised above other windows without stealing keyboard focus."
+          right={<FixedBadge label="Always on" />}
         />
       </Group>
     </>
@@ -269,13 +310,15 @@ function TrackingSection({ policy }: { policy: OrgPolicy | null }) {
     <>
       <SectionHead
         title="Tracking"
-        desc="Tracking rules are defined by your organisation. The settings below are read-only on this device."
+        desc="Idle detection, auto-stop, and screenshot capture are configured by your organisation and applied to all devices on your account. They cannot be changed on this device."
       />
 
       <PolicyBlock policy={policy} />
 
       <InfoNote>
-        To change tracking rules, contact your administrator or visit the DocuFlow web app.
+        When you are idle for the configured period, DocuFlow shows an "Are you still working?" prompt.
+        If you do not respond before the countdown ends, the timer stops automatically and idle time is excluded from your totals.
+        To change these thresholds, contact your administrator or visit the DocuFlow web app.
       </InfoNote>
     </>
   );
@@ -321,7 +364,7 @@ function StartupSection({ prefs }: { prefs: LocalPrefs | null }) {
     <>
       <SectionHead
         title="Startup"
-        desc="Control how DocuFlow behaves when your computer starts."
+        desc="Control how DocuFlow launches when your computer starts. Tracking always requires an explicit action — it never starts automatically."
       />
 
       <Group label="Launch">
@@ -329,8 +372,8 @@ function StartupSection({ prefs }: { prefs: LocalPrefs | null }) {
           label="Launch at system sign-in"
           hint={
             devMode
-              ? 'Not available in development mode.'
-              : 'DocuFlow starts in the background when you sign in to your computer.'
+              ? 'Not available in development mode — only applies to packaged builds.'
+              : 'DocuFlow starts silently in the background when you sign in. The main window appears when you open it from the taskbar or interact with the activity bar.'
           }
           right={
             <Toggle
@@ -341,16 +384,35 @@ function StartupSection({ prefs }: { prefs: LocalPrefs | null }) {
           }
         />
         <Callout>
-          Launching at sign-in does not start tracking automatically — you still need to select
-          a project and task.
+          Background launch does not start tracking — you still need to select a project and task.
         </Callout>
       </Group>
 
-      <Group label="Window (coming soon)">
-        <Row label="Start minimised to tray" right={<SoonBadge />} dimmed />
-        <Row label="Open main window on launch" right={<SoonBadge />} dimmed />
-        <Row label="Show activity bar on launch" right={<SoonBadge />} dimmed />
-        <Row label="Restore last tracked context" right={<SoonBadge />} dimmed />
+      <Group label="Window behaviour (coming soon)">
+        <Row
+          label="Minimise to tray on startup"
+          hint="Keep DocuFlow hidden in the system tray on launch instead of showing the main window."
+          right={<SoonBadge />}
+          dimmed
+        />
+        <Row
+          label="Open main window on startup"
+          hint="Bring the DocuFlow window to the front automatically after launch."
+          right={<SoonBadge />}
+          dimmed
+        />
+        <Row
+          label="Show activity bar on startup"
+          hint="Display the floating widget when DocuFlow launches, even if no timer is running."
+          right={<SoonBadge />}
+          dimmed
+        />
+        <Row
+          label="Restore last active context"
+          hint="Pre-select the last project and task so you can resume tracking in one click."
+          right={<SoonBadge />}
+          dimmed
+        />
       </Group>
 
       {isDirty && (
@@ -367,12 +429,12 @@ function RemindersSection() {
     <>
       <SectionHead
         title="Reminders"
-        desc="Get notified to start tracking when you have been away from DocuFlow."
+        desc="Reminders nudge you to start tracking when you have been idle or away from DocuFlow."
       />
       <Placeholder
         icon="◎"
         title="Desktop reminders — coming in a future release"
-        body='Scheduled "remind me to track" prompts and customisable quiet hours are planned. Time-based rules for your whole team can currently be configured from the DocuFlow web app by your administrator.'
+        body="Quiet-hour rules, recurring nudges, and team-wide reminder policies are planned. Administrators can configure time-based notification rules now from the DocuFlow web app."
       />
     </>
   );
@@ -382,16 +444,27 @@ function RemindersSection() {
 
 function TimeZoneSection() {
   const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const [localTime, setLocalTime] = useState(() =>
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  );
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setLocalTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <>
       <SectionHead
         title="Time Zone"
-        desc="DocuFlow stores all time entries in UTC on the server. Times are displayed in your local device time zone."
+        desc="All time entries are stored in UTC on the server and displayed in your device's local time zone. Changing your OS time zone does not affect the accuracy of historical entries."
       />
 
       <Group label="Your device">
         <InfoRow label="Local time zone" value={localTz} />
+        <InfoRow label="Current local time" value={localTime} mono />
       </Group>
 
       <Group label="Organisation">
@@ -399,8 +472,8 @@ function TimeZoneSection() {
       </Group>
 
       <InfoNote>
-        If your local time zone is wrong, update it in your operating system settings.
-        Your tracked time entries store UTC timestamps and are not affected by this display setting.
+        If your local time zone looks wrong, update it in your operating system settings.
+        Existing time entries store UTC timestamps and will display correctly once the OS time zone is fixed.
       </InfoNote>
     </>
   );
@@ -428,17 +501,17 @@ function AdvancedSection({
     <>
       <SectionHead
         title="Advanced"
-        desc="Device details and account information. These values are read-only."
+        desc="Device and account details. Click ⎘ to copy a value — useful when contacting support."
       />
 
       <Group label="Application">
-        <InfoRow label="App version" value={prefs?.appVersion ?? '—'} />
-        <InfoRow label="Device name" value={agentState?.deviceName ?? '—'} />
-        <InfoRow label="Account" value={agentState?.userEmail ?? '—'} />
+        <CopyableInfoRow label="App version" value={prefs?.appVersion ?? '—'} />
+        <CopyableInfoRow label="Device name" value={agentState?.deviceName ?? '—'} />
+        <CopyableInfoRow label="Account" value={agentState?.userEmail ?? '—'} />
       </Group>
 
       <Group label="Server">
-        <InfoRow label="Host" value={agentState?.apiHost ?? '—'} mono />
+        <CopyableInfoRow label="Host" value={agentState?.apiHost ?? '—'} mono />
         <InfoRow label="URL source" value={apiSource} mono />
       </Group>
 

@@ -4,7 +4,7 @@
  * Phase 3 MVP — Pairing + Timer control + Workers.
  */
 
-import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen } from "electron";
+import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen, clipboard } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -704,6 +704,11 @@ ipcMain.handle("settings:get-local-prefs", () => {
 ipcMain.handle("settings:set-open-at-login", (_event, value: boolean) => {
   app.setLoginItemSettings({ openAtLogin: value });
   console.log(`[Settings] openAtLogin → ${value}`);
+  return { ok: true };
+});
+
+ipcMain.handle("settings:copy-to-clipboard", (_event, text: string) => {
+  clipboard.writeText(String(text));
   return { ok: true };
 });
 

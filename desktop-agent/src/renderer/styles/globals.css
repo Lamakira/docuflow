@@ -1220,6 +1220,25 @@ a:hover { text-decoration: underline; }
   max-width: 380px;
 }
 
+/* Copyable info row — right side with copy button */
+.sp-row__right--gap {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.sp-copy-btn {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s, background 0.1s;
+  line-height: 1.4;
+}
+.sp-copy-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.22); background: rgba(255,255,255,0.05); }
+
 /* Save footer */
 .sp-save-footer {
   display: flex;

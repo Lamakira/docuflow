@@ -71,4 +71,7 @@ contextBridge.exposeInMainWorld("agentBridge", {
 
   // Widget utilities
   resetWidgetPosition: () => ipcRenderer.invoke("widget:reset-position"),
+
+  // Clipboard
+  copyToClipboard: (text: string) => ipcRenderer.invoke("settings:copy-to-clipboard", text),
 });
