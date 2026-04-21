@@ -823,10 +823,13 @@ function handleIdleUx(idleSeconds: number): void {
       queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId: currentEntryId });
       pushStateToRenderer();
       syncWorker?.triggerSync();
-      console.log(`[Main] idle.autoStop — countdown expired, timer stopped retroactively at ${capturedIdleStartedAt.toISOString()}`);
+      // Compute actual idle duration from idleStartedAt to now — more accurate than
+      // the threshold-crossing idleSeconds which was captured earlier.
+      const actualIdleSeconds = Math.round((Date.now() - capturedIdleStartedAt.getTime()) / 1000);
+      console.log(`[Main] idle.autoStop — countdown expired, timer stopped retroactively at ${capturedIdleStartedAt.toISOString()} (actualIdleSeconds=${actualIdleSeconds})`);
       // Push stopped-confirmation so renderer shows the second modal
       mainWindow?.webContents.send("agent:idle-stopped", {
-        idleSeconds,
+        idleSeconds: actualIdleSeconds,
         idleStartedAt: capturedIdleStartedAt.toISOString(),
       });
     } else {

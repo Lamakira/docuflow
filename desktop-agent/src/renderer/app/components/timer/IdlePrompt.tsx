@@ -15,7 +15,7 @@ function fmtTime(isoString: string): string {
   return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-/** Arc SVG countdown ring — r=36, so circumference ≈ 226 */
+/** Arc SVG countdown ring — r=36, circumference ≈ 226 */
 function CountdownRing({ remaining, total }: { remaining: number; total: number }) {
   const r = 36;
   const circ = 2 * Math.PI * r;
@@ -48,6 +48,9 @@ export function IdlePrompt() {
   const [loading, setLoading] = useState<'break' | 'resume' | null>(null);
   const deadlineRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Mirror loading in a ref so the input-listener closure always sees the current value
+  const loadingRef = useRef<'break' | 'resume' | null>(null);
+  loadingRef.current = loading;
 
   function startCountdown(countdownSeconds: number) {
     const deadline = Date.now() + countdownSeconds * 1000;
@@ -69,15 +72,31 @@ export function IdlePrompt() {
     deadlineRef.current = null;
   }
 
+  // Lifted to component level so the input-listener useEffect can reference them stably
+  async function doResume() {
+    if (loadingRef.current !== null) return;
+    setLoading('resume');
+    stopCountdown();
+    await window.agentBridge.idleResume();
+  }
+
+  async function doBreak() {
+    if (loadingRef.current !== null) return;
+    setLoading('break');
+    stopCountdown();
+    await window.agentBridge.idleBreak();
+  }
+
+  // IPC events from main process
   useEffect(() => {
     const offPrompt = window.agentBridge.onIdlePrompt(({ idleSeconds, countdownSeconds }) => {
-      console.log(`[IdlePrompt] prompt received — idleSeconds=${idleSeconds} countdownSeconds=${countdownSeconds}`);
+      console.log(`[IdlePrompt] prompt — idleSeconds=${idleSeconds} countdownSeconds=${countdownSeconds}`);
       setPhase({ kind: 'warning', idleSeconds });
       setLoading(null);
       startCountdown(countdownSeconds ?? 60);
     });
     const offStopped = window.agentBridge.onIdleStopped(({ idleSeconds, idleStartedAt }) => {
-      console.log(`[IdlePrompt] stopped received — idleSeconds=${idleSeconds} idleStartedAt=${idleStartedAt}`);
+      console.log(`[IdlePrompt] stopped — idleSeconds=${idleSeconds} idleStartedAt=${idleStartedAt}`);
       stopCountdown();
       setPhase({ kind: 'stopped', idleSeconds, idleStartedAt });
     });
@@ -86,55 +105,60 @@ export function IdlePrompt() {
       setLoading(null);
       stopCountdown();
     });
-    return () => {
-      offPrompt();
-      offStopped();
-      offDismiss();
-      stopCountdown();
-    };
+    return () => { offPrompt(); offStopped(); offDismiss(); stopCountdown(); };
   }, []);
+
+  // Any keyboard input or mouse click outside the modal card = "I'm still working"
+  useEffect(() => {
+    if (phase?.kind !== 'warning') return;
+
+    function onUserActivity(e: Event) {
+      const target = e.target as Element | null;
+      // Clicks inside the card use the explicit buttons — don't double-fire
+      if (target?.closest?.('.idle-card')) return;
+      doResume();
+    }
+
+    window.addEventListener('keydown', onUserActivity, { capture: true });
+    window.addEventListener('mousedown', onUserActivity, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onUserActivity, { capture: true });
+      window.removeEventListener('mousedown', onUserActivity, { capture: true });
+    };
+  }, [phase?.kind]);
 
   if (phase === null) return null;
 
   // ── Warning phase ─────────────────────────────────────────────────────────────
   if (phase.kind === 'warning') {
-    async function handleBreak() {
-      setLoading('break');
-      stopCountdown();
-      await window.agentBridge.idleBreak();
-    }
-    async function handleResume() {
-      setLoading('resume');
-      stopCountdown();
-      await window.agentBridge.idleResume();
-    }
-
     return (
       <div className="idle-overlay">
         <div className="idle-card idle-card--warning">
           <div className="idle-card__title">Are you still working?</div>
-          <div className="idle-card__subtitle">
-            No activity for <strong>{fmtDuration(phase.idleSeconds)}</strong>.
-            Your timer is still running.
+
+          {/* Instruction — tells user what to do to stay tracked */}
+          <div className="idle-card__instruction">
+            Clicking or typing anywhere means you are working.
           </div>
 
           <CountdownRing remaining={remaining} total={total} />
 
-          <div className="idle-card__hint">
-            Timer stops automatically when the countdown reaches zero.
+          {/* Context — moved below ring, less dominant */}
+          <div className="idle-card__idle-note">
+            No activity for <strong>{fmtDuration(phase.idleSeconds)}</strong> — timer still running.
           </div>
 
           <div className="idle-card__actions">
             <button
               className="idle-btn idle-btn--resume"
-              onClick={handleResume}
+              onClick={doResume}
               disabled={loading !== null}
             >
               {loading === 'resume' ? '…' : 'Yes, keep tracking'}
             </button>
             <button
               className="idle-btn idle-btn--break"
-              onClick={handleBreak}
+              onClick={doBreak}
               disabled={loading !== null}
             >
               {loading === 'break' ? '…' : 'Stop — I was on a break'}
