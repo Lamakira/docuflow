@@ -722,6 +722,23 @@ ipcMain.handle("settings:copy-to-clipboard", (_event, text: string) => {
   return { ok: true };
 });
 
+ipcMain.handle("settings:get-display-timezone", () => store.getDisplayTimezone());
+
+ipcMain.handle("settings:set-display-timezone", (_event, tz: string) => {
+  const value = tz === 'utc' ? 'utc' : 'local';
+  store.setDisplayTimezone(value);
+  return { ok: true };
+});
+
+ipcMain.handle("agent:worked-period", async (_event, startIso: string, endIso: string) => {
+  try {
+    const total = await apiClient.getWorkedPeriod(new Date(startIso), new Date(endIso));
+    return { ok: true, total };
+  } catch {
+    return { ok: false, total: 0 };
+  }
+});
+
 ipcMain.handle("settings:get-org-policy", () => {
   if (!lastKnownPolicy) return null;
   return {

@@ -85,6 +85,9 @@ export interface AgentBridge {
   setOpenAtLogin: (value: boolean) => Promise<{ ok: boolean }>;
   resetWidgetPosition: () => Promise<{ ok: boolean }>;
   copyToClipboard: (text: string) => Promise<{ ok: boolean }>;
+  getDisplayTimezone: () => Promise<'local' | 'utc'>;
+  setDisplayTimezone: (tz: 'local' | 'utc') => Promise<{ ok: boolean }>;
+  getWorkedPeriod: (startIso: string, endIso: string) => Promise<{ ok: boolean; total: number }>;
   getOrgPolicy: () => Promise<{
     screenshotsEnabled: boolean;
     idlePromptEnabled: boolean;

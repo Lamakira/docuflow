@@ -14,6 +14,7 @@ interface State {
   loading: boolean;
   agentState: AgentState | null;
   page: AppPage;
+  settingsDeepSection: string | null;
   loginProgress: string | null;
   recentTasks: RecentTask[];
   wasRevoked: boolean;
@@ -36,6 +37,7 @@ const initialState: State = {
   loading: true,
   agentState: null,
   page: 'timer',
+  settingsDeepSection: null,
   loginProgress: null,
   recentTasks: [],
   wasRevoked: false,
@@ -49,6 +51,8 @@ type Action =
   | { type: 'LOGOUT'; newState: AgentState }
   | { type: 'TICK' }
   | { type: 'SET_PAGE'; page: AppPage }
+  | { type: 'NAVIGATE_SETTINGS'; section: string }
+  | { type: 'CLEAR_SETTINGS_DEEP' }
   | { type: 'SET_LOGIN_PROGRESS'; message: string | null }
   | { type: 'ADD_RECENT'; task: RecentTask };
 
@@ -111,7 +115,13 @@ function reducer(state: State, action: Action): State {
     }
 
     case 'SET_PAGE':
-      return { ...state, page: action.page };
+      return { ...state, page: action.page, settingsDeepSection: null };
+
+    case 'NAVIGATE_SETTINGS':
+      return { ...state, page: 'settings', settingsDeepSection: action.section };
+
+    case 'CLEAR_SETTINGS_DEEP':
+      return { ...state, settingsDeepSection: null };
 
     case 'SET_LOGIN_PROGRESS':
       return { ...state, loginProgress: action.message };
@@ -147,6 +157,7 @@ interface AgentContextValue {
   pauseTimer: () => Promise<{ ok: boolean; error?: string }>;
   resumeTimer: () => Promise<{ ok: boolean; error?: string }>;
   stopTimer: () => Promise<{ ok: boolean; error?: string }>;
+  navigateToSettings: (section: string) => void;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
@@ -255,9 +266,13 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     return result;
   }, []);
 
+  const navigateToSettings = useCallback((section: string) => {
+    dispatch({ type: 'NAVIGATE_SETTINGS', section });
+  }, []);
+
   return (
     <AgentContext.Provider
-      value={{ state, dispatch, login, logout, startTimer, pauseTimer, resumeTimer, stopTimer }}
+      value={{ state, dispatch, login, logout, startTimer, pauseTimer, resumeTimer, stopTimer, navigateToSettings }}
     >
       {children}
     </AgentContext.Provider>

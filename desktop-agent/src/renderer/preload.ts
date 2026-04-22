@@ -74,4 +74,12 @@ contextBridge.exposeInMainWorld("agentBridge", {
 
   // Clipboard
   copyToClipboard: (text: string) => ipcRenderer.invoke("settings:copy-to-clipboard", text),
+
+  // Display timezone preference
+  getDisplayTimezone: (): Promise<'local' | 'utc'> => ipcRenderer.invoke("settings:get-display-timezone"),
+  setDisplayTimezone: (tz: 'local' | 'utc') => ipcRenderer.invoke("settings:set-display-timezone", tz),
+
+  // Period-based worked time (for hover card week/month aggregates)
+  getWorkedPeriod: (startIso: string, endIso: string): Promise<{ ok: boolean; total: number }> =>
+    ipcRenderer.invoke("agent:worked-period", startIso, endIso),
 });

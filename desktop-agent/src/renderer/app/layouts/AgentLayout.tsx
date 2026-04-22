@@ -23,7 +23,7 @@ export function AgentLayout() {
           {page === 'timer' && <TimerPage />}
           {page === 'activity' && <ActivityPage />}
           {page === 'screenshots' && <ScreenshotsPage />}
-          {page === 'settings' && <SettingsPage />}
+          {page === 'settings' && <SettingsPage initialSection={state.settingsDeepSection ?? undefined} />}
         </div>
       </div>
       <IdlePrompt />

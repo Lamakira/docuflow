@@ -287,6 +287,14 @@ export class ApiClient {
     return data?.total ?? 0;
   }
 
+  async getWorkedPeriod(start: Date, end: Date): Promise<number> {
+    const data = await this.authenticatedRequest(
+      `/api/agent/worked-today?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`,
+      { method: "GET" }
+    );
+    return data?.total ?? 0;
+  }
+
   async getTodayBreakdown(): Promise<Array<{
     projectName: string;
     taskId: string | null;
