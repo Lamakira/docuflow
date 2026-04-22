@@ -70,6 +70,14 @@ try {
 
 // ─── Public types ───
 
+/** Global hook payload so main can ignore input that belongs inside the agent window. */
+export type IdleGlobalInputPayload =
+  | { kind: "mousedown"; x: number; y: number }
+  | { kind: "keydown" };
+
+/** Return false to keep the one-shot listener registered for a later event. */
+export type IdleGlobalInputHandler = (payload: IdleGlobalInputPayload) => boolean | void;
+
 export interface ActivityMetrics {
   /** 0–100: fraction of the last 60 s with ≥1 keydown per second (uiohook mode)
    *         or any OS input per second (fallback). */
@@ -104,8 +112,8 @@ export class ActivityWorker {
   private suspendHandler: (() => void) | null = null;
   private resumeHandler: (() => void) | null = null;
   private onIdleUxCb: ((idleSeconds: number) => void) | null = null;
-  /** Fired on the next keydown or mousedown while the idle warning is showing. mousemove excluded intentionally. */
-  private idleInputCb: (() => void) | null = null;
+  /** One-shot: next global keydown/mousedown (mousemove excluded) unless handler returns false to retry. */
+  private idleInputCb: IdleGlobalInputHandler | null = null;
 
   // ─── Idle UX policy (admin-configurable, updated via applyIdlePolicy()) ───
   private idleUxEnabled = true;
@@ -148,11 +156,10 @@ export class ActivityWorker {
   }
 
   /**
-   * Set (or clear) a one-time callback invoked on the next global keydown or mousedown.
-   * mousemove and wheel are excluded — only intentional input counts.
-   * Used by main to dismiss the idle warning when the user acts outside the DocuFlow window.
+   * Set (or clear) a one-time callback invoked on global keydown/mousedown (uiohook).
+   * Return false to ignore this event and wait for the next one (e.g. click inside the agent window).
    */
-  setIdleInputCallback(cb: (() => void) | null): void {
+  setIdleInputCallback(cb: IdleGlobalInputHandler | null): void {
     this.idleInputCb = cb;
   }
 
@@ -226,15 +233,26 @@ export class ActivityWorker {
         this.markKbSecond(now);
         this.kbTimes.push(now);
         if (this.kbTimes.length > 10_000) this.kbTimes.splice(0, 5_000);
-        if (this.idleInputCb) { const cb = this.idleInputCb; this.idleInputCb = null; cb(); }
+        if (this.idleInputCb) {
+          const cb = this.idleInputCb;
+          const keep = cb({ kind: "keydown" }) === false;
+          if (!keep) this.idleInputCb = null;
+        }
       };
 
-      this.mouseDownHandler = () => {
+      this.mouseDownHandler = (...args: unknown[]) => {
         const now = Date.now();
         this.markMsSecond(now);
         this.msTimes.push(now);
         if (this.msTimes.length > 10_000) this.msTimes.splice(0, 5_000);
-        if (this.idleInputCb) { const cb = this.idleInputCb; this.idleInputCb = null; cb(); }
+        if (this.idleInputCb) {
+          const e = args[0] as { x?: number; y?: number } | undefined;
+          const x = typeof e?.x === "number" ? e.x : 0;
+          const y = typeof e?.y === "number" ? e.y : 0;
+          const cb = this.idleInputCb;
+          const keep = cb({ kind: "mousedown", x, y }) === false;
+          if (!keep) this.idleInputCb = null;
+        }
       };
 
       // Throttle mousemove to 10 Hz — the event fires hundreds of times per second

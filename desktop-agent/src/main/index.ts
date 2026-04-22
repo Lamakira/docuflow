@@ -52,7 +52,7 @@ import { AgentStore } from "../lib/AgentStore";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { ApiClient } from "../lib/ApiClient";
 import { HeartbeatWorker } from "../workers/HeartbeatWorker";
-import { ActivityWorker } from "../workers/ActivityWorker";
+import { ActivityWorker, type IdleGlobalInputPayload } from "../workers/ActivityWorker";
 import { SyncWorker } from "../workers/SyncWorker";
 import { ScreenCaptureWorker } from "../workers/ScreenCaptureWorker";
 
@@ -875,16 +875,27 @@ function handleIdleUx(idleSeconds: number): void {
   console.log(`[Main] sending agent:idle-prompt to renderer — idleSeconds=${idleSeconds} countdownSeconds=${countdown}`);
   mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds, countdownSeconds: countdown });
 
-  // Register a one-shot callback on ActivityWorker that fires on the next global keydown or
-  // mousedown (mousemove excluded). When the user clicks or types outside DocuFlow while the
-  // warning is visible, the prompt is dismissed as "resume". mousemove is intentionally ignored
-  // so that simply moving the mouse does not count as "I'm working".
+  // Register a one-shot callback on ActivityWorker (uiohook: global keydown/mousedown).
+  // Must NOT treat clicks inside the agent window as "resume" — those belong to the modal
+  // (e.g. "No, I'm not working") or the renderer's idle-card rules.
   clearIdleTimeout();
   if (activityWorker) {
     idleActivityCheckActive = true;
-    activityWorker.setIdleInputCallback(() => {
+    activityWorker.setIdleInputCallback((payload: IdleGlobalInputPayload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (payload.kind === "mousedown") {
+          const b = mainWindow.getBounds();
+          const { x, y } = payload;
+          if (x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height) {
+            return false;
+          }
+        }
+        if (payload.kind === "keydown" && mainWindow.isFocused()) {
+          return false;
+        }
+      }
       idleActivityCheckActive = false;
-      console.log("[Main] idle.globalActivity — keydown/mousedown outside window, dismissing as resume");
+      console.log("[Main] idle.globalActivity — dismiss as resume (outside agent window / key while unfocused)");
       clearIdleTimeout();
       releaseIdleOnTop();
       idleStartedAt = null;
