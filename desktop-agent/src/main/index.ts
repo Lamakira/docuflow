@@ -201,13 +201,21 @@ function createWidgetWindow(): BrowserWindow {
     console.log("[Widget] renderer ready");
   });
 
-  // Clamp position after drag so the widget can never be moved off-screen
+  // Clamp position after drag; re-assert exact size every time (belt-and-suspenders against OS resize)
   win.on("moved", () => {
-    const { x, y, width, height } = win.getBounds();
+    const { x, y } = win.getBounds();
     const { workArea } = screen.getPrimaryDisplay();
-    const cx = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - width));
-    const cy = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - height));
-    if (cx !== x || cy !== y) win.setPosition(cx, cy);
+    const cx = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - WIDGET_WIDTH));
+    const cy = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - WIDGET_HEIGHT));
+    win.setBounds({ x: cx, y: cy, width: WIDGET_WIDTH, height: WIDGET_HEIGHT });
+  });
+
+  // Snap back to exact dimensions if anything causes a resize (DPI change, compositor glitch, etc.)
+  win.on("resize", () => {
+    const { x, y, width, height } = win.getBounds();
+    if (width !== WIDGET_WIDTH || height !== WIDGET_HEIGHT) {
+      win.setBounds({ x, y, width: WIDGET_WIDTH, height: WIDGET_HEIGHT });
+    }
   });
 
   // Prevent accidental close
@@ -675,7 +683,7 @@ ipcMain.handle("widget:open-main", () => {
 });
 
 ipcMain.on("widget:move-window", (_event, x: number, y: number) => {
-  widgetWindow?.setPosition(Math.round(x), Math.round(y));
+  widgetWindow?.setBounds({ x: Math.round(x), y: Math.round(y), width: WIDGET_WIDTH, height: WIDGET_HEIGHT });
 });
 
 ipcMain.handle("widget:get-window-pos", () => {
