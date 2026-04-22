@@ -191,9 +191,32 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.04em;
   color: white;
   flex-shrink: 0;
-  margin-right: 5rem; /* leave room for the FAB */
 }
 .timer-header__controls { display: flex; gap: 0.25rem; flex-shrink: 0; }
+
+/* Right-side cluster: sync dot + elapsed */
+.timer-header__right {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+  margin-right: 5rem; /* leave room for the FAB */
+}
+.timer-header--stopped .timer-header__right { margin-right: 0; }
+
+/* Pulsing dot shown while entryId is still local (server reconciliation pending) */
+.timer-header__sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  flex-shrink: 0;
+  animation: sync-pulse 1.1s ease-in-out infinite;
+}
+@keyframes sync-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%       { opacity: 1;    transform: scale(1.1); }
+}
 
 /* Truly-stopped header (no recent task): reclaim FAB margin since no FAB is shown */
 .timer-header--stopped .timer-header__elapsed { margin-right: 0; }

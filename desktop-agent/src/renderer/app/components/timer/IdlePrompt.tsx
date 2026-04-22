@@ -206,17 +206,17 @@ export function IdlePrompt() {
           <div className="idle-card__actions">
             <button
               className="idle-btn idle-btn--resume"
-              onClick={doResume}
+              onClick={(e) => { e.stopPropagation(); doResume(); }}
               disabled={loading !== null}
             >
               {loading === 'resume' ? '…' : 'Yes, keep tracking'}
             </button>
             <button
               className="idle-btn idle-btn--break"
-              onClick={doBreak}
+              onClick={(e) => { e.stopPropagation(); doBreak(); }}
               disabled={loading !== null}
             >
-              {loading === 'break' ? '…' : 'Stop — I was on a break'}
+              {loading === 'break' ? '…' : 'No, I\'m not working'}
             </button>
           </div>
         </div>
