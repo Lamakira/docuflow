@@ -94,14 +94,22 @@ export function IdlePrompt() {
     if (loadingRef.current !== null) return;
     setLoading('resume');
     stopCountdown();
-    await window.agentBridge.idleResume();
+    try {
+      await window.agentBridge.idleResume();
+    } finally {
+      setLoading(null);
+    }
   }
 
   async function doBreak() {
     if (loadingRef.current !== null) return;
     setLoading('break');
     stopCountdown();
-    await window.agentBridge.idleBreak();
+    try {
+      await window.agentBridge.idleBreak();
+    } finally {
+      setLoading(null);
+    }
   }
 
   async function doStoppedResume() {

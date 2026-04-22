@@ -923,7 +923,7 @@ function handleIdleUx(idleSeconds: number): void {
   }, countdown * 1000);
 }
 
-/** Renderer: user chose "Stop — I was on a break" — stop timer retroactively and dismiss prompt. */
+/** Renderer: user chose "No, I'm not working" — same outcome as countdown expiry: not running anymore. */
 ipcMain.handle("agent:idle-break", () => {
   clearIdleTimeout();
   releaseIdleOnTop();
@@ -932,18 +932,28 @@ ipcMain.handle("agent:idle-break", () => {
   idleStartedAt = null;
 
   if (entryId && store.getTimerStatus() === "running") {
-    // Retroactively pause at when idle started so idle time is not counted.
-    // Keep entryId / project context intact so the user can resume with one click.
+    // Match idle.autoStop: close session at idle start, clear local active timer, enqueue stop.
+    // (Pause-only left the entry active; server resync could flip UI back to "running" briefly.)
     store.setTimerPaused(capturedIdleStartedAt ?? undefined);
-    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+    store.clearTimer();
+    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
     pushStateToRenderer();
     syncWorker?.triggerSync();
-    console.log(`[Main] idle.break confirmed — timer paused retroactively at ${capturedIdleStartedAt?.toISOString() ?? "now"}`);
+    const ts = capturedIdleStartedAt ?? new Date();
+    const actualIdleSeconds = Math.round((Date.now() - ts.getTime()) / 1000);
+    console.log(
+      `[Main] idle.break confirmed — timer stopped retroactively at ${ts.toISOString()} (actualIdleSeconds=${actualIdleSeconds})`
+    );
+    mainWindow?.webContents.send("agent:idle-stopped", {
+      idleSeconds: actualIdleSeconds,
+      idleStartedAt: ts.toISOString(),
+    });
   } else if (entryId && store.getTimerStatus() === "paused") {
-    // Timer was already paused — nothing extra to do, just dismiss.
     console.log("[Main] idle.break confirmed — timer was already paused, no-op");
+    mainWindow?.webContents.send("agent:idle-dismiss");
+  } else {
+    mainWindow?.webContents.send("agent:idle-dismiss");
   }
-  mainWindow?.webContents.send("agent:idle-dismiss");
   return { ok: true };
 });
 
