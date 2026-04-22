@@ -192,6 +192,8 @@ function createWidgetWindow(): BrowserWindow {
     },
   });
 
+  win.setMinimumSize(WIDGET_WIDTH, WIDGET_HEIGHT);
+  win.setMaximumSize(WIDGET_WIDTH, WIDGET_HEIGHT);
   win.loadURL(WIDGET_WINDOW_WEBPACK_ENTRY);
   win.setAlwaysOnTop(true, "floating");
 

@@ -39,6 +39,7 @@ export function ActiveTimerHeader() {
     : status === 'paused' ? 'paused'
     : canRestart ? 'paused'
     : 'stopped';
+  const isSyncing = status === 'running' && (timer?.entryId?.startsWith('local-') ?? false);
 
   return (
     <div className={`timer-header timer-header--${variant}`}>
@@ -50,9 +51,12 @@ export function ActiveTimerHeader() {
           <div className="timer-header__task">{ctx.taskName}</div>
         )}
       </div>
-      <span className="timer-header__elapsed">
-        {formatTime(ctx.elapsedToday)}
-      </span>
+      <div className="timer-header__right">
+        {isSyncing && <span className="timer-header__sync-dot" title="Syncing…" />}
+        <span className="timer-header__elapsed">
+          {formatTime(ctx.elapsedToday)}
+        </span>
+      </div>
     </div>
   );
 }
