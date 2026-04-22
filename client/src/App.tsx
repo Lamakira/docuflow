@@ -32,6 +32,8 @@ import TimeTrackingProjectsPage from "@/pages/TimeTrackingProjectsPage";
 import TimeTrackingDownloadPage from "@/pages/TimeTrackingDownloadPage";
 import TimeTrackingDashboardPage from "@/pages/TimeTrackingDashboardPage";
 import ScreencastsPage from "@/pages/ScreencastsPage";
+import HelpCenterHubPage from "@/pages/help-center/HelpCenterHubPage";
+import HelpCenterArticlePage from "@/pages/help-center/HelpCenterArticlePage";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -118,6 +120,8 @@ function Router() {
         <Route path="/time-tracking/dashboard" component={TimeTrackingDashboardPage} />
         <Route path="/time-tracking/screencasts" component={ScreencastsPage} />
         <Route path="/devices" component={DevicesPage} />
+        <Route path="/help-center" component={HelpCenterHubPage} />
+        <Route path="/help-center/:slug" component={HelpCenterArticlePage} />
         <Route component={NotFound} />
       </Switch>
     </AuthenticatedLayout>
