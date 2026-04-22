@@ -915,20 +915,16 @@ ipcMain.handle("agent:idle-break", () => {
   idleStartedAt = null;
 
   if (entryId && store.getTimerStatus() === "running") {
-    // Retroactively close session at when idle started so idle time is not counted
+    // Retroactively pause at when idle started so idle time is not counted.
+    // Keep entryId / project context intact so the user can resume with one click.
     store.setTimerPaused(capturedIdleStartedAt ?? undefined);
-    store.clearTimer();
-    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
+    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
     pushStateToRenderer();
     syncWorker?.triggerSync();
-    console.log(`[Main] idle.break confirmed — timer stopped retroactively at ${capturedIdleStartedAt?.toISOString() ?? "now"}`);
+    console.log(`[Main] idle.break confirmed — timer paused retroactively at ${capturedIdleStartedAt?.toISOString() ?? "now"}`);
   } else if (entryId && store.getTimerStatus() === "paused") {
-    // Fallback: timer already paused by another code path
-    store.clearTimer();
-    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
-    pushStateToRenderer();
-    syncWorker?.triggerSync();
-    console.log("[Main] idle.break confirmed — timer stopped (was already paused)");
+    // Timer was already paused — nothing extra to do, just dismiss.
+    console.log("[Main] idle.break confirmed — timer was already paused, no-op");
   }
   mainWindow?.webContents.send("agent:idle-dismiss");
   return { ok: true };
