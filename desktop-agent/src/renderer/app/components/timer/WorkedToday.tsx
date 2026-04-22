@@ -1,18 +1,136 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAgent } from '../../stores/AgentContext';
 import { formatWorkedToday } from '../../types';
 import { StatusBadge } from '../common/StatusBadge';
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function getPeriodBounds(tz: 'local' | 'utc'): {
+  weekStart: Date; weekEnd: Date;
+  monthStart: Date; monthEnd: Date;
+} {
+  const now = new Date();
+
+  if (tz === 'utc') {
+    const y = now.getUTCFullYear(), m = now.getUTCMonth(), d = now.getUTCDate();
+    const dow = now.getUTCDay(); // 0=Sun
+    const mondayOffset = (dow === 0 ? -6 : 1 - dow);
+    const weekStart = new Date(Date.UTC(y, m, d + mondayOffset, 0, 0, 0, 0));
+    const weekEnd   = new Date(Date.UTC(y, m, d + mondayOffset + 6, 23, 59, 59, 999));
+    const monthStart = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0));
+    const monthEnd   = new Date(Date.UTC(y, m + 1, 0, 23, 59, 59, 999));
+    return { weekStart, weekEnd, monthStart, monthEnd };
+  }
+
+  const dow = now.getDay(); // 0=Sun
+  const mondayOffset = (dow === 0 ? -6 : 1 - dow);
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset, 0, 0, 0, 0);
+  const weekEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset + 6, 23, 59, 59, 999);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+  return { weekStart, weekEnd, monthStart, monthEnd };
+}
+
+// ── hover card ───────────────────────────────────────────────────────────────
+
+interface CardData {
+  week: number | null;
+  month: number | null;
+  tz: 'local' | 'utc';
+  tzLabel: string;
+}
+
+function WorkedTodayCard({
+  today,
+  onOpenTimezone,
+}: {
+  today: number;
+  onOpenTimezone: () => void;
+}) {
+  const [data, setData] = useState<CardData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const tz = await window.agentBridge.getDisplayTimezone();
+        const { weekStart, weekEnd, monthStart, monthEnd } = getPeriodBounds(tz);
+        const [wRes, mRes] = await Promise.all([
+          window.agentBridge.getWorkedPeriod(weekStart.toISOString(), weekEnd.toISOString()),
+          window.agentBridge.getWorkedPeriod(monthStart.toISOString(), monthEnd.toISOString()),
+        ]);
+        if (!cancelled) {
+          const tzLabel = tz === 'utc' ? 'UTC' : Intl.DateTimeFormat().resolvedOptions().timeZone;
+          setData({
+            week: wRes.ok ? wRes.total : null,
+            month: mRes.ok ? mRes.total : null,
+            tz,
+            tzLabel,
+          });
+        }
+      } catch {
+        // show whatever loaded
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div className="wt-card" role="tooltip" aria-label="Worked time summary">
+      <div className="wt-card__row">
+        <span className="wt-card__label">Today</span>
+        <span className="wt-card__value">{formatWorkedToday(today)}</span>
+      </div>
+      {loading ? (
+        <div className="wt-card__loading">Loading…</div>
+      ) : (
+        <>
+          <div className="wt-card__row">
+            <span className="wt-card__label">This week</span>
+            <span className="wt-card__value">
+              {data?.week != null ? formatWorkedToday(data.week) : '—'}
+            </span>
+          </div>
+          <div className="wt-card__row">
+            <span className="wt-card__label">This month</span>
+            <span className="wt-card__value">
+              {data?.month != null ? formatWorkedToday(data.month) : '—'}
+            </span>
+          </div>
+        </>
+      )}
+      <div className="wt-card__divider" />
+      <div className="wt-card__tz">
+        <span className="wt-card__tz-label">Boundaries in</span>
+        <span className="wt-card__tz-value">{data?.tzLabel ?? Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
+      </div>
+      <button className="wt-card__settings-link" onClick={onOpenTimezone}>
+        Change time zone in Settings
+      </button>
+    </div>
+  );
+}
+
+// ── main component ────────────────────────────────────────────────────────────
+
 export function WorkedToday() {
-  const { state, pauseTimer, resumeTimer, startTimer } = useAgent();
+  const { state, pauseTimer, resumeTimer, startTimer, navigateToSettings } = useAgent();
   const [pauseLoading, setPauseLoading] = useState(false);
   const [restartLoading, setRestartLoading] = useState(false);
+  const [showCard, setShowCard] = useState(false);
+  const hoverRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const timer = state.agentState?.timer;
   const status = timer?.status ?? 'stopped';
   const isActive = status !== 'stopped' && timer?.entryId != null;
   const canRestart = status === 'stopped' && state.recentTasks.length > 0;
 
-  // workedToday is session-derived and pushed from main on every state update
   const total = timer?.workedToday ?? 0;
   const thisSession = timer?.thisSession ?? 0;
 
@@ -35,6 +153,29 @@ export function WorkedToday() {
       description: recent.description ?? undefined,
     });
     setRestartLoading(false);
+  }
+
+  function onMetricEnter() {
+    if (leaveRef.current) { clearTimeout(leaveRef.current); leaveRef.current = null; }
+    hoverRef.current = setTimeout(() => setShowCard(true), 180);
+  }
+
+  function onMetricLeave() {
+    if (hoverRef.current) { clearTimeout(hoverRef.current); hoverRef.current = null; }
+    leaveRef.current = setTimeout(() => setShowCard(false), 200);
+  }
+
+  function onCardEnter() {
+    if (leaveRef.current) { clearTimeout(leaveRef.current); leaveRef.current = null; }
+  }
+
+  function onCardLeave() {
+    leaveRef.current = setTimeout(() => setShowCard(false), 200);
+  }
+
+  function openTimezone() {
+    setShowCard(false);
+    navigateToSettings('timezone');
   }
 
   return (
@@ -80,9 +221,24 @@ export function WorkedToday() {
         {isActive && <StatusBadge status={status} />}
       </div>
       <div className="worked-today-bar__right">
-        <div className="worked-today-bar__metric">
+        {/* Hoverable Worked Today metric */}
+        <div
+          className="worked-today-bar__metric wt-metric-host"
+          onMouseEnter={onMetricEnter}
+          onMouseLeave={onMetricLeave}
+        >
           <span className="worked-today-bar__label">Worked Today:</span>
           <span className="worked-today-bar__value">{formatWorkedToday(total)}</span>
+
+          {showCard && (
+            <div
+              className="wt-card-wrap"
+              onMouseEnter={onCardEnter}
+              onMouseLeave={onCardLeave}
+            >
+              <WorkedTodayCard today={total} onOpenTimezone={openTimezone} />
+            </div>
+          )}
         </div>
         <div className="worked-today-bar__metric worked-today-bar__metric--session">
           <span className="worked-today-bar__label">This session:</span>

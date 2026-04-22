@@ -447,6 +447,8 @@ function TimeZoneSection() {
   const [localTime, setLocalTime] = useState(() =>
     new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   );
+  const [displayTz, setDisplayTz] = useState<'local' | 'utc'>('local');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -455,16 +457,54 @@ function TimeZoneSection() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    window.agentBridge.getDisplayTimezone().then(setDisplayTz).catch(() => {});
+  }, []);
+
+  async function handleTzChange(next: 'local' | 'utc') {
+    setSaving(true);
+    setDisplayTz(next);
+    await window.agentBridge.setDisplayTimezone(next).catch(() => {});
+    setSaving(false);
+  }
+
+  const previewDate = new Date();
+  const utcTime = previewDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+
   return (
     <>
       <SectionHead
         title="Time Zone"
-        desc="All time entries are stored in UTC on the server and displayed in your device's local time zone. Changing your OS time zone does not affect the accuracy of historical entries."
+        desc="All time entries are stored in UTC on the server. Choose which timezone defines day/week/month boundaries for the Worked Today summary card."
       />
 
-      <Group label="Your device">
-        <InfoRow label="Local time zone" value={localTz} />
-        <InfoRow label="Current local time" value={localTime} mono />
+      <Group label="Display preference">
+        <div className="sp-tz-options">
+          <label className={`sp-tz-option${displayTz === 'local' ? ' sp-tz-option--active' : ''}`}>
+            <input
+              type="radio"
+              name="displayTz"
+              value="local"
+              checked={displayTz === 'local'}
+              onChange={() => handleTzChange('local')}
+              disabled={saving}
+            />
+            <span className="sp-tz-option__title">Local (OS timezone)</span>
+            <span className="sp-tz-option__sub">{localTz} — {localTime}</span>
+          </label>
+          <label className={`sp-tz-option${displayTz === 'utc' ? ' sp-tz-option--active' : ''}`}>
+            <input
+              type="radio"
+              name="displayTz"
+              value="utc"
+              checked={displayTz === 'utc'}
+              onChange={() => handleTzChange('utc')}
+              disabled={saving}
+            />
+            <span className="sp-tz-option__title">UTC</span>
+            <span className="sp-tz-option__sub">Universal Coordinated Time — {utcTime} UTC</span>
+          </label>
+        </div>
       </Group>
 
       <Group label="Organisation">
@@ -472,8 +512,8 @@ function TimeZoneSection() {
       </Group>
 
       <InfoNote>
-        If your local time zone looks wrong, update it in your operating system settings.
-        Existing time entries store UTC timestamps and will display correctly once the OS time zone is fixed.
+        This preference only affects week/month boundaries in the Worked Today hover card.
+        Individual time entries always store UTC timestamps — historical data is never altered.
       </InfoNote>
     </>
   );
@@ -545,17 +585,21 @@ const NAV_ITEMS: { id: SettingsSection; label: string }[] = [
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
-export function SettingsPage() {
-  const { state, logout } = useAgent();
+export function SettingsPage({ initialSection }: { initialSection?: string }) {
+  const { state, logout, dispatch } = useAgent();
   const agentState = state.agentState;
 
-  const [activeSection, setActiveSection] = useState<SettingsSection>('activity-bar');
+  const [activeSection, setActiveSection] = useState<SettingsSection>(
+    (initialSection as SettingsSection) ?? 'activity-bar'
+  );
   const [prefs, setPrefs] = useState<LocalPrefs | null>(null);
   const [policy, setPolicy] = useState<OrgPolicy | null>(null);
 
   useEffect(() => {
     window.agentBridge.getLocalPrefs().then(setPrefs).catch(() => {});
     window.agentBridge.getOrgPolicy().then(setPolicy).catch(() => {});
+    // Clear deep-link so navigating away and back resets to default
+    dispatch({ type: 'CLEAR_SETTINGS_DEEP' });
   }, []);
 
   async function handleSignOut() {

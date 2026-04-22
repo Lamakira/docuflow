@@ -46,6 +46,8 @@ interface PersistedData {
   timerStatus: "stopped" | "running" | "paused";
   /** Wall-clock start of the active time entry (ISO). Used to apportion active duration into "today" without inflating Worked Today on cross-midnight entries. */
   activeEntryStartTime: string | null;
+  /** User-selected display timezone for week/month aggregate boundaries. 'local' = OS timezone (default). 'utc' = UTC. */
+  displayTimezone: 'local' | 'utc';
 }
 
 // Runtime-only state (not persisted)
@@ -97,6 +99,7 @@ export class AgentStore {
       lastActivityAt: null,
       timerStatus: "stopped",
       activeEntryStartTime: null,
+      displayTimezone: 'local',
     };
     try {
       if (!fs.existsSync(this.configPath)) return empty;
@@ -138,6 +141,12 @@ export class AgentStore {
   getUserEmail(): string | null { return this.data.userEmail; }
   getClientVersion(): string { return this.runtime.clientVersion; }
   setClientVersion(v: string): void { this.runtime.clientVersion = v; }
+
+  getDisplayTimezone(): 'local' | 'utc' { return this.data.displayTimezone ?? 'local'; }
+  setDisplayTimezone(tz: 'local' | 'utc'): void {
+    this.data.displayTimezone = tz;
+    this.saveToDisk();
+  }
 
   setSession(deviceId: string, deviceToken: string, deviceName: string, userEmail: string): void {
     this.data.deviceId = deviceId;

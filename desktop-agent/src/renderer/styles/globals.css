@@ -299,6 +299,119 @@ a:hover { text-decoration: underline; }
   color: rgba(255,255,255,0.65);
 }
 
+/* ── Worked Today hover card ──────────────────────── */
+.wt-metric-host {
+  position: relative;
+  cursor: default;
+}
+.wt-metric-host:hover .worked-today-bar__value {
+  color: #a5b4fc; /* subtle indigo hint on hover */
+}
+.wt-card-wrap {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  z-index: 200;
+}
+.wt-card {
+  background: #0f172a;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  min-width: 210px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.wt-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.wt-card__label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.wt-card__value {
+  font-family: 'Consolas', 'Cascadia Code', monospace;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: white;
+  letter-spacing: 0.02em;
+}
+.wt-card__loading {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  padding: 0.2rem 0;
+}
+.wt-card__divider {
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+  margin: 0.25rem 0;
+}
+.wt-card__tz {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+.wt-card__tz-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+.wt-card__tz-value {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.wt-card__settings-link {
+  background: none;
+  border: none;
+  padding: 0.3rem 0 0;
+  font-size: 0.72rem;
+  color: #818cf8;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s;
+}
+.wt-card__settings-link:hover { color: #a5b4fc; }
+
+/* ── Settings: timezone radio options ─────────────── */
+.sp-tz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+.sp-tz-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: rgba(255,255,255,0.02);
+}
+.sp-tz-option input[type="radio"] { display: none; }
+.sp-tz-option--active {
+  border-color: #6366f1;
+  background: rgba(99,102,241,0.08);
+}
+.sp-tz-option__title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary, white);
+}
+.sp-tz-option__sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: 'Consolas', 'Cascadia Code', monospace;
+}
+
 /* ── Buttons ──────────────────────────────────────── */
 .btn {
   padding: 0.45rem 0.875rem;

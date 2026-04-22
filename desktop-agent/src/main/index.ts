@@ -201,13 +201,21 @@ function createWidgetWindow(): BrowserWindow {
     console.log("[Widget] renderer ready");
   });
 
-  // Clamp position after drag so the widget can never be moved off-screen
+  // Clamp position after drag; re-assert exact size every time (belt-and-suspenders against OS resize)
   win.on("moved", () => {
-    const { x, y, width, height } = win.getBounds();
+    const { x, y } = win.getBounds();
     const { workArea } = screen.getPrimaryDisplay();
-    const cx = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - width));
-    const cy = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - height));
-    if (cx !== x || cy !== y) win.setPosition(cx, cy);
+    const cx = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - WIDGET_WIDTH));
+    const cy = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - WIDGET_HEIGHT));
+    win.setBounds({ x: cx, y: cy, width: WIDGET_WIDTH, height: WIDGET_HEIGHT });
+  });
+
+  // Snap back to exact dimensions if anything causes a resize (DPI change, compositor glitch, etc.)
+  win.on("resize", () => {
+    const { x, y, width, height } = win.getBounds();
+    if (width !== WIDGET_WIDTH || height !== WIDGET_HEIGHT) {
+      win.setBounds({ x, y, width: WIDGET_WIDTH, height: WIDGET_HEIGHT });
+    }
   });
 
   // Prevent accidental close
@@ -675,7 +683,7 @@ ipcMain.handle("widget:open-main", () => {
 });
 
 ipcMain.on("widget:move-window", (_event, x: number, y: number) => {
-  widgetWindow?.setPosition(Math.round(x), Math.round(y));
+  widgetWindow?.setBounds({ x: Math.round(x), y: Math.round(y), width: WIDGET_WIDTH, height: WIDGET_HEIGHT });
 });
 
 ipcMain.handle("widget:get-window-pos", () => {
@@ -712,6 +720,23 @@ ipcMain.handle("settings:set-open-at-login", (_event, value: boolean) => {
 ipcMain.handle("settings:copy-to-clipboard", (_event, text: string) => {
   clipboard.writeText(String(text));
   return { ok: true };
+});
+
+ipcMain.handle("settings:get-display-timezone", () => store.getDisplayTimezone());
+
+ipcMain.handle("settings:set-display-timezone", (_event, tz: string) => {
+  const value = tz === 'utc' ? 'utc' : 'local';
+  store.setDisplayTimezone(value);
+  return { ok: true };
+});
+
+ipcMain.handle("agent:worked-period", async (_event, startIso: string, endIso: string) => {
+  try {
+    const total = await apiClient.getWorkedPeriod(new Date(startIso), new Date(endIso));
+    return { ok: true, total };
+  } catch {
+    return { ok: false, total: 0 };
+  }
 });
 
 ipcMain.handle("settings:get-org-policy", () => {
@@ -907,20 +932,16 @@ ipcMain.handle("agent:idle-break", () => {
   idleStartedAt = null;
 
   if (entryId && store.getTimerStatus() === "running") {
-    // Retroactively close session at when idle started so idle time is not counted
+    // Retroactively pause at when idle started so idle time is not counted.
+    // Keep entryId / project context intact so the user can resume with one click.
     store.setTimerPaused(capturedIdleStartedAt ?? undefined);
-    store.clearTimer();
-    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
+    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
     pushStateToRenderer();
     syncWorker?.triggerSync();
-    console.log(`[Main] idle.break confirmed — timer stopped retroactively at ${capturedIdleStartedAt?.toISOString() ?? "now"}`);
+    console.log(`[Main] idle.break confirmed — timer paused retroactively at ${capturedIdleStartedAt?.toISOString() ?? "now"}`);
   } else if (entryId && store.getTimerStatus() === "paused") {
-    // Fallback: timer already paused by another code path
-    store.clearTimer();
-    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
-    pushStateToRenderer();
-    syncWorker?.triggerSync();
-    console.log("[Main] idle.break confirmed — timer stopped (was already paused)");
+    // Timer was already paused — nothing extra to do, just dismiss.
+    console.log("[Main] idle.break confirmed — timer was already paused, no-op");
   }
   mainWindow?.webContents.send("agent:idle-dismiss");
   return { ok: true };
