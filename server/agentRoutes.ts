@@ -904,6 +904,11 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
+  /** Agent: timer / task policy flags (tasks table present). */
+  app.get("/api/agent/capabilities", isAgentAuthenticated as any, async (_req: AgentAuthRequest, res) => {
+    res.json({ requiresTask: isTasksEnabled() });
+  });
+
   /** Agent: list CRM projects (for timer start dropdown) */
   app.get("/api/agent/projects", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     try {
@@ -937,6 +942,16 @@ export function registerAgentRoutes(app: Express): void {
       }
       if (isTasksEnabled() && !taskId) {
         return res.status(400).json({ message: "taskId is required" });
+      }
+
+      if (isTasksEnabled() && taskId) {
+        const task = await storage.getTask(taskId);
+        if (!task || task.crmProjectId !== crmProjectId) {
+          return res.status(400).json({ message: "Invalid task for this project" });
+        }
+        if (task.status === "archived") {
+          return res.status(400).json({ message: "Cannot start timer on an archived task" });
+        }
       }
 
       // Idempotency: if we've already processed this command, return the existing entry

@@ -3974,6 +3974,11 @@ Instructions:
       res.status(500).json({ message: "Failed to fetch active time entry" });
     }
   });
+
+  /** Whether the client must supply a task when starting the timer (tasks migration applied). */
+  app.get("/api/time-tracking/capabilities", isAuthenticated, async (_req: any, res) => {
+    res.json({ requiresTask: isTasksEnabled() });
+  });
   
   // Start time tracking
   app.post("/api/time-tracking/start", isAuthenticated, async (req: any, res) => {
@@ -3985,6 +3990,19 @@ Instructions:
       
       if (!crmProjectId) {
         return res.status(400).json({ message: "Project is required" });
+      }
+
+      if (isTasksEnabled()) {
+        if (!taskId || typeof taskId !== "string") {
+          return res.status(400).json({ message: "taskId is required" });
+        }
+        const task = await storage.getTask(taskId);
+        if (!task || task.crmProjectId !== crmProjectId) {
+          return res.status(400).json({ message: "Invalid task for this project" });
+        }
+        if (task.status === "archived") {
+          return res.status(400).json({ message: "Cannot start timer on an archived task" });
+        }
       }
       
       // Auto-stop any existing active entry before starting a new one

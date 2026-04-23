@@ -115,7 +115,7 @@ export function IdlePrompt() {
   async function doStoppedResume() {
     if (resumeLoading) return;
     const recent = state.recentTasks[0];
-    if (!recent) { setPhase(null); return; }
+    if (!recent?.taskId) { setPhase(null); return; }
     setResumeLoading(true);
     await startTimer({
       crmProjectId: recent.crmProjectId,

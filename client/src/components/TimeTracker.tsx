@@ -1,24 +1,22 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
-import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
-import { Play, Pause, Square, Clock, ChevronDown, ChevronUp, AlertCircle, Check, ChevronsUpDown, Monitor, Plus, X, Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Play, Pause, Square, Clock, ChevronDown, ChevronUp, AlertCircle, Monitor, Loader2 } from "lucide-react";
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -37,10 +35,6 @@ interface TimeTrackerProps {
 
 export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = false }: TimeTrackerProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [projectSelectorOpen, setProjectSelectorOpen] = useState(false);
-  const [taskSelectorOpen, setTaskSelectorOpen] = useState(false);
-  const [newTaskName, setNewTaskName] = useState("");
-  const [isCreatingTask, setIsCreatingTask] = useState(false);
 
   const {
     activeEntry,
@@ -60,6 +54,9 @@ export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = 
     pauseMutationPending,
     resumeMutationPending,
     stopMutationPending,
+    requiresTaskForStart,
+    taskStartBlockedReason,
+    isTasksListLoading,
     setSelectedProjectId,
     setSelectedTaskId,
     setDescription,
@@ -70,25 +67,11 @@ export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = 
     handleToggleCapture,
   } = useTimeTracker();
 
-  const createTaskMutation = useMutation({
-    mutationFn: (name: string) =>
-      apiRequest("POST", "/api/tasks", { crmProjectId: selectedProjectId, name }),
-    onSuccess: (task: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", selectedProjectId] });
-      setSelectedTaskId(task.id);
-      setNewTaskName("");
-      setIsCreatingTask(false);
-      setTaskSelectorOpen(false);
-    },
-  });
-
-  const handleCreateTask = () => {
-    const name = newTaskName.trim();
-    if (!name || !selectedProjectId) return;
-    createTaskMutation.mutate(name);
-  };
-
   const activeProject = projects.find(p => p.id === activeEntry?.crmProjectId);
+
+  function projectLabel(p: { id: string; project?: { name?: string | null } | null; name?: string | null }) {
+    return p.project?.name || p.name || "Unnamed project";
+  }
 
   if (isLoadingActive) {
     return null;
@@ -127,12 +110,106 @@ export function TimeTracker({ testId = "button-time-tracker-toggle", iconOnly = 
             )}
           </div>
 
-          {!hasActiveEntry && (
+          {!hasActiveEntry && !requiresTaskForStart && (
             <div className="flex flex-col items-center gap-2 py-2 text-center">
               <Monitor className="h-8 w-8 text-muted-foreground/40" />
               <p className="text-sm font-medium">Start tracking from the desktop app</p>
               <p className="text-xs text-muted-foreground">
                 Open the DocuFlow Desktop Agent, select a project and task, and start tracking there.
+              </p>
+            </div>
+          )}
+          {!hasActiveEntry && requiresTaskForStart && (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Project</Label>
+                <Select
+                  value={selectedProjectId || undefined}
+                  onValueChange={(id) => {
+                    setSelectedProjectId(id);
+                    setSelectedTaskId("");
+                  }}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {projectLabel(p)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Task</Label>
+                <Select
+                  value={selectedTaskId || undefined}
+                  onValueChange={setSelectedTaskId}
+                  disabled={!selectedProjectId || isTasksListLoading || taskStartBlockedReason === "no_tasks"}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder={isTasksListLoading ? "Loading tasks…" : "Select a task"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tasks
+                      .filter((t) => t.status !== "archived")
+                      .map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Description (optional)</Label>
+                <Input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What are you working on?"
+                  className="h-9"
+                />
+              </div>
+              {taskStartBlockedReason === "no_tasks" && selectedProjectId && (
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Create a task before starting the timer.{" "}
+                  <Link href="/time-tracking/projects" className="text-primary underline underline-offset-2">
+                    Open Projects &amp; Tasks
+                  </Link>
+                </p>
+              )}
+              {taskStartBlockedReason === "no_task_selected" && (
+                <p className="text-xs text-muted-foreground">Select a task to start tracking.</p>
+              )}
+              {taskStartBlockedReason === "loading" && selectedProjectId && (
+                <p className="text-xs text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading tasks…
+                </p>
+              )}
+              <Button
+                className="w-full"
+                onClick={() => handleStart()}
+                disabled={!!taskStartBlockedReason || startMutationPending || !selectedProjectId}
+                data-testid="button-start-tracking-web"
+              >
+                {startMutationPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Starting…
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" />
+                    Start
+                  </>
+                )}
+              </Button>
+              <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+                You can also start from the{" "}
+                <span className="font-medium text-foreground/80">Desktop Agent</span> after picking the same project and task.
               </p>
             </div>
           )}

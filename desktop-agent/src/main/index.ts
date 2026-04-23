@@ -83,10 +83,28 @@ function handleDeviceRevoked(): void {
   console.log("[Main] device.revoked — stopping workers and clearing session");
   stopWorkers();
   store.clearSession();
+  agentTimerRequiresTask = false;
   pushStateToRenderer();
 }
 
 const apiClient = new ApiClient(store, handleDeviceRevoked);
+
+/** Mirrored from server `GET /api/agent/capabilities` — when true, IPC must reject timer start without taskId. */
+let agentTimerRequiresTask = false;
+
+async function refreshAgentTimerPolicy(): Promise<void> {
+  if (!store.isPaired()) {
+    agentTimerRequiresTask = false;
+    return;
+  }
+  try {
+    const cap = await apiClient.getAgentCapabilities();
+    agentTimerRequiresTask = !!cap.requiresTask;
+    console.log(`[Main] timer.policy — requiresTask=${agentTimerRequiresTask}`);
+  } catch (err: any) {
+    console.warn(`[Main] timer.policy refresh failed: ${err.message}`);
+  }
+}
 
 // Feature flag: enabled by default in dev; set SCREENSHOTS_ENABLED=false to disable
 const SCREENSHOTS_ENABLED = process.env.SCREENSHOTS_ENABLED !== "false";
@@ -543,6 +561,7 @@ ipcMain.handle("agent:login", async (event, { email, password }) => {
     // waiting for the 60s interval. Runs after syncTimerFromServer so the
     // active entry is known before we fetch the stopped-entries total.
     await refreshWorkedTodayServerBase().catch(() => { /* non-fatal */ });
+    await refreshAgentTimerPolicy().catch(() => { /* non-fatal */ });
     pushStateToRenderer();
     return { ok: true };
   } catch (error: any) {
@@ -554,6 +573,7 @@ ipcMain.handle("agent:login", async (event, { email, password }) => {
 ipcMain.handle("agent:unpair", () => {
   stopWorkers();
   store.clearSession();
+  agentTimerRequiresTask = false;
   pushStateToRenderer();
   return { ok: true };
 });
@@ -585,11 +605,10 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
 // ─── IPC: Timer ───
 
 ipcMain.handle("agent:timer-start", async (_event, { crmProjectId, taskId, taskName, projectName, description, taskDurationToday }) => {
-  // A task is always required. The UI enforces this, but we guard here too so
-  // no path (IPC replay, future renderers) can create a task-less entry.
-  if (!taskId) {
-    console.warn("[Main] timer.start rejected — taskId is required");
-    return { ok: false, error: "A task must be selected to start the timer." };
+  // When the server has the tasks migration, task-less starts are invalid (matches POST /api/agent/timer/start).
+  if (agentTimerRequiresTask && !taskId) {
+    console.warn("[Main] timer.start rejected — taskId is required for this workspace");
+    return { ok: false, error: "Select a task to start tracking." };
   }
 
   // Local-first: apply state immediately, enqueue for background sync.
@@ -1083,7 +1102,8 @@ app.whenReady().then(() => {
     // Sync timer state from server on startup, then always push to renderer.
     // If the device was revoked while offline, ensureAccessToken fires onRevoke
     // (handleDeviceRevoked) which clears session and pushes unpaired state.
-    syncTimerFromServer()
+    refreshAgentTimerPolicy()
+      .then(() => syncTimerFromServer())
       .then(() => refreshWorkedTodayServerBase())
       .then(() => {
         console.log("[Main] session.restore.success");

@@ -153,7 +153,7 @@ export function ProjectTaskPicker() {
             )}
             {selectedProjectId && !tasksLoading && !tasksError && tasks.length === 0 && (
               <div className="picker-col__empty">
-                No tasks.
+                Create a task before starting the timer.
                 {apiBase && (
                   <a
                     href="#"

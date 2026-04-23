@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { MultiTabCoordinator, type TabRole, type TimeTrackingSyncPayload } from "@/lib/MultiTabCoordinator";
 import { ScreenCaptureWebService } from "@/lib/ScreenCaptureWebService";
 import type { TimeEntry, CrmProjectWithDetails, Task } from "@shared/schema";
@@ -25,6 +26,12 @@ interface TimeTrackerState {
   stopMutationPending: boolean;
   /** Whether this tab is the multi-tab leader (runs heartbeat/screenshots) */
   isTabLeader: boolean;
+  /** When true, timer start must include a taskId (server has tasks migration). */
+  requiresTaskForStart: boolean;
+  /** Why web start is disabled, for inline UX (null = can start or tasks not required). */
+  taskStartBlockedReason: "loading" | "no_project" | "no_tasks" | "no_task_selected" | null;
+  /** Tasks for selected project are loading (requiresTask only). */
+  isTasksListLoading: boolean;
 }
 
 interface TimeTrackerActions {
@@ -53,6 +60,7 @@ export function useTimeTracker() {
 const HEARTBEAT_INTERVAL_SECONDS = 60;
 
 export function TimeTrackerProvider({ children }: { children: ReactNode }) {
+  const { toast } = useToast();
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedTaskId, setSelectedTaskId] = useState<string>("");
   const [description, setDescription] = useState("");
@@ -82,13 +90,20 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
 
   const projects = projectsResponse?.data || [];
 
+  const { data: capabilities } = useQuery<{ requiresTask: boolean }>({
+    queryKey: ["/api/time-tracking/capabilities"],
+    queryFn: () => apiRequest("GET", "/api/time-tracking/capabilities"),
+    staleTime: 60_000,
+  });
+  const requiresTaskForStart = capabilities?.requiresTask ?? false;
+
   const invalidateAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/active"] });
     queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/entries"] });
     queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/stats"] });
   }, []);
 
-  const { data: tasksResponse } = useQuery<{ data: Task[] }>({
+  const { data: tasksResponse, isLoading: isTasksListLoading } = useQuery<{ data: Task[] }>({
     queryKey: ["/api/tasks", selectedProjectId],
     queryFn: () =>
       selectedProjectId
@@ -99,10 +114,15 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
 
   const tasks = tasksResponse?.data ?? [];
 
-  // Reset task when project changes
-  useEffect(() => {
-    setSelectedTaskId("");
-  }, [selectedProjectId]);
+  const taskStartBlockedReason = useMemo(() => {
+    if (!requiresTaskForStart) return null;
+    if (!selectedProjectId) return "no_project";
+    if (isTasksListLoading) return "loading";
+    const openTasks = tasks.filter((t) => t.status !== "archived");
+    if (openTasks.length === 0) return "no_tasks";
+    if (!selectedTaskId) return "no_task_selected";
+    return null;
+  }, [requiresTaskForStart, selectedProjectId, isTasksListLoading, tasks, selectedTaskId]);
 
   const startMutation = useMutation({
     mutationFn: async (data: { crmProjectId: string; taskId?: string; description?: string }) => {
@@ -112,6 +132,10 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
       invalidateAll();
       setDescription("");
       setSelectedTaskId("");
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "Failed to start timer";
+      toast({ title: "Could not start timer", description: message, variant: "destructive" });
     },
   });
 
@@ -204,6 +228,7 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (activeEntry) {
       setSelectedProjectId(activeEntry.crmProjectId);
+      setSelectedTaskId(activeEntry.taskId ?? "");
 
       const calculateDuration = () => {
         let duration = activeEntry.duration || 0;
@@ -301,13 +326,43 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
   const handleStart = useCallback((projectId?: string, taskId?: string) => {
     const pid = projectId || selectedProjectId;
     const tid = taskId || selectedTaskId;
-    if (!pid) return;
+    if (!pid) {
+      toast({ title: "Select a project", description: "Choose a project before starting the timer.", variant: "destructive" });
+      return;
+    }
+    if (requiresTaskForStart) {
+      if (taskStartBlockedReason === "loading") return;
+      if (taskStartBlockedReason === "no_tasks") {
+        toast({
+          title: "Create a task first",
+          description: "This project has no tasks yet. Add a task in Time Tracking → Projects & Tasks before starting the timer.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (taskStartBlockedReason === "no_task_selected" || !tid) {
+        toast({
+          title: "Select a task to start tracking",
+          description: "Pick a task for this project, then start the timer.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     startMutation.mutate({
       crmProjectId: pid,
-      taskId: tid || undefined,
+      taskId: requiresTaskForStart ? tid : tid || undefined,
       description: description || undefined,
     });
-  }, [selectedProjectId, selectedTaskId, description, startMutation]);
+  }, [
+    selectedProjectId,
+    selectedTaskId,
+    description,
+    startMutation,
+    requiresTaskForStart,
+    taskStartBlockedReason,
+    toast,
+  ]);
 
   const handlePause = useCallback(() => {
     if (activeEntry) {
@@ -360,6 +415,9 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     pauseMutationPending: pauseMutation.isPending,
     resumeMutationPending: resumeMutation.isPending,
     stopMutationPending: stopMutation.isPending,
+    requiresTaskForStart,
+    taskStartBlockedReason,
+    isTasksListLoading,
     setSelectedProjectId,
     setSelectedTaskId,
     setDescription,

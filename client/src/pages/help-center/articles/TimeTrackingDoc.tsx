@@ -14,8 +14,10 @@ export function TimeTrackingDoc() {
 
       <DocSection title="Start, stop, and resume the timer">
         <DocP>
-          Use the timer control in the sidebar (desktop) or header (mobile). Pick a CRM project and optional task, add
-          a short description if your process requires it, then start tracking.
+          Use the timer control in the sidebar (desktop) or header (mobile). When your workspace uses tasks for time
+          tracking, you must pick a CRM project <em>and</em> a task before you can start — project-only sessions are not
+          allowed. If the project has no tasks yet, create one under Projects &amp; Tasks first. Add a short description
+          only if your process requires it.
         </DocP>
         <DocList>
           <DocLi>
@@ -84,6 +86,13 @@ export function TimeTrackingDoc() {
           The desktop agent is optional but recommended for accurate idle detection and screenshot capture. The web app
           can still control the timer when you are online; use one primary surface at a time to avoid conflicting edits.
         </DocP>
+        <div className="text-xs text-muted-foreground space-y-1">
+          <DocP>
+            <strong className="text-foreground">Screenshots / marketing:</strong> show the timer with both project and
+            task selected, or the disabled Start state with helper copy (“Select a task…” / “Create a task before…”).
+            Do not depict a running timer or a start affordance with “project only” and no task when tasks are enabled.
+          </DocP>
+        </div>
       </DocSection>
     </div>
   );

@@ -227,6 +227,11 @@ export class ApiClient {
     return res?.data ?? [];
   }
 
+  /** Mirrors web `GET /api/time-tracking/capabilities` — whether `taskId` is mandatory on timer start. */
+  async getAgentCapabilities(): Promise<{ requiresTask: boolean }> {
+    return this.authenticatedRequest("/api/agent/capabilities", { method: "GET" });
+  }
+
   async startTimer(crmProjectId: string, taskId?: string, description?: string, clientCommandId?: string): Promise<TimeEntry> {
     return this.authenticatedRequest("/api/agent/timer/start", {
       method: "POST",

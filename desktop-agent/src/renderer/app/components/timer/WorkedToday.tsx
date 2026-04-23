@@ -129,7 +129,11 @@ export function WorkedToday() {
   const timer = state.agentState?.timer;
   const status = timer?.status ?? 'stopped';
   const isActive = status !== 'stopped' && timer?.entryId != null;
-  const canRestart = status === 'stopped' && state.recentTasks.length > 0;
+  const recentHead = state.recentTasks[0];
+  const canRestart =
+    status === 'stopped' &&
+    state.recentTasks.length > 0 &&
+    !!recentHead?.taskId;
 
   const total = timer?.workedToday ?? 0;
   const thisSession = timer?.thisSession ?? 0;
@@ -143,7 +147,7 @@ export function WorkedToday() {
 
   async function handleRestart() {
     const recent = state.recentTasks[0];
-    if (!recent) return;
+    if (!recent?.taskId) return;
     setRestartLoading(true);
     await startTimer({
       crmProjectId: recent.crmProjectId,

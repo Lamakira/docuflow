@@ -475,17 +475,23 @@ safeTool(
 safeTool(
   "start_time_tracking",
   {
-    description: "Start tracking time on a CRM project.",
+    description:
+      "Start tracking time on a CRM project. When the workspace uses per-task time tracking, taskId is required (same as the web app).",
     inputSchema: {
       crmProjectId: z.string().describe("The CRM project UUID to track time for"),
+      taskId: z
+        .string()
+        .optional()
+        .describe("Task UUID — required if the organisation uses tasks for time entries"),
       description: z
         .string()
         .optional()
         .describe("Description of what you're working on"),
     },
   },
-  async ({ crmProjectId, description }) => {
+  async ({ crmProjectId, taskId, description }) => {
     const body: any = { crmProjectId };
+    if (taskId) body.taskId = taskId;
     if (description) body.description = description;
     const entry = await apiRequest("POST", "/api/time-tracking/start", body);
     return {

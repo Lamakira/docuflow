@@ -706,7 +706,7 @@ export default function TimeTrackingPage() {
             <div className="text-center py-12 text-muted-foreground p-6">
               <Clock className="h-12 w-12 mx-auto mb-4 opacity-20" />
               <p>No time entries found</p>
-              <p className="text-sm mt-1">Start tracking time using the timer in the sidebar</p>
+              <p className="text-sm mt-1">Start tracking from the sidebar timer: pick a project and a task, then Start — or use the Desktop Agent.</p>
             </div>
           ) : viewMode === "grouped" ? (
             <div className="space-y-3 p-6">
