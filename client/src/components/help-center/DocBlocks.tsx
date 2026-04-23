@@ -28,3 +28,12 @@ export function DocLi({ children }: { children: React.ReactNode }) {
 export function DocP({ children }: { children: React.ReactNode }) {
   return <p>{children}</p>;
 }
+
+/** Help Center: reserve space for a future capture without embedding images. */
+export function DocScreenshotPlaceholder({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-md border border-dashed border-muted-foreground/35 bg-muted/25 px-3 py-2 font-mono text-[11px] leading-snug text-muted-foreground">
+      {children}
+    </p>
+  );
+}

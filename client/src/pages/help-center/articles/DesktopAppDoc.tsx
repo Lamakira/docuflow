@@ -1,55 +1,111 @@
-import { DocH3, DocLi, DocList, DocP, DocSection } from "@/components/help-center/DocBlocks";
+import { DocH3, DocLi, DocList, DocP, DocSection, DocScreenshotPlaceholder } from "@/components/help-center/DocBlocks";
 
 export function DesktopAppDoc() {
   return (
     <div className="space-y-2">
       <DocSection title="Download and install">
         <DocP>
-          Go to <strong className="text-foreground">Time Tracking → Download</strong> in the web app. Choose the installer for your operating
-          system (Windows is fully supported; other platforms follow the same packaging where available). Run the
-          installer with permissions that allow background execution if your IT policy permits it.
+          In the web app, go to <strong className="text-foreground">Time Tracking → Download</strong> (
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">/time-tracking/download</code>) and use the installer for
+          your platform. The agent needs permission to run in the background if you expect continuous sync and idle
+          detection while you work in other apps.
         </DocP>
       </DocSection>
 
-      <DocSection title="Sign in on the desktop">
+      <DocSection title="Sign in (device session)">
         <DocP>
-          The agent uses a device-based login separate from the browser session. Enter the same organisational
-          credentials you use on the web unless your administrator issued a dedicated device flow. After login, the agent
-          stores a long-lived device token locally — protect the machine disk encryption accordingly.
+          The agent authenticates with the DocuFlow server using your organisational credentials and registers this
+          device. A long-lived device token is stored locally on the machine (under the application&apos;s user data
+          path). This session is separate from an open browser tab: signing out in the browser does not automatically
+          sign out the agent until you disconnect or unpair from the agent itself.
+        </DocP>
+        <DocScreenshotPlaceholder>
+          [ Screenshot required: Desktop agent login window ]
+        </DocScreenshotPlaceholder>
+      </DocSection>
+
+      <DocSection title="Main window: project and task picker">
+        <DocP>
+          After login, the main window lists CRM projects and, once a project is selected, tasks for that project.
+          Starting the timer is done by choosing a task row (the flow is task-centric from the picker). If the project
+          has no tasks, create tasks from the web app under <strong className="text-foreground">Time Tracking → Projects &amp; Tasks</strong> first.
+        </DocP>
+        <DocScreenshotPlaceholder>
+          [ Screenshot required: Desktop project and task picker (two columns) ]
+        </DocScreenshotPlaceholder>
+      </DocSection>
+
+      <DocSection title="Persistent header and timer display">
+        <DocP>
+          The agent keeps a compact header area with timer status, elapsed display for the current task context, project
+          and task names when known, and metrics such as <strong className="text-foreground">Worked Today</strong> and{" "}
+          <strong className="text-foreground">This session</strong> (see the Time Tracking article for what those labels
+          mean in current behaviour).
+        </DocP>
+        <DocP>
+          When the timer is <strong className="text-foreground">running</strong>, you can pause from the header; when{" "}
+          <strong className="text-foreground">paused</strong>, resume uses the same server entry as before pause (via
+          the agent&apos;s sync queue). When <strong className="text-foreground">stopped</strong>, the header reflects
+          that no active entry is running on this client until you start again or sync picks up an entry started
+          elsewhere.
+        </DocP>
+        <DocScreenshotPlaceholder>
+          [ Screenshot required: Desktop running header with timer and pause control ]
+        </DocScreenshotPlaceholder>
+      </DocSection>
+
+      <DocSection title="Idle warning (running timer)">
+        <DocP>
+          When your organisation&apos;s admin enables the idle prompt and you remain inactive beyond the configured
+          threshold while the timer runs, the agent shows an overlay: a countdown, and actions to indicate you are still
+          working or taking a break. Keyboard or mouse activity outside the modal card may be treated as confirmation
+          you are still working, depending on current application behaviour — read the buttons on your build.
+        </DocP>
+        <DocScreenshotPlaceholder>
+          [ Screenshot required: Desktop idle warning modal with countdown ]
+        </DocScreenshotPlaceholder>
+      </DocSection>
+
+      <DocSection title="After idle stops tracking (post-stop modal)">
+        <DocP>
+          If tracking is stopped from the idle flow, a follow-up state can show that tracking has stopped and offer a
+          way to start again using your most recent project/task context when a task id is available. If no recent task
+          is available, the resume shortcut may not appear — start again from the picker.
+        </DocP>
+        <DocScreenshotPlaceholder>
+          [ Screenshot required: Desktop modal after idle stop with optional resume ]
+        </DocScreenshotPlaceholder>
+      </DocSection>
+
+      <DocSection title="Activity bar and optional widget">
+        <DocP>
+          The activity bar shows a short-window intensity signal derived from input activity (not the content of
+          keystrokes). A small on-screen widget may also mirror timer state; visibility can depend on whether the session
+          was dismissed or the timer is stopped, per current product behaviour.
         </DocP>
       </DocSection>
 
-      <DocSection title="Background behaviour">
+      <DocSection title="What the desktop app is responsible for">
         <DocList>
-          <DocLi>The agent runs in the background and syncs timer and heartbeat data to DocuFlow servers.</DocLi>
-          <DocLi>It may start with your session so tracking resumes quickly — check autostart settings if you prefer manual launch.</DocLi>
-          <DocLi>Corporate VPNs or firewalls can delay sync; the agent retries with backoff.</DocLi>
+          <DocLi>Local-first timer commands (start / pause / resume / stop) queued to the server when online.</DocLi>
+          <DocLi>Heartbeat to the server (on the order of once per minute when paired) carrying device identity and policy refresh.</DocLi>
+          <DocLi>Idle detection and modals when enabled by organisation policy.</DocLi>
+          <DocLi>Screenshot capture pipeline when enabled by policy and build settings.</DocLi>
+          <DocLi>Worked-today style totals that combine server fetches with local session attribution for the UI.</DocLi>
         </DocList>
       </DocSection>
 
-      <DocSection title="Idle detection">
+      <DocSection title="Interaction with the server and the web app">
         <DocP>
-          Idle detection uses OS-level idle timers and, where available, global input hooks for precise activity metrics.
-          When a long idle threshold is crossed while the timer is running, you may see a confirmation modal — answer
-          honestly so Worked Today reflects real work.
+          The server stores canonical time entries. The web app reads the same entries through the web session. The agent
+          reads and writes through authenticated agent APIs. If you change timer state in one client, the other client
+          updates after its next sync or refetch — expect a short delay (roughly up to about a minute for agent-driven
+          updates, shorter for many web refreshes).
         </DocP>
-      </DocSection>
-
-      <DocSection title="Activity bar">
         <DocP>
-          The activity bar summarises keyboard and pointer intensity over a sliding window. It complements screenshots;
-          it does not record keystroke content.
+          Organisation policy (screenshots, idle timing) is delivered to the agent on heartbeat after an admin saves
+          changes in the web Administration area — not necessarily instant the moment Save is clicked.
         </DocP>
-      </DocSection>
-
-      <DocSection title="Known limitations">
-        <DocH3>Permissions</DocH3>
-        <DocP>
-          macOS may require accessibility permissions for global hooks; without them, the agent falls back to a less
-          granular activity signal.
-        </DocP>
-        <DocH3>Multiple monitors</DocH3>
-        <DocP>Screenshot capture follows the product implementation for your build — verify with admins if compliance requires full multi-monitor coverage.</DocP>
       </DocSection>
     </div>
   );
