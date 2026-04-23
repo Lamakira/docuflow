@@ -1,7 +1,7 @@
 import { Link } from "wouter";
-import { ChevronLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import type { HelpTocItem } from "@/content/help-center/helpArticleToc";
+import { HelpCenterSidebar } from "@/components/help-center/HelpCenterSidebar";
+import { cn } from "@/lib/utils";
 
 interface HelpDocLayoutProps {
   title: string;
@@ -14,44 +14,62 @@ interface HelpDocLayoutProps {
 export function HelpDocLayout({ title, description, children, toc }: HelpDocLayoutProps) {
   return (
     <div className="min-h-full bg-background">
-      <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 sticky top-0 z-10">
-        <div className="mx-auto max-w-4xl px-4 sm:px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <Button variant="ghost" size="sm" className="-ml-2 h-8 text-muted-foreground" asChild>
-              <Link href="/help-center">
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Help Center
-              </Link>
-            </Button>
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight mt-1 truncate">{title}</h1>
-            {description ? (
-              <p className="text-sm text-muted-foreground mt-1 max-w-2xl">{description}</p>
-            ) : null}
-          </div>
+      <div className="border-b border-border/50 bg-muted/15">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-2.5 text-sm">
+          <Link href="/help-center" className="text-muted-foreground hover:text-foreground transition-colors">
+            Help Center
+          </Link>
+          <span className="text-muted-foreground/35 mx-2 select-none" aria-hidden>
+            /
+          </span>
+          <span className="font-medium text-foreground/90">{title}</span>
         </div>
       </div>
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8">
-        {toc && toc.length > 0 ? (
-          <nav
-            aria-label="On this page"
-            className="mb-10 rounded-xl border border-border bg-muted/20 p-4 sm:p-5"
-          >
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">On this page</p>
-            <ul className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:gap-x-4 sm:gap-y-2 text-sm">
-              {toc.map((item) => (
-                <li key={item.id}>
-                  <a
-                    href={`#${item.id}`}
-                    className="text-primary hover:underline underline-offset-4 decoration-primary/50"
-                  >
-                    {item.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        ) : null}
-        <div className="max-w-3xl">{children}</div>
+
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 lg:py-12">
+        <div className="flex flex-col lg:flex-row lg:items-start gap-8 lg:gap-12">
+          <HelpCenterSidebar />
+
+          <main className="min-w-0 flex-1">
+            <header className="mb-8 lg:mb-10 max-w-3xl">
+              <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
+              {description ? (
+                <p className="mt-3 text-base sm:text-[1.05rem] text-muted-foreground leading-relaxed">{description}</p>
+              ) : null}
+            </header>
+
+            {toc && toc.length > 0 ? (
+              <nav
+                aria-label="On this page"
+                className="mb-10 max-w-3xl rounded-xl border border-border/60 bg-card/35 p-4 sm:p-5 shadow-sm ring-1 ring-border/20"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                  On this page
+                </p>
+                <ul className="space-y-1 border-l-2 border-primary/20 pl-4">
+                  {toc.map((item) => (
+                    <li key={item.id}>
+                      <a
+                        href={`#${item.id}`}
+                        className={cn(
+                          "block py-1.5 text-sm text-muted-foreground transition-colors",
+                          "hover:text-primary border-l-2 border-transparent -ml-[2px] pl-3 -mr-1",
+                          "hover:border-primary/50",
+                        )}
+                      >
+                        {item.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+            ) : null}
+
+            <article className="max-w-3xl rounded-xl border border-border/60 bg-card/20 px-6 py-8 sm:px-9 sm:py-10 shadow-sm ring-1 ring-border/25">
+              <div className="space-y-8">{children}</div>
+            </article>
+          </main>
+        </div>
       </div>
     </div>
   );

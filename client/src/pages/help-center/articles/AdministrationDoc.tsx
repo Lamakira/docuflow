@@ -1,6 +1,5 @@
 import { useAuth } from "@/hooks/useAuth";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { DocH3, DocLi, DocList, DocP, DocSection, DocCalloutAdmin } from "@/components/help-center/DocBlocks";
+import { DocH3, DocLeadSummary, DocLi, DocList, DocP, DocSection, DocCalloutAdmin } from "@/components/help-center/DocBlocks";
 import { HelpScreenshot } from "@/components/help-center/HelpScreenshot";
 
 export function AdministrationDoc() {
@@ -8,16 +7,15 @@ export function AdministrationDoc() {
   const isAdmin = user?.role === "admin";
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-8">
       {!isAdmin ? (
-        <Alert className="mb-8 border-muted">
-          <AlertTitle className="text-sm">Admin access</AlertTitle>
-          <AlertDescription className="text-xs sm:text-sm text-muted-foreground">
+        <DocLeadSummary title="Admin access" variant="neutral">
+          <p>
             The <strong className="text-foreground">Administration</strong> sidebar entry is only shown for accounts with
             the <code className="text-xs bg-muted px-1 py-0.5 rounded">admin</code> role. The sections below describe what
             administrators configure so you know why desktop behaviour or screenshots change organisation-wide.
-          </AlertDescription>
-        </Alert>
+          </p>
+        </DocLeadSummary>
       ) : (
         <DocCalloutAdmin>
           <DocP className="m-0 text-muted-foreground">

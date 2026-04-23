@@ -3,7 +3,7 @@ import { HelpScreenshot } from "@/components/help-center/HelpScreenshot";
 
 export function DesktopAppDoc() {
   return (
-    <div className="space-y-2">
+    <div className="space-y-8">
       <DocSection title="Download and install" sectionId="section-download">
         <DocP>
           In the web app, go to <strong className="text-foreground">Time Tracking → Download</strong> (

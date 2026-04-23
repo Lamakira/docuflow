@@ -11,8 +11,8 @@ export function HelpCategoryCard({ item }: HelpCategoryCardProps) {
   const Icon = item.icon;
   return (
     <Link href={`/help-center/${item.slug}`} className="block group">
-      <Card className="h-full transition-colors hover:border-primary/40 hover:bg-muted/30">
-        <CardHeader className="space-y-3">
+      <Card className="h-full border-border/70 shadow-sm transition-all hover:border-primary/40 hover:bg-muted/35 hover:shadow-md">
+        <CardHeader className="space-y-3 sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <div className="rounded-lg bg-primary/10 p-2 text-primary">
               <Icon className="h-5 w-5" aria-hidden />

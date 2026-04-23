@@ -2,7 +2,7 @@ import { DocH3, DocLi, DocList, DocP, DocSection } from "@/components/help-cente
 
 export function CrmProjectsDoc() {
   return (
-    <div className="space-y-2">
+    <div className="space-y-8">
       <DocSection title="Projects in Project Management">
         <DocP>
           Projects represent billable or trackable units of work — often a client engagement, internal initiative, or

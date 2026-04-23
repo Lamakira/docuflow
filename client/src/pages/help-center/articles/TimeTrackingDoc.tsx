@@ -1,18 +1,16 @@
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { DocH3, DocLi, DocList, DocP, DocSection, DocCalloutNote } from "@/components/help-center/DocBlocks";
+import { DocH3, DocLeadSummary, DocLi, DocList, DocP, DocSection, DocCalloutNote } from "@/components/help-center/DocBlocks";
 import { HelpScreenshot } from "@/components/help-center/HelpScreenshot";
 
 export function TimeTrackingDoc() {
   return (
-    <div className="space-y-2">
-      <Alert className="mb-8 border-amber-500/40 bg-amber-500/5">
-        <AlertTitle className="text-sm">Records and accuracy</AlertTitle>
-        <AlertDescription className="text-xs sm:text-sm text-muted-foreground">
+    <div className="space-y-8">
+      <DocLeadSummary title="Records and accuracy" variant="caution">
+        <p>
           Time entries are stored on the server. Start when you begin the work you intend to record, and pause or stop
           when you stop that work. Depending on your organisation&apos;s configuration, a task may be mandatory before
           Start is allowed.
-        </AlertDescription>
-      </Alert>
+        </p>
+      </DocLeadSummary>
 
       <DocSection title="Where you start and control the timer" sectionId="section-entry-points">
         <DocH3>Entry points (web)</DocH3>

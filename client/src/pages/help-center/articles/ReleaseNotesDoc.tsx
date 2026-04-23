@@ -2,7 +2,7 @@ import { DocLi, DocList, DocP, DocSection } from "@/components/help-center/DocBl
 
 export function ReleaseNotesDoc() {
   return (
-    <div className="space-y-2">
+    <div className="space-y-8">
       <DocSection title="How we publish updates">
         <DocP>
           DocuFlow ships the web app and desktop agent on independent cadences. Web changes appear after your browser

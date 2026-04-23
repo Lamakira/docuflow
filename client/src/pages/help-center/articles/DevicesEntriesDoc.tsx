@@ -2,7 +2,7 @@ import { DocH3, DocLi, DocList, DocP, DocSection } from "@/components/help-cente
 
 export function DevicesEntriesDoc() {
   return (
-    <div className="space-y-2">
+    <div className="space-y-8">
       <DocSection title="Entries (Time Tracking → Entries)">
         <DocP>
           Entries are the chronological log of time sessions — start time, end time, project, task, and optional notes.

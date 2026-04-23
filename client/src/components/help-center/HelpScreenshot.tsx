@@ -92,9 +92,9 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
 
   if (url) {
     return (
-      <figure className="my-4 space-y-2">
-        <div className="relative rounded-lg border border-border bg-muted/20 overflow-hidden">
-          <img src={url} alt={caption} className="w-full max-h-[min(70vh,520px)] object-contain bg-background" loading="lazy" />
+      <figure className="my-8 space-y-3 not-prose">
+        <div className="relative overflow-hidden rounded-xl border border-border/70 bg-muted/30 shadow-inner ring-1 ring-border/30">
+          <img src={url} alt={caption} className="w-full max-h-[min(70vh,520px)] object-contain bg-background/80" loading="lazy" />
           {isAdmin ? (
             <div className="absolute bottom-2 right-2 flex items-center gap-1">
               <input
@@ -121,7 +121,7 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
             </div>
           ) : null}
         </div>
-        <figcaption className="text-xs text-muted-foreground">{caption}</figcaption>
+        <figcaption className="text-xs text-muted-foreground px-1 leading-relaxed">{caption}</figcaption>
         {isAdmin ? (
           <p className="text-[11px] text-muted-foreground font-mono" data-testid={`help-screenshot-slot-${slotId}`}>
             Slot: {slotId}
@@ -135,7 +135,7 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
   return (
     <div
       className={cn(
-        "my-4 rounded-lg border-2 border-dashed border-violet-500/40 bg-violet-500/5 p-4 space-y-3",
+        "my-8 rounded-xl border-2 border-dashed border-violet-500/45 bg-violet-500/[0.07] p-5 space-y-3 shadow-sm ring-1 ring-violet-500/10",
         "text-sm text-foreground/90",
       )}
     >

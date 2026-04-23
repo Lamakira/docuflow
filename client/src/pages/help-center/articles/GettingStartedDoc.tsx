@@ -1,6 +1,6 @@
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   DocH3,
+  DocLeadSummary,
   DocLi,
   DocList,
   DocP,
@@ -11,16 +11,15 @@ import { HelpScreenshot } from "@/components/help-center/HelpScreenshot";
 
 export function GettingStartedDoc() {
   return (
-    <div className="space-y-2">
-      <Alert className="mb-8 border-primary/30 bg-primary/5">
-        <AlertTitle className="text-sm">What DocuFlow is</AlertTitle>
-        <AlertDescription className="text-xs sm:text-sm text-muted-foreground">
+    <div className="space-y-8">
+      <DocLeadSummary title="What DocuFlow is" variant="intro">
+        <p>
           DocuFlow is a web application for your organisation: rich-text documentation, CRM-style projects and clients,
           optional company-wide files, and time tracking that ties work to CRM projects (and, when enabled for your
           database, tasks). The optional desktop agent adds idle handling, activity signals, and screenshot capture
           according to admin policy.
-        </AlertDescription>
-      </Alert>
+        </p>
+      </DocLeadSummary>
 
       <DocCalloutNext>
         <DocP className="text-muted-foreground m-0">

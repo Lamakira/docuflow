@@ -3,7 +3,7 @@ import { HelpScreenshot } from "@/components/help-center/HelpScreenshot";
 
 export function FaqTroubleshootingDoc() {
   return (
-    <div className="space-y-2">
+    <div className="space-y-8">
       <DocSection title="Why can&apos;t I start tracking?" sectionId="section-cannot-start">
         <DocH3>Web popover</DocH3>
         <DocList>

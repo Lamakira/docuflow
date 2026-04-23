@@ -14,21 +14,21 @@ export function DocSection({
   sectionId?: string;
 }) {
   return (
-    <section className="mb-12 last:mb-0 scroll-mt-24">
+    <section className="mb-14 last:mb-0 scroll-mt-28 pt-2 first:pt-0 border-t border-border/40 first:border-t-0 first:mt-0 mt-2">
       <h2
         id={sectionId}
-        className="text-lg sm:text-xl font-semibold tracking-tight text-foreground border-b border-border pb-2 mb-4"
+        className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground pb-3 mb-5"
       >
         {title}
       </h2>
-      <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">{children}</div>
+      <div className="space-y-4 text-sm sm:text-[15px] text-muted-foreground leading-relaxed">{children}</div>
     </section>
   );
 }
 
 export function DocH3({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="text-sm font-semibold text-foreground mt-5 mb-2 pl-3 border-l-2 border-primary/35">
+    <h3 className="text-[15px] sm:text-base font-semibold text-foreground mt-8 mb-2.5 pl-3 border-l-2 border-primary/40">
       {children}
     </h3>
   );
@@ -50,23 +50,59 @@ export function DocP({ children, className }: { children: React.ReactNode; class
   return <p className={cn(className)}>{children}</p>;
 }
 
+/** Top-of-article summary block (editorial “at a glance” — same role as a TL;DR, without changing body copy). */
+export function DocLeadSummary({
+  title,
+  children,
+  variant = "intro",
+}: {
+  title: string;
+  children: React.ReactNode;
+  variant?: "intro" | "caution" | "neutral";
+}) {
+  const tone =
+    variant === "caution"
+      ? "border-l-amber-500/65 bg-amber-500/[0.07]"
+      : variant === "neutral"
+        ? "border-l-muted-foreground/45 bg-muted/40"
+        : "border-l-emerald-500/60 bg-emerald-500/[0.07]";
+
+  return (
+    <div
+      className={cn(
+        "mb-2 rounded-xl border border-border/60 py-4 pl-4 pr-4 shadow-sm ring-1 ring-black/5 dark:ring-white/10 sm:pl-5 sm:pr-5",
+        "border-l-[3px]",
+        tone,
+      )}
+    >
+      <p className="text-sm font-semibold tracking-tight text-foreground">{title}</p>
+      <div className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed space-y-2 [&_p]:m-0">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 const calloutBase =
-  "rounded-lg border px-3 py-2.5 text-sm leading-relaxed flex gap-2.5 [&_svg]:shrink-0 [&_svg]:mt-0.5";
+  "rounded-xl border px-4 py-3.5 text-sm leading-relaxed flex gap-3 shadow-sm ring-1 ring-black/5 dark:ring-white/5 [&_svg]:shrink-0 [&_svg]:mt-0.5";
 
 export function DocCalloutImportant({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn(calloutBase, "border-amber-500/35 bg-amber-500/5 text-amber-950 dark:text-amber-100/95")}>
+    <div className={cn(calloutBase, "border-amber-500/40 bg-amber-500/[0.07] text-amber-950 dark:text-amber-100/95")}>
       <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden />
-      <div className="min-w-0 space-y-1.5">{children}</div>
+      <div className="min-w-0 space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200/95">Important</p>
+        {children}
+      </div>
     </div>
   );
 }
 
 export function DocCalloutAdmin({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn(calloutBase, "border-violet-500/30 bg-violet-500/5 text-foreground/90")}>
+    <div className={cn(calloutBase, "border-violet-500/35 bg-violet-500/[0.08] text-foreground/90")}>
       <Shield className="h-4 w-4 text-violet-600 dark:text-violet-400" aria-hidden />
-      <div className="min-w-0 space-y-1.5">
+      <div className="min-w-0 space-y-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200">Admin</p>
         {children}
       </div>
@@ -76,9 +112,9 @@ export function DocCalloutAdmin({ children }: { children: React.ReactNode }) {
 
 export function DocCalloutNext({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn(calloutBase, "border-primary/25 bg-primary/5 text-foreground/90")}>
+    <div className={cn(calloutBase, "border-primary/30 bg-primary/[0.06] text-foreground/90")}>
       <ArrowRight className="h-4 w-4 text-primary" aria-hidden />
-      <div className="min-w-0 space-y-1.5">
+      <div className="min-w-0 space-y-2">
         <p className="text-xs font-semibold text-foreground">What happens next</p>
         {children}
       </div>
@@ -88,9 +124,12 @@ export function DocCalloutNext({ children }: { children: React.ReactNode }) {
 
 export function DocCalloutNote({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn(calloutBase, "border-muted-foreground/20 bg-muted/40 text-muted-foreground")}>
-      <Info className="h-4 w-4" aria-hidden />
-      <div className="min-w-0 space-y-1.5">{children}</div>
+    <div className={cn(calloutBase, "border-border/60 bg-muted/50 text-muted-foreground")}>
+      <Info className="h-4 w-4 opacity-80" aria-hidden />
+      <div className="min-w-0 space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/90">Note</p>
+        {children}
+      </div>
     </div>
   );
 }
