@@ -1,9 +1,10 @@
-import { DocH3, DocLi, DocList, DocP, DocSection, DocScreenshotPlaceholder } from "@/components/help-center/DocBlocks";
+import { DocH3, DocLi, DocList, DocP, DocSection } from "@/components/help-center/DocBlocks";
+import { HelpScreenshot } from "@/components/help-center/HelpScreenshot";
 
 export function FaqTroubleshootingDoc() {
   return (
     <div className="space-y-2">
-      <DocSection title="Why can&apos;t I start tracking?">
+      <DocSection title="Why can&apos;t I start tracking?" sectionId="section-cannot-start">
         <DocH3>Web popover</DocH3>
         <DocList>
           <DocLi>
@@ -26,8 +27,8 @@ export function FaqTroubleshootingDoc() {
             <strong className="text-foreground">Not signed in</strong> — complete device login in the agent window.
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">Workspace requires a task</strong> — the agent must start with a task
-            id when the server reports that tasks are required; use the task list, not project-only shortcuts.
+            <strong className="text-foreground">Workspace requires a task</strong> — the agent must start with a task id
+            when the server reports that tasks are required; use the task list, not project-only shortcuts.
           </DocLi>
           <DocLi>
             <strong className="text-foreground">IPC rejection</strong> — if start still fails, capture the error text from
@@ -36,31 +37,33 @@ export function FaqTroubleshootingDoc() {
         </DocList>
       </DocSection>
 
-      <DocSection title="Why does the app tell me to use the desktop agent?">
+      <DocSection title="Why does the app tell me to use the desktop agent?" sectionId="section-desktop-message">
         <DocP>
-          Current application behaviour: when your organisation&apos;s server <strong className="text-foreground">does not</strong>{" "}
-          require per-task tracking (tasks feature not active for that database), the web timer popover does not expose a
-          full web-only start flow and instead instructs you to start from the DocuFlow Desktop Agent after selecting
-          project and task there. That message is intentional for that configuration — it does not by itself mean the
-          web app is broken.
+          Current application behaviour: when your organisation&apos;s server{" "}
+          <strong className="text-foreground">does not</strong> require per-task tracking (tasks feature not active for
+          that database), the web timer popover does not expose a full web-only start flow and instead instructs you to
+          start from the DocuFlow Desktop Agent after selecting project and task there. That message is intentional for
+          that configuration — it does not by itself mean the web app is broken.
         </DocP>
         <DocP>
-          When tasks <em>are</em> required, the web popover shows project and task selectors and Start when the
-          selection is valid.
+          When tasks <em>are</em> required, the web popover shows project and task selectors and Start when the selection
+          is valid.
         </DocP>
-        <DocScreenshotPlaceholder>
-          [ Screenshot required: Web timer popover showing desktop-oriented instruction when web start is not offered ]
-        </DocScreenshotPlaceholder>
+        <HelpScreenshot
+          slotId="faq-web-popover-desktop-message"
+          caption="Web timer popover when the product directs you to the desktop agent."
+          expectedLabel="Web timer popover showing desktop-oriented instruction (no web-only start in that configuration)."
+        />
       </DocSection>
 
-      <DocSection title="Why don&apos;t numbers match immediately between web and desktop?">
+      <DocSection title="Why don&apos;t numbers match immediately between web and desktop?" sectionId="section-numbers">
         <DocP>
           The server stores authoritative time entries. The web app refetches active state on an interval (tens of
           seconds) and when you return to the tab. The desktop agent applies local timer UI first, then synchronises on a
-          heartbeat and timer resync cycle on the order of <strong className="text-foreground">up to about one minute</strong>{" "}
-          for many policy and totals updates. Worked Today in the agent also combines server-backed stopped time with
-          local session attribution, so small differences right after start, stop, or idle can appear until both sides
-          refresh.
+          heartbeat and timer resync cycle on the order of{" "}
+          <strong className="text-foreground">up to about one minute</strong> for many policy and totals updates. Worked
+          Today in the agent also combines server-backed stopped time with local session attribution, so small differences
+          right after start, stop, or idle can appear until both sides refresh.
         </DocP>
         <DocP>
           Wait for the next heartbeat or manually refresh the web page before opening a support ticket for transient
@@ -68,7 +71,7 @@ export function FaqTroubleshootingDoc() {
         </DocP>
       </DocSection>
 
-      <DocSection title="Why are admin policy changes not visible instantly on my desktop?">
+      <DocSection title="Why are admin policy changes not visible instantly on my desktop?" sectionId="section-admin-delay">
         <DocP>
           After an administrator saves screenshot or idle policy in the web Administration area, the server stores the
           new values immediately, but each connected desktop agent typically receives the updated policy on its{" "}
@@ -77,7 +80,7 @@ export function FaqTroubleshootingDoc() {
         </DocP>
       </DocSection>
 
-      <DocSection title="Why are screenshots missing?">
+      <DocSection title="Why are screenshots missing?" sectionId="section-screenshots-missing">
         <DocH3>Policy disabled</DocH3>
         <DocP>
           Your organisation may have <strong className="text-foreground">screenshotsEnabled</strong> turned off in admin
@@ -102,12 +105,14 @@ export function FaqTroubleshootingDoc() {
           Depending on build or environment configuration, screenshots may be disabled independently of org policy —
           confirm with your administrator if captures never appear despite policy being on.
         </DocP>
-        <DocScreenshotPlaceholder>
-          [ Screenshot required: Admin screenshot policy card showing master switch ]
-        </DocScreenshotPlaceholder>
+        <HelpScreenshot
+          slotId="faq-admin-screenshot-master-switch"
+          caption="Admin screenshot policy: master enable switch (reference for missing captures)."
+          expectedLabel="Admin screenshot policy card showing screenshotsEnabled / master switch."
+        />
       </DocSection>
 
-      <DocSection title="Desktop app appears disconnected or sync stalls">
+      <DocSection title="Desktop app appears disconnected or sync stalls" sectionId="section-disconnected">
         <DocP>
           Verify network path to the DocuFlow API (VPN, proxy, firewall). Re-login in the agent if the device token was
           invalidated. Keep the agent online until pending timer commands in the local queue finish uploading after
@@ -115,7 +120,7 @@ export function FaqTroubleshootingDoc() {
         </DocP>
       </DocSection>
 
-      <DocSection title="Worked Today vs This session still look wrong after waiting">
+      <DocSection title="Worked Today vs This session still look wrong after waiting" sectionId="section-worked-today">
         <DocP>
           Remember that <strong className="text-foreground">This session</strong> in the agent is anchored to this run of
           the desktop application, not to &quot;since my timer started&quot;. Worked Today merges server totals with
@@ -124,7 +129,7 @@ export function FaqTroubleshootingDoc() {
         </DocP>
       </DocSection>
 
-      <DocSection title="Timezone and &quot;today&quot; boundaries">
+      <DocSection title="Timezone and &quot;today&quot; boundaries" sectionId="section-timezone">
         <DocP>
           Calendar-day totals depend on how &quot;today&quot; is computed for each surface (browser vs agent local
           midnight fetch vs organisation settings). Small boundary shifts near midnight are often expected rather than

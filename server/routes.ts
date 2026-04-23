@@ -40,6 +40,7 @@ import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail }
 import { extractTextFromFile, isSupportedForExtraction, isVideoFile } from "./contentExtraction";
 import { logTimeEvent, logError, logStaleSession, logInfo } from "./logger";
 import { isTasksEnabled } from "./migrationFlags";
+import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
 
 // Helper to get OpenAI client lazily (only when needed, not at import time)
 function getOpenAIClient(): OpenAI {
@@ -2987,11 +2988,12 @@ Instructions:
   // Org settings — screenshot policy + timezone allow-list
   app.get("/api/admin/org-settings", isAuthenticated, isAdmin, async (_req, res) => {
     try {
-      const [screenshotPolicy, allowedTimezones] = await Promise.all([
+      const [screenshotPolicy, allowedTimezones, helpCenterScreenshots] = await Promise.all([
         storage.getScreenshotPolicy(),
         storage.getAllowedTimezones(),
+        storage.getHelpCenterScreenshots(),
       ]);
-      res.json({ screenshotPolicy, allowedTimezones });
+      res.json({ screenshotPolicy, allowedTimezones, helpCenterScreenshots });
     } catch (error) {
       console.error("Error fetching org settings:", error);
       res.status(500).json({ message: "Failed to fetch org settings" });
@@ -3000,7 +3002,7 @@ Instructions:
 
   app.patch("/api/admin/org-settings", isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      const { screenshotPolicy, allowedTimezones } = req.body;
+      const { screenshotPolicy, allowedTimezones, helpCenterScreenshots } = req.body;
       const ops: Promise<void>[] = [];
       if (screenshotPolicy && typeof screenshotPolicy === "object") {
         const p = screenshotPolicy;
@@ -3030,6 +3032,26 @@ Instructions:
         if (!valid) return res.status(400).json({ message: "allowedTimezones must be an array of non-empty strings" });
         ops.push(storage.upsertAllowedTimezones(allowedTimezones));
       }
+      if (helpCenterScreenshots && typeof helpCenterScreenshots === "object" && !Array.isArray(helpCenterScreenshots)) {
+        const partial: Record<string, string | null> = {};
+        const pathOk = (p: string) => /^\/public-objects\/[a-zA-Z0-9_\/.-]+$/.test(p);
+        for (const [k, v] of Object.entries(helpCenterScreenshots as Record<string, unknown>)) {
+          if (!isHelpScreenshotSlotId(k)) {
+            return res.status(400).json({ message: `Invalid help screenshot slot: ${k}` });
+          }
+          if (v === null) {
+            partial[k] = null;
+          } else if (typeof v === "string" && pathOk(v)) {
+            partial[k] = v;
+          } else {
+            return res.status(400).json({ message: `Invalid public object path for slot ${k}` });
+          }
+        }
+        if (Object.keys(partial).length === 0) {
+          return res.status(400).json({ message: "helpCenterScreenshots must contain at least one slot" });
+        }
+        ops.push(storage.mergeHelpCenterScreenshots(partial));
+      }
       if (ops.length === 0) return res.status(400).json({ message: "Nothing to update" });
       await Promise.all(ops);
       res.json({ ok: true });
@@ -3047,6 +3069,22 @@ Instructions:
     } catch (error) {
       console.error("Error fetching timezone options:", error);
       res.status(500).json({ message: "Failed to fetch timezone options" });
+    }
+  });
+
+  /** Help Center article images — allowlisted slot ids → `/public-objects/…` path or null. */
+  app.get("/api/help-center/screenshot-map", isAuthenticated, async (_req, res) => {
+    try {
+      const stored = await storage.getHelpCenterScreenshots();
+      const out: Record<string, string | null> = {};
+      for (const id of HELP_SCREENSHOT_SLOT_IDS) {
+        const v = stored[id];
+        out[id] = typeof v === "string" && v.length > 0 ? v : null;
+      }
+      res.json(out);
+    } catch (error) {
+      console.error("Error fetching help screenshot map:", error);
+      res.status(500).json({ message: "Failed to fetch help screenshots" });
     }
   });
 

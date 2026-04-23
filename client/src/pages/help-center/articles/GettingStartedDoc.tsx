@@ -1,10 +1,18 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { DocH3, DocLi, DocList, DocP, DocSection, DocScreenshotPlaceholder } from "@/components/help-center/DocBlocks";
+import {
+  DocH3,
+  DocLi,
+  DocList,
+  DocP,
+  DocSection,
+  DocCalloutNext,
+} from "@/components/help-center/DocBlocks";
+import { HelpScreenshot } from "@/components/help-center/HelpScreenshot";
 
 export function GettingStartedDoc() {
   return (
     <div className="space-y-2">
-      <Alert className="mb-6 border-primary/30 bg-primary/5">
+      <Alert className="mb-8 border-primary/30 bg-primary/5">
         <AlertTitle className="text-sm">What DocuFlow is</AlertTitle>
         <AlertDescription className="text-xs sm:text-sm text-muted-foreground">
           DocuFlow is a web application for your organisation: rich-text documentation, CRM-style projects and clients,
@@ -14,7 +22,14 @@ export function GettingStartedDoc() {
         </AlertDescription>
       </Alert>
 
-      <DocSection title="Sign in">
+      <DocCalloutNext>
+        <DocP className="text-muted-foreground m-0">
+          Use the <strong className="text-foreground">On this page</strong> links at the top to jump to a section. Open{" "}
+          <strong className="text-foreground">Time Tracking</strong> when you are ready to track work.
+        </DocP>
+      </DocCalloutNext>
+
+      <DocSection title="Sign in" sectionId="section-sign-in">
         <DocP>
           Open your organisation&apos;s DocuFlow URL. Sign in with email and password, or with whatever sign-in method
           your administrator configured (for example SSO). After a successful sign-in, you remain in a browser session
@@ -30,7 +45,7 @@ export function GettingStartedDoc() {
         </DocList>
       </DocSection>
 
-      <DocSection title="Navigate the web app">
+      <DocSection title="Navigate the web app" sectionId="section-navigate">
         <DocP>The primary navigation is the left sidebar (on narrow screens, open it from the header menu).</DocP>
         <DocList>
           <DocLi>
@@ -51,7 +66,8 @@ export function GettingStartedDoc() {
             <code className="text-xs bg-muted px-1 py-0.5 rounded">admin</code>.
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">Help Center</strong> — this documentation (<code className="text-xs bg-muted px-1 py-0.5 rounded">/help-center</code>).
+            <strong className="text-foreground">Help Center</strong> — this documentation (
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">/help-center</code>).
           </DocLi>
         </DocList>
         <DocP>
@@ -62,23 +78,26 @@ export function GettingStartedDoc() {
         </DocP>
       </DocSection>
 
-      <DocSection title="Where the timer is">
+      <DocSection title="Where the timer is" sectionId="section-where-timer">
         <DocP>
           The time tracker control lives in the <strong className="text-foreground">sidebar</strong> as a clock button
-          next to your user block (desktop layout). On smaller viewports it also appears in the <strong className="text-foreground">top header</strong>{" "}
-          so you can open the same popover without the sidebar expanded.
+          next to your user block (desktop layout). On smaller viewports it also appears in the{" "}
+          <strong className="text-foreground">top header</strong> so you can open the same popover without the sidebar
+          expanded.
         </DocP>
         <DocP>
           Click the control to open the popover: depending on your organisation&apos;s configuration you may start a
-          timer from the web (project + task when tasks are required) or see instructions to use the desktop agent —
-          see <strong className="text-foreground">Time Tracking</strong> in this Help Center.
+          timer from the web (project + task when tasks are required) or see instructions to use the desktop agent — see{" "}
+          <strong className="text-foreground">Time Tracking</strong> in this Help Center.
         </DocP>
-        <DocScreenshotPlaceholder>
-          [ Screenshot required: Web timer popover with selected project and task ]
-        </DocScreenshotPlaceholder>
+        <HelpScreenshot
+          slotId="getting-started-timer-popover"
+          caption="Web timer popover: project and task selected, Start available when your workspace requires tasks."
+          expectedLabel="Web timer popover with selected CRM project and task, Start enabled."
+        />
       </DocSection>
 
-      <DocSection title="Where to go next">
+      <DocSection title="Where to go next" sectionId="section-next">
         <DocH3>I need to track my time</DocH3>
         <DocP>
           Read <strong className="text-foreground">Time Tracking</strong>, install the agent from{" "}

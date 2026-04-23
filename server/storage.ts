@@ -89,6 +89,7 @@ import {
   agentActivityEvents,
   orgSettings,
   type ScreenshotPolicy,
+  type HelpCenterScreenshotsMap,
   DEFAULT_SCREENSHOT_POLICY,
   DEFAULT_ALLOWED_TIMEZONES,
   type EvidenceGrade,
@@ -352,6 +353,8 @@ export interface IStorage {
   upsertScreenshotPolicy(policy: Partial<ScreenshotPolicy>): Promise<void>;
   getAllowedTimezones(): Promise<string[]>;
   upsertAllowedTimezones(timezones: string[]): Promise<void>;
+  getHelpCenterScreenshots(): Promise<HelpCenterScreenshotsMap>;
+  mergeHelpCenterScreenshots(partial: Record<string, string | null>): Promise<void>;
 
   // Agent batch idempotency
   isAgentBatchProcessed(batchId: string): Promise<boolean>;
@@ -2753,6 +2756,40 @@ export class DatabaseStorage implements IStorage {
         target: orgSettings.id,
         set: { allowedTimezones: timezones, updatedAt: new Date() },
       });
+  }
+
+  async getHelpCenterScreenshots(): Promise<HelpCenterScreenshotsMap> {
+    const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
+    const raw = row?.helpCenterScreenshots;
+    if (!raw || typeof raw !== "object") return {};
+    return { ...(raw as Record<string, string>) };
+  }
+
+  async mergeHelpCenterScreenshots(partial: Record<string, string | null>): Promise<void> {
+    const current = await this.getHelpCenterScreenshots();
+    const merged: Record<string, string> = {};
+    for (const [k, v] of Object.entries(current)) {
+      if (typeof v === "string" && v.length > 0) merged[k] = v;
+    }
+    for (const [k, v] of Object.entries(partial)) {
+      if (v === null) delete merged[k];
+      else merged[k] = v;
+    }
+    const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
+    if (!row) {
+      await db.insert(orgSettings).values({
+        id: "default",
+        screenshotPolicy: DEFAULT_SCREENSHOT_POLICY,
+        allowedTimezones: [...DEFAULT_ALLOWED_TIMEZONES],
+        helpCenterScreenshots: merged,
+        updatedAt: new Date(),
+      });
+    } else {
+      await db
+        .update(orgSettings)
+        .set({ helpCenterScreenshots: merged, updatedAt: new Date() })
+        .where(eq(orgSettings.id, "default"));
+    }
   }
 
   async isAgentBatchProcessed(batchId: string): Promise<boolean> {

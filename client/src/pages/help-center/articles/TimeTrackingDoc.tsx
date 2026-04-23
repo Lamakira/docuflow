@@ -1,10 +1,11 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { DocH3, DocLi, DocList, DocP, DocSection, DocScreenshotPlaceholder } from "@/components/help-center/DocBlocks";
+import { DocH3, DocLi, DocList, DocP, DocSection, DocCalloutNote } from "@/components/help-center/DocBlocks";
+import { HelpScreenshot } from "@/components/help-center/HelpScreenshot";
 
 export function TimeTrackingDoc() {
   return (
     <div className="space-y-2">
-      <Alert className="mb-6 border-amber-500/40 bg-amber-500/5">
+      <Alert className="mb-8 border-amber-500/40 bg-amber-500/5">
         <AlertTitle className="text-sm">Records and accuracy</AlertTitle>
         <AlertDescription className="text-xs sm:text-sm text-muted-foreground">
           Time entries are stored on the server. Start when you begin the work you intend to record, and pause or stop
@@ -13,7 +14,7 @@ export function TimeTrackingDoc() {
         </AlertDescription>
       </Alert>
 
-      <DocSection title="Where you start and control the timer">
+      <DocSection title="Where you start and control the timer" sectionId="section-entry-points">
         <DocH3>Entry points (web)</DocH3>
         <DocList>
           <DocLi>
@@ -23,22 +24,30 @@ export function TimeTrackingDoc() {
             <strong className="text-foreground">Mobile header</strong> — same popover from the header clock control.
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">Time Tracking → Entries</strong> (<code className="text-xs bg-muted px-1 py-0.5 rounded">/time-tracking</code>) uses the same underlying timer state as the sidebar; it is the place to review and filter historical entries and screenshots, not a second independent clock.
+            <strong className="text-foreground">Time Tracking → Entries</strong> (
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">/time-tracking</code>) uses the same underlying timer
+            state as the sidebar; it is the place to review and filter historical entries and screenshots, not a second
+            independent clock.
           </DocLi>
         </DocList>
-        <DocScreenshotPlaceholder>
-          [ Screenshot required: Web timer popover with selected project and task ]
-        </DocScreenshotPlaceholder>
-        <DocScreenshotPlaceholder>
-          [ Screenshot required: Web timer popover with Start disabled and helper text for missing task ]
-        </DocScreenshotPlaceholder>
+        <HelpScreenshot
+          slotId="time-tracking-web-popover-task"
+          caption="Timer popover with CRM project and task selected (when tasks are required)."
+          expectedLabel="Web timer popover: project + task selected, Start enabled."
+        />
+        <HelpScreenshot
+          slotId="time-tracking-web-popover-disabled"
+          caption="Timer popover when Start is disabled (e.g. missing task or no tasks on project)."
+          expectedLabel="Web timer popover: Start disabled with helper text for missing task or empty task list."
+        />
 
         <DocH3>Project and task selection</DocH3>
         <DocP>
-          Depending on your organisation&apos;s configuration, the server exposes <strong className="text-foreground">task-required</strong>{" "}
-          time tracking. When that is active, the web popover requires a CRM project and a non-archived task before{" "}
-          <strong className="text-foreground">Start</strong> is enabled; if the project has no tasks, the UI directs you
-          to <strong className="text-foreground">Time Tracking → Projects &amp; Tasks</strong> to create one first.
+          Depending on your organisation&apos;s configuration, the server exposes{" "}
+          <strong className="text-foreground">task-required</strong> time tracking. When that is active, the web popover
+          requires a CRM project and a non-archived task before <strong className="text-foreground">Start</strong> is
+          enabled; if the project has no tasks, the UI directs you to{" "}
+          <strong className="text-foreground">Time Tracking → Projects &amp; Tasks</strong> to create one first.
         </DocP>
         <DocP>
           When task-required mode is <em>not</em> active for your workspace, the current web popover does not offer a full
@@ -47,12 +56,13 @@ export function TimeTrackingDoc() {
         </DocP>
       </DocSection>
 
-      <DocSection title="Start, pause, resume, and stop (web popover)">
+      <DocSection title="Start, pause, resume, and stop (web popover)" sectionId="section-controls">
         <DocList>
           <DocLi>
-            <strong className="text-foreground">Start</strong> — sends <code className="text-xs bg-muted px-1 py-0.5 rounded">POST /api/time-tracking/start</code>{" "}
-            with the selected project (and task when required). The server stops any other active entry for your user
-            before creating the new running entry. On success, the client refreshes active entry and related queries.
+            <strong className="text-foreground">Start</strong> — sends{" "}
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">POST /api/time-tracking/start</code> with the selected
+            project (and task when required). The server stops any other active entry for your user before creating the
+            new running entry. On success, the client refreshes active entry and related queries.
           </DocLi>
           <DocLi>
             <strong className="text-foreground">Pause</strong> — sends pause for the current entry id; the server moves
@@ -60,10 +70,14 @@ export function TimeTrackingDoc() {
             since the last activity timestamp into <code className="text-xs bg-muted px-1 py-0.5 rounded">duration</code>.
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">Resume</strong> — sends resume for the <em>same</em> paused entry (current application behaviour: the web client resumes without discarding idle interval into work duration in that call). This is different from starting a brand-new entry.
+            <strong className="text-foreground">Resume</strong> — sends resume for the <em>same</em> paused entry (current
+            application behaviour: the web client resumes without discarding idle interval into work duration in that
+            call). This is different from starting a brand-new entry.
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">Stop</strong> — finalises the entry (<code className="text-xs bg-muted px-1 py-0.5 rounded">stopped</code>, end time, duration) and clears the web client&apos;s local capture scheduling tied to that session.
+            <strong className="text-foreground">Stop</strong> — finalises the entry (
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">stopped</code>, end time, duration) and clears the web
+            client&apos;s local capture scheduling tied to that session.
           </DocLi>
         </DocList>
 
@@ -86,11 +100,11 @@ export function TimeTrackingDoc() {
         </DocP>
       </DocSection>
 
-      <DocSection title="Worked Today and This session (labels in the desktop agent)">
+      <DocSection title="Worked Today and This session (labels in the desktop agent)" sectionId="section-metrics-desktop">
         <DocP>
-          In the <strong className="text-foreground">desktop agent</strong> header bar you see <strong className="text-foreground">Worked Today</strong>{" "}
-          and <strong className="text-foreground">This session</strong>. These labels are not duplicated in the small web
-          popover the same way; they matter when you run the agent.
+          In the <strong className="text-foreground">desktop agent</strong> header bar you see{" "}
+          <strong className="text-foreground">Worked Today</strong> and <strong className="text-foreground">This session</strong>.
+          These labels are not duplicated in the small web popover the same way; they matter when you run the agent.
         </DocP>
         <DocH3>Worked Today (desktop)</DocH3>
         <DocP>
@@ -105,29 +119,35 @@ export function TimeTrackingDoc() {
           sums tracked time from local session records that began after this run of the desktop application started.
           Restarting the agent application resets the anchor for that label.
         </DocP>
-        <DocScreenshotPlaceholder>
-          [ Screenshot required: Desktop running header showing Worked Today and This session ]
-        </DocScreenshotPlaceholder>
+        <HelpScreenshot
+          slotId="time-tracking-desktop-header-metrics"
+          caption="Desktop agent header: Worked Today and This session with timer controls."
+          expectedLabel="Desktop running header showing Worked Today, This session, and pause/resume affordance."
+        />
       </DocSection>
 
-      <DocSection title="Idle and activity (expectations)">
+      <DocSection title="Idle and activity (expectations)" sectionId="section-idle-activity">
         <DocP>
           <strong className="text-foreground">Desktop agent:</strong> when your administrator enables the idle prompt,
           long inactivity while the timer runs can trigger a warning modal with a countdown, then optional break / resume
           actions. Exact retroactive adjustment on the time entry follows the agent&apos;s implementation when you
           confirm — if you need second-by-second accounting text for compliance, confirm with your administrator.
         </DocP>
-        <DocScreenshotPlaceholder>
-          [ Screenshot required: Desktop idle warning modal with countdown ]
-        </DocScreenshotPlaceholder>
-        <DocP>
-          <strong className="text-foreground">Web browser:</strong> the web client does not replicate the full desktop
-          idle overlay. It relies on server state and, when you are the multi-tab leader, periodic activity posts while
-          the timer is running. Do not assume the browser alone enforces the same idle workflow as the agent.
-        </DocP>
+        <HelpScreenshot
+          slotId="time-tracking-idle-modal"
+          caption="Desktop idle warning: countdown and actions while the timer is running."
+          expectedLabel="Desktop idle warning modal with visible countdown ring."
+        />
+        <DocCalloutNote>
+          <DocP className="m-0 text-muted-foreground">
+            <strong className="text-foreground">Web browser:</strong> the web client does not replicate the full desktop
+            idle overlay. It relies on server state and, when you are the multi-tab leader, periodic activity posts while
+            the timer is running.
+          </DocP>
+        </DocCalloutNote>
       </DocSection>
 
-      <DocSection title="Screenshots and activity signals">
+      <DocSection title="Screenshots and activity signals" sectionId="section-screenshots">
         <DocP>
           Periodic screenshots and the activity bar are tied to the <strong className="text-foreground">desktop agent</strong>{" "}
           when your administrator enables capture. The web Entries / Screenshots views show what the server has stored
@@ -136,7 +156,7 @@ export function TimeTrackingDoc() {
         </DocP>
       </DocSection>
 
-      <DocSection title="Web vs desktop — who does what">
+      <DocSection title="Web vs desktop — who does what" sectionId="section-web-desktop">
         <DocList>
           <DocLi>
             <strong className="text-foreground">Server</strong> — stores authoritative time entries and enforces start

@@ -2,6 +2,7 @@ import { Link, useRoute } from "wouter";
 import { HelpDocLayout } from "@/components/help-center/HelpDocLayout";
 import { Button } from "@/components/ui/button";
 import { getHelpHubItem, isHelpSlug } from "@/content/help-center/helpCenterConfig";
+import { HELP_ARTICLE_TOC } from "@/content/help-center/helpArticleToc";
 import { HELP_ARTICLE_COMPONENTS } from "./articleRegistry";
 
 export default function HelpCenterArticlePage() {
@@ -22,9 +23,10 @@ export default function HelpCenterArticlePage() {
 
   const meta = getHelpHubItem(slug);
   const Article = HELP_ARTICLE_COMPONENTS[slug];
+  const toc = HELP_ARTICLE_TOC[slug];
 
   return (
-    <HelpDocLayout title={meta?.title ?? "Help"} description={meta?.subtitle}>
+    <HelpDocLayout title={meta?.title ?? "Help"} description={meta?.subtitle} toc={toc}>
       <Article />
     </HelpDocLayout>
   );
