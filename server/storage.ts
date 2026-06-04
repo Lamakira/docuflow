@@ -25,6 +25,13 @@ import {
   timeEntryScreenshots,
   type Task,
   type InsertTask,
+  projectMembers,
+  reminders,
+  type ProjectMember,
+  type InsertProjectMember,
+  type ProjectMemberWithUser,
+  type Reminder,
+  type InsertReminder,
   type User,
   type SafeUser,
   type InsertUser,
@@ -96,7 +103,7 @@ import {
   type EvidenceQualityReport,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -331,6 +338,19 @@ export interface IStorage {
   createTask(data: InsertTask): Promise<Task>;
   updateTask(id: string, data: Partial<InsertTask>): Promise<Task | undefined>;
   deleteTask(id: string): Promise<void>;
+
+  // Project Members (self-managed)
+  getProjectMembers(crmProjectId: string): Promise<ProjectMemberWithUser[]>;
+  addProjectMember(crmProjectId: string, userId: string): Promise<ProjectMember>;
+  removeProjectMember(crmProjectId: string, userId: string): Promise<void>;
+
+  // Reminders (self only)
+  createReminder(data: InsertReminder): Promise<Reminder>;
+  getUserRemindersForProject(userId: string, crmProjectId: string): Promise<Reminder[]>;
+  getReminder(id: string): Promise<Reminder | undefined>;
+  updateReminder(id: string, data: Partial<Pick<Reminder, "title" | "note" | "dueAt" | "status" | "taskId" | "notified">>): Promise<Reminder | undefined>;
+  deleteReminder(id: string): Promise<void>;
+  claimDueReminders(now: Date): Promise<Reminder[]>;
 
   // ─── Desktop Agent ───
 
@@ -1114,7 +1134,10 @@ export class DatabaseStorage implements IStorage {
       budgetedHours: crmData?.budgetedHours ?? null,
       actualHours: crmData?.actualHours ?? null,
     });
-    
+
+    // Auto-add the creator as a project member
+    await this.addProjectMember(crmProject.id, projectData.ownerId);
+
     return { project, crmProject };
   }
 
@@ -2669,6 +2692,100 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTask(id: string): Promise<void> {
     await db.delete(tasks).where(eq(tasks.id, id));
+  }
+
+  // ═══════════════════════════════════════
+  // Project Members (self-managed)
+  // ═══════════════════════════════════════
+
+  async getProjectMembers(crmProjectId: string): Promise<ProjectMemberWithUser[]> {
+    const rows = await db.query.projectMembers.findMany({
+      where: eq(projectMembers.crmProjectId, crmProjectId),
+      with: { user: true },
+      orderBy: asc(projectMembers.createdAt),
+    });
+    return rows.map((row) => {
+      const { user, ...rest } = row as any;
+      if (!user) return rest as ProjectMemberWithUser;
+      // Allowlist only non-sensitive, display-relevant user fields
+      const safeUser = {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        profileImageUrl: user.profileImageUrl,
+      };
+      return { ...rest, user: safeUser } as ProjectMemberWithUser;
+    });
+  }
+
+  async addProjectMember(crmProjectId: string, userId: string): Promise<ProjectMember> {
+    const [existing] = await db
+      .select()
+      .from(projectMembers)
+      .where(and(eq(projectMembers.crmProjectId, crmProjectId), eq(projectMembers.userId, userId)));
+    if (existing) return existing;
+    const inserted = await db
+      .insert(projectMembers)
+      .values({ crmProjectId, userId })
+      .onConflictDoNothing()
+      .returning();
+    if (inserted.length > 0) return inserted[0];
+    // Lost a concurrent race; fetch the existing row
+    const [member] = await db
+      .select()
+      .from(projectMembers)
+      .where(and(eq(projectMembers.crmProjectId, crmProjectId), eq(projectMembers.userId, userId)));
+    return member;
+  }
+
+  async removeProjectMember(crmProjectId: string, userId: string): Promise<void> {
+    await db
+      .delete(projectMembers)
+      .where(and(eq(projectMembers.crmProjectId, crmProjectId), eq(projectMembers.userId, userId)));
+  }
+
+  // ═══════════════════════════════════════
+  // Reminders (self only)
+  // ═══════════════════════════════════════
+
+  async createReminder(data: InsertReminder): Promise<Reminder> {
+    const [reminder] = await db.insert(reminders).values(data).returning();
+    return reminder;
+  }
+
+  async getUserRemindersForProject(userId: string, crmProjectId: string): Promise<Reminder[]> {
+    return db
+      .select()
+      .from(reminders)
+      .where(and(eq(reminders.userId, userId), eq(reminders.crmProjectId, crmProjectId)))
+      .orderBy(asc(reminders.dueAt));
+  }
+
+  async getReminder(id: string): Promise<Reminder | undefined> {
+    const [reminder] = await db.select().from(reminders).where(eq(reminders.id, id));
+    return reminder;
+  }
+
+  async updateReminder(
+    id: string,
+    data: Partial<Pick<Reminder, "title" | "note" | "dueAt" | "status" | "taskId" | "notified">>,
+  ): Promise<Reminder | undefined> {
+    const [updated] = await db.update(reminders).set(data).where(eq(reminders.id, id)).returning();
+    return updated;
+  }
+
+  async deleteReminder(id: string): Promise<void> {
+    await db.delete(reminders).where(eq(reminders.id, id));
+  }
+
+  // Atomically claim due, unnotified, not-done reminders so each is dispatched exactly once.
+  async claimDueReminders(now: Date): Promise<Reminder[]> {
+    return db
+      .update(reminders)
+      .set({ notified: 1, status: "due" })
+      .where(and(eq(reminders.notified, 0), lte(reminders.dueAt, now), ne(reminders.status, "done")))
+      .returning();
   }
 
   // ═══════════════════════════════════════

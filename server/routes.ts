@@ -36,7 +36,7 @@ import {
   getTranscriptStatus,
   retryTranscript,
 } from "./transcripts";
-import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail } from "./email";
+import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail, sendReminderDueEmail } from "./email";
 import { extractTextFromFile, isSupportedForExtraction, isVideoFile } from "./contentExtraction";
 import { logTimeEvent, logError, logStaleSession, logInfo } from "./logger";
 import { isTasksEnabled } from "./migrationFlags";
@@ -3918,6 +3918,142 @@ Instructions:
     }
   });
 
+  // ========== PROJECT MEMBERS ROUTES (self-managed) ==========
+
+  app.get("/api/crm/projects/:id/members", isAuthenticated, async (req: any, res) => {
+    try {
+      const crmProject = await storage.getCrmProject(req.params.id);
+      if (!crmProject) return res.status(404).json({ message: "Project not found" });
+      const members = await storage.getProjectMembers(req.params.id);
+      res.json(members);
+    } catch (error) {
+      console.error("Error fetching project members:", error);
+      res.status(500).json({ message: "Failed to fetch project members" });
+    }
+  });
+
+  // Join: a user can only add themselves
+  app.post("/api/crm/projects/:id/members", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const crmProject = await storage.getCrmProject(req.params.id);
+      if (!crmProject) return res.status(404).json({ message: "Project not found" });
+      const member = await storage.addProjectMember(req.params.id, userId);
+      res.status(201).json(member);
+    } catch (error) {
+      console.error("Error joining project:", error);
+      res.status(500).json({ message: "Failed to join project" });
+    }
+  });
+
+  // Leave: a user can only remove themselves
+  app.delete("/api/crm/projects/:id/members/me", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      await storage.removeProjectMember(req.params.id, userId);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error leaving project:", error);
+      res.status(500).json({ message: "Failed to leave project" });
+    }
+  });
+
+  // ========== REMINDERS ROUTES (self only) ==========
+
+  app.get("/api/crm/projects/:id/reminders", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const list = await storage.getUserRemindersForProject(userId, req.params.id);
+      res.json(list);
+    } catch (error) {
+      console.error("Error fetching reminders:", error);
+      res.status(500).json({ message: "Failed to fetch reminders" });
+    }
+  });
+
+  app.post("/api/crm/projects/:id/reminders", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const crmProject = await storage.getCrmProject(req.params.id);
+      if (!crmProject) return res.status(404).json({ message: "Project not found" });
+
+      const bodySchema = z.object({
+        title: z.string().min(1, "Title is required"),
+        note: z.string().nullable().optional(),
+        dueAt: z.string().min(1, "Due date is required"),
+        taskId: z.string().nullable().optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      }
+
+      const dueAt = new Date(parsed.data.dueAt);
+      if (isNaN(dueAt.getTime())) {
+        return res.status(400).json({ message: "Invalid due date" });
+      }
+
+      const reminder = await storage.createReminder({
+        userId,
+        crmProjectId: req.params.id,
+        taskId: parsed.data.taskId || null,
+        title: parsed.data.title.trim(),
+        note: parsed.data.note?.trim() || null,
+        dueAt,
+        status: "upcoming",
+      });
+      res.status(201).json(reminder);
+    } catch (error) {
+      console.error("Error creating reminder:", error);
+      res.status(500).json({ message: "Failed to create reminder" });
+    }
+  });
+
+  app.patch("/api/reminders/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const reminder = await storage.getReminder(req.params.id);
+      if (!reminder) return res.status(404).json({ message: "Reminder not found" });
+      if (reminder.userId !== userId) return res.status(403).json({ message: "Not authorized" });
+
+      const { title, note, dueAt, status, taskId } = req.body;
+      const updates: any = {};
+      if (title !== undefined) updates.title = String(title).trim();
+      if (note !== undefined) updates.note = note ? String(note).trim() : null;
+      if (taskId !== undefined) updates.taskId = taskId || null;
+      if (status !== undefined) {
+        const allowed = ["upcoming", "due", "done"];
+        if (!allowed.includes(status)) return res.status(400).json({ message: "Invalid status" });
+        updates.status = status;
+      }
+      if (dueAt !== undefined) {
+        const d = new Date(dueAt);
+        if (isNaN(d.getTime())) return res.status(400).json({ message: "Invalid due date" });
+        updates.dueAt = d;
+      }
+
+      const updated = await storage.updateReminder(req.params.id, updates);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating reminder:", error);
+      res.status(500).json({ message: "Failed to update reminder" });
+    }
+  });
+
+  app.delete("/api/reminders/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const reminder = await storage.getReminder(req.params.id);
+      if (!reminder) return res.status(404).json({ message: "Reminder not found" });
+      if (reminder.userId !== userId) return res.status(403).json({ message: "Not authorized" });
+      await storage.deleteReminder(req.params.id);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error deleting reminder:", error);
+      res.status(500).json({ message: "Failed to delete reminder" });
+    }
+  });
+
   // ========== TIME TRACKING ROUTES ==========
   
   // Get time entries with filters
@@ -4264,6 +4400,66 @@ Instructions:
       console.error("[StaleSession] Error checking stale entries:", error);
     }
   }, STALE_CHECK_INTERVAL_MS);
+
+  // ─── Due-reminder dispatcher ───
+  // Periodically deliver due reminders via in-app notification + email, exactly once.
+  const REMINDER_CHECK_INTERVAL_MS = 60 * 1000; // every minute
+  let reminderDispatchRunning = false;
+
+  const getAppBaseUrl = (): string => {
+    const domains = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
+    if (domains) return `https://${domains}`;
+    if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+    return "http://localhost:5000";
+  };
+
+  setInterval(async () => {
+    if (reminderDispatchRunning) return;
+    reminderDispatchRunning = true;
+    try {
+      // Atomically claim due reminders first (sets notified=1) so each fires exactly once,
+      // even if delivery below fails or another run overlaps.
+      const due = await storage.claimDueReminders(new Date());
+      if (due.length === 0) return;
+      const appUrl = getAppBaseUrl();
+
+      for (const reminder of due) {
+        try {
+          const crmProject = await storage.getCrmProject(reminder.crmProjectId);
+          const projectName = crmProject?.project?.name || "your project";
+
+          // In-app notification (reuse existing notifications bell)
+          await storage.createNotification({
+            userId: reminder.userId,
+            type: "reminder",
+            crmProjectId: reminder.crmProjectId,
+            message: `Reminder: ${reminder.title} (${projectName})`,
+          });
+
+          // Email notification
+          const user = await storage.getUser(reminder.userId);
+          if (user?.email) {
+            const recipientName = user.firstName || user.email;
+            await sendReminderDueEmail(
+              user.email,
+              recipientName,
+              reminder.title,
+              reminder.note,
+              projectName,
+              appUrl,
+              reminder.crmProjectId,
+            );
+          }
+        } catch (innerErr) {
+          console.error("[ReminderDispatcher] Failed to dispatch reminder", reminder.id, innerErr);
+        }
+      }
+    } catch (error) {
+      console.error("[ReminderDispatcher] Error checking due reminders:", error);
+    } finally {
+      reminderDispatchRunning = false;
+    }
+  }, REMINDER_CHECK_INTERVAL_MS);
 
   // Update time entry (description, etc.)
   app.patch("/api/time-tracking/:id", isAuthenticated, async (req: any, res) => {

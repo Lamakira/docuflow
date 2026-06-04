@@ -139,6 +139,56 @@ export async function sendProjectAssignmentEmail(
   }
 }
 
+// Send reminder due notification email
+export async function sendReminderDueEmail(
+  toEmail: string,
+  recipientName: string,
+  reminderTitle: string,
+  reminderNote: string | null,
+  projectName: string,
+  appUrl: string,
+  projectId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { client, fromEmail } = await getResendClient();
+
+    const result = await client.emails.send({
+      from: fromEmail || 'DocuFlow <noreply@resend.dev>',
+      to: toEmail,
+      subject: `DocuFlow Reminder - ${reminderTitle}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #333;">Reminder Due</h1>
+          <p>Hello ${recipientName},</p>
+          <p>You have a reminder that is now due:</p>
+          <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h2 style="margin: 0 0 8px; color: #0070f3;">${reminderTitle}</h2>
+            ${reminderNote ? `<p style="margin: 0 0 8px; color: #444;">${reminderNote}</p>` : ''}
+            <p style="margin: 0; color: #666; font-size: 14px;">Project: ${projectName}</p>
+          </div>
+          <p>
+            <a href="${appUrl}/crm/project/${projectId}" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+              View Project
+            </a>
+          </p>
+          <p style="color: #666; font-size: 12px; margin-top: 30px;">
+            This is an automated reminder from DocuFlow.
+          </p>
+        </div>
+      `
+    });
+
+    if (result.error) {
+      return { success: false, error: result.error.message };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Failed to send reminder email:', error);
+    return { success: false, error: error.message || 'Failed to send email' };
+  }
+}
+
 // Send password reset/update email
 export async function sendPasswordUpdateEmail(
   toEmail: string, 

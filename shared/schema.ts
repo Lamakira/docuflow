@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   index,
+  uniqueIndex,
   integer,
   jsonb,
   pgTable,
@@ -1027,6 +1028,80 @@ export const insertTaskSchema = createInsertSchema(tasks).omit({
 
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
+
+// Project Members table - multiple users can be members of a CRM project (self-managed)
+export const projectMembers = pgTable("project_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  crmProjectId: varchar("crm_project_id").notNull().references(() => crmProjects.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_project_members_project").on(table.crmProjectId),
+  index("idx_project_members_user").on(table.userId),
+  uniqueIndex("idx_project_members_unique").on(table.crmProjectId, table.userId),
+]);
+
+export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
+  crmProject: one(crmProjects, {
+    fields: [projectMembers.crmProjectId],
+    references: [crmProjects.id],
+  }),
+  user: one(users, {
+    fields: [projectMembers.userId],
+    references: [users.id],
+  }),
+}));
+
+export const insertProjectMemberSchema = createInsertSchema(projectMembers).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type ProjectMember = typeof projectMembers.$inferSelect;
+export type InsertProjectMember = z.infer<typeof insertProjectMemberSchema>;
+export type ProjectMemberWithUser = ProjectMember & { user?: SafeUser };
+
+// Reminders table - self-only task/follow-up reminders with one-time due notification
+export const reminders = pgTable("reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  crmProjectId: varchar("crm_project_id").notNull().references(() => crmProjects.id, { onDelete: "cascade" }),
+  taskId: varchar("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  note: text("note"),
+  dueAt: timestamp("due_at").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("upcoming"),
+  notified: integer("notified").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_reminders_user").on(table.userId),
+  index("idx_reminders_project").on(table.crmProjectId),
+  index("idx_reminders_due").on(table.dueAt, table.notified),
+]);
+
+export const remindersRelations = relations(reminders, ({ one }) => ({
+  user: one(users, {
+    fields: [reminders.userId],
+    references: [users.id],
+  }),
+  crmProject: one(crmProjects, {
+    fields: [reminders.crmProjectId],
+    references: [crmProjects.id],
+  }),
+  task: one(tasks, {
+    fields: [reminders.taskId],
+    references: [tasks.id],
+  }),
+}));
+
+export const insertReminderSchema = createInsertSchema(reminders).omit({
+  id: true,
+  createdAt: true,
+  notified: true,
+});
+
+export type Reminder = typeof reminders.$inferSelect;
+export type InsertReminder = z.infer<typeof insertReminderSchema>;
 
 // Time Entries table - tracks time spent on CRM projects
 export const timeEntries = pgTable("time_entries", {

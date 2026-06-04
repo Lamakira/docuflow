@@ -67,7 +67,11 @@ import {
   Download,
   Copy,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Users,
+  Bell,
+  LogIn,
+  LogOut
 } from "lucide-react";
 import { AudioRecorder } from "@/components/editor/AudioRecorder";
 import { NoteAudioPlayer } from "@/components/NoteAudioPlayer";
@@ -82,7 +86,9 @@ import type {
   CrmProjectType,
   CrmProjectNoteWithCreator,
   CrmProjectStageHistoryWithUser,
-  CrmModuleField
+  CrmModuleField,
+  ProjectMemberWithUser,
+  Reminder
 } from "@shared/schema";
 import { NoteInput } from "@/components/NoteInput";
 import { CrmTagSelector } from "@/components/CrmTagSelector";
@@ -245,6 +251,311 @@ function TasksSection({ projectId }: { projectId: string }) {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTaskId && deleteMutation.mutate(deleteTaskId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function MembersSection({ projectId }: { projectId: string }) {
+  const { toast } = useToast();
+  const { user: currentUser } = useAuth();
+
+  const { data: members = [], isLoading } = useQuery<ProjectMemberWithUser[]>({
+    queryKey: ["/api/crm/projects", projectId, "members"],
+    queryFn: () => apiRequest("GET", `/api/crm/projects/${projectId}/members`),
+    enabled: !!projectId,
+  });
+
+  const isMember = members.some((m) => m.userId === currentUser?.id);
+
+  const joinMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/crm/projects/${projectId}/members`, {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "members"] }),
+    onError: () => toast({ title: "Failed to join project", variant: "destructive" }),
+  });
+
+  const leaveMutation = useMutation({
+    mutationFn: () => apiRequest("DELETE", `/api/crm/projects/${projectId}/members/me`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "members"] }),
+    onError: () => toast({ title: "Failed to leave project", variant: "destructive" }),
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Members
+          </CardTitle>
+          {isMember ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => leaveMutation.mutate()}
+              disabled={leaveMutation.isPending}
+              data-testid="button-leave-project"
+            >
+              {leaveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4 mr-1" />}
+              Leave
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={() => joinMutation.mutate()}
+              disabled={joinMutation.isPending}
+              data-testid="button-join-project"
+            >
+              {joinMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4 mr-1" />}
+              Join
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground text-center py-4">Loading members...</p>
+        ) : members.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">No members yet — click "Join" to add yourself.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {members.map((m) => (
+              <div
+                key={m.id}
+                className="flex items-center gap-2 p-2 pr-3 bg-muted/50 rounded-md"
+                data-testid={`member-${m.userId}`}
+              >
+                <Avatar className="w-6 h-6">
+                  <AvatarImage src={m.user?.profileImageUrl || undefined} />
+                  <AvatarFallback className="text-xs">
+                    {m.user?.firstName?.[0]}{m.user?.lastName?.[0]}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-sm">
+                  {m.user?.firstName || m.user?.lastName
+                    ? `${m.user?.firstName ?? ""} ${m.user?.lastName ?? ""}`.trim()
+                    : m.user?.email}
+                  {m.userId === currentUser?.id ? " (you)" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RemindersSection({ projectId }: { projectId: string }) {
+  const { toast } = useToast();
+  const [isAdding, setIsAdding] = useState(false);
+  const [title, setTitle] = useState("");
+  const [note, setNote] = useState("");
+  const [dueAt, setDueAt] = useState("");
+  const [taskId, setTaskId] = useState<string>("_none");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const { data: reminders = [], isLoading } = useQuery<Reminder[]>({
+    queryKey: ["/api/crm/projects", projectId, "reminders"],
+    queryFn: () => apiRequest("GET", `/api/crm/projects/${projectId}/reminders`),
+    enabled: !!projectId,
+  });
+
+  const { data: taskData } = useQuery<{ data: { id: string; name: string }[] }>({
+    queryKey: ["/api/tasks", projectId],
+    queryFn: () => apiRequest("GET", `/api/tasks?crmProjectId=${projectId}`),
+    enabled: !!projectId,
+  });
+  const tasks = taskData?.data ?? [];
+
+  const resetForm = () => {
+    setTitle("");
+    setNote("");
+    setDueAt("");
+    setTaskId("_none");
+    setIsAdding(false);
+  };
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/crm/projects/${projectId}/reminders`, {
+        title: title.trim(),
+        note: note.trim() || null,
+        dueAt: new Date(dueAt).toISOString(),
+        taskId: taskId === "_none" ? null : taskId,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] });
+      resetForm();
+    },
+    onError: () => toast({ title: "Failed to create reminder", variant: "destructive" }),
+  });
+
+  const markDoneMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("PATCH", `/api/reminders/${id}`, { status: "done" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] }),
+    onError: () => toast({ title: "Failed to update reminder", variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/reminders/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] });
+      setDeleteId(null);
+    },
+    onError: () => toast({ title: "Failed to delete reminder", variant: "destructive" }),
+  });
+
+  const handleCreate = () => {
+    if (!title.trim() || !dueAt) return;
+    createMutation.mutate();
+  };
+
+  const statusLabel = (r: Reminder) => {
+    if (r.status === "done") return "done";
+    if (r.notified || new Date(r.dueAt) <= new Date()) return "due";
+    return "upcoming";
+  };
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="w-5 h-5" />
+              Reminders
+            </CardTitle>
+            <Button size="sm" variant="outline" onClick={() => setIsAdding(true)} data-testid="button-new-reminder">
+              <Plus className="w-4 h-4 mr-1" />
+              New reminder
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isAdding && (
+            <div className="space-y-2 mb-4 p-3 bg-muted/50 rounded-md">
+              <Input
+                autoFocus
+                placeholder="Reminder title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                data-testid="input-reminder-title"
+              />
+              <Textarea
+                placeholder="Note (optional)"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="resize-none"
+                rows={2}
+                data-testid="input-reminder-note"
+              />
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Due date &amp; time</label>
+                  <Input
+                    type="datetime-local"
+                    value={dueAt}
+                    onChange={(e) => setDueAt(e.target.value)}
+                    data-testid="input-reminder-due"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Linked task (optional)</label>
+                  <Select value={taskId} onValueChange={setTaskId}>
+                    <SelectTrigger data-testid="select-reminder-task">
+                      <SelectValue placeholder="No task" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">No task</SelectItem>
+                      {tasks.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button size="sm" variant="ghost" onClick={resetForm} data-testid="button-cancel-reminder">Cancel</Button>
+                <Button
+                  size="sm"
+                  onClick={handleCreate}
+                  disabled={createMutation.isPending || !title.trim() || !dueAt}
+                  data-testid="button-save-reminder"
+                >
+                  {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Add reminder"}
+                </Button>
+              </div>
+            </div>
+          )}
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground text-center py-4">Loading reminders...</p>
+          ) : reminders.length === 0 && !isAdding ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No reminders yet — click "New reminder" to add one.</p>
+          ) : (
+            <div className="space-y-2">
+              {reminders.map((r) => {
+                const label = statusLabel(r);
+                return (
+                  <div key={r.id} className="flex items-start gap-3 p-3 bg-muted/50 rounded-md group" data-testid={`reminder-${r.id}`}>
+                    <Bell className={`w-4 h-4 flex-shrink-0 mt-0.5 ${label === "due" ? "text-amber-500" : "text-muted-foreground"}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-sm font-medium ${r.status === "done" ? "line-through text-muted-foreground" : ""}`}>{r.title}</span>
+                        <Badge variant="outline" className="text-xs">{label}</Badge>
+                      </div>
+                      {r.note && <p className="text-xs text-muted-foreground mt-0.5 break-words">{r.note}</p>}
+                      <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(r.dueAt), "PPp")}</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {r.status !== "done" && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => markDoneMutation.mutate(r.id)}
+                          disabled={markDoneMutation.isPending}
+                          title="Mark done"
+                          data-testid={`button-reminder-done-${r.id}`}
+                        >
+                          <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                        </Button>
+                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => setDeleteId(r.id)}
+                        title="Delete"
+                        data-testid={`button-reminder-delete-${r.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete reminder?</AlertDialogTitle>
+            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
@@ -1803,8 +2114,14 @@ export default function CrmProjectPage() {
         budgetedMinutes={formData?.budgetedMinutes ?? null}
       />
 
+      {/* Members Section */}
+      <MembersSection projectId={projectId!} />
+
       {/* Tasks Section */}
       <TasksSection projectId={projectId!} />
+
+      {/* Reminders Section */}
+      <RemindersSection projectId={projectId!} />
 
       {/* Stage History Section */}
       <Card>
