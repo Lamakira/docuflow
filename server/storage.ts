@@ -348,9 +348,9 @@ export interface IStorage {
   createReminder(data: InsertReminder): Promise<Reminder>;
   getUserRemindersForProject(userId: string, crmProjectId: string): Promise<Reminder[]>;
   getReminder(id: string): Promise<Reminder | undefined>;
-  updateReminder(id: string, data: Partial<Pick<Reminder, "title" | "note" | "dueAt" | "status" | "taskId" | "notified">>): Promise<Reminder | undefined>;
+  updateReminder(id: string, data: Partial<Pick<Reminder, "title" | "note" | "dueAt" | "status" | "taskId" | "notified" | "notifiedInApp" | "emailSent">>): Promise<Reminder | undefined>;
   deleteReminder(id: string): Promise<void>;
-  claimDueReminders(now: Date): Promise<Reminder[]>;
+  getPendingDueReminders(now: Date): Promise<Reminder[]>;
 
   // ─── Desktop Agent ───
 
@@ -2769,7 +2769,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateReminder(
     id: string,
-    data: Partial<Pick<Reminder, "title" | "note" | "dueAt" | "status" | "taskId" | "notified">>,
+    data: Partial<Pick<Reminder, "title" | "note" | "dueAt" | "status" | "taskId" | "notified" | "notifiedInApp" | "emailSent">>,
   ): Promise<Reminder | undefined> {
     const [updated] = await db.update(reminders).set(data).where(eq(reminders.id, id)).returning();
     return updated;
@@ -2779,13 +2779,21 @@ export class DatabaseStorage implements IStorage {
     await db.delete(reminders).where(eq(reminders.id, id));
   }
 
-  // Atomically claim due, unnotified, not-done reminders so each is dispatched exactly once.
-  async claimDueReminders(now: Date): Promise<Reminder[]> {
+  // Due, not-done reminders that still have at least one channel pending delivery.
+  // The dispatcher marks each channel only after it succeeds, so failed channels retry
+  // and succeeded channels are never re-sent (exactly-once per channel).
+  async getPendingDueReminders(now: Date): Promise<Reminder[]> {
     return db
-      .update(reminders)
-      .set({ notified: 1, status: "due" })
-      .where(and(eq(reminders.notified, 0), lte(reminders.dueAt, now), ne(reminders.status, "done")))
-      .returning();
+      .select()
+      .from(reminders)
+      .where(
+        and(
+          lte(reminders.dueAt, now),
+          ne(reminders.status, "done"),
+          or(eq(reminders.notifiedInApp, 0), eq(reminders.emailSent, 0)),
+        ),
+      )
+      .orderBy(asc(reminders.dueAt));
   }
 
   // ═══════════════════════════════════════

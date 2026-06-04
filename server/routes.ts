@@ -15,6 +15,7 @@ import {
   insertCrmClientSchema,
   insertCrmContactSchema,
   insertCrmProjectSchema,
+  insertReminderSchema,
   crmProjectStatusValues,
   crmProjectTypeValues
 } from "@shared/schema";
@@ -3977,20 +3978,25 @@ Instructions:
       const crmProject = await storage.getCrmProject(req.params.id);
       if (!crmProject) return res.status(404).json({ message: "Project not found" });
 
-      const bodySchema = z.object({
+      // userId and crmProjectId come from the session/route, never the client body.
+      const bodySchema = insertReminderSchema.omit({ userId: true, crmProjectId: true }).extend({
         title: z.string().min(1, "Title is required"),
         note: z.string().nullable().optional(),
-        dueAt: z.string().min(1, "Due date is required"),
+        dueAt: z.coerce.date({ invalid_type_error: "Invalid due date" }),
         taskId: z.string().nullable().optional(),
+        status: z.enum(["upcoming", "due", "done"]).optional(),
       });
       const parsed = bodySchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
 
-      const dueAt = new Date(parsed.data.dueAt);
-      if (isNaN(dueAt.getTime())) {
-        return res.status(400).json({ message: "Invalid due date" });
+      // A linked task must belong to this same project.
+      if (parsed.data.taskId) {
+        const task = await storage.getTask(parsed.data.taskId);
+        if (!task || task.crmProjectId !== req.params.id) {
+          return res.status(400).json({ message: "Task does not belong to this project" });
+        }
       }
 
       const reminder = await storage.createReminder({
@@ -3999,8 +4005,8 @@ Instructions:
         taskId: parsed.data.taskId || null,
         title: parsed.data.title.trim(),
         note: parsed.data.note?.trim() || null,
-        dueAt,
-        status: "upcoming",
+        dueAt: parsed.data.dueAt,
+        status: parsed.data.status || "upcoming",
       });
       res.status(201).json(reminder);
     } catch (error) {
@@ -4020,7 +4026,16 @@ Instructions:
       const updates: any = {};
       if (title !== undefined) updates.title = String(title).trim();
       if (note !== undefined) updates.note = note ? String(note).trim() : null;
-      if (taskId !== undefined) updates.taskId = taskId || null;
+      if (taskId !== undefined) {
+        if (taskId) {
+          // A linked task must belong to this reminder's project.
+          const task = await storage.getTask(taskId);
+          if (!task || task.crmProjectId !== reminder.crmProjectId) {
+            return res.status(400).json({ message: "Task does not belong to this project" });
+          }
+        }
+        updates.taskId = taskId || null;
+      }
       if (status !== undefined) {
         const allowed = ["upcoming", "due", "done"];
         if (!allowed.includes(status)) return res.status(400).json({ message: "Invalid status" });
@@ -4417,9 +4432,10 @@ Instructions:
     if (reminderDispatchRunning) return;
     reminderDispatchRunning = true;
     try {
-      // Atomically claim due reminders first (sets notified=1) so each fires exactly once,
-      // even if delivery below fails or another run overlaps.
-      const due = await storage.claimDueReminders(new Date());
+      // Reminders that are due and not done, with at least one channel still pending.
+      // Each channel is marked only after it succeeds, so a transient failure on one
+      // channel is retried next run without re-sending the channel that already succeeded.
+      const due = await storage.getPendingDueReminders(new Date());
       if (due.length === 0) return;
       const appUrl = getAppBaseUrl();
 
@@ -4428,27 +4444,51 @@ Instructions:
           const crmProject = await storage.getCrmProject(reminder.crmProjectId);
           const projectName = crmProject?.project?.name || "your project";
 
-          // In-app notification (reuse existing notifications bell)
-          await storage.createNotification({
-            userId: reminder.userId,
-            type: "reminder",
-            crmProjectId: reminder.crmProjectId,
-            message: `Reminder: ${reminder.title} (${projectName})`,
-          });
+          let inAppDone = reminder.notifiedInApp === 1;
+          let emailDone = reminder.emailSent === 1;
 
-          // Email notification
-          const user = await storage.getUser(reminder.userId);
-          if (user?.email) {
-            const recipientName = user.firstName || user.email;
-            await sendReminderDueEmail(
-              user.email,
-              recipientName,
-              reminder.title,
-              reminder.note,
-              projectName,
-              appUrl,
-              reminder.crmProjectId,
-            );
+          // In-app notification (reuse existing notifications bell) — once only.
+          if (!inAppDone) {
+            await storage.createNotification({
+              userId: reminder.userId,
+              type: "reminder",
+              crmProjectId: reminder.crmProjectId,
+              message: `Reminder: ${reminder.title} (${projectName})`,
+            });
+            await storage.updateReminder(reminder.id, { notifiedInApp: 1 });
+            inAppDone = true;
+          }
+
+          // Email notification — once only, and only marked sent when delivery succeeds.
+          if (!emailDone) {
+            const user = await storage.getUser(reminder.userId);
+            if (user?.email) {
+              const recipientName = user.firstName || user.email;
+              const emailResult = await sendReminderDueEmail(
+                user.email,
+                recipientName,
+                reminder.title,
+                reminder.note,
+                projectName,
+                appUrl,
+                reminder.crmProjectId,
+              );
+              if (emailResult?.success) {
+                await storage.updateReminder(reminder.id, { emailSent: 1 });
+                emailDone = true;
+              } else {
+                console.error("[ReminderDispatcher] Email failed, will retry", reminder.id, emailResult?.error);
+              }
+            } else {
+              // No email address to send to — nothing to retry.
+              await storage.updateReminder(reminder.id, { emailSent: 1 });
+              emailDone = true;
+            }
+          }
+
+          // Flag overall notified + due status only once both channels are complete.
+          if (inAppDone && emailDone && reminder.notified === 0) {
+            await storage.updateReminder(reminder.id, { notified: 1, status: "due" });
           }
         } catch (innerErr) {
           console.error("[ReminderDispatcher] Failed to dispatch reminder", reminder.id, innerErr);

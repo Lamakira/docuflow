@@ -1072,6 +1072,8 @@ export const reminders = pgTable("reminders", {
   dueAt: timestamp("due_at").notNull(),
   status: varchar("status", { length: 20 }).notNull().default("upcoming"),
   notified: integer("notified").notNull().default(0),
+  notifiedInApp: integer("notified_in_app").notNull().default(0),
+  emailSent: integer("email_sent").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_reminders_user").on(table.userId),
@@ -1098,6 +1100,8 @@ export const insertReminderSchema = createInsertSchema(reminders).omit({
   id: true,
   createdAt: true,
   notified: true,
+  notifiedInApp: true,
+  emailSent: true,
 });
 
 export type Reminder = typeof reminders.$inferSelect;
