@@ -1,0 +1,1 @@
+- [Stale-process route gap](stale-process-route-gap.md) — new routes not served until server restarts; Vite's catch-all returns HTML/200 masking the missing route as "success"
