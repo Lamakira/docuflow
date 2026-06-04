@@ -266,11 +266,12 @@ function MembersSection({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
 
-  const { data: members = [], isLoading } = useQuery<ProjectMemberWithUser[]>({
+  const { data: membersRaw, isLoading } = useQuery<ProjectMemberWithUser[]>({
     queryKey: ["/api/crm/projects", projectId, "members"],
     queryFn: () => apiRequest("GET", `/api/crm/projects/${projectId}/members`),
     enabled: !!projectId,
   });
+  const members: ProjectMemberWithUser[] = Array.isArray(membersRaw) ? membersRaw : [];
 
   const isMember = members.some((m) => m.userId === currentUser?.id);
 
@@ -361,11 +362,12 @@ function RemindersSection({ projectId }: { projectId: string }) {
   const [taskId, setTaskId] = useState<string>("_none");
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const { data: reminders = [], isLoading } = useQuery<Reminder[]>({
+  const { data: remindersRaw, isLoading } = useQuery<Reminder[]>({
     queryKey: ["/api/crm/projects", projectId, "reminders"],
     queryFn: () => apiRequest("GET", `/api/crm/projects/${projectId}/reminders`),
     enabled: !!projectId,
   });
+  const reminders: Reminder[] = Array.isArray(remindersRaw) ? remindersRaw : [];
 
   const { data: taskData } = useQuery<{ data: { id: string; name: string }[] }>({
     queryKey: ["/api/tasks", projectId],
