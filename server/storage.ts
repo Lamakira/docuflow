@@ -401,14 +401,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertUser(userData: { id: string; email?: string | null; firstName?: string | null; lastName?: string | null; profileImageUrl?: string | null }): Promise<User> {
-    // For Replit OIDC users, we need to provide a placeholder password since the column is required
-    // These users authenticate via OIDC and never use the password field
+    // If a user with this email already exists under a different OIDC id, update that record
+    // instead of inserting — otherwise the email unique constraint will crash the server.
+    if (userData.email) {
+      const [existing] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, userData.email))
+        .limit(1);
+
+      if (existing && existing.id !== userData.id) {
+        const [updated] = await db
+          .update(users)
+          .set({
+            firstName: userData.firstName ?? undefined,
+            lastName: userData.lastName ?? undefined,
+            profileImageUrl: userData.profileImageUrl ?? undefined,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.email, userData.email))
+          .returning();
+        return updated;
+      }
+    }
+
+    // Normal upsert by OIDC id
     const [user] = await db
       .insert(users)
       .values({
         id: userData.id,
         email: userData.email ?? "",
-        password: "REPLIT_OIDC_USER", // Placeholder for OIDC users - never used for auth
+        password: "REPLIT_OIDC_USER",
         firstName: userData.firstName ?? undefined,
         lastName: userData.lastName ?? undefined,
         profileImageUrl: userData.profileImageUrl ?? undefined,
