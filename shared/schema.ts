@@ -456,6 +456,7 @@ export type CrmProjectWithDetails = CrmProject & {
   project?: Project;
   client?: CrmClient & { contacts?: CrmContact[] };
   assignee?: SafeUser;
+  members?: ProjectMemberWithUser[];
   latestNote?: CrmProjectNoteWithCreator;
   tags?: CrmTag[];
 };

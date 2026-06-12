@@ -33,7 +33,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { 
   ArrowLeft,
-  User,
   Briefcase,
   Mail,
   Phone,
@@ -1173,7 +1172,6 @@ export default function CrmProjectPage() {
   }
 
   const selectedClient = clients.find(c => c.id === formData?.clientId);
-  const selectedAssignee = users.find(u => u.id === formData?.assigneeId);
 
   return (
     <div className="p-4 md:p-6 w-full space-y-4 md:space-y-6">
@@ -1374,33 +1372,6 @@ export default function CrmProjectPage() {
                   </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Assigned To</label>
-                  <Select 
-                    value={formData?.assigneeId || "_none"} 
-                    onValueChange={(v) => updateFormField("assigneeId", v === "_none" ? null : v)}
-                  >
-                    <SelectTrigger data-testid="select-assignee">
-                      <SelectValue placeholder="Select assignee" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_none">Unassigned</SelectItem>
-                      {users.map(user => (
-                        <SelectItem key={user.id} value={user.id}>
-                          <div className="flex items-center gap-2">
-                            <Avatar className="w-5 h-5">
-                              <AvatarImage src={user.profileImageUrl || undefined} />
-                              <AvatarFallback className="text-xs">
-                                {user.firstName?.[0]}{user.lastName?.[0]}
-                              </AvatarFallback>
-                            </Avatar>
-                            {user.firstName} {user.lastName}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Client</label>
@@ -1511,24 +1482,6 @@ export default function CrmProjectPage() {
               </>
             ) : (
               <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Assigned To:</span>
-                  {selectedAssignee ? (
-                    <div className="flex items-center gap-2">
-                      <Avatar className="w-6 h-6">
-                        <AvatarImage src={selectedAssignee.profileImageUrl || undefined} />
-                        <AvatarFallback className="text-xs">
-                          {selectedAssignee.firstName?.[0]}{selectedAssignee.lastName?.[0]}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="text-sm">{selectedAssignee.firstName} {selectedAssignee.lastName}</span>
-                    </div>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">Unassigned</span>
-                  )}
-                </div>
-
                 <div className="flex items-center gap-2">
                   <Briefcase className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm font-medium">Client:</span>

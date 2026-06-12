@@ -370,8 +370,8 @@ export default function CrmPage() {
       // Apply status filter
       if (statusFilter !== "all" && project.status !== statusFilter) return false;
       
-      // Apply user filter
-      if (userFilter !== "all" && project.assigneeId !== userFilter) return false;
+      // Apply user filter (based on project members)
+      if (userFilter !== "all" && !(project.members ?? []).some(m => m.userId === userFilter)) return false;
       
       // Apply search filter
       if (search) {
@@ -386,7 +386,7 @@ export default function CrmPage() {
       // Apply project view filter
       switch (projectViewFilter) {
         case "my_projects":
-          return project.assigneeId === user?.id;
+          return (project.members ?? []).some(m => m.userId === user?.id);
         case "internal":
           return project.projectType === "internal";
         case "client":
@@ -859,19 +859,26 @@ export default function CrmPage() {
                                                     </div>
                                                   );
                                                 })()}
-                                                {project.assignee && (
-                                                  <div className="flex items-center gap-1.5 mt-2">
-                                                    <Avatar className="w-5 h-5">
-                                                      <AvatarImage src={project.assignee.profileImageUrl || undefined} />
-                                                      <AvatarFallback className="text-[10px]">
-                                                        {project.assignee.firstName?.[0]}{project.assignee.lastName?.[0]}
-                                                      </AvatarFallback>
-                                                    </Avatar>
-                                                    <span className="text-xs text-muted-foreground truncate">
-                                                      {project.assignee.firstName}
-                                                    </span>
-                                                  </div>
-                                                )}
+                                                {project.members && project.members.length > 0 && (() => {
+                                                  const first = project.members[0].user;
+                                                  const extra = project.members.length - 1;
+                                                  return (
+                                                    <div className="flex items-center gap-1.5 mt-2" data-testid={`members-${project.id}`}>
+                                                      <Avatar className="w-5 h-5">
+                                                        <AvatarImage src={first?.profileImageUrl || undefined} />
+                                                        <AvatarFallback className="text-[10px]">
+                                                          {first?.firstName?.[0]}{first?.lastName?.[0]}
+                                                        </AvatarFallback>
+                                                      </Avatar>
+                                                      <span className="text-xs text-muted-foreground truncate">
+                                                        {first?.firstName || first?.email}
+                                                      </span>
+                                                      {extra > 0 && (
+                                                        <span className="text-xs text-muted-foreground">+{extra}</span>
+                                                      )}
+                                                    </div>
+                                                  );
+                                                })()}
                                                 {project.tags && project.tags.length > 0 && (
                                                   <div className="flex flex-wrap gap-1 mt-2">
                                                     {project.tags.slice(0, 3).map((tag) => (
@@ -1043,17 +1050,24 @@ export default function CrmPage() {
                             )}
                             {projectColumnVisibility.isColumnVisible("assigned") && (
                               <td className="px-4 py-3">
-                                {crmProject.assignee ? (
-                                  <div className="flex items-center gap-2">
-                                    <Avatar className="w-6 h-6">
-                                      <AvatarImage src={crmProject.assignee.profileImageUrl || undefined} />
-                                      <AvatarFallback className="text-[10px]">
-                                        {crmProject.assignee.firstName?.[0]}{crmProject.assignee.lastName?.[0]}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <span className="text-sm">{crmProject.assignee.firstName}</span>
-                                  </div>
-                                ) : (
+                                {crmProject.members && crmProject.members.length > 0 ? (() => {
+                                  const first = crmProject.members[0].user;
+                                  const extra = crmProject.members.length - 1;
+                                  return (
+                                    <div className="flex items-center gap-2" data-testid={`members-${crmProject.id}`}>
+                                      <Avatar className="w-6 h-6">
+                                        <AvatarImage src={first?.profileImageUrl || undefined} />
+                                        <AvatarFallback className="text-[10px]">
+                                          {first?.firstName?.[0]}{first?.lastName?.[0]}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <span className="text-sm">{first?.firstName || first?.email}</span>
+                                      {extra > 0 && (
+                                        <span className="text-sm text-muted-foreground">+{extra}</span>
+                                      )}
+                                    </div>
+                                  );
+                                })() : (
                                   <span className="text-muted-foreground text-sm">—</span>
                                 )}
                               </td>

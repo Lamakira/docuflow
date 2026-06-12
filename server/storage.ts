@@ -984,6 +984,32 @@ export class DatabaseStorage implements IStorage {
         tagsMap.set(projectTag.crmProjectId, existing);
       });
     }
+
+    // Get members for each CRM project
+    const membersMap = new Map<string, ProjectMemberWithUser[]>();
+    if (crmProjectIds.length > 0) {
+      const memberRows = await db.query.projectMembers.findMany({
+        where: or(...crmProjectIds.map(id => eq(projectMembers.crmProjectId, id))),
+        with: { user: true },
+        orderBy: asc(projectMembers.createdAt),
+      });
+      memberRows.forEach((row) => {
+        const { user, ...rest } = row as any;
+        const safeUser = user
+          ? {
+              id: user.id,
+              email: user.email,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              profileImageUrl: user.profileImageUrl,
+            }
+          : undefined;
+        const member = { ...rest, user: safeUser } as ProjectMemberWithUser;
+        const existing = membersMap.get(member.crmProjectId) || [];
+        existing.push(member);
+        membersMap.set(member.crmProjectId, existing);
+      });
+    }
     
     if (crmProjectIds.length > 0) {
       // Get all notes and group by project, keeping only the latest
@@ -1030,12 +1056,14 @@ export class DatabaseStorage implements IStorage {
       const assignee = cp.assigneeId ? assigneeMap.get(cp.assigneeId) : undefined;
       const latestNote = latestNotesMap.get(cp.id);
       const tags = tagsMap.get(cp.id) || [];
+      const members = membersMap.get(cp.id) || [];
 
       return {
         ...cp,
         project,
         client: client ? { ...client, contacts: clientContacts } : undefined,
         assignee,
+        members,
         latestNote,
         tags,
       };
@@ -1077,7 +1105,9 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    return { ...crmProject, project, client, assignee };
+    const members = await this.getProjectMembers(crmProject.id);
+
+    return { ...crmProject, project, client, assignee, members };
   }
 
   async getCrmProjectByProjectId(projectId: string): Promise<CrmProject | undefined> {
