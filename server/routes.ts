@@ -1582,6 +1582,11 @@ Instructions:
         }
       }
 
+      // Auto-sync: if an assignee was set, ensure they are also a member
+      if (parsed.data.assigneeId) {
+        await storage.addProjectMember(crmProject.id, parsed.data.assigneeId);
+      }
+
       res.status(201).json({ project, crmProject });
     } catch (error) {
       console.error("Error creating CRM project:", error);
@@ -1770,6 +1775,14 @@ Instructions:
       }
       
       const updated = await storage.updateCrmProject(req.params.id, updateData);
+
+      // Auto-sync: if a (new or unchanged) assignee is set, ensure they are also a member
+      const effectiveAssigneeId = parsed.data.assigneeId !== undefined
+        ? parsed.data.assigneeId
+        : crmProject.assigneeId;
+      if (effectiveAssigneeId) {
+        await storage.addProjectMember(req.params.id, effectiveAssigneeId);
+      }
       
       // Record stage history if status changed
       if (isStatusChange && updated) {
