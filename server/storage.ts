@@ -103,7 +103,7 @@ import {
   type EvidenceQualityReport,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ne, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray, getTableColumns } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -1366,12 +1366,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllUsers(opts: { includeArchived?: boolean } = {}): Promise<SafeUser[]> {
-    const { password: _pw, ...safeColumns } = getTableColumns(users);
-    const q = db.select(safeColumns).from(users).orderBy(asc(users.firstName), asc(users.lastName));
+    const safeColumns = {
+      id: users.id,
+      email: users.email,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      profileImageUrl: users.profileImageUrl,
+      role: users.role,
+      isMainAdmin: users.isMainAdmin,
+      hoursPerDay: users.hoursPerDay,
+      lastLoginAt: users.lastLoginAt,
+      isArchived: users.isArchived,
+      createdAt: users.createdAt,
+      updatedAt: users.updatedAt,
+    };
     if (!opts.includeArchived) {
-      return await db.select(safeColumns).from(users).where(eq(users.isArchived, false)).orderBy(asc(users.firstName), asc(users.lastName));
+      return await db.select(safeColumns).from(users).where(eq(users.isArchived, false)).orderBy(asc(users.firstName), asc(users.lastName)) as SafeUser[];
     }
-    return await q;
+    return await db.select(safeColumns).from(users).orderBy(asc(users.firstName), asc(users.lastName)) as SafeUser[];
   }
 
   async archiveUser(userId: string, isArchived: boolean): Promise<SafeUser | undefined> {
