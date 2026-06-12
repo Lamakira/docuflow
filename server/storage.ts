@@ -103,7 +103,7 @@ import {
   type EvidenceQualityReport,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ne, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray, getTableColumns } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -1366,9 +1366,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllUsers(opts: { includeArchived?: boolean } = {}): Promise<SafeUser[]> {
-    const q = db.select().from(users).orderBy(asc(users.firstName), asc(users.lastName));
+    const { password: _pw, ...safeColumns } = getTableColumns(users);
+    const q = db.select(safeColumns).from(users).orderBy(asc(users.firstName), asc(users.lastName));
     if (!opts.includeArchived) {
-      return await db.select().from(users).where(eq(users.isArchived, false)).orderBy(asc(users.firstName), asc(users.lastName));
+      return await db.select(safeColumns).from(users).where(eq(users.isArchived, false)).orderBy(asc(users.firstName), asc(users.lastName));
     }
     return await q;
   }
