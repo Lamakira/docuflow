@@ -1525,6 +1525,7 @@ Instructions:
         actualHours: z.number().nullable().optional(),
         documentationEnabled: z.boolean().optional(),
         isDocumentationOnly: z.boolean().optional(),
+        memberIds: z.array(z.string()).optional(),
       });
       
       const parsed = createSchema.safeParse(req.body);
@@ -1564,7 +1565,16 @@ Instructions:
           isDocumentationOnly: parsed.data.isDocumentationOnly ? 1 : 0,
         }
       );
-      
+
+      // Add extra members provided at creation time (creator is already added by createCrmProjectWithBase)
+      if (parsed.data.memberIds && parsed.data.memberIds.length > 0) {
+        for (const memberId of parsed.data.memberIds) {
+          if (memberId !== userId) {
+            await storage.addProjectMember(crmProject.id, memberId);
+          }
+        }
+      }
+
       res.status(201).json({ project, crmProject });
     } catch (error) {
       console.error("Error creating CRM project:", error);
@@ -2128,10 +2138,7 @@ Instructions:
     try {
       const requestingUserId = getUserId(req)!;
       const requestingUser = await storage.getUser(requestingUserId);
-      if (requestingUser?.role !== "admin") {
-        return res.status(403).json({ message: "Admin access required" });
-      }
-      const includeArchived = req.query.includeArchived === "true";
+      const includeArchived = requestingUser?.role === "admin" && req.query.includeArchived === "true";
       const users = await storage.getAllUsers({ includeArchived });
       res.json(users);
     } catch (error) {
@@ -3933,17 +3940,30 @@ Instructions:
     }
   });
 
-  // Join: a user can only add themselves
+  // Add member: owner/admin can add any user, others add themselves
   app.post("/api/crm/projects/:id/members", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = getUserId(req)!;
+      const callerId = getUserId(req)!;
       const crmProject = await storage.getCrmProject(req.params.id);
       if (!crmProject) return res.status(404).json({ message: "Project not found" });
-      const member = await storage.addProjectMember(req.params.id, userId);
+
+      const targetUserId: string = req.body?.userId || callerId;
+
+      // If adding someone other than themselves, caller must be owner or admin
+      if (targetUserId !== callerId) {
+        const caller = await storage.getUser(callerId);
+        const isOwner = crmProject.project?.ownerId === callerId;
+        const isAdmin = caller?.role === "admin";
+        if (!isOwner && !isAdmin) {
+          return res.status(403).json({ message: "Only project owner or admin can add other members" });
+        }
+      }
+
+      const member = await storage.addProjectMember(req.params.id, targetUserId);
       res.status(201).json(member);
     } catch (error) {
-      console.error("Error joining project:", error);
-      res.status(500).json({ message: "Failed to join project" });
+      console.error("Error adding project member:", error);
+      res.status(500).json({ message: "Failed to add project member" });
     }
   });
 
@@ -3956,6 +3976,31 @@ Instructions:
     } catch (error) {
       console.error("Error leaving project:", error);
       res.status(500).json({ message: "Failed to leave project" });
+    }
+  });
+
+  // Remove a specific member: owner/admin can remove anyone, member can remove themselves
+  app.delete("/api/crm/projects/:id/members/:userId", isAuthenticated, async (req: any, res) => {
+    try {
+      const callerId = getUserId(req)!;
+      const { id: projectId, userId: targetUserId } = req.params;
+
+      if (targetUserId !== callerId) {
+        const crmProject = await storage.getCrmProject(projectId);
+        if (!crmProject) return res.status(404).json({ message: "Project not found" });
+        const caller = await storage.getUser(callerId);
+        const isOwner = crmProject.project?.ownerId === callerId;
+        const isAdmin = caller?.role === "admin";
+        if (!isOwner && !isAdmin) {
+          return res.status(403).json({ message: "Only project owner or admin can remove other members" });
+        }
+      }
+
+      await storage.removeProjectMember(projectId, targetUserId);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error removing project member:", error);
+      res.status(500).json({ message: "Failed to remove project member" });
     }
   });
 

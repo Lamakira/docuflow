@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,10 +31,11 @@ import {
   Clock,
   Check,
   ChevronsUpDown,
-  X
+  X,
+  Users
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CrmClient, CrmProjectStatus, CrmProjectType, CrmModuleField } from "@shared/schema";
+import type { CrmClient, CrmProjectStatus, CrmProjectType, CrmModuleField, SafeUser } from "@shared/schema";
 
 // Helper to parse field options from database format
 interface ParsedOption {
@@ -105,9 +107,29 @@ export default function ProjectCreatePage() {
     actualMinutes: "",
   });
   const [contactOpen, setContactOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+
+  // Pre-select the current user once loaded
+  useEffect(() => {
+    if (user?.id && !selectedMemberIds.includes(user.id)) {
+      setSelectedMemberIds([user.id]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const { data: clients = [] } = useQuery<CrmClient[]>({
     queryKey: ["/api/crm/clients"],
+  });
+
+  const { data: allUsers = [] } = useQuery<SafeUser[]>({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60000,
   });
 
   // Fetch project module fields for dynamic status options
@@ -197,7 +219,7 @@ export default function ProjectCreatePage() {
   }, [formData.startDate, formData.projectType, formData.budgetedHours, hoursPerDay]);
 
   const createProjectMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string | null; clientId?: string | null; status?: string | null; projectType?: string | null; startDate?: string | null; dueDate?: string | null; budgetedHours?: number | null; budgetedMinutes?: number | null; actualHours?: number | null; actualMinutes?: number | null }) => {
+    mutationFn: async (data: { name: string; description?: string | null; clientId?: string | null; status?: string | null; projectType?: string | null; startDate?: string | null; dueDate?: string | null; budgetedHours?: number | null; budgetedMinutes?: number | null; actualHours?: number | null; actualMinutes?: number | null; memberIds?: string[] }) => {
       return apiRequest("POST", "/api/crm/projects", data);
     },
     onSuccess: (response) => {
@@ -257,6 +279,7 @@ export default function ProjectCreatePage() {
       budgetedMinutes: formData.budgetedMinutes ? parseInt(formData.budgetedMinutes) : null,
       actualHours: formData.actualHours ? parseInt(formData.actualHours) : null,
       actualMinutes: formData.actualMinutes ? parseInt(formData.actualMinutes) : null,
+      memberIds: selectedMemberIds,
     });
   };
 
@@ -374,6 +397,106 @@ export default function ProjectCreatePage() {
                   </Command>
                 </PopoverContent>
               </Popover>
+            </div>
+
+            {/* Members field */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1">
+                <Users className="w-4 h-4" />
+                Members
+              </Label>
+              <Popover open={membersOpen} onOpenChange={setMembersOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={membersOpen}
+                    className="w-full justify-between font-normal"
+                    data-testid="select-project-members"
+                  >
+                    {selectedMemberIds.length === 0
+                      ? "Select members..."
+                      : `${selectedMemberIds.length} member${selectedMemberIds.length > 1 ? "s" : ""} selected`}
+                    <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[400px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search users..." data-testid="input-search-members" />
+                    <CommandList>
+                      <CommandEmpty>No users found.</CommandEmpty>
+                      <CommandGroup>
+                        {allUsers.map((u) => {
+                          const isSelected = selectedMemberIds.includes(u.id);
+                          const displayName = u.firstName || u.lastName
+                            ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim()
+                            : u.email;
+                          return (
+                            <CommandItem
+                              key={u.id}
+                              value={`${u.firstName ?? ""} ${u.lastName ?? ""} ${u.email}`}
+                              onSelect={() => {
+                                setSelectedMemberIds(prev =>
+                                  isSelected ? prev.filter(id => id !== u.id) : [...prev, u.id]
+                                );
+                              }}
+                              data-testid={`option-member-${u.id}`}
+                            >
+                              <Check className={cn("mr-2 h-4 w-4", isSelected ? "opacity-100" : "opacity-0")} />
+                              <Avatar className="w-5 h-5 mr-2">
+                                <AvatarImage src={u.profileImageUrl || undefined} />
+                                <AvatarFallback className="text-xs">{u.firstName?.[0]}{u.lastName?.[0]}</AvatarFallback>
+                              </Avatar>
+                              <div className="flex flex-col">
+                                <span>{displayName}</span>
+                                {u.email && displayName !== u.email && (
+                                  <span className="text-xs text-muted-foreground">{u.email}</span>
+                                )}
+                              </div>
+                              {u.id === user?.id && (
+                                <span className="ml-auto text-xs text-muted-foreground">you</span>
+                              )}
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {/* Selected members chips */}
+              {selectedMemberIds.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {selectedMemberIds.map(id => {
+                    const u = allUsers.find(usr => usr.id === id);
+                    const displayName = u
+                      ? (u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : u.email)
+                      : id;
+                    return (
+                      <div
+                        key={id}
+                        className="flex items-center gap-1 bg-muted rounded-md px-2 py-1 text-sm"
+                        data-testid={`selected-member-${id}`}
+                      >
+                        <Avatar className="w-4 h-4">
+                          <AvatarImage src={u?.profileImageUrl || undefined} />
+                          <AvatarFallback className="text-xs">{u?.firstName?.[0]}{u?.lastName?.[0]}</AvatarFallback>
+                        </Avatar>
+                        <span>{displayName}</span>
+                        {id === user?.id && <span className="text-muted-foreground text-xs">(you)</span>}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMemberIds(prev => prev.filter(mid => mid !== id))}
+                          className="ml-1 text-muted-foreground hover:text-foreground"
+                          data-testid={`remove-member-chip-${id}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">

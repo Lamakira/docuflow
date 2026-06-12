@@ -71,8 +71,18 @@ import {
   Users,
   Bell,
   LogIn,
-  LogOut
+  LogOut,
+  Check,
+  ChevronsUpDown
 } from "lucide-react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { AudioRecorder } from "@/components/editor/AudioRecorder";
 import { NoteAudioPlayer } from "@/components/NoteAudioPlayer";
 import type { NoteAttachment } from "@/components/NoteInput";
@@ -262,9 +272,10 @@ function TasksSection({ projectId }: { projectId: string }) {
   );
 }
 
-function MembersSection({ projectId }: { projectId: string }) {
+function MembersSection({ projectId, ownerId }: { projectId: string; ownerId?: string | null }) {
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
+  const [addOpen, setAddOpen] = useState(false);
 
   const { data: membersRaw, isLoading } = useQuery<ProjectMemberWithUser[]>({
     queryKey: ["/api/crm/projects", projectId, "members"],
@@ -273,79 +284,171 @@ function MembersSection({ projectId }: { projectId: string }) {
   });
   const members: ProjectMemberWithUser[] = Array.isArray(membersRaw) ? membersRaw : [];
 
-  const isMember = members.some((m) => m.userId === currentUser?.id);
-
-  const joinMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/crm/projects/${projectId}/members`, {}),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "members"] }),
-    onError: () => toast({ title: "Failed to join project", variant: "destructive" }),
+  const { data: allUsersRaw = [] } = useQuery<SafeUser[]>({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const res = await fetch("/api/users", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60000,
+    enabled: !!currentUser,
   });
 
-  const leaveMutation = useMutation({
-    mutationFn: () => apiRequest("DELETE", `/api/crm/projects/${projectId}/members/me`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "members"] }),
-    onError: () => toast({ title: "Failed to leave project", variant: "destructive" }),
+  const isMember = members.some((m) => m.userId === currentUser?.id);
+  const isOwner = ownerId === currentUser?.id;
+  const isAdmin = currentUser?.role === "admin";
+  const canManageMembers = isOwner || isAdmin;
+
+  // Users not yet in the project
+  const memberIds = new Set(members.map((m) => m.userId));
+  const availableUsers = allUsersRaw.filter((u) => !memberIds.has(u.id));
+
+  const addMemberMutation = useMutation({
+    mutationFn: (userId: string) =>
+      apiRequest("POST", `/api/crm/projects/${projectId}/members`, { userId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "members"] });
+      setAddOpen(false);
+    },
+    onError: () => toast({ title: "Failed to add member", variant: "destructive" }),
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: (userId: string) =>
+      apiRequest("DELETE", `/api/crm/projects/${projectId}/members/${userId}`),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "members"] }),
+    onError: () => toast({ title: "Failed to remove member", variant: "destructive" }),
   });
 
   return (
     <Card>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <CardTitle className="flex items-center gap-2">
             <Users className="w-5 h-5" />
             Members
           </CardTitle>
-          {isMember ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => leaveMutation.mutate()}
-              disabled={leaveMutation.isPending}
-              data-testid="button-leave-project"
-            >
-              {leaveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4 mr-1" />}
-              Leave
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              onClick={() => joinMutation.mutate()}
-              disabled={joinMutation.isPending}
-              data-testid="button-join-project"
-            >
-              {joinMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4 mr-1" />}
-              Join
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Add member combobox — visible to all */}
+            <Popover open={addOpen} onOpenChange={setAddOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="button-add-member"
+                  disabled={availableUsers.length === 0}
+                >
+                  <UserPlus className="w-4 h-4 mr-1" />
+                  Add
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-0" align="end">
+                <Command>
+                  <CommandInput placeholder="Search users..." data-testid="input-search-add-member" />
+                  <CommandList>
+                    <CommandEmpty>No users available.</CommandEmpty>
+                    <CommandGroup>
+                      {availableUsers.map((u) => {
+                        const displayName =
+                          u.firstName || u.lastName
+                            ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim()
+                            : u.email;
+                        return (
+                          <CommandItem
+                            key={u.id}
+                            value={`${u.firstName ?? ""} ${u.lastName ?? ""} ${u.email}`}
+                            onSelect={() => addMemberMutation.mutate(u.id)}
+                            disabled={addMemberMutation.isPending}
+                            data-testid={`option-add-member-${u.id}`}
+                          >
+                            <Avatar className="w-5 h-5 mr-2">
+                              <AvatarImage src={u.profileImageUrl || undefined} />
+                              <AvatarFallback className="text-xs">
+                                {u.firstName?.[0]}{u.lastName?.[0]}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex flex-col">
+                              <span className="text-sm">{displayName}</span>
+                              {u.email && displayName !== u.email && (
+                                <span className="text-xs text-muted-foreground">{u.email}</span>
+                              )}
+                            </div>
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+
+            {/* Leave button — only when current user is a member */}
+            {isMember && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => removeMemberMutation.mutate(currentUser!.id)}
+                disabled={removeMemberMutation.isPending}
+                data-testid="button-leave-project"
+              >
+                {removeMemberMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <LogOut className="w-4 h-4 mr-1" />
+                )}
+                Leave
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <p className="text-sm text-muted-foreground text-center py-4">Loading members...</p>
         ) : members.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">No members yet — click "Join" to add yourself.</p>
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No members yet — click "Add" to assign someone.
+          </p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {members.map((m) => (
-              <div
-                key={m.id}
-                className="flex items-center gap-2 p-2 pr-3 bg-muted/50 rounded-md"
-                data-testid={`member-${m.userId}`}
-              >
-                <Avatar className="w-6 h-6">
-                  <AvatarImage src={m.user?.profileImageUrl || undefined} />
-                  <AvatarFallback className="text-xs">
-                    {m.user?.firstName?.[0]}{m.user?.lastName?.[0]}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-sm">
-                  {m.user?.firstName || m.user?.lastName
-                    ? `${m.user?.firstName ?? ""} ${m.user?.lastName ?? ""}`.trim()
-                    : m.user?.email}
-                  {m.userId === currentUser?.id ? " (you)" : ""}
-                </span>
-              </div>
-            ))}
+            {members.map((m) => {
+              const canRemoveThis =
+                canManageMembers || m.userId === currentUser?.id;
+              return (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-2 p-2 pr-2 bg-muted/50 rounded-md"
+                  data-testid={`member-${m.userId}`}
+                >
+                  <Avatar className="w-6 h-6">
+                    <AvatarImage src={m.user?.profileImageUrl || undefined} />
+                    <AvatarFallback className="text-xs">
+                      {m.user?.firstName?.[0]}{m.user?.lastName?.[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm">
+                    {m.user?.firstName || m.user?.lastName
+                      ? `${m.user?.firstName ?? ""} ${m.user?.lastName ?? ""}`.trim()
+                      : m.user?.email}
+                    {m.userId === currentUser?.id ? " (you)" : ""}
+                  </span>
+                  {canRemoveThis && (
+                    <button
+                      type="button"
+                      onClick={() => removeMemberMutation.mutate(m.userId)}
+                      disabled={removeMemberMutation.isPending}
+                      className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
+                      data-testid={`button-remove-member-${m.userId}`}
+                      title="Remove member"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </CardContent>
@@ -2117,7 +2220,7 @@ export default function CrmProjectPage() {
       />
 
       {/* Members Section */}
-      <MembersSection projectId={projectId!} />
+      <MembersSection projectId={projectId!} ownerId={project?.project?.ownerId} />
 
       {/* Tasks Section */}
       <TasksSection projectId={projectId!} />
