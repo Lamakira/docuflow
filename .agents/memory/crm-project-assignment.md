@@ -10,4 +10,6 @@ CRM project assignment is driven by the many-to-many `project_members` relations
 
 **How to apply:**
 - Any "who is on this project" feature (display, filters, "my projects") must read from project members, not `assigneeId`.
-- Existing legacy `assigneeId` values were backfilled into `project_members`. Do not reintroduce assignee as the primary assignment mechanism; if assignee writes ever return, re-run the backfill or add a members fallback.
+- The CRM list keeps a read-time fallback: when a project has no members it falls back to its legacy `assignee` for display/filtering. This is transitional — it exists so un-migrated projects (notably in production, where `project_members` starts empty after the schema is first published) still render correctly. Do NOT remove this fallback until all environments' legacy assignees are migrated into `project_members`.
+- Dev legacy `assigneeId` values were backfilled into `project_members`. Production was NOT backfilled (agent has read-only prod access); the fallback covers it instead.
+- Do not reintroduce assignee as the primary assignment mechanism.

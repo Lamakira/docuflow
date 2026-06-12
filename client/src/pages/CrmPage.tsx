@@ -362,6 +362,15 @@ export default function CrmPage() {
   });
 
   // Filter projects based on view filter (for Kanban and table view)
+  // People shown for a project: members if present, otherwise fall back to the
+  // legacy assignee (transitional — covers projects not yet migrated to members).
+  const getProjectPeople = (project: CrmProjectWithDetails): SafeUser[] => {
+    if (project.members && project.members.length > 0) {
+      return project.members.map(m => m.user).filter(Boolean) as SafeUser[];
+    }
+    return project.assignee ? [project.assignee] : [];
+  };
+
   const filterProjects = (projects: CrmProjectWithDetails[]) => {
     return projects.filter(project => {
       // Apply hide internal projects toggle
@@ -370,8 +379,8 @@ export default function CrmPage() {
       // Apply status filter
       if (statusFilter !== "all" && project.status !== statusFilter) return false;
       
-      // Apply user filter (based on project members)
-      if (userFilter !== "all" && !(project.members ?? []).some(m => m.userId === userFilter)) return false;
+      // Apply user filter (members, with legacy assignee fallback)
+      if (userFilter !== "all" && !getProjectPeople(project).some(p => p.id === userFilter)) return false;
       
       // Apply search filter
       if (search) {
@@ -386,7 +395,7 @@ export default function CrmPage() {
       // Apply project view filter
       switch (projectViewFilter) {
         case "my_projects":
-          return (project.members ?? []).some(m => m.userId === user?.id);
+          return getProjectPeople(project).some(p => p.id === user?.id);
         case "internal":
           return project.projectType === "internal";
         case "client":
@@ -859,9 +868,10 @@ export default function CrmPage() {
                                                     </div>
                                                   );
                                                 })()}
-                                                {project.members && project.members.length > 0 && (() => {
-                                                  const first = project.members[0].user;
-                                                  const extra = project.members.length - 1;
+                                                {getProjectPeople(project).length > 0 && (() => {
+                                                  const people = getProjectPeople(project);
+                                                  const first = people[0];
+                                                  const extra = people.length - 1;
                                                   return (
                                                     <div className="flex items-center gap-1.5 mt-2" data-testid={`members-${project.id}`}>
                                                       <Avatar className="w-5 h-5">
@@ -1050,9 +1060,10 @@ export default function CrmPage() {
                             )}
                             {projectColumnVisibility.isColumnVisible("assigned") && (
                               <td className="px-4 py-3">
-                                {crmProject.members && crmProject.members.length > 0 ? (() => {
-                                  const first = crmProject.members[0].user;
-                                  const extra = crmProject.members.length - 1;
+                                {getProjectPeople(crmProject).length > 0 ? (() => {
+                                  const people = getProjectPeople(crmProject);
+                                  const first = people[0];
+                                  const extra = people.length - 1;
                                   return (
                                     <div className="flex items-center gap-2" data-testid={`members-${crmProject.id}`}>
                                       <Avatar className="w-6 h-6">

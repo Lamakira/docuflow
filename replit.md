@@ -22,14 +22,14 @@ Preferred communication style: Simple, everyday language.
 
 ## Test Credentials (Development / Staging)
 
-Comptes de test disponibles sur la branche `refactor/project_assignment` et l'environnement de développement Replit.
+Ces identifiants sont valides sur la branche `refactor/project_assignment` et l'environnement de développement Replit.
 
-| Rôle | Email |
-|------|-------|
-| **Admin principal** | `masdouk@techma.ca` |
-| **Utilisateur standard** | `testuser123@example.com` |
+| Rôle | Email | Mot de passe |
+|------|-------|--------------|
+| **Admin principal** | `masdouk@techma.ca` | `DocuFlow2026!` |
+| **Utilisateur standard** | `testuser123@example.com` | `TestUser123!` |
 
-> ⚠️ Les mots de passe ne sont **pas** stockés dans le dépôt (risque de fuite). Ils sont définis directement en base de données pour ces comptes de test. Demandez-les en privé ou réinitialisez-les via l'administration. Ne pas utiliser en production.
+> ⚠️ Ces identifiants sont uniquement pour les tests (comptes de dév, non liés à la base de production). Ne pas utiliser en production.
 
 ## System Architecture
 
