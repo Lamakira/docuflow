@@ -20,6 +20,17 @@ DocuFlow is a Notion-like documentation application designed for organizing tech
 
 Preferred communication style: Simple, everyday language.
 
+## Test Credentials (Development / Staging)
+
+Ces identifiants sont valides sur la branche `refactor/project_assignment` et l'environnement de développement Replit.
+
+| Rôle | Email | Mot de passe |
+|------|-------|--------------|
+| **Admin principal** | `masdouk@techma.ca` | `DocuFlow2026!` |
+| **Utilisateur standard** | `testuser123@example.com` | `DocuUser2026!` |
+
+> ⚠️ Ces identifiants sont uniquement pour les tests. Ne pas utiliser en production.
+
 ## System Architecture
 
 ### Frontend Architecture
