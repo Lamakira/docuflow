@@ -1566,9 +1566,16 @@ Instructions:
         }
       );
 
-      // Add extra members provided at creation time (creator is already added by createCrmProjectWithBase)
-      if (parsed.data.memberIds && parsed.data.memberIds.length > 0) {
-        for (const memberId of parsed.data.memberIds) {
+      // Handle memberIds provided at creation time
+      // createCrmProjectWithBase always auto-adds the creator; honour the caller's explicit selection
+      if (parsed.data.memberIds !== undefined) {
+        const requestedIds = new Set(parsed.data.memberIds);
+        // If creator was explicitly excluded, remove them
+        if (!requestedIds.has(userId)) {
+          await storage.removeProjectMember(crmProject.id, userId);
+        }
+        // Add any additional members (skip creator to avoid duplicate-insert errors)
+        for (const memberId of requestedIds) {
           if (memberId !== userId) {
             await storage.addProjectMember(crmProject.id, memberId);
           }
