@@ -27,7 +27,7 @@ Ces identifiants sont valides sur la branche `refactor/project_assignment` et l'
 | Rôle | Email | Mot de passe |
 |------|-------|--------------|
 | **Admin principal** | `masdouk@techma.ca` | `DocuFlow2026!` |
-| **Utilisateur standard** | `testuser123@example.com` | `DocuUser2026!` |
+| **Utilisateur standard** | `testuser123@example.com` | `TestUser123!` |
 
 > ⚠️ Ces identifiants sont uniquement pour les tests. Ne pas utiliser en production.
 
