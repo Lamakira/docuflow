@@ -52,6 +52,36 @@ if (!appFolderName) {
 const prepackaged = path.join(outDir, appFolderName);
 console.log(`\n[dist-linux] Packaged app: ${prepackaged}`);
 
+// ── Step 1.5: Fix permissions ─────────────────────────────────────────────────
+// electron-forge creates the app folder with drwx------ (700) on some systems.
+// This blocks regular users from entering /opt/DocuFlow Desktop Agent/ after install.
+// We fix it here: directories → 755, files → 644, executables → 755.
+
+console.log("\n[dist-linux] Step 1.5: fixing permissions...");
+try {
+  // Make the app folder traversable by all users
+  execSync(`chmod 755 "${prepackaged}"`, { stdio: "pipe" });
+  // Recursively set directories to 755
+  execSync(`find "${prepackaged}" -type d -exec chmod 755 {} +`, { stdio: "pipe" });
+  // Set all regular files to 644
+  execSync(`find "${prepackaged}" -type f -exec chmod 644 {} +`, { stdio: "pipe" });
+  // Make the main executable runnable
+  const execNames = ["docuflow-agent", "chrome_crashpad_handler", "chrome-sandbox"];
+  for (const name of execNames) {
+    const p = path.join(prepackaged, name);
+    if (fs.existsSync(p)) {
+      execSync(`chmod 755 "${p}"`, { stdio: "pipe" });
+      console.log(`  chmod 755 ${name}`);
+    }
+  }
+  // Also make .so shared libs executable (must quote path properly to handle spaces)
+  execSync(`find "${prepackaged}" \\( -name "*.so" -o -name "*.so.*" \\) -exec chmod 755 {} +`, { stdio: "pipe", shell: true });
+  console.log("  Permissions fixed.");
+} catch (err) {
+  console.error("[dist-linux] WARNING: could not fix permissions:", err.message);
+  // Don't exit — try to build anyway
+}
+
 // ── Step 2: electron-builder .deb ────────────────────────────────────────────
 
 console.log("\n[dist-linux] Step 2: electron-builder deb...\n");
