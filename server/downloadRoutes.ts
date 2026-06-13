@@ -6,7 +6,9 @@
  *     → { windows: bool, macos: bool, linux: bool } — DB-backed, per-platform
  *
  *   GET /downloads/:platform
- *     → streams installer file from installers/ directory
+ *     → if storageUrl is gs:// → generates a 15-min signed GCS GET URL → 302 redirect
+ *       (download goes directly from GCS, bypasses Replit's 50 MB proxy limit)
+ *     → otherwise streams installer file from installers/ directory
  *     → 404 JSON if not yet published for that platform
  *
  *   GET /api/downloads/desktop/latest?platform=windows|macos|linux
@@ -48,6 +50,7 @@ import { createHash } from "crypto";
 import { db } from "./db";
 import { desktopReleases } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { signObjectURL, parseObjectPath } from "./objectStorage";
 
 const VALID_PLATFORMS = ["windows", "macos", "linux"] as const;
 type Platform = (typeof VALID_PLATFORMS)[number];
@@ -71,21 +74,27 @@ export function registerDownloadRoutes(app: Express): void {
 
   // ── Public: per-platform availability ────────────────────────────────────
   // Returns { windows: bool, macos: bool, linux: bool }.
-  // A platform is "available" when the DB has an is_latest row AND the file
-  // is present on disk. Missing either → false (consistent, honest).
+  // A platform is "available" when the DB has an is_latest row AND either:
+  //   a) storageUrl is a GCS HTTPS URL (file lives in Object Storage — always reachable), or
+  //   b) storageUrl is a local /downloads/:platform path AND the file exists on disk.
   app.get("/downloads/availability", async (_req: Request, res: Response) => {
     try {
       const rows = await db
         .select({
           platform: desktopReleases.platform,
           filename: desktopReleases.filename,
+          storageUrl: desktopReleases.storageUrl,
         })
         .from(desktopReleases)
         .where(eq(desktopReleases.isLatest, true));
 
       const result: Record<string, boolean> = { windows: false, macos: false, linux: false };
       for (const row of rows) {
-        if (row.platform in result) {
+        if (!(row.platform in result)) continue;
+        if (row.storageUrl?.startsWith("https://storage.googleapis.com/")) {
+          // File is in GCS — always reachable (no disk check needed).
+          result[row.platform] = true;
+        } else {
           result[row.platform] = fs.existsSync(path.join(installersDir, row.filename));
         }
       }
@@ -105,7 +114,10 @@ export function registerDownloadRoutes(app: Express): void {
     app.get(`/downloads/${platform}`, async (_req: Request, res: Response) => {
       try {
         const [release] = await db
-          .select({ filename: desktopReleases.filename })
+          .select({
+            filename: desktopReleases.filename,
+            storageUrl: desktopReleases.storageUrl,
+          })
           .from(desktopReleases)
           .where(
             and(
@@ -121,6 +133,30 @@ export function registerDownloadRoutes(app: Express): void {
           });
         }
 
+        // GCS object (storageUrl = https://storage.googleapis.com/BUCKET/OBJECT)
+        // → generate a short-lived signed GET URL and redirect the browser there.
+        // Download goes directly from GCS, bypassing Replit's ~50 MB proxy limit.
+        if (release.storageUrl?.startsWith("https://storage.googleapis.com/")) {
+          try {
+            const url = new URL(release.storageUrl);
+            const pathParts = url.pathname.split("/").filter(Boolean);
+            const bucketName = pathParts[0];
+            const objectName = pathParts.slice(1).join("/");
+            const signedUrl = await signObjectURL({
+              bucketName,
+              objectName,
+              method: "GET",
+              ttlSec: 900, // 15 minutes — enough for any download
+            });
+            return res.redirect(302, signedUrl);
+          } catch (signErr) {
+            console.error(`[downloadRoutes] Failed to sign GCS URL for ${platform}:`, signErr);
+            return res.status(500).json({ error: "Failed to generate download URL" });
+          }
+        }
+
+        // Fallback: stream from local installers/ directory.
+        // Only works for files ≤ ~50 MB through Replit's reverse proxy.
         const filePath = path.join(installersDir, release.filename);
         if (!fs.existsSync(filePath)) {
           return res.status(404).json({

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Clock, Download, Monitor, Apple, Terminal } from "lucide-react";
 
-const AGENT_VERSION = "v0.1.6";
+const AGENT_VERSION = "v0.1.7";
 
 interface Availability { windows: boolean; macos: boolean; linux: boolean; }
 
