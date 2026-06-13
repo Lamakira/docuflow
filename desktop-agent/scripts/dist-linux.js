@@ -90,7 +90,11 @@ execSync(
   { cwd: ROOT, stdio: "inherit" }
 );
 
-// ── Report output ─────────────────────────────────────────────────────────────
+// ── Step 3: Patch postinst to always chmod 755 the install dir ───────────────
+// Problem: when dpkg *upgrades* (not fresh install), it does NOT update existing
+// directory permissions. If the old .deb left /opt/DocuFlow Desktop Agent/ at 700,
+// a new install still leaves it 700 and regular users can't launch the app.
+// Fix: inject a chmod 755 line into the postinst so every install/upgrade fixes it.
 
 const artifacts = fs.existsSync(releaseDir)
   ? fs.readdirSync(releaseDir).filter((f) => f.endsWith(".deb"))
@@ -99,6 +103,56 @@ const artifacts = fs.existsSync(releaseDir)
 if (artifacts.length === 0) {
   console.error("[dist-linux] ERROR: no .deb found in release/");
   process.exit(1);
+}
+
+console.log("\n[dist-linux] Step 3: patching postinst in .deb...");
+try {
+  const os = require("os");
+  const debFile = path.join(releaseDir, artifacts[0]);
+  const patchDir = fs.mkdtempSync(path.join(os.tmpdir(), "docuflow-deb-"));
+
+  // Extract the .deb (it's an ar archive)
+  execSync(`ar x "${debFile}"`, { cwd: patchDir, stdio: "pipe" });
+
+  // Extract control.tar.xz
+  const ctrlDir = path.join(patchDir, "ctrl");
+  fs.mkdirSync(ctrlDir);
+  execSync(`tar -xJf "${path.join(patchDir, "control.tar.xz")}" -C "${ctrlDir}"`, { stdio: "pipe" });
+
+  // Patch postinst: insert chmod right after the shebang line
+  const postinstPath = path.join(ctrlDir, "postinst");
+  if (fs.existsSync(postinstPath)) {
+    let postinst = fs.readFileSync(postinstPath, "utf8");
+    const chmodLine = `\n# Fix directory permissions so regular users can access the app (survives upgrades)\nchmod 755 '/opt/DocuFlow Desktop Agent' 2>/dev/null || true\nchmod -R 755 '/opt/DocuFlow Desktop Agent' 2>/dev/null || true\nfind '/opt/DocuFlow Desktop Agent' -type f -not -executable -exec chmod 644 {} + 2>/dev/null || true\n`;
+    // Insert after the shebang line
+    postinst = postinst.replace(/^(#!\/bin\/bash\n?)/, `$1${chmodLine}`);
+    fs.writeFileSync(postinstPath, postinst);
+    fs.chmodSync(postinstPath, 0o755);
+    console.log("  postinst patched with chmod fix.");
+  } else {
+    console.warn("  WARNING: postinst not found in control archive — skipping patch.");
+  }
+
+  // Recompress control.tar.xz
+  const ctrlEntries = fs.readdirSync(ctrlDir).map((f) => `./${f}`).join(" ");
+  execSync(`tar -cJf "${path.join(patchDir, "control.tar.xz")}" -C "${ctrlDir}" ${ctrlEntries}`, { stdio: "pipe" });
+
+  // Reassemble .deb: ar requires exact member order: debian-binary, control.tar.xz, data.tar.xz
+  const finalDeb = debFile + ".patched";
+  execSync(
+    `ar cr "${finalDeb}" "${path.join(patchDir, "debian-binary")}" "${path.join(patchDir, "control.tar.xz")}" "${path.join(patchDir, "data.tar.xz")}"`,
+    { stdio: "pipe" }
+  );
+
+  // Replace original with patched
+  fs.renameSync(finalDeb, debFile);
+  console.log("  .deb reassembled successfully.");
+
+  // Cleanup
+  fs.rmSync(patchDir, { recursive: true, force: true });
+} catch (err) {
+  console.error("[dist-linux] WARNING: postinst patch failed:", err.message);
+  // Don't abort — the .deb still works for fresh installs
 }
 
 console.log("\n[dist-linux] Done! Artifacts:");
