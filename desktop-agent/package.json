@@ -56,13 +56,15 @@
     "linux": {
       "target": "deb",
       "executableName": "docuflow-agent",
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "category": "Utility"
     },
     "deb": {
       "packageName": "docuflow-agent",
       "artifactName": "DocuFlow-Agent-${version}-linux-amd64.deb",
       "depends": [
-        "libayatana-appindicator3-1"
+        "libayatana-appindicator3-1",
+        "libgtk-3-0"
       ],
       "maintainer": "DocuFlow <support@docuflow.app>"
     }
