@@ -258,3 +258,56 @@ The MCP (Model Context Protocol) server enables Claude Desktop to interact with 
 - Idle detection: 3-minute inactivity threshold, auto-STOP after 30-second countdown dialog
 - Screenshot capture: Random 180-300s intervals, retry logic with max 5 consecutive failures, video readyState validation
 - Backend auto-stops previous active entry when starting a new one
+
+### Desktop Agent Installers
+
+**Emplacement des installeurs** : stockés dans Google Cloud Storage (GCS), bucket `replit-objstore-64708bc7-367f-45c8-9004-db72f81cbeba`, dossier `public/installers/`.
+
+**Versions publiées** (v0.1.7) :
+| Plateforme | Fichier | Taille |
+|------------|---------|--------|
+| Windows | `DocuFlow-Agent-0.1.7-windows-setup.exe` | ~65 MB |
+| macOS | `DocuFlow-Agent-0.1.7-macos.dmg` | ~94 MB |
+| Linux | `DocuFlow-Agent-0.1.7-linux-amd64.deb` | ~74 MB |
+
+**Architecture de distribution** :
+- Les installeurs sont trop volumineux (~65-94 MB) pour le proxy inverse de Replit (~50 MB max)
+- Solution : `server/downloadRoutes.ts` génère des **URL signées GCS** (valides 15 min) via une redirection 302
+- Endpoint de disponibilité : `GET /api/downloads/desktop/availability` → `{ windows: bool, macos: bool, linux: bool }`
+- Endpoint de téléchargement : `GET /downloads/:platform` → 302 vers URL signée GCS
+- La DB (`desktop_releases`) stocke le `storageUrl` GCS, `sha256`, `fileSize` et `isLatest` par plateforme
+
+**Scripts de build** (`desktop-agent/scripts/`) :
+- `dist-win.js` — build Windows NSIS installer via electron-forge + electron-builder
+- `dist-mac.js` — build macOS DMG (requiert macOS + certificats Apple)
+- `dist-linux.js` — build Linux .deb ; inclut deux correctifs critiques :
+  1. **Fix permissions Step 1.5** : `chmod 755` sur le dossier `out/` après `electron-forge package` (electron-forge crée parfois le dossier en `700`, bloquant l'accès aux utilisateurs normaux)
+  2. **Patch postinst Step 3** : extrait le `.deb`, injecte `chmod 755 '/opt/DocuFlow Desktop Agent'` dans le script `postinst`, et repackage le `.deb` — permet que les permissions soient corrigées même lors d'une **mise à jour** (dpkg ne remet pas à jour les permissions d'un dossier existant)
+- `upload-to-gcs.mjs` — upload un installeur vers GCS via l'API sidecar Replit
+- `fix-permissions.js` — correctif de permissions (utilisé lors du build, non invoqué directement)
+
+**Script d'enregistrement en DB** :
+```bash
+curl -X POST https://docs.appvibed.com/api/internal/desktop-releases \
+  -H "Authorization: Bearer $DESKTOP_RELEASE_CI_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "platform": "linux",
+    "version": "0.1.7",
+    "filename": "DocuFlow-Agent-0.1.7-linux-amd64.deb",
+    "storageUrl": "https://storage.googleapis.com/...",
+    "sha256": "...",
+    "fileSize": 76593368
+  }'
+```
+
+**Workflow de mise à jour d'un installeur** :
+1. Rebuilder : `cd desktop-agent && npm run dist:linux` (ou `dist:win` / `dist:mac`)
+2. Uploader : `node scripts/upload-to-gcs.mjs linux desktop-agent/release/<fichier>.deb`
+3. Enregistrer en DB via l'endpoint ci-dessus (dev ET prod partagent la même DB Neon)
+4. Déployer si des modifications de code serveur sont incluses
+
+**Notes Linux spécifiques** :
+- Sur **Wayland** : l'app demande une autorisation de partage d'écran à chaque session (comportement normal du portail XDG/PipeWire, imposé par Wayland pour la sécurité). Pour éviter ce dialogue, utiliser une session **X11/Xorg** à la connexion.
+- Sur **X11** : aucun dialogue de permission pour les captures d'écran.
+- Installation propre recommandée lors d'une mise à jour : `sudo dpkg --purge docuflow-agent && sudo dpkg -i <nouveau.deb>` (évite les problèmes de permissions résiduelles si l'ancienne version avait le bug `700`).
