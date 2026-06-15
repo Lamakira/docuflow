@@ -51,16 +51,31 @@ for (const dir of [dotWebpack, cacheOutDir]) {
 
 // ── Step 1: forge package ───────────────────────────────────────────────────
 
+const outDir = path.join(ROOT, "out");
+
 console.log("\n[dist-win] Step 1: electron-forge package...\n");
-execSync("npx electron-forge package --platform win32 --arch x64", {
-  cwd: ROOT,
-  stdio: "inherit",
-  env: { ...process.env, NODE_ENV: "production" },
-});
+try {
+  execSync("npx electron-forge package --platform win32 --arch x64", {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: { ...process.env, NODE_ENV: "production" },
+    timeout: 180000,   // 3 min — kills the process if postPackage hook hangs
+    killSignal: "SIGKILL", // SIGTERM is swallowed by listr2; SIGKILL exits immediately
+  });
+} catch (err) {
+  // Forge sometimes hangs at the postPackage hook due to open webpack 5 handles.
+  // If packaging actually finished (out/ exists), treat it as success.
+  const packed = fs.existsSync(outDir) &&
+    fs.readdirSync(outDir).find((n) => n.endsWith("-win32-x64") && !n.startsWith("."));
+  if (!packed) {
+    console.error("[dist-win] ERROR: electron-forge package failed:", err.message);
+    process.exit(1);
+  }
+  console.log("[dist-win] Note: forge hung at postPackage hook but output is present — continuing.");
+}
 
 // ── Locate packaged output ──────────────────────────────────────────────────
 
-const outDir = path.join(ROOT, "out");
 const appFolderName = fs
   .readdirSync(outDir)
   .find((name) => name.endsWith("-win32-x64") && !name.startsWith("."));

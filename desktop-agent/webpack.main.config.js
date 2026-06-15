@@ -1,5 +1,8 @@
 module.exports = {
   entry: './src/main/index.ts',
+  // Disable filesystem cache in production so webpack 5 doesn't keep file
+  // watchers alive after compiler.run() — which would block process.exit().
+  cache: process.env.NODE_ENV === 'production' ? false : { type: 'filesystem' },
   module: {
     rules: [
       {

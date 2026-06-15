@@ -11,6 +11,15 @@ import path from "path";
 import fs from "fs";
 
 const config: ForgeConfig = {
+  hooks: {
+    // Webpack 5 keeps internal handles alive after compiler.run() even when
+    // there are no watchers, preventing the process from exiting naturally.
+    // Force-exit here once packaging is fully done (afterComplete hooks have
+    // already run at this point, so nothing is lost).
+    postPackage: async () => {
+      setImmediate(() => process.exit(0));
+    },
+  },
   // uiohook-napi ships prebuilt binaries via node-gyp-build and does not need
   // to be recompiled against Electron headers. Skipping the rebuild step lets
   // node-gyp-build pick up the correct prebuilt at runtime without requiring
