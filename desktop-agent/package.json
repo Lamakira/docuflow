@@ -1,10 +1,10 @@
 {
   "name": "docuflow-desktop-agent",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "DocuFlow Desktop Agent — time tracking, activity monitoring, and screenshot capture",
   "main": ".webpack/main",
   "private": true,
-  "homepage": "https://techma-doc--masdouk1.replit.app",
+  "homepage": "https://docs.appvibed.com",
   "scripts": {
     "predev": "node scripts/kill-port.js 9000",
     "dev": "electron-forge start",

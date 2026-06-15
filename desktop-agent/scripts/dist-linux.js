@@ -29,6 +29,21 @@ if (fs.existsSync(releaseDir)) {
   }
 }
 
+// Also clean Electron Forge cache directories so stale webpack bundles are rebuilt
+console.log("[dist-linux] Step 0b: cleaning .webpack/ and out/...");
+const dotWebpack = path.join(ROOT, ".webpack");
+const outDir = path.join(ROOT, "out");
+for (const dir of [dotWebpack, outDir]) {
+  if (fs.existsSync(dir)) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      console.log(`  deleted ${path.basename(dir)}/`);
+    } catch {
+      console.warn(`  WARNING: could not clean ${path.basename(dir)}/`);
+    }
+  }
+}
+
 // ── Step 1: electron-forge package ───────────────────────────────────────────
 
 console.log("\n[dist-linux] Step 1: electron-forge package...\n");
