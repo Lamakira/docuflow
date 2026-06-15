@@ -50,6 +50,7 @@ console.log("\n[dist-linux] Step 1: electron-forge package...\n");
 execSync("npx electron-forge package --platform linux --arch x64", {
   cwd: ROOT,
   stdio: "inherit",
+  env: { ...process.env, NODE_ENV: "production" },
 });
 
 // ── Locate packaged output ────────────────────────────────────────────────────

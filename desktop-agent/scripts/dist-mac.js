@@ -80,6 +80,7 @@ console.log("\n[dist-mac] Step 1: electron-forge package...\n");
 execSync("npx electron-forge package --platform darwin --arch arm64", {
   cwd: ROOT,
   stdio: "inherit",
+  env: { ...process.env, NODE_ENV: "production" },
 });
 
 // ── Locate packaged output ────────────────────────────────────────────────────

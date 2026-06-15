@@ -71,7 +71,7 @@ const config: ForgeConfig = {
           categories: ["Utility", "Office"],
           icon: "./assets/icon.png",
           maintainer: "DocuFlow <support@docuflow.app>",
-          homepage: "https://techma-doc--masdouk1.replit.app",
+          homepage: "https://docs.appvibed.com",
           // libayatana-appindicator3-1: system tray support on Ubuntu 22.04+
           // libappindicator3-1: fallback for Ubuntu 20.04
           depends: ["libayatana-appindicator3-1 | libappindicator3-1"],

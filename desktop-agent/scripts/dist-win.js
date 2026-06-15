@@ -55,6 +55,7 @@ console.log("\n[dist-win] Step 1: electron-forge package...\n");
 execSync("npx electron-forge package --platform win32 --arch x64", {
   cwd: ROOT,
   stdio: "inherit",
+  env: { ...process.env, NODE_ENV: "production" },
 });
 
 // ── Locate packaged output ──────────────────────────────────────────────────
