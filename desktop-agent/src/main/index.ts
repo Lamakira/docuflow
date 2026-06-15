@@ -820,7 +820,18 @@ ipcMain.handle("agent:list-screenshots", async () => {
         // Extract timestamp from filename "screenshot-<ms>.png"
         const match = filename.match(/screenshot-(\d+)\.png/);
         const timestampMs = match ? parseInt(match[1], 10) : stat.mtimeMs;
-        return { filename, timestampMs, sizeKb: Math.round(stat.size / 1024) };
+        // Read sidecar JSON for project context (non-fatal if missing)
+        let projectName: string | null = null;
+        let taskName: string | null = null;
+        try {
+          const sidecarPath = path.join(screenshotDir, filename.replace(/\.png$/, ".json"));
+          if (fs.existsSync(sidecarPath)) {
+            const raw = JSON.parse(await fs.promises.readFile(sidecarPath, "utf-8"));
+            projectName = raw.projectName ?? null;
+            taskName = raw.taskName ?? null;
+          }
+        } catch { /* ignore */ }
+        return { filename, timestampMs, sizeKb: Math.round(stat.size / 1024), projectName, taskName };
       })
     );
     // Sort newest first

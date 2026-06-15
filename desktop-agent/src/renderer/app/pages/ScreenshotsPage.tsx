@@ -4,6 +4,8 @@ interface ScreenshotMeta {
   filename: string;
   timestampMs: number;
   sizeKb: number;
+  projectName: string | null;
+  taskName: string | null;
 }
 
 function formatDate(ms: number): string {
@@ -84,7 +86,22 @@ function ScreenshotCard({ meta }: { meta: ScreenshotMeta }) {
         </div>
 
         {/* Meta */}
-        <div style={{ padding: '0.5rem 0.65rem', display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+        <div style={{ padding: '0.5rem 0.65rem', display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0 }}>
+          {meta.projectName && (
+            <span
+              title={meta.taskName ? `${meta.projectName} — ${meta.taskName}` : meta.projectName}
+              style={{
+                color: 'var(--accent)',
+                fontSize: 10,
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {meta.taskName ? `${meta.projectName} / ${meta.taskName}` : meta.projectName}
+            </span>
+          )}
           <span style={{ color: 'var(--text)', fontSize: 11, fontWeight: 600 }}>
             {formatDate(meta.timestampMs)}
           </span>
@@ -131,8 +148,14 @@ function ScreenshotCard({ meta }: { meta: ScreenshotMeta }) {
               right: 16,
               color: 'rgba(255,255,255,0.6)',
               fontSize: 10,
+              textAlign: 'right',
             }}
           >
+            {meta.projectName && (
+              <span style={{ color: 'rgba(99,102,241,0.9)', marginRight: 6 }}>
+                {meta.taskName ? `${meta.projectName} / ${meta.taskName}` : meta.projectName}
+              </span>
+            )}
             {formatDate(meta.timestampMs)} {formatTime(meta.timestampMs)} — {meta.sizeKb} KB — click to close
           </div>
         </div>

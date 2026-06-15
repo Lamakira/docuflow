@@ -175,10 +175,23 @@ export class ScreenCaptureWorker {
       console.log("[ScreenCaptureWorker] screenshot.capture");
 
       // Save to local file (userData dir — app-private, persists across reboots)
-      const filename = `screenshot-${Date.now()}.png`;
+      const tsMs = Date.now();
+      const filename = `screenshot-${tsMs}.png`;
       const filePath = path.join(this.screenshotDir, filename);
       await fs.promises.writeFile(filePath, png);
       console.log(`[ScreenCapture] Saved to ${filePath} (${(png.length / 1024).toFixed(0)} KB)`);
+
+      // Sidecar JSON: project context so the Screenshots page can show which project was active
+      try {
+        const sidecarPath = path.join(this.screenshotDir, `screenshot-${tsMs}.json`);
+        const sidecar = {
+          projectName: this.store.getActiveProjectName() ?? null,
+          taskName: this.store.getActiveTaskName() ?? null,
+          capturedAt,
+          timeEntryId: entryId,
+        };
+        await fs.promises.writeFile(sidecarPath, JSON.stringify(sidecar), "utf-8");
+      } catch { /* non-fatal — screenshot still saved */ }
 
       // Enqueue for upload — activity metrics attached for Screencasts UI
       this.queue.enqueueScreenshot(filePath, {

@@ -96,7 +96,7 @@ export interface AgentBridge {
   } | null>;
   listScreenshots: () => Promise<{
     ok: boolean;
-    data: Array<{ filename: string; timestampMs: number; sizeKb: number }>;
+    data: Array<{ filename: string; timestampMs: number; sizeKb: number; projectName: string | null; taskName: string | null }>;
   }>;
   readScreenshot: (filename: string) => Promise<{ ok: boolean; dataUrl?: string }>;
 }
