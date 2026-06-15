@@ -1,0 +1,67 @@
+~/workspace$ cd desktop-agent
+
+# Linux
+npm run dist:linux
+# → release/DocuFlow-Agent-0.1.8-linux-amd64.deb
+
+# Windows (sur Windows)
+npm run dist:win
+# → release/DocuFlow-Agent-0.1.8-windows-setup.exe
+
+# macOS (sur macOS)
+npm run dist:mac
+# → release/DocuFlow-Agent-0.1.8-macos.dmg
+
+> docuflow-desktop-agent@0.1.8 dist:linux
+> node scripts/dist-linux.js
+
+/home/runner/workspace/desktop-agent/scripts/dist-linux.js:57
+const outDir = path.join(ROOT, "out");
+      ^
+
+SyntaxError: Identifier 'outDir' has already been declared
+    at wrapSafe (node:internal/modules/cjs/loader:1464:18)
+    at Module._compile (node:internal/modules/cjs/loader:1495:20)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Module._load (node:internal/modules/cjs/loader:1091:12)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12)
+    at node:internal/main/run_main_module:28:49
+
+Node.js v20.20.0
+
+> docuflow-desktop-agent@0.1.8 dist:win
+> node scripts/dist-win.js
+
+/home/runner/workspace/desktop-agent/scripts/dist-win.js:62
+const outDir = path.join(ROOT, "out");
+      ^
+
+SyntaxError: Identifier 'outDir' has already been declared
+    at wrapSafe (node:internal/modules/cjs/loader:1464:18)
+    at Module._compile (node:internal/modules/cjs/loader:1495:20)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Module._load (node:internal/modules/cjs/loader:1091:12)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12)
+    at node:internal/main/run_main_module:28:49
+
+Node.js v20.20.0
+
+> docuflow-desktop-agent@0.1.8 dist:mac
+> node scripts/dist-mac.js
+
+/home/runner/workspace/desktop-agent/scripts/dist-mac.js:87
+const outDir = path.join(ROOT, "out");
+      ^
+
+SyntaxError: Identifier 'outDir' has already been declared
+    at wrapSafe (node:internal/modules/cjs/loader:1464:18)
+    at Module._compile (node:internal/modules/cjs/loader:1495:20)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Module._load (node:internal/modules/cjs/loader:1091:12)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12)
+    at node:internal/main/run_main_module:28:49
+
+Node.js v20.20.0

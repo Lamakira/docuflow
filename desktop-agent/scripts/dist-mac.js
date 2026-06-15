@@ -62,8 +62,8 @@ if (fs.existsSync(releaseDir)) {
 // Also clean Electron Forge cache directories so stale webpack bundles are rebuilt
 console.log("[dist-mac] Step 0b: cleaning .webpack/ and out/...");
 const dotWebpack = path.join(ROOT, ".webpack");
-const outDir = path.join(ROOT, "out");
-for (const dir of [dotWebpack, outDir]) {
+const cacheOutDir = path.join(ROOT, "out");
+for (const dir of [dotWebpack, cacheOutDir]) {
   if (fs.existsSync(dir)) {
     try {
       fs.rmSync(dir, { recursive: true, force: true });
