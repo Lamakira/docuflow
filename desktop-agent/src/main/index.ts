@@ -287,6 +287,65 @@ function getTrayIconPath(): string {
   return path.join(__dirname, "../../assets/icon.png");
 }
 
+function rebuildTrayMenu(): void {
+  if (!tray) return;
+
+  const timerStatus = store.getTimerStatus();
+  const isPaired = store.isPaired();
+
+  const timerItems: Electron.MenuItemConstructorOptions[] = [];
+
+  if (isPaired) {
+    if (timerStatus === "running") {
+      timerItems.push({
+        label: "Pause timer",
+        click: async () => {
+          const entryId = store.getActiveEntryId();
+          if (!entryId) return;
+          store.setTimerPaused();
+          queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+          pushStateToRenderer();
+          syncWorker?.triggerSync();
+        },
+      });
+    } else if (timerStatus === "paused") {
+      timerItems.push({
+        label: "Resume timer",
+        click: async () => {
+          const entryId = store.getActiveEntryId();
+          if (!entryId) return;
+          store.setTimerRunning(
+            entryId,
+            store.getActiveProjectName(),
+            store.getActiveTaskId(),
+            store.getActiveTaskName(),
+            store.getActiveDescription(),
+          );
+          queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
+          pushStateToRenderer();
+          syncWorker?.triggerSync();
+        },
+      });
+    } else {
+      timerItems.push({
+        label: "Start timer…",
+        click: () => showMainWindow(),
+      });
+    }
+    timerItems.push({ type: "separator" });
+  }
+
+  const contextMenu = Menu.buildFromTemplate([
+    { label: "Show Agent", click: () => showMainWindow() },
+    { label: "Status: " + (isPaired ? "Connected" : "Not paired"), enabled: false },
+    { type: "separator" },
+    ...timerItems,
+    { label: "Quit", click: () => { stopWorkers(); app.exit(0); } },
+  ]);
+
+  tray.setContextMenu(contextMenu);
+}
+
 function createTray(): void {
   try {
     tray = new Tray(getTrayIconPath());
@@ -295,15 +354,8 @@ function createTray(): void {
     return;
   }
 
-  const contextMenu = Menu.buildFromTemplate([
-    { label: "Show Agent", click: () => showMainWindow() },
-    { label: "Status: " + (store.isPaired() ? "Connected" : "Not paired"), enabled: false },
-    { type: "separator" },
-    { label: "Quit", click: () => { stopWorkers(); app.exit(0); } },
-  ]);
-
   tray.setToolTip("DocuFlow Desktop Agent");
-  tray.setContextMenu(contextMenu);
+  rebuildTrayMenu();
   tray.on("click", () => showMainWindow());
 }
 
@@ -494,6 +546,8 @@ function stopResyncPolling(): void {
 /** Notify renderer(s) of state changes */
 function pushStateToRenderer(): void {
   const timerState = store.getTimerState();
+
+  rebuildTrayMenu();
 
   mainWindow?.webContents.send("agent:state-update", {
     isPaired: store.isPaired(),
@@ -747,6 +801,62 @@ ipcMain.handle("settings:set-display-timezone", (_event, tz: string) => {
   const value = tz === 'utc' ? 'utc' : 'local';
   store.setDisplayTimezone(value);
   return { ok: true };
+});
+
+// ─── IPC: Screenshots ───
+
+ipcMain.handle("agent:list-screenshots", async () => {
+  try {
+    const screenshotDir = path.join(app.getPath("userData"), "screenshots");
+    if (!fs.existsSync(screenshotDir)) {
+      return { ok: true, data: [] };
+    }
+    const files = await fs.promises.readdir(screenshotDir);
+    const pngFiles = files.filter((f) => f.endsWith(".png"));
+    const entries = await Promise.all(
+      pngFiles.map(async (filename) => {
+        const filePath = path.join(screenshotDir, filename);
+        const stat = await fs.promises.stat(filePath);
+        // Extract timestamp from filename "screenshot-<ms>.png"
+        const match = filename.match(/screenshot-(\d+)\.png/);
+        const timestampMs = match ? parseInt(match[1], 10) : stat.mtimeMs;
+        // Read sidecar JSON for project context (non-fatal if missing)
+        let projectName: string | null = null;
+        let taskName: string | null = null;
+        try {
+          const sidecarPath = path.join(screenshotDir, filename.replace(/\.png$/, ".json"));
+          if (fs.existsSync(sidecarPath)) {
+            const raw = JSON.parse(await fs.promises.readFile(sidecarPath, "utf-8"));
+            projectName = raw.projectName ?? null;
+            taskName = raw.taskName ?? null;
+          }
+        } catch { /* ignore */ }
+        return { filename, timestampMs, sizeKb: Math.round(stat.size / 1024), projectName, taskName };
+      })
+    );
+    // Sort newest first
+    entries.sort((a, b) => b.timestampMs - a.timestampMs);
+    return { ok: true, data: entries };
+  } catch (err: any) {
+    console.error("[Main] list-screenshots failed:", err.message);
+    return { ok: false, data: [] };
+  }
+});
+
+ipcMain.handle("agent:read-screenshot", async (_event, filename: string) => {
+  try {
+    const screenshotDir = path.join(app.getPath("userData"), "screenshots");
+    // Sanitise: only allow plain filenames (no path traversal)
+    const safe = path.basename(filename);
+    if (!safe.endsWith(".png")) return { ok: false };
+    const filePath = path.join(screenshotDir, safe);
+    if (!fs.existsSync(filePath)) return { ok: false };
+    const data = await fs.promises.readFile(filePath);
+    return { ok: true, dataUrl: `data:image/png;base64,${data.toString("base64")}` };
+  } catch (err: any) {
+    console.error("[Main] read-screenshot failed:", err.message);
+    return { ok: false };
+  }
 });
 
 ipcMain.handle("agent:worked-period", async (_event, startIso: string, endIso: string) => {
