@@ -25,7 +25,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const DEFAULT_API_URL = "https://techma-doc--masdouk1.replit.app";
+const DEFAULT_API_URL = "https://docs.appvibed.com";
 
 export type ApiBaseSource = "env" | "file" | "default";
 

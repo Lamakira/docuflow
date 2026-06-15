@@ -82,4 +82,10 @@ contextBridge.exposeInMainWorld("agentBridge", {
   // Period-based worked time (for hover card week/month aggregates)
   getWorkedPeriod: (startIso: string, endIso: string): Promise<{ ok: boolean; total: number }> =>
     ipcRenderer.invoke("agent:worked-period", startIso, endIso),
+
+  // Screenshots
+  listScreenshots: (): Promise<{ ok: boolean; data: Array<{ filename: string; timestampMs: number; sizeKb: number }> }> =>
+    ipcRenderer.invoke("agent:list-screenshots"),
+  readScreenshot: (filename: string): Promise<{ ok: boolean; dataUrl?: string }> =>
+    ipcRenderer.invoke("agent:read-screenshot", filename),
 });
