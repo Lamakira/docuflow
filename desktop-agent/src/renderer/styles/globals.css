@@ -573,6 +573,74 @@ a:hover { text-decoration: underline; }
   background: transparent;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.picker-new-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.15rem;
+  border-radius: 0.2rem;
+  transition: color 0.12s;
+}
+.picker-new-btn:hover { color: var(--accent); }
+
+/* Inline new-project form */
+.picker-new-project-form {
+  padding: 0.5rem 0.625rem;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  background: var(--surface2);
+}
+.picker-new-project-input {
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.78rem;
+  outline: none;
+}
+.picker-new-project-input::placeholder { color: var(--text-dim); }
+.picker-new-project-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+.picker-new-project-confirm,
+.picker-new-project-cancel {
+  flex: 1;
+  padding: 0.25rem 0;
+  font-size: 0.72rem;
+  border-radius: 0.25rem;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s, opacity 0.12s;
+}
+.picker-new-project-confirm {
+  background: var(--accent);
+  color: white;
+}
+.picker-new-project-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.picker-new-project-cancel {
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.picker-new-project-error {
+  font-size: 0.68rem;
+  color: var(--error, #e55);
 }
 .picker-col__list {
   flex: 1;

@@ -927,6 +927,28 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
+  /** Agent: create a new CRM project */
+  app.post("/api/agent/projects", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
+    try {
+      const userId = req.agentUserId!;
+      const { name } = req.body;
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ message: "Project name is required" });
+      }
+      const { crmProject } = await storage.createCrmProjectWithBase(
+        { name: name.trim(), description: null, icon: null, ownerId: userId },
+      );
+      res.status(201).json({
+        id: crmProject.id,
+        name: name.trim(),
+        status: crmProject.status ?? "active",
+      });
+    } catch (error) {
+      logError("agent.projects.create.failed", error);
+      res.status(500).json({ message: "Failed to create project" });
+    }
+  });
+
   /** Agent: start timer */
   app.post("/api/agent/timer/start", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     try {

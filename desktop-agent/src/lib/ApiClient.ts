@@ -219,6 +219,13 @@ export class ApiClient {
     return res?.data ?? [];
   }
 
+  async createProject(name: string): Promise<CrmProjectSummary> {
+    return this.authenticatedRequest("/api/agent/projects", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  }
+
   async getTasks(crmProjectId: string): Promise<TaskSummary[]> {
     const res = await this.authenticatedRequest(
       `/api/agent/tasks?crmProjectId=${encodeURIComponent(crmProjectId)}`,

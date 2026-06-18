@@ -411,7 +411,16 @@ function startWorkers(): void {
   startResyncPolling();
 
   // Refresh worked-today server base every 60s so multi-device entries are reflected.
+  // Also detect midnight crossing and reset immediately so stale yesterday data is not shown.
+  let _lastWorkedTodayDate = new Date().toDateString();
   workedTodayInterval = setInterval(async () => {
+    const today = new Date().toDateString();
+    if (_lastWorkedTodayDate !== today) {
+      console.log(`[Main] Day changed (${_lastWorkedTodayDate} → ${today}) — resetting workedTodayServerBase`);
+      store.setWorkedTodayServerBase(0);
+      pushStateToRenderer();
+      _lastWorkedTodayDate = today;
+    }
     await refreshWorkedTodayServerBase();
     pushStateToRenderer();
   }, 60_000);
@@ -644,6 +653,15 @@ ipcMain.handle("agent:get-projects", async () => {
     return { ok: true, data: projects };
   } catch (error: any) {
     return { ok: false, error: error.message, data: [] };
+  }
+});
+
+ipcMain.handle("agent:create-project", async (_event, { name }) => {
+  try {
+    const project = await apiClient.createProject(name);
+    return { ok: true, data: project };
+  } catch (error: any) {
+    return { ok: false, error: error.message };
   }
 });
 
