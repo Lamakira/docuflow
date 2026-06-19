@@ -16,7 +16,13 @@ v0.1.7 — dernière version enregistrée en DB, les 3 plateformes pointent vers
 | macOS | `DocuFlow-Agent-0.1.7-macos.dmg` | ~94 MB |
 | Linux | `DocuFlow-Agent-0.1.7-linux-amd64.deb` | ~74 MB |
 
-**v0.1.8 — État** : compilée avec succès (artifacts GitHub Actions, rétention 7 jours), mais **non uploadée sur l'Object Storage et non enregistrée en DB** — les endpoints de téléchargement retournent encore v0.1.7. Voir "Procédure de release" ci-dessous.
+**v0.1.8 — publiée le 2026-06-19** (les 3 plateformes pointent vers l'Object Storage Replit) :
+
+| Plateforme | Fichier | Taille | SHA256 |
+|------------|---------|--------|--------|
+| Windows | `DocuFlow-Agent-0.1.8-windows-setup.exe` | 64.8 MB | `9e61bd11...` |
+| macOS | `DocuFlow-Agent-0.1.8-macos.dmg` | 93.8 MB | `c6133b17...` |
+| Linux | `DocuFlow-Agent-0.1.8-linux-amd64.deb` | 73.2 MB | `e591fec3...` |
 
 ## Architecture de distribution
 

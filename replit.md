@@ -268,7 +268,7 @@ Toute la procédure de release, les scripts de build, les endpoints d'upload et 
 **En résumé** :
 - Les installeurs sont stockés dans l'**Object Storage Replit** (bucket `replit-objstore-...`, service account `heimdall-production`) — **aucun compte Google externe requis**.
 - Accessible uniquement depuis l'environnement Replit via le sidecar interne (`http://127.0.0.1:1106`). Les runners GitHub Actions ne peuvent pas le joindre, d'où la procédure manuelle.
-- v0.1.7 est publiée (les 3 plateformes). v0.1.8 est compilée mais non uploadée (voir le guide pour finaliser).
+- v0.1.8 est publiée (les 3 plateformes, 2026-06-19). Voir le guide pour les prochaines releases.
 
 **Notes Linux spécifiques** :
 - Sur **Wayland** : l'app demande une autorisation de partage d'écran à chaque session (comportement normal du portail XDG/PipeWire, imposé par Wayland pour la sécurité). Pour éviter ce dialogue, utiliser une session **X11/Xorg** à la connexion.
