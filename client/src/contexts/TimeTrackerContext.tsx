@@ -293,12 +293,37 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     };
   }, [activeEntry?.id, activeEntry?.status, isTabLeader]);
 
-  // ─── Visibility change handling ───
+  // ─── Visibility change handling (sleep/idle detection) ───
+  const hiddenAtRef = useRef<number | null>(null);
+  const IDLE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes
+
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        // Tab became visible — resync with server
+      if (document.hidden) {
+        // Tab/PC going to sleep or background — record the time
+        hiddenAtRef.current = Date.now();
+      } else {
+        // Tab/PC becoming visible — resync with server
         invalidateAll();
+
+        if (hiddenAtRef.current !== null) {
+          const hiddenDuration = Date.now() - hiddenAtRef.current;
+          const entry = activeEntryRef.current;
+          if (hiddenDuration >= IDLE_THRESHOLD_MS && entry?.status === "running") {
+            // Auto-pause: PC was asleep or inactive for too long
+            apiRequest("POST", `/api/time-tracking/${entry.id}/pause`).then(() => {
+              invalidateAll();
+              const minutes = Math.floor(hiddenDuration / 60000);
+              toast({
+                title: "Timer paused — idle detected",
+                description: `The tab was hidden for ${minutes} min. Timer paused automatically.`,
+              });
+            }).catch(() => {
+              // Best-effort — if pause fails, at least the server is resynced
+            });
+          }
+          hiddenAtRef.current = null;
+        }
       }
     };
 
@@ -306,7 +331,7 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [invalidateAll]);
+  }, [invalidateAll, toast]);
 
   // ─── Screen Capture via service (LEADER ONLY for scheduling) ───
   const isRunning = activeEntry?.status === "running";

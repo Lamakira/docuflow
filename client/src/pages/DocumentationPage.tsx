@@ -178,7 +178,7 @@ export default function DocumentationPage() {
             />
           )}
           <Button 
-            onClick={() => { setFolderName(""); setFolderDescription(""); setShowCreateFolderDialog(true); }} 
+            onClick={() => setLocation("/crm/project/new")}
             data-testid="button-create-folder"
           >
             <FolderPlus className="h-4 w-4 sm:mr-2" />

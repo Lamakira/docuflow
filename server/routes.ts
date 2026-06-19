@@ -3895,15 +3895,6 @@ Instructions:
       if (!crmProjectId || !name?.trim()) {
         return res.status(400).json({ message: "crmProjectId and name are required" });
       }
-      // Enforce unique task name within the same project (excluding archived)
-      const existingTasks = await storage.getTasks({ crmProjectId });
-      const taskNameConflict = existingTasks.some(
-        (t) => t.name.trim().toLowerCase() === name.trim().toLowerCase()
-      );
-      if (taskNameConflict) {
-        return res.status(409).json({ message: `A task named "${name}" already exists in this project` });
-      }
-
       const task = await storage.createTask({
         crmProjectId,
         name: name.trim(),
