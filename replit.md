@@ -263,12 +263,16 @@ The MCP (Model Context Protocol) server enables Claude Desktop to interact with 
 
 **Emplacement des installeurs** : stockés dans Google Cloud Storage (GCS), bucket `replit-objstore-64708bc7-367f-45c8-9004-db72f81cbeba`, dossier `public/installers/`.
 
-**Versions publiées** (v0.1.7) :
+> ⚠️ **Important** : ce bucket est géré par Replit via un OAuth sidecar interne. Il n'est **pas** accessible depuis GitHub Actions avec un service account Google standard. Pour la pipeline CI/CD, utiliser un **bucket GCS externe** (créé dans votre propre projet GCP).
+
+**Versions publiées via Replit** (v0.1.7 — dernière version enregistrée en DB) :
 | Plateforme | Fichier | Taille |
 |------------|---------|--------|
 | Windows | `DocuFlow-Agent-0.1.7-windows-setup.exe` | ~65 MB |
 | macOS | `DocuFlow-Agent-0.1.7-macos.dmg` | ~94 MB |
 | Linux | `DocuFlow-Agent-0.1.7-linux-amd64.deb` | ~74 MB |
+
+**v0.1.8 — État** : compilée avec succès (GitHub Actions artifacts, rétention 7 jours), mais **non uploadée sur GCS et non enregistrée en DB** — les endpoints de téléchargement retournent encore v0.1.7. Voir "Workflow de release CI/CD" ci-dessous pour finaliser.
 
 **Architecture de distribution** :
 - Les installeurs sont trop volumineux (~65-94 MB) pour le proxy inverse de Replit (~50 MB max)
@@ -283,7 +287,7 @@ The MCP (Model Context Protocol) server enables Claude Desktop to interact with 
 - `dist-linux.js` — build Linux .deb ; inclut deux correctifs critiques :
   1. **Fix permissions Step 1.5** : `chmod 755` sur le dossier `out/` après `electron-forge package` (electron-forge crée parfois le dossier en `700`, bloquant l'accès aux utilisateurs normaux)
   2. **Patch postinst Step 3** : extrait le `.deb`, injecte `chmod 755 '/opt/DocuFlow Desktop Agent'` dans le script `postinst`, et repackage le `.deb` — permet que les permissions soient corrigées même lors d'une **mise à jour** (dpkg ne remet pas à jour les permissions d'un dossier existant)
-- `upload-to-gcs.mjs` — upload un installeur vers GCS via l'API sidecar Replit
+- `upload-to-gcs.mjs` — upload un installeur vers GCS via l'API sidecar Replit (bucket Replit uniquement)
 - `fix-permissions.js` — correctif de permissions (utilisé lors du build, non invoqué directement)
 
 **Script d'enregistrement en DB** :
@@ -293,19 +297,54 @@ curl -X POST https://docs.appvibed.com/api/internal/desktop-releases \
   -H "Content-Type: application/json" \
   -d '{
     "platform": "linux",
-    "version": "0.1.7",
-    "filename": "DocuFlow-Agent-0.1.7-linux-amd64.deb",
-    "storageUrl": "https://storage.googleapis.com/...",
+    "version": "0.1.8",
+    "filename": "DocuFlow-Agent-0.1.8-linux-amd64.deb",
+    "storageUrl": "https://storage.googleapis.com/<BUCKET>/installers/v0.1.8/DocuFlow-Agent-0.1.8-linux-amd64.deb",
     "sha256": "...",
-    "fileSize": 76593368
+    "fileSize": 0
   }'
 ```
 
-**Workflow de mise à jour d'un installeur** :
+**Workflow de mise à jour manuel (via Replit — bucket Replit)** :
 1. Rebuilder : `cd desktop-agent && npm run dist:linux` (ou `dist:win` / `dist:mac`)
 2. Uploader : `node scripts/upload-to-gcs.mjs linux desktop-agent/release/<fichier>.deb`
 3. Enregistrer en DB via l'endpoint ci-dessus (dev ET prod partagent la même DB Neon)
 4. Déployer si des modifications de code serveur sont incluses
+
+---
+
+### Workflow de release CI/CD (GitHub Actions)
+
+**Repo** : `billos-e/TECHMA-DOCUMENTATION-PLATFORM`
+**Fichier** : `.github/workflows/desktop-release.yml`
+
+**Comportement selon le déclencheur** :
+
+| Déclencheur | Build | Upload GCS | Enregistrement DB |
+|-------------|-------|------------|-------------------|
+| `git push` sur un tag `desktop-agent-v*` | ✅ | ✅ | ✅ |
+| Déclenchement manuel (Actions → Run workflow) | ✅ | ❌ skippé | ❌ skippé |
+
+> Le paramètre `dry_run` visible dans l'UI de déclenchement manuel est **non fonctionnel** — il est défini dans le YAML mais jamais lu dans les conditions. Le seul vrai interrupteur est le type d'événement (`push` sur tag vs `workflow_dispatch`). Un déclenchement manuel produit toujours un build-only.
+
+**Secrets GitHub requis** (Settings → Secrets and variables → Actions) :
+
+| Secret | Description |
+|--------|-------------|
+| `GCS_RELEASE_SA_KEY` | JSON brut d'une clé de service account GCP avec rôle `Storage Object Admin` sur le bucket |
+| `INSTALLER_GCS_BUCKET` | Nom du bucket GCS externe (ex: `techma-desktop-releases`) — **pas** le bucket Replit |
+| `DOCUFLOW_API_URL` | `https://docs.appvibed.com` |
+| `DESKTOP_RELEASE_CI_TOKEN` | Valeur de l'env var Replit (récupérable via `echo $DESKTOP_RELEASE_CI_TOKEN` dans le shell) |
+
+**Pour publier une nouvelle version** :
+```bash
+# 1. Bumper la version dans desktop-agent/package.json
+# 2. Committer et pousser sur main
+# 3. Créer et pousser le tag
+git tag desktop-agent-v0.1.X
+git push origin desktop-agent-v0.1.X
+# → GitHub Actions compile + uploade sur GCS + enregistre en DB automatiquement
+```
 
 **Notes Linux spécifiques** :
 - Sur **Wayland** : l'app demande une autorisation de partage d'écran à chaque session (comportement normal du portail XDG/PipeWire, imposé par Wayland pour la sécurité). Pour éviter ce dialogue, utiliser une session **X11/Xorg** à la connexion.
