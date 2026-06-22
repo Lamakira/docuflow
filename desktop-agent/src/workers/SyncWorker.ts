@@ -15,7 +15,6 @@ import { ApiClient } from "../lib/ApiClient";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
 import fs from "fs";
-import path from "path";
 
 const SYNC_INTERVAL_MS = 30_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
@@ -203,8 +202,7 @@ export class SyncWorker {
 
     if (pending.attemptCount >= MAX_SCREENSHOT_ATTEMPTS) {
       console.warn(`[SyncWorker] Screenshot ${pending.id.slice(0, 8)} exceeded max attempts, dropping`);
-      this.queue.markScreenshotSent(pending.id); // Remove from queue
-      this.cleanupFile(pending.filePath);
+      this.queue.markScreenshotSent(pending.id); // Remove from queue (keep local file for display)
       return;
     }
 
@@ -254,7 +252,8 @@ export class SyncWorker {
       });
 
       this.queue.markScreenshotSent(pending.id);
-      this.cleanupFile(pending.filePath);
+      // Keep local file so the Screenshots page can display it.
+      // Old files (>30 days) are pruned by ScreenCaptureWorker.pruneOldScreenshots().
       this.totalScreenshotsSynced++;
       console.log(
         `[SyncWorker] Screenshot ${pending.id.slice(0, 8)} uploaded (total: ${this.totalScreenshotsSynced})`
@@ -269,9 +268,4 @@ export class SyncWorker {
     }
   }
 
-  private cleanupFile(filePath: string): void {
-    fs.promises.unlink(filePath).catch((err) => {
-      console.warn(`[SyncWorker] Cleanup failed for ${path.basename(filePath)}: ${err.message}`);
-    });
-  }
 }

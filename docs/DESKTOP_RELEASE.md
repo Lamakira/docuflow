@@ -24,6 +24,17 @@ v0.1.7 — dernière version enregistrée en DB, les 3 plateformes pointent vers
 | macOS | `DocuFlow-Agent-0.1.8-macos.dmg` | 93.8 MB | `c6133b17...` |
 | Linux | `DocuFlow-Agent-0.1.8-linux-amd64.deb` | 73.2 MB | `e591fec3...` |
 
+**v0.1.9 — à publier** (correctifs UX) :
+
+Changements inclus dans v0.1.9 :
+- **Bouton + pour créer des tâches** dans le picker projet/tâche de l'agent
+- **Formulaire inline de création de projet** dans l'agent (+ dans la colonne Projets)
+- **Icône tray macOS corrigée** — utilise maintenant `tray-icon.png` (16×16) au lieu de `icon.png` (grande icône)
+- **Screenshots visibles** — les fichiers locaux ne sont plus supprimés après upload ; nettoyage automatique des fichiers > 30 jours
+- **Erreur de création de projet explicite** — le message d'erreur réel est retourné au lieu du message générique
+
+> Pour publier v0.1.9, suivre la procédure ci-dessous (build + upload GCS + enregistrement DB avec version `0.1.9`).
+
 ## Architecture de distribution
 
 - Les installeurs sont trop volumineux (~65-94 MB) pour le proxy inverse de Replit (~50 MB max)

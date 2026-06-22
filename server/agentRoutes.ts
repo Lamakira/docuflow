@@ -943,9 +943,10 @@ export function registerAgentRoutes(app: Express): void {
         name: name.trim(),
         status: crmProject.status ?? "active",
       });
-    } catch (error) {
+    } catch (error: any) {
       logError("agent.projects.create.failed", error);
-      res.status(500).json({ message: "Failed to create project" });
+      const detail = error?.message ?? "Unknown error";
+      res.status(500).json({ message: `Failed to create project: ${detail}` });
     }
   });
 

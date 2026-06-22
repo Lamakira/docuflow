@@ -402,6 +402,8 @@ function startWorkers(): void {
   screenshotWorker = new ScreenCaptureWorker(queue, store, SCREENSHOTS_ENABLED);
   if (activityWorker) screenshotWorker.setActivityWorker(activityWorker);
   screenshotWorker.start();
+  // Prune screenshots older than 30 days at startup (non-blocking)
+  screenshotWorker.pruneOldScreenshots(30).catch(() => {});
 
   // Create floating widget if it doesn't exist yet
   if (!widgetWindow) {

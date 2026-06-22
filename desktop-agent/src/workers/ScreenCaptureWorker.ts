@@ -279,4 +279,32 @@ export class ScreenCaptureWorker {
       return null;
     }
   }
+
+  /**
+   * Delete screenshot files (PNG + sidecar JSON) older than `maxAgeDays` days.
+   * Called once at agent startup to keep the screenshots directory bounded.
+   */
+  async pruneOldScreenshots(maxAgeDays = 30): Promise<void> {
+    try {
+      if (!fs.existsSync(this.screenshotDir)) return;
+      const files = await fs.promises.readdir(this.screenshotDir);
+      const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+      let pruned = 0;
+      for (const file of files) {
+        const filePath = path.join(this.screenshotDir, file);
+        try {
+          const stat = await fs.promises.stat(filePath);
+          if (stat.mtimeMs < cutoffMs) {
+            await fs.promises.unlink(filePath);
+            pruned++;
+          }
+        } catch { /* ignore per-file errors */ }
+      }
+      if (pruned > 0) {
+        console.log(`[ScreenCaptureWorker] Pruned ${pruned} screenshot file(s) older than ${maxAgeDays} days`);
+      }
+    } catch (err: any) {
+      console.warn("[ScreenCaptureWorker] pruneOldScreenshots failed:", err.message);
+    }
+  }
 }
