@@ -281,10 +281,10 @@ function getTrayIconPath(): string {
   // which is inside app.asar. Assets need to be resolved relative to the app root.
   if (app.isPackaged) {
     // Packaged: resources/app.asar/.webpack/main → go up to resources/
-    return path.join(process.resourcesPath, "assets", "icon.png");
+    return path.join(process.resourcesPath, "assets", "tray-icon.png");
   }
   // Dev: .webpack/main → ../../assets/
-  return path.join(__dirname, "../../assets/icon.png");
+  return path.join(__dirname, "../../assets/tray-icon.png");
 }
 
 function rebuildTrayMenu(): void {
@@ -671,6 +671,15 @@ ipcMain.handle("agent:get-tasks", async (_event, { crmProjectId }) => {
     return { ok: true, data: taskList };
   } catch (error: any) {
     return { ok: false, error: error.message, data: [] };
+  }
+});
+
+ipcMain.handle("agent:create-task", async (_event, { crmProjectId, name }) => {
+  try {
+    const task = await apiClient.createTask(crmProjectId, name);
+    return { ok: true, data: task };
+  } catch (error: any) {
+    return { ok: false, error: error.message };
   }
 });
 

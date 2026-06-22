@@ -234,6 +234,13 @@ export class ApiClient {
     return res?.data ?? [];
   }
 
+  async createTask(crmProjectId: string, name: string): Promise<TaskSummary> {
+    return this.authenticatedRequest("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify({ crmProjectId, name }),
+    });
+  }
+
   /** Mirrors web `GET /api/time-tracking/capabilities` — whether `taskId` is mandatory on timer start. */
   async getAgentCapabilities(): Promise<{ requiresTask: boolean }> {
     return this.authenticatedRequest("/api/agent/capabilities", { method: "GET" });

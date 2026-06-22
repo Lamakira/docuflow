@@ -35,6 +35,13 @@ export function ProjectTaskPicker() {
   const [createProjectError, setCreateProjectError] = useState<string | null>(null);
   const newProjectInputRef = useRef<HTMLInputElement>(null);
 
+  // New-task inline form state
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [newTaskName, setNewTaskName] = useState('');
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [createTaskError, setCreateTaskError] = useState<string | null>(null);
+  const newTaskInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     bridge.getProjects().then((r) => {
       setProjectsLoading(false);
@@ -44,6 +51,9 @@ export function ProjectTaskPicker() {
   }, []);
 
   useEffect(() => {
+    setShowNewTask(false);
+    setNewTaskName('');
+    setCreateTaskError(null);
     if (!selectedProjectId) {
       setTasks([]);
       setTasksError(false);
@@ -70,12 +80,48 @@ export function ProjectTaskPicker() {
     return () => clearTimeout(t);
   }, [timer?.entryId]);
 
-  // Focus the input when the form opens
+  // Focus the project input when the form opens
   useEffect(() => {
     if (showNewProject) {
       setTimeout(() => newProjectInputRef.current?.focus(), 50);
     }
   }, [showNewProject]);
+
+  // Focus the task input when the form opens
+  useEffect(() => {
+    if (showNewTask) {
+      setTimeout(() => newTaskInputRef.current?.focus(), 50);
+    }
+  }, [showNewTask]);
+
+  function openNewTaskForm() {
+    setShowNewTask(true);
+    setNewTaskName('');
+    setCreateTaskError(null);
+  }
+
+  function cancelNewTask() {
+    setShowNewTask(false);
+    setNewTaskName('');
+    setCreateTaskError(null);
+  }
+
+  async function handleCreateTask(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newTaskName.trim();
+    if (!name || !selectedProjectId) return;
+    setCreatingTask(true);
+    setCreateTaskError(null);
+    const result = await bridge.createTask({ crmProjectId: selectedProjectId, name });
+    setCreatingTask(false);
+    if (result.ok && result.data) {
+      setTasks((prev) => [...prev, result.data]);
+      setShowNewTask(false);
+      setNewTaskName('');
+    } else {
+      setCreateTaskError(result.error ?? 'Failed to create task');
+    }
+  }
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
 
@@ -231,7 +277,55 @@ export function ProjectTaskPicker() {
 
         {/* Right: Tasks */}
         <div className="picker-col picker-col--tasks">
-          <div className="picker-col__header">Tasks</div>
+          <div className="picker-col__header">
+            <span>Tasks</span>
+            {selectedProjectId && (
+              <button
+                className="picker-new-btn"
+                title="New task"
+                onClick={openNewTaskForm}
+              >
+                +
+              </button>
+            )}
+          </div>
+
+          {/* Inline new-task form */}
+          {showNewTask && selectedProjectId && (
+            <form className="picker-new-project-form" onSubmit={handleCreateTask}>
+              <input
+                ref={newTaskInputRef}
+                className="picker-new-project-input"
+                type="text"
+                placeholder="Task name…"
+                value={newTaskName}
+                onChange={(e) => setNewTaskName(e.target.value)}
+                disabled={creatingTask}
+                maxLength={120}
+              />
+              <div className="picker-new-project-actions">
+                <button
+                  type="submit"
+                  className="picker-new-project-confirm"
+                  disabled={creatingTask || !newTaskName.trim()}
+                >
+                  {creatingTask ? '…' : 'Create'}
+                </button>
+                <button
+                  type="button"
+                  className="picker-new-project-cancel"
+                  onClick={cancelNewTask}
+                  disabled={creatingTask}
+                >
+                  Cancel
+                </button>
+              </div>
+              {createTaskError && (
+                <div className="picker-new-project-error">{createTaskError}</div>
+              )}
+            </form>
+          )}
+
           <div className="picker-col__list">
             {!selectedProjectId && (
               <div className="picker-col__empty">← Select a project</div>
@@ -244,16 +338,7 @@ export function ProjectTaskPicker() {
             )}
             {selectedProjectId && !tasksLoading && !tasksError && tasks.length === 0 && (
               <div className="picker-col__empty">
-                Create a task before starting the timer.
-                {apiBase && (
-                  <a
-                    href="#"
-                    style={{ display: 'block', marginTop: '0.25rem', fontSize: '0.72rem' }}
-                    onClick={(e) => { e.preventDefault(); window.agentBridge.openExternal(`${apiBase}/crm/project/${selectedProjectId}`); }}
-                  >
-                    Create tasks in web app
-                  </a>
-                )}
+                No tasks yet — click + to add one.
               </div>
             )}
             {tasks.map((task) => {
