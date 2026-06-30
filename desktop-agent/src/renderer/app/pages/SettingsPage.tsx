@@ -153,8 +153,8 @@ function PolicyBlock({ policy }: { policy: OrgPolicy | null }) {
             }
           />
           <InfoRow
-            label="Auto-stop countdown"
-            value={`${policy.idleCountdownSeconds} s warning before stopping`}
+            label="Idle behaviour"
+            value="Pause immediately — no countdown"
           />
           <InfoRow
             label="Screenshots"
@@ -521,6 +521,56 @@ function TimeZoneSection() {
 
 // ─── Section: Advanced ───────────────────────────────────────────────────────
 
+function UpdateCheckRow() {
+  const [status, setStatus] = useState<'idle' | 'checking' | 'available' | 'uptodate' | 'error'>('idle');
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function check() {
+    setStatus('checking');
+    setMessage(null);
+    const res = await window.agentBridge.checkUpdate();
+    if (!res.ok) {
+      setStatus('error');
+      setMessage(res.error ?? 'Update check failed');
+      return;
+    }
+    if (res.updateAvailable && res.latestVersion && res.downloadUrl) {
+      setLatestVersion(res.latestVersion);
+      setDownloadUrl(res.downloadUrl);
+      setStatus('available');
+    } else {
+      setStatus('uptodate');
+    }
+  }
+
+  const right =
+    status === 'available' ? (
+      <button
+        className="btn btn--primary btn--sm"
+        onClick={() => downloadUrl && window.agentBridge.openExternal(downloadUrl)}
+      >
+        Download v{latestVersion}
+      </button>
+    ) : (
+      <button className="btn btn--ghost btn--sm" onClick={check} disabled={status === 'checking'}>
+        {status === 'checking' ? 'Checking…' : 'Check for updates'}
+      </button>
+    );
+
+  const hint =
+    status === 'uptodate'
+      ? "You're on the latest version."
+      : status === 'error'
+      ? (message ?? 'Update check failed')
+      : status === 'available'
+      ? 'Download the installer, then run it to update.'
+      : undefined;
+
+  return <Row label="Updates" hint={hint} right={right} />;
+}
+
 function AdvancedSection({
   prefs,
   agentState,
@@ -546,6 +596,7 @@ function AdvancedSection({
 
       <Group label="Application">
         <CopyableInfoRow label="App version" value={prefs?.appVersion ?? '—'} />
+        <UpdateCheckRow />
         <CopyableInfoRow label="Device name" value={agentState?.deviceName ?? '—'} />
         <CopyableInfoRow label="Account" value={agentState?.userEmail ?? '—'} />
       </Group>

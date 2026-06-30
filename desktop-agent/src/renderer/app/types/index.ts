@@ -18,6 +18,7 @@ export interface TimerState {
   elapsedToday: number; // entry elapsed clamped to current local day — use this for UI display
   workedToday: number;  // all tasks today, clamped to current local day (all devices)
   thisSession: number;  // total tracked since this app launch (all tasks, not day-scoped)
+  dayKey: string;       // local calendar day or synthetic test-day key (midnight rollover detection)
   entryId: string | null;
   taskId: string | null;
   projectName: string | null;
@@ -59,6 +60,7 @@ export interface AgentBridge {
   unpair: () => Promise<{ ok: boolean }>;
   getProjects: () => Promise<{ ok: boolean; data: Project[] }>;
   getTasks: (data: { crmProjectId: string }) => Promise<{ ok: boolean; data: Task[] }>;
+  createTask: (data: { crmProjectId: string; name: string }) => Promise<{ ok: boolean; data?: Task; error?: string }>;
   timerStart: (data: {
     crmProjectId: string;
     taskId?: string;
@@ -72,12 +74,19 @@ export interface AgentBridge {
   timerStop: () => Promise<{ ok: boolean; error?: string }>;
   timerState: () => Promise<TimerState>;
   openExternal: (url: string) => void;
+  checkUpdate: () => Promise<{
+    ok: boolean;
+    updateAvailable?: boolean;
+    currentVersion: string;
+    latestVersion?: string;
+    downloadUrl?: string;
+    error?: string;
+  }>;
   getWorkedToday: () => Promise<{ ok: boolean; total: number }>;
   idleBreak: () => Promise<{ ok: boolean }>;
   idleResume: () => Promise<{ ok: boolean; error?: string }>;
-  onIdlePrompt: (cb: (data: { idleSeconds: number; countdownSeconds: number }) => void) => () => void;
+  onIdlePrompt: (cb: (data: { idleSeconds: number }) => void) => () => void;
   onIdleDismiss: (cb: () => void) => () => void;
-  onIdleStopped: (cb: (data: { idleSeconds: number; idleStartedAt: string }) => void) => () => void;
   getTodayBreakdown: () => Promise<{ ok: boolean; rows: BreakdownRow[]; error?: string }>;
   onLoginProgress: (cb: (data: { message: string }) => void) => () => void;
   onStateUpdate: (cb: (state: any) => void) => void;

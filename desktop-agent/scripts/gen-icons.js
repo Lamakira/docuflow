@@ -25,6 +25,7 @@ const assetsDir = path.join(ROOT, 'assets');
 const outPng = path.join(assetsDir, 'icon.png');
 const outIco = path.join(assetsDir, 'icon.ico');
 const outIcns = path.join(assetsDir, 'icon.icns');
+const outTray = path.join(assetsDir, 'tray-icon.png');
 
 const svgData = fs.readFileSync(svgPath, 'utf8');
 
@@ -34,6 +35,15 @@ const resvg = new Resvg(svgData, { fitTo: { mode: 'width', value: 256 } });
 const pngData = resvg.render().asPng();
 fs.writeFileSync(outPng, pngData);
 console.log(`✅ Written: ${outPng} (${pngData.length} bytes)`);
+
+// ── Tray icon 32×32 (transparent) ─────────────────────────────────────────────
+// Rendered at 32px (not 16) so the white document glyph survives — a 16×16 render
+// collapsed the 1.5px strokes into a flat blue square (Ubuntu top-bar bug).
+// macOS resizes this to 16×16 at runtime (see createTray in main/index.ts).
+const trayResvg = new Resvg(svgData, { fitTo: { mode: 'width', value: 32 } });
+const trayPng = trayResvg.render().asPng();
+fs.writeFileSync(outTray, trayPng);
+console.log(`✅ Written: ${outTray} (${trayPng.length} bytes)`);
 
 // ── ICO (Windows) ────────────────────────────────────────────────────────────
 

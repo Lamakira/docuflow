@@ -56,6 +56,7 @@ export interface TaskSummary {
   id: string;
   name: string;
   status: string;
+  crmProjectId?: string;
   durationToday?: number;
 }
 
@@ -235,7 +236,9 @@ export class ApiClient {
   }
 
   async createTask(crmProjectId: string, name: string): Promise<TaskSummary> {
-    return this.authenticatedRequest("/api/tasks", {
+    // Agent-authenticated endpoint (Bearer). The web `/api/tasks` route uses
+    // cookie/session auth and returns 401 for the desktop agent.
+    return this.authenticatedRequest("/api/agent/tasks", {
       method: "POST",
       body: JSON.stringify({ crmProjectId, name }),
     });

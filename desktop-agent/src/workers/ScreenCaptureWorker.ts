@@ -21,6 +21,7 @@ import { execSync } from "child_process";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
 import type { ActivityWorker, ActivityMetrics } from "./ActivityWorker";
+import { isWaylandSession, shouldSkipWaylandCaptures, getTestCaptureIntervalSeconds } from "../lib/platform";
 
 const CAPTURE_MIN_MS = 3 * 60 * 1000; // 3 minutes
 const CAPTURE_MAX_MS = 5 * 60 * 1000; // 5 minutes
@@ -42,6 +43,14 @@ export interface ScreenshotPolicyPayload {
   idleCountdownSeconds: number;
 }
 
+/** Optional hooks for Wayland portal capture — pause timer during consent dialog. */
+export interface CaptureLifecycleHooks {
+  /** Called immediately before desktopCapturer opens the XDG portal dialog. */
+  onBeforePortalDialog?: () => void;
+  /** Called after capture attempt; resume only when granted is true. */
+  onAfterPortalDialog?: (granted: boolean) => void;
+}
+
 export class ScreenCaptureWorker {
   private queue: SqliteQueue;
   private store: AgentStore;
@@ -55,6 +64,7 @@ export class ScreenCaptureWorker {
   private activeHoursStart = "08:00";
   private activeHoursEnd = "18:00";
   private activityWorker: ActivityWorker | null = null;
+  private captureHooks: CaptureLifecycleHooks = {};
 
   constructor(queue: SqliteQueue, store: AgentStore, enabled = false) {
     this.queue = queue;
@@ -69,10 +79,33 @@ export class ScreenCaptureWorker {
     this.activityWorker = w;
   }
 
+  /** Pause/resume timer around Wayland XDG portal screen-picker dialogs. */
+  setCaptureLifecycleHooks(hooks: CaptureLifecycleHooks): void {
+    this.captureHooks = hooks;
+  }
+
   start(): void {
     if (!this.enabled) {
       console.log("[ScreenCaptureWorker] Disabled (screenshotsEnabled=false)");
       return;
+    }
+
+    const testIntervalSec = getTestCaptureIntervalSeconds();
+    if (testIntervalSec) {
+      this.captureMinMs = testIntervalSec * 1000;
+      this.captureMaxMs = testIntervalSec * 1000;
+      console.log(`[ScreenCaptureWorker] TEST capture interval: ${testIntervalSec}s`);
+    }
+
+    if (shouldSkipWaylandCaptures()) {
+      console.log(
+        "[ScreenCaptureWorker] Disabled — Wayland captures opted out " +
+        "(unset DOCUFLOW_SKIP_WAYLAND_CAPTURES to enable)."
+      );
+      return;
+    }
+    if (isWaylandSession()) {
+      console.log("[ScreenCaptureWorker] Wayland — timer pauses during portal consent dialog");
     }
     fs.mkdirSync(this.screenshotDir, { recursive: true });
     this.scheduleNext();
@@ -104,7 +137,9 @@ export class ScreenCaptureWorker {
       `interval=${policy.captureIntervalMinMin}–${policy.captureIntervalMaxMin}min, ` +
       `activeHours=${this.activeHoursEnabled ? `${this.activeHoursStart}–${this.activeHoursEnd}` : "off"}`
     );
-    // Start if newly enabled; stop if newly disabled
+    // Start if newly enabled; stop if newly disabled.
+    // On Wayland, start() is a no-op (logs warning, returns early) so
+    // the policy enable flag is preserved but no timer is scheduled.
     if (!wasEnabled && this.enabled) {
       this.start();
     } else if (wasEnabled && !this.enabled) {
@@ -153,13 +188,38 @@ export class ScreenCaptureWorker {
 
       const capturedAt = new Date().toISOString();
       // Snapshot activity metrics for the last 60 seconds before this screenshot.
-      // In uiohook mode: keyboard and mouse are genuinely separate signals.
-      // In fallback mode: both share the same powerMonitor idle signal.
       const metrics: ActivityMetrics | null = this.activityWorker?.getActivityMetrics() ?? null;
-      const png = await this.captureScreen();
 
-      if (!png || png.length === 0) {
+      const needsPortalPause = isWaylandSession() && !shouldSkipWaylandCaptures();
+      if (needsPortalPause) {
+        this.captureHooks.onBeforePortalDialog?.();
+      }
+
+      let png: Buffer | null = null;
+      let portalGranted = false;
+      try {
+        png = await this.captureScreen();
+        portalGranted = !!(png && png.length > 0);
+      } finally {
+        if (needsPortalPause) {
+          this.captureHooks.onAfterPortalDialog?.(portalGranted);
+        }
+      }
+
+      if (needsPortalPause && !portalGranted) {
+        console.warn(
+          "[ScreenCaptureWorker] Portal consent not granted — timer stays paused until you accept or resume manually"
+        );
+        this.scheduleNext();
+        return;
+      }
+      if (!portalGranted) {
         console.warn("[ScreenCaptureWorker] Empty capture, skipping");
+        this.scheduleNext();
+        return;
+      }
+
+      if (!png) {
         this.scheduleNext();
         return;
       }

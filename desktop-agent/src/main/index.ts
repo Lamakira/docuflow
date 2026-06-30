@@ -4,7 +4,7 @@
  * Phase 3 MVP — Pairing + Timer control + Workers.
  */
 
-import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen, clipboard } from "electron";
+import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen, clipboard, nativeImage, powerMonitor } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -55,6 +55,9 @@ import { HeartbeatWorker } from "../workers/HeartbeatWorker";
 import { ActivityWorker, type IdleGlobalInputPayload } from "../workers/ActivityWorker";
 import { SyncWorker } from "../workers/SyncWorker";
 import { ScreenCaptureWorker } from "../workers/ScreenCaptureWorker";
+import { LinuxScreenLockWatcher } from "../lib/LinuxScreenLockWatcher";
+import { getLocalDayKey, getTestDayRolloverSeconds } from "../lib/dayBoundary";
+import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
 
 let mainWindow: BrowserWindow | null = null;
 let widgetWindow: BrowserWindow | null = null;
@@ -115,6 +118,15 @@ let syncWorker: SyncWorker | null = null;
 let screenshotWorker: ScreenCaptureWorker | null = null;
 let resyncInterval: ReturnType<typeof setInterval> | null = null;
 let workedTodayInterval: ReturnType<typeof setInterval> | null = null;
+
+// ─── Suspend / Resume handlers (registered in startWorkers, removed in stopWorkers) ───
+let suspendMainHandler: (() => void) | null = null;
+let resumeMainHandler: (() => void) | null = null;
+let lockScreenMainHandler: (() => void) | null = null;
+let unlockScreenMainHandler: (() => void) | null = null;
+let linuxScreenLockWatcher: LinuxScreenLockWatcher | null = null;
+/** True when timer was paused locally for a Wayland screenshot portal dialog. */
+let pausedForScreenshotPortal = false;
 
 // ─── Window ───
 
@@ -348,7 +360,15 @@ function rebuildTrayMenu(): void {
 
 function createTray(): void {
   try {
-    tray = new Tray(getTrayIconPath());
+    // tray-icon.png is a 32×32 transparent PNG (logo glyph visible — not a flat
+    // blue square). On macOS the menu bar is ~22pt tall, so resize down to 16×16
+    // to avoid the oversized icon that prompted the earlier fix; Linux (top bar
+    // indicator) and Windows downscale the 32×32 cleanly on their own.
+    let image = nativeImage.createFromPath(getTrayIconPath());
+    if (process.platform === "darwin" && !image.isEmpty()) {
+      image = image.resize({ width: 16, height: 16 });
+    }
+    tray = new Tray(image.isEmpty() ? getTrayIconPath() : image);
   } catch (err) {
     console.warn("[Main] Tray icon not found, skipping tray:", (err as Error).message);
     return;
@@ -364,26 +384,9 @@ function createTray(): void {
 function startWorkers(): void {
   if (!store.isPaired()) return;
 
-  // Apply countdown override immediately — do NOT wait for first heartbeat.
-  // If heartbeat fails (server down, auth error) the override would never take
-  // effect otherwise. The heartbeat callback below keeps it applied on every
-  // subsequent sync so the server policy cannot silently override it back.
-  const _testCountdown = process.env.DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS;
-  if (_testCountdown) {
-    idleCountdownSeconds = Math.max(5, parseInt(_testCountdown, 10) || 30);
-    console.log(`[Main] Idle countdown override at startup: ${idleCountdownSeconds}s [DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS=${_testCountdown}]`);
-  }
-
   heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync, (policy) => {
     lastKnownPolicy = policy;
     screenshotWorker?.applyPolicy(policy);
-
-    // Re-apply countdown override on every heartbeat so the server policy cannot
-    // silently clobber the test value. Fall back to server policy if no override.
-    const testCountdown = process.env.DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS;
-    idleCountdownSeconds = testCountdown
-      ? Math.max(5, parseInt(testCountdown, 10) || 30)
-      : (policy.idleCountdownSeconds ?? 60);
 
     activityWorker?.applyIdlePolicy(
       policy.idlePromptEnabled ?? true,
@@ -401,6 +404,45 @@ function startWorkers(): void {
 
   screenshotWorker = new ScreenCaptureWorker(queue, store, SCREENSHOTS_ENABLED);
   if (activityWorker) screenshotWorker.setActivityWorker(activityWorker);
+  screenshotWorker.setCaptureLifecycleHooks({
+    onBeforePortalDialog: () => {
+      if (store.getTimerStatus() !== "running" || idleStartedAt !== null) return;
+      const entryId = store.getActiveEntryId();
+      if (!entryId) return;
+
+      store.setTimerPaused();
+      queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+      syncWorker?.triggerSync();
+      pausedForScreenshotPortal = true;
+      pushStateToRenderer();
+      console.log("[Main] Wayland screenshot portal — timer paused (waiting for screen-share consent)");
+    },
+    onAfterPortalDialog: (granted) => {
+      if (!pausedForScreenshotPortal) return;
+      pausedForScreenshotPortal = false;
+
+      if (!granted) {
+        console.log("[Main] Wayland screenshot portal — consent denied or dismissed; timer stays paused");
+        pushStateToRenderer();
+        return;
+      }
+
+      const entryId = store.getActiveEntryId();
+      if (entryId && store.getTimerStatus() === "paused" && idleStartedAt === null) {
+        store.setTimerRunning(
+          entryId,
+          store.getActiveProjectName(),
+          store.getActiveTaskId(),
+          store.getActiveTaskName(),
+          store.getActiveDescription(),
+        );
+        queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
+        syncWorker?.triggerSync();
+        pushStateToRenderer();
+        console.log("[Main] Wayland screenshot portal — consent granted, timer resumed");
+      }
+    },
+  });
   screenshotWorker.start();
   // Prune screenshots older than 30 days at startup (non-blocking)
   screenshotWorker.pruneOldScreenshots(30).catch(() => {});
@@ -412,32 +454,82 @@ function startWorkers(): void {
 
   startResyncPolling();
 
-  // Refresh worked-today server base every 60s so multi-device entries are reflected.
-  // Also detect midnight crossing and reset immediately so stale yesterday data is not shown.
-  let _lastWorkedTodayDate = new Date().toDateString();
-  workedTodayInterval = setInterval(async () => {
-    const today = new Date().toDateString();
-    if (_lastWorkedTodayDate !== today) {
-      console.log(`[Main] Day changed (${_lastWorkedTodayDate} → ${today}) — resetting workedTodayServerBase`);
-      store.setWorkedTodayServerBase(0);
+  // Refresh worked-today server base and detect day-boundary crossings.
+  // Normal cadence: 60 s. Near calendar midnight (23:55–00:05) or in test rollover mode: 15 s.
+  let _lastWorkedTodayDate = getLocalDayKey();
+
+  function scheduleWorkedTodayTick(): void {
+    const now = new Date();
+    const minuteOfDay = now.getHours() * 60 + now.getMinutes();
+    const testRollover = getTestDayRolloverSeconds();
+    const nearMidnight = !testRollover && (minuteOfDay >= 23 * 60 + 55 || minuteOfDay <= 5);
+    const interval = testRollover ? 5_000 : nearMidnight ? 15_000 : 60_000;
+
+    workedTodayInterval = setTimeout(async () => {
+      const today = getLocalDayKey();
+      if (_lastWorkedTodayDate !== today) {
+        console.log(`[Main] Day changed (${_lastWorkedTodayDate} → ${today}) — resetting workedTodayServerBase`);
+        store.setWorkedTodayServerBase(0);
+        pushStateToRenderer();
+        _lastWorkedTodayDate = today;
+      }
+      await refreshWorkedTodayServerBase();
       pushStateToRenderer();
-      _lastWorkedTodayDate = today;
-    }
-    await refreshWorkedTodayServerBase();
+      scheduleWorkedTodayTick();
+    }, interval) as unknown as ReturnType<typeof setInterval>;
+  }
+
+  scheduleWorkedTodayTick();
+
+  // System suspend / screen lock — pause timer locally (no server command), manual resume required.
+  const onSystemAway = (reason: string) => pauseTimerForSystemAway(reason);
+  const onSystemBack = (reason: string) => {
+    console.log(`[Main] ${reason} — timer stays paused, refreshing renderer`);
     pushStateToRenderer();
-  }, 60_000);
+  };
+
+  suspendMainHandler = () => onSystemAway("system.suspend");
+  resumeMainHandler = () => onSystemBack("system.resume");
+  lockScreenMainHandler = () => onSystemAway("lock-screen");
+  unlockScreenMainHandler = () => onSystemBack("unlock-screen");
+
+  powerMonitor.on("suspend", suspendMainHandler);
+  powerMonitor.on("resume", resumeMainHandler);
+  powerMonitor.on("lock-screen", lockScreenMainHandler);
+  powerMonitor.on("unlock-screen", unlockScreenMainHandler);
+
+  // Linux: Super+L locks the screen but does not suspend; Electron lock-screen is macOS/Windows only.
+  linuxScreenLockWatcher = new LinuxScreenLockWatcher(
+    () => onSystemAway("linux.screen-lock"),
+    () => onSystemBack("linux.screen-unlock"),
+  );
+  linuxScreenLockWatcher.start();
+
+  if (isWaylandSession()) {
+    const captureNote = shouldSkipWaylandCaptures()
+      ? "screenshots OFF (DOCUFLOW_SKIP_WAYLAND_CAPTURES)"
+      : "screenshots ON (timer pauses during portal consent)";
+    console.log(`[Main] Wayland session — ${captureNote}`);
+  }
 
   console.log(`[Main] Workers started (screenshots: ${SCREENSHOTS_ENABLED})`);
 }
 
 function stopWorkers(): void {
+  if (suspendMainHandler) { powerMonitor.removeListener("suspend", suspendMainHandler); suspendMainHandler = null; }
+  if (resumeMainHandler) { powerMonitor.removeListener("resume", resumeMainHandler); resumeMainHandler = null; }
+  if (lockScreenMainHandler) { powerMonitor.removeListener("lock-screen", lockScreenMainHandler); lockScreenMainHandler = null; }
+  if (unlockScreenMainHandler) { powerMonitor.removeListener("unlock-screen", unlockScreenMainHandler); unlockScreenMainHandler = null; }
+  linuxScreenLockWatcher?.stop();
+  linuxScreenLockWatcher = null;
+
   heartbeatWorker?.stop();
   activityWorker?.stop();
   syncWorker?.stop();
   screenshotWorker?.stop();
   stopResyncPolling();
   if (workedTodayInterval) {
-    clearInterval(workedTodayInterval);
+    clearTimeout(workedTodayInterval);
     workedTodayInterval = null;
   }
   heartbeatWorker = null;
@@ -645,6 +737,68 @@ ipcMain.handle("agent:unpair", () => {
 
 ipcMain.handle("agent:open-external", (_event, url: string) => {
   shell.openExternal(url);
+});
+
+// ─── IPC: In-app update check ───
+// Queries the public release endpoint for the latest installer for this OS and
+// compares it to the running version. Download is a one-click open of the
+// installer in the browser (.deb/.dmg/.exe can't self-apply without elevation).
+
+function updatePlatform(): "windows" | "macos" | "linux" | null {
+  switch (process.platform) {
+    case "win32": return "windows";
+    case "darwin": return "macos";
+    case "linux": return "linux";
+    default: return null;
+  }
+}
+
+/** Returns true if `latest` is a strictly higher semver than `current`. */
+function isNewerVersion(latest: string, current: string): boolean {
+  const parse = (v: string) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const a = parse(latest);
+  const b = parse(current);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x > y) return true;
+    if (x < y) return false;
+  }
+  return false;
+}
+
+ipcMain.handle("agent:check-update", async () => {
+  const currentVersion = app.getVersion();
+  const platform = updatePlatform();
+  if (!platform) {
+    return { ok: false, error: "Unsupported platform", currentVersion };
+  }
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8_000);
+    const res = await fetch(
+      `${API_BASE}/api/downloads/desktop/latest?platform=${platform}&format=json`,
+      { headers: { Accept: "application/json" }, signal: controller.signal }
+    ).finally(() => clearTimeout(timeoutId));
+
+    if (!res.ok) {
+      return { ok: false, error: `Update check failed (HTTP ${res.status})`, currentVersion };
+    }
+    const data = await res.json();
+    const latestVersion: string = data.version;
+    const updateAvailable = isNewerVersion(latestVersion, currentVersion);
+    return {
+      ok: true,
+      updateAvailable,
+      currentVersion,
+      latestVersion,
+      // Use the redirect endpoint so the server resolves the signed URL itself.
+      downloadUrl: `${API_BASE}/downloads/${platform}`,
+    };
+  } catch (error: any) {
+    console.warn("[Main] check-update failed:", error.message);
+    return { ok: false, error: error.message, currentVersion };
+  }
 });
 
 // ─── IPC: Projects & Tasks ───
@@ -948,11 +1102,8 @@ ipcMain.handle("agent:today-breakdown", async () => {
 
 // ─── Idle / break UX ───
 
-let idlePromptDismissTimeout: ReturnType<typeof setTimeout> | null = null;
 /** Tracks whether a global-input callback is registered on activityWorker (for cleanup). */
 let idleActivityCheckActive = false;
-/** Countdown seconds before the timer is auto-stopped. Updated by heartbeat policy. */
-let idleCountdownSeconds = 60;
 /** Wall-clock time when the user went idle — set by handleIdleUx, cleared on any resolution. */
 let idleStartedAt: Date | null = null;
 
@@ -963,25 +1114,29 @@ function clearIdleActivityCheck(): void {
   }
 }
 
+/** Clear the global-input listener only (no countdown to clear in the new flow). */
 function clearIdleTimeout(): void {
-  if (idlePromptDismissTimeout) { clearTimeout(idlePromptDismissTimeout); idlePromptDismissTimeout = null; }
   clearIdleActivityCheck();
 }
 
 /**
- * Called by ActivityWorker when idle crosses the configured threshold while timer is running.
- *
- * New flow (Time-Doctor style):
- *   1. Record when the user went idle — do NOT pause the timer yet.
- *   2. Push the warning prompt — timer keeps running visually during the countdown.
- *   3. If the user responds before the countdown expires → just dismiss ("Back to work")
- *      or stop retroactively ("I'm on break").
- *   4. If countdown expires → retroactively stop at idleStartedAt so idle time is
- *      excluded from Worked Today, then push a stopped-confirmation event.
- *
- * Worked Today correctness: sessions are closed at idleStartedAt (not at stop time),
- * so idle time is never counted regardless of when the user actually responds.
+ * Pause the timer when the system sleeps or the screen is locked.
+ * Local pause only — no server command (matches TD2 / plan P2).
  */
+function pauseTimerForSystemAway(reason: string): void {
+  if (store.getTimerStatus() !== "running") return;
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return;
+
+  store.setTimerPaused(new Date());
+  clearIdleTimeout();
+  releaseIdleOnTop();
+  idleStartedAt = null;
+  mainWindow?.webContents.send("agent:idle-dismiss");
+  pushStateToRenderer();
+  console.log(`[Main] ${reason} — timer paused locally (entry=${entryId})`);
+}
+
 /** Bring mainWindow above all other windows for the duration of the idle prompt. */
 function raiseForIdlePrompt(): void {
   if (!mainWindow) return;
@@ -998,6 +1153,40 @@ function releaseIdleOnTop(): void {
   console.log("[Main] idle — alwaysOnTop released");
 }
 
+/**
+ * Resume the timer after an idle prompt — used by both the IPC handler and the
+ * global-input (uiohook) callback so the logic is in one place.
+ */
+function resumeFromIdlePrompt(entryId: string): void {
+  clearIdleActivityCheck();
+  releaseIdleOnTop();
+  idleStartedAt = null;
+
+  store.setTimerRunning(
+    entryId,
+    store.getActiveProjectName(),
+    store.getActiveTaskId(),
+    store.getActiveTaskName(),
+    store.getActiveDescription(),
+  );
+  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+  mainWindow?.webContents.send("agent:idle-dismiss");
+  console.log(`[Main] idle.resume — timer resumed (entry=${entryId})`);
+}
+
+/**
+ * Called by ActivityWorker when idle crosses the configured threshold while timer is running.
+ *
+ * Time-Doctor style flow:
+ *   1. Pause the timer immediately (at idleStartedAt — retroactive).
+ *   2. Enqueue a pause command to the server.
+ *   3. Show the idle prompt (no countdown — session is already safe).
+ *   4. Global input outside the window → auto-resume.
+ *   5. "I'm back" button → resume.
+ *   6. "I'm not working" button → stop (session was already paused at idleStartedAt).
+ */
 function handleIdleUx(idleSeconds: number): void {
   const timerStatus = store.getTimerStatus();
   const entryId = store.getActiveEntryId();
@@ -1011,32 +1200,30 @@ function handleIdleUx(idleSeconds: number): void {
     console.log("[Main] handleIdleUx — skipped: no active entry");
     return;
   }
-  // Guard: if a prompt is already showing, ignore re-triggers caused by mouse movement
-  // resetting the OS idle timer. Without this, each mouse move while the prompt is visible
-  // would call clearIdleTimeout() (killing the ActivityWorker callback + auto-stop timer)
-  // and reset the countdown, effectively dismissing on mouse movement.
+  // Guard: prompt already active (e.g. ActivityWorker fired again before user responded).
   if (idleStartedAt !== null) {
     console.log(`[Main] handleIdleUx — skipped: prompt already active (idleStartedAt=${idleStartedAt.toISOString()})`);
     return;
   }
 
-  // Capture idle start time — used for retroactive session close if the timer stops.
-  // The timer is NOT paused here; it keeps running so the UI remains active.
+  // Backdate the pause to when the user actually went idle.
   idleStartedAt = new Date(Date.now() - idleSeconds * 1000);
+  console.log(`[Main] idle.pause — pausing timer immediately at idleStartedAt=${idleStartedAt.toISOString()} (idleSeconds=${idleSeconds})`);
 
-  const countdown = idleCountdownSeconds;
-  console.log(`[Main] idle.warning — idleSeconds=${idleSeconds} countdown=${countdown}s idleStartedAt=${idleStartedAt.toISOString()}`);
+  // Pause the timer locally at idleStartedAt so idle time is excluded from Worked Today.
+  store.setTimerPaused(idleStartedAt);
+  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+  syncWorker?.triggerSync();
+  pushStateToRenderer();
 
-  // Bring the window above all other windows so the prompt is visible regardless of focus
+  // Raise window so the prompt is visible regardless of focus.
   raiseForIdlePrompt();
 
-  console.log(`[Main] sending agent:idle-prompt to renderer — idleSeconds=${idleSeconds} countdownSeconds=${countdown}`);
-  mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds, countdownSeconds: countdown });
+  mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds });
 
-  // Register a one-shot callback on ActivityWorker (uiohook: global keydown/mousedown).
-  // Must NOT treat clicks inside the agent window as "resume" — those belong to the modal
-  // (e.g. "No, I'm not working") or the renderer's idle-card rules.
-  clearIdleTimeout();
+  // Register a one-shot global-input callback: any keydown/mousedown outside the agent window
+  // counts as "I'm back" and auto-resumes, matching Time Doctor behaviour.
+  clearIdleActivityCheck();
   if (activityWorker) {
     idleActivityCheckActive = true;
     activityWorker.setIdleInputCallback((payload: IdleGlobalInputPayload) => {
@@ -1045,95 +1232,76 @@ function handleIdleUx(idleSeconds: number): void {
           const b = mainWindow.getBounds();
           const { x, y } = payload;
           if (x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height) {
-            return false;
+            return false; // click inside agent window — handled by modal buttons
           }
         }
         if (payload.kind === "keydown" && mainWindow.isFocused()) {
-          return false;
+          return false; // key while window is focused — handled by modal
         }
       }
-      idleActivityCheckActive = false;
-      console.log("[Main] idle.globalActivity — dismiss as resume (outside agent window / key while unfocused)");
-      clearIdleTimeout();
-      releaseIdleOnTop();
-      idleStartedAt = null;
-      mainWindow?.webContents.send("agent:idle-dismiss");
+      // Activity detected outside the agent window → auto-resume
+      const currentEntryId = store.getActiveEntryId();
+      if (currentEntryId && store.getTimerStatus() === "paused") {
+        console.log("[Main] idle.globalActivity — auto-resume (outside agent window / key while unfocused)");
+        resumeFromIdlePrompt(currentEntryId);
+      } else {
+        idleActivityCheckActive = false;
+        clearIdleActivityCheck();
+        releaseIdleOnTop();
+        idleStartedAt = null;
+        mainWindow?.webContents.send("agent:idle-dismiss");
+      }
     });
   }
-
-  // Auto-stop after countdown expires — retroactively excludes idle time from Worked Today
-  idlePromptDismissTimeout = setTimeout(() => {
-    idlePromptDismissTimeout = null;
-    clearIdleActivityCheck();
-    const currentEntryId = store.getActiveEntryId();
-    const capturedIdleStartedAt = idleStartedAt;
-    idleStartedAt = null;
-
-    releaseIdleOnTop();
-    if (currentEntryId && store.getTimerStatus() === "running" && capturedIdleStartedAt) {
-      // Retroactively close session at when idle started, then stop
-      store.setTimerPaused(capturedIdleStartedAt);
-      store.clearTimer();
-      queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId: currentEntryId });
-      pushStateToRenderer();
-      syncWorker?.triggerSync();
-      // Compute actual idle duration from idleStartedAt to now — more accurate than
-      // the threshold-crossing idleSeconds which was captured earlier.
-      const actualIdleSeconds = Math.round((Date.now() - capturedIdleStartedAt.getTime()) / 1000);
-      console.log(`[Main] idle.autoStop — countdown expired, timer stopped retroactively at ${capturedIdleStartedAt.toISOString()} (actualIdleSeconds=${actualIdleSeconds})`);
-      // Push stopped-confirmation so renderer shows the second modal
-      mainWindow?.webContents.send("agent:idle-stopped", {
-        idleSeconds: actualIdleSeconds,
-        idleStartedAt: capturedIdleStartedAt.toISOString(),
-      });
-    } else {
-      mainWindow?.webContents.send("agent:idle-dismiss");
-    }
-  }, countdown * 1000);
 }
 
-/** Renderer: user chose "No, I'm not working" — same outcome as countdown expiry: not running anymore. */
-ipcMain.handle("agent:idle-break", () => {
-  clearIdleTimeout();
+/** Renderer: user clicked "I'm back" — resume the paused timer. */
+ipcMain.handle("agent:idle-resume", () => {
+  clearIdleActivityCheck();
   releaseIdleOnTop();
   const entryId = store.getActiveEntryId();
   const capturedIdleStartedAt = idleStartedAt;
   idleStartedAt = null;
 
-  if (entryId && store.getTimerStatus() === "running") {
-    // Match idle.autoStop: close session at idle start, clear local active timer, enqueue stop.
-    // (Pause-only left the entry active; server resync could flip UI back to "running" briefly.)
-    store.setTimerPaused(capturedIdleStartedAt ?? undefined);
+  if (entryId && (store.getTimerStatus() === "paused" || store.getTimerStatus() === "running")) {
+    store.setTimerRunning(
+      entryId,
+      store.getActiveProjectName(),
+      store.getActiveTaskId(),
+      store.getActiveTaskName(),
+      store.getActiveDescription(),
+    );
+    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
+    pushStateToRenderer();
+    syncWorker?.triggerSync();
+    const idleDuration = capturedIdleStartedAt
+      ? Math.round((Date.now() - capturedIdleStartedAt.getTime()) / 1000)
+      : 0;
+    console.log(`[Main] idle.resume confirmed — timer resumed (entry=${entryId} idleDuration=${idleDuration}s)`);
+  }
+  mainWindow?.webContents.send("agent:idle-dismiss");
+  return { ok: true };
+});
+
+/** Renderer: user chose "I'm not working" — timer is already paused at idleStartedAt; just stop it. */
+ipcMain.handle("agent:idle-break", () => {
+  clearIdleActivityCheck();
+  releaseIdleOnTop();
+  const entryId = store.getActiveEntryId();
+  const capturedIdleStartedAt = idleStartedAt;
+  idleStartedAt = null;
+
+  if (entryId && (store.getTimerStatus() === "paused" || store.getTimerStatus() === "running")) {
+    // Timer was already paused at idleStartedAt — just convert the pause to a full stop.
     store.clearTimer();
     queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
     pushStateToRenderer();
     syncWorker?.triggerSync();
     const ts = capturedIdleStartedAt ?? new Date();
     const actualIdleSeconds = Math.round((Date.now() - ts.getTime()) / 1000);
-    console.log(
-      `[Main] idle.break confirmed — timer stopped retroactively at ${ts.toISOString()} (actualIdleSeconds=${actualIdleSeconds})`
-    );
-    mainWindow?.webContents.send("agent:idle-stopped", {
-      idleSeconds: actualIdleSeconds,
-      idleStartedAt: ts.toISOString(),
-    });
-  } else if (entryId && store.getTimerStatus() === "paused") {
-    console.log("[Main] idle.break confirmed — timer was already paused, no-op");
-    mainWindow?.webContents.send("agent:idle-dismiss");
-  } else {
-    mainWindow?.webContents.send("agent:idle-dismiss");
+    console.log(`[Main] idle.break confirmed — timer stopped (entry=${entryId} idleSince=${ts.toISOString()} idleDuration=${actualIdleSeconds}s)`);
   }
-  return { ok: true };
-});
-
-/** Renderer: user chose "Yes, keep tracking" — timer was never paused, just dismiss the prompt. */
-ipcMain.handle("agent:idle-resume", () => {
-  clearIdleTimeout();
-  releaseIdleOnTop();
-  idleStartedAt = null;
   mainWindow?.webContents.send("agent:idle-dismiss");
-  console.log("[Main] idle.resume confirmed — timer continues running");
-  // Timer was not paused during the warning countdown, so no resume action is needed.
   return { ok: true };
 });
 
@@ -1204,12 +1372,14 @@ app.whenReady().then(() => {
   // confirmed before any worker starts. If these lines are absent the vars
   // are not visible to the Electron process (shell scope issue, not a code bug).
   const _testIdleMin = process.env.DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES;
-  const _testCountdown = process.env.DOCUFLOW_TEST_IDLE_COUNTDOWN_SECONDS;
-  if (_testIdleMin || _testCountdown) {
+  const _testCapture = process.env.DOCUFLOW_TEST_CAPTURE_INTERVAL_SECONDS;
+  const _testDayRollover = process.env.DOCUFLOW_TEST_DAY_ROLLOVER_SECONDS;
+  if (_testIdleMin || _testCapture || _testDayRollover) {
     console.log(
-      `[Main] TEST OVERRIDES active:` +
-      (_testIdleMin    ? ` IDLE_TIMEOUT_MINUTES=${_testIdleMin}`       : "") +
-      (_testCountdown  ? ` IDLE_COUNTDOWN_SECONDS=${_testCountdown}`   : "")
+      "[Main] TEST OVERRIDES:" +
+      (_testIdleMin ? ` IDLE_TIMEOUT_MINUTES=${_testIdleMin}` : "") +
+      (_testCapture ? ` CAPTURE_INTERVAL_SECONDS=${_testCapture}` : "") +
+      (_testDayRollover ? ` DAY_ROLLOVER_SECONDS=${_testDayRollover}` : "")
     );
   } else {
     console.log("[Main] No test overrides detected (DOCUFLOW_TEST_* vars not set)");

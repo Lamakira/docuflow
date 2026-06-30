@@ -26,6 +26,7 @@ const defaultTimerState: TimerState = {
   elapsedToday: 0,
   workedToday: 0,
   thisSession: 0,
+  dayKey: new Date().toDateString(),
   entryId: null,
   taskId: null,
   projectName: null,
@@ -185,10 +186,36 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Local tick when timer is running
+  // Track day key from main (calendar or test rollover) for boundary detection.
+  const timerDayKeyRef = useRef<string>(new Date().toDateString());
+  const lastTickDayRef = useRef<string>(new Date().toDateString());
+
+  useEffect(() => {
+    const key = state.agentState?.timer.dayKey;
+    if (key) {
+      timerDayKeyRef.current = key;
+      lastTickDayRef.current = key;
+    }
+  }, [state.agentState?.timer.dayKey, state.agentState?.timer.elapsedToday]);
+
+  // Local tick when timer is running.
   useEffect(() => {
     if (state.agentState?.timer.status !== 'running') return;
-    const id = setInterval(() => dispatch({ type: 'TICK' }), 1000);
+    const id = setInterval(() => {
+      const mainDayKey = timerDayKeyRef.current;
+      const calendarDay = new Date().toDateString();
+      const isTestDay = mainDayKey.startsWith('test-day-');
+      const boundaryKey = isTestDay ? mainDayKey : calendarDay;
+
+      if (boundaryKey !== lastTickDayRef.current) {
+        lastTickDayRef.current = boundaryKey;
+        bridge.timerState().then((fresh) => {
+          dispatch({ type: 'STATE_UPDATE', payload: { timer: fresh } });
+        }).catch(() => {});
+        return;
+      }
+      dispatch({ type: 'TICK' });
+    }, 1000);
     return () => clearInterval(id);
   }, [state.agentState?.timer.status, state.agentState?.timer.entryId]);
 

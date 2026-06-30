@@ -227,8 +227,10 @@ export function ScreenshotsPage() {
             <circle cx="12" cy="13" r="3" />
           </svg>
           <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-muted)' }}>No screenshots yet</div>
-          <div style={{ fontSize: 12, maxWidth: 260, textAlign: 'center', lineHeight: 1.5, color: 'var(--text-dim)' }}>
+          <div style={{ fontSize: 12, maxWidth: 280, textAlign: 'center', lineHeight: 1.5, color: 'var(--text-dim)' }}>
             Screenshots are captured automatically every 3–5 minutes while the timer is running.
+            They appear here only after being captured on <strong>this device</strong> — older captures
+            and those from other devices are available in the web app.
           </div>
         </div>
       )}

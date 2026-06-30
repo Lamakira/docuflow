@@ -28,12 +28,10 @@ export function ProjectTaskPicker() {
   const [startError, setStartError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  // New-project inline form state
-  const [showNewProject, setShowNewProject] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [creatingProject, setCreatingProject] = useState(false);
-  const [createProjectError, setCreateProjectError] = useState<string | null>(null);
-  const newProjectInputRef = useRef<HTMLInputElement>(null);
+  // Project creation is handled in the web app. The desktop "+" button opens
+  // the create-project page on the current API server so dev/staging/prod all
+  // route to the right place.
+  const CREATE_PROJECT_URL = apiBase ? `${apiBase}/crm/project/new` : 'https://docs.appvibed.com/crm/project/new';
 
   // New-task inline form state
   const [showNewTask, setShowNewTask] = useState(false);
@@ -79,13 +77,6 @@ export function ProjectTaskPicker() {
     }, 1500);
     return () => clearTimeout(t);
   }, [timer?.entryId]);
-
-  // Focus the project input when the form opens
-  useEffect(() => {
-    if (showNewProject) {
-      setTimeout(() => newProjectInputRef.current?.focus(), 50);
-    }
-  }, [showNewProject]);
 
   // Focus the task input when the form opens
   useEffect(() => {
@@ -149,35 +140,9 @@ export function ProjectTaskPicker() {
     }
   }
 
-  function openNewProjectForm() {
-    setShowNewProject(true);
-    setNewProjectName('');
-    setCreateProjectError(null);
-  }
-
-  function cancelNewProject() {
-    setShowNewProject(false);
-    setNewProjectName('');
-    setCreateProjectError(null);
-  }
-
-  async function handleCreateProject(e: React.FormEvent) {
-    e.preventDefault();
-    const name = newProjectName.trim();
-    if (!name) return;
-    setCreatingProject(true);
-    setCreateProjectError(null);
-    const result = await bridge.createProject({ name });
-    setCreatingProject(false);
-    if (result.ok && result.data) {
-      const created: Project = { id: result.data.id, name: result.data.name, status: result.data.status };
-      setProjects((prev) => [...prev, created]);
-      setSelectedProjectId(created.id);
-      setShowNewProject(false);
-      setNewProjectName('');
-    } else {
-      setCreateProjectError(result.error ?? 'Failed to create project');
-    }
+  // Project creation lives in the web app — open the create-project page.
+  function openWebProjectCreation() {
+    bridge.openExternal(CREATE_PROJECT_URL);
   }
 
   return (
@@ -190,48 +155,12 @@ export function ProjectTaskPicker() {
             <span>Projects</span>
             <button
               className="picker-new-btn"
-              title="New project"
-              onClick={openNewProjectForm}
+              title="Create a project (opens the web app)"
+              onClick={openWebProjectCreation}
             >
               +
             </button>
           </div>
-
-          {/* Inline new-project form */}
-          {showNewProject && (
-            <form className="picker-new-project-form" onSubmit={handleCreateProject}>
-              <input
-                ref={newProjectInputRef}
-                className="picker-new-project-input"
-                type="text"
-                placeholder="Project name…"
-                value={newProjectName}
-                onChange={(e) => setNewProjectName(e.target.value)}
-                disabled={creatingProject}
-                maxLength={120}
-              />
-              <div className="picker-new-project-actions">
-                <button
-                  type="submit"
-                  className="picker-new-project-confirm"
-                  disabled={creatingProject || !newProjectName.trim()}
-                >
-                  {creatingProject ? '…' : 'Create'}
-                </button>
-                <button
-                  type="button"
-                  className="picker-new-project-cancel"
-                  onClick={cancelNewProject}
-                  disabled={creatingProject}
-                >
-                  Cancel
-                </button>
-              </div>
-              {createProjectError && (
-                <div className="picker-new-project-error">{createProjectError}</div>
-              )}
-            </form>
-          )}
 
           <div className="picker-search">
             <input

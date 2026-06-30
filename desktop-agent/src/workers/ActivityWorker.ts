@@ -22,9 +22,9 @@
  *   keyboardCount           = total keydown events in the window
  *   mouseCount              = total pointer events in the window
  *
- * Idle detection (powerMonitor.getSystemIdleTime) is UNCHANGED — it still
- * drives the 3-min idle_start/idle_end analytics events and the 10-min
- * auto-pause UX flow. Activity bars are intensity metrics, not idle flags.
+ * Idle detection drives the 3-min idle_start/idle_end analytics events and the
+ * 10-min auto-pause UX flow. On Linux/Wayland, powerMonitor returns 0 — we use
+ * GNOME Mutter IdleMonitor D-Bus (or uiohook last-input time as fallback).
  *
  * Phase 4.4
  */
@@ -32,6 +32,8 @@
 import { powerMonitor } from "electron";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
+import { getLinuxIdleSeconds } from "../lib/LinuxIdleTime";
+import { isWaylandSession } from "../lib/platform";
 
 // ─── Timing constants ───
 const IDLE_CHECK_INTERVAL_MS = 5_000;
@@ -118,6 +120,7 @@ export class ActivityWorker {
   // ─── Idle UX policy (admin-configurable, updated via applyIdlePolicy()) ───
   private idleUxEnabled = true;
   private idleUxThresholdSeconds = IDLE_UX_THRESHOLD_SECONDS;
+  private lastIdleProgressLogMs = 0;
 
   // ─── uiohook mode: per-second circular buffers ───
   /** 60-slot ring buffer. Slot = 1 if ≥1 keydown event occurred in that second, else 0. */
@@ -138,6 +141,8 @@ export class ActivityWorker {
 
   // ─── Mode flag ───
   private _uiohookActive = false;
+  /** Last global input timestamp (uiohook) — fallback idle source on Linux/Wayland. */
+  private lastInputAtMs = Date.now();
 
   // ─── uiohook handler references (needed for .off()) ───
   private kbDownHandler: ((...args: unknown[]) => void) | null = null;
@@ -171,6 +176,15 @@ export class ActivityWorker {
    */
   applyIdlePolicy(enabled: boolean, timeoutMinutes: number): void {
     this.idleUxEnabled = enabled;
+    const testOverride = process.env.DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES;
+    if (testOverride) {
+      const mins = Math.max(1, parseInt(testOverride, 10) || 1);
+      this.idleUxThresholdSeconds = mins * 60;
+      console.log(
+        `[ActivityWorker] Idle policy (test override kept): enabled=${enabled} timeout=${mins}min`
+      );
+      return;
+    }
     const effectiveMinutes = Math.max(1, Math.min(60, timeoutMinutes));
     this.idleUxThresholdSeconds = effectiveMinutes * 60;
     console.log(
@@ -222,7 +236,15 @@ export class ActivityWorker {
     }
 
     const mode = this._uiohookActive ? "uiohook (keyboard+mouse separated)" : "powerMonitor fallback (unified)";
-    console.log(`[ActivityWorker] Started — idle: 5s, window: 10s, activity: ${mode}`);
+    const idleSource =
+      process.platform === "linux" && isWaylandSession()
+        ? getLinuxIdleSeconds() !== null
+          ? "mutter-dbus"
+          : this._uiohookActive
+            ? "uiohook-last-input"
+            : "powerMonitor (may be broken on Wayland)"
+        : "powerMonitor";
+    console.log(`[ActivityWorker] Started — idle: 5s, window: 10s, activity: ${mode}, idleSource: ${idleSource}`);
   }
 
   private startUiohook(): void {
@@ -230,6 +252,7 @@ export class ActivityWorker {
     try {
       this.kbDownHandler = () => {
         const now = Date.now();
+        this.lastInputAtMs = now;
         this.markKbSecond(now);
         this.kbTimes.push(now);
         if (this.kbTimes.length > 10_000) this.kbTimes.splice(0, 5_000);
@@ -242,6 +265,7 @@ export class ActivityWorker {
 
       this.mouseDownHandler = (...args: unknown[]) => {
         const now = Date.now();
+        this.lastInputAtMs = now;
         this.markMsSecond(now);
         this.msTimes.push(now);
         if (this.msTimes.length > 10_000) this.msTimes.splice(0, 5_000);
@@ -260,6 +284,7 @@ export class ActivityWorker {
         const now = Date.now();
         if (now - this.lastMouseMoveMs < MOUSEMOVE_THROTTLE_MS) return;
         this.lastMouseMoveMs = now;
+        this.lastInputAtMs = now;
         this.markMsSecond(now);
         this.msTimes.push(now);
         if (this.msTimes.length > 10_000) this.msTimes.splice(0, 5_000);
@@ -267,6 +292,7 @@ export class ActivityWorker {
 
       this.wheelHandler = () => {
         const now = Date.now();
+        this.lastInputAtMs = now;
         this.markMsSecond(now);
         this.msTimes.push(now);
         if (this.msTimes.length > 10_000) this.msTimes.splice(0, 5_000);
@@ -399,18 +425,51 @@ export class ActivityWorker {
     };
   }
 
-  // ─── Idle detection (unchanged — drives auto-pause and analytics) ───
+  // ─── Idle detection (drives auto-pause and analytics) ───
+
+  /**
+   * System idle seconds. On Linux/Wayland, Electron's powerMonitor always returns 0;
+   * prefer Mutter D-Bus, then uiohook last-input, then powerMonitor.
+   */
+  private getEffectiveIdleSeconds(): number {
+    if (process.platform === "linux" && isWaylandSession()) {
+      const linuxIdle = getLinuxIdleSeconds();
+      if (linuxIdle !== null) return linuxIdle;
+      if (this._uiohookActive) {
+        return Math.floor((Date.now() - this.lastInputAtMs) / 1000);
+      }
+    }
+    return powerMonitor.getSystemIdleTime();
+  }
 
   private checkIdle(): void {
-    const idleSeconds = powerMonitor.getSystemIdleTime();
+    const idleSeconds = this.getEffectiveIdleSeconds();
     const timerStatus = this.store.getTimerStatus();
 
     // Diagnostic log every 5 s — shows all four conditions at once.
     if (process.env.DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES) {
+      const source =
+        process.platform === "linux" && isWaylandSession()
+          ? "linux-dbus/uiohook"
+          : "powerMonitor";
       console.log(
         `[ActivityWorker][TEST] idle=${idleSeconds}s threshold=${this.idleUxThresholdSeconds}s` +
-        ` enabled=${this.idleUxEnabled} triggered=${this.idleUxTriggered} timer=${timerStatus}`
+        ` enabled=${this.idleUxEnabled} triggered=${this.idleUxTriggered} timer=${timerStatus}` +
+        ` source=${source}`
       );
+    } else if (
+      process.env.DOCUFLOW_DEBUG_IDLE === "true" &&
+      timerStatus === "running" &&
+      this.idleUxEnabled
+    ) {
+      const now = Date.now();
+      if (now - this.lastIdleProgressLogMs >= 60_000) {
+        this.lastIdleProgressLogMs = now;
+        console.log(
+          `[ActivityWorker][idle] ${idleSeconds}s / ${this.idleUxThresholdSeconds}s` +
+          ` (${Math.round(this.idleUxThresholdSeconds / 60)} min threshold)`
+        );
+      }
     }
 
     // Analytics idle events (3-min threshold — unchanged)

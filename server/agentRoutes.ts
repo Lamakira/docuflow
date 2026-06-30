@@ -891,6 +891,12 @@ export function registerAgentRoutes(app: Express): void {
       const userId = req.agentUserId!;
       const { crmProjectId } = req.query as { crmProjectId?: string };
       if (!crmProjectId) return res.status(400).json({ message: "crmProjectId is required" });
+      const crmProject = await storage.getCrmProject(crmProjectId);
+      if (!crmProject) return res.status(404).json({ message: "Project not found" });
+      const isMember =
+        crmProject.members.some((m: any) => m.userId === userId) ||
+        crmProject.project?.ownerId === userId;
+      if (!isMember) return res.status(403).json({ message: "Access denied" });
       const taskList = await storage.getTasks({ crmProjectId });
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -901,6 +907,42 @@ export function registerAgentRoutes(app: Express): void {
     } catch (error) {
       logError("agent.tasks.list.failed", error);
       res.status(500).json({ message: "Failed to list tasks" });
+    }
+  });
+
+  /** Agent: create a task under a CRM project (mirrors web POST /api/tasks, Bearer auth). */
+  app.post("/api/agent/tasks", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
+    if (!isTasksEnabled()) {
+      return res.status(503).json({ message: "Tasks feature not available yet — migration pending" });
+    }
+    try {
+      const userId = req.agentUserId!;
+      const { crmProjectId, name, description } = req.body as {
+        crmProjectId?: string;
+        name?: string;
+        description?: string;
+      };
+      if (!crmProjectId || !name?.trim()) {
+        return res.status(400).json({ message: "crmProjectId and name are required" });
+      }
+      const crmProject = await storage.getCrmProject(crmProjectId);
+      if (!crmProject) return res.status(404).json({ message: "Project not found" });
+      const isMember =
+        crmProject.members.some((m: any) => m.userId === userId) ||
+        crmProject.project?.ownerId === userId;
+      if (!isMember) return res.status(403).json({ message: "Access denied" });
+      const task = await storage.createTask({
+        crmProjectId,
+        name: name.trim(),
+        description: description?.trim() || null,
+        status: "open",
+      });
+      logInfo("agent.tasks.create", { taskId: task.id, crmProjectId, userId });
+      res.status(201).json({ id: task.id, name: task.name, status: task.status, crmProjectId: task.crmProjectId });
+    } catch (error: any) {
+      logError("agent.tasks.create.failed", error);
+      const detail = error?.message ?? "Unknown error";
+      res.status(500).json({ message: `Failed to create task: ${detail}` });
     }
   });
 

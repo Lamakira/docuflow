@@ -8,6 +8,7 @@ import { TimerPage } from '../pages/TimerPage';
 import { ActivityPage } from '../pages/ActivityPage';
 import { ScreenshotsPage } from '../pages/ScreenshotsPage';
 import { SettingsPage } from '../pages/SettingsPage';
+import { UpdateBanner } from '../components/common/UpdateBanner';
 
 export function AgentLayout() {
   const { state } = useAgent();
@@ -17,6 +18,7 @@ export function AgentLayout() {
     <div className="agent-layout">
       <AgentSidebar />
       <div className="agent-main">
+        <UpdateBanner />
         <ActiveTimerHeader />
         <WorkedToday />
         <div className="agent-page">

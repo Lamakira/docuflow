@@ -13,6 +13,7 @@ import { app } from "electron";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { getLocalDayKey, getLocalDayWindowMs } from "./dayBoundary";
 
 /** One continuous run of the timer for a given time entry. */
 export interface TrackingSession {
@@ -508,12 +509,8 @@ export class AgentStore {
     const entryId = this.data.activeEntryId;
     if (!entryId) return 0;
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const midnight = todayStart.getTime();
-    const endOfDay = new Date(todayStart);
-    endOfDay.setHours(23, 59, 59, 999);
-    const endMs = endOfDay.getTime();
+    const { startMs: midnight, endMs } = getLocalDayWindowMs(now);
+    const endMsClamped = Math.min(endMs, now);
 
     if (this.data.activeEntryStartTime) {
       const startMs = new Date(this.data.activeEntryStartTime).getTime();
@@ -521,7 +518,7 @@ export class AgentStore {
       const spanEnd = this.getActiveSpanWallEndMs(entryId, now);
       const totalWallMs = Math.max(1, spanEnd - startMs);
       const overlapStart = Math.max(startMs, midnight);
-      const overlapEnd = Math.min(spanEnd, endMs, now);
+      const overlapEnd = Math.min(spanEnd, endMsClamped, now);
       const inWindowMs = Math.max(0, overlapEnd - overlapStart);
       if (inWindowMs <= 0) return 0;
       return Math.round(totalActive * (inWindowMs / totalWallMs));
@@ -595,6 +592,7 @@ export class AgentStore {
     elapsedToday: number;
     workedToday: number;
     thisSession: number;
+    dayKey: string;
     projectName: string | null;
     taskName: string | null;
     description: string | null;
@@ -607,6 +605,7 @@ export class AgentStore {
       elapsedToday: this.getElapsedTodaySeconds(),
       workedToday: this.getWorkedTodaySeconds(),
       thisSession: this.getThisSessionSeconds(),
+      dayKey: getLocalDayKey(),
       projectName: this.data.activeProjectName,
       taskName: this.data.activeTaskName,
       description: this.runtime.activeDescription,

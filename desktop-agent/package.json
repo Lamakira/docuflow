@@ -7,7 +7,11 @@
   "homepage": "https://docs.appvibed.com",
   "scripts": {
     "predev": "node scripts/kill-port.js 9000",
-    "dev": "electron-forge start",
+    "dev": "DOCUFLOW_DEBUG_IDLE=true electron-forge start",
+    "dev:test": "DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES=1 DOCUFLOW_TEST_CAPTURE_INTERVAL_SECONDS=45 DOCUFLOW_TEST_DAY_ROLLOVER_SECONDS=120 electron-forge start",
+    "dev:test-idle": "DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES=1 electron-forge start",
+    "dev:test-capture": "DOCUFLOW_TEST_CAPTURE_INTERVAL_SECONDS=30 electron-forge start",
+    "dev:test-day": "DOCUFLOW_TEST_DAY_ROLLOVER_SECONDS=120 electron-forge start",
     "package": "electron-forge package",
     "dist:win": "node scripts/dist-win.js",
     "dist:win:debug": "node scripts/dist-win.js --debug",

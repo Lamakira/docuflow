@@ -29,6 +29,16 @@ contextBridge.exposeInMainWorld("agentBridge", {
   // Open URL in default browser
   openExternal: (url: string) => ipcRenderer.invoke("agent:open-external", url),
 
+  // In-app update check
+  checkUpdate: (): Promise<{
+    ok: boolean;
+    updateAvailable?: boolean;
+    currentVersion: string;
+    latestVersion?: string;
+    downloadUrl?: string;
+    error?: string;
+  }> => ipcRenderer.invoke("agent:check-update"),
+
   // Daily totals
   getWorkedToday: () => ipcRenderer.invoke("agent:get-worked-today"),
   getTodayBreakdown: () => ipcRenderer.invoke("agent:today-breakdown"),
@@ -36,8 +46,8 @@ contextBridge.exposeInMainWorld("agentBridge", {
   // Idle / break
   idleBreak: () => ipcRenderer.invoke("agent:idle-break"),
   idleResume: () => ipcRenderer.invoke("agent:idle-resume"),
-  onIdlePrompt: (callback: (data: { idleSeconds: number; countdownSeconds: number }) => void) => {
-    const handler = (_event: any, data: { idleSeconds: number; countdownSeconds: number }) => callback(data);
+  onIdlePrompt: (callback: (data: { idleSeconds: number }) => void) => {
+    const handler = (_event: any, data: { idleSeconds: number }) => callback(data);
     ipcRenderer.on("agent:idle-prompt", handler);
     return () => ipcRenderer.off("agent:idle-prompt", handler);
   },
@@ -45,11 +55,6 @@ contextBridge.exposeInMainWorld("agentBridge", {
     const handler = () => callback();
     ipcRenderer.on("agent:idle-dismiss", handler);
     return () => ipcRenderer.off("agent:idle-dismiss", handler);
-  },
-  onIdleStopped: (callback: (data: { idleSeconds: number; idleStartedAt: string }) => void) => {
-    const handler = (_event: any, data: { idleSeconds: number; idleStartedAt: string }) => callback(data);
-    ipcRenderer.on("agent:idle-stopped", handler);
-    return () => ipcRenderer.off("agent:idle-stopped", handler);
   },
 
   // Login progress events pushed from main during waitForBackend + loginWithPassword
