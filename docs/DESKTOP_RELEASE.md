@@ -24,16 +24,18 @@ v0.1.7 — dernière version enregistrée en DB, les 3 plateformes pointent vers
 | macOS | `DocuFlow-Agent-0.1.8-macos.dmg` | 93.8 MB | `c6133b17...` |
 | Linux | `DocuFlow-Agent-0.1.8-linux-amd64.deb` | 73.2 MB | `e591fec3...` |
 
-**v0.1.9 — à publier** (correctifs UX) :
+**v0.1.10 — publiée le 2026-06-30** (correctifs sécurité et UX) :
 
-Changements inclus dans v0.1.9 :
-- **Bouton + pour créer des tâches** dans le picker projet/tâche de l'agent
-- **Formulaire inline de création de projet** dans l'agent (+ dans la colonne Projets)
-- **Icône tray macOS corrigée** — utilise maintenant `tray-icon.png` (16×16) au lieu de `icon.png` (grande icône)
-- **Screenshots visibles** — les fichiers locaux ne sont plus supprimés après upload ; nettoyage automatique des fichiers > 30 jours
-- **Erreur de création de projet explicite** — le message d'erreur réel est retourné au lieu du message générique
+Changements inclus dans v0.1.10 :
+- **Corrections de sécurité** — autorisation par projet sur les endpoints `/api/agent/tasks`
+- **Corrections Wayland** — nettoyage robuste du portail PipeWire (`pause` restaure le display)
+- **URL de création de projet** — utilise la configuration `apiBase` au lieu de l'URL de production
 
-> Pour publier v0.1.9, suivre la procédure ci-dessous (build + upload GCS + enregistrement DB avec version `0.1.9`).
+| Plateforme | Fichier | Taille | SHA256 |
+|------------|---------|--------|--------|
+| Windows | `DocuFlow-Agent-0.1.10-windows-setup.exe` | 64.8 MB | `fa0568ffb560d8deeff06cf8a681b71e3b1c1d576b26e7e2a55f12938553507e` |
+| macOS | `DocuFlow-Agent-0.1.10-macos.dmg` | 93.8 MB | `749e704d304f644d2eea46e2f8c2f371c599bb1bc9974d0fdf10495a3aa781d0` |
+| Linux | `DocuFlow-Agent-0.1.10-linux-amd64.deb` | 73.0 MB | `491bf2c97ea3967c517cf2ed12aa11ff3eaaa6d8edcd56dd6c7cf9e7bf25d82a` |
 
 ## Architecture de distribution
 

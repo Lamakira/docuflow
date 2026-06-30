@@ -1005,6 +1005,19 @@ export function registerAgentRoutes(app: Express): void {
       if (!crmProjectId) {
         return res.status(400).json({ message: "crmProjectId is required" });
       }
+
+      // Verify user is a member of the project
+      const crmProject = await storage.getCrmProject(crmProjectId);
+      if (!crmProject) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      const isMember =
+        crmProject.members.some((m: any) => m.userId === userId) ||
+        crmProject.project?.ownerId === userId;
+      if (!isMember) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
       if (isTasksEnabled() && !taskId) {
         return res.status(400).json({ message: "taskId is required" });
       }
