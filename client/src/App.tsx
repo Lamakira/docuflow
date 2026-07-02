@@ -26,6 +26,8 @@ import CompanyDocumentEditorPage from "@/pages/CompanyDocumentEditorPage";
 import FileViewerPage from "@/pages/FileViewerPage";
 import AdminPage from "@/pages/AdminPage";
 import AdminAnalyticsPage from "@/pages/AdminAnalyticsPage";
+import DailyUpdatePage from "@/pages/DailyUpdatePage";
+import DailyUpdatesAdminPage from "@/pages/DailyUpdatesAdminPage";
 import TimeTrackingPage from "@/pages/TimeTrackingPage";
 import DevicesPage from "@/pages/DevicesPage";
 import TimeTrackingProjectsPage from "@/pages/TimeTrackingProjectsPage";
@@ -109,10 +111,12 @@ function Router() {
         <Route path="/company-documents/:id/view" component={FileViewerPage} />
         <Route path="/project/:projectId" component={ProjectPage} />
         <Route path="/document/:documentId" component={DocumentPage} />
+        <Route path="/daily-update" component={DailyUpdatePage} />
         <Route path="/admin" component={AdminPage} />
         <Route path="/admin/create" component={AdminPage} />
         <Route path="/admin/user/:id" component={AdminPage} />
         <Route path="/admin/analytics" component={AdminAnalyticsPage} />
+        <Route path="/admin/daily-updates" component={DailyUpdatesAdminPage} />
         <Route path="/time-tracking" component={TimeTrackingPage} />
         <Route path="/time-tracking/projects" component={TimeTrackingProjectsPage} />
         <Route path="/time-tracking/devices" component={DevicesPage} />

@@ -1380,6 +1380,58 @@ export const desktopReleases = pgTable(
 
 export type DesktopRelease = typeof desktopReleases.$inferSelect;
 
+// ─── Project Daily Updates ───
+// Users submit daily status updates for CRM projects they work on.
+// Admins review all submissions in a dashboard table.
+
+export const projectDailyUpdates = pgTable(
+  "project_daily_updates",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    crmProjectId: varchar("crm_project_id").notNull().references(() => crmProjects.id, { onDelete: "cascade" }),
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    updateDate: timestamp("update_date").notNull().defaultNow(),
+    status: varchar("status", { length: 50 }).notNull(),
+    whatHappened: text("what_happened"),
+    whatWasDone: text("what_was_done"),
+    needsClientUpdate: boolean("needs_client_update").notNull().default(false),
+    needsClientSubmission: boolean("needs_client_submission").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_daily_updates_project").on(table.crmProjectId),
+    index("idx_daily_updates_user").on(table.userId),
+    index("idx_daily_updates_date").on(table.updateDate),
+    uniqueIndex("idx_daily_updates_unique").on(table.crmProjectId, table.userId, table.updateDate),
+  ]
+);
+
+export const projectDailyUpdatesRelations = relations(projectDailyUpdates, ({ one }) => ({
+  crmProject: one(crmProjects, {
+    fields: [projectDailyUpdates.crmProjectId],
+    references: [crmProjects.id],
+  }),
+  user: one(users, {
+    fields: [projectDailyUpdates.userId],
+    references: [users.id],
+  }),
+}));
+
+export const insertProjectDailyUpdateSchema = createInsertSchema(projectDailyUpdates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type ProjectDailyUpdate = typeof projectDailyUpdates.$inferSelect;
+export type InsertProjectDailyUpdate = z.infer<typeof insertProjectDailyUpdateSchema>;
+
+export type ProjectDailyUpdateWithDetails = ProjectDailyUpdate & {
+  crmProject?: CrmProject & { project?: Project };
+  user?: SafeUser;
+};
+
 // ─── Evidence Quality Score ───
 //
 // A per-user (or per-entry) composite score (0–100) that measures how well

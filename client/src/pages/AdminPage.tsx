@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore, BarChart2, Camera, Monitor } from "lucide-react";
+import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore, BarChart2, Camera, Monitor, ClipboardList } from "lucide-react";
 import { AnalyticsContent } from "./AdminAnalyticsPage";
 import type { SafeUser, CrmModule, CrmModuleField, CrmModuleWithFields, CrmFieldType, crmFieldTypeValues, ScreenshotPolicy } from "@shared/schema";
 import { DEFAULT_SCREENSHOT_POLICY } from "@shared/schema";
@@ -116,6 +116,13 @@ function AdminMainPage() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
         </div>
+      </div>
+
+      <div className="flex gap-3 flex-wrap">
+        <Button variant="outline" onClick={() => setLocation("/admin/daily-updates")} data-testid="link-daily-updates-dashboard">
+          <ClipboardList className="w-4 h-4 mr-2" />
+          Daily Updates Dashboard
+        </Button>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

@@ -16,6 +16,7 @@ import {
   insertCrmContactSchema,
   insertCrmProjectSchema,
   insertReminderSchema,
+  insertProjectDailyUpdateSchema,
   crmProjectStatusValues,
   crmProjectTypeValues
 } from "@shared/schema";
@@ -4817,6 +4818,108 @@ Instructions:
     } catch (error) {
       console.error("Error soft-deleting screenshot:", error);
       res.status(500).json({ message: "Failed to delete screenshot" });
+    }
+  });
+
+  // ─── Project Daily Updates ───
+
+  app.post("/api/daily-updates", isAuthenticated, async (req, res) => {
+    try {
+      const data = insertProjectDailyUpdateSchema.parse(req.body);
+      const update = await storage.createProjectDailyUpdate({
+        ...data,
+        userId: getUserId(req),
+      });
+      res.status(201).json(update);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error creating daily update:", error);
+      res.status(500).json({ message: "Failed to create daily update" });
+    }
+  });
+
+  app.get("/api/daily-updates", isAuthenticated, async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      const dateParam = req.query.date as string | undefined;
+      const date = dateParam ? new Date(dateParam) : undefined;
+      const updates = await storage.getProjectDailyUpdatesByUser(userId, { date });
+      res.json(updates);
+    } catch (error) {
+      console.error("Error fetching daily updates:", error);
+      res.status(500).json({ message: "Failed to fetch daily updates" });
+    }
+  });
+
+  app.patch("/api/daily-updates/:id", isAuthenticated, async (req, res) => {
+    try {
+      const existing = await storage.getProjectDailyUpdate(req.params.id);
+      if (!existing) return res.status(404).json({ message: "Not found" });
+      if (existing.userId !== getUserId(req)) return res.status(403).json({ message: "Forbidden" });
+      const data = insertProjectDailyUpdateSchema.partial().parse(req.body);
+      const updated = await storage.updateProjectDailyUpdate(req.params.id, data);
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error updating daily update:", error);
+      res.status(500).json({ message: "Failed to update daily update" });
+    }
+  });
+
+  app.delete("/api/daily-updates/:id", isAuthenticated, async (req, res) => {
+    try {
+      const existing = await storage.getProjectDailyUpdate(req.params.id);
+      if (!existing) return res.status(404).json({ message: "Not found" });
+      if (existing.userId !== getUserId(req)) return res.status(403).json({ message: "Forbidden" });
+      await storage.deleteProjectDailyUpdate(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting daily update:", error);
+      res.status(500).json({ message: "Failed to delete daily update" });
+    }
+  });
+
+  app.get("/api/admin/daily-updates", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { startDate, endDate, userId, crmProjectId } = req.query;
+      const updates = await storage.getProjectDailyUpdatesForAdmin({
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+        userId: userId as string | undefined,
+        crmProjectId: crmProjectId as string | undefined,
+      });
+      res.json(updates);
+    } catch (error) {
+      console.error("Error fetching admin daily updates:", error);
+      res.status(500).json({ message: "Failed to fetch daily updates" });
+    }
+  });
+
+  app.get("/api/admin/daily-updates/kpis", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { startDate, endDate } = req.query;
+      const updates = await storage.getProjectDailyUpdatesForAdmin({
+        startDate: startDate ? new Date(startDate as string) : undefined,
+        endDate: endDate ? new Date(endDate as string) : undefined,
+      });
+      const total = updates.length;
+      const needsClientUpdate = updates.filter((u) => u.needsClientUpdate).length;
+      const needsClientSubmission = updates.filter((u) => u.needsClientSubmission).length;
+      const activeUsers = new Set(updates.map((u) => u.userId)).size;
+      const activeProjects = new Set(updates.map((u) => u.crmProjectId)).size;
+      const today = new Date();
+      const todayUpdates = updates.filter((u) => {
+        const d = new Date(u.updateDate);
+        return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+      }).length;
+      res.json({ total, needsClientUpdate, needsClientSubmission, activeUsers, activeProjects, todayUpdates });
+    } catch (error) {
+      console.error("Error fetching daily update KPIs:", error);
+      res.status(500).json({ message: "Failed to fetch KPIs" });
     }
   });
 

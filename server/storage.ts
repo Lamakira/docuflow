@@ -101,6 +101,10 @@ import {
   DEFAULT_ALLOWED_TIMEZONES,
   type EvidenceGrade,
   type EvidenceQualityReport,
+  projectDailyUpdates,
+  type ProjectDailyUpdate,
+  type InsertProjectDailyUpdate,
+  type ProjectDailyUpdateWithDetails,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, lt, lte, asc, count, inArray } from "drizzle-orm";
@@ -343,6 +347,14 @@ export interface IStorage {
   getProjectMembers(crmProjectId: string): Promise<ProjectMemberWithUser[]>;
   addProjectMember(crmProjectId: string, userId: string): Promise<ProjectMember>;
   removeProjectMember(crmProjectId: string, userId: string): Promise<void>;
+
+  // Project Daily Updates
+  createProjectDailyUpdate(data: InsertProjectDailyUpdate): Promise<ProjectDailyUpdate>;
+  getProjectDailyUpdate(id: string): Promise<ProjectDailyUpdate | undefined>;
+  getProjectDailyUpdatesByUser(userId: string, options?: { date?: Date }): Promise<ProjectDailyUpdateWithDetails[]>;
+  getProjectDailyUpdatesForAdmin(options?: { startDate?: Date; endDate?: Date; userId?: string; crmProjectId?: string }): Promise<ProjectDailyUpdateWithDetails[]>;
+  updateProjectDailyUpdate(id: string, data: Partial<InsertProjectDailyUpdate>): Promise<ProjectDailyUpdate | undefined>;
+  deleteProjectDailyUpdate(id: string): Promise<void>;
 
   // Reminders (self only)
   createReminder(data: InsertReminder): Promise<Reminder>;
@@ -2789,8 +2801,74 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ═══════════════════════════════════════
-  // Reminders (self only)
-  // ═══════════════════════════════════════
+
+  // ─── Project Daily Updates ───
+
+  async createProjectDailyUpdate(data: InsertProjectDailyUpdate): Promise<ProjectDailyUpdate> {
+    const [update] = await db.insert(projectDailyUpdates).values(data).returning();
+    return update;
+  }
+
+  async getProjectDailyUpdate(id: string): Promise<ProjectDailyUpdate | undefined> {
+    const [update] = await db.select().from(projectDailyUpdates).where(eq(projectDailyUpdates.id, id));
+    return update;
+  }
+
+  async getProjectDailyUpdatesByUser(userId: string, options?: { date?: Date }): Promise<ProjectDailyUpdateWithDetails[]> {
+    const conditions: any[] = [eq(projectDailyUpdates.userId, userId)];
+    if (options?.date) {
+      const start = new Date(options.date.getFullYear(), options.date.getMonth(), options.date.getDate(), 0, 0, 0, 0);
+      const end = new Date(options.date.getFullYear(), options.date.getMonth(), options.date.getDate(), 23, 59, 59, 999);
+      conditions.push(sql`${projectDailyUpdates.updateDate} >= ${start}`);
+      conditions.push(sql`${projectDailyUpdates.updateDate} <= ${end}`);
+    }
+    const rows = await db.select().from(projectDailyUpdates).where(and(...conditions)).orderBy(desc(projectDailyUpdates.updateDate));
+    return this._hydrateDailyUpdates(rows);
+  }
+
+  async getProjectDailyUpdatesForAdmin(options?: { startDate?: Date; endDate?: Date; userId?: string; crmProjectId?: string }): Promise<ProjectDailyUpdateWithDetails[]> {
+    const conditions: any[] = [];
+    if (options?.startDate) conditions.push(sql`${projectDailyUpdates.updateDate} >= ${options.startDate}`);
+    if (options?.endDate) conditions.push(sql`${projectDailyUpdates.updateDate} <= ${options.endDate}`);
+    if (options?.userId) conditions.push(eq(projectDailyUpdates.userId, options.userId));
+    if (options?.crmProjectId) conditions.push(eq(projectDailyUpdates.crmProjectId, options.crmProjectId));
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const rows = await db.select().from(projectDailyUpdates).where(whereClause).orderBy(desc(projectDailyUpdates.updateDate));
+    return this._hydrateDailyUpdates(rows);
+  }
+
+  private async _hydrateDailyUpdates(rows: ProjectDailyUpdate[]): Promise<ProjectDailyUpdateWithDetails[]> {
+    if (rows.length === 0) return [];
+    const crmProjectIds = [...new Set(rows.map((r) => r.crmProjectId))];
+    const userIds = [...new Set(rows.map((r) => r.userId))];
+    const crmRows = crmProjectIds.length > 0 ? await db.select().from(crmProjects).where(inArray(crmProjects.id, crmProjectIds)) : [];
+    const projectIds = [...new Set(crmRows.map((r) => r.projectId))];
+    const projectsData = projectIds.length > 0 ? await db.select().from(projects).where(inArray(projects.id, projectIds)) : [];
+    const usersData = userIds.length > 0 ? await db.select().from(users).where(inArray(users.id, userIds)) : [];
+    const crmMap = new Map(crmRows.map((r) => [r.id, r]));
+    const projectMap = new Map(projectsData.map((p) => [p.id, p]));
+    const userMap = new Map(usersData.map((u) => [u.id, u]));
+    return rows.map((row) => {
+      const crmProject = crmMap.get(row.crmProjectId);
+      const user = userMap.get(row.userId);
+      return {
+        ...row,
+        crmProject: crmProject ? { ...crmProject, project: projectMap.get(crmProject.projectId) } : undefined,
+        user: user ? { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, profileImageUrl: user.profileImageUrl, createdAt: user.createdAt, updatedAt: user.updatedAt } as SafeUser : undefined,
+      };
+    });
+  }
+
+  async updateProjectDailyUpdate(id: string, data: Partial<InsertProjectDailyUpdate>): Promise<ProjectDailyUpdate | undefined> {
+    const [updated] = await db.update(projectDailyUpdates).set(data).where(eq(projectDailyUpdates.id, id)).returning();
+    return updated;
+  }
+
+  async deleteProjectDailyUpdate(id: string): Promise<void> {
+    await db.delete(projectDailyUpdates).where(eq(projectDailyUpdates.id, id));
+  }
+
+// ═══════════════════════════════════════
 
   async createReminder(data: InsertReminder): Promise<Reminder> {
     const [reminder] = await db.insert(reminders).values(data).returning();
