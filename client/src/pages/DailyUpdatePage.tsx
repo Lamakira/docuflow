@@ -7,12 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { Calendar, Send, Clock, Briefcase } from "lucide-react";
+import { Calendar, Send, Clock, Briefcase, Check, ChevronsUpDown } from "lucide-react";
 import DailyUpdatesAdminPage from "@/pages/DailyUpdatesAdminPage";
 import {
   dailyUpdateStatusOptions,
@@ -30,6 +33,7 @@ export default function DailyUpdatePage() {
   const today = format(new Date(), "yyyy-MM-dd");
 
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [progressToday, setProgressToday] = useState("");
   const [nextSteps, setNextSteps] = useState("");
@@ -129,22 +133,59 @@ export default function DailyUpdatePage() {
               {projectsLoading ? (
                 <Skeleton className="h-9 w-full" />
               ) : (
-                <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                  <SelectTrigger data-testid="select-project">
-                    <SelectValue placeholder="Select a project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.length === 0 ? (
-                      <div className="px-2 py-4 text-sm text-muted-foreground text-center">No projects available</div>
-                    ) : (
-                      projects.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.project?.name || "Untitled project"}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+                <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={projectPickerOpen}
+                      className="w-full justify-between font-normal"
+                      data-testid="select-project"
+                    >
+                      <span className="truncate">
+                        {selectedProjectId
+                          ? projects.find((p) => p.id === selectedProjectId)?.project?.name || "Untitled project"
+                          : "Select a project"}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command
+                      filter={(value, search) => {
+                        const p = projects.find((pr) => pr.id === value);
+                        const name = (p?.project?.name || "").toLowerCase();
+                        return name.includes(search.toLowerCase()) ? 1 : 0;
+                      }}
+                    >
+                      <CommandInput placeholder="Search projects..." data-testid="input-project-search" />
+                      <CommandList>
+                        <CommandEmpty>No projects found.</CommandEmpty>
+                        <CommandGroup>
+                          {projects.map((p) => (
+                            <CommandItem
+                              key={p.id}
+                              value={p.id}
+                              onSelect={(currentValue) => {
+                                setSelectedProjectId(currentValue === selectedProjectId ? "" : currentValue);
+                                setProjectPickerOpen(false);
+                              }}
+                              data-testid={`option-project-${p.id}`}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  selectedProjectId === p.id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              <span className="truncate">{p.project?.name || "Untitled project"}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               )}
             </div>
 
