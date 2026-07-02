@@ -16,7 +16,7 @@ import {
   insertCrmContactSchema,
   insertCrmProjectSchema,
   insertReminderSchema,
-  insertProjectDailyUpdateSchema,
+  createProjectDailyUpdateApiSchema,
   crmProjectStatusValues,
   crmProjectTypeValues
 } from "@shared/schema";
@@ -4825,7 +4825,7 @@ Instructions:
 
   app.post("/api/daily-updates", isAuthenticated, async (req, res) => {
     try {
-      const data = insertProjectDailyUpdateSchema.parse(req.body);
+      const data = createProjectDailyUpdateApiSchema.parse(req.body);
       const update = await storage.createProjectDailyUpdate({
         ...data,
         userId: getUserId(req),
@@ -4858,7 +4858,7 @@ Instructions:
       const existing = await storage.getProjectDailyUpdate(req.params.id);
       if (!existing) return res.status(404).json({ message: "Not found" });
       if (existing.userId !== getUserId(req)) return res.status(403).json({ message: "Forbidden" });
-      const data = insertProjectDailyUpdateSchema.partial().parse(req.body);
+      const data = createProjectDailyUpdateApiSchema.partial().parse(req.body);
       const updated = await storage.updateProjectDailyUpdate(req.params.id, data);
       res.json(updated);
     } catch (error) {
@@ -4907,8 +4907,8 @@ Instructions:
         endDate: endDate ? new Date(endDate as string) : undefined,
       });
       const total = updates.length;
-      const needsClientUpdate = updates.filter((u) => u.needsClientUpdate).length;
-      const needsClientSubmission = updates.filter((u) => u.needsClientSubmission).length;
+      const waitingOnClient = updates.filter((u) => u.waitingOnClient).length;
+      const blocked = updates.filter((u) => u.status === "blocked_client" || u.status === "blocked_internal").length;
       const activeUsers = new Set(updates.map((u) => u.userId)).size;
       const activeProjects = new Set(updates.map((u) => u.crmProjectId)).size;
       const today = new Date();
@@ -4916,7 +4916,7 @@ Instructions:
         const d = new Date(u.updateDate);
         return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
       }).length;
-      res.json({ total, needsClientUpdate, needsClientSubmission, activeUsers, activeProjects, todayUpdates });
+      res.json({ total, waitingOnClient, blocked, activeUsers, activeProjects, todayUpdates });
     } catch (error) {
       console.error("Error fetching daily update KPIs:", error);
       res.status(500).json({ message: "Failed to fetch KPIs" });

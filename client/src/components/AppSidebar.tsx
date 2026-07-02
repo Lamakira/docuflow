@@ -196,6 +196,22 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
+                    isActive={location === "/daily-update"}
+                    className="h-9 rounded-md"
+                  >
+                    <Link
+                      href="/daily-update"
+                      className={`flex items-center w-full ${isCollapsed ? 'justify-center' : 'gap-3'}`}
+                      data-testid="link-daily-update"
+                    >
+                      <ClipboardList className="w-4 h-4 shrink-0" />
+                      {!isCollapsed && <span className="text-sm">Daily Update</span>}
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
                     isActive={location === "/time-tracking" || location.startsWith("/time-tracking/") || location === "/devices"}
                     className="h-9 rounded-md"
                   >
@@ -222,22 +238,6 @@ export function AppSidebar() {
                     >
                       <CircleHelp className="w-4 h-4 shrink-0" />
                       {!isCollapsed && <span className="text-sm">Help Center</span>}
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location === "/daily-update"}
-                    className="h-9 rounded-md"
-                  >
-                    <Link
-                      href="/daily-update"
-                      className={`flex items-center w-full ${isCollapsed ? 'justify-center' : 'gap-3'}`}
-                      data-testid="link-daily-update"
-                    >
-                      <ClipboardList className="w-4 h-4 shrink-0" />
-                      {!isCollapsed && <span className="text-sm">Daily Update</span>}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

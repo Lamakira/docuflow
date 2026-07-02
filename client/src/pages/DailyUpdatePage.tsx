@@ -4,7 +4,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,15 +12,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
-import { Calendar, Send, AlertTriangle, FileX, Briefcase } from "lucide-react";
+import { Calendar, Send, Clock, Briefcase } from "lucide-react";
+import DailyUpdatesAdminPage from "@/pages/DailyUpdatesAdminPage";
+import {
+  dailyUpdateStatusOptions,
+  dailyUpdateBlockedStatuses,
+  dailyUpdateBlockageTypeOptions,
+} from "@shared/schema";
 import type { ProjectDailyUpdateWithDetails, CrmProjectWithDetails } from "@shared/schema";
 
-const STATUS_OPTIONS = [
-  { value: "on_track", label: "On Track", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
-  { value: "at_risk", label: "At Risk", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
-  { value: "blocked", label: "Blocked", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
-  { value: "completed", label: "Completed", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
-];
+const STATUS_OPTIONS = dailyUpdateStatusOptions;
+const BLOCKED_STATUSES = dailyUpdateBlockedStatuses as readonly string[];
 
 export default function DailyUpdatePage() {
   const { user } = useAuth();
@@ -30,16 +31,20 @@ export default function DailyUpdatePage() {
 
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [status, setStatus] = useState("");
-  const [whatHappened, setWhatHappened] = useState("");
-  const [whatWasDone, setWhatWasDone] = useState("");
-  const [needsClientUpdate, setNeedsClientUpdate] = useState(false);
-  const [needsClientSubmission, setNeedsClientSubmission] = useState(false);
+  const [progressToday, setProgressToday] = useState("");
+  const [nextSteps, setNextSteps] = useState("");
+  const [blockageType, setBlockageType] = useState("");
+  const [waitingOnClient, setWaitingOnClient] = useState(false);
+
+  const isAdmin = user?.role === "admin";
+  const isBlocked = BLOCKED_STATUSES.includes(status);
 
   const { data: projectsData, isLoading: projectsLoading } = useQuery<{
     data: CrmProjectWithDetails[];
     total: number;
   }>({
     queryKey: ["/api/crm/projects", "all"],
+    enabled: !isAdmin,
     queryFn: async () => {
       const res = await fetch(`/api/crm/projects?pageSize=1000`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch projects");
@@ -48,8 +53,9 @@ export default function DailyUpdatePage() {
   });
   const projects = projectsData?.data ?? [];
 
-  const { data: todayUpdates = [], isLoading: updatesLoading } = useQuery<ProjectDailyUpdateWithDetails[]>({
+  const { data: todayUpdates = [] } = useQuery<ProjectDailyUpdateWithDetails[]>({
     queryKey: ["/api/daily-updates", today],
+    enabled: !isAdmin,
     queryFn: async () => {
       const res = await fetch(`/api/daily-updates?date=${today}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch daily updates");
@@ -64,10 +70,10 @@ export default function DailyUpdatePage() {
       toast({ title: "Daily update submitted", description: "Your progress has been recorded." });
       setSelectedProjectId("");
       setStatus("");
-      setWhatHappened("");
-      setWhatWasDone("");
-      setNeedsClientUpdate(false);
-      setNeedsClientSubmission(false);
+      setProgressToday("");
+      setNextSteps("");
+      setBlockageType("");
+      setWaitingOnClient(false);
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to submit daily update. Try again.", variant: "destructive" });
@@ -79,22 +85,31 @@ export default function DailyUpdatePage() {
       toast({ title: "Missing fields", description: "Please select a project and status.", variant: "destructive" });
       return;
     }
+    if (isBlocked && !blockageType) {
+      toast({ title: "Blockage cause required", description: "Please specify if the blockage is internal or external.", variant: "destructive" });
+      return;
+    }
     createMutation.mutate({
       crmProjectId: selectedProjectId,
       updateDate: new Date().toISOString(),
       status,
-      whatHappened: whatHappened || null,
-      whatWasDone: whatWasDone || null,
-      needsClientUpdate,
-      needsClientSubmission,
+      whatHappened: progressToday || null,
+      nextSteps: nextSteps || null,
+      blockageType: isBlocked ? blockageType : null,
+      waitingOnClient,
     });
   };
 
   const getStatusLabel = (value: string) => STATUS_OPTIONS.find((s) => s.value === value)?.label || value;
   const getStatusClass = (value: string) => STATUS_OPTIONS.find((s) => s.value === value)?.color || "";
 
+  // Admins don't fill out the form — they go straight to the dashboard.
+  if (isAdmin) {
+    return <DailyUpdatesAdminPage />;
+  }
+
   return (
-    <div className="max-w-3xl mx-auto p-6 space-y-6">
+    <div className="max-w-2xl mx-auto p-6 space-y-6">
       <div className="flex items-center gap-3">
         <Calendar className="w-6 h-6 text-primary" />
         <div>
@@ -107,88 +122,107 @@ export default function DailyUpdatePage() {
         <CardHeader>
           <CardTitle className="text-base">Submit Today's Update</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Project</Label>
-            {projectsLoading ? (
-              <Skeleton className="h-9 w-full" />
-            ) : (
-              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                <SelectTrigger data-testid="select-project">
-                  <SelectValue placeholder="Select a project" />
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Project</Label>
+              {projectsLoading ? (
+                <Skeleton className="h-9 w-full" />
+              ) : (
+                <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                  <SelectTrigger data-testid="select-project">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.length === 0 ? (
+                      <div className="px-2 py-4 text-sm text-muted-foreground text-center">No projects available</div>
+                    ) : (
+                      projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.project?.name || "Untitled project"}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={status} onValueChange={(v) => {
+                setStatus(v);
+                if (!BLOCKED_STATUSES.includes(v)) {
+                  setBlockageType("");
+                } else {
+                  setBlockageType(v === "blocked_client" ? "external" : "internal");
+                }
+              }}>
+                <SelectTrigger data-testid="select-status">
+                  <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
+                  {STATUS_OPTIONS.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
+            </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Status</Label>
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger data-testid="select-status">
-                <SelectValue placeholder="Select status" />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_OPTIONS.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {isBlocked && (
+            <div className="space-y-2">
+              <Label>Blockage cause</Label>
+              <Select value={blockageType} onValueChange={setBlockageType}>
+                <SelectTrigger data-testid="select-blockage-type">
+                  <SelectValue placeholder="Is the blockage internal or external?" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dailyUpdateBlockageTypeOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
-            <Label>What happened today?</Label>
+            <Label>Progress today</Label>
             <Textarea
-              placeholder="Describe what happened on the project today..."
-              value={whatHappened}
-              onChange={(e) => setWhatHappened(e.target.value)}
+              placeholder="What did you accomplish on this project today?"
+              value={progressToday}
+              onChange={(e) => setProgressToday(e.target.value)}
               rows={3}
-              data-testid="textarea-what-happened"
+              data-testid="textarea-progress-today"
             />
           </div>
 
           <div className="space-y-2">
-            <Label>What was done?</Label>
+            <Label>Next steps {waitingOnClient ? "(after the client responds)" : "(tomorrow)"}</Label>
             <Textarea
-              placeholder="List tasks completed, decisions made, blockers encountered..."
-              value={whatWasDone}
-              onChange={(e) => setWhatWasDone(e.target.value)}
-              rows={3}
-              data-testid="textarea-what-was-done"
+              placeholder={waitingOnClient ? "What will you do once the client responds?" : "What will you do next / tomorrow?"}
+              value={nextSteps}
+              onChange={(e) => setNextSteps(e.target.value)}
+              rows={2}
+              data-testid="textarea-next-steps"
             />
           </div>
 
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Switch
-                id="needs-client-update"
-                checked={needsClientUpdate}
-                onCheckedChange={setNeedsClientUpdate}
-                data-testid="switch-client-update"
-              />
-              <Label htmlFor="needs-client-update" className="cursor-pointer">
-                Needs client update
-              </Label>
+          <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+            <div>
+              <Label htmlFor="waiting-on-client" className="cursor-pointer">Waiting on client</Label>
+              <p className="text-xs text-muted-foreground">Are you blocked waiting for a client response?</p>
             </div>
-            <div className="flex items-center gap-3">
-              <Switch
-                id="needs-client-submission"
-                checked={needsClientSubmission}
-                onCheckedChange={setNeedsClientSubmission}
-                data-testid="switch-client-submission"
-              />
-              <Label htmlFor="needs-client-submission" className="cursor-pointer">
-                Needs client submission
-              </Label>
-            </div>
+            <Switch
+              id="waiting-on-client"
+              checked={waitingOnClient}
+              onCheckedChange={setWaitingOnClient}
+              data-testid="switch-waiting-on-client"
+            />
           </div>
 
           <Button
@@ -213,37 +247,34 @@ export default function DailyUpdatePage() {
           {todayUpdates.map((u) => (
             <Card key={u.id} data-testid={`card-daily-update-${u.id}`}>
               <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Briefcase className="w-4 h-4 text-muted-foreground" />
-                    <span className="font-medium text-sm">{u.crmProject?.name || "Project"}</span>
+                    <span className="font-medium text-sm">{u.crmProject?.project?.name || "Project"}</span>
                   </div>
                   <Badge className={getStatusClass(u.status)}>{getStatusLabel(u.status)}</Badge>
                 </div>
                 {u.whatHappened && (
                   <div>
-                    <p className="text-xs text-muted-foreground font-medium mb-1">What happened</p>
+                    <p className="text-xs text-muted-foreground font-medium mb-1">Progress today</p>
                     <p className="text-sm">{u.whatHappened}</p>
                   </div>
                 )}
-                {u.whatWasDone && (
+                {u.nextSteps && (
                   <div>
-                    <p className="text-xs text-muted-foreground font-medium mb-1">What was done</p>
-                    <p className="text-sm">{u.whatWasDone}</p>
+                    <p className="text-xs text-muted-foreground font-medium mb-1">Next steps</p>
+                    <p className="text-sm">{u.nextSteps}</p>
                   </div>
                 )}
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  {u.needsClientUpdate && (
+                <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                  {u.waitingOnClient && (
                     <span className="flex items-center gap-1 text-amber-600">
-                      <AlertTriangle className="w-3 h-3" />
-                      Needs client update
+                      <Clock className="w-3 h-3" />
+                      Waiting on client
                     </span>
                   )}
-                  {u.needsClientSubmission && (
-                    <span className="flex items-center gap-1 text-red-600">
-                      <FileX className="w-3 h-3" />
-                      Needs client submission
-                    </span>
+                  {u.blockageType && (
+                    <span className="capitalize">Blockage: {u.blockageType}</span>
                   )}
                 </div>
               </CardContent>

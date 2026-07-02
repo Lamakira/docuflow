@@ -10,22 +10,17 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format, subDays } from "date-fns";
-import { Search, Calendar, Users, Briefcase, AlertTriangle, FileX, BarChart3, ArrowLeft } from "lucide-react";
+import { Search, Calendar, Users, Clock, Briefcase, Ban, BarChart3, ArrowLeft } from "lucide-react";
+import { dailyUpdateStatusOptions } from "@shared/schema";
 import type { ProjectDailyUpdateWithDetails } from "@shared/schema";
 
-const STATUS_BADGES: Record<string, string> = {
-  on_track: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-  at_risk: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  blocked: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-  completed: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-};
+const STATUS_BADGES: Record<string, string> = Object.fromEntries(
+  dailyUpdateStatusOptions.map((s) => [s.value, s.color])
+);
 
-const STATUS_LABELS: Record<string, string> = {
-  on_track: "On Track",
-  at_risk: "At Risk",
-  blocked: "Blocked",
-  completed: "Completed",
-};
+const STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  dailyUpdateStatusOptions.map((s) => [s.value, s.label])
+);
 
 export default function DailyUpdatesAdminPage() {
   const { user } = useAuth();
@@ -65,8 +60,8 @@ export default function DailyUpdatesAdminPage() {
 
   const { data: kpis, isLoading: kpisLoading } = useQuery<{
     total: number;
-    needsClientUpdate: number;
-    needsClientSubmission: number;
+    waitingOnClient: number;
+    blocked: number;
     activeUsers: number;
     activeProjects: number;
     todayUpdates: number;
@@ -91,9 +86,9 @@ export default function DailyUpdatesAdminPage() {
         (u) =>
           (u.user?.firstName || "").toLowerCase().includes(q) ||
           (u.user?.lastName || "").toLowerCase().includes(q) ||
-          (u.crmProject?.name || "").toLowerCase().includes(q) ||
+          (u.crmProject?.project?.name || "").toLowerCase().includes(q) ||
           (u.whatHappened || "").toLowerCase().includes(q) ||
-          (u.whatWasDone || "").toLowerCase().includes(q)
+          (u.nextSteps || "").toLowerCase().includes(q)
       );
     }
     return rows;
@@ -127,22 +122,22 @@ export default function DailyUpdatesAdminPage() {
         <Card>
           <CardContent className="p-4 flex items-center gap-3">
             <div className="rounded-lg bg-amber-500/10 p-2">
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
+              <Clock className="w-5 h-5 text-amber-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{kpisLoading ? "-" : kpis?.needsClientUpdate ?? 0}</p>
-              <p className="text-xs text-muted-foreground">Need client update</p>
+              <p className="text-2xl font-bold">{kpisLoading ? "-" : kpis?.waitingOnClient ?? 0}</p>
+              <p className="text-xs text-muted-foreground">Waiting on client</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-3">
             <div className="rounded-lg bg-red-500/10 p-2">
-              <FileX className="w-5 h-5 text-red-600" />
+              <Ban className="w-5 h-5 text-red-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{kpisLoading ? "-" : kpis?.needsClientSubmission ?? 0}</p>
-              <p className="text-xs text-muted-foreground">Need client submission</p>
+              <p className="text-2xl font-bold">{kpisLoading ? "-" : kpis?.blocked ?? 0}</p>
+              <p className="text-xs text-muted-foreground">Blocked</p>
             </div>
           </CardContent>
         </Card>
@@ -189,10 +184,9 @@ export default function DailyUpdatesAdminPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="on_track">On Track</SelectItem>
-            <SelectItem value="at_risk">At Risk</SelectItem>
-            <SelectItem value="blocked">Blocked</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
+            {dailyUpdateStatusOptions.map((s) => (
+              <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -222,8 +216,8 @@ export default function DailyUpdatesAdminPage() {
                     <TableHead>User</TableHead>
                     <TableHead>Project</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>What Happened</TableHead>
-                    <TableHead>What Was Done</TableHead>
+                    <TableHead>Progress Today</TableHead>
+                    <TableHead>Next Steps</TableHead>
                     <TableHead>Flags</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -242,7 +236,7 @@ export default function DailyUpdatesAdminPage() {
                       <TableCell className="text-sm">
                         <div className="flex items-center gap-2">
                           <Briefcase className="w-3 h-3 text-muted-foreground" />
-                          <span>{u.crmProject?.name || "-"}</span>
+                          <span>{u.crmProject?.project?.name || "-"}</span>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -251,19 +245,19 @@ export default function DailyUpdatesAdminPage() {
                       <TableCell className="max-w-[200px] truncate text-sm" title={u.whatHappened || ""}>
                         {u.whatHappened || "-"}
                       </TableCell>
-                      <TableCell className="max-w-[200px] truncate text-sm" title={u.whatWasDone || ""}>
-                        {u.whatWasDone || "-"}
+                      <TableCell className="max-w-[200px] truncate text-sm" title={u.nextSteps || ""}>
+                        {u.nextSteps || "-"}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-1">
-                          {u.needsClientUpdate && (
+                        <div className="flex gap-1 flex-wrap">
+                          {u.waitingOnClient && (
                             <Badge variant="outline" className="text-amber-600 border-amber-200 text-xs">
-                              Update
+                              Waiting on client
                             </Badge>
                           )}
-                          {u.needsClientSubmission && (
-                            <Badge variant="outline" className="text-red-600 border-red-200 text-xs">
-                              Submission
+                          {u.blockageType && (
+                            <Badge variant="outline" className="text-red-600 border-red-200 text-xs capitalize">
+                              {u.blockageType}
                             </Badge>
                           )}
                         </div>

@@ -1394,6 +1394,9 @@ export const projectDailyUpdates = pgTable(
     status: varchar("status", { length: 50 }).notNull(),
     whatHappened: text("what_happened"),
     whatWasDone: text("what_was_done"),
+    nextSteps: text("next_steps"),
+    blockageType: varchar("blockage_type", { length: 20 }),
+    waitingOnClient: boolean("waiting_on_client").notNull().default(false),
     needsClientUpdate: boolean("needs_client_update").notNull().default(false),
     needsClientSubmission: boolean("needs_client_submission").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow(),
@@ -1418,10 +1421,17 @@ export const projectDailyUpdatesRelations = relations(projectDailyUpdates, ({ on
   }),
 }));
 
-export const insertProjectDailyUpdateSchema = createInsertSchema(projectDailyUpdates).omit({
+export const insertProjectDailyUpdateSchema = createInsertSchema(projectDailyUpdates, {
+  updateDate: z.coerce.date().optional(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+});
+
+// Payload accepted from clients — userId is derived server-side, not trusted from the request.
+export const createProjectDailyUpdateApiSchema = insertProjectDailyUpdateSchema.omit({
+  userId: true,
 });
 
 export type ProjectDailyUpdate = typeof projectDailyUpdates.$inferSelect;
@@ -1431,6 +1441,32 @@ export type ProjectDailyUpdateWithDetails = ProjectDailyUpdate & {
   crmProject?: CrmProject & { project?: Project };
   user?: SafeUser;
 };
+
+// ─── Daily Update status set (single source of truth for form + admin dashboard) ───
+// Combines project-management statuses with predefined progress statuses.
+export const dailyUpdateStatusOptions = [
+  { value: "on_track", label: "On Track", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" },
+  { value: "blocked_client", label: "Blocked - Client", color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" },
+  { value: "blocked_internal", label: "Blocked - Internal", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
+  { value: "done", label: "Done", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
+  { value: "not_started", label: "Not Started", color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
+  { value: "in_progress", label: "In Progress", color: "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400" },
+  { value: "in_review", label: "In Review", color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400" },
+  { value: "won", label: "Won", color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400" },
+  { value: "completed", label: "Completed", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
+  { value: "on_hold", label: "On Hold", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" },
+  { value: "cancelled", label: "Cancelled", color: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400" },
+] as const;
+
+export type DailyUpdateStatus = typeof dailyUpdateStatusOptions[number]["value"];
+
+// Statuses that represent a blockage and require specifying an internal/external cause.
+export const dailyUpdateBlockedStatuses = ["blocked_client", "blocked_internal"] as const;
+
+export const dailyUpdateBlockageTypeOptions = [
+  { value: "internal", label: "Internal (our team)" },
+  { value: "external", label: "External (waiting on client / third party)" },
+] as const;
 
 // ─── Evidence Quality Score ───
 //
