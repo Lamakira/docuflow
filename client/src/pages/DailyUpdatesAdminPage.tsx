@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { format, subDays } from "date-fns";
 import { Search, Calendar, Users, Clock, Briefcase, Ban, BarChart3, ArrowLeft } from "lucide-react";
 import { dailyUpdateStatusOptions } from "@shared/schema";
@@ -25,19 +26,10 @@ const STATUS_LABELS: Record<string, string> = Object.fromEntries(
 export default function DailyUpdatesAdminPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  
-  // Redirect non-admin users
-  if (user?.role !== "admin") {
-    return (
-      <div className="max-w-3xl mx-auto p-6 text-center">
-        <h1 className="text-xl font-semibold">Access Denied</h1>
-        <p className="text-muted-foreground mt-2">You need admin privileges to view this page.</p>
-      </div>
-    );
-  }
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("7");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [employeeFilter, setEmployeeFilter] = useState("all");
 
   const startDate = useMemo(() => {
     const days = parseInt(dateFilter);
@@ -77,9 +69,20 @@ export default function DailyUpdatesAdminPage() {
     },
   });
 
+  const employees = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const u of updates) {
+      if (!u.userId) continue;
+      const name = `${u.user?.firstName || ""} ${u.user?.lastName || ""}`.trim() || u.user?.email || "Unknown";
+      if (!map.has(u.userId)) map.set(u.userId, { id: u.userId, name });
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [updates]);
+
   const filteredUpdates = useMemo(() => {
     let rows = updates;
     if (statusFilter !== "all") rows = rows.filter((u) => u.status === statusFilter);
+    if (employeeFilter !== "all") rows = rows.filter((u) => u.userId === employeeFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       rows = rows.filter(
@@ -92,7 +95,46 @@ export default function DailyUpdatesAdminPage() {
       );
     }
     return rows;
-  }, [updates, statusFilter, search]);
+  }, [updates, statusFilter, employeeFilter, search]);
+
+  // Group by employee, then sort each group's updates newest first.
+  const groupedByEmployee = useMemo(() => {
+    const groups = new Map<
+      string,
+      { user: ProjectDailyUpdateWithDetails["user"]; userId: string; updates: ProjectDailyUpdateWithDetails[] }
+    >();
+    for (const u of filteredUpdates) {
+      const key = u.userId || "unknown";
+      if (!groups.has(key)) groups.set(key, { user: u.user, userId: key, updates: [] });
+      groups.get(key)!.updates.push(u);
+    }
+    const arr = Array.from(groups.values());
+    for (const g of arr) {
+      g.updates.sort((a, b) => new Date(b.updateDate).getTime() - new Date(a.updateDate).getTime());
+    }
+    arr.sort((a, b) => {
+      const an = `${a.user?.firstName || ""} ${a.user?.lastName || ""}`.trim();
+      const bn = `${b.user?.firstName || ""} ${b.user?.lastName || ""}`.trim();
+      return an.localeCompare(bn);
+    });
+    return arr;
+  }, [filteredUpdates]);
+
+  const getInitials = (u: ProjectDailyUpdateWithDetails["user"]) => {
+    const f = u?.firstName?.[0] || "";
+    const l = u?.lastName?.[0] || "";
+    return (f + l).toUpperCase() || u?.email?.[0]?.toUpperCase() || "?";
+  };
+
+  // Gate rendering after all hooks to keep hook order stable across auth changes.
+  if (user?.role !== "admin") {
+    return (
+      <div className="max-w-3xl mx-auto p-6 text-center">
+        <h1 className="text-xl font-semibold">Access Denied</h1>
+        <p className="text-muted-foreground mt-2">You need admin privileges to view this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
@@ -189,87 +231,114 @@ export default function DailyUpdatesAdminPage() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
+          <SelectTrigger className="w-[180px]" data-testid="select-employee-filter">
+            <Users className="w-4 h-4 mr-2" />
+            <SelectValue placeholder="All employees" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All employees</SelectItem>
+            {employees.map((e) => (
+              <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Submissions ({filteredUpdates.length})</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {updatesLoading ? (
-            <div className="p-6 space-y-3">
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
-            </div>
-          ) : filteredUpdates.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">
-              No daily updates found for the selected filters.
-            </div>
-          ) : (
-            <div className="overflow-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Progress Today</TableHead>
-                    <TableHead>Next Steps</TableHead>
-                    <TableHead>Flags</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredUpdates.map((u) => (
-                    <TableRow key={u.id} data-testid={`row-daily-update-${u.id}`}>
-                      <TableCell className="text-xs whitespace-nowrap">
-                        {format(new Date(u.updateDate), "MMM d")}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        <div className="flex items-center gap-2">
-                          <Users className="w-3 h-3 text-muted-foreground" />
-                          <span>{u.user?.firstName || ""} {u.user?.lastName || ""}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        <div className="flex items-center gap-2">
-                          <Briefcase className="w-3 h-3 text-muted-foreground" />
-                          <span>{u.crmProject?.project?.name || "-"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={STATUS_BADGES[u.status] || ""}>{STATUS_LABELS[u.status] || u.status}</Badge>
-                      </TableCell>
-                      <TableCell className="max-w-[200px] truncate text-sm" title={u.whatHappened || ""}>
-                        {u.whatHappened || "-"}
-                      </TableCell>
-                      <TableCell className="max-w-[200px] truncate text-sm" title={u.nextSteps || ""}>
-                        {u.nextSteps || "-"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1 flex-wrap">
-                          {u.waitingOnClient && (
-                            <Badge variant="outline" className="text-amber-600 border-amber-200 text-xs">
-                              Waiting on client
-                            </Badge>
-                          )}
-                          {u.blockageType && (
-                            <Badge variant="outline" className="text-red-600 border-red-200 text-xs capitalize">
-                              {u.blockageType}
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Grouped by employee */}
+      {updatesLoading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      ) : groupedByEmployee.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            No daily updates found for the selected filters.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-5">
+          {groupedByEmployee.map((group) => {
+            const name = `${group.user?.firstName || ""} ${group.user?.lastName || ""}`.trim() || group.user?.email || "Unknown employee";
+            return (
+              <Card key={group.userId} data-testid={`group-employee-${group.userId}`}>
+                <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage src={group.user?.profileImageUrl || undefined} alt={name} />
+                      <AvatarFallback>{getInitials(group.user)}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <CardTitle className="text-base" data-testid={`text-employee-name-${group.userId}`}>{name}</CardTitle>
+                      {group.user?.email && (
+                        <p className="text-xs text-muted-foreground">{group.user.email}</p>
+                      )}
+                    </div>
+                  </div>
+                  <Badge variant="secondary" className="shrink-0">
+                    {group.updates.length} {group.updates.length === 1 ? "update" : "updates"}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Project</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Progress Today</TableHead>
+                          <TableHead>Next Steps</TableHead>
+                          <TableHead>Flags</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {group.updates.map((u) => (
+                          <TableRow key={u.id} data-testid={`row-daily-update-${u.id}`}>
+                            <TableCell className="text-xs whitespace-nowrap">
+                              {format(new Date(u.updateDate), "MMM d")}
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              <div className="flex items-center gap-2">
+                                <Briefcase className="w-3 h-3 text-muted-foreground shrink-0" />
+                                <span>{u.crmProject?.project?.name || "-"}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={STATUS_BADGES[u.status] || ""}>{STATUS_LABELS[u.status] || u.status}</Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[220px] truncate text-sm" title={u.whatHappened || ""}>
+                              {u.whatHappened || "-"}
+                            </TableCell>
+                            <TableCell className="max-w-[220px] truncate text-sm" title={u.nextSteps || ""}>
+                              {u.nextSteps || "-"}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1 flex-wrap">
+                                {u.waitingOnClient && (
+                                  <Badge variant="outline" className="text-amber-600 border-amber-200 text-xs">
+                                    Waiting on client
+                                  </Badge>
+                                )}
+                                {u.blockageType && (
+                                  <Badge variant="outline" className="text-red-600 border-red-200 text-xs capitalize">
+                                    {u.blockageType}
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
