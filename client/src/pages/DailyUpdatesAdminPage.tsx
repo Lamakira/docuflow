@@ -296,25 +296,25 @@ export default function DailyUpdatesAdminPage() {
                       <TableBody>
                         {group.updates.map((u) => (
                           <TableRow key={u.id} data-testid={`row-daily-update-${u.id}`}>
-                            <TableCell className="text-xs whitespace-nowrap">
+                            <TableCell className="text-xs whitespace-nowrap align-top">
                               {format(new Date(u.updateDate), "MMM d")}
                             </TableCell>
-                            <TableCell className="text-sm">
+                            <TableCell className="text-sm align-top">
                               <div className="flex items-center gap-2">
                                 <Briefcase className="w-3 h-3 text-muted-foreground shrink-0" />
                                 <span>{u.crmProject?.project?.name || "-"}</span>
                               </div>
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="align-top">
                               <Badge className={STATUS_BADGES[u.status] || ""}>{STATUS_LABELS[u.status] || u.status}</Badge>
                             </TableCell>
-                            <TableCell className="max-w-[220px] truncate text-sm" title={u.whatHappened || ""}>
+                            <TableCell className="min-w-[240px] max-w-[420px] text-sm align-top whitespace-pre-wrap break-words">
                               {u.whatHappened || "-"}
                             </TableCell>
-                            <TableCell className="max-w-[220px] truncate text-sm" title={u.nextSteps || ""}>
+                            <TableCell className="min-w-[240px] max-w-[420px] text-sm align-top whitespace-pre-wrap break-words">
                               {u.nextSteps || "-"}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="align-top">
                               <div className="flex gap-1 flex-wrap">
                                 {u.waitingOnClient && (
                                   <Badge variant="outline" className="text-amber-600 border-amber-200 text-xs">
