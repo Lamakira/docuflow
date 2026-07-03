@@ -166,7 +166,7 @@ function UserManagementContent() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [editingUser, setEditingUser] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<{ firstName: string; lastName: string; email: string; hoursPerDay: number }>({ firstName: "", lastName: "", email: "", hoursPerDay: 8 });
+  const [editForm, setEditForm] = useState<{ firstName: string; lastName: string; email: string; hoursPerDay: number; canViewDailyUpdates: number }>({ firstName: "", lastName: "", email: "", hoursPerDay: 8, canViewDailyUpdates: 0 });
   const [copiedPassword, setCopiedPassword] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [showArchived, setShowArchived] = useState(false);
@@ -234,7 +234,7 @@ function UserManagementContent() {
   });
 
   const updateUserMutation = useMutation({
-    mutationFn: async ({ userId, data }: { userId: string; data: { firstName?: string; lastName?: string; email?: string; hoursPerDay?: number } }) => {
+    mutationFn: async ({ userId, data }: { userId: string; data: { firstName?: string; lastName?: string; email?: string; hoursPerDay?: number; canViewDailyUpdates?: number } }) => {
       return await apiRequest("PATCH", `/api/admin/users/${userId}`, data);
     },
     onSuccess: () => {
@@ -297,12 +297,13 @@ function UserManagementContent() {
       lastName: u.lastName || "",
       email: u.email,
       hoursPerDay: u.hoursPerDay || 8,
+      canViewDailyUpdates: u.canViewDailyUpdates ?? 0,
     });
   };
 
   const cancelEditing = () => {
     setEditingUser(null);
-    setEditForm({ firstName: "", lastName: "", email: "", hoursPerDay: 8 });
+    setEditForm({ firstName: "", lastName: "", email: "", hoursPerDay: 8, canViewDailyUpdates: 0 });
   };
 
   const saveEditing = () => {
@@ -392,6 +393,16 @@ function UserManagementContent() {
                         max="24"
                         data-testid={`input-hoursperday-${u.id}`}
                       />
+                      <div className="flex items-center gap-2 sm:col-span-4">
+                        <Switch
+                          checked={editForm.canViewDailyUpdates === 1}
+                          onCheckedChange={(checked) => setEditForm({ ...editForm, canViewDailyUpdates: checked ? 1 : 0 })}
+                          data-testid={`switch-daily-updates-${u.id}`}
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          Can view all daily updates (manager access, no admin rights)
+                        </span>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex items-center gap-4">
@@ -426,6 +437,12 @@ function UserManagementContent() {
                     ) : (
                       <Badge variant={u.role === "admin" ? "default" : "secondary"}>
                         {(u.role || "user").charAt(0).toUpperCase() + (u.role || "user").slice(1)}
+                      </Badge>
+                    )}
+
+                    {u.role !== "admin" && u.canViewDailyUpdates === 1 && (
+                      <Badge variant="outline" data-testid={`badge-daily-updates-${u.id}`}>
+                        Daily updates viewer
                       </Badge>
                     )}
 

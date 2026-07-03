@@ -64,8 +64,12 @@ export function NotificationBell() {
     switch (notification.type) {
       case "mention":
         return `${fromName} mentioned you in a note on "${projectName}"`;
+      case "daily_update_reminder":
+        return notification.message || "Don't forget to submit your daily update.";
+      case "reminder":
+        return notification.message || "You have a reminder.";
       default:
-        return "You have a new notification";
+        return notification.message || "You have a new notification";
     }
   };
 
@@ -120,7 +124,13 @@ export function NotificationBell() {
               {notifications.map((notification) => (
                 <Link
                   key={notification.id}
-                  href={notification.crmProjectId ? `/crm/project/${notification.crmProjectId}` : "#"}
+                  href={
+                    notification.type === "daily_update_reminder"
+                      ? "/daily-update"
+                      : notification.crmProjectId
+                      ? `/crm/project/${notification.crmProjectId}`
+                      : "#"
+                  }
                   onClick={() => handleNotificationClick(notification)}
                   className={`block px-4 py-3 hover-elevate transition-colors ${
                     notification.isRead ? "opacity-60" : "bg-accent/30"

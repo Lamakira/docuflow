@@ -41,6 +41,9 @@ export default function DailyUpdatePage() {
   const [waitingOnClient, setWaitingOnClient] = useState(false);
 
   const isAdmin = user?.role === "admin";
+  // Admins, plus non-admin managers granted the daily-update view permission,
+  // go straight to the review dashboard instead of the submission form.
+  const canViewDashboard = isAdmin || user?.canViewDailyUpdates === 1;
   const isBlocked = BLOCKED_STATUSES.includes(status);
 
   const { data: projectsData, isLoading: projectsLoading } = useQuery<{
@@ -48,7 +51,7 @@ export default function DailyUpdatePage() {
     total: number;
   }>({
     queryKey: ["/api/crm/projects", "all"],
-    enabled: !isAdmin,
+    enabled: !canViewDashboard,
     queryFn: async () => {
       const res = await fetch(`/api/crm/projects?pageSize=1000`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch projects");
@@ -59,7 +62,7 @@ export default function DailyUpdatePage() {
 
   const { data: todayUpdates = [] } = useQuery<ProjectDailyUpdateWithDetails[]>({
     queryKey: ["/api/daily-updates", today],
-    enabled: !isAdmin,
+    enabled: !canViewDashboard,
     queryFn: async () => {
       const res = await fetch(`/api/daily-updates?date=${today}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch daily updates");
@@ -107,8 +110,9 @@ export default function DailyUpdatePage() {
   const getStatusLabel = (value: string) => STATUS_OPTIONS.find((s) => s.value === value)?.label || value;
   const getStatusClass = (value: string) => STATUS_OPTIONS.find((s) => s.value === value)?.color || "";
 
-  // Admins don't fill out the form — they go straight to the dashboard.
-  if (isAdmin) {
+  // Admins (and permitted managers) don't fill out the form — they go straight
+  // to the review dashboard.
+  if (canViewDashboard) {
     return <DailyUpdatesAdminPage />;
   }
 

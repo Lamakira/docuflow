@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "can_view_daily_updates" integer DEFAULT 0 NOT NULL;

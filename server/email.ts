@@ -189,6 +189,47 @@ export async function sendReminderDueEmail(
   }
 }
 
+// Send a 6 PM reminder to submit the daily update
+export async function sendDailyUpdateReminderEmail(
+  toEmail: string,
+  recipientName: string,
+  appUrl: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { client, fromEmail } = await getResendClient();
+
+    const result = await client.emails.send({
+      from: fromEmail || 'DocuFlow <noreply@resend.dev>',
+      to: toEmail,
+      subject: 'Reminder: submit your daily update',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #333;">Daily update reminder</h1>
+          <p>Hello ${recipientName},</p>
+          <p>Before you finish your day, please take a moment to submit your daily update so your team knows what you worked on.</p>
+          <p>
+            <a href="${appUrl}/daily-update" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+              Submit daily update
+            </a>
+          </p>
+          <p style="color: #666; font-size: 12px; margin-top: 30px;">
+            This is an automated reminder from DocuFlow.
+          </p>
+        </div>
+      `
+    });
+
+    if (result.error) {
+      return { success: false, error: result.error.message };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Failed to send daily update reminder email:', error);
+    return { success: false, error: error.message || 'Failed to send email' };
+  }
+}
+
 // Send password reset/update email
 export async function sendPasswordUpdateEmail(
   toEmail: string, 

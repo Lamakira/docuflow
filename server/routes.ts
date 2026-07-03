@@ -38,7 +38,7 @@ import {
   getTranscriptStatus,
   retryTranscript,
 } from "./transcripts";
-import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail, sendReminderDueEmail } from "./email";
+import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail, sendReminderDueEmail, sendDailyUpdateReminderEmail } from "./email";
 import { extractTextFromFile, isSupportedForExtraction, isVideoFile } from "./contentExtraction";
 import { logTimeEvent, logError, logStaleSession, logInfo } from "./logger";
 import { isTasksEnabled } from "./migrationFlags";
@@ -52,6 +52,23 @@ function getOpenAIClient(): OpenAI {
   }
   // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
   return new OpenAI({ apiKey });
+}
+
+// Returns the calendar day key ("YYYY-MM-DD") and hour (0-23) for a given
+// instant in the supplied IANA timezone (DST-safe via Intl).
+function tzDayKeyAndHour(d: Date, timeZone: string): { dayKey: string; hour: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  let hour = parseInt(get("hour"), 10);
+  if (hour === 24) hour = 0; // some environments emit "24" for midnight
+  return { dayKey: `${get("year")}-${get("month")}-${get("day")}`, hour };
 }
 
 // Helper to extract text content from TipTap JSON
@@ -3014,6 +3031,20 @@ Instructions:
     next();
   };
 
+  // Allows admins OR non-admin users who were granted the "view daily updates"
+  // permission (canViewDailyUpdates flag) to reach the daily-updates dashboard.
+  const canViewDailyUpdates = async (req: any, res: any, next: any) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    const user = await storage.getUser(userId);
+    if (!user || (user.role !== "admin" && user.canViewDailyUpdates !== 1)) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    next();
+  };
+
   // Org settings — screenshot policy + timezone allow-list
   app.get("/api/admin/org-settings", isAuthenticated, isAdmin, async (_req, res) => {
     try {
@@ -3277,6 +3308,7 @@ Instructions:
         firstName: z.string().min(1).optional(),
         lastName: z.string().min(1).optional(),
         hoursPerDay: z.number().min(1).max(24).optional(),
+        canViewDailyUpdates: z.union([z.literal(0), z.literal(1)]).optional(),
       });
       
       const parsed = updateUserSchema.safeParse(req.body);
@@ -4558,6 +4590,75 @@ Instructions:
     }
   }, REMINDER_CHECK_INTERVAL_MS);
 
+  // ─── Daily-update 6 PM reminder ───
+  // Once a day, at 6:00 PM (America/Toronto), nudge every active employee who
+  // hasn't submitted a daily update that day via in-app notification + email.
+  const DAILY_REMINDER_TIMEZONE = "America/Toronto";
+  const DAILY_REMINDER_HOUR = 18; // 6:00 PM local time
+  let lastDailyReminderDayKey: string | null = null;
+  let dailyReminderRunning = false;
+
+  setInterval(async () => {
+    if (dailyReminderRunning) return;
+    dailyReminderRunning = true;
+    try {
+      const now = new Date();
+      const { dayKey, hour } = tzDayKeyAndHour(now, DAILY_REMINDER_TIMEZONE);
+      if (hour < DAILY_REMINDER_HOUR) return; // not 6 PM yet
+      if (lastDailyReminderDayKey === dayKey) return; // already sent today
+
+      // Determine who already submitted an update "today" in the reminder tz.
+      const since = new Date(now.getTime() - 36 * 60 * 60 * 1000);
+      const recentUpdates = await storage.getProjectDailyUpdatesForAdmin({ startDate: since });
+      const submittedToday = new Set(
+        recentUpdates
+          .filter((u) => tzDayKeyAndHour(new Date(u.updateDate), DAILY_REMINDER_TIMEZONE).dayKey === dayKey)
+          .map((u) => u.userId),
+      );
+
+      // Only remind active employees (role "user"); admins consume the dashboard.
+      const employees = (await storage.getAllUsers()).filter(
+        (u) => u.role === "user" && !u.isArchived && !submittedToday.has(u.id),
+      );
+
+      // Idempotency across restarts / multi-tick: skip anyone already reminded
+      // since the start of today (reminder tz). The in-memory guard above is a
+      // fast-path; this DB check is the durable safeguard.
+      const startOfTodayLocal = new Date(now.getTime() - hour * 60 * 60 * 1000 - 60 * 60 * 1000);
+
+      const appUrl = getAppBaseUrl();
+      let sent = 0;
+      for (const emp of employees) {
+        try {
+          const alreadyReminded = await storage.hasRecentNotification(
+            emp.id,
+            "daily_update_reminder",
+            startOfTodayLocal,
+          );
+          if (alreadyReminded) continue;
+          await storage.createNotification({
+            userId: emp.id,
+            type: "daily_update_reminder",
+            message: "Don't forget to submit your daily update before you finish your day.",
+          });
+          if (emp.email) {
+            await sendDailyUpdateReminderEmail(emp.email, emp.firstName || emp.email, appUrl);
+          }
+          sent++;
+        } catch (innerErr) {
+          console.error("[DailyUpdateReminder] Failed for user", emp.id, innerErr);
+        }
+      }
+
+      lastDailyReminderDayKey = dayKey;
+      console.log(`[DailyUpdateReminder] Sent ${sent} reminder(s) for ${dayKey}`);
+    } catch (error) {
+      console.error("[DailyUpdateReminder] Error dispatching daily reminders:", error);
+    } finally {
+      dailyReminderRunning = false;
+    }
+  }, 60 * 1000);
+
   // Update time entry (description, etc.)
   app.patch("/api/time-tracking/:id", isAuthenticated, async (req: any, res) => {
     try {
@@ -4828,7 +4929,7 @@ Instructions:
       const data = createProjectDailyUpdateApiSchema.parse(req.body);
       const update = await storage.createProjectDailyUpdate({
         ...data,
-        userId: getUserId(req),
+        userId: getUserId(req)!,
       });
       res.status(201).json(update);
     } catch (error) {
@@ -4842,7 +4943,7 @@ Instructions:
 
   app.get("/api/daily-updates", isAuthenticated, async (req, res) => {
     try {
-      const userId = getUserId(req);
+      const userId = getUserId(req)!;
       const dateParam = req.query.date as string | undefined;
       const date = dateParam ? new Date(dateParam) : undefined;
       const updates = await storage.getProjectDailyUpdatesByUser(userId, { date });
@@ -4883,7 +4984,7 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/daily-updates", isAuthenticated, isAdmin, async (req, res) => {
+  app.get("/api/admin/daily-updates", isAuthenticated, canViewDailyUpdates, async (req, res) => {
     try {
       const { startDate, endDate, userId, crmProjectId } = req.query;
       const updates = await storage.getProjectDailyUpdatesForAdmin({
@@ -4899,7 +5000,7 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/daily-updates/kpis", isAuthenticated, isAdmin, async (req, res) => {
+  app.get("/api/admin/daily-updates/kpis", isAuthenticated, canViewDailyUpdates, async (req, res) => {
     try {
       const { startDate, endDate } = req.query;
       const updates = await storage.getProjectDailyUpdatesForAdmin({
@@ -4920,6 +5021,38 @@ Instructions:
     } catch (error) {
       console.error("Error fetching daily update KPIs:", error);
       res.status(500).json({ message: "Failed to fetch KPIs" });
+    }
+  });
+
+  // Today's submission status: which active employees have (and have not)
+  // submitted a daily update today, in the reminder timezone. Powers the
+  // "Today" overview so admins/managers can see at a glance who forgot.
+  app.get("/api/admin/daily-updates/today-status", isAuthenticated, canViewDailyUpdates, async (_req, res) => {
+    try {
+      const tz = "America/Toronto";
+      const now = new Date();
+      const todayKey = tzDayKeyAndHour(now, tz).dayKey;
+      const since = new Date(now.getTime() - 36 * 60 * 60 * 1000);
+      const recent = await storage.getProjectDailyUpdatesForAdmin({ startDate: since });
+      const submittedIds = new Set(
+        recent
+          .filter((u) => tzDayKeyAndHour(new Date(u.updateDate), tz).dayKey === todayKey)
+          .map((u) => u.userId),
+      );
+      const employees = (await storage.getAllUsers()).filter((u) => u.role === "user" && !u.isArchived);
+      const toDto = (u: typeof employees[number]) => ({
+        id: u.id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        profileImageUrl: u.profileImageUrl,
+      });
+      const submitted = employees.filter((u) => submittedIds.has(u.id)).map(toDto);
+      const missing = employees.filter((u) => !submittedIds.has(u.id)).map(toDto);
+      res.json({ date: todayKey, submitted, missing });
+    } catch (error) {
+      console.error("Error fetching today's daily update status:", error);
+      res.status(500).json({ message: "Failed to fetch today's status" });
     }
   });
 

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { format, subDays } from "date-fns";
-import { Search, Calendar, Users, Clock, Briefcase, Ban, BarChart3, ArrowLeft } from "lucide-react";
+import { Search, Calendar, Users, Clock, Briefcase, Ban, BarChart3, ArrowLeft, CheckCircle2, AlertCircle } from "lucide-react";
 import { dailyUpdateStatusOptions } from "@shared/schema";
 import type { ProjectDailyUpdateWithDetails } from "@shared/schema";
 
@@ -65,6 +65,19 @@ export default function DailyUpdatesAdminPage() {
       params.set("endDate", endDate.toISOString());
       const res = await fetch(`/api/admin/daily-updates/kpis?${params.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch KPIs");
+      return res.json();
+    },
+  });
+
+  const { data: todayStatus, isLoading: todayLoading } = useQuery<{
+    date: string;
+    submitted: { id: string; firstName: string | null; lastName: string | null; email: string; profileImageUrl: string | null }[];
+    missing: { id: string; firstName: string | null; lastName: string | null; email: string; profileImageUrl: string | null }[];
+  }>({
+    queryKey: ["/api/admin/daily-updates/today-status"],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/daily-updates/today-status`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch today's status");
       return res.json();
     },
   });
@@ -126,12 +139,20 @@ export default function DailyUpdatesAdminPage() {
     return (f + l).toUpperCase() || u?.email?.[0]?.toUpperCase() || "?";
   };
 
+  const getDtoInitials = (e: { firstName: string | null; lastName: string | null; email: string }) => {
+    const f = e.firstName?.[0] || "";
+    const l = e.lastName?.[0] || "";
+    return (f + l).toUpperCase() || e.email?.[0]?.toUpperCase() || "?";
+  };
+
   // Gate rendering after all hooks to keep hook order stable across auth changes.
-  if (user?.role !== "admin") {
+  // Admins, plus non-admin managers granted the daily-update view permission.
+  const canView = user?.role === "admin" || user?.canViewDailyUpdates === 1;
+  if (!canView) {
     return (
       <div className="max-w-3xl mx-auto p-6 text-center">
         <h1 className="text-xl font-semibold">Access Denied</h1>
-        <p className="text-muted-foreground mt-2">You need admin privileges to view this page.</p>
+        <p className="text-muted-foreground mt-2">You don't have permission to view this page.</p>
       </div>
     );
   }
@@ -195,6 +216,89 @@ export default function DailyUpdatesAdminPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Today's submission status */}
+      <Card data-testid="card-today-status">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-primary" />
+              Today's submissions
+            </CardTitle>
+            {!todayLoading && todayStatus && (
+              <Badge variant="secondary" className="shrink-0">
+                {todayStatus.submitted.length} of {todayStatus.submitted.length + todayStatus.missing.length} submitted
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {todayLoading ? (
+            <Skeleton className="h-20 w-full" />
+          ) : !todayStatus || (todayStatus.submitted.length === 0 && todayStatus.missing.length === 0) ? (
+            <p className="text-sm text-muted-foreground">No active employees found.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-emerald-600">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Submitted ({todayStatus.submitted.length})
+                </div>
+                {todayStatus.submitted.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No one has submitted yet today.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {todayStatus.submitted.map((e) => {
+                      const name = `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.email;
+                      return (
+                        <div
+                          key={e.id}
+                          className="flex items-center gap-2 rounded-md border px-2 py-1"
+                          data-testid={`today-submitted-${e.id}`}
+                        >
+                          <Avatar className="h-6 w-6">
+                            <AvatarImage src={e.profileImageUrl || undefined} alt={name} />
+                            <AvatarFallback className="text-[10px]">{getDtoInitials(e)}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">{name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-amber-600">
+                  <AlertCircle className="w-4 h-4" />
+                  Missing ({todayStatus.missing.length})
+                </div>
+                {todayStatus.missing.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Everyone has submitted today.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {todayStatus.missing.map((e) => {
+                      const name = `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.email;
+                      return (
+                        <div
+                          key={e.id}
+                          className="flex items-center gap-2 rounded-md border px-2 py-1"
+                          data-testid={`today-missing-${e.id}`}
+                        >
+                          <Avatar className="h-6 w-6">
+                            <AvatarImage src={e.profileImageUrl || undefined} alt={name} />
+                            <AvatarFallback className="text-[10px]">{getDtoInitials(e)}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">{name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">

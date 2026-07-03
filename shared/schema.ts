@@ -40,6 +40,7 @@ export const users = pgTable("users", {
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role", { length: 20 }).notNull().default("user"),
   isMainAdmin: integer("is_main_admin").notNull().default(0),
+  canViewDailyUpdates: integer("can_view_daily_updates").notNull().default(0),
   hoursPerDay: integer("hours_per_day").notNull().default(8),
   lastGeneratedPassword: varchar("last_generated_password", { length: 255 }),
   lastLoginAt: timestamp("last_login_at"),
