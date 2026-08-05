@@ -1,0 +1,3 @@
+# Separate the marketing website from the web application
+
+The public DocuFlow website and the authenticated product are separate surfaces with separate responsibilities. `docuflow-marketing` owns acquisition, product information, pricing, and trial entry; the application host presents authentication or onboarding when signed out and Today when signed in. The current application-hosted landing page will therefore be retired once routing and deployment are separated. Keeping a duplicate landing page inside the product was rejected because it creates two visual and content authorities and couples public-site iteration to application releases.

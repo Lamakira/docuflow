@@ -1,0 +1,3 @@
+# Separate sales opportunities from delivery projects
+
+DocuFlow currently combines sales and delivery in one `crmProjects` lifecycle (`LEAD → WON → IN PROGRESS → IN REVIEW → COMPLETED`). The future product models an Opportunity and a Project as separate records: an Opportunity ends as won or lost, a won Opportunity may create a linked Client Project, and Internal Projects bypass the sales pipeline. This preserves Project as the operational hub while giving sales conversion, delivery status, internal work, and reporting unambiguous meanings. Keeping the combined record was rejected because its early stages do not describe delivery and do not apply to Internal Projects; the eventual migration must also update the marketing site's current stage narrative.

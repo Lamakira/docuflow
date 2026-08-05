@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800&f[]=switzer@400,500,600&display=swap">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: #F3F5F7; color: #0F1524; font-family: 'Switzer', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #0F1524; text-decoration: none; }
+  a:hover { color: #E9A23B; }
+  ::selection { background: #E9A23B; color: #0F1524; }
+  :focus-visible { outline: 2px solid #E9A23B; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  .df-rail { display: none; }
+  @media (min-width: 1240px) { .df-rail { display: block; } }
+  @media (max-width: 900px) {
+    .df-split, .df-proof { grid-template-columns: 1fr !important; gap: 32px !important; }
+    .df-sectors, .df-plans, .df-footer { grid-template-columns: 1fr 1fr !important; }
+  }
+  @media (max-width: 560px) {
+    .df-navlinks { display: none !important; }
+    .df-sectors, .df-plans { grid-template-columns: 1fr !important; }
+    .df-footer { grid-template-columns: 1fr !important; }
+    .df-stats { grid-template-columns: 1fr !important; }
+  }
+</style>
+</helmet>
+
+<div style="position: relative; width: 100%; overflow-x: hidden;">
+
+  <!-- LEFT RAIL — CRM stages -->
+  <div aria-hidden="true" class="df-rail" style="position: fixed; left: 26px; top: 18vh; bottom: 18vh; width: 1px; background: #D8DEE6; z-index: 40;">
+    <div ref="{{ railFillRef }}" style="position: absolute; left: 0; top: 0; width: 1px; background: #E9A23B; height: 0%;"></div>
+    <div ref="{{ railDotRef }}" style="position: absolute; left: -3px; width: 7px; height: 7px; border-radius: 50%; background: #E9A23B; box-shadow: 0 0 0 3px rgba(233,162,59,.2); top: 0%;"></div>
+    <sc-for list="{{ railTicks }}" as="t" hint-placeholder-count="5">
+      <div style="{{ t.style }}">{{ t.h }}</div>
+    </sc-for>
+  </div>
+
+  <!-- NAV -->
+  <nav style="position: sticky; top: 0; z-index: 50; background: rgba(243,245,247,.9); backdrop-filter: blur(8px); border-bottom: 1px solid #D8DEE6;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 0 24px; height: 64px; display: flex; align-items: center; gap: 32px;">
+      <a href="#top" style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: 20px; letter-spacing: -.02em;">DocuFlow</a>
+      <div class="df-navlinks" style="display: flex; gap: 26px; margin-left: 8px; font-size: 15px; font-weight: 500;">
+        <a href="#work">Product</a>
+        <a href="#sectors">Solutions</a>
+        <a href="Pricing.dc.html">Pricing</a>
+        <a href="#knowledge">Resources</a>
+      </div>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 18px; font-size: 15px; font-weight: 500;">
+        <a href="#">Sign in</a>
+        <a href="#cta" style="background: #0F1524; color: #F3F5F7; padding: 9px 16px; border-radius: 6px; font-weight: 600;" style-hover="{{ ctaHover }}">Start free trial</a>
+      </div>
+    </div>
+  </nav>
+
+  <div id="top"></div>
+
+  <!-- HERO — LEAD -->
+  <section style="max-width: 1200px; margin: 0 auto; padding: 84px 24px 64px;">
+    <div style="display: flex; align-items: center; gap: 12px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #E9A23B; font-weight: 500; margin-bottom: 22px;">
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #E9A23B;"></span>LEAD<span style="color: #59657A;">— a new client project</span>
+    </div>
+    <h1 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: clamp(38px, 6vw, 66px); line-height: 1.02; letter-spacing: -.03em; margin: 0 0 24px; max-width: 17ch; text-wrap: balance;">One place for everything a client project leaves behind.</h1>
+    <p style="font-size: 19px; line-height: 1.55; color: #59657A; max-width: 62ch; margin: 0 0 28px;">Contacts, budgets, tasks, hours, screenshots and documents — all attached to the same client project, in one tool. Service teams replace four subscriptions with DocuFlow.</p>
+    <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 14px;">
+      <a href="#cta" style="background: #E9A23B; color: #0F1524; padding: 13px 22px; border-radius: 6px; font-weight: 600; font-size: 16px;" style-hover="{{ amberHover }}">Start free trial</a>
+      <a href="#cta" style="border: 1px solid #D8DEE6; padding: 12px 22px; border-radius: 6px; font-weight: 600; font-size: 16px; background: #fff;" style-hover="{{ ghostHover }}">Book a 15-minute demo</a>
+    </div>
+    <p style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #59657A; margin: 0;">No credit card. Desktop app for Windows, macOS and Linux.</p>
+
+    <!-- PROJECT VISUAL -->
+    <div style="margin-top: 52px; background: #fff; border: 1px solid #D8DEE6; border-radius: 8px; padding: 22px 24px 26px;" onMouseLeave="{{ clearLayer }}">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #59657A;">One client project · Everything attached</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A;">hover a layer →</span>
+      </div>
+
+      <!-- identity -->
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
+        <span style="font-weight: 600; font-size: 17px;">Northwind · Ledger rebuild</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .06em; background: #E9A23B; color: #0F1524; border-radius: 3px; padding: 3px 8px;">IN PROGRESS</span>
+      </div>
+
+      <!-- stage bar -->
+      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .05em; margin-bottom: 18px;">
+        <span style="color: #59657A;">LEAD</span><span style="flex: 1; max-width: 44px; height: 1px; background: #59657A;"></span>
+        <span style="color: #59657A;">WON</span><span style="flex: 1; max-width: 44px; height: 1px; background: #59657A;"></span>
+        <span style="color: #E9A23B; font-weight: 700;">IN PROGRESS</span><span style="flex: 1; max-width: 44px; height: 1px; background: #D8DEE6;"></span>
+        <span style="color: #D8DEE6;">IN REVIEW</span><span style="flex: 1; max-width: 44px; height: 1px; background: #D8DEE6;"></span>
+        <span style="color: #D8DEE6;">COMPLETED</span>
+      </div>
+
+      <!-- layer: client record -->
+      <div role="button" tabindex="0" onMouseEnter="{{ enterRecord }}" onFocus="{{ enterRecord }}" style="display: flex; gap: 18px; flex-wrap: wrap; align-items: center; background: #F3F5F7; border-radius: 5px; padding: 12px 14px; margin-bottom: 10px; cursor: default;">
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <span style="width: 26px; height: 26px; border-radius: 50%; background: #0F1524; color: #F3F5F7; font-family: 'JetBrains Mono', monospace; font-size: 10px; display: flex; align-items: center; justify-content: center;">EP</span>
+          <span style="width: 26px; height: 26px; border-radius: 50%; background: #59657A; color: #F3F5F7; font-family: 'JetBrains Mono', monospace; font-size: 10px; display: flex; align-items: center; justify-content: center; margin-left: -14px;">RA</span>
+          <span style="width: 26px; height: 26px; border-radius: 50%; background: #1F9D6B; color: #F3F5F7; font-family: 'JetBrains Mono', monospace; font-size: 10px; display: flex; align-items: center; justify-content: center; margin-left: -14px;">SD</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A;">3 contacts</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 180px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700;">$48,000</span>
+          <div style="flex: 1; height: 4px; background: rgba(15,21,36,.08); border-radius: 2px;"><div style="width: 62%; height: 100%; background: #1F9D6B; border-radius: 2px;"></div></div>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A;">62% used</span>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #59657A; border: 1px solid #D8DEE6; border-radius: 3px; padding: 2px 7px;">retainer</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #59657A; border: 1px solid #D8DEE6; border-radius: 3px; padding: 2px 7px;">Q2</span>
+        </div>
+      </div>
+
+      <!-- layer: hours per member -->
+      <div role="button" tabindex="0" onMouseEnter="{{ enterHours }}" onFocus="{{ enterHours }}" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; cursor: default;">
+        <sc-for list="{{ memberHours }}" as="m" hint-placeholder-count="3">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #59657A; width: 20px;">{{ m.who }}</span>
+            <div style="flex: 1; height: 8px; background: #F3F5F7; border-radius: 2px;"><div style="{{ m.barStyle }}"></div></div>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #0F1524; width: 48px; text-align: right;">{{ m.hrs }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- layer: screenshots -->
+      <div role="button" tabindex="0" onMouseEnter="{{ enterShots }}" onFocus="{{ enterShots }}" style="position: relative; height: 34px; cursor: default;">
+        <span style="position: absolute; left: 0; top: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: #59657A;">shots</span>
+        <sc-for list="{{ thumbs }}" as="th" hint-placeholder-count="7">
+          <div title="screenshot" style="{{ th.style }}"></div>
+        </sc-for>
+      </div>
+
+      <!-- layer: tasks & docs -->
+      <div role="button" tabindex="0" onMouseEnter="{{ enterMarkers }}" onFocus="{{ enterMarkers }}" style="position: relative; height: 22px; margin-top: 4px; cursor: default;">
+        <span style="position: absolute; left: 0; top: 6px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: #59657A;">tasks · docs</span>
+        <sc-for list="{{ markers }}" as="m" hint-placeholder-count="8">
+          <div title="{{ m.label }}" style="{{ m.style }}"></div>
+        </sc-for>
+      </div>
+
+      <!-- inspector -->
+      <div style="min-height: 58px; margin-top: 16px; border-top: 1px solid #D8DEE6; padding-top: 14px;">
+        <sc-if value="{{ hasActive }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-wrap: wrap; gap: 22px; align-items: baseline;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #E9A23B; font-weight: 500;">{{ activeLayer.tag }}</span>
+            <span style="font-weight: 600; font-size: 15px;">{{ activeLayer.title }}</span>
+            <span style="color: #59657A; font-size: 14px;">{{ activeLayer.desc }}</span>
+            <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #59657A;">{{ activeLayer.stats }}</span>
+          </div>
+        </sc-if>
+        <sc-if value="{{ noActive }}" hint-placeholder-val="{{ false }}">
+          <span style="color: #59657A; font-size: 14px;">Every layer is attached to the same client project — hover to see what the record holds.</span>
+        </sc-if>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROOF BAND -->
+  <section style="background: #0F1524; color: #F3F5F7;">
+    <div class="df-proof" style="max-width: 1200px; margin: 0 auto; padding: 54px 24px; display: grid; grid-template-columns: 1.3fr 1fr; gap: 48px; align-items: center;">
+      <div>
+        <h2 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 700; font-size: 26px; letter-spacing: -.02em; margin: 0 0 12px; line-height: 1.15;">Built by an agency that got tired of paying four vendors.</h2>
+        <p style="color: #9AA6B8; font-size: 16px; line-height: 1.55; margin: 0; max-width: 54ch;">DocuFlow runs TECHMA's own operations every day — the timers, the screenshots, the client records, the docs. We ship what we use.</p>
+      </div>
+      <div class="df-stats" style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px;">
+        <sc-for list="{{ proof }}" as="p" hint-placeholder-count="4">
+          <div style="border-left: 2px solid #E9A23B; padding-left: 14px;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700;">{{ p.value }}</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9AA6B8; letter-spacing: .03em;">{{ p.label }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROBLEM — stack fold -->
+  <section id="stack-anim" style="max-width: 1200px; margin: 0 auto; padding: 92px 24px;">
+    <h2 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: clamp(30px, 4.5vw, 46px); letter-spacing: -.025em; margin: 0 0 18px; max-width: 18ch; line-height: 1.05;">Your stack has four logins and no memory.</h2>
+    <p style="font-size: 18px; line-height: 1.55; color: #59657A; max-width: 64ch; margin: 0 0 44px;">A CRM that doesn't know the hours. A time tracker that doesn't know the client. A monitoring tool that doesn't know the project. A wiki nobody opens. Four bills, four exports, and a spreadsheet to glue it together.</p>
+    <div style="position: relative; height: 300px;">
+      <sc-for list="{{ foldCards }}" as="c" hint-placeholder-count="4">
+        <div style="{{ c.style }}">
+          <div style="background: #fff; border: 1px solid #D8DEE6; border-radius: 6px; padding: 18px; height: 220px; display: flex; flex-direction: column;">
+            <div style="font-weight: 600; font-size: 16px; margin-bottom: 6px;">{{ c.name }}</div>
+            <div style="color: #59657A; font-size: 13px; line-height: 1.45; flex: 1;">{{ c.note }}</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #0F1524; font-weight: 500;">{{ c.price }}</div>
+          </div>
+        </div>
+      </sc-for>
+      <div style="{{ resultStyle }}">
+        <div style="width: 300px; background: #0F1524; color: #F3F5F7; border-radius: 8px; padding: 22px; box-shadow: 0 24px 48px -18px rgba(15,21,36,.5);">
+          <div style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: 22px; letter-spacing: -.02em;">DocuFlow</div>
+          <div style="color: #9AA6B8; font-size: 13px; line-height: 1.45; margin: 6px 0 14px;">One login. Every client, hour, screenshot and document on the same project.</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: #E9A23B; font-weight: 500;">$14 /user/mo</div>
+        </div>
+      </div>
+    </div>
+    <div style="text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 14px; margin-top: 12px;">
+      <span style="color: #59657A;">{{ scrubLabel }}</span> <span style="color: #E9A23B; font-weight: 700;">{{ scrubPrice }}</span>
+    </div>
+  </section>
+
+  <!-- WON — THE CLIENT -->
+  <section id="clients" style="background: #F3F5F7;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 88px 24px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #E9A23B; font-weight: 500; margin-bottom: 18px;">WON — the client</div>
+      <div class="df-split" style="display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center;">
+        <div style="background: #fff; border: 1px solid #D8DEE6; border-radius: 8px; padding: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+            <span style="font-weight: 600; font-size: 16px;">Northwind Systems</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .06em; background: #E9A23B; color: #0F1524; border-radius: 3px; padding: 3px 8px;">WON — IN PROGRESS</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="width: 24px; height: 24px; border-radius: 50%; background: #0F1524; color: #F3F5F7; font-family: 'JetBrains Mono', monospace; font-size: 9px; display: flex; align-items: center; justify-content: center;">EP</span>
+              <span style="font-size: 14px; font-weight: 500;">Elena Park</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A;">VP Operations</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="width: 24px; height: 24px; border-radius: 50%; background: #59657A; color: #F3F5F7; font-family: 'JetBrains Mono', monospace; font-size: 9px; display: flex; align-items: center; justify-content: center;">RA</span>
+              <span style="font-size: 14px; font-weight: 500;">Raj Anand</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A;">Finance lead</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="width: 24px; height: 24px; border-radius: 50%; background: #1F9D6B; color: #F3F5F7; font-family: 'JetBrains Mono', monospace; font-size: 9px; display: flex; align-items: center; justify-content: center;">SD</span>
+              <span style="font-size: 14px; font-weight: 500;">Sofia Duarte</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A;">IT contact</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700;">$48,000</span>
+            <div style="flex: 1; height: 4px; background: rgba(15,21,36,.08); border-radius: 2px;"><div style="width: 62%; height: 100%; background: #1F9D6B; border-radius: 2px;"></div></div>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A;">62% used</span>
+          </div>
+          <div style="display: flex; gap: 6px; margin-bottom: 14px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #59657A; border: 1px solid #D8DEE6; border-radius: 3px; padding: 2px 7px;">retainer</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #59657A; border: 1px solid #D8DEE6; border-radius: 3px; padding: 2px 7px;">Q2</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; background: #FBF3E6; border-radius: 5px; padding: 8px 12px; margin-bottom: 12px;">
+            <span style="width: 7px; height: 7px; background: #E9A23B; border-radius: 1px;"></span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #0F1524;">Apr 12 · Scope review</span>
+          </div>
+          <div style="border-top: 1px solid #D8DEE6; padding-top: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A;">71.7 h tracked this month</div>
+        </div>
+        <div>
+          <h2 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: clamp(28px,4vw,42px); letter-spacing: -.025em; line-height: 1.05; margin: 0 0 18px;">The client record everything hangs off.</h2>
+          <p style="font-size: 18px; line-height: 1.55; color: #59657A; margin: 0; max-width: 52ch;">Companies, contacts, budgets, stages and notes live in the CRM. Every project, task, hour, screenshot and document files itself against the right client — not because someone tagged it, but because that's where it was created.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- IN PROGRESS — THE HOURS -->
+  <section id="work" style="background: #EAF2ED;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 88px 24px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #1F9D6B; font-weight: 500; margin-bottom: 18px;">IN PROGRESS — the hours</div>
+      <div class="df-split" style="display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center;">
+        <div>
+          <h2 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: clamp(28px,4vw,42px); letter-spacing: -.025em; line-height: 1.05; margin: 0 0 18px;">What happened, not what was reported.</h2>
+          <p style="font-size: 18px; line-height: 1.55; color: #59657A; margin: 0; max-width: 52ch;">The desktop agent records screenshots, keyboard and mouse activity and idle time in the background, and files everything against the project the timer was running on. Nobody writes a timesheet from memory.</p>
+        </div>
+        <div style="background: #fff; border: 1px solid #D8DEE6; border-radius: 8px; padding: 20px;">
+          <div style="display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #59657A; margin-bottom: 12px;"><span>Northwind · Ledger rebuild</span><span style="color: #1F9D6B;">88% active</span></div>
+          <div style="display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 12px;">
+            <div style="aspect-ratio: 4/3; border: 1px solid #D8DEE6; border-radius: 3px; background-image: repeating-linear-gradient(45deg,#F3F5F7 0 5px,#fff 5px 10px);"></div>
+            <div style="aspect-ratio: 4/3; border: 1px solid #D8DEE6; border-radius: 3px; background-image: repeating-linear-gradient(45deg,#F3F5F7 0 5px,#fff 5px 10px);"></div>
+            <div style="aspect-ratio: 4/3; border: 1px solid #D8DEE6; border-radius: 3px; background-image: repeating-linear-gradient(45deg,#F3F5F7 0 5px,#fff 5px 10px);"></div>
+            <div style="aspect-ratio: 4/3; border: 1px solid #D8DEE6; border-radius: 3px; background-image: repeating-linear-gradient(45deg,#F3F5F7 0 5px,#fff 5px 10px);"></div>
+          </div>
+          <div style="display: flex; align-items: flex-end; gap: 3px; height: 40px;">
+            <sc-for list="{{ activityBars }}" as="b" hint-placeholder-count="24">
+              <div style="{{ b.style }}"></div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- IN PROGRESS — THE DOCUMENTATION -->
+  <section id="docs" style="background: #FBF3E6;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 88px 24px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #E9A23B; font-weight: 500; margin-bottom: 18px;">IN PROGRESS — the documentation</div>
+      <div class="df-split" style="display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center;">
+        <div style="background: #fff; border: 1px solid #D8DEE6; border-radius: 8px; padding: 20px;">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A; margin-bottom: 14px;">Northwind / Ledger rebuild / Technical spec</div>
+          <div style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: 20px; letter-spacing: -.02em; margin-bottom: 10px;">Technical spec — Ledger rebuild</div>
+          <p style="font-size: 14px; line-height: 1.55; color: #59657A; margin: 0 0 12px;">Migration covers the ledger entries table only. Reporting stays on the current schema until Northwind signs off on phase two.</p>
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+            <span style="display: inline-flex; column-gap: 2px; flex-wrap: wrap; width: 8px;"><span style="width: 3px; height: 3px; border-radius: 50%; background: #D8DEE6; margin-bottom: 2px;"></span><span style="width: 3px; height: 3px; border-radius: 50%; background: #D8DEE6; margin-bottom: 2px;"></span><span style="width: 3px; height: 3px; border-radius: 50%; background: #D8DEE6; margin-bottom: 2px;"></span><span style="width: 3px; height: 3px; border-radius: 50%; background: #D8DEE6;"></span><span style="width: 3px; height: 3px; border-radius: 50%; background: #D8DEE6;"></span><span style="width: 3px; height: 3px; border-radius: 50%; background: #D8DEE6;"></span></span>
+            <span style="width: 16px; height: 16px; border-radius: 3px; background: #1F9D6B; color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center;">✓</span>
+            <span style="font-size: 14px;">Migrate ledger entries table</span>
+          </div>
+          <div style="height: 64px; border: 1px solid #D8DEE6; border-radius: 4px; background-image: repeating-linear-gradient(45deg,#F3F5F7 0 5px,#fff 5px 10px); display: flex; align-items: center; padding: 0 12px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A;">code block</span>
+          </div>
+        </div>
+        <div>
+          <h2 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: clamp(28px,4vw,42px); letter-spacing: -.025em; line-height: 1.05; margin: 0 0 18px;">Write it where the work is.</h2>
+          <p style="font-size: 18px; line-height: 1.55; color: #59657A; margin: 0; max-width: 52ch;">The block editor lives inside the client project — specs, meeting notes, statements of work, nested pages, reusable templates. Not a separate wiki nobody opens, because it's already where the work is.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- IN REVIEW — THE ANSWER -->
+  <section id="knowledge" style="background: #FBF3E6;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 88px 24px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #E9A23B; font-weight: 500; margin-bottom: 18px;">IN REVIEW — the answer</div>
+      <div class="df-split" style="display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center;">
+        <div>
+          <h2 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: clamp(28px,4vw,42px); letter-spacing: -.025em; line-height: 1.05; margin: 0 0 18px;">Ask your own company a question.</h2>
+          <p style="font-size: 18px; line-height: 1.55; color: #59657A; margin: 0; max-width: 52ch;">Documentation, company files and meeting recordings are indexed as they're written. Ask "what did we agree on the Ledger rebuild?" and get the answer with its source, not a list of files.</p>
+        </div>
+        <div style="background: #fff; border: 1px solid #D8DEE6; border-radius: 8px; padding: 20px;">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #0F1524; background: #F3F5F7; border: 1px solid #D8DEE6; border-radius: 5px; padding: 10px 12px; margin-bottom: 14px;">what did we agree on the Ledger rebuild?</div>
+          <p style="font-size: 15px; line-height: 1.55; color: #0F1524; margin: 0 0 12px;">Fixed scope: migration only, no new reporting. Northwind signed off on a two-sprint window at the April 3 call.</p>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #1F9D6B; border: 1px solid #1F9D6B; border-radius: 3px; padding: 3px 7px;">doc · Ledger SOW</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #1F9D6B; border: 1px solid #1F9D6B; border-radius: 3px; padding: 3px 7px;">call · Apr 3</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRANSPARENCY -->
+  <section style="background: #F3F5F7;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 88px 24px;">
+      <div class="df-split" style="border: 1px solid #D8DEE6; border-radius: 8px; background: #fff; padding: 48px; display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center;">
+        <div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #1F9D6B; margin-bottom: 14px;">Transparency</div>
+          <h2 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: clamp(28px,4vw,40px); letter-spacing: -.025em; line-height: 1.05; margin: 0 0 18px;">Monitoring people can live with.</h2>
+          <p style="font-size: 18px; line-height: 1.55; color: #59657A; margin: 0; max-width: 52ch;">Employees see exactly what's recorded and when the timer is running. Screenshots can be blurred, capture can be scheduled to working hours, and anyone can review their own data. Configure it once, tell your team, keep it visible.</p>
+        </div>
+        <div style="display: grid; gap: 12px;">
+          <sc-for list="{{ transparency }}" as="t" hint-placeholder-count="4">
+            <div style="display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; background: #F3F5F7; border-radius: 6px;">
+              <span style="width: 18px; height: 18px; border-radius: 50%; background: #1F9D6B; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;">✓</span>
+              <span style="font-size: 15px; line-height: 1.45;">{{ t }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPLETED — SECTORS -->
+  <section id="sectors" style="background: #F3F5F7;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 88px 24px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #E9A23B; font-weight: 500; margin-bottom: 18px;">COMPLETED — who it's for</div>
+      <h2 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: clamp(28px,4vw,42px); letter-spacing: -.025em; line-height: 1.05; margin: 0 0 36px; max-width: 20ch;">Teams that deliver for clients.</h2>
+      <div class="df-sectors" style="display: grid; grid-template-columns: repeat(4,1fr); gap: 16px;">
+        <sc-for list="{{ sectors }}" as="s" hint-placeholder-count="8">
+          <a href="{{ s.href }}" style="display: block; background: #fff; border: 1px solid #D8DEE6; border-radius: 6px; padding: 20px; transition: border-color .12s, transform .12s;" style-hover="{{ sectorHover }}">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #59657A; margin-bottom: 8px;">{{ s.tag }}</div>
+            <div style="font-weight: 600; font-size: 16px; line-height: 1.2;">{{ s.name }}</div>
+          </a>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPLETED — THE BILL -->
+  <section id="pricing" style="background: #0F1524; color: #F3F5F7;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 92px 24px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #E9A23B; font-weight: 500; margin-bottom: 18px;">COMPLETED — the bill</div>
+      <div class="df-split" style="display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; margin-bottom: 64px;">
+        <h2 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: clamp(34px,5vw,56px); letter-spacing: -.03em; line-height: 1; margin: 0;">Four tools.<br>One bill.</h2>
+        <div style="background: #161D30; border: 1px solid #2A3348; border-radius: 8px; padding: 24px; font-family: 'JetBrains Mono', monospace; font-size: 14px;">
+          <sc-for list="{{ billRows }}" as="b" hint-placeholder-count="4">
+            <div style="display: flex; justify-content: space-between; padding: 5px 0; color: #9AA6B8;"><span>{{ b.name }}</span><span>{{ b.price }}</span></div>
+          </sc-for>
+          <div style="border-top: 1px solid #2A3348; margin: 10px 0;"></div>
+          <div style="display: flex; justify-content: space-between; padding: 5px 0; font-weight: 500;"><span>Your stack</span><span>$38 /user/mo</span></div>
+          <div style="display: flex; justify-content: space-between; padding: 5px 0; color: #E9A23B; font-weight: 700;"><span>DocuFlow</span><span>$14 /user/mo</span></div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #E9A23B; border: 1px solid #E9A23B; border-radius: 3px; padding: 4px 9px;">Beta pricing — subject to change</span>
+        <a href="Pricing.dc.html" style="color: #9AA6B8; font-size: 14px; font-weight: 500;" style-hover="{{ pricingLinkHover }}">Compare all plans →</a>
+      </div>
+      <div class="df-plans" style="display: grid; grid-template-columns: repeat(4,1fr); gap: 16px;">
+        <sc-for list="{{ plans }}" as="p" hint-placeholder-count="4">
+          <div style="{{ p.cardStyle }}">
+            <div style="{{ p.nameStyle }}">{{ p.name }}</div>
+            <div style="{{ p.priceStyle }}">{{ p.price }}</div>
+            <div style="{{ p.noteStyle }}">{{ p.note }}</div>
+            <a href="#cta" style="{{ p.btnStyle }}">{{ p.cta }}</a>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <!-- FINAL CTA -->
+  <section id="cta" style="background: #E9A23B;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 84px 24px; text-align: center;">
+      <h2 style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: clamp(32px,5vw,52px); letter-spacing: -.03em; line-height: 1.02; margin: 0 0 28px; color: #0F1524;">Start with your next client project.</h2>
+      <div style="display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;">
+        <a href="#" style="background: #0F1524; color: #F3F5F7; padding: 14px 26px; border-radius: 6px; font-weight: 600; font-size: 16px;" style-hover="{{ ctaHover }}">Start free trial</a>
+        <a href="#" style="background: #fff; color: #0F1524; padding: 14px 26px; border-radius: 6px; font-weight: 600; font-size: 16px; border: 1px solid rgba(15,21,36,.15);" style-hover="{{ ghostHover }}">Book a 15-minute demo</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer style="background: #0F1524; color: #9AA6B8;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 64px 24px 40px;">
+      <div class="df-footer" style="display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr; gap: 32px; margin-bottom: 48px;">
+        <div>
+          <div style="font-family: 'Cabinet Grotesk', sans-serif; font-weight: 800; font-size: 20px; color: #F3F5F7; margin-bottom: 12px;">DocuFlow</div>
+          <p style="font-size: 13.5px; line-height: 1.55; max-width: 34ch; margin: 0;">Clients, projects, hours and documentation in one tool. Built and run by TECHMA.</p>
+        </div>
+        <sc-for list="{{ footerCols }}" as="col" hint-placeholder-count="4">
+          <div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #59657A; margin-bottom: 14px;">{{ col.title }}</div>
+            <div style="display: flex; flex-direction: column; gap: 9px;">
+              <sc-for list="{{ col.links }}" as="l" hint-placeholder-count="5">
+                <a href="{{ l.href }}" style="font-size: 14px; color: #9AA6B8;" style-hover="{{ footerLinkHover }}">{{ l.label }}</a>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="border-top: 1px solid #2A3348; padding-top: 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+        <span>© 2026 TECHMA · Terms · Privacy · Law 25</span>
+        <select style="background: #161D30; color: #9AA6B8; border: 1px solid #2A3348; border-radius: 5px; padding: 6px 10px; font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+          <option>English</option>
+          <option>Français</option>
+        </select>
+      </div>
+    </div>
+  </footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { layer: null, folded: false };
+  railFillRef = React.createRef();
+  railDotRef = React.createRef();
+
+  componentDidMount() {
+    this.reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (this.reduced) this.setState({ folded: true });
+    // Rail progress: direct DOM writes, no React re-render on scroll.
+    this.onScroll = () => {
+      if (this._raf) return;
+      this._raf = requestAnimationFrame(() => {
+        this._raf = null;
+        const de = document.documentElement;
+        const st = window.scrollY || de.scrollTop || 0;
+        const pct = Math.min(100, Math.max(0, st / ((de.scrollHeight - window.innerHeight) || 1) * 100));
+        if (this.railFillRef.current) this.railFillRef.current.style.height = pct + '%';
+        if (this.railDotRef.current) this.railDotRef.current.style.top = pct + '%';
+      });
+    };
+    window.addEventListener('scroll', this.onScroll, { passive: true });
+    window.addEventListener('resize', this.onScroll, { passive: true });
+    this.onScroll();
+    // Stack fold: one-shot when the cards enter view.
+    if (!this.reduced && 'IntersectionObserver' in window) {
+      this._io = new IntersectionObserver((entries) => {
+        if (entries.some(e => e.isIntersecting)) {
+          this.setState({ folded: true });
+          this._io.disconnect();
+          this._io = null;
+        }
+      }, { threshold: 0.45 });
+      const el = document.getElementById('stack-anim');
+      if (el) this._io.observe(el); else this.setState({ folded: true });
+    } else if (!('IntersectionObserver' in window)) {
+      this.setState({ folded: true });
+    }
+  }
+  componentWillUnmount() {
+    window.removeEventListener('scroll', this.onScroll);
+    window.removeEventListener('resize', this.onScroll);
+    if (this._io) this._io.disconnect();
+  }
+
+  renderVals() {
+    const mono = "'JetBrains Mono', monospace";
+
+    const layerData = {
+      record: { tag: 'CRM', title: 'Client record', desc: 'Contacts, budget, stage and notes.', stats: '3 contacts · $48,000 budget · 62% used' },
+      hours: { tag: 'TIME', title: 'Tracked hours', desc: 'Per member, filed to this project automatically.', stats: '71.7 h this month' },
+      shots: { tag: 'ACTIVITY', title: 'Screenshots', desc: 'Captured by the desktop agent while the timer ran.', stats: '53 shots · 84% active this week' },
+      markers: { tag: 'TASKS · DOCS', title: 'Tasks & documents', desc: 'Created inside the project, never tagged after the fact.', stats: '12 tasks · 8 documents' }
+    };
+    const mkEnter = (k) => () => this.setState({ layer: k });
+
+    const memberHours = [
+      { who: 'AR', hrs: '38.5 h', pct: 100, color: '#1F9D6B' },
+      { who: 'JM', hrs: '21.0 h', pct: 55, color: '#E9A23B' },
+      { who: 'KT', hrs: '12.2 h', pct: 32, color: '#59657A' }
+    ].map(m => ({ ...m, barStyle: { width: m.pct + '%', height: '100%', background: m.color, borderRadius: '2px' } }));
+
+    const W = 10, S = 8;
+    const thumbs = [9.1, 10.3, 11.4, 13.3, 14.6, 16.1, 17.2].map(p => ({
+      style: {
+        position: 'absolute', top: '4px', transform: 'translateX(-50%)', width: '34px', height: '26px',
+        border: '1px solid #D8DEE6', borderRadius: '3px',
+        backgroundImage: 'repeating-linear-gradient(45deg,#F3F5F7 0 4px,#fff 4px 8px)',
+        left: (p - S) / W * 100 + '%'
+      }
+    }));
+    const markers = [
+      { p: 9.66, t: 'task' }, { p: 12.9, t: 'task' }, { p: 15.5, t: 'task' }, { p: 17.8, t: 'task' },
+      { p: 8.5, t: 'doc' }, { p: 13.4, t: 'doc' }, { p: 15.9, t: 'doc' }, { p: 16.8, t: 'doc' }
+    ].map(m => ({
+      label: m.t,
+      style: {
+        position: 'absolute', top: '8px', transform: 'translateX(-50%)', width: '7px', height: '7px',
+        left: (m.p - S) / W * 100 + '%',
+        background: m.t === 'task' ? '#E9A23B' : '#1F9D6B',
+        borderRadius: m.t === 'task' ? '1px' : '50%'
+      }
+    }));
+
+    const folded = this.state.folded;
+    const noAnim = this.reduced;
+    const starts = [2, 26.3, 50.6, 74.9];
+    const foldData = [
+      { name: 'CRM & projects', note: 'Clients, but no hours.', price: '$12 /user/mo' },
+      { name: 'Time tracker', note: 'Hours, but no client.', price: '$ 7 /user/mo' },
+      { name: 'Monitoring', note: 'Screenshots, but no context.', price: '$ 9 /user/mo' },
+      { name: 'Wiki & docs', note: 'Pages nobody opens.', price: '$10 /user/mo' }
+    ];
+    const foldCards = foldData.map((c, i) => {
+      return {
+        ...c,
+        style: {
+          position: 'absolute', top: 0, width: '22%',
+          left: (folded ? 39 : starts[i]) + '%',
+          opacity: folded ? 0 : 1,
+          transform: folded ? `rotate(${(i - 1.5) * 3}deg) scale(.93)` : 'none',
+          transition: noAnim ? 'none' : `left .9s cubic-bezier(.4,0,.2,1) ${i * 90}ms, transform .9s cubic-bezier(.4,0,.2,1) ${i * 90}ms, opacity .7s ease ${200 + i * 90}ms`,
+          zIndex: i
+        }
+      };
+    });
+
+    const activityBars = Array.from({ length: 26 }, (_, i) => {
+      const base = 40 + Math.round(45 * Math.abs(Math.sin(i * 0.9)) + 15 * Math.cos(i * 0.4));
+      const h = Math.min(100, Math.max(12, base));
+      return { style: { flex: 1, borderRadius: '1px', height: h + '%', background: h > 70 ? '#1F9D6B' : (h > 40 ? '#E9A23B' : '#D8DEE6') } };
+    });
+
+    const sectors = [
+      { name: 'Digital agencies', tag: 'agency', href: '#' },
+      { name: 'Development teams', tag: 'software', href: '#' },
+      { name: 'Consulting firms', tag: 'advisory', href: '#' },
+      { name: 'Accountants', tag: 'finance', href: '#' },
+      { name: 'Legal services', tag: 'legal', href: '#' },
+      { name: 'BPO teams', tag: 'outsourcing', href: '#' },
+      { name: 'Construction', tag: 'field', href: '#' },
+      { name: 'Staffing agencies', tag: 'placement', href: '#' }
+    ];
+
+    const billRows = [
+      { name: 'CRM & projects', price: '$12 /user/mo' },
+      { name: 'Time tracker', price: '$ 7 /user/mo' },
+      { name: 'Monitoring', price: '$ 9 /user/mo' },
+      { name: 'Wiki & docs', price: '$10 /user/mo' }
+    ];
+
+    const mkPlan = (p, hl) => {
+      const cardBg = hl ? '#F3F5F7' : '#161D30';
+      const cardBorder = hl ? '2px solid #E9A23B' : '1px solid #2A3348';
+      const primary = hl ? '#0F1524' : '#F3F5F7';
+      const muted = hl ? '#59657A' : '#9AA6B8';
+      return {
+        ...p,
+        cardStyle: { borderRadius: '8px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '4px', background: cardBg, border: cardBorder },
+        nameStyle: { fontWeight: 600, fontSize: '16px', color: primary },
+        priceStyle: { fontFamily: mono, fontSize: '26px', fontWeight: 700, margin: '4px 0', color: primary },
+        noteStyle: { fontSize: '13px', lineHeight: 1.4, marginBottom: '14px', color: muted },
+        btnStyle: {
+          marginTop: 'auto', textAlign: 'center', padding: '9px', borderRadius: '5px', fontWeight: 600, fontSize: '14px',
+          background: hl ? '#E9A23B' : 'transparent', color: hl ? '#0F1524' : '#F3F5F7', border: hl ? '1px solid #E9A23B' : '1px solid #2A3348'
+        }
+      };
+    };
+    const plans = [
+      mkPlan({ name: 'Starter', price: '$7', note: 'Solo & very small teams. Timer, screenshots, one client.', cta: 'Start free trial' }, false),
+      mkPlan({ name: 'Growth', price: '$14', note: 'The full stack: time, monitoring, CRM, docs & AI.', cta: 'Start free trial' }, true),
+      mkPlan({ name: 'Business', price: '$22', note: 'Advanced analytics, roles and payroll exports.', cta: 'Start free trial' }, false),
+      mkPlan({ name: 'Enterprise', price: 'Custom', note: 'SSO, data residency and a dedicated contact.', cta: 'Talk to us' }, false)
+    ];
+
+    const transparency = [
+      'A visible indicator shows the team exactly when the timer is running.',
+      'Screenshots can be blurred so content is never legible.',
+      'Capture is scheduled to working hours only.',
+      'Anyone can open and review their own recorded data.'
+    ];
+
+    const proof = [
+      { value: '184,200', label: 'hours tracked' },
+      { value: '2.6M', label: 'screenshots processed' },
+      { value: '11,400', label: 'documents indexed' },
+      { value: '1,340', label: 'client projects managed' }
+    ];
+
+    const railTicks = [
+      { h: 'LEAD', p: 2 }, { h: 'WON', p: 26 }, { h: 'IN PROGRESS', p: 50 },
+      { h: 'IN REVIEW', p: 74 }, { h: 'COMPLETED', p: 98 }
+    ].map(t => ({ h: t.h, style: { position: 'absolute', left: '10px', top: t.p + '%', transform: 'translateY(-50%)', fontFamily: mono, fontSize: '10px', letterSpacing: '.05em', color: '#59657A', whiteSpace: 'nowrap' } }));
+
+    const footerCols = [
+      { title: 'Product', links: [{ label: 'Time tracking', href: '#' }, { label: 'Monitoring', href: '#' }, { label: 'Projects & CRM', href: '#' }, { label: 'Documentation', href: '#' }, { label: 'AI assistant', href: '#' }] },
+      { title: 'Solutions', links: [{ label: 'Digital agencies', href: '#' }, { label: 'Development teams', href: '#' }, { label: 'Consulting', href: '#' }, { label: 'Accountants', href: '#' }, { label: 'Legal', href: '#' }] },
+      { title: 'Compare', links: [{ label: 'vs Time Doctor', href: '#' }, { label: 'vs Hubstaff', href: '#' }, { label: 'vs Toggl', href: '#' }, { label: 'Pricing', href: 'Pricing.dc.html' }] },
+      { title: 'Company', links: [{ label: 'About TECHMA', href: '#' }, { label: 'Security', href: '#' }, { label: 'Law 25', href: '#' }, { label: 'Contact', href: '#' }] }
+    ];
+
+    const layer = this.state.layer;
+    return {
+      memberHours, thumbs, markers, activityBars, sectors, billRows, plans,
+      transparency, proof, railTicks, footerCols, foldCards,
+      railFillRef: this.railFillRef,
+      railDotRef: this.railDotRef,
+      resultStyle: {
+        position: 'absolute', top: '40px', left: '50%', zIndex: 10,
+        opacity: folded ? 1 : 0,
+        transform: folded ? 'translateX(-50%) translateY(0) scale(1)' : 'translateX(-50%) translateY(30px) scale(.92)',
+        transition: noAnim ? 'none' : 'opacity .7s ease .55s, transform .8s cubic-bezier(.4,0,.2,1) .55s'
+      },
+      scrubLabel: folded ? 'One tool —' : 'Your stack —',
+      scrubPrice: folded ? '$14 /user/mo' : '$38 /user/mo',
+      enterRecord: mkEnter('record'),
+      enterHours: mkEnter('hours'),
+      enterShots: mkEnter('shots'),
+      enterMarkers: mkEnter('markers'),
+      clearLayer: () => this.setState({ layer: null }),
+      activeLayer: layer ? layerData[layer] : null,
+      hasActive: layer != null,
+      noActive: layer == null,
+      ctaHover: { background: '#1c2740' },
+      amberHover: { background: '#d8912f' },
+      ghostHover: { borderColor: '#0F1524' },
+      sectorHover: { borderColor: '#E9A23B', transform: 'translateY(-2px)' },
+      footerLinkHover: { color: '#F3F5F7' },
+      pricingLinkHover: { color: '#E9A23B' }
+    };
+  }
+}
+</script>
+</body>
+</html>

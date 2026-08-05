@@ -1,0 +1,3 @@
+# Use one Workspace model for individuals and organizations
+
+DocuFlow uses Workspace as the ownership, policy, membership, and subscription boundary for both individuals and organizations. A one-member Workspace can add members without migrating to a different product type; a User may hold Memberships in multiple Workspaces; and every operational record belongs to exactly one Workspace. Separate personal and organization products were rejected because they would duplicate product behavior and make growth require migration, while the current global-organization assumption was rejected because it cannot provide tenant isolation or independent subscriptions.

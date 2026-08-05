@@ -1,0 +1,3 @@
+# Migrate the web interface through a parallel v2 layer
+
+The redesigned web application will be built as a parallel v2 presentation layer behind a feature flag while the current interface remains operational. V2 reuses existing authentication, API contracts, queries, and domain behavior where suitable, and new backend capabilities are added as their vertical slices are implemented. Selected users can exercise v2 before legacy routes are retired. An in-place or big-bang rewrite was rejected because it would mix the discarded and canonical visual systems in production, make rollback difficult, and force every current feature to reach redesign parity before any validated slice could ship.
