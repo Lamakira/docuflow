@@ -49,6 +49,7 @@ const initialState: State = {
 type Action =
   | { type: 'INIT'; payload: AgentState }
   | { type: 'STATE_UPDATE'; payload: any }
+  | { type: 'TIMER_SYNC'; timer: TimerState }
   | { type: 'LOGOUT'; newState: AgentState }
   | { type: 'TICK' }
   | { type: 'SET_PAGE'; page: AppPage }
@@ -88,6 +89,21 @@ function reducer(state: State, action: Action): State {
         wasRevoked: wasRevoked || state.wasRevoked,
         loading: false,
       };
+    }
+
+    /**
+     * Replace only the timer, leaving pairing and account fields alone.
+     *
+     * The day-rollover path used to reuse STATE_UPDATE with a `{ timer }`-only
+     * payload. That reducer reads `isPaired` off the same payload, so a partial
+     * payload resolved to `false` — and because the previous state was paired,
+     * `wasRevoked` flipped too. The result was a signed-in user being thrown to
+     * "Session ended — this device was disconnected" at local midnight, with a
+     * running timer and a perfectly valid session.
+     */
+    case 'TIMER_SYNC': {
+      if (!state.agentState) return state;
+      return { ...state, agentState: { ...state.agentState, timer: action.timer } };
     }
 
     case 'LOGOUT':
@@ -210,7 +226,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       if (boundaryKey !== lastTickDayRef.current) {
         lastTickDayRef.current = boundaryKey;
         bridge.timerState().then((fresh) => {
-          dispatch({ type: 'STATE_UPDATE', payload: { timer: fresh } });
+          dispatch({ type: 'TIMER_SYNC', timer: fresh });
         }).catch(() => {});
         return;
       }
