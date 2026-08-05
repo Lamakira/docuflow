@@ -11,3 +11,11 @@ installers/
 # Claude Code
 .claude/
 CLAUDE.md
+transcript.txt
+
+# Local tooling — machine-specific, regenerated on demand
+.codegraph/
+.idea/
+
+# Harness build output (npm run harness serves from source; build writes here)
+desktop-agent/.harness/
