@@ -146,7 +146,7 @@ async function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: 
   try {
     const device = await storage.getDevice(payload.sub);
     if (!device || device.revokedAt) {
-      res.status(403).json({ message: "Device has been revoked" });
+      res.status(403).json({ code: "device_revoked", message: "Device has been revoked" });
       return;
     }
   } catch {
@@ -335,7 +335,7 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(401).json({ message: "Invalid device credentials" });
       }
       if (device.revokedAt) {
-        return res.status(401).json({ message: "Device has been revoked" });
+        return res.status(401).json({ code: "device_revoked", message: "Device has been revoked" });
       }
 
       // Update lastSeenAt
@@ -420,7 +420,7 @@ export function registerAgentRoutes(app: Express): void {
       // instead of waiting for JWT expiry. ApiClient handles 403 → onRevoke() → clearSession.
       const device = await storage.getDevice(body.deviceId);
       if (!device || device.revokedAt) {
-        return res.status(403).json({ message: "Device has been revoked" });
+        return res.status(403).json({ code: "device_revoked", message: "Device has been revoked" });
       }
 
       // Update device lastSeenAt
@@ -575,7 +575,7 @@ export function registerAgentRoutes(app: Express): void {
       // Guard: verify the requesting device is not revoked
       const presignDevice = await storage.getDevice(req.agentDeviceId!);
       if (!presignDevice || presignDevice.revokedAt) {
-        return res.status(403).json({ message: "Device has been revoked" });
+        return res.status(403).json({ code: "device_revoked", message: "Device has been revoked" });
       }
 
       // Create a screenshot record with pending status
@@ -776,7 +776,7 @@ export function registerAgentRoutes(app: Express): void {
       return false;
     }
     if (device.revokedAt) {
-      res.status(403).json({ message: "Device has been revoked" });
+      res.status(403).json({ code: "device_revoked", message: "Device has been revoked" });
       return false;
     }
     return true;

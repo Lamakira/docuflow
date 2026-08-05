@@ -448,8 +448,18 @@ export class ApiClient {
     if (res.status === 403) {
       const data = await res.json().catch(() => ({ message: res.statusText }));
       const msg = data.message || `Request failed: ${res.status}`;
-      console.log(`[ApiClient] Device revoked (403): ${msg}`);
-      this.onRevoke?.();
+      // 403 means two different things on these routes: the device was revoked,
+      // or this user is not a member of the project being asked about. Treating
+      // every 403 as revocation signed the user out the moment they touched a
+      // project they do not belong to — one GET /api/agent/tasks was enough.
+      // The revocation responses carry `code: "device_revoked"`; the message
+      // check keeps older servers working.
+      if (data.code === 'device_revoked' || /device has been revoked/i.test(msg)) {
+        console.log(`[ApiClient] Device revoked (403): ${msg}`);
+        this.onRevoke?.();
+      } else {
+        console.log(`[ApiClient] Forbidden (403, not a revocation): ${msg}`);
+      }
       throw new Error(msg);
     }
 
