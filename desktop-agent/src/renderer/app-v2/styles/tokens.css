@@ -1,0 +1,164 @@
+/**
+ * Design tokens — rail-layout redesign.
+ *
+ * Two layers. The palette holds the raw values from the handoff; the semantic
+ * layer is what components reference. Components must never use a raw hex or a
+ * palette variable directly, so retheming means editing one block.
+ */
+
+:root {
+  /* ── Palette (raw values from the handoff) ──────────────────────────── */
+  --p-desk: #dbe4fb;
+  --p-rail: #edf0fb;
+  --p-white: #ffffff;
+  --p-stage: #f7f8fd;
+
+  --p-border-1: #e9eaf3;
+  --p-border-2: #eceef7;
+  --p-border-3: #e6e8f2;
+  --p-divider-1: #f0f1f7;
+  --p-divider-2: #f4f5fa;
+  --p-hover-1: #fafbfe;
+  --p-hover-2: #f5f6fa;
+
+  --p-ink: #14161f;
+  --p-ink-2: #22242e;
+  --p-ink-3: #4a4e63;
+  --p-muted: #8b90ab;
+  --p-muted-2: #9296ac;
+  --p-body: #6b7080;
+  --p-body-2: #5a5f75;
+
+  --p-accent: #4f46e5;
+  --p-accent-strong: #4338ca;
+  --p-accent-deep: #3730a3;
+  --p-accent-tint: #e9e8fd;
+  --p-accent-tint-2: #eceafd;
+  --p-accent-border: #d8d6fa;
+  --p-accent-border-2: #dcd9fa;
+  --p-accent-hover-border: #c7c4f5;
+  --p-selected-text: #22245a;
+  --p-selected-meta: #6f74a8;
+
+  --p-success: #16a34a;
+  --p-success-bg: #e6f6ec;
+  --p-success-text: #15803d;
+  --p-warn-dot: #e2960f;
+  --p-warn-bg: #fdf1e0;
+  --p-warn-text: #b06d05;
+  --p-danger: #b91c1c;
+  --p-danger-bg: #fdecec;
+
+  --p-toast-bg: #1c1f2e;
+  --p-toast-check: #34d399;
+
+  --p-disabled-fill: #c7c4ee;
+  --p-toggle-off: #dcdfea;
+  --p-toggle-locked: #c9c6f6;
+
+  --p-neutral-btn: #e9eaf5;
+  --p-neutral-btn-hover: #dfe1f0;
+  --p-dot: #dadce8;
+
+  /* Transport controls carry their own colour: the three buttons do different
+     and partly irreversible things, so they must not read as one row. */
+  --p-run-btn: #16a34a;
+  --p-run-btn-hover: #15803d;
+  --p-run-rgb: 22, 163, 74;
+  --p-hold-btn: #d97706;
+  --p-hold-btn-hover: #b45309;
+  --p-hold-rgb: 217, 119, 6;
+  --p-danger-tint-hover: #fbdcdc;
+  --p-accent-tint-hover: #ddd9fb;
+
+  /* ── Semantic ───────────────────────────────────────────────────────── */
+  --desk: var(--p-desk);
+  --rail-bg: var(--p-rail);
+  --panel-bg: var(--p-white);
+  --stage-bg: var(--p-stage);
+  --surface-card: var(--p-white);
+
+  --border-card: var(--p-border-1);
+  --border-card-soft: var(--p-border-2);
+  --border-field: var(--p-border-3);
+  --border-create: var(--p-accent-border-2);
+  --border-tile-hover: var(--p-accent-hover-border);
+  --divider: var(--p-divider-1);
+  --divider-soft: var(--p-divider-2);
+  --row-hover: var(--p-hover-1);
+  --row-hover-strong: var(--p-hover-2);
+
+  --text-primary: var(--p-ink);
+  --text-row: var(--p-ink-2);
+  --text-secondary: var(--p-ink-3);
+  --text-body: var(--p-body);
+  --text-body-soft: var(--p-body-2);
+  --text-muted: var(--p-muted);
+  --text-meta: var(--p-muted-2);
+
+  --accent: var(--p-accent);
+  --accent-strong: var(--p-accent-strong);
+  --accent-deep: var(--p-accent-deep);
+  --accent-tint: var(--p-accent-tint);
+  --accent-tint-2: var(--p-accent-tint-2);
+  --accent-border: var(--p-accent-border);
+  --selected-text: var(--p-selected-text);
+  --selected-meta: var(--p-selected-meta);
+
+  --status-ok: var(--p-success);
+  --status-ok-bg: var(--p-success-bg);
+  --status-ok-text: var(--p-success-text);
+  --status-warn-dot: var(--p-warn-dot);
+  --status-warn-bg: var(--p-warn-bg);
+  --status-warn-text: var(--p-warn-text);
+  --status-danger: var(--p-danger);
+  --status-danger-bg: var(--p-danger-bg);
+
+  --toast-bg: var(--p-toast-bg);
+  --toast-check: var(--p-toast-check);
+
+  --control-neutral: var(--p-neutral-btn);
+  --control-neutral-hover: var(--p-neutral-btn-hover);
+  --run-btn: var(--p-run-btn);
+  --run-btn-hover: var(--p-run-btn-hover);
+  --run-rgb: var(--p-run-rgb);
+  --hold-btn: var(--p-hold-btn);
+  --hold-btn-hover: var(--p-hold-btn-hover);
+  --hold-rgb: var(--p-hold-rgb);
+  --danger-tint: var(--p-danger-bg);
+  --danger-tint-hover: var(--p-danger-tint-hover);
+  --accent-tint-hover: var(--p-accent-tint-hover);
+  --control-disabled: var(--p-disabled-fill);
+  --toggle-off: var(--p-toggle-off);
+  --toggle-locked: var(--p-toggle-locked);
+  --window-dot: var(--p-dot);
+
+  /* ── Metrics ────────────────────────────────────────────────────────── */
+  --rail-w: 78px;
+  --panel-w: 292px;
+  --rail-gap: 24px;
+  --notch-r: 20px;          /* must stay <= half of --rail-gap */
+
+  --r-6: 6px;
+  --r-8: 8px;
+  --r-9: 9px;
+  --r-11: 11px;
+  --r-12: 12px;
+  --r-14: 14px;
+  --r-20: 20px;
+  --r-toast: 24px;
+
+  --shadow-card: 0 4px 12px rgba(35, 40, 80, .05);
+  --shadow-row: 0 3px 10px rgba(35, 40, 80, .06);
+  --shadow-tile: 0 8px 20px rgba(40, 36, 90, .12);
+  --shadow-toast: 0 10px 26px rgba(20, 24, 50, .28);
+  --shadow-play: 0 12px 26px rgba(67, 56, 202, .32);
+  --shadow-create: 0 4px 14px rgba(50, 45, 120, .08);
+  --shadow-logo: 0 6px 14px rgba(67, 56, 202, .28);
+
+  --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --press: transform .1s ease;
+  --fade: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}

@@ -8,6 +8,7 @@
   "scripts": {
     "predev": "node scripts/kill-port.js 9000",
     "dev": "DOCUFLOW_DEBUG_IDLE=true electron-forge start",
+    "dev:v2": "DOCUFLOW_UI=v2 DOCUFLOW_DEBUG_IDLE=true electron-forge start",
     "dev:test": "DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES=1 DOCUFLOW_TEST_CAPTURE_INTERVAL_SECONDS=45 DOCUFLOW_TEST_DAY_ROLLOVER_SECONDS=120 electron-forge start",
     "dev:test-idle": "DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES=1 electron-forge start",
     "dev:test-capture": "DOCUFLOW_TEST_CAPTURE_INTERVAL_SECONDS=30 electron-forge start",
@@ -19,6 +20,7 @@
     "dist:ubuntu": "node scripts/dist-linux.js",
     "dist:mac": "node scripts/dist-mac.js",
     "dist": "node scripts/dist-win.js",
+    "harness": "vite --config vite.harness.config.mts",
     "lint": "tsc --noEmit"
   },
   "build": {
@@ -94,7 +96,8 @@
     "png-to-ico": "^3.0.1",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.4",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vite": "^6.0.0"
   },
   "dependencies": {
     "react": "^19.2.4",

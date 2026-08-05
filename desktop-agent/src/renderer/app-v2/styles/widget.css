@@ -1,0 +1,143 @@
+/*
+ * Floating activity bar — 380 x 44, frameless, always-on-top.
+ *
+ * Sits over arbitrary applications, so it is the one surface that carries a
+ * shadow and an opaque fill: it is a real object above other windows, not a
+ * card on the page.
+ *
+ * The bar is not part of the rail-layout handoff. It is restated in the new
+ * tokens here so the two surfaces still look like one product — same indigo,
+ * same green/amber status pair, same radii.
+ */
+
+@import './tokens.css';
+
+html, body, #widget-root { height: 100%; background: transparent; }
+
+.w2 {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-right: 8px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+  box-shadow: var(--shadow-tile);
+  overflow: hidden;
+  user-select: none;
+  font-family: var(--font);
+}
+
+/* Drag grip — the only drag initiator; everything else opens the main window. */
+.w2__grip {
+  flex-shrink: 0;
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 3px);
+  grid-template-rows: repeat(3, 3px);
+  gap: 2.5px;
+  align-content: center;
+  padding: 0 8px 0 10px;
+  cursor: move;
+}
+.w2__grip i {
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.w2__dot {
+  width: 6px; height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--status-ok);
+  transition: background .15s ease;
+}
+.w2--paused .w2__dot { background: var(--status-warn-dot); }
+
+.w2__label {
+  flex: 1;
+  min-width: 0;
+  margin-left: 8px;
+  cursor: pointer;
+}
+.w2__task {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.w2__sub {
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* The elapsed value carries the status: green recording, amber held. The dot
+ * beside it repeats the same distinction, so the state still reads without
+ * colour vision. */
+.w2__time {
+  flex-shrink: 0;
+  margin: 0 8px;
+  padding: 2px 8px;
+  border-radius: var(--r-20);
+  background: var(--status-ok-bg);
+  color: var(--status-ok-text);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.w2--paused .w2__time {
+  background: var(--status-warn-bg);
+  color: var(--status-warn-text);
+}
+
+.w2__toggle {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  border-radius: var(--r-8);
+  background: var(--control-neutral);
+  color: var(--text-secondary);
+  transition: background .15s ease;
+}
+.w2__toggle:hover { background: var(--control-neutral-hover); }
+.w2--paused .w2__toggle {
+  border-radius: 50%;
+  background: var(--accent-strong);
+  color: #fff;
+}
+.w2--paused .w2__toggle:hover { background: var(--accent-deep); }
+.w2__toggle:disabled { opacity: .55; cursor: wait; }
+
+.w2__dismiss {
+  flex-shrink: 0;
+  width: 16px; height: 16px;
+  margin-left: 4px;
+  display: grid; place-items: center;
+  border-radius: var(--r-6);
+  color: var(--text-meta);
+  transition: color .15s ease;
+}
+.w2__dismiss:hover { color: var(--text-secondary); }
+
+/* Transient failure notice, above the bar. */
+.w2__error {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: var(--r-20);
+  background: var(--status-danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-toast);
+}
+
+.w2__stage { position: relative; height: 100%; }

@@ -58,8 +58,11 @@ export interface AgentBridge {
   getState: () => Promise<AgentState>;
   login: (data: { email: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
   unpair: () => Promise<{ ok: boolean }>;
-  getProjects: () => Promise<{ ok: boolean; data: Project[] }>;
-  getTasks: (data: { crmProjectId: string }) => Promise<{ ok: boolean; data: Task[] }>;
+  getProjects: () => Promise<{ ok: boolean; data: Project[]; error?: string }>;
+  /** Fails with "Access denied" when the user is not a member of the project. */
+  getTasks: (data: { crmProjectId: string }) => Promise<{ ok: boolean; data: Task[]; error?: string }>;
+  /** Creates a CRM project on the server — it appears in the web app too. */
+  createProject: (data: { name: string }) => Promise<{ ok: boolean; data?: Project; error?: string }>;
   createTask: (data: { crmProjectId: string; name: string }) => Promise<{ ok: boolean; data?: Task; error?: string }>;
   timerStart: (data: {
     crmProjectId: string;
@@ -93,6 +96,16 @@ export interface AgentBridge {
   getLocalPrefs: () => Promise<{ openAtLogin: boolean; isPackaged: boolean; appVersion: string }>;
   setOpenAtLogin: (value: boolean) => Promise<{ ok: boolean }>;
   resetWidgetPosition: () => Promise<{ ok: boolean }>;
+  /**
+   * Ask the main process for the window size this UI needs. Optional: v1 never
+   * calls it and keeps the portrait window the app is created with.
+   */
+  setWindowLayout?: (layout: {
+    width: number;
+    height: number;
+    minWidth: number;
+    minHeight: number;
+  }) => Promise<{ ok: boolean }>;
   copyToClipboard: (text: string) => Promise<{ ok: boolean }>;
   getDisplayTimezone: () => Promise<'local' | 'utc'>;
   setDisplayTimezone: (tz: 'local' | 'utc') => Promise<{ ok: boolean }>;

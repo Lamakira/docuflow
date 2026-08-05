@@ -123,7 +123,9 @@ const config: ForgeConfig = {
           },
           {
             html: "./src/renderer/widget.html",
-            js: "./src/renderer/widget.tsx",
+            // Switcher entry: picks the v1 or v2 bar from the `docuflow-ui`
+            // localStorage key. widget.tsx (v1) is loaded from there.
+            js: "./src/renderer/widget-index.tsx",
             name: "widget_window",
             preload: {
               js: "./src/renderer/widget-preload.ts",
