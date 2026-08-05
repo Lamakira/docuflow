@@ -105,6 +105,8 @@ export interface AgentBridge {
     height: number;
     minWidth: number;
     minHeight: number;
+    /** Pre-paint fill, and what shows behind rounded corners. */
+    background?: string;
   }) => Promise<{ ok: boolean }>;
   copyToClipboard: (text: string) => Promise<{ ok: boolean }>;
   getDisplayTimezone: () => Promise<'local' | 'utc'>;

@@ -24,8 +24,14 @@ import { LoginPage } from './pages/LoginPage';
 import { IdlePrompt } from './components/IdlePrompt';
 import './styles/app.css';
 
-/** The design's window. The old portrait size does not hold three columns. */
-const WINDOW = { width: 1020, height: 660, minWidth: 820, minHeight: 560 };
+/**
+ * The design's window. The old portrait size does not hold three columns.
+ *
+ * `background` is what shows for the instant before the renderer paints, and in
+ * the sliver behind the shell's rounded bottom corners. v1 is dark and keeps
+ * the navy it was created with; only this UI asks for Cold Stock.
+ */
+const WINDOW = { width: 1020, height: 660, minWidth: 820, minHeight: 560, background: '#f3f5f7' };
 
 function Shell() {
   const { state } = useAgent();

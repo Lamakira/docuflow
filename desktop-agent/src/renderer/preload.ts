@@ -80,8 +80,13 @@ contextBridge.exposeInMainWorld("agentBridge", {
   resetWidgetPosition: () => ipcRenderer.invoke("widget:reset-position"),
 
   // Window sizing — the renderer knows which UI booted, the main process does not
-  setWindowLayout: (layout: { width: number; height: number; minWidth: number; minHeight: number }) =>
-    ipcRenderer.invoke("ui:set-window-layout", layout),
+  setWindowLayout: (layout: {
+    width: number;
+    height: number;
+    minWidth: number;
+    minHeight: number;
+    background?: string;
+  }) => ipcRenderer.invoke("ui:set-window-layout", layout),
 
   // Clipboard
   copyToClipboard: (text: string) => ipcRenderer.invoke("settings:copy-to-clipboard", text),

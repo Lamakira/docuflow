@@ -121,8 +121,10 @@ function Harness() {
               width: size.w,
               height: size.h,
               overflow: isWidget ? 'visible' : 'hidden',
-              background: isWidget ? 'transparent' : '#f6f5f4',
-              borderRadius: isWidget ? 0 : 10,
+              background: isWidget ? 'transparent' : '#f3f5f7',
+              // Square at the top like a native title bar, curved at the bottom
+              // where the app itself rounds — the same shape Electron produces.
+              borderRadius: isWidget ? 0 : '10px 10px 16px 16px',
               border: isWidget ? 'none' : '1px solid rgba(0,0,0,.08)',
               boxShadow: isWidget ? 'none' : '0 8px 32px rgba(0,0,0,.10)',
             }}

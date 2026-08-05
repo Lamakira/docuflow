@@ -1033,9 +1033,14 @@ ipcMain.handle("settings:set-display-timezone", (_event, tz: string) => {
  */
 ipcMain.handle(
   "ui:set-window-layout",
-  (_event, layout: { width: number; height: number; minWidth: number; minHeight: number }) => {
+  (
+    _event,
+    layout: { width: number; height: number; minWidth: number; minHeight: number; background?: string },
+  ) => {
     if (!mainWindow) return { ok: false };
-    const { width, height, minWidth, minHeight } = layout;
+    const { width, height, minWidth, minHeight, background } = layout;
+    // Shows during the pre-paint instant and behind the rounded bottom corners.
+    if (background) mainWindow.setBackgroundColor(background);
     mainWindow.setMinimumSize(minWidth, minHeight);
     const [w, h] = mainWindow.getSize();
     if (w < minWidth || h < minHeight) {

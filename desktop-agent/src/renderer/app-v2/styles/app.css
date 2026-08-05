@@ -61,6 +61,11 @@ button:disabled { cursor: default; }
   display: flex;
   height: 100%;
   width: 100%;
+  /* Bottom corners only: the title bar above belongs to the OS, so rounding the
+     top would leave square chrome sitting on a curved app. `overflow: hidden`
+     is what makes the rail and the stage follow the curve — neither carries a
+     radius of its own. */
+  border-radius: 0 0 var(--r-window) var(--r-window);
   overflow: hidden;
   background: var(--panel-bg);
   position: relative;
