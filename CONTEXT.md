@@ -211,3 +211,9 @@ _Avoid_: Feature flag, plan permission
 **Plan Registry**:
 The versioned, DocuFlow-owned catalog mapping each plan to its entitlement values and seat limits. Workspaces pin to a registry version until deliberately migrated, so plan changes never silently apply.
 _Avoid_: Stripe product catalog, pricing table
+
+## Integrations
+
+**Webhook Endpoint**:
+A workspace-owned target that receives signed notifications for selected public event types, with its own secret, event filter, and enable/disable lifecycle. It confers no read authority; consumers fetch current state with their own credentials.
+_Avoid_: Callback URL, webhook subscription
