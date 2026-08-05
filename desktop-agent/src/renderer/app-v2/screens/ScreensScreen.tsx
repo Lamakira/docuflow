@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Panel, PanelHead, PanelBody, PanelRow } from '../components/Panel';
 import { Stage, StageHead } from '../components/Stage';
 import { useGridFit } from '../ui/useGridFit';
-import { CameraIcon, ChevronLeftIcon, ChevronRightIcon, XMarkIcon } from '../icons';
+import { CalendarIcon, CameraIcon, ChevronLeftIcon, ChevronRightIcon, XMarkIcon } from '../icons';
 
 interface Capture {
   filename: string;
@@ -150,6 +150,7 @@ export function ScreensScreen() {
               <PanelRow
                 key={day.key}
                 name={groupLabel(day.key, i)}
+                icon={<CalendarIcon size={15} />}
                 end={day.items.length}
                 selected={activeDay?.key === day.key}
                 onClick={() => setSelectedDay(day.key)}

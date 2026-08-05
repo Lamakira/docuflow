@@ -132,6 +132,21 @@ export const ChevronRightIcon = make(
   'M16.28 11.47a.75.75 0 0 1 0 1.06l-7.5 7.5a.75.75 0 0 1-1.06-1.06L14.69 12 7.72 5.03a.75.75 0 0 1 1.06-1.06l7.5 7.5Z',
 );
 
+export const FolderIcon = make(
+  'M19.5 21a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3h-5.379a.75.75 0 0 1-.53-.22L11.47 3.66A2.25 2.25 0 0 0 9.879 3H4.5a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h15Z',
+);
+
+export const CheckCircleIcon = make(
+  'M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z',
+);
+
+/**
+ * Drawn here rather than vendored: Heroicons' `calendar-days` is a frame plus
+ * fifteen separate dot paths, which is a lot of glyph for a 15px row icon that
+ * only has to say "a day".
+ */
+export const CalendarIcon = makeStroke('M4 7h16v13H4zM8 3v4M16 3v4M4 11h16', 2);
+
 export const ArrowLeftIcon = make(
   'M11.03 3.97a.75.75 0 0 1 0 1.06l-6.22 6.22H21a.75.75 0 0 1 0 1.5H4.81l6.22 6.22a.75.75 0 1 1-1.06 1.06l-7.5-7.5a.75.75 0 0 1 0-1.06l7.5-7.5a.75.75 0 0 1 1.06 0Z',
 );

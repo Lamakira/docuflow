@@ -20,7 +20,7 @@ import { useUi } from '../ui/UiContext';
 import { useActiveTask } from '../ui/useActiveTask';
 import { useFitCount } from '../ui/useFitCount';
 import { formatDuration, formatElapsed } from '../format';
-import { ArrowLeftIcon } from '../icons';
+import { ArrowLeftIcon, FolderIcon, PlayIcon } from '../icons';
 
 const ROW_H = 55;
 const NAME_LIMIT = 120;
@@ -278,6 +278,7 @@ export function TimerPanel() {
                     key={task.id}
                     name={task.name}
                     meta={openProject.name}
+                    icon={<PlayIcon size={13} />}
                     end={seconds > 0 ? formatDuration(seconds) : undefined}
                     selected={live}
                     onClick={() => void start(task, openProject.name)}
@@ -291,6 +292,7 @@ export function TimerPanel() {
                   <PanelRow
                     key={project.id}
                     name={project.name}
+                    icon={<FolderIcon size={15} />}
                     meta={tasks ? `${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}` : undefined}
                     end={isActive ? 'ACTIVE' : undefined}
                     endAccent={isActive}
