@@ -68,9 +68,26 @@ function Shell() {
 
 function AppInner() {
   const { state } = useAgent();
+  const { setAppChrome } = useUi();
 
-  // v1 is portrait and stays that way; only this UI asks for the wide window.
-  useEffect(() => { void window.agentBridge.setWindowLayout?.(WINDOW); }, []);
+  /**
+   * Ask for the window this UI needs, and believe only the answer.
+   *
+   * `chromeApplied` comes back false when the running main process built a
+   * framed window — an older build, or this renderer hot-reloaded underneath
+   * one. In that case the app must not draw a second title bar or call window
+   * IPC that is not there; the native frame stays in charge until a restart.
+   */
+  useEffect(() => {
+    void window.agentBridge
+      .setWindowLayout?.(WINDOW)
+      .then((result) => {
+        const applied = !!result?.chromeApplied;
+        setAppChrome(applied);
+        document.documentElement.dataset.chrome = applied ? 'app' : 'native';
+      })
+      .catch(() => { /* older preload without the handler — keep the frame */ });
+  }, []);
 
   if (state.loading) return <div className="v2-loading">Loading…</div>;
   if (!state.agentState?.isPaired) return <LoginPage />;

@@ -32,6 +32,16 @@ interface UiValue {
 
   toast: string | null;
   showToast: (text: string) => void;
+
+  /**
+   * True only when the main process confirmed it built a frameless window for
+   * this renderer. The two halves can be out of step — webpack hot-reloads the
+   * renderer while the main process keeps running the build it started with —
+   * and a renderer that assumed otherwise drew its own title bar under the
+   * native one and called IPC handlers that did not exist yet.
+   */
+  appChrome: boolean;
+  setAppChrome: (v: boolean) => void;
 }
 
 const UiContext = createContext<UiValue | null>(null);
@@ -48,6 +58,7 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
   const [settingsSection, setSettingsSection] = useState('activity-bar');
   const [completedKey, setCompletedKey] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [appChrome, setAppChrome] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** Single slot: a new toast replaces the current one and restarts the clock. */
@@ -67,7 +78,8 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
     markCompleted: setCompletedKey,
     clearCompleted: () => setCompletedKey(null),
     toast, showToast,
-  }), [search, openProjectId, settingsSection, completedKey, toast, showToast]);
+    appChrome, setAppChrome,
+  }), [search, openProjectId, settingsSection, completedKey, toast, showToast, appChrome]);
 
   return <UiContext.Provider value={value}>{children}</UiContext.Provider>;
 }

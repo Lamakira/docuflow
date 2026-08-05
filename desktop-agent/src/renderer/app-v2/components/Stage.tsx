@@ -20,7 +20,7 @@ export function Stage({ children }: { children: React.ReactNode }) {
     <main className="v2-stage">
       <div
         className="v2-stage__bar"
-        onDoubleClick={() => void window.agentBridge.windowToggleMaximize?.()}
+        onDoubleClick={() => { void window.agentBridge.windowToggleMaximize?.().catch(() => {}); }}
       >
         <span className="v2-stage__wordmark">DocuFlow</span>
         {/* Production is where the app runs, so labelling it says nothing; a

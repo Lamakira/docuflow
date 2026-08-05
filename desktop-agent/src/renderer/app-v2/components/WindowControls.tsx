@@ -13,23 +13,29 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useUi } from '../ui/UiContext';
 
 export function WindowControls() {
   const bridge = window.agentBridge;
+  const { appChrome } = useUi();
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    void bridge.windowIsMaximized?.().then((r) => setMaximized(r.maximized));
+    if (!appChrome) return;
+    void bridge.windowIsMaximized?.().then((r) => setMaximized(r.maximized)).catch(() => {});
     return bridge.onWindowMaximizedChange?.(setMaximized);
-  }, []);
+  }, [appChrome]);
 
-  if (!bridge.windowMinimize) return null;
+  // Nothing to draw against a native frame — the OS already has these, and the
+  // IPC behind them only exists in a main process that built the window
+  // frameless.
+  if (!appChrome || !bridge.windowMinimize) return null;
 
   return (
     <div className="v2-winctl">
       <button
         className="v2-winctl__btn"
-        onClick={() => void bridge.windowMinimize?.()}
+        onClick={() => { void bridge.windowMinimize?.().catch(() => {}); }}
         aria-label="Minimise"
         title="Minimise"
       >
@@ -37,7 +43,9 @@ export function WindowControls() {
       </button>
       <button
         className="v2-winctl__btn"
-        onClick={() => void bridge.windowToggleMaximize?.().then((r) => setMaximized(r.maximized))}
+        onClick={() => {
+          void bridge.windowToggleMaximize?.().then((r) => setMaximized(r.maximized)).catch(() => {});
+        }}
         aria-label={maximized ? 'Restore' : 'Maximise'}
         title={maximized ? 'Restore' : 'Maximise'}
       >
@@ -45,7 +53,7 @@ export function WindowControls() {
       </button>
       <button
         className="v2-winctl__btn v2-winctl__btn--close"
-        onClick={() => void bridge.windowHide?.()}
+        onClick={() => { void bridge.windowHide?.().catch(() => {}); }}
         aria-label="Close"
         title="Close — tracking continues in the tray"
       >

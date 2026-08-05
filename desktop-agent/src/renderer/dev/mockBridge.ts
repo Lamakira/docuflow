@@ -328,7 +328,9 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
     setOpenAtLogin: async () => ({ ok: true }),
     resetWidgetPosition: async () => ({ ok: true }),
     // The harness frames the app itself; resizing is the Electron window's job.
-    setWindowLayout: async () => ({ ok: true }),
+    // It reports app chrome so the drawn title bar and the rounded corners can
+    // be reviewed here — that is the state the packaged app runs in.
+    setWindowLayout: async () => ({ ok: true, chromeApplied: true }),
 
     // Window controls exist so the app-drawn title bar can be reviewed here.
     // They log rather than act — the harness has no window to minimise.

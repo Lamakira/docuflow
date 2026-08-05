@@ -28,12 +28,14 @@ html, body, #root {
 body {
   font-family: var(--font);
   color: var(--text-primary);
-  /* Transparent, not Cold Stock: the window is frameless and transparent so its
-     corners can be cut, and any background here fills them straight back in.
-     Every visible surface is painted by .v2-shell and its children. */
-  background: transparent;
+  /* Cold Stock under a native frame; transparent once the window is frameless,
+     because any background here fills the cut corners straight back in. Every
+     visible surface is painted by .v2-shell and its children either way. */
+  background: var(--stage-bg);
   -webkit-font-smoothing: antialiased;
 }
+
+:root[data-chrome="app"] body { background: transparent; }
 
 /* Scrollbars are hidden globally *and* every pane is overflow:hidden, so
    nothing is ever silently cut — content that does not fit is paged. */
@@ -64,10 +66,8 @@ button:disabled { cursor: default; }
   display: flex;
   height: 100%;
   width: 100%;
-  /* All four corners: the window is frameless, so this element *is* the window.
-     `overflow: hidden` is what makes the rail and the stage follow the curve —
-     neither carries a radius of its own. */
-  border-radius: var(--r-window);
+  /* Corners are rounded only when the window is frameless — see the rule below.
+     Against a native frame the cut would just expose the window's own fill. */
   overflow: hidden;
   background: var(--panel-bg);
   position: relative;
@@ -76,7 +76,6 @@ button:disabled { cursor: default; }
 .v2-loading {
   font-family: var(--font);
   background: var(--stage-bg);
-  border-radius: var(--r-window);
   display: grid;
   place-items: center;
   height: 100%;
@@ -577,12 +576,12 @@ button:disabled { cursor: default; }
   display: flex;
   align-items: center;
   gap: 10px;
-  /* This bar is the window's drag handle. Anything clickable inside it has to
-     opt out, or the click never reaches it. */
-  -webkit-app-region: drag;
 }
-.v2-stage__bar button,
-.v2-stage__bar .v2-update { -webkit-app-region: no-drag; }
+/* The bar is the window's drag handle once the app owns the window. Anything
+   clickable inside it opts out, or the click never reaches it. */
+:root[data-chrome="app"] .v2-stage__bar { -webkit-app-region: drag; }
+:root[data-chrome="app"] .v2-stage__bar button,
+:root[data-chrome="app"] .v2-stage__bar .v2-update { -webkit-app-region: no-drag; }
 
 /* ── Window controls ──────────────────────────────────────────────────── */
 
@@ -1309,15 +1308,28 @@ button:disabled { cursor: default; }
 
 /* ── Login ────────────────────────────────────────────────────────────── */
 
-/* No title bar on these two, so the whole surface drags — minus the form. */
-.v2-login, .v2-loading { -webkit-app-region: drag; }
-.v2-login__form, .v2-login button, .v2-login input, .v2-login__revoked { -webkit-app-region: no-drag; }
+/* ── Frameless chrome ─────────────────────────────────────────────────────
+   Everything here applies only once the main process confirms it built the
+   window without a frame (App.tsx sets data-chrome). Applied unconditionally,
+   these rules cut corners out of an opaque window — pale notches — and make a
+   drag region under a title bar that already has one. */
+:root[data-chrome="app"] .v2-shell,
+:root[data-chrome="app"] .v2-login,
+:root[data-chrome="app"] .v2-loading { border-radius: var(--r-window); }
+
+/* Sign-in and the loading screen have no bar of their own, so the whole
+   surface drags — minus the form. */
+:root[data-chrome="app"] .v2-login,
+:root[data-chrome="app"] .v2-loading { -webkit-app-region: drag; }
+:root[data-chrome="app"] .v2-login__form,
+:root[data-chrome="app"] .v2-login button,
+:root[data-chrome="app"] .v2-login input,
+:root[data-chrome="app"] .v2-login__revoked { -webkit-app-region: no-drag; }
 
 .v2-login {
   font-family: var(--font);
   position: relative;
   height: 100%;
-  border-radius: var(--r-window);
   overflow: hidden;
   display: flex;
   flex-direction: column;
