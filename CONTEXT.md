@@ -203,3 +203,11 @@ _Avoid_: Deleted workspace, locked account
 **Billable Seat**:
 An accepted, active membership that consumes subscription capacity. Pending invitations and archived or removed memberships do not consume seats.
 _Avoid_: User license, invited seat
+
+**Entitlement**:
+A workspace-level answer to whether the subscription grants a capability or capacity limit, derived deterministically from billing state and the versioned plan registry rather than read from the billing provider.
+_Avoid_: Feature flag, plan permission
+
+**Plan Registry**:
+The versioned, DocuFlow-owned catalog mapping each plan to its entitlement values and seat limits. Workspaces pin to a registry version until deliberately migrated, so plan changes never silently apply.
+_Avoid_: Stripe product catalog, pricing table
