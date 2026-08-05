@@ -1102,6 +1102,10 @@ ipcMain.handle(
       mainWindow.setSize(width, height);
       mainWindow.center();
     }
+    console.log(
+      `[Main] ui.layout — renderer wants ${chrome ?? 'native'} chrome; ` +
+      `this window was built ${mainWindowAppChrome ? 'frameless' : 'framed'}`,
+    );
     // What this window is, not what the next one will be.
     return { ok: true, chromeApplied: mainWindowAppChrome };
   },
