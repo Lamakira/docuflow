@@ -145,12 +145,24 @@ function usesAppChrome(): boolean {
   return store.getUiMode() === 'v2';
 }
 
+/**
+ * What the live window was actually built with.
+ *
+ * Not the same question as usesAppChrome(), which predicts the *next* launch:
+ * the layout handler writes the reported UI to the store, so re-asking it there
+ * answers for a window that does not exist yet. Reading it instead of this flag
+ * told a framed window it was frameless, and the renderer drew a second set of
+ * controls under the native ones.
+ */
+let mainWindowAppChrome = false;
+
 function createMainWindow(): BrowserWindow {
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, "assets", "icon.png")
     : path.join(__dirname, "../../assets/icon.png");
 
   const appChrome = usesAppChrome();
+  mainWindowAppChrome = appChrome;
   console.log(`[Main] window chrome — ${appChrome ? "app-drawn (frameless)" : "native frame"}`);
 
   const win = new BrowserWindow({
@@ -1082,7 +1094,7 @@ ipcMain.handle(
 
     // Only meaningful on an opaque window; setting it on a transparent one
     // would fill the corners we just cut.
-    if (background && !usesAppChrome()) mainWindow.setBackgroundColor(background);
+    if (background && !mainWindowAppChrome) mainWindow.setBackgroundColor(background);
 
     mainWindow.setMinimumSize(minWidth, minHeight);
     const [w, h] = mainWindow.getSize();
@@ -1090,7 +1102,8 @@ ipcMain.handle(
       mainWindow.setSize(width, height);
       mainWindow.center();
     }
-    return { ok: true, chromeApplied: usesAppChrome() };
+    // What this window is, not what the next one will be.
+    return { ok: true, chromeApplied: mainWindowAppChrome };
   },
 );
 
