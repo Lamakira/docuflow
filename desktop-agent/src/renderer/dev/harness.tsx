@@ -121,12 +121,13 @@ function Harness() {
               width: size.w,
               height: size.h,
               overflow: isWidget ? 'visible' : 'hidden',
-              background: isWidget ? 'transparent' : '#f3f5f7',
-              // Square at the top like a native title bar, curved at the bottom
-              // where the app itself rounds — the same shape Electron produces.
-              borderRadius: isWidget ? 0 : '10px 10px 16px 16px',
-              border: isWidget ? 'none' : '1px solid rgba(0,0,0,.08)',
-              boxShadow: isWidget ? 'none' : '0 8px 32px rgba(0,0,0,.10)',
+              background: 'transparent',
+              // The Electron window is frameless and transparent: the app draws
+              // its own chrome and its own corners, so the frame here is only a
+              // shadow — anything else would hide a mistake in the app's shape.
+              borderRadius: isWidget ? 0 : 16,
+              border: 'none',
+              boxShadow: isWidget ? 'none' : '0 18px 44px rgba(15,21,36,.22)',
             }}
           >
             {isWidget ? <Widget /> : <App />}

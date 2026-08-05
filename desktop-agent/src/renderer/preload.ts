@@ -86,7 +86,20 @@ contextBridge.exposeInMainWorld("agentBridge", {
     minWidth: number;
     minHeight: number;
     background?: string;
+    chrome?: 'app' | 'native';
   }) => ipcRenderer.invoke("ui:set-window-layout", layout),
+
+  // Window controls — only used by the UI that draws its own title bar.
+  windowMinimize: () => ipcRenderer.invoke("window:minimize"),
+  windowToggleMaximize: (): Promise<{ ok: boolean; maximized: boolean }> =>
+    ipcRenderer.invoke("window:toggle-maximize"),
+  windowHide: () => ipcRenderer.invoke("window:hide"),
+  windowIsMaximized: (): Promise<{ maximized: boolean }> => ipcRenderer.invoke("window:is-maximized"),
+  onWindowMaximizedChange: (cb: (maximized: boolean) => void) => {
+    const handler = (_event: unknown, maximized: boolean) => cb(maximized);
+    ipcRenderer.on("window:maximized-change", handler);
+    return () => ipcRenderer.removeListener("window:maximized-change", handler);
+  },
 
   // Clipboard
   copyToClipboard: (text: string) => ipcRenderer.invoke("settings:copy-to-clipboard", text),

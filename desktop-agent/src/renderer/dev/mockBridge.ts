@@ -144,6 +144,9 @@ function seedTimer(scenario: Scenario): TimerState {
  */
 let mockApiBaseSource: 'default' | 'file' | 'env' = 'default';
 
+/** Toggled by the app-drawn maximise control so its icon can be reviewed. */
+let mockMaximized = false;
+
 export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
   const failing = scenario === 'error';
   const empty = scenario === 'fresh';
@@ -326,6 +329,18 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
     resetWidgetPosition: async () => ({ ok: true }),
     // The harness frames the app itself; resizing is the Electron window's job.
     setWindowLayout: async () => ({ ok: true }),
+
+    // Window controls exist so the app-drawn title bar can be reviewed here.
+    // They log rather than act — the harness has no window to minimise.
+    windowMinimize: async () => { console.info('[mock] window.minimize'); return { ok: true }; },
+    windowToggleMaximize: async () => {
+      mockMaximized = !mockMaximized;
+      console.info('[mock] window.toggleMaximize ->', mockMaximized);
+      return { ok: true, maximized: mockMaximized };
+    },
+    windowHide: async () => { console.info('[mock] window.hide — agent keeps running'); return { ok: true }; },
+    windowIsMaximized: async () => ({ maximized: mockMaximized }),
+    onWindowMaximizedChange: () => () => {},
     copyToClipboard: async (text) => { await navigator.clipboard?.writeText(text).catch(() => {}); return { ok: true }; },
     getDisplayTimezone: async () => 'local',
     setDisplayTimezone: async () => ({ ok: true }),

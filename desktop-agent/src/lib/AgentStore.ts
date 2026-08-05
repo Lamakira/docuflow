@@ -49,6 +49,16 @@ interface PersistedData {
   activeEntryStartTime: string | null;
   /** User-selected display timezone for week/month aggregate boundaries. 'local' = OS timezone (default). 'utc' = UTC. */
   displayTimezone: 'local' | 'utc';
+  /**
+   * Which renderer booted last, so the next launch can create the right window.
+   *
+   * The UI is chosen in the renderer (localStorage, then DOCUFLOW_UI), but
+   * `frame` and `transparent` are fixed at BrowserWindow construction — long
+   * before any renderer runs. v2 draws its own title bar and needs a frameless
+   * transparent window; v1 needs the OS one. The renderer reports which it is
+   * once it has loaded, and the answer is used at the *next* launch.
+   */
+  uiMode: 'v1' | 'v2' | null;
 }
 
 // Runtime-only state (not persisted)
@@ -101,6 +111,7 @@ export class AgentStore {
       timerStatus: "stopped",
       activeEntryStartTime: null,
       displayTimezone: 'local',
+      uiMode: null,
     };
     try {
       if (!fs.existsSync(this.configPath)) return empty;
@@ -142,6 +153,13 @@ export class AgentStore {
   getUserEmail(): string | null { return this.data.userEmail; }
   getClientVersion(): string { return this.runtime.clientVersion; }
   setClientVersion(v: string): void { this.runtime.clientVersion = v; }
+
+  getUiMode(): 'v1' | 'v2' | null { return this.data.uiMode ?? null; }
+  setUiMode(mode: 'v1' | 'v2'): void {
+    if (this.data.uiMode === mode) return;
+    this.data.uiMode = mode;
+    this.saveToDisk();
+  }
 
   getDisplayTimezone(): 'local' | 'utc' { return this.data.displayTimezone ?? 'local'; }
   setDisplayTimezone(tz: 'local' | 'utc'): void {

@@ -105,9 +105,19 @@ export interface AgentBridge {
     height: number;
     minWidth: number;
     minHeight: number;
-    /** Pre-paint fill, and what shows behind rounded corners. */
+    /** Pre-paint fill. Ignored on a transparent window. */
     background?: string;
-  }) => Promise<{ ok: boolean }>;
+    /** 'app' when this UI draws its own title bar; remembered for next launch. */
+    chrome?: 'app' | 'native';
+  }) => Promise<{ ok: boolean; chromeApplied?: boolean }>;
+
+  /* Window controls. Present only in builds whose preload exposes them, and
+     only meaningful when the window was created without a native frame. */
+  windowMinimize?: () => Promise<{ ok: boolean }>;
+  windowToggleMaximize?: () => Promise<{ ok: boolean; maximized: boolean }>;
+  windowHide?: () => Promise<{ ok: boolean }>;
+  windowIsMaximized?: () => Promise<{ maximized: boolean }>;
+  onWindowMaximizedChange?: (cb: (maximized: boolean) => void) => () => void;
   copyToClipboard: (text: string) => Promise<{ ok: boolean }>;
   getDisplayTimezone: () => Promise<'local' | 'utc'>;
   setDisplayTimezone: (tz: 'local' | 'utc') => Promise<{ ok: boolean }>;

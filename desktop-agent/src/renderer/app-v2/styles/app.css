@@ -28,7 +28,10 @@ html, body, #root {
 body {
   font-family: var(--font);
   color: var(--text-primary);
-  background: var(--stage-bg);
+  /* Transparent, not Cold Stock: the window is frameless and transparent so its
+     corners can be cut, and any background here fills them straight back in.
+     Every visible surface is painted by .v2-shell and its children. */
+  background: transparent;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -61,11 +64,10 @@ button:disabled { cursor: default; }
   display: flex;
   height: 100%;
   width: 100%;
-  /* Bottom corners only: the title bar above belongs to the OS, so rounding the
-     top would leave square chrome sitting on a curved app. `overflow: hidden`
-     is what makes the rail and the stage follow the curve — neither carries a
-     radius of its own. */
-  border-radius: 0 0 var(--r-window) var(--r-window);
+  /* All four corners: the window is frameless, so this element *is* the window.
+     `overflow: hidden` is what makes the rail and the stage follow the curve —
+     neither carries a radius of its own. */
+  border-radius: var(--r-window);
   overflow: hidden;
   background: var(--panel-bg);
   position: relative;
@@ -73,6 +75,8 @@ button:disabled { cursor: default; }
 
 .v2-loading {
   font-family: var(--font);
+  background: var(--stage-bg);
+  border-radius: var(--r-window);
   display: grid;
   place-items: center;
   height: 100%;
@@ -569,11 +573,87 @@ button:disabled { cursor: default; }
 .v2-stage__bar {
   height: 44px;
   flex: none;
-  padding: 0 14px;
+  padding: 0 6px 0 14px;
   display: flex;
   align-items: center;
   gap: 10px;
+  /* This bar is the window's drag handle. Anything clickable inside it has to
+     opt out, or the click never reaches it. */
+  -webkit-app-region: drag;
 }
+.v2-stage__bar button,
+.v2-stage__bar .v2-update { -webkit-app-region: no-drag; }
+
+/* ── Window controls ──────────────────────────────────────────────────── */
+
+.v2-winctl {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+}
+.v2-winctl__btn {
+  width: 30px;
+  height: 26px;
+  border-radius: var(--r-6);
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+}
+.v2-winctl__btn:hover { background: var(--row-hover-strong); }
+.v2-winctl__btn:active:not(:disabled) { transform: none; }  /* chrome does not bounce */
+.v2-winctl__btn--close:hover { background: var(--status-danger-bg); color: var(--status-danger); }
+
+.v2-winctl__min {
+  width: 10px;
+  height: 1.5px;
+  background: currentColor;
+  border-radius: 1px;
+}
+.v2-winctl__max {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+/* Restore reads as two sheets: the front one plus an edge of the one behind. */
+.v2-winctl__max--restore {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  margin: 1px -1px -1px 1px;
+}
+.v2-winctl__max--restore::after {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+}
+.v2-winctl__close {
+  position: relative;
+  width: 11px;
+  height: 11px;
+}
+.v2-winctl__close::before,
+.v2-winctl__close::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 11px;
+  height: 1.5px;
+  background: currentColor;
+  border-radius: 1px;
+}
+.v2-winctl__close::before { transform: rotate(45deg); }
+.v2-winctl__close::after { transform: rotate(-45deg); }
 .v2-stage__wordmark { font-size: 12.5px; font-weight: 600; color: var(--text-meta); }
 .v2-stage__badge {
   font-size: 9.5px;
@@ -1229,15 +1309,28 @@ button:disabled { cursor: default; }
 
 /* ── Login ────────────────────────────────────────────────────────────── */
 
+/* No title bar on these two, so the whole surface drags — minus the form. */
+.v2-login, .v2-loading { -webkit-app-region: drag; }
+.v2-login__form, .v2-login button, .v2-login input, .v2-login__revoked { -webkit-app-region: no-drag; }
+
 .v2-login {
   font-family: var(--font);
+  position: relative;
   height: 100%;
+  border-radius: var(--r-window);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   padding: 40px;
   background: var(--stage-bg);
+}
+.v2-login__chrome {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  -webkit-app-region: no-drag;
 }
 .v2-login__brand { display: flex; align-items: center; gap: 10px; }
 .v2-login__mark {

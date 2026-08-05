@@ -130,18 +130,40 @@ let pausedForScreenshotPortal = false;
 
 // ─── Window ───
 
+/**
+ * True when the window must be created without OS decorations.
+ *
+ * v2 draws its own title bar — the rounded window in the design is only
+ * possible if the corners can be transparent, and a native frame paints its
+ * own square ones underneath. `frame` and `transparent` are construction-time
+ * options, so this has to be known before the renderer that picks the UI has
+ * even loaded: the env var answers immediately, and otherwise the last UI the
+ * renderer reported (see "ui:set-window-layout") answers for it.
+ */
+function usesAppChrome(): boolean {
+  if (process.env.DOCUFLOW_UI === 'v2') return true;
+  return store.getUiMode() === 'v2';
+}
+
 function createMainWindow(): BrowserWindow {
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, "assets", "icon.png")
     : path.join(__dirname, "../../assets/icon.png");
 
+  const appChrome = usesAppChrome();
+  console.log(`[Main] window chrome — ${appChrome ? "app-drawn (frameless)" : "native frame"}`);
+
   const win = new BrowserWindow({
-    width: 680,
-    height: 780,
-    minWidth: 400,
-    minHeight: 500,
+    width: appChrome ? 1020 : 680,
+    height: appChrome ? 660 : 780,
+    minWidth: appChrome ? 820 : 400,
+    minHeight: appChrome ? 560 : 500,
     resizable: true,
-    backgroundColor: '#0f172a',
+    frame: !appChrome,
+    transparent: appChrome,
+    // A transparent window must not paint a background, or the rounded corners
+    // are filled in before the page draws.
+    backgroundColor: appChrome ? '#00000000' : '#0f172a',
     show: false,
     icon: iconPath,
     webPreferences: {
@@ -191,6 +213,12 @@ function createMainWindow(): BrowserWindow {
     e.preventDefault();
     win.hide();
   });
+
+  // The app-drawn maximise control has to follow the window, which the WM can
+  // also maximise on its own (double-click, keyboard, tiling).
+  const pushMaximized = () => win.webContents.send("window:maximized-change", win.isMaximized());
+  win.on("maximize", pushMaximized);
+  win.on("unmaximize", pushMaximized);
 
   return win;
 }
@@ -1035,21 +1063,58 @@ ipcMain.handle(
   "ui:set-window-layout",
   (
     _event,
-    layout: { width: number; height: number; minWidth: number; minHeight: number; background?: string },
+    layout: {
+      width: number;
+      height: number;
+      minWidth: number;
+      minHeight: number;
+      background?: string;
+      /** 'app' when the renderer draws its own title bar. */
+      chrome?: 'app' | 'native';
+    },
   ) => {
     if (!mainWindow) return { ok: false };
-    const { width, height, minWidth, minHeight, background } = layout;
-    // Shows during the pre-paint instant and behind the rounded bottom corners.
-    if (background) mainWindow.setBackgroundColor(background);
+    const { width, height, minWidth, minHeight, background, chrome } = layout;
+
+    // Remembered for the next launch, because frame/transparent cannot change
+    // on a live window. A UI switch therefore costs one restart.
+    store.setUiMode(chrome === 'app' ? 'v2' : 'v1');
+
+    // Only meaningful on an opaque window; setting it on a transparent one
+    // would fill the corners we just cut.
+    if (background && !usesAppChrome()) mainWindow.setBackgroundColor(background);
+
     mainWindow.setMinimumSize(minWidth, minHeight);
     const [w, h] = mainWindow.getSize();
     if (w < minWidth || h < minHeight) {
       mainWindow.setSize(width, height);
       mainWindow.center();
     }
-    return { ok: true };
+    return { ok: true, chromeApplied: usesAppChrome() };
   },
 );
+
+// ─── IPC: window controls (frameless chrome) ───
+
+ipcMain.handle("window:minimize", () => {
+  mainWindow?.minimize();
+  return { ok: true };
+});
+
+ipcMain.handle("window:toggle-maximize", () => {
+  if (!mainWindow) return { ok: false, maximized: false };
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
+  return { ok: true, maximized: mainWindow.isMaximized() };
+});
+
+/** Same as the frame's close button: the agent keeps running in the tray. */
+ipcMain.handle("window:hide", () => {
+  mainWindow?.hide();
+  return { ok: true };
+});
+
+ipcMain.handle("window:is-maximized", () => ({ maximized: mainWindow?.isMaximized() ?? false }));
 
 // ─── IPC: Screenshots ───
 

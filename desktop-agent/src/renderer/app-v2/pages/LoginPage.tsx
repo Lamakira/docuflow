@@ -11,6 +11,7 @@
 
 import { useState } from 'react';
 import { useAgent } from '../../app/stores/AgentContext';
+import { WindowControls } from '../components/WindowControls';
 
 export function LoginPage() {
   const { state, login } = useAgent();
@@ -33,6 +34,10 @@ export function LoginPage() {
 
   return (
     <div className="v2-login">
+      {/* Sign-in has no title bar of its own, and a window you cannot close is
+          a trap — the controls come along. */}
+      <div className="v2-login__chrome"><WindowControls /></div>
+
       <header className="v2-login__brand">
         <span className="v2-login__mark">DF</span>
         <span className="v2-login__name">DocuFlow Agent</span>

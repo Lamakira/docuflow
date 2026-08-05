@@ -44,6 +44,17 @@ async function boot() {
   } else {
     await import('./styles/globals.css');
     ({ App } = await import('./app/App'));
+    // v1 has no title bar of its own, so it must claim the native frame. The
+    // main process fixes `frame` at construction from whatever the last run
+    // reported; without this, switching back to v1 would leave a frameless
+    // window with nothing to drag.
+    void window.agentBridge.setWindowLayout?.({
+      width: 680,
+      height: 780,
+      minWidth: 400,
+      minHeight: 500,
+      chrome: 'native',
+    });
   }
 
   console.log('[renderer] calling createRoot');
