@@ -129,7 +129,10 @@ export function TimerPanel() {
       taskName: task.name,
       taskDurationToday: task.durationToday ?? 0,
     });
-    showToast(result.ok ? `Tracking “${task.name}”` : result.error ?? 'Could not start the timer');
+    showToast(
+      result.ok ? `Tracking “${task.name}”` : result.error ?? 'Could not start the timer',
+      result.ok ? 'now' : 'error',
+    );
   }
 
   async function submitCreate(e: React.FormEvent) {

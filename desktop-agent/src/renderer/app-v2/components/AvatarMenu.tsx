@@ -47,11 +47,13 @@ export function AvatarMenu() {
     const result = await window.agentBridge.checkUpdate();
     setChecking(false);
     setOpen(false);
-    if (!result.ok) { showToast(result.error ?? 'Could not reach the update server'); return; }
+    if (!result.ok) { showToast(result.error ?? 'Could not reach the update server', 'error'); return; }
     showToast(
       result.updateAvailable
         ? `Version ${result.latestVersion} is available — Settings › Advanced to download`
         : `You are on the latest version (${result.currentVersion})`,
+      // An available update is a state, not something that just succeeded.
+      result.updateAvailable ? 'now' : 'ok',
     );
   }
 

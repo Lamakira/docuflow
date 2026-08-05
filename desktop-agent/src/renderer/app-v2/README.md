@@ -14,6 +14,12 @@ Two rules from that handoff are structural, not decoration:
    the play button while recording. `prefers-reduced-motion` drops the
    animations and keeps the static ring.
 
+   Toasts come in three kinds, because a checkmark on "Could not pause" is a
+   lie: `ok` (ink pill, green tick — it happened), `now` (ink pill, amber dot —
+   the current state changed) and `error` (red pill, white warning, and
+   `aria-live="assertive"`). Only the failure recolours the pill; colouring all
+   three would make the common case shout as loudly as the rare one.
+
 ## Why it lives beside the old UI
 
 `src/renderer/app/` is untouched and still ships. v2 is a parallel view layer

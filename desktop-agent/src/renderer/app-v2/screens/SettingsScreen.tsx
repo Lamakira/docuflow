@@ -119,7 +119,7 @@ export function SettingsScreen() {
     const result = await window.agentBridge.setOpenAtLogin(next);
     if (!result.ok) {
       setOpenAtLogin(!next);
-      showToast('Could not change the launch setting');
+      showToast('Could not change the launch setting', 'error');
       return;
     }
     setPrefs((p) => (p ? { ...p, openAtLogin: next } : p));

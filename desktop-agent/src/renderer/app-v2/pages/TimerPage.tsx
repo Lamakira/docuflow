@@ -73,17 +73,23 @@ export function TimerPage() {
     try {
       if (running) {
         const result = await pauseTimer();
-        showToast(result.ok ? `Timer paused at ${formatElapsed(active!.seconds)}` : result.error ?? 'Could not pause');
+        showToast(
+          result.ok ? `Timer paused at ${formatElapsed(active!.seconds)}` : result.error ?? 'Could not pause',
+          result.ok ? 'now' : 'error',
+        );
         return;
       }
       if (active!.status === 'paused') {
         const result = await resumeTimer();
-        showToast(result.ok ? 'Timer resumed' : result.error ?? 'Could not resume');
+        showToast(result.ok ? 'Timer resumed' : result.error ?? 'Could not resume', result.ok ? 'now' : 'error');
         return;
       }
       clearCompleted();
       const result = await restart();
-      showToast(result.ok ? `Tracking “${taskLabel}”` : result.error ?? 'Could not start the timer');
+      showToast(
+        result.ok ? `Tracking “${taskLabel}”` : result.error ?? 'Could not start the timer',
+        result.ok ? 'now' : 'error',
+      );
     } finally {
       setBusy(false);
     }
@@ -95,7 +101,7 @@ export function TimerPage() {
     const logged = active!.seconds;
     try {
       const result = await stopTimer();
-      if (!result.ok) { showToast(result.error ?? 'Could not stop the timer'); return; }
+      if (!result.ok) { showToast(result.error ?? 'Could not stop the timer', 'error'); return; }
       if (complete) {
         markCompleted(activeKey(active!.taskId, active!.projectName));
         showToast(`“${taskLabel}” marked complete`);

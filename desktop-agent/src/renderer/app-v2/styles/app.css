@@ -1222,18 +1222,42 @@ button:disabled { cursor: default; }
   box-shadow: var(--shadow-toast);
   animation: toastIn .18s ease-out;
 }
-.v2-toast__check {
+.v2-toast__mark {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--toast-check);
-  color: var(--on-accent);
   font-size: 9px;
+  font-weight: 700;
   display: grid;
   place-items: center;
   flex: none;
 }
 .v2-toast__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Confirmed result — the default. */
+.v2-toast--ok .v2-toast__mark {
+  background: var(--status-ok);
+  color: var(--on-accent);
+}
+
+/* State change: amber, and a plain dot rather than a tick — nothing was
+   completed, something is now true. */
+.v2-toast--now .v2-toast__mark {
+  width: 8px;
+  height: 8px;
+  margin: 0 3px;
+  background: var(--accent);
+}
+
+/* Failure takes the whole pill. A red disc on an ink pill reads as decoration
+   at 14px; the message has to fail loudly enough to be believed. */
+.v2-toast--error {
+  background: var(--status-danger);
+}
+.v2-toast--error .v2-toast__mark {
+  background: #fff;
+  color: var(--status-danger);
+}
 
 /* ── Update banner ────────────────────────────────────────────────────── */
 

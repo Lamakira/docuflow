@@ -17,6 +17,26 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 const TOAST_MS = 2200;
 
+/**
+ * What kind of thing just happened. The brand has two chromatic voices and one
+ * derived red, and a toast is the clearest place they earn their keep:
+ *
+ *   ok     a confirmed result — an entry logged, a project created   (green)
+ *   now    the current state changed — tracking started, paused      (amber)
+ *   error  it did not happen                                         (red)
+ *
+ * Every toast used to be an ink pill with a green tick, so a failure announced
+ * itself with a checkmark.
+ */
+export type ToastKind = 'ok' | 'now' | 'error';
+
+export interface ToastMessage {
+  text: string;
+  kind: ToastKind;
+  /** Distinguishes two identical messages so the entrance animation replays. */
+  id: number;
+}
+
 interface UiValue {
   search: string;
   setSearch: (v: string) => void;
@@ -30,8 +50,8 @@ interface UiValue {
   markCompleted: (key: string) => void;
   clearCompleted: () => void;
 
-  toast: string | null;
-  showToast: (text: string) => void;
+  toast: ToastMessage | null;
+  showToast: (text: string, kind?: ToastKind) => void;
 
   /**
    * True only when the main process confirmed it built a frameless window for
@@ -57,14 +77,15 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [settingsSection, setSettingsSection] = useState('activity-bar');
   const [completedKey, setCompletedKey] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
   const [appChrome, setAppChrome] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastSeq = useRef(0);
 
   /** Single slot: a new toast replaces the current one and restarts the clock. */
-  const showToast = useCallback((text: string) => {
+  const showToast = useCallback((text: string, kind: ToastKind = 'ok') => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast(text);
+    setToast({ text, kind, id: ++toastSeq.current });
     toastTimer.current = setTimeout(() => setToast(null), TOAST_MS);
   }, []);
 
