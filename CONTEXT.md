@@ -44,6 +44,14 @@ _Avoid_: Current organization, global workspace
 A user-directed event originating from exactly one workspace and shown in the user's cross-workspace inbox with that origin visible.
 _Avoid_: Workspace inbox item, global record
 
+**Notification Category**:
+One of a small, stable set of notification groupings — such as work assignments, reminders, approvals, membership, billing, and security — through which delivery preferences are expressed.
+_Avoid_: Event type, notification setting
+
+**Delivery Preference**:
+A user's per-workspace, per-category choice of which derived channels carry their notifications. The in-app inbox cannot be disabled, and mandatory security, billing, and membership notices are delivered regardless of preference.
+_Avoid_: Mute, unsubscribe, notification opt-out
+
 **Invitation**:
 A pending offer for a user to join a workspace. It shows projected seat impact but does not become a membership or consume a billable seat until accepted.
 _Avoid_: Pending member, inactive user
