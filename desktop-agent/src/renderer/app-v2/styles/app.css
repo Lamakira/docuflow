@@ -14,6 +14,8 @@
  */
 
 @import './tokens.css';
+/* Stage texture. Loaded after the tokens it uses, before the rules it feeds. */
+@import './doodle.css';
 
 /* ── Base ─────────────────────────────────────────────────────────────── */
 
@@ -562,7 +564,7 @@ button:disabled { cursor: default; }
 .v2-stage {
   flex: 1;
   min-width: 0;
-  background: var(--stage-bg);
+  /* background is set in doodle.css — colour plus the texture tile */
   display: flex;
   flex-direction: column;
   overflow: hidden;

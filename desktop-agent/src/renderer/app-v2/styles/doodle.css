@@ -1,0 +1,34 @@
+/**
+ * Doodle texture for the stage.
+ *
+ * A seamless 160×160 tile drawn as an inline SVG — no asset, no request, and
+ * it scales with the window instead of resampling. The motifs are inset from
+ * the tile edges, so nothing is clipped at a seam and the density can be
+ * changed with `background-size` alone.
+ *
+ * Two changes from the supplied file, both required by the brand:
+ *
+ *   Colour  it shipped in the old indigo #4F46E5, which is not in the palette
+ *           any more. Redrawn in Archive Slate #59657A — the same voice as the
+ *           hairlines it sits between. Amber and green were not options: they
+ *           mean "now" and "confirmed", and a background that says either is
+ *           lying about every screen it appears on.
+ *   Ground  Cold Stock, from the token, rather than the literal it carried.
+ *
+ * Opacity is 0.13 stroke / 0.11 fill. The supplied note warns that above ~0.16
+ * the texture starts competing with the 92px clock, and slate is darker than
+ * the indigo those numbers were tuned against.
+ */
+
+.v2-stage {
+  background-color: var(--stage-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' stroke='%2359657a' stroke-opacity='0.13' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='28' cy='30' r='9'/%3E%3Cpath d='M28 25v5l3.5 2'/%3E%3Cpath d='M64 22c4-5 9 5 13 0s9 5 13 0'/%3E%3Cpath d='M120 20v12M114 26h12'/%3E%3Crect x='16' y='68' width='16' height='12' rx='2.5'/%3E%3Cpath d='M56 62c6 2 9 8 6 13s-11 4-13-1'/%3E%3Cpath d='M100 74l5-8 5 8z'/%3E%3Cpath d='M134 62v14M128 69h13'/%3E%3Ccircle cx='140' cy='108' r='8'/%3E%3Cpath d='M140 104v4l3 2'/%3E%3Cpath d='M24 110c5-4 10 4 15 0'/%3E%3Cpath d='M70 104h16M70 112h10'/%3E%3Cpath d='M106 100v14'/%3E%3Cpath d='M46 140c4-6 10 4 14-2'/%3E%3Ccircle cx='92' cy='142' r='6'/%3E%3Cpath d='M124 136l8 8M132 136l-8 8'/%3E%3C/g%3E%3Cg fill='%2359657a' fill-opacity='0.11'%3E%3Ccircle cx='84' cy='42' r='2.2'/%3E%3Ccircle cx='12' cy='48' r='2.2'/%3E%3Ccircle cx='152' cy='44' r='2.2'/%3E%3Ccircle cx='40' cy='90' r='2.2'/%3E%3Ccircle cx='122' cy='92' r='2.2'/%3E%3Ccircle cx='8' cy='128' r='2.2'/%3E%3Ccircle cx='66' cy='128' r='2.2'/%3E%3Ccircle cx='152' cy='134' r='2.2'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 160px 160px;
+}
+
+/* Texture is decoration, and decoration is the first thing to go when someone
+   has asked the OS for more contrast. */
+@media (prefers-contrast: more) {
+  .v2-stage { background-image: none; }
+}
