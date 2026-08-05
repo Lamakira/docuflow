@@ -1,137 +1,164 @@
 /**
- * Design tokens — rail-layout redesign.
+ * Design tokens — DocuFlow brand.
  *
- * Two layers. The palette holds the raw values from the handoff; the semantic
- * layer is what components reference. Components must never use a raw hex or a
- * palette variable directly, so retheming means editing one block.
+ * The palette layer mirrors docuflow-marketing/src/styles/global.css value for
+ * value, under the same names, so the two surfaces can be diffed. The semantic
+ * layer is what components reference; nothing outside this file may use a raw
+ * hex or a palette variable directly.
+ *
+ * The brand's rule is a cold clerical ground with exactly two chromatic voices:
+ *
+ *   amber #E9A23B   the current thing — primary action, the running timer,
+ *                   the selected row. Never a resting border, never body text.
+ *   green #1F9D6B   a confirmed result — logged entries, on-states, capture
+ *                   counts. Green is an outcome; amber is a state.
+ *
+ * Amber carries ink text, never white: #E9A23B under white is 1.9:1.
+ *
+ * Four tokens are additions the marketing system does not define, because a
+ * desktop app needs states a landing page never shows. Each is marked DERIVED
+ * and each was checked against the ground it sits on:
+ *
+ *   --p-flag / --p-flag-wash   destructive (Stop, Sign out). Marketing has no
+ *                              red at all; a timer needs one.
+ *   --p-slate-muted            second, quieter step below Archive Slate for
+ *                              row meta. 4.6:1 on white.
+ *   --p-rule-soft              hairline *inside* a card, where Divider Grey at
+ *                              full strength turns a list into a table.
+ *   --p-amber-on-light         amber that carries text (the PAUSED chip).
+ *                              Full amber is 2.1:1 on manila.
  */
 
+@font-face {
+  font-family: 'Switzer';
+  src: url('../fonts/switzer-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Switzer';
+  src: url('../fonts/switzer-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Switzer';
+  src: url('../fonts/switzer-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cabinet Grotesk';
+  src: url('../fonts/cabinet-grotesk-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cabinet Grotesk';
+  src: url('../fonts/cabinet-grotesk-800.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  /* ── Palette (raw values from the handoff) ──────────────────────────── */
-  --p-desk: #dbe4fb;
-  --p-rail: #edf0fb;
-  --p-white: #ffffff;
-  --p-stage: #f7f8fd;
+  /* ── Palette — mirrors the marketing tokens, same names ─────────────── */
+  --p-ink: #0f1524;              /* Case Ink */
+  --p-ink-raised: #161d30;       /* Ink Raised — surfaces on a dark band */
+  --p-ink-border: #2a3348;       /* Ink Border — hairline on dark */
+  --p-ink-hover: #1c2740;        /* Ink Hover */
+  --p-stock: #f3f5f7;            /* Cold Stock — the desk */
+  --p-white: #ffffff;            /* Card White — the record */
+  --p-slate: #59657a;            /* Archive Slate */
+  --p-slate-on-ink: #9aa6b8;     /* Slate on Ink */
+  --p-rule: #d8dee6;             /* Divider Grey */
 
-  --p-border-1: #e9eaf3;
-  --p-border-2: #eceef7;
-  --p-border-3: #e6e8f2;
-  --p-divider-1: #f0f1f7;
-  --p-divider-2: #f4f5fa;
-  --p-hover-1: #fafbfe;
-  --p-hover-2: #f5f6fa;
+  --p-amber: #e9a23b;            /* Amber Tab — now */
+  --p-amber-hover: #d8912f;      /* Amber Tab Pressed */
+  --p-green: #1f9d6b;            /* Signed-Off Green — confirmed */
+  --p-green-on-light: #187751;   /* the green that carries a sign */
 
-  --p-ink: #14161f;
-  --p-ink-2: #22242e;
-  --p-ink-3: #4a4e63;
-  --p-muted: #8b90ab;
-  --p-muted-2: #9296ac;
-  --p-body: #6b7080;
-  --p-body-2: #5a5f75;
+  --p-mint: #eaf2ed;             /* Ledger Mint — the hours band */
+  --p-manila: #fbf3e6;           /* Manila — the documentation band */
 
-  --p-accent: #4f46e5;
-  --p-accent-strong: #4338ca;
-  --p-accent-deep: #3730a3;
-  --p-accent-tint: #e9e8fd;
-  --p-accent-tint-2: #eceafd;
-  --p-accent-border: #d8d6fa;
-  --p-accent-border-2: #dcd9fa;
-  --p-accent-hover-border: #c7c4f5;
-  --p-selected-text: #22245a;
-  --p-selected-meta: #6f74a8;
-
-  --p-success: #16a34a;
-  --p-success-bg: #e6f6ec;
-  --p-success-text: #15803d;
-  --p-warn-dot: #e2960f;
-  --p-warn-bg: #fdf1e0;
-  --p-warn-text: #b06d05;
-  --p-danger: #b91c1c;
-  --p-danger-bg: #fdecec;
-
-  --p-toast-bg: #1c1f2e;
-  --p-toast-check: #34d399;
-
-  --p-disabled-fill: #c7c4ee;
-  --p-toggle-off: #dcdfea;
-  --p-toggle-locked: #c9c6f6;
-
-  --p-neutral-btn: #e9eaf5;
-  --p-neutral-btn-hover: #dfe1f0;
-  --p-dot: #dadce8;
-
-  /* Transport controls carry their own colour: the three buttons do different
-     and partly irreversible things, so they must not read as one row. */
-  --p-run-btn: #16a34a;
-  --p-run-btn-hover: #15803d;
-  --p-run-rgb: 22, 163, 74;
-  --p-hold-btn: #d97706;
-  --p-hold-btn-hover: #b45309;
-  --p-hold-rgb: 217, 119, 6;
-  --p-danger-tint-hover: #fbdcdc;
-  --p-accent-tint-hover: #ddd9fb;
+  /* DERIVED — see the header note. */
+  --p-slate-muted: #7b8798;
+  --p-rule-soft: #e7ebf0;
+  --p-amber-on-light: #8a5a0f;
+  --p-flag: #b42318;
+  --p-flag-wash: #fef3f2;
+  --p-flag-wash-hover: #fee4e2;
 
   /* ── Semantic ───────────────────────────────────────────────────────── */
-  --desk: var(--p-desk);
-  --rail-bg: var(--p-rail);
-  --panel-bg: var(--p-white);
-  --stage-bg: var(--p-stage);
-  --surface-card: var(--p-white);
+  --rail-bg: var(--p-ink);
+  --rail-raised: var(--p-ink-raised);
+  --rail-border: var(--p-ink-border);
+  --rail-text: var(--p-slate-on-ink);
 
-  --border-card: var(--p-border-1);
-  --border-card-soft: var(--p-border-2);
-  --border-field: var(--p-border-3);
-  --border-create: var(--p-accent-border-2);
-  --border-tile-hover: var(--p-accent-hover-border);
-  --divider: var(--p-divider-1);
-  --divider-soft: var(--p-divider-2);
-  --row-hover: var(--p-hover-1);
-  --row-hover-strong: var(--p-hover-2);
+  --panel-bg: var(--p-white);
+  --stage-bg: var(--p-stock);
+  --surface-card: var(--p-white);
+  --surface-inset: var(--p-stock);
+
+  --border-card: var(--p-rule);
+  --border-field: var(--p-rule);
+  --divider: var(--p-rule);
+  --divider-soft: var(--p-rule-soft);
+  --row-hover: var(--p-stock);
+  --row-hover-strong: var(--p-stock);
 
   --text-primary: var(--p-ink);
-  --text-row: var(--p-ink-2);
-  --text-secondary: var(--p-ink-3);
-  --text-body: var(--p-body);
-  --text-body-soft: var(--p-body-2);
-  --text-muted: var(--p-muted);
-  --text-meta: var(--p-muted-2);
+  --text-secondary: var(--p-slate);
+  --text-body: var(--p-slate);
+  --text-body-soft: var(--p-slate);
+  --text-muted: var(--p-slate);
+  --text-meta: var(--p-slate-muted);
+  --text-on-ink: var(--p-slate-on-ink);
 
-  --accent: var(--p-accent);
-  --accent-strong: var(--p-accent-strong);
-  --accent-deep: var(--p-accent-deep);
-  --accent-tint: var(--p-accent-tint);
-  --accent-tint-2: var(--p-accent-tint-2);
-  --accent-border: var(--p-accent-border);
-  --selected-text: var(--p-selected-text);
-  --selected-meta: var(--p-selected-meta);
+  /* "Now" — the current selection, the primary action, the running timer. */
+  --accent: var(--p-amber);
+  --accent-strong: var(--p-amber);
+  --accent-hover: var(--p-amber-hover);
+  --accent-wash: var(--p-manila);
+  --accent-text: var(--p-amber-on-light);
+  --on-accent: var(--p-ink);            /* amber never carries white text */
 
-  --status-ok: var(--p-success);
-  --status-ok-bg: var(--p-success-bg);
-  --status-ok-text: var(--p-success-text);
-  --status-warn-dot: var(--p-warn-dot);
-  --status-warn-bg: var(--p-warn-bg);
-  --status-warn-text: var(--p-warn-text);
-  --status-danger: var(--p-danger);
-  --status-danger-bg: var(--p-danger-bg);
+  /* "Confirmed" — logged, verified, on. */
+  --status-ok: var(--p-green);
+  --status-ok-bg: var(--p-mint);
+  --status-ok-text: var(--p-green-on-light);
 
-  --toast-bg: var(--p-toast-bg);
-  --toast-check: var(--p-toast-check);
+  /* "Held" — paused, waiting. Amber again: it is a state, not a result. */
+  --status-hold: var(--p-amber);
+  --status-hold-bg: var(--p-manila);
+  --status-hold-text: var(--p-amber-on-light);
 
-  --control-neutral: var(--p-neutral-btn);
-  --control-neutral-hover: var(--p-neutral-btn-hover);
-  --run-btn: var(--p-run-btn);
-  --run-btn-hover: var(--p-run-btn-hover);
-  --run-rgb: var(--p-run-rgb);
-  --hold-btn: var(--p-hold-btn);
-  --hold-btn-hover: var(--p-hold-btn-hover);
-  --hold-rgb: var(--p-hold-rgb);
-  --danger-tint: var(--p-danger-bg);
-  --danger-tint-hover: var(--p-danger-tint-hover);
-  --accent-tint-hover: var(--p-accent-tint-hover);
-  --control-disabled: var(--p-disabled-fill);
-  --toggle-off: var(--p-toggle-off);
-  --toggle-locked: var(--p-toggle-locked);
-  --window-dot: var(--p-dot);
+  --status-danger: var(--p-flag);
+  --status-danger-bg: var(--p-flag-wash);
+  --status-danger-bg-hover: var(--p-flag-wash-hover);
+
+  --toast-bg: var(--p-ink);
+  --toast-check: var(--p-green);
+
+  --control-neutral: var(--p-stock);
+  --control-neutral-hover: var(--p-rule);
+  --control-disabled: var(--p-rule);
+  --toggle-off: var(--p-rule);
+  --toggle-locked: #c3cfc9;
+
+  /* Transport — a media control, so it keeps the transport convention:
+     green while it runs, amber while it is held, red to stop. The brand's
+     amber-is-now still holds for the held state and for the panel. */
+  --run-btn: var(--p-green);
+  --run-btn-hover: var(--p-green-on-light);
+  --run-rgb: 31, 157, 107;
+  --hold-btn: var(--p-amber);
+  --hold-btn-hover: var(--p-amber-hover);
+  --hold-rgb: 233, 162, 59;
 
   /* ── Metrics ────────────────────────────────────────────────────────── */
   --rail-w: 78px;
@@ -148,16 +175,16 @@
   --r-20: 20px;
   --r-toast: 24px;
 
-  --shadow-card: 0 4px 12px rgba(35, 40, 80, .05);
-  --shadow-row: 0 3px 10px rgba(35, 40, 80, .06);
-  --shadow-tile: 0 8px 20px rgba(40, 36, 90, .12);
-  --shadow-toast: 0 10px 26px rgba(20, 24, 50, .28);
-  --shadow-play: 0 12px 26px rgba(67, 56, 202, .32);
-  --shadow-create: 0 4px 14px rgba(50, 45, 120, .08);
-  --shadow-logo: 0 6px 14px rgba(67, 56, 202, .28);
+  --shadow-card: 0 1px 2px rgb(15 21 36 / .04);
+  --shadow-row: 0 6px 16px -8px rgb(15 21 36 / .18);
+  --shadow-tile: 0 10px 24px -12px rgb(15 21 36 / .24);
+  --shadow-toast: 0 18px 38px -14px rgb(15 21 36 / .45);
+  --shadow-create: 0 6px 16px -8px rgb(15 21 36 / .18);
+  --shadow-logo: none;
 
-  --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font: 'Switzer', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Cabinet Grotesk', 'Switzer', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --press: transform .1s ease;
   --fade: background .15s ease, border-color .15s ease, box-shadow .15s ease;

@@ -97,11 +97,16 @@ grid pages. Splitting them across a context would mean fetching twice.
 - **Past days show a total only.** The agent exposes per-entry detail for today
   and totals for any period. The stage says where the rest lives rather than
   implying a past day was empty.
-- **The transport buttons are colour-coded**, against the handoff's single
-  indigo. Stop is red, ✓ is accent-tinted, and the main button *states the
-  timer*: green while recording, amber while held. Three controls that do
-  different and partly irreversible things must not read as one grey row. The
-  pulse ring follows the button colour (`--transport-rgb`).
+- **The rail is Case Ink.** Marketing has no icon rail to copy; the dark band is
+  how that system carries structure, so the rail takes it. The active tab is
+  still the white notch merging into the panel, with amber marking which tab it
+  is — the same "this is the current one" job amber does on the site.
+- **The transport buttons are colour-coded**, and they keep the media-transport
+  convention rather than the brand's amber-is-now rule: green while recording,
+  amber while held, red to stop, mint ✓. Three controls that do different and
+  partly irreversible things must not read as one grey row. The pulse ring
+  follows the button colour (`--transport-rgb`), and the glyph flips to ink on
+  amber because amber never carries white.
 - **The avatar is a menu**, not decoration: account, Settings, open the web app,
   check for updates, sign out. It is the only place in the shell that stands
   for "you", so the account actions live there instead of only in Settings.
@@ -112,10 +117,30 @@ grid pages. Splitting them across a context would mean fetching twice.
 
 ## Tokens
 
-`styles/tokens.css` has two layers. The palette holds the raw values from the
-handoff; the semantic layer is what components reference (`--surface-card`,
-`--accent`, `--text-muted`). Components must never use a raw hex or a palette
-variable directly — retheming should mean editing one block.
+`styles/tokens.css` has two layers. The palette mirrors
+`docuflow-marketing/src/styles/global.css` value for value under the same names,
+so the two surfaces can be diffed; the semantic layer is what components
+reference (`--surface-card`, `--accent`, `--text-muted`). Components must never
+use a raw hex or a palette variable directly — retheming should mean editing one
+block.
+
+The brand rule is a cold clerical ground (Case Ink `#0F1524`, Cold Stock
+`#F3F5F7`, Card White, Archive Slate, Divider Grey) with exactly two chromatic
+voices: **amber `#E9A23B` = the current thing** (primary action, running timer,
+selected row) and **green `#1F9D6B` = a confirmed result** (logged entries,
+on-states, capture counts). Amber carries ink text, never white — `#E9A23B`
+under white is 1.9:1 — and it never becomes a resting border or body text; text
+that wants to be amber uses `--accent-text` (`#8A5A0F`).
+
+Four tokens are additions the marketing system does not define, each marked
+DERIVED in the file: a destructive red (marketing has none, a timer needs one),
+a second muted slate for row meta, a softer in-card hairline, and the darkened
+amber above.
+
+Fonts are the brand's, bundled from `fonts/` (5 woff2, ~95KB): **Cabinet
+Grotesk** for headings and **Switzer** for everything else. Numerals stay on
+Switzer — Cabinet Grotesk has no tabular figures, so a 92px clock in it jumps
+~120px between `11:11` and `00:00`.
 
 ## Status
 
