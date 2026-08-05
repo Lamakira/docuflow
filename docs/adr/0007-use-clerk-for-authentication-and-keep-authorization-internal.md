@@ -1,0 +1,3 @@
+# Use Clerk for authentication and keep authorization internal
+
+DocuFlow will use Clerk as its managed identity provider for the US-market-first launch, behind an `IdentityProvider` seam; Clerk owns credentials, authentication flows, MFA, and session rotation, while DocuFlow remains authoritative for User linkage, Workspaces, Memberships, Workspace Roles, Capabilities, Service Accounts, Devices, and every authorization decision. Clerk was preferred over ZITADEL for faster React product integration once EU-first identity residency was no longer the launch assumption, and over WorkOS because enterprise federation is not the initial go-to-market center; an explicit EU-residency or enterprise-procurement requirement triggers reassessment before onboarding that customer.

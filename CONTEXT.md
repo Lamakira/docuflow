@@ -48,6 +48,18 @@ _Avoid_: Workspace inbox item, global record
 A pending offer for a user to join a workspace. It shows projected seat impact but does not become a membership or consume a billable seat until accepted.
 _Avoid_: Pending member, inactive user
 
+**Service Account**:
+A non-human identity through which an external integration acts within exactly one workspace using explicitly granted capabilities. It is not a member and does not consume a billable seat.
+_Avoid_: API user, bot user, machine user
+
+**Device**:
+A registered desktop-agent installation associated with one user. A device has no workspace authority without a device enrollment.
+_Avoid_: Desktop user, workspace device
+
+**Device Enrollment**:
+The authorization connecting one device to one workspace through the user's active membership. Revoking it ends that device's access to the workspace without affecting the user's other device enrollments.
+_Avoid_: Device membership, agent account
+
 ## Work and clients
 
 **Client**:
@@ -119,6 +131,14 @@ _Avoid_: Hidden monitoring settings, agent settings
 **Timer**:
 A user's single globally active work tracker, always scoped to one workspace and one project. Its active scope remains visible while the user browses another workspace.
 _Avoid_: Workspace timer, parallel timer
+
+**Timer Command**:
+A single start, pause, resume, or stop instruction issued against a user's Timer from one identified web session or enrolled device, applied at its claimed effective time even when it arrives late.
+_Avoid_: Timer event, sync message
+
+**Timer Session**:
+The span from one Timer start to its final stop, grouping every Time Entry produced within it by pauses, resumes, and late-arriving Timer Commands.
+_Avoid_: Shift, timer run
 
 **Time Entry**:
 A recorded interval of work belonging to one workspace and one project, optionally linked to a task when policy allows. It may originate from the timer or an authorized manual entry.
