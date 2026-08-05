@@ -182,6 +182,18 @@ _Avoid_: Documentation project, workspace document
 The visibility inherited by a Workspace Document from its folder: everyone in the workspace, selected workspace roles, or selected members. Browsing, search, and AI citations must enforce the same access.
 _Avoid_: Search visibility, AI-only access
 
+**File Version**:
+One immutable uploaded revision of a File, stored as its own object and listed on the File with a current pointer. Replacing a File adds a version; it never overwrites an object.
+_Avoid_: Overwritten file, object version
+
+**Derived Artifact**:
+A generated companion of one File Version — thumbnail, preview, poster, or extracted text — that inherits the source File's access and is never independently shareable.
+_Avoid_: Public thumbnail, cached copy
+
+**Trash**:
+The workspace holding area for soft-deleted Documents and Files during their restore window, after which a purge permanently removes rows, objects, derived artifacts, and index entries.
+_Avoid_: Archive, permanent delete
+
 ## Subscription and billing
 
 **Subscription**:
