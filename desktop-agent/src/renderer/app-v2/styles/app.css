@@ -364,7 +364,7 @@ button:disabled { cursor: default; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 11px;
   width: 100%;
   text-align: left;
   padding: 12px 14px;
@@ -378,7 +378,27 @@ button:disabled { cursor: default; }
 }
 .v2-row:active:not(:disabled) { transform: scale(.985); }
 
-.v2-row__text { min-width: 0; }
+/* Leading glyph. Sized to the two-line row so name and meta stay optically
+   centred against it, and muted so the label still leads. */
+.v2-row__icon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-8);
+  display: grid;
+  place-items: center;
+  color: var(--text-meta);
+  background: var(--stage-bg);
+  transition: var(--fade);
+}
+.v2-row:hover .v2-row__icon { background: var(--divider-soft); }
+.v2-row--selected .v2-row__icon,
+.v2-row--selected:hover .v2-row__icon {
+  background: #fff;
+  color: var(--accent-text);
+}
+
+.v2-row__text { min-width: 0; flex: 1; }
 .v2-row__name {
   display: block;
   font-size: 13px;

@@ -30,9 +30,12 @@ export function PanelBody({ children }: { children: React.ReactNode }) {
   return <div className="v2-panel__body">{children}</div>;
 }
 
-export function PanelRow({ name, meta, end, endAccent, selected, onClick, title }: {
+export function PanelRow({ name, meta, icon, end, endAccent, selected, onClick, title }: {
   name: string;
   meta?: string;
+  /** Leading glyph. Settings uses one per section; the lists do not — a row of
+   *  identical project icons is decoration that costs a column of width. */
+  icon?: React.ReactNode;
   end?: React.ReactNode;
   endAccent?: boolean;
   selected?: boolean;
@@ -46,6 +49,7 @@ export function PanelRow({ name, meta, end, endAccent, selected, onClick, title 
       title={title ?? name}
       type="button"
     >
+      {icon && <span className="v2-row__icon" aria-hidden="true">{icon}</span>}
       <span className="v2-row__text">
         <span className="v2-row__name">{name}</span>
         {meta && <span className="v2-row__meta">{meta}</span>}

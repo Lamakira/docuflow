@@ -19,6 +19,7 @@ import { useAgent } from '../../app/stores/AgentContext';
 import { Panel, PanelHead, PanelBody, PanelRow } from '../components/Panel';
 import { Stage, StageHead } from '../components/Stage';
 import { useUi } from '../ui/UiContext';
+import { BellIcon, EyeIcon, GlobeIcon, PowerIcon, WindowIcon, WrenchIcon } from '../icons';
 
 type SectionId = 'activity-bar' | 'tracking' | 'startup' | 'reminders' | 'timezone' | 'advanced';
 
@@ -105,13 +106,13 @@ export function SettingsScreen() {
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const section = settingsSection as SectionId;
 
-  const SECTIONS: { id: SectionId; label: string; meta: string }[] = [
-    { id: 'activity-bar', label: 'Activity Bar', meta: 'Floating widget & window' },
-    { id: 'tracking', label: 'Tracking', meta: 'Idle detection, captures' },
-    { id: 'startup', label: 'Startup', meta: 'Launch at login' },
-    { id: 'reminders', label: 'Reminders', meta: 'Nudges when idle' },
-    { id: 'timezone', label: 'Time Zone', meta: zone },
-    { id: 'advanced', label: 'Advanced', meta: 'Device, account, updates' },
+  const SECTIONS: { id: SectionId; label: string; meta: string; Icon: typeof WindowIcon }[] = [
+    { id: 'activity-bar', label: 'Activity Bar', meta: 'Floating widget & window', Icon: WindowIcon },
+    { id: 'tracking', label: 'Tracking', meta: 'Idle detection, captures', Icon: EyeIcon },
+    { id: 'startup', label: 'Startup', meta: 'Launch at login', Icon: PowerIcon },
+    { id: 'reminders', label: 'Reminders', meta: 'Nudges when idle', Icon: BellIcon },
+    { id: 'timezone', label: 'Time Zone', meta: zone, Icon: GlobeIcon },
+    { id: 'advanced', label: 'Advanced', meta: 'Device, account, updates', Icon: WrenchIcon },
   ];
 
   async function saveOpenAtLogin(next: boolean) {
@@ -148,6 +149,7 @@ export function SettingsScreen() {
                 key={s.id}
                 name={s.label}
                 meta={s.meta}
+                icon={<s.Icon size={15} />}
                 selected={section === s.id}
                 onClick={() => setSettingsSection(s.id)}
               />
