@@ -1,18 +1,23 @@
 /**
  * Outbound-HTTP guard and Replit-sidecar fake (ADR-0018).
  *
- * Two provider boundaries are reached with a raw `fetch` rather than an SDK, so
+ * Three provider boundaries are reached with a raw `fetch` rather than an SDK, so
  * aliasing a package cannot cover them:
  *
  *   - the Replit object-storage sidecar on 127.0.0.1:1106, which mints the signed
  *     upload/download URLs that `server/objectStorage.ts` hands to clients;
  *   - the Replit connectors API, from which `server/email.ts` fetches Resend
- *     credentials before every send.
+ *     credentials before every send;
+ *   - the signed storage URL itself, which `server/agentRoutes.ts` PUTs to when it
+ *     relays a desktop-agent screenshot — the one upload the server performs
+ *     itself instead of handing the URL to the client.
  *
- * `installNetworkFake()` answers both from memory and makes every *other* fetch
- * throw, so a suite can never quietly reach a real service. Postgres and supertest
- * do not use `fetch`, so nothing legitimate is blocked.
+ * `installNetworkFake()` answers all three from memory and makes every *other*
+ * fetch throw, so a suite can never quietly reach a real service. Postgres and
+ * supertest do not use `fetch`, so nothing legitimate is blocked.
  */
+
+import { putObject } from "./gcs";
 
 /** Storage origin every minted URL sits under, so no suite hard-codes a host. */
 export const FAKE_STORAGE_ORIGIN = "https://storage.googleapis.com";
@@ -46,7 +51,10 @@ export interface SignedUrlRequest {
 const signedUrlRequests: SignedUrlRequest[] = [];
 
 export function installNetworkFake(): void {
-  globalThis.fetch = (async (input: unknown, init?: { body?: unknown }) => {
+  globalThis.fetch = (async (
+    input: unknown,
+    init?: { method?: string; body?: unknown; headers?: Record<string, string> }
+  ) => {
     const url = typeof input === "string" ? input : String((input as { url?: string })?.url ?? input);
 
     if (url === `${SIDECAR_ORIGIN}/object-storage/signed-object-url`) {
@@ -54,6 +62,18 @@ export function installNetworkFake(): void {
       signedUrlRequests.push(request);
       const signed = fakeSignedUrl(`${request.bucket_name}/${request.object_name}`, request.method);
       return jsonResponse({ signed_url: signed });
+    }
+
+    // A PUT the server makes itself: the desktop agent uploads screenshot bytes
+    // to the app, which compresses them and relays them to storage. Store the
+    // body so the object exists for whoever reads it back.
+    if (url.startsWith(`${FAKE_STORAGE_ORIGIN}/`) && init?.method === "PUT") {
+      const objectPath = new URL(url).pathname.slice(1);
+      const body = init.body;
+      putObject(objectPath, Buffer.isBuffer(body) ? body : Buffer.from(String(body ?? "")), {
+        contentType: init.headers?.["Content-Type"] ?? "application/octet-stream",
+      });
+      return new Response(null, { status: 200 });
     }
 
     if (url.includes("/api/v2/connection") && url.includes("connector_names=resend")) {

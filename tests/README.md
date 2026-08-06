@@ -52,12 +52,14 @@ module knows it is under test:
 | `resend`                | `tests/fakes/resend.ts` | Always-succeeding delivery into an inspectable outbox.                        |
 | `playwright`            | `tests/fakes/playwright.ts` | Throws — the Loom/Fathom transcript scraper must never be reached.        |
 
-Two provider boundaries are crossed with a raw `fetch` rather than an SDK — the
-Replit object-storage sidecar that signs upload URLs, and the Replit connectors
-API that hands out Resend credentials. `tests/fakes/network.ts` answers both from
-memory and makes every **other** `fetch` throw, so a suite cannot quietly reach a
-real service. Postgres and supertest do not use `fetch`, so nothing legitimate is
-blocked.
+Three provider boundaries are crossed with a raw `fetch` rather than an SDK — the
+Replit object-storage sidecar that signs upload URLs, the Replit connectors API
+that hands out Resend credentials, and the signed storage URL itself, which the
+server PUTs to when it relays a desktop-agent screenshot. `tests/fakes/network.ts`
+answers all three from memory (a relayed PUT lands in the same in-memory bucket
+`tests/fakes/gcs.ts` serves from) and makes every **other** `fetch` throw, so a
+suite cannot quietly reach a real service. Postgres and supertest do not use
+`fetch`, so nothing legitimate is blocked.
 
 All four fakes are module-level singletons; `tests/setup.ts` resets them in a
 global `beforeEach` alongside the database.
@@ -81,6 +83,10 @@ a database you care about, and never at anything production-related.
   `storage`. The one exception is `tests/helpers/auth.ts`, which writes the admin
   role directly: every route that can grant it is itself admin-only, so there is
   no HTTP path to the first admin.
+- Sign desktop agents in with `loginDevice` from `tests/helpers/agent.ts`, which
+  returns a request agent already carrying the bearer token. The same module
+  mints tokens with the harness's fixed `JWT_SECRET`, for the middleware branches
+  (an expired token, a token for a deleted device) no live login can produce.
 - Get every request from `newAgent`/`registerUser` rather than `supertest`
   directly, authenticated or not. They attach a unique `X-Forwarded-For`, which
   keeps unrelated suites from spending each other's rate-limit budget;
@@ -93,7 +99,10 @@ a database you care about, and never at anything production-related.
 
 `tests/smoke/` holds the two boot-level suites from the harness ticket.
 `tests/characterization/` freezes the legacy web API
-([#20](https://github.com/Lamakira/docuflow/issues/20)):
+([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
+protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`
+suites — `docs/agent-protocol.md` has drifted, so the tests encode the
+implementation and each suite's header lists what the document gets wrong):
 
 | Suite                            | Covers                                                              |
 | -------------------------------- | ------------------------------------------------------------------- |
@@ -107,6 +116,10 @@ a database you care about, and never at anything production-related.
 | `tasks-members-reminders`        | tasks, project membership, per-user reminders                       |
 | `time-tracking`                  | start/pause/resume/stop/activity, visibility, stats                 |
 | `agent-timer`                    | the desktop agent's device login and its half of the shared tracker  |
+| `agent-auth`                     | device login, refresh, revocation, and the retired pairing endpoints |
+| `agent-ingestion`                | heartbeats, timer sync, policy delivery, activity event batches      |
+| `agent-screenshots`              | the agent's presign / upload / confirm flow and the tombstone it hits |
+| `agent-workspace`                | the agent's project and task pickers, capabilities, and day totals   |
 | `screenshots`                    | evidence upload, listing, image serving, tombstones                 |
 | `notifications-org-settings`     | the bell, screenshot policy, timezones, Help Center screenshots      |
 | `daily-updates`                  | per-project daily updates and the admin dashboards                  |
@@ -117,4 +130,4 @@ a database you care about, and never at anything production-related.
 | `desktop-downloads`              | public installer endpoints and CI release registration              |
 | `teams`                          | teams and invite links (still mounted, no longer used by the SPA)    |
 | `transcripts`                    | transcript status and sync on the no-video paths                    |
-| `rate-limits`                    | the global limiter, and where the auth limiter is actually mounted   |
+| `rate-limits`                    | the global limiter, the screenshot budget, and where the auth limiter is actually mounted |
