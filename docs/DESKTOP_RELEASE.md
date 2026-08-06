@@ -2,9 +2,9 @@
 
 ## Emplacement des installeurs
 
-Stockés dans Google Cloud Storage (GCS), bucket `replit-objstore-64708bc7-367f-45c8-9004-db72f81cbeba`, dossier `public/installers/`.
+Stockés dans Google Cloud Storage (GCS), bucket nommé par `INSTALLER_GCS_BUCKET`, dossier `public/installers/`.
 
-> ⚠️ **Important** : ce bucket est l'**Object Storage Replit** (service account `heimdall-production`). Il est accessible **uniquement depuis l'environnement Replit** (shell de dev ou déploiement) via le **sidecar interne** (`http://127.0.0.1:1106`). Aucun compte Google, service account ou bucket externe n'est requis. Il n'est **pas** accessible depuis GitHub Actions (les runners ne peuvent pas joindre le sidecar) — c'est pourquoi la publication automatique 100 % CI vers ce bucket n'est pas possible.
+> ⚠️ **Important** : l'accès au bucket passe par un **service account Google** — clé dans `GCS_SERVICE_ACCOUNT_KEY`, ou Application Default Credentials (voir [CONFIGURATION.md](CONFIGURATION.md)). Les scripts de release, le serveur et GitHub Actions utilisent tous ce même mécanisme ; il n'y a plus de sidecar Replit ni de dépendance à l'environnement Replit.
 
 ## Versions publiées
 
@@ -45,9 +45,9 @@ Changements inclus dans v0.1.10 :
 - Endpoint de téléchargement : `GET /downloads/:platform` → 302 vers URL signée (si `storageUrl` est une URL `https://storage.googleapis.com/...`) OU stream local depuis `installers/` (si `storageUrl` est `/downloads/:platform`)
 - La DB (`desktop_releases`) stocke le `storageUrl`, `sha256`, `fileSize` et `isLatest` par plateforme
 
-## Deux modes de stockage supportés (les deux sans Google externe)
+## Deux modes de stockage supportés
 
-1. **Object Storage Replit** (mode actuel pour v0.1.7) — `storageUrl = https://storage.googleapis.com/replit-objstore-.../public/installers/<fichier>`, signé au téléchargement via le sidecar. Persiste à travers les redéploiements.
+1. **Google Cloud Storage** (mode actuel) — `storageUrl = https://storage.googleapis.com/<bucket>/public/installers/<fichier>`, signé au téléchargement par le service account du serveur. Persiste à travers les redéploiements.
 2. **Fichier local** — `storageUrl = /downloads/:platform`, le fichier vit dans le dossier `installers/` du serveur. Plus simple mais **ne persiste pas** sur le filesystem éphémère d'un déploiement Replit (raison de la migration vers l'Object Storage).
 
 ## Scripts de build (`desktop-agent/scripts/`)
@@ -59,9 +59,9 @@ Changements inclus dans v0.1.10 :
   2. **Patch postinst Step 3** : extrait le `.deb`, injecte `chmod 755 '/opt/DocuFlow Desktop Agent'` dans le script `postinst`, et repackage le `.deb` — permet que les permissions soient corrigées même lors d'une **mise à jour** (dpkg ne remet pas à jour les permissions d'un dossier existant)
 - `fix-permissions.js` — correctif de permissions (utilisé lors du build, non invoqué directement)
 
-## Scripts de release (`scripts/`, à la racine — exécutés depuis le shell Replit)
+## Scripts de release (`scripts/`, à la racine — exécutables depuis n'importe quel shell disposant des credentials)
 
-- `upload-to-gcs.mjs` — upload un installeur vers l'Object Storage Replit via le sidecar (PUT signé). N'enregistre **pas** en DB ; affiche le `gs://...` à convertir en URL HTTPS pour l'enregistrement.
+- `upload-to-gcs.mjs` — upload un installeur vers le bucket `INSTALLER_GCS_BUCKET` avec le service account. N'enregistre **pas** en DB ; affiche le `gs://...` à convertir en URL HTTPS pour l'enregistrement.
 - `upload-installer.mjs` — upload **chunké** (tranches de 20 MB) vers `/api/internal/desktop-releases/upload-chunk` ; écrit le fichier dans `installers/` **et** enregistre la DB en une seule passe (mode fichier local).
 - `publish-windows.js` / `publish-release.sh` / `publish-release.ps1` — variantes d'upload chunké (mode fichier local).
 
@@ -89,15 +89,15 @@ curl -X POST https://docs.appvibed.com/api/internal/desktop-releases \
 
 ---
 
-## Procédure de release (sans Google externe) — RECOMMANDÉE
+## Procédure de release manuelle — RECOMMANDÉE
 
-C'est la méthode qui a réellement servi pour v0.1.7. **Aucun bucket Google externe, aucun service account.**
+C'est la méthode qui a réellement servi pour v0.1.7. Elle demande le service account GCS décrit plus haut.
 
 1. **Compiler** les installeurs via GitHub Actions :
    - Soit déclencher manuellement le workflow (Actions → `Desktop Agent — Release` → Run workflow) → build-only, produit 3 artifacts (rétention 7 jours).
    - Soit `npm run dist:win` / `dist:mac` / `dist:linux` localement sur la bonne plateforme.
-2. **Récupérer les 3 artifacts** dans l'environnement Replit (téléchargement depuis l'UI GitHub Actions, ou `gh run download <run-id>` si `gh` est authentifié).
-3. **Uploader vers l'Object Storage** (mode actuel) depuis le shell Replit, pour chaque plateforme :
+2. **Récupérer les 3 artifacts** (téléchargement depuis l'UI GitHub Actions, ou `gh run download <run-id>` si `gh` est authentifié).
+3. **Uploader vers l'Object Storage** (mode actuel), pour chaque plateforme :
    ```bash
    node scripts/upload-to-gcs.mjs windows <chemin>/DocuFlow-Agent-0.1.8-windows-setup.exe
    node scripts/upload-to-gcs.mjs macos   <chemin>/DocuFlow-Agent-0.1.8-macos.dmg
@@ -111,21 +111,21 @@ C'est la méthode qui a réellement servi pour v0.1.7. **Aucun bucket Google ext
 
 ---
 
-## Workflow GitHub Actions (build uniquement, ou release auto via bucket externe — NON utilisé)
+## Workflow GitHub Actions (build uniquement, ou release auto par tag — NON utilisé)
 
 **Repo** : `billos-e/TECHMA-DOCUMENTATION-PLATFORM`
 **Fichier** : `.github/workflows/desktop-release.yml`
 
 **Comportement selon le déclencheur** :
 
-| Déclencheur | Build | Upload bucket externe | Enregistrement DB |
+| Déclencheur | Build | Upload bucket GCS | Enregistrement DB |
 |-------------|-------|------------|-------------------|
-| `git push` sur un tag `desktop-agent-v*` | ✅ | ✅ (nécessite un bucket GCS externe + SA) | ✅ |
+| `git push` sur un tag `desktop-agent-v*` | ✅ | ✅ (nécessite les secrets GCS_RELEASE_SA_KEY + INSTALLER_GCS_BUCKET) | ✅ |
 | Déclenchement manuel (Actions → Run workflow) | ✅ | ❌ skippé | ❌ skippé |
 
 > Le paramètre `dry_run` visible dans l'UI de déclenchement manuel est **non fonctionnel** — il est défini dans le YAML mais jamais lu dans les conditions. Le seul vrai interrupteur est le type d'événement (`push` sur tag vs `workflow_dispatch`). Un déclenchement manuel produit toujours un build-only.
 
-> ⚠️ La voie auto par tag exige un **bucket GCS externe** (les runners GitHub ne peuvent pas joindre le sidecar Replit). Comme la création d'un tel bucket n'est pas possible ici, **utiliser le déclenchement manuel pour le build uniquement**, puis suivre la "Procédure de release (sans Google externe)" ci-dessus. Le déclenchement manuel reste donc le mode normal d'utilisation de ce workflow.
+> ⚠️ La voie auto par tag exige les secrets GitHub `GCS_RELEASE_SA_KEY` et `INSTALLER_GCS_BUCKET` (voir l'en-tête du workflow). Tant qu'ils ne sont pas renseignés, **utiliser le déclenchement manuel pour le build uniquement**, puis suivre la procédure de release ci-dessus.
 
 ## Notes Linux spécifiques
 

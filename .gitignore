@@ -1,6 +1,11 @@
 node_modules
 dist
 .DS_Store
+
+# Local environment configuration — .env.example is the committed template
+.env
+.env.*
+!.env.example
 server/public
 vite.config.ts.*
 *.tar.gz

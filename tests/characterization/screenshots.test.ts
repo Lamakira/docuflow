@@ -4,7 +4,7 @@ import { resetDb } from "../helpers/db";
 import { registerAdmin, registerUser } from "../helpers/auth";
 import { createCrmProject, createTask, startTimer } from "../helpers/fixtures";
 import { completeUpload, objectPathFor } from "../helpers/objects";
-import { FAKE_STORAGE_ORIGIN } from "../fakes/network";
+import { FAKE_STORAGE_ORIGIN } from "../fakes/gcs";
 import type { TestUser } from "../helpers/auth";
 
 /**

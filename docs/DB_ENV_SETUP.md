@@ -42,9 +42,9 @@ PGDATABASE=docuflow_dev
 
 | Fichier | Rôle |
 |---|---|
-| `server/dbConfig.ts` | **Source unique** — résout la connection string au démarrage, loggue la source (sans le mot de passe) |
-| `server/db.ts` | Utilise `connectionString` de `dbConfig.ts` — plus de lecture directe de `DATABASE_URL` |
-| `server/auth.ts` | Session store (`connect-pg-simple`) — utilise `connectionString` de `dbConfig.ts` |
+| `server/config.ts` | **Source unique** — résout la connection string au démarrage avec le reste de la configuration, loggue la source (sans le mot de passe). Voir [CONFIGURATION.md](CONFIGURATION.md) |
+| `server/db.ts` | Utilise `config.database` — plus de lecture directe de `DATABASE_URL` ni de `DB_DRIVER` |
+| `server/auth.ts` | Session store (`connect-pg-simple`) — utilise `config.database.connectionString` |
 | `drizzle.config.ts` | drizzle-kit CLI — contient la même logique inline (le CLI ne peut pas importer un module serveur TS) |
 | `scripts/resolve-db-url.js` | Utilitaire Node.js — imprime la connection string résolue sur stdout, pour scripts shell |
 
@@ -96,7 +96,7 @@ PGHOST=localhost PGUSER=me PGPASSWORD=x PGDATABASE=mydb npm run db:push
 2. Remplir soit `DATABASE_URL`, soit les variables `PG*`
 3. Vérifier : `npm run db:env:check`
 4. Démarrer : `npm run dev`
-5. Vérifier dans les logs serveur : `[DB] Config source: DATABASE_URL — ...` ou `[DB] Config source: PG_VARS — ...`
+5. Vérifier dans les logs serveur : `[config] development — database DATABASE_URL over neon (...)` ou `... database PG_VARS ...`
 
 ---
 
@@ -106,7 +106,7 @@ PGHOST=localhost PGUSER=me PGPASSWORD=x PGDATABASE=mydb npm run db:push
 
 - [ ] Les variables `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` sont définies sur Replit
 - [ ] `npm run db:env:check` retourne ✅ en mode PG*
-- [ ] Le serveur démarre et loggue `[DB] Config source: PG_VARS`
+- [ ] Le serveur démarre et loggue `[config] ... database PG_VARS ...`
 - [ ] La session utilisateur fonctionne (login / logout)
 - [ ] `npm run db:push` fonctionne en mode PG* sur un environnement de staging
 - [ ] Aucun log ne contient le mot de passe (`grep -i password` dans les logs)

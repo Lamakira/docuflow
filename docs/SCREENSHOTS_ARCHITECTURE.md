@@ -29,7 +29,7 @@ Desktop Agent
 
 | Layer | Technology | Notes |
 |-------|-----------|-------|
-| Object storage | Google Cloud Storage (Replit sidecar) | Private bucket, server-relayed access |
+| Object storage | Google Cloud Storage (service account) | Private bucket, server-relayed access |
 | Database | PostgreSQL (Neon Serverless) | `time_entry_screenshots` table |
 | Serving | Express `GET /api/time-tracking/screenshots/:id/image` | Proxies binary from GCS |
 

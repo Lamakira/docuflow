@@ -3,8 +3,13 @@ import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { newAgent, registerUser } from "../helpers/auth";
 import { completeUpload, objectPathFor } from "../helpers/objects";
-import { objectMetadata, putObject } from "../fakes/gcs";
-import { fakeSignedUrl, signedUrlCalls, signedUrlPattern } from "../fakes/network";
+import {
+  fakeSignedUrl,
+  objectMetadata,
+  putObject,
+  signedUrlCalls,
+  signedUrlPattern,
+} from "../fakes/gcs";
 import { transcriptionCallCount } from "../fakes/openai";
 import { waitFor } from "../helpers/wait";
 
@@ -12,7 +17,7 @@ import { waitFor } from "../helpers/wait";
  * Characterization: signed upload URLs, object serving, and audio notes.
  *
  * Quirks frozen here:
- *  - Upload URLs come from the storage sidecar; the server only ever sees the
+ *  - Upload URLs are signed against the bucket; the server only ever sees the
  *    URL, never the bytes.
  *  - `PUT /api/document-images` and `/api/document-attachments` tag whatever the
  *    caller names as **public**, owned by the caller — with no check that the
@@ -29,7 +34,7 @@ describe("object storage and uploads (characterization)", () => {
     await resetDb();
   });
 
-  it("issues private and public upload URLs from the storage sidecar", async () => {
+  it("issues private and public upload URLs signed against the storage bucket", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
 
@@ -45,8 +50,8 @@ describe("object storage and uploads (characterization)", () => {
       signedUrlPattern("test-bucket/public/uploads/[0-9a-f-]+")
     );
 
-    expect(signedUrlCalls().map((c) => c.method)).toEqual(["PUT", "PUT"]);
-    expect(signedUrlCalls()[0].expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(signedUrlCalls().map((c) => c.action)).toEqual(["write", "write"]);
+    expect(signedUrlCalls()[0].expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it("tags an uploaded image or attachment as public and returns its object path", async () => {

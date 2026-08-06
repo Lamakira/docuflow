@@ -6,13 +6,14 @@
  *   1. Déclenche le workflow GitHub Actions (build-only)
  *   2. Attend la fin du run (poll)
  *   3. Télécharge les 3 artifacts (Windows, macOS, Linux)
- *   4. Uploade chaque fichier vers l'Object Storage Replit (via sidecar)
+ *   4. Uploade chaque fichier vers Google Cloud Storage
  *   5. Enregistre chaque plateforme en DB via l'endpoint metadata-only
  *
  * Prérequis :
  *   - `gh` CLI authentifié (gh auth login)
- *   - DESKTOP_RELEASE_CI_TOKEN défini dans l'environnement Replit
- *   - Être exécuté depuis l'environnement Replit (sidecar interne accessible)
+ *   - DESKTOP_RELEASE_CI_TOKEN défini dans l'environnement
+ *   - INSTALLER_GCS_BUCKET, et GCS_SERVICE_ACCOUNT_KEY sauf si les
+ *     Application Default Credentials sont déjà disponibles (voir .env.example)
  *
  * Usage :
  *   node scripts/release-desktop.mjs
@@ -30,9 +31,8 @@ import { createHash } from "crypto";
 import { readFileSync, readdirSync, existsSync, rmSync, mkdirSync } from "fs";
 import { join, basename } from "path";
 import { tmpdir } from "os";
+import { gcsClient, installerBucketName } from "./gcs-client.mjs";
 
-const SIDECAR_URL   = "http://127.0.0.1:1106";
-const BUCKET        = "replit-objstore-64708bc7-367f-45c8-9004-db72f81cbeba";
 const PREFIX        = "public/installers";
 
 const API_URL       = (process.env.DOCUFLOW_API_URL || "https://docs.appvibed.com").replace(/\/$/, "");
@@ -171,12 +171,13 @@ function downloadArtifacts(id) {
   return files;
 }
 
-// ── Étape 4 : Upload vers l'Object Storage Replit ────────────────────────────
+// ── Étape 4 : Upload vers Google Cloud Storage ───────────────────────────────
 
 async function uploadToObjectStorage(filePath) {
+  const bucket     = installerBucketName();
   const filename   = basename(filePath);
   const objectName = `${PREFIX}/${filename}`;
-  const gcsHttps   = `https://storage.googleapis.com/${BUCKET}/${objectName}`;
+  const gcsHttps   = `https://storage.googleapis.com/${bucket}/${objectName}`;
 
   const fileBuffer = readFileSync(filePath);
   const sha256     = createHash("sha256").update(fileBuffer).digest("hex");
@@ -187,32 +188,11 @@ async function uploadToObjectStorage(filePath) {
   console.log(`      SHA256  : ${sha256}`);
   console.log(`      Cible   : ${gcsHttps}`);
 
-  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-  const signResp  = await fetch(`${SIDECAR_URL}/object-storage/signed-object-url`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bucket_name: BUCKET, object_name: objectName, method: "PUT", expires_at: expiresAt }),
+  console.log("      Upload vers GCS...");
+  await gcsClient().bucket(bucket).upload(filePath, {
+    destination: objectName,
+    contentType: "application/octet-stream",
   });
-  if (!signResp.ok) {
-    const body = await signResp.text();
-    throw new Error(`Sidecar error ${signResp.status}: ${body}`);
-  }
-  const { signed_url: signedUrl } = await signResp.json();
-
-  const { Readable } = await import("stream");
-  const webStream = Readable.toWeb(await import("fs").then(m => m.createReadStream(filePath)));
-
-  console.log("      PUT vers GCS...");
-  const putResp = await fetch(signedUrl, {
-    method: "PUT",
-    headers: { "Content-Type": "application/octet-stream", "Content-Length": String(fileSize) },
-    body: webStream,
-    duplex: "half",
-  });
-  if (!putResp.ok) {
-    const body = await putResp.text();
-    throw new Error(`GCS PUT error ${putResp.status}: ${body.slice(0, 500)}`);
-  }
   console.log("      Upload OK.");
 
   return { filename, sha256, fileSize, gcsHttps };

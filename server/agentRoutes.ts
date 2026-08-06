@@ -22,6 +22,7 @@ let sharpLib: ((input: Buffer) => any) | null = null;
 })();
 import { storage } from "./storage";
 import { isAuthenticated, getUserId, verifyPassword } from "./auth";
+import { config } from "./config";
 import { logInfo, logError, logTimeEvent } from "./logger";
 import { parseObjectPath, signObjectURL } from "./objectStorage";
 import { isTasksEnabled } from "./migrationFlags";
@@ -56,7 +57,7 @@ function hashToken(token: string): string {
 
 // ─── JWT (HMAC-SHA256, no external dependency) ───
 
-const JWT_SECRET = process.env.JWT_SECRET ?? generateToken(32); // fallback: ephemeral random key
+const JWT_SECRET = config.jwtSecret ?? generateToken(32); // fallback: ephemeral random key
 
 interface JwtPayload {
   sub: string;  // deviceId
@@ -683,12 +684,9 @@ export function registerAgentRoutes(app: Express): void {
           logInfo("agent.screenshots.compress.skipped", { screenshotId: id, reason: "sharp unavailable" });
         }
 
-        // Upload to Object Storage via signed URL (Replit sidecar)
-        const privateDir = process.env.PRIVATE_OBJECT_DIR;
-        if (!privateDir) {
-          return res.status(503).json({ message: "Object storage not configured" });
-        }
-
+        // Upload to Object Storage via a signed URL this process PUTs to itself:
+        // the agent sends bytes here, the server compresses and relays them.
+        const privateDir = config.objectStorage.privateDir;
         const objectSubPath = `agent-screenshots/${id}.${imageExt}`;
         const fullObjectPath = `${privateDir}/${objectSubPath}`;
         const { bucketName, objectName } = parseObjectPath(fullObjectPath);

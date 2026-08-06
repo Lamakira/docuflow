@@ -1,6 +1,7 @@
 import { Storage, File } from "@google-cloud/storage";
 import { Response } from "express";
 import { randomUUID } from "crypto";
+import { config } from "./config";
 import {
   ObjectAclPolicy,
   ObjectPermission,
@@ -9,24 +10,24 @@ import {
   setObjectAclPolicy,
 } from "./objectAcl";
 
-const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
-
+/**
+ * Storage client for the configured Google service account. An inline key
+ * (`GCS_SERVICE_ACCOUNT_KEY`) is used when one is set; otherwise the client
+ * resolves Application Default Credentials, which covers both a key file named
+ * by `GOOGLE_APPLICATION_CREDENTIALS` and workload identity on a Google host.
+ * Either way the identity must be a service account: signing URLs needs a key
+ * that can sign.
+ */
 export const objectStorageClient = new Storage({
-  credentials: {
-    audience: "replit",
-    subject_token_type: "access_token",
-    token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
-    type: "external_account",
-    credential_source: {
-      url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
-      format: {
-        type: "json",
-        subject_token_field_name: "access_token",
-      },
-    },
-    universe_domain: "googleapis.com",
-  },
-  projectId: "",
+  ...(config.objectStorage.projectId ? { projectId: config.objectStorage.projectId } : {}),
+  ...(config.objectStorage.serviceAccount
+    ? {
+        credentials: {
+          client_email: config.objectStorage.serviceAccount.clientEmail,
+          private_key: config.objectStorage.serviceAccount.privateKey,
+        },
+      }
+    : {}),
 });
 
 export class ObjectNotFoundError extends Error {
@@ -41,33 +42,11 @@ export class ObjectStorageService {
   constructor() {}
 
   getPublicObjectSearchPaths(): Array<string> {
-    const pathsStr = process.env.PUBLIC_OBJECT_SEARCH_PATHS || "";
-    const paths = Array.from(
-      new Set(
-        pathsStr
-          .split(",")
-          .map((path) => path.trim())
-          .filter((path) => path.length > 0)
-      )
-    );
-    if (paths.length === 0) {
-      throw new Error(
-        "PUBLIC_OBJECT_SEARCH_PATHS not set. Create a bucket in 'Object Storage' " +
-          "tool and set PUBLIC_OBJECT_SEARCH_PATHS env var (comma-separated paths)."
-      );
-    }
-    return paths;
+    return config.objectStorage.publicSearchPaths;
   }
 
   getPrivateObjectDir(): string {
-    const dir = process.env.PRIVATE_OBJECT_DIR || "";
-    if (!dir) {
-      throw new Error(
-        "PRIVATE_OBJECT_DIR not set. Create a bucket in 'Object Storage' " +
-          "tool and set PRIVATE_OBJECT_DIR env var."
-      );
-    }
-    return dir;
+    return config.objectStorage.privateDir;
   }
 
   async searchPublicObject(filePath: string): Promise<File | null> {
@@ -117,13 +96,6 @@ export class ObjectStorageService {
 
   async getObjectEntityUploadURL(): Promise<string> {
     const privateObjectDir = this.getPrivateObjectDir();
-    if (!privateObjectDir) {
-      throw new Error(
-        "PRIVATE_OBJECT_DIR not set. Create a bucket in 'Object Storage' " +
-          "tool and set PRIVATE_OBJECT_DIR env var."
-      );
-    }
-
     const objectId = randomUUID();
     const fullPath = `${privateObjectDir}/uploads/${objectId}`;
 
@@ -138,15 +110,7 @@ export class ObjectStorageService {
   }
 
   async getPublicUploadURL(): Promise<string> {
-    const publicPaths = this.getPublicObjectSearchPaths();
-    if (publicPaths.length === 0) {
-      throw new Error(
-        "PUBLIC_OBJECT_SEARCH_PATHS not set. Create a bucket in 'Object Storage' " +
-          "tool and set PUBLIC_OBJECT_SEARCH_PATHS env var."
-      );
-    }
-
-    const publicDir = publicPaths[0];
+    const publicDir = this.getPublicObjectSearchPaths()[0];
     const objectId = randomUUID();
     const fullPath = `${publicDir}/uploads/${objectId}`;
 
@@ -259,6 +223,22 @@ export function parseObjectPath(path: string): {
   };
 }
 
+/** The storage action each HTTP method a caller signs for needs to be granted. */
+const SIGNING_ACTIONS = {
+  GET: "read",
+  HEAD: "read",
+  PUT: "write",
+  DELETE: "delete",
+} as const;
+
+/**
+ * Mint a V4 signed URL the holder can use directly against storage, so large
+ * uploads and downloads never pass through this process.
+ *
+ * Content type is deliberately left out of the signature: browsers upload with
+ * whatever type the picked file has, and signing one would force every client
+ * to send exactly that header.
+ */
 export async function signObjectURL({
   bucketName,
   objectName,
@@ -267,32 +247,16 @@ export async function signObjectURL({
 }: {
   bucketName: string;
   objectName: string;
-  method: "GET" | "PUT" | "DELETE" | "HEAD";
+  method: keyof typeof SIGNING_ACTIONS;
   ttlSec: number;
 }): Promise<string> {
-  const request = {
-    bucket_name: bucketName,
-    object_name: objectName,
-    method,
-    expires_at: new Date(Date.now() + ttlSec * 1000).toISOString(),
-  };
-  const response = await fetch(
-    `${REPLIT_SIDECAR_ENDPOINT}/object-storage/signed-object-url`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(request),
-    }
-  );
-  if (!response.ok) {
-    throw new Error(
-      `Failed to sign object URL, errorcode: ${response.status}, ` +
-        `make sure you're running on Replit`
-    );
-  }
-
-  const { signed_url: signedURL } = await response.json();
+  const [signedURL] = await objectStorageClient
+    .bucket(bucketName)
+    .file(objectName)
+    .getSignedUrl({
+      version: "v4",
+      action: SIGNING_ACTIONS[method],
+      expires: Date.now() + ttlSec * 1000,
+    });
   return signedURL;
 }

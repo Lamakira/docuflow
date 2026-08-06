@@ -17,8 +17,9 @@ npm run test:db:down # stop the database
 ## How it works
 
 - `tests/setup.ts` fixes the environment **before any server module loads**
-  (`DATABASE_URL`, `DB_DRIVER=pg`, test secrets, object-storage layout). Server
-  code is therefore only ever imported dynamically, never at a module's top level.
+  (`DATABASE_URL`, `DB_DRIVER=pg`, test secrets, object-storage layout). `server/config.ts`
+  resolves all of it at import and refuses to boot when a required variable is missing,
+  so server code is only ever imported dynamically, never at a module's top level.
 - `tests/global-setup.ts` pushes the schema from `shared/schema.ts` into the
   test database once per run (`drizzle-kit push`), pending migration-journal
   consolidation (#24), then applies the vector DDL described below.
@@ -47,19 +48,18 @@ module knows it is under test:
 
 | Package                 | Fake                    | What it does                                                                 |
 | ----------------------- | ----------------------- | ---------------------------------------------------------------------------- |
-| `@google-cloud/storage` | `tests/fakes/gcs.ts`    | In-memory bucket. `putObject` seeds an object, `objectMetadata` reads its ACL. |
+| `@google-cloud/storage` | `tests/fakes/gcs.ts`    | In-memory bucket, and deterministic signed URLs. `putObject` seeds an object, `objectMetadata` reads its ACL, `signedUrlCalls` lists what was signed. |
 | `openai`                | `tests/fakes/openai.ts` | Deterministic bag-of-words embeddings, canned chat and Whisper replies, call log. |
 | `resend`                | `tests/fakes/resend.ts` | Always-succeeding delivery into an inspectable outbox.                        |
 | `playwright`            | `tests/fakes/playwright.ts` | Throws — the Loom/Fathom transcript scraper must never be reached.        |
 
-Three provider boundaries are crossed with a raw `fetch` rather than an SDK — the
-Replit object-storage sidecar that signs upload URLs, the Replit connectors API
-that hands out Resend credentials, and the signed storage URL itself, which the
-server PUTs to when it relays a desktop-agent screenshot. `tests/fakes/network.ts`
-answers all three from memory (a relayed PUT lands in the same in-memory bucket
-`tests/fakes/gcs.ts` serves from) and makes every **other** `fetch` throw, so a
-suite cannot quietly reach a real service. Postgres and supertest do not use
-`fetch`, so nothing legitimate is blocked.
+One provider boundary is crossed with a raw `fetch` rather than an SDK: the signed
+storage URL itself, which the server PUTs to when it relays a desktop-agent
+screenshot — the one upload the server performs instead of handing the URL to the
+client. `tests/fakes/network.ts` answers it from memory (the PUT lands in the same
+in-memory bucket `tests/fakes/gcs.ts` serves from) and makes every **other** `fetch`
+throw, so a suite cannot quietly reach a real service. Postgres and supertest do
+not use `fetch`, so nothing legitimate is blocked.
 
 All four fakes are module-level singletons; `tests/setup.ts` resets them in a
 global `beforeEach` alongside the database.
@@ -93,7 +93,7 @@ a database you care about, and never at anything production-related.
   `rate-limits.test.ts` is the one exception — it pins an address on purpose and
   characterizes the limiter itself.
 - Build signed storage URLs with `fakeSignedUrl`/`signedUrlPattern` from
-  `tests/fakes/network.ts` instead of writing a storage host into a suite.
+  `tests/fakes/gcs.ts` instead of writing a storage host into a suite.
 
 ## Suites
 
