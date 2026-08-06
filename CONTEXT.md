@@ -198,9 +198,31 @@ _Avoid_: Overwritten file, object version
 A generated companion of one File Version — thumbnail, preview, poster, or extracted text — that inherits the source File's access and is never independently shareable.
 _Avoid_: Public thumbnail, cached copy
 
+**Transcript**:
+The immutable, timestamped text record of one File Version's audio or video — or of an externally imported recording — carrying language and provider provenance. It is searchable and citable but never edited in place; its text may be copied into a Document.
+_Avoid_: Editable transcript document, caption file
+
 **Trash**:
 The workspace holding area for soft-deleted Documents and Files during their restore window, after which a purge permanently removes rows, objects, derived artifacts, and index entries.
 _Avoid_: Archive, permanent delete
+
+## Search and AI
+
+**Index Artifact**:
+A rebuildable retrieval derivative — a chunk, embedding, or search row — carrying the workspace, source identity, source revision, and generation provenance needed to rebuild or purge it. It is never a source of truth and never widens access.
+_Avoid_: Search document, AI training data
+
+**Workspace AI Policy**:
+The workspace rules governing which AI Purposes may run and which providers, regions, and retention modes may process workspace content, enforced before any external AI call. Owners and Administrators may disable AI globally or per purpose.
+_Avoid_: AI settings, feature flag
+
+**AI Purpose**:
+The declared reason for one external AI call — such as search embedding, transcription, or answer — evaluated against the Workspace AI Policy and recorded in the call's audit event.
+_Avoid_: AI feature, prompt type
+
+**AI Answer**:
+A stored, source-cited response to a member's question over the knowledge corpus, kept in that member's per-workspace history under workspace-configurable retention. Its citations re-check Document Access whenever displayed.
+_Avoid_: Chat log, generated document
 
 ## Subscription and billing
 
