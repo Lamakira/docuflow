@@ -28,8 +28,16 @@ export function log(message: string, source = "express") {
  * exact order production has always used. Boot-time migrations, static/Vite
  * serving, and listening remain the entry point's job (server/index.ts); the
  * test harness boots this app in-process instead.
+ *
+ * `stopBackgroundJobs` halts the periodic dispatchers the routes start. The
+ * entry point never calls it — they run as long as the process does — but the
+ * test harness must, so they cannot outlive the run that started them.
  */
-export async function createApp(): Promise<{ app: express.Express; httpServer: Server }> {
+export async function createApp(): Promise<{
+  app: express.Express;
+  httpServer: Server;
+  stopBackgroundJobs: () => void;
+}> {
   const app = express();
   app.set("trust proxy", 1);
   const httpServer = createServer(app);
@@ -122,7 +130,7 @@ export async function createApp(): Promise<{ app: express.Express; httpServer: S
     next();
   });
 
-  await registerRoutes(httpServer, app);
+  const { stopBackgroundJobs } = await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -137,5 +145,5 @@ export async function createApp(): Promise<{ app: express.Express; httpServer: S
     }
   });
 
-  return { app, httpServer };
+  return { app, httpServer, stopBackgroundJobs };
 }

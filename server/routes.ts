@@ -96,7 +96,7 @@ function extractTextFromContent(content: any): string {
 export async function registerRoutes(
   httpServer: Server,
   app: Express
-): Promise<Server> {
+): Promise<{ httpServer: Server; stopBackgroundJobs: () => void }> {
   await setupAuth(app);
 
   /**
@@ -4474,6 +4474,26 @@ Instructions:
     }
   });
   
+  // ─── Background dispatchers ───
+  // The periodic jobs below run for the lifetime of the process. Their handles
+  // are collected so the caller can stop them deterministically — the test
+  // harness boots this app in-process and must not leave dispatchers firing
+  // against a closed pool or reaching real providers after a run ends. unref
+  // additionally keeps them from holding the event loop open on their own; in
+  // production the listening socket does that, so nothing changes there.
+  const backgroundJobs: NodeJS.Timeout[] = [];
+
+  const startBackgroundJob = (task: () => void, intervalMs: number) => {
+    const handle = setInterval(task, intervalMs);
+    handle.unref();
+    backgroundJobs.push(handle);
+  };
+
+  const stopBackgroundJobs = () => {
+    for (const handle of backgroundJobs) clearInterval(handle);
+    backgroundJobs.length = 0;
+  };
+
   // ─── Server-side stale session detection (agent-ready) ───
   // Periodically flag running entries with no heartbeat for > STALE_THRESHOLD_MINUTES.
   // TODO [PLACEHOLDER]: Policy — currently flag_only. Change to auto_pause or auto_stop
@@ -4481,7 +4501,7 @@ Instructions:
   const STALE_THRESHOLD_MINUTES = 10;
   const STALE_CHECK_INTERVAL_MS = 2 * 60 * 1000; // check every 2 minutes
 
-  setInterval(async () => {
+  startBackgroundJob(async () => {
     try {
       const threshold = new Date(Date.now() - STALE_THRESHOLD_MINUTES * 60 * 1000);
       const staleEntries = await storage.getStaleRunningEntries(threshold);
@@ -4517,7 +4537,7 @@ Instructions:
     return "http://localhost:5000";
   };
 
-  setInterval(async () => {
+  startBackgroundJob(async () => {
     if (reminderDispatchRunning) return;
     reminderDispatchRunning = true;
     try {
@@ -4598,7 +4618,7 @@ Instructions:
   let lastDailyReminderDayKey: string | null = null;
   let dailyReminderRunning = false;
 
-  setInterval(async () => {
+  startBackgroundJob(async () => {
     if (dailyReminderRunning) return;
     dailyReminderRunning = true;
     try {
@@ -5056,5 +5076,5 @@ Instructions:
     }
   });
 
-  return httpServer;
+  return { httpServer, stopBackgroundJobs };
 }

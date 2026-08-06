@@ -17,8 +17,8 @@ npm run test:db:down # stop the database
 ## How it works
 
 - `tests/setup.ts` fixes the environment **before any server module loads**
-  (`DATABASE_URL`, `DB_DRIVER=pg`, test secrets). Server code is only ever
-  imported dynamically through `tests/helpers/app.ts` for this reason.
+  (`DATABASE_URL`, `DB_DRIVER=pg`, test secrets). Server code is therefore
+  only ever imported dynamically, never at a module's top level.
 - `tests/global-setup.ts` pushes the schema from `shared/schema.ts` into the
   test database once per run (`drizzle-kit push`), pending migration-journal
   consolidation (#24).
