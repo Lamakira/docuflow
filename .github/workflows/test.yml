@@ -1,0 +1,55 @@
+####
+# Runs the harness from #19 and the characterization suites from #20 on every
+# push and pull request, so the frozen legacy contract is checked continuously
+# through the migration phases (ADR-0017).
+#
+# The database is a service container rather than docker-compose.test.yml: the
+# image, credentials, and port are the same, but a service container is already
+# healthy before the first step runs. Keep the two in step.
+####
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      test-db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: docuflow_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d docuflow_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
+        env:
+          # Same URL tests/test-db-url.ts defaults to; set explicitly so a
+          # change to the service port fails loudly here instead of silently
+          # falling back.
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/docuflow_test
