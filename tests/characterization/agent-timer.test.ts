@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { newAgent, registerUser, type Agent, type TestUser } from "../helpers/auth";
+import { newAgent, registerUser, type TestUser } from "../helpers/auth";
 import { createCrmProject, createTask, startTimer } from "../helpers/fixtures";
+import { loginDevice } from "../helpers/agent";
 
 /**
  * Characterization: the desktop agent's half of the shared time tracker.
@@ -33,36 +34,6 @@ describe("desktop agent timer (characterization)", () => {
   beforeEach(async () => {
     await resetDb();
   });
-
-  interface AgentDevice {
-    deviceId: string;
-    deviceToken: string;
-    accessToken: string;
-    /** Pre-set with the bearer token; agent routes never look at cookies. */
-    request: Agent;
-  }
-
-  /** Sign a registered user's desktop agent in and keep the device credentials. */
-  async function loginDevice(
-    app: Awaited<ReturnType<typeof makeApp>>,
-    user: TestUser,
-    deviceName = "Test Workstation"
-  ): Promise<AgentDevice> {
-    const res = await newAgent(app).post("/api/agent/auth/login").send({
-      email: user.email,
-      password: user.password,
-      deviceMeta: { deviceName, os: "linux", clientVersion: "0.1.0" },
-    });
-    if (res.status !== 200) {
-      throw new Error(`loginDevice failed: ${res.status} ${JSON.stringify(res.body)}`);
-    }
-    return {
-      deviceId: res.body.deviceId,
-      deviceToken: res.body.deviceToken,
-      accessToken: res.body.accessToken,
-      request: newAgent(app).set("Authorization", `Bearer ${res.body.accessToken}`),
-    };
-  }
 
   async function trackableProject(user: TestUser) {
     const { crmProject } = await createCrmProject(user.agent);
