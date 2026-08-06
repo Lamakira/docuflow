@@ -259,3 +259,33 @@ _Avoid_: Stripe product catalog, pricing table
 **Webhook Endpoint**:
 A workspace-owned target that receives signed notifications for selected public event types, with its own secret, event filter, and enable/disable lifecycle. It confers no read authority; consumers fetch current state with their own credentials.
 _Avoid_: Callback URL, webhook subscription
+
+## Security and compliance
+
+**Audit Event**:
+An append-only, PII-minimized record of one security-relevant action, carrying workspace or platform scope, the acting principal by ID, and references rather than content. It is evidence, not a domain event, and is never updated or deleted in place.
+_Avoid_: Log line, outbox event, activity feed item
+
+**Data Class**:
+One of six fixed platform classifications — Public, Workspace-Operational, Sensitive-Evidence, Identity, Financial, Secret — assigned to a record type and driving its encryption, logging, export, and delivery controls. Workspaces cannot redefine classes.
+_Avoid_: Sensitivity label, workspace tag
+
+**Erasure Journal**:
+The durable, ID-only record of completed purge and erasure operations, replayed after any backup restore so erased data does not resurface. It never contains erased content.
+_Avoid_: Deletion log, trash history
+
+**Legal Hold**:
+A purge-blocking flag on named records or a whole workspace that suspends retention and deletion jobs while an incident or legal matter is open. It preserves; it never widens access.
+_Avoid_: Archive, backup, freeze
+
+**Platform Staff**:
+An internal DocuFlow operator principal from a dedicated identity pool, distinct from Users, acting only through the separate audited operator surface with no standing access to workspace content.
+_Avoid_: Super admin, support user, impersonation account
+
+**Support Access Grant**:
+A time-boxed, workspace-visible authorization allowing named Platform Staff to access a workspace's content for support. Absent a grant, only audited break-glass access exists.
+_Avoid_: Impersonation, admin override
+
+**Subprocessor Registry**:
+The published list of vendors processing customer data on DocuFlow's behalf, recording each vendor's purpose, region, and no-training terms. Vendor changes update the registry and notify customers before material changes take effect.
+_Avoid_: Internal vendor list, integrations page
