@@ -21,8 +21,12 @@ export function completeUpload(
   return signedUrl;
 }
 
-/** The `/objects/...` path the server stores for a signed upload URL. */
-export function objectPathFor(signedUrl: string, privateDir = "/test-bucket/.private"): string {
+/**
+ * The `/objects/...` path the server stores for a signed upload URL — the same
+ * normalization `objectStorage.ts` applies, against the layout `tests/setup.ts`
+ * puts in the environment.
+ */
+export function objectPathFor(signedUrl: string): string {
   const { pathname } = new URL(signedUrl);
-  return `/objects/${pathname.slice(privateDir.length + 1)}`;
+  return `/objects/${pathname.slice(process.env.PRIVATE_OBJECT_DIR!.length + 1)}`;
 }

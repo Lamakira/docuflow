@@ -36,7 +36,7 @@ function hashToken(token: string): number {
 }
 
 /** Deterministic unit vector: hashed bag of words, L2-normalized. */
-export function fakeEmbedding(text: string): number[] {
+function fakeEmbedding(text: string): number[] {
   const vector = new Array<number>(DIMENSIONS).fill(0);
   const tokens = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
   for (const token of tokens) {
@@ -104,10 +104,6 @@ export function transcriptionCallCount(): number {
 
 export function setChatReply(reply: string): void {
   chatReply = reply;
-}
-
-export function setTranscriptionText(text: string): void {
-  transcriptionText = text;
 }
 
 export function resetOpenAi(): void {

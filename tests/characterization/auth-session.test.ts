@@ -1,4 +1,3 @@
-import request from "supertest";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
@@ -18,6 +17,11 @@ import { login, newAgent, promoteToAdmin, registerUser, uniqueEmail } from "../h
  *    `/api/register`, not on the `/api/auth/*` endpoints the SPA actually posts
  *    to, so real logins are only covered by the loose global limit.
  *  - Any error inside `GET /api/auth/user` is swallowed into a `null` body.
+ *  - There is no self-service password change. The only route that sets a
+ *    password after registration is the admin-only
+ *    `POST /api/admin/users/:id/reset-password` (frozen in `users-admin`), so a
+ *    user who knows their own password cannot rotate it. The absence is part of
+ *    the contract a later phase has to decide about deliberately.
  */
 describe("auth and session (characterization)", () => {
   beforeEach(async () => {
@@ -192,25 +196,22 @@ describe("auth and session (characterization)", () => {
       await promoteToAdmin(admin.id);
       process.env.MCP_API_KEY = "test-mcp-key";
 
-      const authorized = await request(app)
+      const authorized = await newAgent(app)
         .get("/api/auth/user")
-        .set("X-Forwarded-For", "10.250.0.1")
         .set("x-api-key", "test-mcp-key");
       expect(authorized.status).toBe(200);
       // Quirk: `/api/auth/user` has no `isAuthenticated` guard, so the key does
       // nothing here — the endpoint still reports nobody logged in.
       expect(authorized.body).toBeNull();
 
-      const guarded = await request(app)
+      const guarded = await newAgent(app)
         .get("/api/admin/users")
-        .set("X-Forwarded-For", "10.250.0.2")
         .set("x-api-key", "test-mcp-key");
       expect(guarded.status).toBe(200);
       expect(Array.isArray(guarded.body)).toBe(true);
 
-      const wrongKey = await request(app)
+      const wrongKey = await newAgent(app)
         .get("/api/admin/users")
-        .set("X-Forwarded-For", "10.250.0.3")
         .set("x-api-key", "wrong-key");
       expect(wrongKey.status).toBe(401);
     });
@@ -220,9 +221,8 @@ describe("auth and session (characterization)", () => {
       await registerUser(app); // plain user — `getMainAdmin` finds nothing
       process.env.MCP_API_KEY = "test-mcp-key";
 
-      const res = await request(app)
+      const res = await newAgent(app)
         .get("/api/projects")
-        .set("X-Forwarded-For", "10.250.0.4")
         .set("x-api-key", "test-mcp-key");
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ message: "Unauthorized" });

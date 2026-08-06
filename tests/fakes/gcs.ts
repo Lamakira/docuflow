@@ -112,10 +112,6 @@ export function objectMetadata(path: string): Record<string, string> | undefined
   return objects.get(path)?.metadata;
 }
 
-export function hasObject(path: string): boolean {
-  return objects.has(path);
-}
-
 export function resetGcs(): void {
   objects.clear();
 }

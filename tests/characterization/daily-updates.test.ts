@@ -129,10 +129,10 @@ describe("project daily updates (characterization)", () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const manager = await registerUser(app);
-    const employee = await registerUser(app);
+    const member = await registerUser(app);
     const { crmProject } = await createCrmProject(admin.agent);
 
-    await employee.agent
+    await member.agent
       .post("/api/daily-updates")
       .send({ crmProjectId: crmProject.id, status: "on_track" });
 
@@ -144,7 +144,7 @@ describe("project daily updates (characterization)", () => {
     const allowed = await manager.agent.get("/api/admin/daily-updates");
     expect(allowed.status).toBe(200);
     expect(allowed.body).toHaveLength(1);
-    expect(allowed.body[0].userId).toBe(employee.id);
+    expect(allowed.body[0].userId).toBe(member.id);
 
     const asAdmin = await admin.agent.get("/api/admin/daily-updates");
     expect(asAdmin.body).toHaveLength(1);
@@ -163,10 +163,10 @@ describe("project daily updates (characterization)", () => {
   it("summarises the dashboard into KPIs", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
-    const employee = await registerUser(app);
+    const member = await registerUser(app);
     const { crmProject } = await createCrmProject(admin.agent);
 
-    await employee.agent.post("/api/daily-updates").send({
+    await member.agent.post("/api/daily-updates").send({
       crmProjectId: crmProject.id,
       status: "blocked_client",
       waitingOnClient: true,
@@ -190,7 +190,7 @@ describe("project daily updates (characterization)", () => {
     });
   });
 
-  it("splits today's employees into submitted and missing", async () => {
+  it("splits today's members into submitted and missing", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const submitted = await registerUser(app, { firstName: "Sub" });

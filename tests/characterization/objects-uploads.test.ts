@@ -1,11 +1,10 @@
-import request from "supertest";
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { newAgent, registerUser } from "../helpers/auth";
 import { completeUpload, objectPathFor } from "../helpers/objects";
 import { objectMetadata, putObject } from "../fakes/gcs";
-import { signedUrlCalls } from "../fakes/network";
+import { fakeSignedUrl, signedUrlCalls, signedUrlPattern } from "../fakes/network";
 import { transcriptionCallCount } from "../fakes/openai";
 import { waitFor } from "../helpers/wait";
 
@@ -37,13 +36,13 @@ describe("object storage and uploads (characterization)", () => {
     const privateUrl = await user.agent.post("/api/objects/upload");
     expect(privateUrl.status).toBe(200);
     expect(privateUrl.body.uploadURL).toMatch(
-      /^https:\/\/storage\.googleapis\.com\/test-bucket\/\.private\/uploads\/[0-9a-f-]+\?fake-signature=PUT$/
+      signedUrlPattern("test-bucket/\\.private/uploads/[0-9a-f-]+")
     );
 
     const publicUrl = await user.agent.post("/api/objects/upload-public");
     expect(publicUrl.status).toBe(200);
     expect(publicUrl.body.uploadURL).toMatch(
-      /^https:\/\/storage\.googleapis\.com\/test-bucket\/public\/uploads\/[0-9a-f-]+\?fake-signature=PUT$/
+      signedUrlPattern("test-bucket/public/uploads/[0-9a-f-]+")
     );
 
     expect(signedUrlCalls().map((c) => c.method)).toEqual(["PUT", "PUT"]);
@@ -86,7 +85,7 @@ describe("object storage and uploads (characterization)", () => {
 
     const unknownObject = await user.agent
       .put("/api/document-images")
-      .send({ imageURL: "https://storage.googleapis.com/test-bucket/.private/uploads/nope" });
+      .send({ imageURL: fakeSignedUrl("test-bucket/.private/uploads/nope") });
     expect(unknownObject.status).toBe(500);
     expect(unknownObject.body).toEqual({ error: "Internal server error" });
   });
@@ -127,17 +126,15 @@ describe("object storage and uploads (characterization)", () => {
     await makeApp();
     putObject("test-bucket/public/brochure.pdf", "BROCHURE", { contentType: "application/pdf" });
 
-    const served = await request(app)
+    const served = await newAgent(app)
       .get("/public-objects/brochure.pdf")
-      .set("X-Forwarded-For", "10.240.0.1")
       .buffer(true);
     expect(served.status).toBe(200);
     expect(Buffer.from(served.body).toString()).toBe("BROCHURE");
     expect(served.headers["content-disposition"]).toBeUndefined();
 
-    const downloaded = await request(app)
+    const downloaded = await newAgent(app)
       .get("/public-objects/brochure.pdf")
-      .set("X-Forwarded-For", "10.240.0.2")
       .query({ download: "true", filename: "Company brochure.pdf" })
       .buffer(true);
     expect(downloaded.status).toBe(200);
@@ -145,9 +142,7 @@ describe("object storage and uploads (characterization)", () => {
       'attachment; filename="Company brochure.pdf"'
     );
 
-    const missing = await request(app)
-      .get("/public-objects/missing.pdf")
-      .set("X-Forwarded-For", "10.240.0.3");
+    const missing = await newAgent(app).get("/public-objects/missing.pdf");
     expect(missing.status).toBe(404);
     expect(missing.body).toEqual({ error: "File not found" });
   });

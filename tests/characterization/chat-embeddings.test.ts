@@ -43,9 +43,10 @@ describe("chat and embeddings (characterization)", () => {
   it("falls back to pasting whole pages when the caller owns no embeddings", async () => {
     const app = await makeApp();
     const author = await registerUser(app);
-    // Embeddings are scoped to the owner that generated them, so a second user's
-    // vector search always comes back empty — which is what puts chat on the
-    // fallback path deterministically.
+    // Every embedding row is written with `owner_id` = the user whose request
+    // generated it, and vector search filters on `owner_id` = the caller
+    // (`server/embeddings.ts`). A second user's search therefore always comes
+    // back empty — which is what puts chat on the fallback path deterministically.
     const user = await registerUser(app);
     const { project } = await createCrmProject(author.agent, { name: "Atlas" });
     await createDocument(author.agent, project.id, {

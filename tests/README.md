@@ -81,10 +81,13 @@ a database you care about, and never at anything production-related.
   `storage`. The one exception is `tests/helpers/auth.ts`, which writes the admin
   role directly: every route that can grant it is itself admin-only, so there is
   no HTTP path to the first admin.
-- Get agents from `newAgent`/`registerUser` rather than `request.agent` directly.
-  They attach a unique `X-Forwarded-For`, which keeps unrelated suites from
-  spending each other's rate-limit budget; `rate-limits.test.ts` pins an address
-  on purpose and characterizes the limiter itself.
+- Get every request from `newAgent`/`registerUser` rather than `supertest`
+  directly, authenticated or not. They attach a unique `X-Forwarded-For`, which
+  keeps unrelated suites from spending each other's rate-limit budget;
+  `rate-limits.test.ts` is the one exception — it pins an address on purpose and
+  characterizes the limiter itself.
+- Build signed storage URLs with `fakeSignedUrl`/`signedUrlPattern` from
+  `tests/fakes/network.ts` instead of writing a storage host into a suite.
 
 ## Suites
 

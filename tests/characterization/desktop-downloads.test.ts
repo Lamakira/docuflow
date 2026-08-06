@@ -1,8 +1,8 @@
-import request from "supertest";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { newAgent } from "../helpers/auth";
+import { FAKE_STORAGE_ORIGIN, fakeSignedUrl } from "../fakes/network";
 
 const CI_TOKEN = "test-ci-token";
 
@@ -29,15 +29,16 @@ describe("desktop downloads (characterization)", () => {
     delete process.env.DESKTOP_RELEASE_CI_TOKEN;
   });
 
-  const gcsUrl = (file: string) => `https://storage.googleapis.com/test-bucket/releases/${file}`;
+  const releaseObject = (file: string) => `test-bucket/releases/${file}`;
+  /** The stored URL a release carries — unsigned, unlike what `/downloads/:platform` mints. */
+  const gcsUrl = (file: string) => `${FAKE_STORAGE_ORIGIN}/${releaseObject(file)}`;
 
   async function publish(
     app: Awaited<ReturnType<typeof makeApp>>,
     body: Record<string, unknown>
   ) {
-    return request(app)
+    return newAgent(app)
       .post("/api/internal/desktop-releases")
-      .set("X-Forwarded-For", "10.230.0.1")
       .set("Authorization", `Bearer ${CI_TOKEN}`)
       .send(body);
   }
@@ -74,16 +75,14 @@ describe("desktop downloads (characterization)", () => {
   it("refuses registration without the CI bearer token", async () => {
     const app = await makeApp();
 
-    const noAuth = await request(app)
+    const noAuth = await newAgent(app)
       .post("/api/internal/desktop-releases")
-      .set("X-Forwarded-For", "10.230.0.2")
       .send({ version: "1.0.0", platform: "windows", filename: "a.exe", storageUrl: gcsUrl("a.exe") });
     expect(noAuth.status).toBe(401);
     expect(noAuth.body).toEqual({ error: "Unauthorized" });
 
-    const wrongToken = await request(app)
+    const wrongToken = await newAgent(app)
       .post("/api/internal/desktop-releases")
-      .set("X-Forwarded-For", "10.230.0.3")
       .set("Authorization", "Bearer nope")
       .send({ version: "1.0.0", platform: "windows", filename: "a.exe", storageUrl: gcsUrl("a.exe") });
     expect(wrongToken.status).toBe(401);
@@ -91,9 +90,8 @@ describe("desktop downloads (characterization)", () => {
     // Quirk: with the environment variable unset, even the right token is 401 —
     // the guard fails closed.
     delete process.env.DESKTOP_RELEASE_CI_TOKEN;
-    const unconfigured = await request(app)
+    const unconfigured = await newAgent(app)
       .post("/api/internal/desktop-releases")
-      .set("X-Forwarded-For", "10.230.0.4")
       .set("Authorization", `Bearer ${CI_TOKEN}`)
       .send({ version: "1.0.0", platform: "windows", filename: "a.exe", storageUrl: gcsUrl("a.exe") });
     expect(unconfigured.status).toBe(401);
@@ -205,7 +203,7 @@ describe("desktop downloads (characterization)", () => {
     const signed = await anonymous.get("/downloads/windows").redirects(0);
     expect(signed.status).toBe(302);
     expect(signed.headers.location).toBe(
-      "https://storage.googleapis.com/test-bucket/releases/DocuFlow-0.1.0-setup.exe?fake-signature=GET"
+      fakeSignedUrl(releaseObject("DocuFlow-0.1.0-setup.exe"), "GET")
     );
 
     const second = await publish(app, {

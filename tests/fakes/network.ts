@@ -14,11 +14,25 @@
  * do not use `fetch`, so nothing legitimate is blocked.
  */
 
-/** Stable prefix for signed URLs, so upload-URL assertions do not depend on a signature. */
-export const FAKE_SIGNED_URL_PREFIX = "https://storage.googleapis.com";
+/** Storage origin every minted URL sits under, so no suite hard-codes a host. */
+export const FAKE_STORAGE_ORIGIN = "https://storage.googleapis.com";
 
-export const FAKE_RESEND_API_KEY = "fake-resend-api-key";
-export const FAKE_RESEND_FROM_EMAIL = "DocuFlow <noreply@docuflow.test>";
+const FAKE_RESEND_API_KEY = "fake-resend-api-key";
+const FAKE_RESEND_FROM_EMAIL = "DocuFlow <noreply@docuflow.test>";
+
+/** The exact URL this fake mints for `<bucket>/<object name>`. */
+export function fakeSignedUrl(objectPath: string, method = "PUT"): string {
+  return `${FAKE_STORAGE_ORIGIN}/${objectPath}?fake-signature=${method}`;
+}
+
+/**
+ * Matcher for a minted URL whose object name is only known by shape.
+ * `objectPattern` is regex source, matched against `<bucket>/<object name>`.
+ */
+export function signedUrlPattern(objectPattern: string, method = "PUT"): RegExp {
+  const prefix = FAKE_STORAGE_ORIGIN.replace(/[.]/g, "\\.");
+  return new RegExp(`^${prefix}/${objectPattern}\\?fake-signature=${method}$`);
+}
 
 const SIDECAR_ORIGIN = "http://127.0.0.1:1106";
 
@@ -38,9 +52,7 @@ export function installNetworkFake(): void {
     if (url === `${SIDECAR_ORIGIN}/object-storage/signed-object-url`) {
       const request = JSON.parse(String(init?.body ?? "{}")) as SignedUrlRequest;
       signedUrlRequests.push(request);
-      const signed =
-        `${FAKE_SIGNED_URL_PREFIX}/${request.bucket_name}/${request.object_name}` +
-        `?fake-signature=${request.method}`;
+      const signed = fakeSignedUrl(`${request.bucket_name}/${request.object_name}`, request.method);
       return jsonResponse({ signed_url: signed });
     }
 

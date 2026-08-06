@@ -4,6 +4,8 @@ import { resetDb } from "../helpers/db";
 import { registerAdmin, registerUser } from "../helpers/auth";
 import { createCrmProject, createTask, startTimer } from "../helpers/fixtures";
 import { completeUpload, objectPathFor } from "../helpers/objects";
+import { FAKE_STORAGE_ORIGIN } from "../fakes/network";
+import type { TestUser } from "../helpers/auth";
 
 /**
  * Characterization: time-tracking screenshots — the evidence trail behind
@@ -35,6 +37,31 @@ describe("time-tracking screenshots (characterization)", () => {
     return { user, crmProjectId: crmProject.id, entry };
   }
 
+  /**
+   * Both legs of a capture: take a signed URL, stand in for the browser's PUT,
+   * then post the metadata back. `uploadedUrl` comes back too because the row
+   * stores a normalized form of it, not the URL itself.
+   */
+  async function captureScreenshot(
+    user: TestUser,
+    entryId: string,
+    crmProjectId: string,
+    extra: Record<string, unknown> = {}
+  ) {
+    const issued = await user.agent
+      .post("/api/time-tracking/screenshots/upload-url")
+      .send({ timeEntryId: entryId });
+    const uploadedUrl = completeUpload(issued.body.uploadURL, "PNG-BYTES", "image/png");
+
+    const created = await user.agent.post("/api/time-tracking/screenshots").send({
+      timeEntryId: entryId,
+      crmProjectId,
+      storageKey: uploadedUrl,
+      ...extra,
+    });
+    return { created, uploadedUrl };
+  }
+
   it("issues an upload URL only for the caller's own entry", async () => {
     const app = await makeApp();
     const { user, entry } = await runningEntry(app);
@@ -60,22 +87,14 @@ describe("time-tracking screenshots (characterization)", () => {
       .post("/api/time-tracking/screenshots/upload-url")
       .send({ timeEntryId: entry.id });
     expect(issued.status).toBe(200);
-    expect(issued.body.uploadURL).toContain("https://storage.googleapis.com/test-bucket/");
+    expect(issued.body.uploadURL).toContain(`${FAKE_STORAGE_ORIGIN}/test-bucket/`);
   });
 
   it("records a screenshot against an entry and serves the image back", async () => {
     const app = await makeApp();
     const { user, crmProjectId, entry } = await runningEntry(app);
 
-    const issued = await user.agent
-      .post("/api/time-tracking/screenshots/upload-url")
-      .send({ timeEntryId: entry.id });
-    const storageKey = completeUpload(issued.body.uploadURL, "PNG-BYTES", "image/png");
-
-    const created = await user.agent.post("/api/time-tracking/screenshots").send({
-      timeEntryId: entry.id,
-      crmProjectId,
-      storageKey,
+    const { created, uploadedUrl } = await captureScreenshot(user, entry.id, crmProjectId, {
       capturedAt: "2026-05-01T12:00:00.000Z",
     });
     expect(created.status).toBe(200);
@@ -84,7 +103,7 @@ describe("time-tracking screenshots (characterization)", () => {
       userId: user.id,
       crmProjectId,
       // The signed URL is stored as an internal object path.
-      storageKey: objectPathFor(storageKey),
+      storageKey: objectPathFor(uploadedUrl),
       deletedAt: null,
     });
     expect(created.body.capturedAt).toBe("2026-05-01T12:00:00.000Z");
@@ -128,13 +147,7 @@ describe("time-tracking screenshots (characterization)", () => {
     const admin = await registerAdmin(app);
     const { user, crmProjectId, entry } = await runningEntry(app);
 
-    const issued = await user.agent
-      .post("/api/time-tracking/screenshots/upload-url")
-      .send({ timeEntryId: entry.id });
-    const storageKey = completeUpload(issued.body.uploadURL, "PNG", "image/png");
-    const created = await user.agent
-      .post("/api/time-tracking/screenshots")
-      .send({ timeEntryId: entry.id, crmProjectId, storageKey });
+    const { created } = await captureScreenshot(user, entry.id, crmProjectId);
 
     const mine = await user.agent.get("/api/time-tracking/screenshots");
     expect(mine.status).toBe(200);
@@ -179,13 +192,7 @@ describe("time-tracking screenshots (characterization)", () => {
     const admin = await registerAdmin(app);
     const { user, crmProjectId, entry } = await runningEntry(app);
 
-    const issued = await user.agent
-      .post("/api/time-tracking/screenshots/upload-url")
-      .send({ timeEntryId: entry.id });
-    const storageKey = completeUpload(issued.body.uploadURL, "PNG", "image/png");
-    const created = await user.agent
-      .post("/api/time-tracking/screenshots")
-      .send({ timeEntryId: entry.id, crmProjectId, storageKey });
+    const { created } = await captureScreenshot(user, entry.id, crmProjectId);
 
     const refused = await user.agent.delete(`/api/time-tracking/screenshots/${created.body.id}`);
     expect(refused.status).toBe(403);

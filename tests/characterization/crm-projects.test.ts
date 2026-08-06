@@ -13,11 +13,11 @@ import { emailsTo } from "../fakes/resend";
  *  - Creation is atomic across both tables and answers `{ project, crmProject }`.
  *  - Name uniqueness is enforced in application code, case-insensitively and
  *    trimmed, and is checked against the first 1000 rows only.
- *  - Documentation-only projects are hidden from every CRM listing.
+ *  - Projects with no `crmProject` row are hidden from every CRM listing.
  *  - `?search=` filters the page that pagination already selected, and `total`
  *    stays the unfiltered count — so a search can return fewer rows than it says.
  *  - `PATCH` splits its payload: `projectName`/`projectDescription` update the
- *    documentation project, everything else the CRM row.
+ *    `project` row, everything else the `crmProject` row.
  *  - Moving into a "review" status starts a review clock; moving out of it adds
  *    the elapsed time to `totalReviewMs` and pushes `dueDate` out by the same
  *    amount.
@@ -29,7 +29,7 @@ describe("CRM projects (characterization)", () => {
     await resetDb();
   });
 
-  it("creates the documentation project and the CRM row together", async () => {
+  it("creates the `project` and `crmProject` rows together", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const client = await createClient(user.agent);
@@ -187,7 +187,7 @@ describe("CRM projects (characterization)", () => {
     expect(missing.body).toEqual({ message: "CRM Project not found" });
   });
 
-  it("looks a CRM project up by its documentation project id, and deletes through it", async () => {
+  it("looks a CRM project up by its `project` id, and deletes through it", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const created = await createCrmProject(user.agent);
@@ -208,12 +208,12 @@ describe("CRM projects (characterization)", () => {
     const deleted = await user.agent.delete(`/api/crm/projects/by-project/${created.project.id}`);
     expect(deleted.status).toBe(204);
 
-    // Deleting the CRM row cascades to the documentation project.
+    // Deleting the `crmProject` row cascades to the `project` row.
     const project = await user.agent.get(`/api/projects/${created.project.id}`);
     expect(project.status).toBe(404);
   });
 
-  it("splits a patch between the documentation project and the CRM row", async () => {
+  it("splits a patch between the `project` and `crmProject` rows", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const created = await createCrmProject(user.agent, { name: "Before" });
@@ -412,7 +412,7 @@ describe("CRM projects (characterization)", () => {
     expect(missing.body).toEqual({ message: "Source project not found" });
   });
 
-  it("deletes a CRM project and its documentation project", async () => {
+  it("deletes a CRM project and its `project` row", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const created = await createCrmProject(user.agent);

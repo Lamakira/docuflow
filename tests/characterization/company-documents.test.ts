@@ -5,7 +5,7 @@ import { registerAdmin, registerUser } from "../helpers/auth";
 import { createFolder, tiptap } from "../helpers/fixtures";
 import { completeUpload } from "../helpers/objects";
 import { objectMetadata } from "../fakes/gcs";
-import { signedUrlCalls } from "../fakes/network";
+import { fakeSignedUrl, signedUrlCalls, signedUrlPattern } from "../fakes/network";
 
 /**
  * Characterization: company document folders and the two kinds of document that
@@ -123,7 +123,7 @@ describe("company documents and folders (characterization)", () => {
     const issued = await user.agent.post("/api/company-documents/upload-url");
     expect(issued.status).toBe(200);
     expect(issued.body.uploadURL).toMatch(
-      /^https:\/\/storage\.googleapis\.com\/test-bucket\/\.private\/uploads\/[0-9a-f-]+\?fake-signature=PUT$/
+      signedUrlPattern("test-bucket/\\.private/uploads/[0-9a-f-]+")
     );
     expect(signedUrlCalls()).toHaveLength(1);
     expect(signedUrlCalls()[0]).toMatchObject({ bucket_name: "test-bucket", method: "PUT" });
@@ -161,7 +161,7 @@ describe("company documents and folders (characterization)", () => {
       name: "Ghost file",
       fileName: "ghost.pdf",
       mimeType: "application/pdf",
-      storagePath: "https://storage.googleapis.com/test-bucket/.private/uploads/never-uploaded",
+      storagePath: fakeSignedUrl("test-bucket/.private/uploads/never-uploaded"),
     });
     // Quirk: the missing object is only discovered while tagging the ACL, and
     // the generic catch reports it as a server error rather than a bad request.
