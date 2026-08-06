@@ -30,8 +30,10 @@ import { loginDevice, type AgentDevice } from "../helpers/agent";
  *    seen at this seam.
  *
  * Behavior quirks frozen here:
- *  - Heartbeat trusts `deviceId` from the *body*, not from the token — the one
- *    agent route that does — so a device can report for another user's device.
+ *  - Heartbeat and the event batch both trust `deviceId` from the *body* rather
+ *    than from the token — the two routes that do — so a device can report for
+ *    another user's device. Heartbeat at least runs its revocation check on that
+ *    body device; the batch checks revocation nowhere.
  *  - Heartbeat trusts the client's `timestamp` for duration accrual and does not
  *    check the entry belongs to the caller.
  *  - Nothing auto-stops a stale timer; the gap is credited as worked time on the
@@ -256,7 +258,9 @@ describe("desktop agent ingestion (characterization)", () => {
 
     // Quirk: the body's `deviceId` is used for the revocation check and for the
     // lastSeenAt stamp, so one user's agent can mark another user's device as
-    // recently seen. Every other agent route reads the device off the token.
+    // recently seen. The event batch trusts the body the same way (frozen below
+    // in "stamps the batch onto the device named in the body"); every other agent
+    // route reads the device off the token.
     const res = await device.request.post("/api/agent/heartbeat").send({
       deviceId: strangersDevice.deviceId,
       timestamp: new Date().toISOString(),

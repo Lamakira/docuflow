@@ -2,6 +2,9 @@ import request from "supertest";
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
+import { registerUser } from "../helpers/auth";
+import { createCrmProject, createTask, startTimer } from "../helpers/fixtures";
+import { loginDevice, PNG_1X1, type AgentDevice } from "../helpers/agent";
 
 /**
  * Characterization: the rate limiters in the middleware chain.
@@ -21,6 +24,10 @@ import { resetDb } from "../helpers/db";
  *  - Over the limit the response is 429 with `{ message: "Too many requests,
  *    please try again later" }` and draft-7 `RateLimit` headers.
  *  - `/health` is registered before the limiter and is never throttled.
+ *  - The screenshot limiter is mounted on the `/api/agent/screenshots/` prefix,
+ *    so presign, upload and confirm share one 10-per-minute budget keyed on the
+ *    address — three requests per capture, and every device behind one address
+ *    spends the same allowance.
  */
 describe("rate limiting (characterization)", () => {
   beforeEach(async () => {
@@ -77,5 +84,74 @@ describe("rate limiting (characterization)", () => {
     }
     expect(statuses.at(-1)).toBe(429);
     expect(statuses.filter((s) => s === 429)).toHaveLength(1);
+  });
+
+  it("spends one screenshot budget per address across presign, upload and confirm", async () => {
+    const app = await makeApp();
+    const ip = "203.0.113.30";
+    const user = await registerUser(app);
+    const device = await loginDevice(app, user);
+    const secondDevice = await loginDevice(app, user);
+    const { crmProject } = await createCrmProject(user.agent);
+    const task = await createTask(user.agent, crmProject.id);
+    const entry = await startTimer(user.agent, crmProject.id, task.id);
+
+    /** A screenshot-route request pinned to `ip`, whichever device sends it. */
+    const pin = (dev: AgentDevice, method: "post" | "put", path: string) =>
+      request(app)
+        [method](path)
+        .set("Authorization", `Bearer ${dev.accessToken}`)
+        .set("X-Forwarded-For", ip);
+
+    const presign = (dev: AgentDevice) =>
+      pin(dev, "post", "/api/agent/screenshots/presign").send({
+        deviceId: dev.deviceId,
+        timeEntryId: entry.id,
+        capturedAt: new Date().toISOString(),
+        clientType: "desktop",
+        clientVersion: "0.1.0",
+      });
+
+    // One capture is three requests off the same budget: the draft-7 header
+    // counts down 9, 8, 7 as presign, upload and confirm each spend from it.
+    const slot = await presign(device);
+    expect(slot.status).toBe(200);
+    expect(slot.headers["ratelimit"]).toMatch(/^limit=10, remaining=9,/);
+
+    const uploaded = await pin(device, "put", slot.body.uploadURL)
+      .set("Content-Type", "image/png")
+      .send(PNG_1X1);
+    expect(uploaded.status).toBe(200);
+    expect(uploaded.headers["ratelimit"]).toMatch(/^limit=10, remaining=8,/);
+
+    const confirmed = await pin(device, "post", "/api/agent/screenshots/confirm").send({
+      screenshotId: slot.body.screenshotId,
+      deviceId: device.deviceId,
+    });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.headers["ratelimit"]).toMatch(/^limit=10, remaining=7,/);
+
+    // Seven presigns exhaust what the capture left behind.
+    for (let i = 0; i < 7; i++) {
+      expect((await presign(device)).status, `presign ${i + 1}`).toBe(200);
+    }
+
+    // The eleventh request carries the screenshot limiter's own message, not the
+    // global limiter's.
+    const limited = await presign(device);
+    expect(limited.status).toBe(429);
+    expect(limited.body).toEqual({ message: "Screenshot upload rate limit exceeded" });
+
+    // The budget is keyed on the address, not the device: a second device sharing
+    // it is refused on its first request.
+    const fromSecondDevice = await presign(secondDevice);
+    expect(fromSecondDevice.status).toBe(429);
+
+    // Agent routes outside the prefix keep answering — they spend the global budget.
+    const elsewhere = await request(app)
+      .get("/api/agent/timer/active")
+      .set("Authorization", `Bearer ${device.accessToken}`)
+      .set("X-Forwarded-For", ip);
+    expect(elsewhere.status).toBe(200);
   });
 });

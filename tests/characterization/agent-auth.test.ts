@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { newAgent, registerUser } from "../helpers/auth";
+import { newAgent, registerAdmin, registerUser } from "../helpers/auth";
 import { bearer, decodeJwtPayload, loginDevice, mintAccessToken, sha256Hex } from "../helpers/agent";
 
 /**
@@ -17,8 +17,9 @@ import { bearer, decodeJwtPayload, loginDevice, mintAccessToken, sha256Hex } fro
  *    `410 Gone` and no code is ever minted.
  *  - §3 says the device token lives 90 days. Nothing expires it — a device token
  *    is valid until the device is revoked.
- *  - §4.1 says `accessToken` may be "JWT or opaque". It is always an HS256 JWT
- *    assembled by hand in `agentRoutes.ts`, carrying `sub`/`uid`/`iat`/`exp`.
+ *  - §3's security details say `accessToken` may be "JWT or opaque". It is always
+ *    an HS256 JWT assembled by hand in `agentRoutes.ts`, carrying
+ *    `sub`/`uid`/`iat`/`exp`.
  *  - §4.1 documents `POST /api/agent/device/revoke` as owner-or-admin. Only the
  *    owner can revoke; an admin gets the same 404 a stranger does.
  *  - The document never mentions `GET /api/agent/ping`,
@@ -257,6 +258,7 @@ describe("desktop agent auth and devices (characterization)", () => {
     const app = await makeApp();
     const owner = await registerUser(app);
     const stranger = await registerUser(app);
+    const admin = await registerAdmin(app);
     const device = await loginDevice(app, owner);
 
     const anonymous = await newAgent(app)
@@ -270,6 +272,14 @@ describe("desktop agent auth and devices (characterization)", () => {
       .send({ deviceId: device.deviceId });
     expect(foreign.status).toBe(404);
     expect(foreign.body).toEqual({ message: "Device not found" });
+
+    // Divergence from §4.1 ("must be device owner or admin"): the route matches on
+    // ownership alone, so an admin gets the same 404 the stranger did.
+    const byAdmin = await admin.agent
+      .post("/api/agent/device/revoke")
+      .send({ deviceId: device.deviceId });
+    expect(byAdmin.status).toBe(404);
+    expect(byAdmin.body).toEqual({ message: "Device not found" });
 
     const unknown = await owner.agent
       .post("/api/agent/device/revoke")

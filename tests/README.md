@@ -130,4 +130,4 @@ implementation and each suite's header lists what the document gets wrong):
 | `desktop-downloads`              | public installer endpoints and CI release registration              |
 | `teams`                          | teams and invite links (still mounted, no longer used by the SPA)    |
 | `transcripts`                    | transcript status and sync on the no-video paths                    |
-| `rate-limits`                    | the global limiter, and where the auth limiter is actually mounted   |
+| `rate-limits`                    | the global limiter, the screenshot budget, and where the auth limiter is actually mounted |

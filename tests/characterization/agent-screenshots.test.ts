@@ -31,8 +31,9 @@ import { loginDevice, PNG_1X1, type AgentDevice } from "../helpers/agent";
  *    key; an agent that never uploads leaves it behind forever.
  *  - Confirm proves only that the key stopped saying `pending-` — it checks
  *    neither the caller nor the tombstone.
- *  - The upload path is rate-limited to 10 requests per minute per IP, and
- *    presign and confirm spend from the same budget.
+ *  - All three legs are rate-limited to 10 requests a minute per address out of
+ *    one shared budget — three requests per capture. That limiter is frozen in
+ *    `rate-limits.test.ts`, the suite that pins an address on purpose.
  */
 describe("desktop agent screenshots (characterization)", () => {
   beforeEach(async () => {
@@ -326,27 +327,5 @@ describe("desktop agent screenshots (characterization)", () => {
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ code: "device_revoked", message: "Device has been revoked" });
     }
-  });
-
-  it("rate-limits the screenshot endpoints as one shared budget per address", async () => {
-    const app = await makeApp();
-    const { device, entry } = await trackingUser(app);
-
-    // Ten requests a minute across presign, upload and confirm together — three
-    // per capture, so an agent capturing faster than about one every 20 seconds
-    // starts losing frames.
-    const statuses: number[] = [];
-    for (let i = 0; i < 11; i++) {
-      statuses.push((await presign(device, entry.id)).status);
-    }
-    expect(statuses.slice(0, 10)).toEqual(Array(10).fill(200));
-
-    const limited = await presign(device, entry.id);
-    expect(limited.status).toBe(429);
-    expect(limited.body).toEqual({ message: "Screenshot upload rate limit exceeded" });
-
-    // The budget is per address, not per device or per user: a second device on
-    // the same address is refused too, and the other agent routes are unaffected.
-    expect((await device.request.get("/api/agent/timer/active")).status).toBe(200);
   });
 });
