@@ -1,6 +1,9 @@
 services:
   test-db:
-    image: postgres:16-alpine
+    # pgvector, not plain postgres: document_embeddings.embedding and
+    # company_document_embeddings.embedding are vector(1536) columns that the
+    # retrieval paths insert into and order by.
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
