@@ -45,6 +45,12 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # package-lock.json was written by npm 11, which leaves the esbuild peer of
+      # vitest's nested vite for the installer to resolve. The npm 10 bundled with
+      # node 22 rejects that as "Missing: @esbuild/...@0.28.1 from lock file".
+      # Match the toolchain the lockfile came from instead of loosening npm ci.
+      - run: npm install --global npm@11
+
       - run: npm ci
 
       - run: npm test
