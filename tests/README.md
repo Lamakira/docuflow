@@ -103,6 +103,7 @@ a database you care about, and never at anything production-related.
 | `company-documents`              | folders, native pages, uploaded files, streaming and download        |
 | `tasks-members-reminders`        | tasks, project membership, per-user reminders                       |
 | `time-tracking`                  | start/pause/resume/stop/activity, visibility, stats                 |
+| `agent-timer`                    | the desktop agent's device login and its half of the shared tracker  |
 | `screenshots`                    | evidence upload, listing, image serving, tombstones                 |
 | `notifications-org-settings`     | the bell, screenshot policy, timezones, Help Center screenshots      |
 | `daily-updates`                  | per-project daily updates and the admin dashboards                  |
