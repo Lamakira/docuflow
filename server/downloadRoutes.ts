@@ -50,6 +50,7 @@ import { createHash } from "crypto";
 import { db } from "./db";
 import { desktopReleases } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { desktopReleaseCiToken } from "./config";
 import { signObjectURL, parseObjectPath } from "./objectStorage";
 
 const VALID_PLATFORMS = ["windows", "macos", "linux"] as const;
@@ -64,7 +65,7 @@ const FILENAME_RE = /^[a-zA-Z0-9._-]+$/;
 const installersDir = path.resolve(process.cwd(), "installers");
 
 function isCiAuthorized(req: Request): boolean {
-  const token = process.env.DESKTOP_RELEASE_CI_TOKEN;
+  const token = desktopReleaseCiToken();
   if (!token) return false;
   const auth = req.headers.authorization;
   return typeof auth === "string" && auth === `Bearer ${token}`;

@@ -7,7 +7,7 @@ import { Strategy, type VerifyFunction } from "openid-client/passport";
 import passport from "passport";
 import memoize from "memoizee";
 import { storage } from "./storage";
-import { connectionString } from "./dbConfig";
+import { config, mcpApiKey } from "./config";
 
 const SALT_ROUNDS = 12;
 
@@ -15,35 +15,30 @@ const SALT_ROUNDS = 12;
 const getOidcConfig = memoize(
   async () => {
     return await client.discovery(
-      new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
-      process.env.REPL_ID!
+      new URL(config.replitAuth.issuerUrl),
+      config.replitAuth.clientId as string
     );
   },
   { maxAge: 3600 * 1000 }
 );
 
 export function getSession() {
-  const sessionSecret = process.env.SESSION_SECRET;
-  if (!sessionSecret) {
-    throw new Error("SESSION_SECRET environment variable is required for secure authentication");
-  }
-  
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 7 days
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
-    conString: connectionString,
+    conString: config.database.connectionString,
     createTableIfMissing: false,
     ttl: sessionTtl,
     tableName: "sessions",
   });
   return session({
-    secret: sessionSecret,
+    secret: config.sessionSecret,
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: config.isProduction,
       maxAge: sessionTtl,
       sameSite: "lax" as const,
     },
@@ -106,7 +101,7 @@ export async function setupAuth(app: Express) {
   const ensureStrategy = async (domain: string) => {
     const strategyName = `replitauth:${domain}`;
     if (!registeredStrategies.has(strategyName)) {
-      const config = await getOidcConfig();
+      const oidcConfig = await getOidcConfig();
       const verify: VerifyFunction = async (
         tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
         verified: passport.AuthenticateCallback
@@ -119,7 +114,7 @@ export async function setupAuth(app: Express) {
       const strategy = new Strategy(
         {
           name: strategyName,
-          config,
+          config: oidcConfig,
           scope: "openid email profile offline_access",
           callbackURL: `https://${domain}/api/callback`,
         },
@@ -168,11 +163,11 @@ export async function setupAuth(app: Express) {
   // Replit OIDC logout route
   app.get("/api/logout", async (req, res) => {
     try {
-      const config = await getOidcConfig();
+      const oidcConfig = await getOidcConfig();
       req.logout(() => {
         res.redirect(
-          client.buildEndSessionUrl(config, {
-            client_id: process.env.REPL_ID!,
+          client.buildEndSessionUrl(oidcConfig, {
+            client_id: config.replitAuth.clientId as string,
             post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
           }).href
         );
@@ -188,7 +183,8 @@ export async function setupAuth(app: Express) {
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const apiKey = req.headers["x-api-key"] as string | undefined;
-  if (apiKey && process.env.MCP_API_KEY && apiKey === process.env.MCP_API_KEY) {
+  const expectedKey = mcpApiKey();
+  if (apiKey && expectedKey && apiKey === expectedKey) {
     const adminUser = await storage.getMainAdmin();
     if (adminUser) {
       (req.session as any).userId = adminUser.id;

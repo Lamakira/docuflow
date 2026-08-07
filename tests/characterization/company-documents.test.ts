@@ -4,8 +4,7 @@ import { resetDb } from "../helpers/db";
 import { registerAdmin, registerUser } from "../helpers/auth";
 import { createFolder, tiptap } from "../helpers/fixtures";
 import { completeUpload } from "../helpers/objects";
-import { objectMetadata } from "../fakes/gcs";
-import { fakeSignedUrl, signedUrlCalls, signedUrlPattern } from "../fakes/network";
+import { fakeSignedUrl, objectMetadata, signedUrlCalls, signedUrlPattern } from "../fakes/gcs";
 
 /**
  * Characterization: company document folders and the two kinds of document that
@@ -126,7 +125,7 @@ describe("company documents and folders (characterization)", () => {
       signedUrlPattern("test-bucket/\\.private/uploads/[0-9a-f-]+")
     );
     expect(signedUrlCalls()).toHaveLength(1);
-    expect(signedUrlCalls()[0]).toMatchObject({ bucket_name: "test-bucket", method: "PUT" });
+    expect(signedUrlCalls()[0]).toMatchObject({ bucket: "test-bucket", action: "write" });
 
     const storagePath = completeUpload(issued.body.uploadURL, "report bytes", "application/pdf");
 

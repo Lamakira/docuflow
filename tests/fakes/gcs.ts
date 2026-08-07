@@ -6,7 +6,9 @@
  * at the provider boundary, application code is untouched.
  *
  * Only the surface the server actually uses is implemented: `bucket().file()`,
- * `exists`, `getMetadata`, `setMetadata`, `createReadStream`, and `download`.
+ * `exists`, `getMetadata`, `setMetadata`, `createReadStream`, `download`, and
+ * `getSignedUrl` — which mints the upload and download URLs the server hands to
+ * clients, deterministic here so a suite can assert the exact string.
  */
 
 import { Readable } from "stream";
@@ -21,6 +23,43 @@ interface StoredObject {
 const objects = new Map<string, StoredObject>();
 
 const key = (bucket: string, name: string) => `${bucket}/${name}`;
+
+/** Storage origin every minted URL sits under, so no suite hard-codes a host. */
+export const FAKE_STORAGE_ORIGIN = "https://storage.googleapis.com";
+
+/**
+ * The actions `server/objectStorage.ts` signs for, mapped from HTTP methods —
+ * the same two it narrowed `SIGNING_ACTIONS` to, for the same reason: an action
+ * no caller signs for is a promise nothing has ever verified.
+ */
+export type SignedUrlAction = "read" | "write";
+
+export interface SignedUrlRequest {
+  bucket: string;
+  object: string;
+  action: SignedUrlAction;
+  /** Expiry the server asked for, as an ISO instant. */
+  expiresAt: string;
+}
+
+const signedUrlRequests: SignedUrlRequest[] = [];
+
+/** The exact URL this fake mints for `<bucket>/<object name>`. */
+export function fakeSignedUrl(objectPath: string, action: SignedUrlAction = "write"): string {
+  return `${FAKE_STORAGE_ORIGIN}/${objectPath}?fake-signature=${action}`;
+}
+
+/**
+ * Matcher for a minted URL whose object name is only known by shape.
+ * `objectPattern` is regex source, matched against `<bucket>/<object name>`.
+ */
+export function signedUrlPattern(
+  objectPattern: string,
+  action: SignedUrlAction = "write"
+): RegExp {
+  const prefix = FAKE_STORAGE_ORIGIN.replace(/[.]/g, "\\.");
+  return new RegExp(`^${prefix}/${objectPattern}\\?fake-signature=${action}$`);
+}
 
 export class File {
   constructor(
@@ -73,6 +112,25 @@ export class File {
     if (!stored) throw new Error(`fake-gcs: object not found: ${this.name}`);
     return [stored.data];
   }
+
+  /**
+   * Real V4 signing needs a service-account key and produces a URL nothing can
+   * predict; this records what was asked for and returns a stable stand-in with
+   * the same origin and path, which is the part the server's own code reads back.
+   */
+  async getSignedUrl(options: {
+    version?: string;
+    action: SignedUrlAction;
+    expires: string | number | Date;
+  }): Promise<[string]> {
+    signedUrlRequests.push({
+      bucket: this.bucketName,
+      object: this.name,
+      action: options.action,
+      expiresAt: new Date(options.expires).toISOString(),
+    });
+    return [fakeSignedUrl(key(this.bucketName, this.name), options.action)];
+  }
 }
 
 class Bucket {
@@ -112,6 +170,12 @@ export function objectMetadata(path: string): Record<string, string> | undefined
   return objects.get(path)?.metadata;
 }
 
+/** Every URL the server signed, in call order. */
+export function signedUrlCalls(): SignedUrlRequest[] {
+  return signedUrlRequests;
+}
+
 export function resetGcs(): void {
   objects.clear();
+  signedUrlRequests.length = 0;
 }

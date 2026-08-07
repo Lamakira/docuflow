@@ -1,3 +1,4 @@
+import { config } from "./config";
 import { db } from "./db";
 import { videoTranscripts, documents, projects, documentEmbeddings } from "@shared/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
@@ -91,7 +92,7 @@ async function fetchLoomTranscriptBrowser(videoId: string): Promise<TranscriptRe
 }
 
 async function fetchFathomTranscriptBrowser(videoId: string): Promise<TranscriptResult> {
-  const apiKey = process.env.FATHOM_API_KEY;
+  const apiKey = config.fathomApiKey;
   
   if (apiKey) {
     try {

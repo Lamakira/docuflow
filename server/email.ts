@@ -1,46 +1,22 @@
 // Resend email integration for DocuFlow
 import { Resend } from 'resend';
+import { config } from './config';
 
-let connectionSettings: any;
-
-async function getCredentials() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY 
-    ? 'repl ' + process.env.REPL_IDENTITY 
-    : process.env.WEB_REPL_RENEWAL 
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+/**
+ * The Resend client and the address DocuFlow sends from, both from configuration.
+ *
+ * Throws when `RESEND_API_KEY` is unset: every sender below calls this inside its
+ * try block, so an unconfigured deployment reports a failed send rather than
+ * failing the request that triggered it.
+ */
+export function getResendClient(): { client: Resend; fromEmail: string } {
+  const { apiKey, fromAddress } = config.email;
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY is not set — email is not configured');
   }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=resend',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
-      }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  if (!connectionSettings || (!connectionSettings.settings.api_key)) {
-    throw new Error('Resend not connected');
-  }
-  return {
-    apiKey: connectionSettings.settings.api_key, 
-    fromEmail: connectionSettings.settings.from_email
-  };
-}
-
-// WARNING: Never cache this client.
-// Access tokens expire, so a new client must be created each time.
-export async function getResendClient() {
-  const { apiKey, fromEmail } = await getCredentials();
   return {
     client: new Resend(apiKey),
-    fromEmail
+    fromEmail: fromAddress
   };
 }
 
@@ -52,10 +28,10 @@ export async function sendWelcomeEmail(
   appUrl: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { client, fromEmail } = await getResendClient();
+    const { client, fromEmail } = getResendClient();
     
     const result = await client.emails.send({
-      from: fromEmail || 'DocuFlow <noreply@resend.dev>',
+      from: fromEmail,
       to: toEmail,
       subject: 'Welcome to DocuFlow - Your Account Credentials',
       html: `
@@ -101,10 +77,10 @@ export async function sendProjectAssignmentEmail(
   projectId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { client, fromEmail } = await getResendClient();
+    const { client, fromEmail } = getResendClient();
     
     const result = await client.emails.send({
-      from: fromEmail || 'DocuFlow <noreply@resend.dev>',
+      from: fromEmail,
       to: toEmail,
       subject: `DocuFlow - You've been assigned to "${projectName}"`,
       html: `
@@ -150,10 +126,10 @@ export async function sendReminderDueEmail(
   projectId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { client, fromEmail } = await getResendClient();
+    const { client, fromEmail } = getResendClient();
 
     const result = await client.emails.send({
-      from: fromEmail || 'DocuFlow <noreply@resend.dev>',
+      from: fromEmail,
       to: toEmail,
       subject: `DocuFlow Reminder - ${reminderTitle}`,
       html: `
@@ -196,10 +172,10 @@ export async function sendDailyUpdateReminderEmail(
   appUrl: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { client, fromEmail } = await getResendClient();
+    const { client, fromEmail } = getResendClient();
 
     const result = await client.emails.send({
-      from: fromEmail || 'DocuFlow <noreply@resend.dev>',
+      from: fromEmail,
       to: toEmail,
       subject: 'Reminder: submit your daily update',
       html: `
@@ -238,10 +214,10 @@ export async function sendPasswordUpdateEmail(
   appUrl: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { client, fromEmail } = await getResendClient();
+    const { client, fromEmail } = getResendClient();
     
     const result = await client.emails.send({
-      from: fromEmail || 'DocuFlow <noreply@resend.dev>',
+      from: fromEmail,
       to: toEmail,
       subject: 'DocuFlow - Your Password Has Been Updated',
       html: `

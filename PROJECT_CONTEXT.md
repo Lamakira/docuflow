@@ -39,7 +39,7 @@ A companion **MCP server** exposes the app's API to Claude Desktop.
 - Desktop agent: device token (SHA-256 hash stored) + short-lived (1h) HMAC-SHA256 JWT
 
 **Storage & external services**
-- Google Cloud Storage via Replit Object Storage (sidecar OAuth2 at `http://127.0.0.1:1106`), with a custom ACL layer (`server/objectAcl.ts`)
+- Google Cloud Storage with a Google service account (`GCS_SERVICE_ACCOUNT_KEY`, or Application Default Credentials), V4 signed URLs for direct client transfer, and a custom ACL layer (`server/objectAcl.ts`)
 - OpenAI: GPT-4.1-nano for chat, `text-embedding-3-small` (1536-dim) for embeddings
 - Resend for email; Fathom API and Playwright-based scraping for video transcripts
 
@@ -85,7 +85,7 @@ A companion **MCP server** exposes the app's API to Claude Desktop.
 - **Auth flow**: `POST /api/agent/auth/login` (email/password) creates a `devices` row, returns a raw device token (only its SHA-256 hash is stored) plus a 1-hour HMAC-SHA256 JWT; `POST /api/agent/auth/refresh` renews the JWT. The older pairing-code flow (`/api/agent/pairing/*`) returns **410 Gone** (deprecated). Heartbeat checks revocation; devices can be revoked from the web Devices page.
 - **Screenshot flow**: `POST /api/agent/screenshots/presign` → direct GCS upload → `POST /api/agent/screenshots/confirm` (records activity percentages and counts in `time_entry_screenshots`).
 - **Screenshot policy** is org-wide (`org_settings.screenshotPolicy`): enable flag, capture interval min/max (3–15 min), optional active-hours window, idle prompt settings (timeout 1–60 min, countdown 15–120 s).
-- **Packaging**: electron-forge/electron-builder → Windows NSIS `.exe`, macOS `.dmg` (notarized), Linux `.deb`. Installers are uploaded to Replit Object Storage and registered in `desktop_releases` (one `isLatest` row per platform). `GET /api/downloads/desktop/latest` / `versions` serve stable URLs. CI registration endpoint: `POST /api/internal/desktop-releases`. Full release procedure: `docs/DESKTOP_RELEASE.md` (builds must run from the Replit environment because the object-storage sidecar is not reachable from GitHub runners).
+- **Packaging**: electron-forge/electron-builder → Windows NSIS `.exe`, macOS `.dmg` (notarized), Linux `.deb`. Installers are uploaded to Google Cloud Storage (bucket named by `INSTALLER_GCS_BUCKET`) and registered in `desktop_releases` (one `isLatest` row per platform). `GET /api/downloads/desktop/latest` / `versions` serve stable URLs. CI registration endpoint: `POST /api/internal/desktop-releases`. Full release procedure: `docs/DESKTOP_RELEASE.md` (uploads need the storage service account, from any environment that holds it).
 - Linux quirks: Wayland requires a screen-share permission each session (XDG portal); X11 does not. Documented in replit.md.
 
 ### 3.5 AI Assistant & Embedding Pipeline
@@ -217,6 +217,6 @@ All app routes require session auth (`isAuthenticated`) unless noted. Files: `se
 - **Idempotency**: agent timer commands via `clientCommandId`; event batches via `agent_processed_batches`; scheduled jobs (reminders, daily-update emails) use DB-backed per-recipient dedup, never in-memory guards.
 - **Embeddings**: content-hash chunk skipping; any content change re-embeds only changed chunks; `POST /api/embeddings/rebuild` for full rebuilds.
 - **Dev credentials**: test accounts are listed in `replit.md` (do not copy into other docs; dev-only).
-- **Desktop releases**: procedure in `docs/DESKTOP_RELEASE.md`; builds must run inside Replit (object-storage sidecar unreachable from CI runners); registry in `desktop_releases`, latest published v0.1.8, codebase at 0.1.10.
-- **Do not modify**: `server/vite.ts`, `vite.config.ts`, `package.json`, `drizzle.config.ts` (platform-managed).
-- **Env vars used** (names only): `DATABASE_URL`, `MCP_API_KEY`, `FATHOM_API_KEY`, OpenAI/Resend keys via Replit integrations, `PUBLIC_OBJECT_SEARCH_PATHS`, `PRIVATE_OBJECT_DIR`.
+- **Desktop releases**: procedure in `docs/DESKTOP_RELEASE.md`; uploads need the storage service account (`INSTALLER_GCS_BUCKET` + `GCS_SERVICE_ACCOUNT_KEY`); registry in `desktop_releases`, latest published v0.1.8, codebase at 0.1.10.
+- **Platform-managed files**: `server/vite.ts` and `vite.config.ts` still come from the Replit template — leave them until the container work (#25) removes the premise. `package.json` and `drizzle.config.ts` no longer do: the test runner (#27) and the `--env-file-if-exists=.env` flags on `dev`/`start` are edits this repository makes on purpose.
+- **Env vars**: all read in `server/config.ts` and nowhere else; every one documented in `.env.example` — the register of record — and `docs/CONFIGURATION.md`. Required to boot: database (`DATABASE_URL` or `PG*`), `SESSION_SECRET`, `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS`, and a storage credential (`GCS_SERVICE_ACCOUNT_KEY` or `GOOGLE_APPLICATION_CREDENTIALS`).

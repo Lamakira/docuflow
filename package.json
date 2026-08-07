@@ -4,9 +4,9 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server/index.ts",
+    "dev": "NODE_ENV=development tsx --env-file-if-exists=.env server/index.ts",
     "build": "tsx script/build.ts",
-    "start": "NODE_ENV=production node dist/index.cjs",
+    "start": "NODE_ENV=production node --env-file-if-exists=.env dist/index.cjs",
     "check": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",

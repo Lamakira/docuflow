@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { config } from "./config";
 import { db } from "./db";
 import { documentEmbeddings, documents, projects, companyDocumentEmbeddings, companyDocuments, companyDocumentFolders } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
@@ -10,7 +11,7 @@ const EMBEDDING_MODEL = "text-embedding-3-small";
 const EMBEDDING_DIMENSIONS = 1536;
 
 function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = config.openaiApiKey;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY environment variable is not set");
   }

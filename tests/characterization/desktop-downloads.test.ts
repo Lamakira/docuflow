@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { newAgent } from "../helpers/auth";
-import { FAKE_STORAGE_ORIGIN, fakeSignedUrl } from "../fakes/network";
+import { FAKE_STORAGE_ORIGIN, fakeSignedUrl } from "../fakes/gcs";
 
 const CI_TOKEN = "test-ci-token";
 
@@ -203,7 +203,7 @@ describe("desktop downloads (characterization)", () => {
     const signed = await anonymous.get("/downloads/windows").redirects(0);
     expect(signed.status).toBe(302);
     expect(signed.headers.location).toBe(
-      fakeSignedUrl(releaseObject("DocuFlow-0.1.0-setup.exe"), "GET")
+      fakeSignedUrl(releaseObject("DocuFlow-0.1.0-setup.exe"), "read")
     );
 
     const second = await publish(app, {

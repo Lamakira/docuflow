@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, getUserId, hashPassword, verifyPassword, regenerateSession } from "./auth";
+import { config } from "./config";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
@@ -46,7 +47,7 @@ import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCe
 
 // Helper to get OpenAI client lazily (only when needed, not at import time)
 function getOpenAIClient(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = config.openaiApiKey;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY environment variable is not set");
   }
@@ -4530,13 +4531,6 @@ Instructions:
   const REMINDER_CHECK_INTERVAL_MS = 60 * 1000; // every minute
   let reminderDispatchRunning = false;
 
-  const getAppBaseUrl = (): string => {
-    const domains = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
-    if (domains) return `https://${domains}`;
-    if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
-    return "http://localhost:5000";
-  };
-
   startBackgroundJob(async () => {
     if (reminderDispatchRunning) return;
     reminderDispatchRunning = true;
@@ -4546,7 +4540,7 @@ Instructions:
       // channel is retried next run without re-sending the channel that already succeeded.
       const due = await storage.getPendingDueReminders(new Date());
       if (due.length === 0) return;
-      const appUrl = getAppBaseUrl();
+      const appUrl = config.appUrl;
 
       for (const reminder of due) {
         try {
@@ -4646,7 +4640,7 @@ Instructions:
       // fast-path; this DB check is the durable safeguard.
       const startOfTodayLocal = new Date(now.getTime() - hour * 60 * 60 * 1000 - 60 * 60 * 1000);
 
-      const appUrl = getAppBaseUrl();
+      const appUrl = config.appUrl;
       let sent = 0;
       for (const emp of employees) {
         try {

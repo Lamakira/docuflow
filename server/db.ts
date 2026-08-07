@@ -5,7 +5,9 @@ import type { PgDatabase } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import ws from "ws";
 import * as schema from "@shared/schema";
-import { connectionString } from "./dbConfig";
+import { config } from "./config";
+
+const { connectionString, driver } = config.database;
 
 /**
  * The pool surface the server actually uses: raw SQL and shutdown. Both pools
@@ -33,7 +35,7 @@ export type Db = PgDatabase<NodePgQueryResultHKT, typeof schema>;
 // Neon serverless (WebSocket) driver cannot reach — local and CI Postgres.
 // Default remains the Neon driver used in production. Both satisfy DbPool and
 // Db below, so the rest of the server is driver-agnostic by type, not by cast.
-const usePg = process.env.DB_DRIVER === "pg";
+const usePg = driver === "pg";
 
 neonConfig.webSocketConstructor = ws;
 

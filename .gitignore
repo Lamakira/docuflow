@@ -1,12 +1,21 @@
 node_modules
 dist
 .DS_Store
+
+# Local environment configuration — .env.example is the committed template
+.env
+.env.*
+!.env.example
 server/public
 vite.config.ts.*
 *.tar.gz
 
-# Installer binaries — uploaded to Replit filesystem, never committed
+# Installer binaries — uploaded to object storage, never committed
 installers/
+
+# Editor and refactor leftovers. A stale copy of a server module keeps whatever
+# secrets and defaults it had when it was set aside (ADR-0018).
+*.bak
 
 # Claude Code
 .claude/

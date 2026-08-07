@@ -1,4 +1,5 @@
 import { createApp, log } from "./app";
+import { config, logConfigSummary } from "./config";
 import { serveStatic } from "./static";
 import { storage } from "./storage";
 import { detectMigrationFlags, setTasksEnabled } from "./migrationFlags";
@@ -83,6 +84,9 @@ async function ensureAgentTables(): Promise<void> {
 }
 
 (async () => {
+  // First line of the boot log: what this process resolved its environment to.
+  logConfigSummary();
+
   // Ensure tasks migration (002) is applied (idempotent).
   // On success we set the flag directly — detectMigrationFlags() is NOT called
   // afterward because it uses the Drizzle `db` connection which may target a
@@ -134,7 +138,7 @@ async function ensureAgentTables(): Promise<void> {
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
+  if (config.isProduction) {
     serveStatic(app);
   } else {
     const { setupVite } = await import("./vite");
@@ -145,7 +149,7 @@ async function ensureAgentTables(): Promise<void> {
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const port = config.port;
   httpServer.listen(
     {
       port,

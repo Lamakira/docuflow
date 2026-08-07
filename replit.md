@@ -167,7 +167,7 @@ Ces identifiants sont valides sur la branche `refactor/project_assignment` et l'
 
 **Object Storage**
 - **Google Cloud Storage** integration via `@google-cloud/storage`
-- Authentication using Replit Sidecar OAuth2 flow
+- Authentication as a Google service account, from `GCS_SERVICE_ACCOUNT_KEY` or Application Default Credentials (see `docs/CONFIGURATION.md`)
 - Access control system with ObjectAclPolicy interface
 - Public/private visibility controls
 - Support for user/group-based permissions (READ/WRITE)
@@ -177,13 +177,12 @@ Ces identifiants sont valides sur la branche `refactor/project_assignment` et l'
 **Third-Party Services**
 
 **Replit Platform Services**
-- Replit Auth (OIDC) for authentication
-- Replit Sidecar for GCS credential provisioning
+- Replit Auth (OIDC) for authentication — removed in Phase 5
 - Replit Vite plugins: runtime error overlay, cartographer, dev banner
 
 **Google Cloud Platform**
 - Google Cloud Storage for file/image storage
-- External account credentials via token exchange
+- Service-account credentials from the environment; no platform-provided credential flow
 
 **Development Tools**
 - TypeScript compiler with strict mode enabled
@@ -266,8 +265,8 @@ Toute la procédure de release, les scripts de build, les endpoints d'upload et 
 **→ [`docs/DESKTOP_RELEASE.md`](docs/DESKTOP_RELEASE.md)**
 
 **En résumé** :
-- Les installeurs sont stockés dans l'**Object Storage Replit** (bucket `replit-objstore-...`, service account `heimdall-production`) — **aucun compte Google externe requis**.
-- Accessible uniquement depuis l'environnement Replit via le sidecar interne (`http://127.0.0.1:1106`). Les runners GitHub Actions ne peuvent pas le joindre, d'où la procédure manuelle.
+- Les installeurs sont stockés dans **Google Cloud Storage**, bucket nommé par `INSTALLER_GCS_BUCKET` (jamais écrit en dur ici — ADR-0018).
+- Accessible depuis n'importe quel shell disposant du service account (`GCS_SERVICE_ACCOUNT_KEY` ou Application Default Credentials), y compris les runners GitHub Actions. Voir `docs/CONFIGURATION.md`.
 - v0.1.8 est publiée (les 3 plateformes, 2026-06-19). Voir le guide pour les prochaines releases.
 
 **Notes Linux spécifiques** :
