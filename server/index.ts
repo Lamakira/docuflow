@@ -1,5 +1,5 @@
 import { createApp, log } from "./app";
-import { config } from "./config";
+import { config, logConfigSummary } from "./config";
 import { serveStatic } from "./static";
 import { storage } from "./storage";
 import { detectMigrationFlags, setTasksEnabled } from "./migrationFlags";
@@ -84,6 +84,9 @@ async function ensureAgentTables(): Promise<void> {
 }
 
 (async () => {
+  // First line of the boot log: what this process resolved its environment to.
+  logConfigSummary();
+
   // Ensure tasks migration (002) is applied (idempotent).
   // On success we set the flag directly — detectMigrationFlags() is NOT called
   // afterward because it uses the Drizzle `db` connection which may target a

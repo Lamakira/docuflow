@@ -27,8 +27,12 @@ const key = (bucket: string, name: string) => `${bucket}/${name}`;
 /** Storage origin every minted URL sits under, so no suite hard-codes a host. */
 export const FAKE_STORAGE_ORIGIN = "https://storage.googleapis.com";
 
-/** The actions `server/objectStorage.ts` signs for, mapped from HTTP methods. */
-export type SignedUrlAction = "read" | "write" | "delete" | "resumable";
+/**
+ * The actions `server/objectStorage.ts` signs for, mapped from HTTP methods —
+ * the same two it narrowed `SIGNING_ACTIONS` to, for the same reason: an action
+ * no caller signs for is a promise nothing has ever verified.
+ */
+export type SignedUrlAction = "read" | "write";
 
 export interface SignedUrlRequest {
   bucket: string;

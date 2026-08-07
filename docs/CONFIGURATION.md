@@ -51,12 +51,13 @@ Required:
 | `SESSION_SECRET` | Signs session cookies. Rotating it logs everyone out |
 | `PRIVATE_OBJECT_DIR` | Bucket root for private objects, as `/<bucket>/<prefix>` |
 | `PUBLIC_OBJECT_SEARCH_PATHS` | Comma-separated bucket roots for public objects; the first receives public uploads |
+| `GCS_SERVICE_ACCOUNT_KEY`, or `GOOGLE_APPLICATION_CREDENTIALS` | The storage identity. Either the key file's JSON inline, or a path to it. One or the other — see [Object storage](#object-storage) |
 
 Optional — each gates one feature, which reports its own failure while unset:
 
 | Variable | Effect while unset |
 | --- | --- |
-| `GCS_SERVICE_ACCOUNT_KEY`, `GCS_PROJECT_ID` | Storage falls back to Application Default Credentials |
+| `GCS_PROJECT_ID` | The project is taken from the key file's `project_id` |
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Email sends fail and report why; the request that triggered them still succeeds |
 | `OPENAI_API_KEY` | Embeddings, chat, and transcription fail when used |
 | `FATHOM_API_KEY` | Fathom transcripts fall back to the browser scraper |
@@ -64,7 +65,9 @@ Optional — each gates one feature, which reports its own failure while unset:
 | `MCP_API_KEY` | The MCP admin-impersonation header is refused. Phase 5 removes it |
 | `DESKTOP_RELEASE_CI_TOKEN` | Release registration is refused |
 | `APP_URL` | Links in outbound email fall back to the Replit domain variables, then `http://localhost:5000` |
+| `REPLIT_DOMAINS`, `REPLIT_DEV_DOMAIN` | Set by the Replit runtime, never by hand. The first entry stands in for `APP_URL` while that is unset. They leave with the OIDC login in Phase 5 |
 | `PORT` | 5000 |
+| `NODE_ENV` | `development`. The production build replaces the read with a literal (`script/build.ts`), so a deployment sets it rather than a person |
 | `DB_DRIVER` | Neon's serverless driver; `pg` selects node-postgres for a database that driver cannot reach |
 | `REPL_ID`, `ISSUER_URL` | Replit OIDC login fails. Phase 5 removes both |
 
@@ -86,19 +89,64 @@ signed URL and the client transfers directly against the bucket. Signing needs a
 key that can sign, so the identity must be a **service account** in every
 environment.
 
-Credentials, in the order the client tries them:
+Two ways to supply that service account, and boot requires one of them:
 
 1. `GCS_SERVICE_ACCOUNT_KEY` — the key file's JSON, verbatim on one line or
    base64-encoded. Base64 is what survives secret stores that mangle the
    newlines inside `private_key`.
-2. Application Default Credentials — a key file named by
-   `GOOGLE_APPLICATION_CREDENTIALS`, or workload identity on a Google host.
+2. `GOOGLE_APPLICATION_CREDENTIALS` — a path to that same key file, read by the
+   Google SDK rather than by this app. `server/config.ts` reads it only to know
+   a credential exists and to name the mode on the boot line.
+
+Both are environment variables, which is what lets boot refuse an environment
+that names neither instead of failing at the first signature. Bare workload
+identity — a Google host inferring an identity with no variable set — is
+deliberately not a third mode: nothing this app runs on is a Google host, so it
+would be a path no deployment has ever exercised.
 
 The bucket needs CORS allowing `PUT` and `GET` from the app's origin, since
 browsers upload to it directly.
 
-`scripts/upload-to-gcs.mjs` and `scripts/release-desktop.mjs` read the same
-credentials and take the installer bucket from `INSTALLER_GCS_BUCKET`.
+### Against ADR-0016 and ADR-0012
+
+[ADR-0016](adr/0016-host-on-render-neon-and-r2-with-an-independent-aws-evidence-account.md)
+puts files, screenshots, and installers on **Cloudflare R2** behind an S3-shaped
+port, and [ADR-0012](adr/0012-store-files-behind-a-workspace-keyed-object-storage-port.md)
+requires storage to sit behind one shared infrastructure port. Neither holds
+here yet: this is the legacy stack, addressed as GCS directly, and the settings
+above are GCS-shaped (`GCS_SERVICE_ACCOUNT_KEY`, `GCS_PROJECT_ID`). The de-Replit
+work moved the credentials out of the Replit sidecar without introducing the
+port — that is the migration's own phase, not this one. Recorded here so the
+next reader sees the gap rather than reading the ADRs as already satisfied.
+
+## The release scripts
+
+`scripts/upload-to-gcs.mjs` and `scripts/release-desktop.mjs` are plain `.mjs`
+entry points, so they cannot import `server/config.ts` — a TypeScript module —
+and read their own environment through `scripts/gcs-client.mjs` instead. It
+applies the same rules and the same validation: one of `GCS_SERVICE_ACCOUNT_KEY`
+or `GOOGLE_APPLICATION_CREDENTIALS`, the installer bucket from
+`INSTALLER_GCS_BUCKET`, and no identifier hard-coded in the repository.
+
+| Variable | Purpose |
+| --- | --- |
+| `INSTALLER_GCS_BUCKET` | Bucket the desktop installers are published to. Required by both scripts; no default |
+| `DOCUFLOW_API_URL` | The deployment `release-desktop.mjs` registers the release against. No default: a release must name where it is publishing to (ADR-0018) |
+| `DESKTOP_RELEASE_CI_TOKEN` | Bearer token those registrations present. No default |
+| `GH_REPO` | Repository the installer workflow runs on. Defaults to this project's |
+| `GH_WORKFLOW` | Workflow file to dispatch. Defaults to `desktop-release.yml` |
+
+## Tests
+
+The harness reads two variables of its own, in `tests/test-db-url.ts` rather than
+in `server/config.ts` — the server never sees them, and `tests/setup.ts` fixes
+every server variable before any server module loads, so a developer's exported
+secrets never reach a suite.
+
+| Variable | Effect while unset |
+| --- | --- |
+| `TEST_DATABASE_URL` | The `docker-compose.test.yml` Postgres on `localhost:5433`. Whatever it points at is truncated between tests, so it must be disposable |
+| `ALLOW_REMOTE_TEST_DB` | A non-local `TEST_DATABASE_URL` is refused outright (ADR-0018). `1` permits one, and should only ever name a throwaway database |
 
 ## Email
 
@@ -109,8 +157,15 @@ email is unconfigured.
 
 ## Adding a variable
 
-Read it in `server/config.ts` and nowhere else, then:
+A variable the server reads goes in `server/config.ts` and nowhere else; a
+variable only a release script or the test harness reads stays where it is read.
+Either way:
 
-- add it to `.env.example` with a placeholder and a one-line comment;
-- add it to the right table above;
-- decide the tier deliberately. Required means the app will not boot without it.
+- add it to `.env.example` with a placeholder and a one-line comment. That file
+  is the register of record — every variable the repository reads is listed
+  there, whichever process reads it;
+- add it to the right table above — Required, Optional, the release scripts, or
+  Tests;
+- decide the tier deliberately. Required means the app will not boot without it,
+  which is the whole point: a variable checked at boot cannot surface as a 500 on
+  the first request that needed it.

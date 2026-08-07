@@ -12,6 +12,8 @@
  * Prérequis :
  *   - `gh` CLI authentifié (gh auth login)
  *   - DESKTOP_RELEASE_CI_TOKEN défini dans l'environnement
+ *   - DOCUFLOW_API_URL — le déploiement où la release est enregistrée. Aucune
+ *     valeur par défaut : une release doit nommer sa cible (ADR-0018)
  *   - INSTALLER_GCS_BUCKET, et GCS_SERVICE_ACCOUNT_KEY sauf si les
  *     Application Default Credentials sont déjà disponibles (voir .env.example)
  *
@@ -21,7 +23,6 @@
  *   node scripts/release-desktop.mjs --skip-build           # build déjà fait, demande le run-id
  *
  * Variables d'environnement optionnelles :
- *   DOCUFLOW_API_URL   — défaut : https://docs.appvibed.com
  *   GH_REPO           — défaut : billos-e/TECHMA-DOCUMENTATION-PLATFORM
  *   GH_WORKFLOW        — défaut : desktop-release.yml
  */
@@ -35,7 +36,7 @@ import { gcsClient, installerBucketName } from "./gcs-client.mjs";
 
 const PREFIX        = "public/installers";
 
-const API_URL       = (process.env.DOCUFLOW_API_URL || "https://docs.appvibed.com").replace(/\/$/, "");
+const API_URL       = (process.env.DOCUFLOW_API_URL || "").trim().replace(/\/$/, "");
 const TOKEN         = process.env.DESKTOP_RELEASE_CI_TOKEN;
 const GH_REPO       = process.env.GH_REPO || "billos-e/TECHMA-DOCUMENTATION-PLATFORM";
 const GH_WORKFLOW   = process.env.GH_WORKFLOW || "desktop-release.yml";
@@ -73,6 +74,14 @@ for (let i = 0; i < args.length; i++) {
 if (!TOKEN) {
   console.error("\n[release-desktop] ERREUR : DESKTOP_RELEASE_CI_TOKEN non défini.");
   console.error("  → Récupérer la valeur avec : echo $DESKTOP_RELEASE_CI_TOKEN");
+  process.exit(1);
+}
+
+// Pas de défaut : le script publie une release, et c'est la variable qui décide
+// vers quel déploiement (ADR-0018 : aucune URL de production dans ce dépôt).
+if (!API_URL) {
+  console.error("\n[release-desktop] ERREUR : DOCUFLOW_API_URL non défini.");
+  console.error("  → Nommer le déploiement cible, ex. : DOCUFLOW_API_URL=https://docuflow.example.com");
   process.exit(1);
 }
 

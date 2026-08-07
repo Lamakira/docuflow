@@ -97,7 +97,11 @@ a database you care about, and never at anything production-related.
 
 ## Suites
 
-`tests/smoke/` holds the two boot-level suites from the harness ticket.
+`tests/smoke/` holds the boot-level suites: the two from the harness ticket, plus
+`config` ([#22](https://github.com/Lamakira/docuflow/issues/22)), which is the one
+suite that does **not** use the fixed environment — it clears the variables,
+re-imports `server/config.ts`, and pins what each environment resolves to,
+including the boot failures the rest of the harness can never reach.
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`

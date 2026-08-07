@@ -6,7 +6,7 @@
  *   node scripts/upload-installer.mjs <platform> <file> [api-url]
  *
  * Example:
- *   DESKTOP_RELEASE_CI_TOKEN=xxx node scripts/upload-installer.mjs windows installers/DocuFlow-Agent-0.1.7-windows-setup.exe https://docs.appvibed.com
+ *   DESKTOP_RELEASE_CI_TOKEN=xxx node scripts/upload-installer.mjs windows installers/DocuFlow-Agent-0.1.7-windows-setup.exe https://docuflow.example.com
  *
  * Env vars:
  *   DESKTOP_RELEASE_CI_TOKEN — required

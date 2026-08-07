@@ -37,7 +37,7 @@ export interface ObjectStorageConfig {
   privateDir: string;
   /** `/bucket/prefix` roots searched for public objects; the first receives uploads. */
   publicSearchPaths: string[];
-  /** Inline service-account key; absent means Application Default Credentials. */
+  /** Inline service-account key; absent means `GOOGLE_APPLICATION_CREDENTIALS` names one. */
   serviceAccount?: ServiceAccountKey;
   projectId?: string;
 }
@@ -96,32 +96,44 @@ function readList(name: string): string[] {
   );
 }
 
-function resolveDatabase(missing: string[]): DatabaseConfig {
+/**
+ * One section of the configuration, alongside the required variables it found
+ * absent. Sections report what is missing rather than aborting on the first gap,
+ * so a single boot failure can name every one of them.
+ */
+interface Resolved<T> {
+  value: T;
+  missing: string[];
+}
+
+function resolveDatabase(): Resolved<DatabaseConfig> {
   // DB_DRIVER=pg selects node-postgres for local and CI Postgres; production
   // stays on the Neon serverless driver.
   const driver: DatabaseDriver = read("DB_DRIVER") === "pg" ? "pg" : "neon";
 
   const url = read("DATABASE_URL");
   if (url) {
-    return { connectionString: url, source: "DATABASE_URL", driver };
+    return { value: { connectionString: url, source: "DATABASE_URL", driver }, missing: [] };
   }
 
   const absent = (["PGHOST", "PGUSER", "PGPASSWORD", "PGDATABASE"] as const).filter(
     (name) => !read(name)
   );
   if (absent.length > 0) {
-    missing.push(
-      `DATABASE_URL — or every PG* variable instead (PGHOST, PGPORT, PGUSER, ` +
-        `PGPASSWORD, PGDATABASE); currently missing: ${absent.join(", ")}`
-    );
-    return { connectionString: "", source: "PG_VARS", driver };
+    return {
+      value: { connectionString: "", source: "PG_VARS", driver },
+      missing: [
+        `DATABASE_URL — or every PG* variable instead (PGHOST, PGPORT, PGUSER, ` +
+          `PGPASSWORD, PGDATABASE); currently missing: ${absent.join(", ")}`,
+      ],
+    };
   }
 
   const password = encodeURIComponent(read("PGPASSWORD")!);
   const port = read("PGPORT") ?? "5432";
   const connectionString =
     `postgresql://${read("PGUSER")}:${password}@${read("PGHOST")}:${port}/${read("PGDATABASE")}`;
-  return { connectionString, source: "PG_VARS", driver };
+  return { value: { connectionString, source: "PG_VARS", driver }, missing: [] };
 }
 
 /**
@@ -158,7 +170,9 @@ function resolveServiceAccount(): ServiceAccountKey | undefined {
   };
 }
 
-function resolveObjectStorage(missing: string[]): ObjectStorageConfig {
+function resolveObjectStorage(): Resolved<ObjectStorageConfig> {
+  const missing: string[] = [];
+
   const privateDir = read("PRIVATE_OBJECT_DIR");
   if (!privateDir) {
     missing.push("PRIVATE_OBJECT_DIR — bucket root for private objects, e.g. /my-bucket/.private");
@@ -172,12 +186,28 @@ function resolveObjectStorage(missing: string[]): ObjectStorageConfig {
     );
   }
 
+  // Signing a V4 URL needs a key that can sign, so a credential is as required as
+  // the bucket roots are. Both ways of supplying one are an environment variable,
+  // which makes the absence of either checkable here rather than at the first
+  // upload. Bare workload identity — a Google host inferring an identity from no
+  // variable at all — is not among them: nothing this app runs on is a Google
+  // host, so it would be a mode no deployment has ever exercised.
   const serviceAccount = resolveServiceAccount();
+  if (!serviceAccount && !read("GOOGLE_APPLICATION_CREDENTIALS")) {
+    missing.push(
+      "GCS_SERVICE_ACCOUNT_KEY — the service-account key file's JSON, verbatim or " +
+        "base64-encoded; or GOOGLE_APPLICATION_CREDENTIALS naming a key file on disk"
+    );
+  }
+
   return {
-    privateDir: privateDir ?? "",
-    publicSearchPaths,
-    serviceAccount,
-    projectId: read("GCS_PROJECT_ID") ?? serviceAccount?.projectId,
+    value: {
+      privateDir: privateDir ?? "",
+      publicSearchPaths,
+      serviceAccount,
+      projectId: read("GCS_PROJECT_ID") ?? serviceAccount?.projectId,
+    },
+    missing,
   };
 }
 
@@ -202,14 +232,17 @@ function resolveConfig(): AppConfig {
   // this text with a literal (see script/build.ts), which a dynamic lookup misses.
   const nodeEnv = process.env.NODE_ENV ?? "development";
 
-  const missing: string[] = [];
-  const database = resolveDatabase(missing);
-  const objectStorage = resolveObjectStorage(missing);
-
+  const database = resolveDatabase();
+  const objectStorage = resolveObjectStorage();
   const sessionSecret = read("SESSION_SECRET");
-  if (!sessionSecret) {
-    missing.push("SESSION_SECRET — signs session cookies; any long random string");
-  }
+
+  const missing = [
+    ...database.missing,
+    ...objectStorage.missing,
+    ...(sessionSecret
+      ? []
+      : ["SESSION_SECRET — signs session cookies; any long random string"]),
+  ];
 
   if (missing.length > 0) {
     throw new Error(
@@ -223,10 +256,10 @@ function resolveConfig(): AppConfig {
     nodeEnv,
     isProduction: nodeEnv === "production",
     port: Number.parseInt(read("PORT") ?? String(DEFAULT_PORT), 10),
-    database,
+    database: database.value,
     sessionSecret: sessionSecret!,
     jwtSecret: read("JWT_SECRET"),
-    objectStorage,
+    objectStorage: objectStorage.value,
     email: {
       apiKey: read("RESEND_API_KEY"),
       fromAddress: read("RESEND_FROM_EMAIL") ?? DEFAULT_FROM_ADDRESS,
@@ -256,18 +289,26 @@ export function desktopReleaseCiToken(): string | undefined {
   return read("DESKTOP_RELEASE_CI_TOKEN");
 }
 
+/** One of the two, always: boot refuses an environment that supplies neither. */
 function storageCredentialMode(): string {
-  if (config.objectStorage.serviceAccount) return "service-account key";
-  if (read("GOOGLE_APPLICATION_CREDENTIALS")) return "GOOGLE_APPLICATION_CREDENTIALS";
-  return "application default credentials";
+  return config.objectStorage.serviceAccount
+    ? "service-account key"
+    : "GOOGLE_APPLICATION_CREDENTIALS";
 }
 
-// One boot line describing what this process is configured with. The connection
-// string is masked: the password never reaches the log.
-console.log(
-  `[config] ${config.nodeEnv} — database ${config.database.source} over ${config.database.driver} ` +
-    `(${config.database.connectionString.replace(/:([^@/]+)@/, ":<hidden>@")}), ` +
-    `object storage via ${storageCredentialMode()}, ` +
-    `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
-    `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}`
-);
+/**
+ * One boot line describing what this process is configured with. The connection
+ * string is masked: the password never reaches the log.
+ *
+ * Called by the process entry point rather than run at import, so that importing
+ * config — which the test harness and any script does — stays silent.
+ */
+export function logConfigSummary(): void {
+  console.log(
+    `[config] ${config.nodeEnv} — database ${config.database.source} over ${config.database.driver} ` +
+      `(${config.database.connectionString.replace(/:([^@/]+)@/, ":<hidden>@")}), ` +
+      `object storage via ${storageCredentialMode()}, ` +
+      `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
+      `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}`
+  );
+}

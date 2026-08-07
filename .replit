@@ -36,9 +36,11 @@ args = "npm run dev"
 waitForPort = 5000
 
 [agent]
-# Object storage and Resend are no longer Replit integrations: both now use
-# direct credentials from the environment (see .env.example, docs/CONFIGURATION.md).
-integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.0", "javascript_openai:1.0.0"]
+# Object storage, Resend, the database, and OpenAI are no longer Replit
+# integrations: every one now reads direct credentials from the environment
+# (see .env.example, docs/CONFIGURATION.md). Only the OIDC login remains, and
+# it leaves in Phase 5.
+integrations = ["javascript_log_in_with_replit:1.0.0"]
 
 [[ports]]
 localPort = 5000

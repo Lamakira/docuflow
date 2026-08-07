@@ -13,10 +13,10 @@ import {
 /**
  * Storage client for the configured Google service account. An inline key
  * (`GCS_SERVICE_ACCOUNT_KEY`) is used when one is set; otherwise the client
- * resolves Application Default Credentials, which covers both a key file named
- * by `GOOGLE_APPLICATION_CREDENTIALS` and workload identity on a Google host.
- * Either way the identity must be a service account: signing URLs needs a key
- * that can sign.
+ * reads the key file named by `GOOGLE_APPLICATION_CREDENTIALS`. Boot requires
+ * one or the other, so the client is never left to discover at the first
+ * signature that it has no identity — and either way that identity is a service
+ * account, because signing a URL needs a key that can sign.
  */
 export const objectStorageClient = new Storage({
   ...(config.objectStorage.projectId ? { projectId: config.objectStorage.projectId } : {}),
@@ -223,12 +223,14 @@ export function parseObjectPath(path: string): {
   };
 }
 
-/** The storage action each HTTP method a caller signs for needs to be granted. */
+/**
+ * The storage action each HTTP method a caller signs for needs to be granted.
+ * Only the two methods callers actually sign for: a V4 signature binds the
+ * method, so an entry no caller uses is a promise nothing has ever verified.
+ */
 const SIGNING_ACTIONS = {
   GET: "read",
-  HEAD: "read",
   PUT: "write",
-  DELETE: "delete",
 } as const;
 
 /**

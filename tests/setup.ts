@@ -20,10 +20,13 @@ process.env.SESSION_SECRET = "test-session-secret";
 process.env.JWT_SECRET = "test-jwt-secret";
 process.env.OPENAI_API_KEY = "test-openai-key"; // consumed by the aliased fake, never sent anywhere
 // Object-storage layout the fake GCS bucket mirrors. Without these, config
-// refuses to boot. No GCS credentials: the SDK is aliased away, so a suite that
-// somehow reached the real client would fail rather than authenticate.
+// refuses to boot, and it likewise refuses to boot without a credential — so one
+// is named, but no credential material is put in the harness: the path does not
+// exist and the SDK is aliased away, so a suite that somehow reached the real
+// client would fail rather than authenticate.
 process.env.PRIVATE_OBJECT_DIR = "/test-bucket/.private";
 process.env.PUBLIC_OBJECT_SEARCH_PATHS = "/test-bucket/public";
+process.env.GOOGLE_APPLICATION_CREDENTIALS = "/nonexistent/test-service-account.json";
 delete process.env.GCS_SERVICE_ACCOUNT_KEY;
 // Email credentials, consumed by the aliased fake and never sent anywhere. The
 // from address is fixed here because it is what the suites see in the outbox.

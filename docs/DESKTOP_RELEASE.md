@@ -6,9 +6,11 @@ Stockés dans Google Cloud Storage (GCS), bucket nommé par `INSTALLER_GCS_BUCKE
 
 > ⚠️ **Important** : l'accès au bucket passe par un **service account Google** — clé dans `GCS_SERVICE_ACCOUNT_KEY`, ou Application Default Credentials (voir [CONFIGURATION.md](CONFIGURATION.md)). Les scripts de release, le serveur et GitHub Actions utilisent tous ce même mécanisme ; il n'y a plus de sidecar Replit ni de dépendance à l'environnement Replit.
 
+> Les commandes de ce guide lisent `$INSTALLER_GCS_BUCKET` (le bucket) et `$DOCUFLOW_API_URL` (le déploiement où la release est enregistrée). Aucun des deux n'a de valeur par défaut et aucun n'est écrit en dur ici : ce dépôt ne contient pas d'identifiant de production (ADR-0018).
+
 ## Versions publiées
 
-v0.1.7 — dernière version enregistrée en DB, les 3 plateformes pointent vers l'Object Storage Replit :
+v0.1.7 — dernière version enregistrée en DB, les 3 plateformes pointent vers l'Object Storage :
 
 | Plateforme | Fichier | Taille |
 |------------|---------|--------|
@@ -16,7 +18,7 @@ v0.1.7 — dernière version enregistrée en DB, les 3 plateformes pointent vers
 | macOS | `DocuFlow-Agent-0.1.7-macos.dmg` | ~94 MB |
 | Linux | `DocuFlow-Agent-0.1.7-linux-amd64.deb` | ~74 MB |
 
-**v0.1.8 — publiée le 2026-06-19** (les 3 plateformes pointent vers l'Object Storage Replit) :
+**v0.1.8 — publiée le 2026-06-19** (les 3 plateformes pointent vers l'Object Storage) :
 
 | Plateforme | Fichier | Taille | SHA256 |
 |------------|---------|--------|--------|
@@ -74,14 +76,14 @@ Changements inclus dans v0.1.10 :
 ## Enregistrement metadata-only en DB (mode Object Storage)
 
 ```bash
-curl -X POST https://docs.appvibed.com/api/internal/desktop-releases \
+curl -X POST "$DOCUFLOW_API_URL/api/internal/desktop-releases" \
   -H "Authorization: Bearer $DESKTOP_RELEASE_CI_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "platform": "linux",
     "version": "0.1.8",
     "filename": "DocuFlow-Agent-0.1.8-linux-amd64.deb",
-    "storageUrl": "https://storage.googleapis.com/replit-objstore-64708bc7-367f-45c8-9004-db72f81cbeba/public/installers/DocuFlow-Agent-0.1.8-linux-amd64.deb",
+    "storageUrl": "https://storage.googleapis.com/$INSTALLER_GCS_BUCKET/public/installers/DocuFlow-Agent-0.1.8-linux-amd64.deb",
     "sha256": "...",
     "fileSize": 0
   }'
@@ -105,7 +107,7 @@ C'est la méthode qui a réellement servi pour v0.1.7. Elle demande le service a
    ```
 4. **Enregistrer en DB** chaque plateforme via le `curl` metadata-only ci-dessus (avec l'URL HTTPS `storage.googleapis.com/...` et le SHA256 affiché par le script).
 
-> Alternative tout-en-un (mode fichier local) : `node scripts/upload-installer.mjs <platform> <fichier> https://docs.appvibed.com` fait l'upload chunké **et** l'enregistrement DB en une commande — mais le fichier ne survit pas à un redéploiement (préférer l'Object Storage pour une release durable).
+> Alternative tout-en-un (mode fichier local) : `node scripts/upload-installer.mjs <platform> <fichier> "$DOCUFLOW_API_URL"` fait l'upload chunké **et** l'enregistrement DB en une commande — mais le fichier ne survit pas à un redéploiement (préférer l'Object Storage pour une release durable).
 
 > Dev et prod partagent la même DB Neon, donc l'enregistrement est visible des deux côtés. En mode Object Storage, le fichier est durable et téléchargeable depuis prod immédiatement.
 
