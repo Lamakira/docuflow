@@ -22,6 +22,20 @@
       "when": 1783082069257,
       "tag": "0002_slimy_whirlwind",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786113821081,
+      "tag": "0003_vector_embeddings",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786117811723,
+      "tag": "0004_time_entries_task_id_index",
+      "breakpoints": true
     }
   ]
 }

@@ -157,8 +157,13 @@ async function createTranscriptEmbeddings(
   const title = `Video Transcript (${videoProvider})`;
   const chunks = chunkText(transcript, title);
   
+  // Two columns only — the staleness check reads nothing else, and the row
+  // carries a 1536-dimension vector.
   const existingEmbeddings = await db
-    .select()
+    .select({
+      chunkIndex: documentEmbeddings.chunkIndex,
+      contentHash: documentEmbeddings.contentHash,
+    })
     .from(documentEmbeddings)
     .where(
       and(

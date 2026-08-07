@@ -14,11 +14,12 @@
  * under: no production credential, URL, or dataset ever lands here.
  */
 
+import { PG_VARS, resolveDatabaseUrl, type DatabaseUrlSource } from "../shared/databaseUrl";
 import { parseSigningKey, type SigningKey } from "./signingKeys";
 
 export type { SigningKey };
 
-export type DatabaseSource = "DATABASE_URL" | "PG_VARS";
+export type DatabaseSource = DatabaseUrlSource;
 export type DatabaseDriver = "neon" | "pg";
 
 export interface DatabaseConfig {
@@ -122,29 +123,19 @@ function resolveDatabase(): Resolved<DatabaseConfig> {
   // stays on the Neon serverless driver.
   const driver: DatabaseDriver = read("DB_DRIVER") === "pg" ? "pg" : "neon";
 
-  const url = read("DATABASE_URL");
+  // `read` rather than `process.env`: a whitespace-only variable is unset here.
+  const { url, source, missing } = resolveDatabaseUrl(read);
   if (url) {
-    return { value: { connectionString: url, source: "DATABASE_URL", driver }, missing: [] };
+    return { value: { connectionString: url, source, driver }, missing: [] };
   }
 
-  const absent = (["PGHOST", "PGUSER", "PGPASSWORD", "PGDATABASE"] as const).filter(
-    (name) => !read(name)
-  );
-  if (absent.length > 0) {
-    return {
-      value: { connectionString: "", source: "PG_VARS", driver },
-      missing: [
-        `DATABASE_URL — or every PG* variable instead (PGHOST, PGPORT, PGUSER, ` +
-          `PGPASSWORD, PGDATABASE); currently missing: ${absent.join(", ")}`,
-      ],
-    };
-  }
-
-  const password = encodeURIComponent(read("PGPASSWORD")!);
-  const port = read("PGPORT") ?? "5432";
-  const connectionString =
-    `postgresql://${read("PGUSER")}:${password}@${read("PGHOST")}:${port}/${read("PGDATABASE")}`;
-  return { value: { connectionString, source: "PG_VARS", driver }, missing: [] };
+  return {
+    value: { connectionString: "", source, driver },
+    missing: [
+      `DATABASE_URL — or every PG* variable instead (${PG_VARS.join(", ")}); ` +
+        `currently missing: ${missing.join(", ")}`,
+    ],
+  };
 }
 
 /**

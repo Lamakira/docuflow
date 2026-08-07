@@ -12,9 +12,14 @@
     "test:watch": "vitest",
     "test:db:up": "docker compose -f docker-compose.test.yml up -d --wait",
     "test:db:down": "docker compose -f docker-compose.test.yml down",
-    "db:push": "drizzle-kit push",
-    "db:env:check": "node scripts/db-env-check.js",
-    "db:print:url:masked": "node scripts/db-print-url-masked.js",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx --env-file-if-exists=.env scripts/migrate.ts",
+    "db:migrate:status": "tsx --env-file-if-exists=.env scripts/migrate.ts --status",
+    "db:verify": "tsx --env-file-if-exists=.env scripts/verify-schema.ts",
+    "db:seed": "tsx --env-file-if-exists=.env scripts/seed-defaults.ts",
+    "db:backfill:crm-links": "tsx --env-file-if-exists=.env scripts/backfill-crm-links.ts",
+    "db:env:check": "tsx --env-file-if-exists=.env scripts/db-env-check.ts",
+    "db:print:url:masked": "tsx --env-file-if-exists=.env scripts/db-print-url-masked.ts",
     "publish:windows": "node scripts/publish-windows.js"
   },
   "dependencies": {

@@ -41,7 +41,3 @@ export async function detectMigrationFlags(): Promise<void> {
 export function isTasksEnabled(): boolean {
   return flags.tasksEnabled;
 }
-
-export function setTasksEnabled(value: boolean): void {
-  flags.tasksEnabled = value;
-}

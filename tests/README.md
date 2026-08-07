@@ -20,9 +20,9 @@ npm run test:db:down # stop the database
   (`DATABASE_URL`, `DB_DRIVER=pg`, test secrets, object-storage layout). `server/config.ts`
   resolves all of it at import and refuses to boot when a required variable is missing,
   so server code is only ever imported dynamically, never at a module's top level.
-- `tests/global-setup.ts` pushes the schema from `shared/schema.ts` into the
-  test database once per run (`drizzle-kit push`), pending migration-journal
-  consolidation (#24), then applies the vector DDL described below.
+- `tests/global-setup.ts` builds the test database once per run by applying the
+  migration journal through `scripts/migrate.ts` — the same runner a deploy uses
+  (#24), rather than a second path to a schema that could drift from it.
 - `tests/helpers/app.ts` boots the real app assembly (`server/app.ts`) —
   the exact middleware chain production uses, minus Vite/static and listen.
 - `tests/helpers/db.ts` truncates all tables between tests.
@@ -33,12 +33,9 @@ npm run test:db:down # stop the database
 
 `document_embeddings.embedding` and `company_document_embeddings.embedding` are
 `vector(1536)` columns that `server/embeddings.ts` writes and orders by through
-raw SQL — but no Drizzle column and no committed migration creates them; they
-were applied out of band. A bare schema push therefore produces a database in
-which every embedding write fails silently, which would make the retrieval
-suites freeze a local accident instead of the real contract. `tests/global-setup.ts`
-recreates the extension and both columns after the push. Fold this into the
-migration journal in #24 and the workaround can go.
+raw SQL. Migration `0003_vector_embeddings` creates the extension and both
+columns, so the image has to be one that carries pgvector — a plain `postgres`
+image fails on `CREATE EXTENSION vector` and the run stops at global setup.
 
 ## Provider fakes (ADR-0018)
 
@@ -108,6 +105,22 @@ to, including the boot failures the rest of the harness can never reach.
 `server/desktopTokens.ts` under one set of signing keys and presents its tokens
 to the next load — a restart, and a key rotation — without going near the
 database.
+`migrations`, `boot-ddl-parity`, and `db-scripts`
+([#24](https://github.com/Lamakira/docuflow/issues/24)) cover what boot used to
+do and no longer does. `migrations` diffs a database built from the journal
+against one built from `shared/schema.ts`, and pins the runner's ledger, its
+refusal to run a migration whose file changed after it shipped, and the promise
+that `--status` and `--dry-run` create nothing — not even the ledger.
+`boot-ddl-parity` keeps the deleted boot DDL verbatim and checks the journal
+still produces exactly what it produced; migration `0004` exists because it did
+not. `db-scripts` freezes the rows `npm run db:seed` and
+`npm run db:backfill:crm-links` write, which are the rows `server/index.ts` used
+to write on every start.
+
+None of the three can see DDL applied to a database from outside this repository
+— both sides of every comparison here are built from the repository. That is
+`npm run db:verify`, which diffs the journal against a live database; see
+`migrations/README.md`.
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`

@@ -42,11 +42,12 @@ PGDATABASE=docuflow_dev
 
 | Fichier | Rôle |
 |---|---|
-| `server/config.ts` | **Source unique** — résout la connection string au démarrage avec le reste de la configuration, loggue la source (sans le mot de passe). Voir [CONFIGURATION.md](CONFIGURATION.md) |
+| `shared/databaseUrl.ts` | **Source unique** — la règle elle-même : `DATABASE_URL`, sinon les `PG*` assemblés. Tout le reste l'importe |
+| `server/config.ts` | Résout la connection string au démarrage avec le reste de la configuration, loggue la source (sans le mot de passe). Voir [CONFIGURATION.md](CONFIGURATION.md) |
 | `server/db.ts` | Utilise `config.database` — plus de lecture directe de `DATABASE_URL` ni de `DB_DRIVER` |
 | `server/auth.ts` | Session store (`connect-pg-simple`) — utilise `config.database.connectionString` |
-| `drizzle.config.ts` | drizzle-kit CLI — contient la même logique inline (le CLI ne peut pas importer un module serveur TS) |
-| `scripts/resolve-db-url.js` | Utilitaire Node.js — imprime la connection string résolue sur stdout, pour scripts shell |
+| `drizzle.config.ts` | drizzle-kit CLI — importe `shared/databaseUrl.ts` |
+| `scripts/lib/db.ts` | Connexion des scripts opérationnels (`db:migrate`, `db:seed`, `db:backfill:crm-links`, `db:verify`) — node-postgres, sans passer par `server/config.ts` |
 
 ---
 
@@ -76,17 +77,19 @@ Exemple de sortie en mode PG* :
 
 ---
 
-## Migrations / drizzle-kit
+## Migrations
 
-`npm run db:push` utilise `drizzle.config.ts` qui embarque la même logique de résolution. Aucune variable supplémentaire nécessaire.
+`npm run db:migrate` applique le journal de `migrations/` et embarque la même logique de résolution — aucune variable supplémentaire nécessaire. Le serveur ne crée plus rien au démarrage (#24) : une base à jour est une précondition du déploiement, pas un effet de bord du boot.
 
 ```bash
 # Fonctionne avec DATABASE_URL défini
-npm run db:push
+npm run db:migrate
 
 # Fonctionne aussi avec PG* définis (sans DATABASE_URL)
-PGHOST=localhost PGUSER=me PGPASSWORD=x PGDATABASE=mydb npm run db:push
+PGHOST=localhost PGUSER=me PGPASSWORD=x PGDATABASE=mydb npm run db:migrate
 ```
+
+`migrations/README.md` détaille l'ordre du journal, les scripts de seed et de backfill, et la procédure `--baseline` pour une base antérieure au journal.
 
 ---
 
@@ -108,7 +111,7 @@ PGHOST=localhost PGUSER=me PGPASSWORD=x PGDATABASE=mydb npm run db:push
 - [ ] `npm run db:env:check` retourne ✅ en mode PG*
 - [ ] Le serveur démarre et loggue `[config] ... database PG_VARS ...`
 - [ ] La session utilisateur fonctionne (login / logout)
-- [ ] `npm run db:push` fonctionne en mode PG* sur un environnement de staging
+- [ ] `npm run db:migrate` fonctionne en mode PG* sur un environnement de staging
 - [ ] Aucun log ne contient le mot de passe (`grep -i password` dans les logs)
 - [ ] Le desktop agent n'est pas impacté (il parle HTTP à l'API — pas de DB directe)
 
