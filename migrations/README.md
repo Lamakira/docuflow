@@ -18,19 +18,27 @@ journal is not part of it and is never applied.
 | 0001 | `0001_dashing_rick_jones.sql` | `project_daily_updates`: next steps, blockage type, waiting-on-client. |
 | 0002 | `0002_slimy_whirlwind.sql` | `users.can_view_daily_updates`. |
 | 0003 | `0003_vector_embeddings.sql` | The `vector` extension and the two `embedding vector(1536)` columns the retrieval paths write. |
+| 0004 | `0004_time_entries_task_id_index.sql` | `idx_time_entries_task_id` — created by boot on every start, by no migration until now. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
 every server boot; `drizzle-kit generate` produced `0000` from
-`shared/schema.ts` after all of it had been applied. `0003` folds in the last
-piece that had never been written down anywhere: the pgvector columns
-`server/embeddings.ts` has always required, applied to production out of band
-and absent from both `shared/schema.ts` and every migration until #24.
+`shared/schema.ts` after all of it had been applied.
 
-`legacy/` holds the superseded hand-numbered files (`002_s2_tasks.sql` through
-`011_help_center_screenshots.sql`). They are kept as the audit trail of what was
-applied to production before the journal existed. Every one of their effects is
-already inside `0000` — running any of them is never correct.
+`0003` and `0004` are the two pieces that squash missed, both for the same
+reason: `drizzle-kit generate` writes down what `shared/schema.ts` declares, and
+neither had ever been declared there. `0003` is the pgvector columns
+`server/embeddings.ts` has always required, applied to production out of band.
+`0004` is an index the boot-time DDL created that no migration did — found by
+`tests/smoke/boot-ddl-parity.test.ts`, which is now what keeps the journal and
+the deleted boot DDL comparable.
+
+`legacy/` holds the superseded hand-numbered files, `002_s2_tasks.sql` through
+`011_help_center_screenshots.sql`, along with the one down migration that was
+ever written, `002_s2_tasks.down.sql`. They are kept as the audit trail of what
+was applied to production before the journal existed. Every one of their effects
+is already inside `0000` — running any of them is never correct, and the down
+file is not a rollback path (see *Adding a migration* below).
 
 ## Commands
 
@@ -38,6 +46,7 @@ already inside `0000` — running any of them is never correct.
 npm run db:migrate                   # apply everything pending
 npm run db:migrate:status            # list applied and pending, change nothing
 npm run db:migrate -- --dry-run      # print what would run, change nothing
+npm run db:verify                    # does a real database match the journal?
 npm run db:generate                  # write a new migration from shared/schema.ts
 ```
 
@@ -47,8 +56,36 @@ migration whose file changes after it has been applied stops the next run: the
 database can no longer be made to match the file, so the fix is a new migration,
 never an edit to a shipped one.
 
+`--status` and `--dry-run` change nothing at all, and that includes the ledger:
+against a database with no `schema_migrations` they report everything as pending
+rather than creating the table to discover it is empty. Either is safe to point
+at a database you are only asking about.
+
 The runner is a command, never a server import. ADR-0016 runs it as a gated
 pre-deploy step; nothing about it belongs on the request path or on boot.
+
+## Auditing a real database
+
+```bash
+npm run db:verify                              # the database you are configured for
+npm run db:verify -- --against "$PROD_URL"     # another one
+```
+
+The journal is only the whole truth if nothing else ever wrote DDL. Twice now
+something did — the pgvector columns in `0003` and the index in `0004` both
+reached a database without passing through a migration, and both went unnoticed
+because everything anyone compared was built from this repository.
+`tests/smoke/migrations.test.ts` cannot catch that: it diffs the journal against
+`shared/schema.ts`, and a column that exists only in production is in neither.
+
+`npm run db:verify` closes that gap. It builds a throwaway database from the
+journal on the **reference** server — your local one unless `--reference` says
+otherwise — introspects both, and reports every column, index, and constraint the
+two disagree about. `EXTRA` is DDL applied out of band; `MISSING` is a migration
+never applied. It exits 1 on either, so it can gate a deploy (ADR-0016).
+
+The audited database is only ever read. Nothing is created, dropped, or written
+there, which is what makes `--against "$PROD_URL"` a safe thing to run.
 
 ## A new database
 
@@ -74,13 +111,14 @@ npm run db:migrate -- --baseline 0002_slimy_whirlwind
 ```
 
 That writes `0000`–`0002` into `schema_migrations` without running them, then
-applies `0003` — which is written with `IF NOT EXISTS` throughout precisely
-because the columns it adds are already there. Every deploy after that is an
-ordinary `npm run db:migrate`.
+applies `0003` and `0004` — both written with `IF NOT EXISTS` precisely because
+what they add is already there. Every deploy after that is an ordinary
+`npm run db:migrate`.
 
 Check the schema really does contain everything through the version being
-baselined before running it. `npm run db:migrate:status` afterwards should show
-every migration applied.
+baselined before running it: `npm run db:verify -- --against "$URL"` is that
+check, and it reports anything the database has that the journal does not.
+`npm run db:migrate:status` afterwards should show every migration applied.
 
 ## Adding a migration
 
@@ -89,7 +127,8 @@ every migration applied.
    entry.
 3. Read the generated SQL. Drizzle does not know about extensions, and it
    generates a drop for anything it cannot see; both are why `0003` is
-   hand-edited.
+   hand-edited. Add `IF NOT EXISTS` where an environment may already have what
+   the migration adds — `0003` and `0004` are the worked examples.
 4. `npm run db:migrate` against a local database, then `npm test`.
 
 Two rules, from ADR-0017:
@@ -103,6 +142,14 @@ Two rules, from ADR-0017:
   never a down migration, so no migration may make the previous image unable to
   run.
 
-`tests/smoke/migrations.test.ts` builds a database from this journal and another
-from `shared/schema.ts` and diffs them, so a migration someone forgot to
-generate fails in CI rather than in production.
+Three things check this journal, and they check different things:
+
+- `tests/smoke/migrations.test.ts` builds a database from the journal and another
+  from `shared/schema.ts` and diffs them, so a migration someone forgot to
+  generate fails in CI rather than in production.
+- `tests/smoke/boot-ddl-parity.test.ts` holds the DDL `server/index.ts` ran on
+  every boot before #24 deleted it, and checks the journal still produces the
+  same tables, columns, constraints, and indexes that DDL did. `0004` exists
+  because it did not.
+- `npm run db:verify` compares the journal to a database that really exists,
+  which is the only one of the three that can see DDL applied out of band.

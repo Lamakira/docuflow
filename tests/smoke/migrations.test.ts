@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describeSchema } from "../../scripts/lib/schemaSnapshot";
 import { loadMigrations, migrate } from "../../scripts/migrate";
 import { resolveTestDatabaseUrl } from "../test-db-url";
 
@@ -17,6 +18,12 @@ import { resolveTestDatabaseUrl } from "../test-db-url";
  *
  * So: build one database from the journal, build another with `drizzle-kit
  * push` — the schema file, applied directly — and diff the two.
+ *
+ * What this cannot catch, by construction: DDL that reached a real database
+ * without passing through this repository. Both sides here are built from the
+ * repository, so a column that exists only in production is in neither. That is
+ * `npm run db:verify` (`scripts/verify-schema.ts`), which diffs the journal
+ * against a live database instead.
  */
 
 const TEST_DB_URL = resolveTestDatabaseUrl();
@@ -40,58 +47,9 @@ async function withClient<T>(url: string, use: (client: Client) => Promise<T>): 
   }
 }
 
-/**
- * Columns with their real types — `format_type` renders the type modifier, so
- * `varchar(255)` and `vector(1536)` compare as themselves rather than collapsing
- * into `character varying` and `USER-DEFINED` the way `information_schema` does.
- *
- * Sorted by name, not by position: a column appended by `ALTER TABLE` lands last
- * while the same column in a `CREATE TABLE` sits wherever the schema file
- * declares it, and that difference means nothing.
- */
-const COLUMNS_SQL = `
-  SELECT c.relname AS table_name,
-         a.attname AS column_name,
-         format_type(a.atttypid, a.atttypmod) AS type,
-         a.attnotnull AS not_null,
-         pg_get_expr(d.adbin, d.adrelid) AS default_expr
-  FROM pg_attribute a
-  JOIN pg_class c ON c.oid = a.attrelid
-  JOIN pg_namespace n ON n.oid = c.relnamespace
-  LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
-  WHERE n.nspname = 'public'
-    AND c.relkind = 'r'
-    AND a.attnum > 0
-    AND NOT a.attisdropped
-    AND c.relname <> 'schema_migrations'
-  ORDER BY c.relname, a.attname
-`;
-
-const INDEXES_SQL = `
-  SELECT tablename, indexname, indexdef
-  FROM pg_indexes
-  WHERE schemaname = 'public' AND tablename <> 'schema_migrations'
-  ORDER BY tablename, indexname
-`;
-
-/** Primary keys, foreign keys, uniques, and checks, as Postgres renders them. */
-const CONSTRAINTS_SQL = `
-  SELECT c.conrelid::regclass::text AS table_name,
-         c.conname,
-         pg_get_constraintdef(c.oid) AS definition
-  FROM pg_constraint c
-  JOIN pg_namespace n ON n.oid = c.connamespace
-  WHERE n.nspname = 'public'
-    AND c.conrelid::regclass::text <> 'schema_migrations'
-  ORDER BY 1, 2
-`;
-
-async function describeSchema(url: string) {
-  return withClient(url, async (client) => ({
-    columns: (await client.query(COLUMNS_SQL)).rows,
-    indexes: (await client.query(INDEXES_SQL)).rows,
-    constraints: (await client.query(CONSTRAINTS_SQL)).rows,
-  }));
+/** The same introspection `npm run db:verify` runs, so the two cannot disagree. */
+async function describeDatabase(url: string) {
+  return withClient(url, describeSchema);
 }
 
 describe("migration journal", () => {
@@ -124,8 +82,8 @@ describe("migration journal", () => {
   it("builds the same schema shared/schema.ts declares", async () => {
     // The journal database is the one the whole suite runs against, built by
     // tests/global-setup.ts through the same runner a deploy uses.
-    const fromJournal = await describeSchema(TEST_DB_URL);
-    const fromSchemaFile = await describeSchema(urlForDatabase(SCRATCH_DB));
+    const fromJournal = await describeDatabase(TEST_DB_URL);
+    const fromSchemaFile = await describeDatabase(urlForDatabase(SCRATCH_DB));
 
     expect(fromJournal.columns).toEqual(fromSchemaFile.columns);
     expect(fromJournal.indexes).toEqual(fromSchemaFile.indexes);
@@ -152,12 +110,13 @@ describe("migration journal", () => {
   it("baselines a database that predates the journal", async () => {
     // The production cutover: a schema built by `drizzle-kit push`, with no
     // migration record at all. Baselining through 0002 records the history it
-    // already has without running it, and leaves 0003 to apply normally.
+    // already has without running it, and leaves everything after it to apply
+    // normally — as no-ops here, since `push` already built what they add.
     const scratch = urlForDatabase(SCRATCH_DB);
 
     const ran = await migrate(scratch, { baselineThrough: "0002_slimy_whirlwind" });
 
-    expect(ran).toEqual(["0003_vector_embeddings"]);
+    expect(ran).toEqual(["0003_vector_embeddings", "0004_time_entries_task_id_index"]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
         `SELECT version, baselined FROM schema_migrations ORDER BY version`
@@ -168,8 +127,47 @@ describe("migration journal", () => {
       { version: "0001_dashing_rick_jones", baselined: true },
       { version: "0002_slimy_whirlwind", baselined: true },
       { version: "0003_vector_embeddings", baselined: false },
+      { version: "0004_time_entries_task_id_index", baselined: false },
     ]);
   });
+
+  it("creates nothing under --status or --dry-run", async () => {
+    // Both modes promise to change nothing, and the ledger table is part of
+    // "nothing": pointed at a database you are only asking about, neither may
+    // leave a `schema_migrations` behind. An empty database is where that shows.
+    const probe = "docuflow_readonly_probe";
+    await withClient(urlForDatabase("postgres"), async (client) => {
+      await client.query(`DROP DATABASE IF EXISTS ${probe}`);
+      await client.query(`CREATE DATABASE ${probe}`);
+    });
+    const probeUrl = urlForDatabase(probe);
+
+    try {
+      const reported: string[] = [];
+      const say = (message: string) => reported.push(message);
+
+      await migrate(probeUrl, { status: true }, say);
+      await migrate(probeUrl, { dryRun: true }, say);
+      await migrate(probeUrl, { baselineThrough: "0002_slimy_whirlwind", dryRun: true }, say);
+
+      // It still describes the database correctly: everything is pending, and
+      // the baseline is reported as something a real run would do.
+      expect(reported).toContain("pending  0000_fair_amazoness");
+      expect(reported).toContain("would baseline 0000_fair_amazoness (record, not run)");
+      expect(reported).toContain("would apply 0003_vector_embeddings (3 statements)");
+
+      const ledger = await withClient(probeUrl, (client) =>
+        client.query<{ present: boolean }>(
+          `SELECT to_regclass('public.schema_migrations') IS NOT NULL AS present`
+        )
+      );
+      expect(ledger.rows[0].present).toBe(false);
+    } finally {
+      await withClient(urlForDatabase("postgres"), (client) =>
+        client.query(`DROP DATABASE IF EXISTS ${probe}`)
+      );
+    }
+  }, 30_000);
 
   it("refuses to run when an applied migration's file has changed", async () => {
     const [first] = loadMigrations();

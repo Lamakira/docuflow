@@ -1,0 +1,15 @@
+-- The index on `time_entries.task_id`, which `ensureTasksMigration()` created on
+-- every server boot and no migration ever did. Squashing that boot DDL into
+-- `0000` (#24) carried the table and the column across but not this index: it
+-- was never declared in `shared/schema.ts`, so `drizzle-kit generate` had no way
+-- to know about it, and a database built from the journal alone was quietly one
+-- index short of what every running server actually had.
+--
+-- `IF NOT EXISTS`, hand-edited onto what drizzle generated, for the same reason
+-- as `0003`: production has carried this index since the first boot that created
+-- it, under this exact name, so there the migration is a no-op rather than a
+-- duplicate-relation error.
+--
+-- `tests/smoke/boot-ddl-parity.test.ts` is what found this, and is what keeps
+-- the journal and the old boot DDL comparable from here on.
+CREATE INDEX IF NOT EXISTS "idx_time_entries_task_id" ON "time_entries" USING btree ("task_id");

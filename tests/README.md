@@ -105,13 +105,22 @@ to, including the boot failures the rest of the harness can never reach.
 `server/desktopTokens.ts` under one set of signing keys and presents its tokens
 to the next load — a restart, and a key rotation — without going near the
 database.
-`migrations` and `db-scripts` ([#24](https://github.com/Lamakira/docuflow/issues/24))
-cover what boot used to do and no longer does: `migrations` diffs a database
-built from the journal against one built from `shared/schema.ts`, and pins the
-runner's ledger and its refusal to run a migration whose file changed after it
-shipped; `db-scripts` freezes the rows `npm run db:seed` and
+`migrations`, `boot-ddl-parity`, and `db-scripts`
+([#24](https://github.com/Lamakira/docuflow/issues/24)) cover what boot used to
+do and no longer does. `migrations` diffs a database built from the journal
+against one built from `shared/schema.ts`, and pins the runner's ledger, its
+refusal to run a migration whose file changed after it shipped, and the promise
+that `--status` and `--dry-run` create nothing — not even the ledger.
+`boot-ddl-parity` keeps the deleted boot DDL verbatim and checks the journal
+still produces exactly what it produced; migration `0004` exists because it did
+not. `db-scripts` freezes the rows `npm run db:seed` and
 `npm run db:backfill:crm-links` write, which are the rows `server/index.ts` used
 to write on every start.
+
+None of the three can see DDL applied to a database from outside this repository
+— both sides of every comparison here are built from the repository. That is
+`npm run db:verify`, which diffs the journal against a live database; see
+`migrations/README.md`.
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`

@@ -1138,6 +1138,9 @@ export const timeEntries = pgTable("time_entries", {
   index("idx_time_entries_crm_project").on(table.crmProjectId),
   index("idx_time_entries_status").on(table.status),
   index("idx_time_entries_start").on(table.startTime),
+  // Named as the boot-time DDL named it, which is the name production already
+  // carries. Declared here so the journal produces it too — see migration 0004.
+  index("idx_time_entries_task_id").on(table.taskId),
 ]);
 
 export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({

@@ -29,6 +29,13 @@
       "when": 1786113821081,
       "tag": "0003_vector_embeddings",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786117811723,
+      "tag": "0004_time_entries_task_id_index",
+      "breakpoints": true
     }
   ]
 }
