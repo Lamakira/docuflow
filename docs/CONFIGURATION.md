@@ -24,6 +24,7 @@ make a production secret acceptable to put there.
 | Context | Mechanism |
 | --- | --- |
 | `npm run dev`, `npm start` | Node loads `.env` if it exists (`--env-file-if-exists=.env`) |
+| The container | `docker run -e` or `--env-file`; the image carries no configuration of its own ([docs/CONTAINER.md](CONTAINER.md)) |
 | Deployments | The platform's own environment configuration |
 | Tests | `tests/setup.ts` assigns fixed values before any server module loads; a developer's exported secrets never reach the harness |
 
