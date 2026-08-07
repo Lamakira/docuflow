@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAgent } from '../../app/stores/AgentContext';
 import type { BreakdownRow } from '../../app/types';
+import { ActivityChart } from '../components/ActivityChart';
 import { Panel, PanelHead, PanelBody, PanelRow } from '../components/Panel';
 import { Stage, StageHead } from '../components/Stage';
 import { useUi } from '../ui/UiContext';
@@ -54,9 +55,15 @@ export function ActivityScreen() {
   const [past, setPast] = useState<DayTotal[]>([]);
   const [captures, setCaptures] = useState(0);
   const [selectedDay, setSelectedDay] = useState<string>('today');
+  // Bumped when the numbers behind the chart can have moved: a manual refresh,
+  // or an entry that just closed. The live bar tracks WORKED TODAY without it.
+  const [chartKey, setChartKey] = useState(0);
 
-  // 70px of reserve = the header row plus the "N more entries" footer.
-  const [tableRef, maxRows] = useFitCount<HTMLDivElement>(ROW_H, { min: 2, max: 12, reserve: 70 });
+  // 70px of reserve = the header row plus the "N more entries" footer. The floor
+  // is one row, not two: with the chart above it the minimum window has room for
+  // about one and a half, and a forced second row is drawn cut in half. One whole
+  // row and a footer that counts the rest is the honest version of the same space.
+  const [tableRef, maxRows] = useFitCount<HTMLDivElement>(ROW_H, { min: 1, max: 12, reserve: 70 });
 
   const load = useCallback(async () => {
     setError(null);
@@ -80,7 +87,10 @@ export function ActivityScreen() {
 
   // A stopped timer means an entry just closed — show it without waiting a minute.
   useEffect(() => {
-    if (timer?.status === 'stopped') void load();
+    if (timer?.status === 'stopped') {
+      void load();
+      setChartKey((k) => k + 1);
+    }
   }, [timer?.status]);
 
   useEffect(() => {
@@ -109,6 +119,7 @@ export function ActivityScreen() {
   async function refresh() {
     if (refreshing) return;
     setRefreshing(true);
+    setChartKey((k) => k + 1);
     await Promise.all([load(), new Promise((r) => setTimeout(r, SPINNER_MS))]);
     setRefreshing(false);
     showToast('Activity up to date');
@@ -174,6 +185,8 @@ export function ActivityScreen() {
                 {refreshing ? 'Refreshing…' : 'Refresh'}
               </button>
             </StageHead>
+
+            <ActivityChart workedToday={workedToday} refreshKey={chartKey} />
 
             <div className="v2-statgrid">
               <div className="v2-card v2-stat">

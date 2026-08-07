@@ -109,6 +109,26 @@ grid pages. Splitting them across a context would mean fetching twice.
 - **Past days show a total only.** The agent exposes per-entry detail for today
   and totals for any period. The stage says where the rest lives rather than
   implying a past day was empty.
+- **The activity chart is measured, and the handoff's chart is not.** The design
+  derives all three ranges from today's total by spreading it backwards over the
+  hours, because the prototype had no history to ask for. `getWorkedPeriod` does
+  have it, so `ActivityChart.tsx` queries cumulative windows sharing the range's
+  start and differences them. The rule that falls out is *time counts in the
+  bucket its entry started in* — a session from 09:10 to 11:30 stands whole in
+  the 09 bar — which is coarse but true, where a spread would draw work into
+  hours nobody worked. The bars always sum to the range total, and any range
+  containing today sums to WORKED TODAY: the running timer contributes whatever
+  the stat card knows that the server's stopped total does not.
+- **The bar the timer is in is amber; every other bar is green.** Tracked hours
+  are a logged result and green is the brand's result; the bucket still filling
+  is a state, which is amber's job. It is also the only bar that moves, so the
+  colour marks the one thing on the card that is not yet final. Hover names it —
+  the distinction is never colour alone.
+- **The day view's window is fixed at 08:00–20:00**, not sliding with the clock.
+  A window ending at the current hour opens at 01:00 at noon and spends half the
+  plot on hours nobody works. Nothing is dropped: the first bucket's query
+  starts at midnight and the last one's ends at the next, so early starts and
+  late nights fold into the end bars, which say so on hover.
 - **The rail is Case Ink.** Marketing has no icon rail to copy; the dark band is
   how that system carries structure, so the rail takes it. The active tab is
   still the white notch merging into the panel, with amber marking which tab it

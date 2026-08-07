@@ -86,6 +86,39 @@ const SCREENSHOTS = [
   { filename: 'shot-1752.jpg', timestampMs: at(17, 52, 1), sizeKb: 0, projectName: 'Kaleido', taskName: 'Design QA' },
 ];
 
+/**
+ * Six weeks of stopped entries behind `getWorkedPeriod`, so the activity chart
+ * has a shape to draw in the harness.
+ *
+ * Durations come from the calendar date rather than a random source: the same
+ * day always produces the same bars, which is what makes a screenshot of this
+ * harness comparable to the last one. Sundays are empty and Saturdays are short,
+ * so the week view has a silhouette instead of a fence. Nothing is dated in the
+ * future — an entry that has not happened yet would be counted as worked.
+ */
+const HISTORY: { start: number; end: number; seconds: number }[] = (() => {
+  const now = Date.now();
+  const entries: { start: number; end: number; seconds: number }[] = [];
+
+  for (let daysAgo = 0; daysAgo < 45; daysAgo++) {
+    const day = new Date();
+    day.setDate(day.getDate() - daysAgo);
+    day.setHours(0, 0, 0, 0);
+    const weekday = day.getDay();
+    if (weekday === 0) continue;
+
+    [9, 11, 14, 16].forEach((hour, i) => {
+      const minutes = 25 + ((day.getDate() * 7 + hour * 13 + i * 5) % 71);
+      const length = (weekday === 6 ? Math.round(minutes / 2) : minutes) * 60;
+      const start = at(hour, (i * 7) % 30, daysAgo);
+      if (start > now) return;
+      entries.push({ start, end: start + length * SECOND, seconds: length });
+    });
+  }
+
+  return entries;
+})();
+
 /* ── Timer seeds per scenario ────────────────────────────────────────────── */
 
 function seedTimer(scenario: Scenario): TimerState {
@@ -292,11 +325,18 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
       return { ok: true, rows: many };
     },
     getWorkedToday: async () => ({ ok: !failing, total: timer.workedToday }),
-    getWorkedPeriod: async (startIso) => {
+    getWorkedPeriod: async (startIso, endIso) => {
       if (failing) return { ok: false, total: 0 };
-      // week 28h 15m / month 104h 03m, matching the hover card in the exports
-      const isMonth = new Date(startIso).getDate() === 1;
-      return { ok: true, total: isMonth ? 374580 : 101700 };
+      const start = new Date(startIso).getTime();
+      const end = new Date(endIso).getTime();
+      // The server's rule, reproduced: an entry counts in full against any window
+      // it starts in. Answering a flat number instead made every chart bucket
+      // after the first come out empty, since the chart differences cumulative
+      // windows — a mock that cannot be differenced hides the thing it is for.
+      return {
+        ok: true,
+        total: HISTORY.filter((e) => e.start < end && e.end >= start).reduce((sum, e) => sum + e.seconds, 0),
+      };
     },
 
     listScreenshots: async () => {

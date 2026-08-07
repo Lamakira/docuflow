@@ -160,6 +160,16 @@
   --hold-btn-hover: var(--p-amber-hover);
   --hold-rgb: 233, 162, 59;
 
+  /* Chart — tracked hours are a logged result, so the bars are green. The one
+     bucket the running timer sits in is amber: that bar is a state, not yet a
+     result, and it is the only one still moving. An empty bucket is a rule, not
+     a colour: nothing was tracked, so nothing is claimed. */
+  --chart-bar: var(--p-green);
+  --chart-bar-hover: var(--p-green-on-light);
+  --chart-bar-live: var(--p-amber);
+  --chart-bar-live-hover: var(--p-amber-hover);
+  --chart-empty: var(--p-rule-soft);
+
   /* ── Metrics ────────────────────────────────────────────────────────── */
   --rail-w: 78px;
   --panel-w: 292px;
