@@ -599,11 +599,18 @@ button:disabled { cursor: default; }
   align-items: center;
   gap: 10px;
 }
-/* The bar is the window's drag handle once the app owns the window. Anything
-   clickable inside it opts out, or the click never reaches it. */
-:root[data-chrome="app"] .v2-stage__bar { -webkit-app-region: drag; }
+/* The bar is the window's drag handle in every mode where the app draws its own
+   title bar — frameless or not. Anything clickable inside it opts out, or the
+   click never reaches it. */
+:root[data-chrome="app"] .v2-stage__bar,
+:root[data-chrome="app-opaque"] .v2-stage__bar,
+:root[data-chrome="inset"] .v2-stage__bar { -webkit-app-region: drag; }
 :root[data-chrome="app"] .v2-stage__bar button,
-:root[data-chrome="app"] .v2-stage__bar .v2-update { -webkit-app-region: no-drag; }
+:root[data-chrome="app"] .v2-stage__bar .v2-update,
+:root[data-chrome="app-opaque"] .v2-stage__bar button,
+:root[data-chrome="app-opaque"] .v2-stage__bar .v2-update,
+:root[data-chrome="inset"] .v2-stage__bar button,
+:root[data-chrome="inset"] .v2-stage__bar .v2-update { -webkit-app-region: no-drag; }
 
 /* ── Window controls ──────────────────────────────────────────────────── */
 
@@ -1354,11 +1361,11 @@ button:disabled { cursor: default; }
 
 /* ── Login ────────────────────────────────────────────────────────────── */
 
-/* ── Frameless chrome ─────────────────────────────────────────────────────
-   Everything here applies only once the main process confirms it built the
-   window without a frame (App.tsx sets data-chrome). Applied unconditionally,
-   these rules cut corners out of an opaque window — pale notches — and make a
-   drag region under a title bar that already has one. */
+/* ── Window chrome ────────────────────────────────────────────────────────
+   Everything here keys off the mode the main process confirmed it built (see
+   lib/windowChrome.ts; App.tsx sets data-chrome). Only "app" is transparent, so
+   only "app" may cut the window's corners — the same radius on an opaque window
+   leaves pale notches, and Windows 11 and macOS round their own anyway. */
 :root[data-chrome="app"] .v2-shell,
 :root[data-chrome="app"] .v2-login,
 :root[data-chrome="app"] .v2-loading { border-radius: var(--r-window); }
@@ -1366,11 +1373,25 @@ button:disabled { cursor: default; }
 /* Sign-in and the loading screen have no bar of their own, so the whole
    surface drags — minus the form. */
 :root[data-chrome="app"] .v2-login,
-:root[data-chrome="app"] .v2-loading { -webkit-app-region: drag; }
-:root[data-chrome="app"] .v2-login__form,
-:root[data-chrome="app"] .v2-login button,
-:root[data-chrome="app"] .v2-login input,
-:root[data-chrome="app"] .v2-login__revoked { -webkit-app-region: no-drag; }
+:root[data-chrome="app"] .v2-loading,
+:root[data-chrome="app-opaque"] .v2-login,
+:root[data-chrome="app-opaque"] .v2-loading,
+:root[data-chrome="inset"] .v2-login,
+:root[data-chrome="inset"] .v2-loading { -webkit-app-region: drag; }
+:root:not([data-chrome="native"]) .v2-login__form,
+:root:not([data-chrome="native"]) .v2-login button,
+:root:not([data-chrome="native"]) .v2-login input,
+:root:not([data-chrome="native"]) .v2-login__revoked { -webkit-app-region: no-drag; }
+
+/* macOS keeps its traffic lights and insets them into the app's chrome. They
+   land over the rail, because the rail is the window's left edge — so the rail
+   starts below them, and drags the way the stage's bar does. Their coordinates
+   are TRAFFIC_LIGHT_POSITION in lib/windowChrome.ts: move one, move both. */
+:root[data-chrome="inset"] .v2-rail {
+  padding-top: 46px;
+  -webkit-app-region: drag;
+}
+:root[data-chrome="inset"] .v2-rail button { -webkit-app-region: no-drag; }
 
 .v2-login {
   font-family: var(--font);

@@ -58,6 +58,12 @@ import { ScreenCaptureWorker } from "../workers/ScreenCaptureWorker";
 import { LinuxScreenLockWatcher } from "../lib/LinuxScreenLockWatcher";
 import { getLocalDayKey, getTestDayRolloverSeconds } from "../lib/dayBoundary";
 import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
+import {
+  type ChromeMode,
+  TRAFFIC_LIGHT_POSITION,
+  chromeModeFor,
+  drawsWindowControls,
+} from "../lib/windowChrome";
 
 let mainWindow: BrowserWindow | null = null;
 let widgetWindow: BrowserWindow | null = null;
@@ -131,51 +137,62 @@ let pausedForScreenshotPortal = false;
 // ─── Window ───
 
 /**
- * True when the window must be created without OS decorations.
+ * The chrome the *next* window is built with.
  *
- * v2 draws its own title bar — the rounded window in the design is only
- * possible if the corners can be transparent, and a native frame paints its
- * own square ones underneath. `frame` and `transparent` are construction-time
- * options, so this has to be known before the renderer that picks the UI has
- * even loaded: the env var answers immediately, and otherwise the last UI the
- * renderer reported (see "ui:set-window-layout") answers for it.
+ * `frame`, `transparent` and `titleBarStyle` are construction-time options, so
+ * this has to be known before the renderer that picks the UI has even loaded:
+ * the env var answers immediately, and otherwise the last UI the renderer
+ * reported (see "ui:set-window-layout") answers for it. Which mode a v2 window
+ * gets is a per-platform decision — see lib/windowChrome.ts.
  */
-function usesAppChrome(): boolean {
-  if (process.env.DOCUFLOW_UI === 'v2') return true;
-  return store.getUiMode() === 'v2';
+function chromeModeForNextWindow(): ChromeMode {
+  const usesV2 = process.env.DOCUFLOW_UI === 'v2' || store.getUiMode() === 'v2';
+  return chromeModeFor(process.platform, usesV2);
 }
 
 /**
  * What the live window was actually built with.
  *
- * Not the same question as usesAppChrome(), which predicts the *next* launch:
- * the layout handler writes the reported UI to the store, so re-asking it there
- * answers for a window that does not exist yet. Reading it instead of this flag
- * told a framed window it was frameless, and the renderer drew a second set of
- * controls under the native ones.
+ * Not the same question as chromeModeForNextWindow(), which predicts the *next*
+ * launch: the layout handler writes the reported UI to the store, so re-asking
+ * it there answers for a window that does not exist yet. Reading it instead of
+ * this value told a framed window it was frameless, and the renderer drew a
+ * second set of controls under the native ones.
  */
-let mainWindowAppChrome = false;
+let mainWindowChrome: ChromeMode = 'native';
+
+/** Pre-paint fill for an opaque v2 window; the renderer confirms it on load. */
+const V2_BACKGROUND = '#f3f5f7';
 
 function createMainWindow(): BrowserWindow {
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, "assets", "icon.png")
     : path.join(__dirname, "../../assets/icon.png");
 
-  const appChrome = usesAppChrome();
-  mainWindowAppChrome = appChrome;
-  console.log(`[Main] window chrome — ${appChrome ? "app-drawn (frameless)" : "native frame"}`);
+  const chrome = chromeModeForNextWindow();
+  mainWindowChrome = chrome;
+  // v2 in any of its modes: the wide window and the app's own title bar.
+  const v2 = chrome !== 'native';
+  const frameless = chrome === 'app' || chrome === 'app-opaque';
+  console.log(`[Main] window chrome — ${chrome}`);
 
   const win = new BrowserWindow({
-    width: appChrome ? 1020 : 680,
-    height: appChrome ? 660 : 780,
-    minWidth: appChrome ? 820 : 400,
-    minHeight: appChrome ? 560 : 500,
+    width: v2 ? 1020 : 680,
+    height: v2 ? 660 : 780,
+    minWidth: v2 ? 820 : 400,
+    minHeight: v2 ? 560 : 500,
     resizable: true,
-    frame: !appChrome,
-    transparent: appChrome,
-    // A transparent window must not paint a background, or the rounded corners
-    // are filled in before the page draws.
-    backgroundColor: appChrome ? '#00000000' : '#0f172a',
+    frame: !frameless,
+    // hiddenInset keeps the frame — and with it the shadow, the rounded corners
+    // and the zoom behaviour — while moving the traffic lights into the app's bar.
+    ...(chrome === 'inset'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: TRAFFIC_LIGHT_POSITION }
+      : {}),
+    // Only the mode that cuts its own corners needs them cut out of, and a
+    // transparent window must not paint a background or they are filled in
+    // before the page draws.
+    transparent: chrome === 'app',
+    backgroundColor: chrome === 'app' ? '#00000000' : v2 ? V2_BACKGROUND : '#0f172a',
     show: false,
     icon: iconPath,
     webPreferences: {
@@ -1094,7 +1111,7 @@ ipcMain.handle(
 
     // Only meaningful on an opaque window; setting it on a transparent one
     // would fill the corners we just cut.
-    if (background && !mainWindowAppChrome) mainWindow.setBackgroundColor(background);
+    if (background && mainWindowChrome !== 'app') mainWindow.setBackgroundColor(background);
 
     mainWindow.setMinimumSize(minWidth, minHeight);
     const [w, h] = mainWindow.getSize();
@@ -1104,10 +1121,16 @@ ipcMain.handle(
     }
     console.log(
       `[Main] ui.layout — renderer wants ${chrome ?? 'native'} chrome; ` +
-      `this window was built ${mainWindowAppChrome ? 'frameless' : 'framed'}`,
+      `this window was built ${mainWindowChrome}`,
     );
-    // What this window is, not what the next one will be.
-    return { ok: true, chromeApplied: mainWindowAppChrome };
+    // What this window is, not what the next one will be. `chromeApplied` is
+    // the older, narrower question — "do I draw the buttons?" — kept for a
+    // renderer hot-reloaded on top of a main process that predates the modes.
+    return {
+      ok: true,
+      chrome: mainWindowChrome,
+      chromeApplied: drawsWindowControls(mainWindowChrome),
+    };
   },
 );
 

@@ -328,9 +328,10 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
     setOpenAtLogin: async () => ({ ok: true }),
     resetWidgetPosition: async () => ({ ok: true }),
     // The harness frames the app itself; resizing is the Electron window's job.
-    // It reports app chrome so the drawn title bar and the rounded corners can
-    // be reviewed here — that is the state the packaged app runs in.
-    setWindowLayout: async () => ({ ok: true, chromeApplied: true }),
+    // It reports the Linux mode so the drawn title bar and the rounded corners
+    // can be reviewed here. The other modes differ only in what the OS draws,
+    // which a browser cannot show — check those on the platform itself.
+    setWindowLayout: async () => ({ ok: true, chrome: 'app' as const, chromeApplied: true }),
 
     // Window controls exist so the app-drawn title bar can be reviewed here.
     // They log rather than act — the harness has no window to minimise.

@@ -1,10 +1,11 @@
 /**
  * Stage — the right-hand column.
  *
- * The bar at its top is the window's title bar. The window is frameless so its
- * corners can be transparent, which makes this bar the drag region and gives
- * the design's three decorative dots a real job as minimise / maximise / close.
- * Everything interactive inside it opts out of dragging.
+ * The bar at its top is the window's title bar, and its drag region, in every
+ * chrome mode the app draws for itself. Where the window is frameless — Linux
+ * and Windows — the design's three decorative dots also get a real job as
+ * minimise / maximise / close; on macOS the native traffic lights are inset
+ * into the rail instead. Everything interactive in the bar opts out of dragging.
  */
 
 import { useAgent } from '../../app/stores/AgentContext';

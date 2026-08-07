@@ -1,9 +1,11 @@
 /**
  * Minimise / maximise / close, drawn by the app.
  *
- * The window is frameless so its corners can be transparent — a native frame
- * paints square ones underneath whatever the page rounds. That trade means the
- * app owes the user the three controls the frame used to provide.
+ * On Linux and Windows the window is frameless — on Linux so its corners can be
+ * transparent, since a native frame paints square ones underneath whatever the
+ * page rounds. Either way the app owes the user the three controls the frame
+ * used to provide. macOS keeps its frame and insets the traffic lights into
+ * this bar instead, so there these render nothing.
  *
  * Close hides the window rather than quitting, which is what the native close
  * button already did: the agent keeps tracking from the tray.
@@ -17,19 +19,19 @@ import { useUi } from '../ui/UiContext';
 
 export function WindowControls() {
   const bridge = window.agentBridge;
-  const { appChrome } = useUi();
+  const { drawsControls } = useUi();
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    if (!appChrome) return;
+    if (!drawsControls) return;
     void bridge.windowIsMaximized?.().then((r) => setMaximized(r.maximized)).catch(() => {});
     return bridge.onWindowMaximizedChange?.(setMaximized);
-  }, [appChrome]);
+  }, [drawsControls]);
 
-  // Nothing to draw against a native frame — the OS already has these, and the
-  // IPC behind them only exists in a main process that built the window
-  // frameless.
-  if (!appChrome || !bridge.windowMinimize) return null;
+  // Nothing to draw when the window came with its own buttons — a native frame,
+  // or macOS traffic lights inset into this bar. The IPC behind these exists
+  // only in a main process that built the window frameless.
+  if (!drawsControls || !bridge.windowMinimize) return null;
 
   return (
     <div className="v2-winctl">

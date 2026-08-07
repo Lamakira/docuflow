@@ -14,6 +14,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChromeMode, drawsWindowControls } from '../../../lib/windowChrome';
 
 const TOAST_MS = 2200;
 
@@ -54,14 +55,19 @@ interface UiValue {
   showToast: (text: string, kind?: ToastKind) => void;
 
   /**
-   * True only when the main process confirmed it built a frameless window for
-   * this renderer. The two halves can be out of step — webpack hot-reloads the
-   * renderer while the main process keeps running the build it started with —
-   * and a renderer that assumed otherwise drew its own title bar under the
-   * native one and called IPC handlers that did not exist yet.
+   * The chrome the main process confirmed it built for this window, 'native'
+   * until it answers. The two halves can be out of step — webpack hot-reloads
+   * the renderer while the main process keeps running the build it started
+   * with — and a renderer that assumed otherwise drew its own title bar under
+   * the native one and called IPC handlers that did not exist yet.
    */
-  appChrome: boolean;
-  setAppChrome: (v: boolean) => void;
+  chrome: ChromeMode;
+  setChrome: (v: ChromeMode) => void;
+  /**
+   * True when this window has no buttons of its own, so the app must draw them.
+   * False on macOS, where the native traffic lights sit inside the app's bar.
+   */
+  drawsControls: boolean;
 }
 
 const UiContext = createContext<UiValue | null>(null);
@@ -78,7 +84,7 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
   const [settingsSection, setSettingsSection] = useState('activity-bar');
   const [completedKey, setCompletedKey] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
-  const [appChrome, setAppChrome] = useState(false);
+  const [chrome, setChrome] = useState<ChromeMode>('native');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastSeq = useRef(0);
 
@@ -99,8 +105,9 @@ export function UiProvider({ children }: { children: React.ReactNode }) {
     markCompleted: setCompletedKey,
     clearCompleted: () => setCompletedKey(null),
     toast, showToast,
-    appChrome, setAppChrome,
-  }), [search, openProjectId, settingsSection, completedKey, toast, showToast, appChrome]);
+    chrome, setChrome,
+    drawsControls: drawsWindowControls(chrome),
+  }), [search, openProjectId, settingsSection, completedKey, toast, showToast, chrome]);
 
   return <UiContext.Provider value={value}>{children}</UiContext.Provider>;
 }

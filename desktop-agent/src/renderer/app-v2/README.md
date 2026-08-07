@@ -35,6 +35,12 @@ Two files outside this folder were edited:
   UI booted is a renderer-side decision, so the renderer asks for 1020×660
   (min 820×560) once it knows. A window the user has already sized past that
   minimum is left alone.
+- `src/lib/windowChrome.ts` — which chrome a v2 window gets, per platform:
+  frameless and transparent on Linux (`app`), frameless and opaque on Windows
+  (`app-opaque`, because a transparent window there loses the shadow and the
+  snap and resize borders), a native frame with the traffic lights inset into
+  the app's bar on macOS (`inset`). The handler answers with the mode the window
+  was really built with; `data-chrome` on `<html>` carries it into the CSS.
 
 ## Switching UI
 
@@ -118,8 +124,10 @@ grid pages. Splitting them across a context would mean fetching twice.
   for "you", so the account actions live there instead of only in Settings.
 - **"Capture now" is not built.** The agent has no manual-capture path — the
   worker captures on its own schedule while a timer runs.
-- **The stage's fake window dots are not built.** The window has real controls
-  from the OS; a second, dead set beside them is a control that lies.
+- **The stage's window dots are real controls**, not the design's decoration —
+  minimise, maximise, close — and only where the window is frameless. On macOS
+  the OS still owns them, so the app draws none: a second, dead set beside the
+  traffic lights would be a control that lies.
 
 ## Tokens
 

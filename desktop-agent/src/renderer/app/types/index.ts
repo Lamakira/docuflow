@@ -1,3 +1,5 @@
+import type { ChromeMode } from '../../../lib/windowChrome';
+
 export interface Project {
   id: string;
   name: string;
@@ -109,7 +111,13 @@ export interface AgentBridge {
     background?: string;
     /** 'app' when this UI draws its own title bar; remembered for next launch. */
     chrome?: 'app' | 'native';
-  }) => Promise<{ ok: boolean; chromeApplied?: boolean }>;
+    /**
+     * `chrome` is the request; `chrome` in the answer is what the window was
+     * actually built with, which the main process decides per platform. Absent
+     * from a main process that predates the modes — `chromeApplied` then says
+     * whether this UI draws the window buttons.
+     */
+  }) => Promise<{ ok: boolean; chrome?: ChromeMode; chromeApplied?: boolean }>;
 
   /* Window controls. Present only in builds whose preload exposes them, and
      only meaningful when the window was created without a native frame. */

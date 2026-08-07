@@ -12,6 +12,7 @@
  */
 
 import { useEffect } from 'react';
+import type { ChromeMode } from '../../lib/windowChrome';
 import { AgentProvider, useAgent } from '../app/stores/AgentContext';
 import { ErrorBoundary } from '../app/components/common/ErrorBoundary';
 import { UiProvider, useUi } from './ui/UiContext';
@@ -27,11 +28,12 @@ import './styles/app.css';
 /**
  * The design's window. The old portrait size does not hold three columns.
  *
- * `chrome: 'app'` tells the main process this UI draws its own title bar, so
- * the window is created frameless and transparent — the only way the rounded
- * corners can show the desktop instead of a square frame underneath. That is a
- * construction-time option, so it is remembered and applied at the *next*
- * launch; switching UI costs one restart.
+ * `chrome: 'app'` tells the main process this UI draws its own title bar. How
+ * far that goes is the main process's call and differs by platform — frameless
+ * and transparent on Linux, frameless and opaque on Windows, a native frame
+ * with inset traffic lights on macOS (see lib/windowChrome.ts). All three are
+ * construction-time options, so the answer applies at the *next* launch;
+ * switching UI costs one restart.
  */
 const WINDOW = {
   width: 1020,
@@ -68,25 +70,37 @@ function Shell() {
 
 function AppInner() {
   const { state } = useAgent();
-  const { setAppChrome } = useUi();
+  const { setChrome } = useUi();
 
   /**
    * Ask for the window this UI needs, and believe only the answer.
    *
-   * `chromeApplied` comes back false when the running main process built a
+   * The answer names the mode the window was really built with, which is what
+   * decides whether the app draws window buttons and whether it may cut its own
+   * corners. It comes back 'native' when the running main process built a
    * framed window — an older build, or this renderer hot-reloaded underneath
-   * one. In that case the app must not draw a second title bar or call window
-   * IPC that is not there; the native frame stays in charge until a restart.
+   * one — and then the frame stays in charge until a restart, with no drawn
+   * title bar over it and no window IPC that is not there.
    */
   useEffect(() => {
-    void window.agentBridge
-      .setWindowLayout?.(WINDOW)
-      .then((result) => {
-        const applied = !!result?.chromeApplied;
-        setAppChrome(applied);
-        document.documentElement.dataset.chrome = applied ? 'app' : 'native';
-      })
-      .catch(() => { /* older preload without the handler — keep the frame */ });
+    const apply = (mode: ChromeMode) => {
+      setChrome(mode);
+      document.documentElement.dataset.chrome = mode;
+    };
+
+    const ask = window.agentBridge?.setWindowLayout;
+    if (!ask) {
+      // The browser harness, or a preload without the handler: whatever frame
+      // exists is not ours to draw.
+      apply('native');
+      return;
+    }
+
+    void ask(WINDOW)
+      .then((result) =>
+        apply(result?.chrome ?? (result?.chromeApplied ? 'app' : 'native')),
+      )
+      .catch(() => apply('native'));
   }, []);
 
   if (state.loading) return <div className="v2-loading">Loading…</div>;
