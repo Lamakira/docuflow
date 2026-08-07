@@ -832,7 +832,7 @@ export function registerAgentRoutes(app: Express): void {
       const crmProject = await storage.getCrmProject(crmProjectId);
       if (!crmProject) return res.status(404).json({ message: "Project not found" });
       const isMember =
-        crmProject.members.some((m: any) => m.userId === userId) ||
+        crmProject.members?.some((m: any) => m.userId === userId) ||
         crmProject.project?.ownerId === userId;
       if (!isMember) return res.status(403).json({ message: "Access denied" });
       const taskList = await storage.getTasks({ crmProjectId });
@@ -866,7 +866,7 @@ export function registerAgentRoutes(app: Express): void {
       const crmProject = await storage.getCrmProject(crmProjectId);
       if (!crmProject) return res.status(404).json({ message: "Project not found" });
       const isMember =
-        crmProject.members.some((m: any) => m.userId === userId) ||
+        crmProject.members?.some((m: any) => m.userId === userId) ||
         crmProject.project?.ownerId === userId;
       if (!isMember) return res.status(403).json({ message: "Access denied" });
       const task = await storage.createTask({
@@ -950,7 +950,7 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(404).json({ message: "Project not found" });
       }
       const isMember =
-        crmProject.members.some((m: any) => m.userId === userId) ||
+        crmProject.members?.some((m: any) => m.userId === userId) ||
         crmProject.project?.ownerId === userId;
       if (!isMember) {
         return res.status(403).json({ message: "Access denied" });
