@@ -137,8 +137,13 @@ export async function updateDocumentEmbeddings(
   const textContent = extractTextFromContent(content);
   const chunks = chunkText(textContent, title);
   
+  // Only the two columns the staleness check reads: selecting the whole row
+  // would pull every chunk's 1536-dimension vector across the wire for nothing.
   const existingEmbeddings = await db
-    .select()
+    .select({
+      chunkIndex: documentEmbeddings.chunkIndex,
+      contentHash: documentEmbeddings.contentHash,
+    })
     .from(documentEmbeddings)
     .where(eq(documentEmbeddings.documentId, documentId));
   
@@ -331,8 +336,12 @@ export async function updateCompanyDocumentEmbeddings(
   const textContent = extractTextFromContent(content);
   const chunks = chunkText(textContent, title);
   
+  // Two columns only, for the same reason as the document-side check above.
   const existingEmbeddings = await db
-    .select()
+    .select({
+      chunkIndex: companyDocumentEmbeddings.chunkIndex,
+      contentHash: companyDocumentEmbeddings.contentHash,
+    })
     .from(companyDocumentEmbeddings)
     .where(eq(companyDocumentEmbeddings.companyDocumentId, companyDocumentId));
   

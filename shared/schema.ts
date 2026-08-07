@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   varchar,
+  vector,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -164,6 +165,9 @@ export const documentEmbeddings = pgTable("document_embeddings", {
   chunkIndex: integer("chunk_index").notNull().default(0),
   chunkText: text("chunk_text").notNull(),
   contentHash: varchar("content_hash", { length: 64 }).notNull(),
+  // The pgvector column `server/embeddings.ts` writes and orders by through raw
+  // SQL. Nullable because it was added to a table that already had rows.
+  embedding: vector("embedding", { dimensions: 1536 }),
   metadata: jsonb("metadata").$type<{
     title?: string;
     projectName?: string;
@@ -635,6 +639,8 @@ export const companyDocumentEmbeddings = pgTable("company_document_embeddings", 
   chunkIndex: integer("chunk_index").notNull().default(0),
   chunkText: text("chunk_text").notNull(),
   contentHash: varchar("content_hash", { length: 64 }).notNull(),
+  // Same pgvector column as document_embeddings, on the company-document side.
+  embedding: vector("embedding", { dimensions: 1536 }),
   metadata: jsonb("metadata").$type<{
     title?: string;
     folderName?: string;
