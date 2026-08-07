@@ -70,11 +70,25 @@ export function decodeJwtPayload(token: string): {
 }
 
 /**
+ * The signing key `tests/setup.ts` configured, as `server/config.ts` splits it:
+ * the id a token's header names, and the secret the HMAC is taken with.
+ */
+function harnessSigningKey(): { id: string; secret: string } {
+  const separator = process.env.JWT_SECRET!.indexOf(":");
+  return {
+    id: process.env.JWT_SECRET!.slice(0, separator),
+    secret: process.env.JWT_SECRET!.slice(separator + 1),
+  };
+}
+
+/**
  * Mint an access token the server will accept as genuine.
  *
  * `tests/setup.ts` fixes `JWT_SECRET`, so a suite can sign the same HS256 token
- * `agentRoutes.ts` does — the only way to reach branches the live endpoints
- * cannot produce, such as an already-expired token.
+ * `desktopTokens.ts` does — the only way to reach branches the live endpoints
+ * cannot produce, such as an already-expired token. That it works at all is the
+ * point of the key living in the environment: nothing but the configured key
+ * connects this token to the running server.
  */
 export function mintAccessToken(claims: {
   deviceId: string;
@@ -83,19 +97,20 @@ export function mintAccessToken(claims: {
   expiresInSeconds: number;
 }): string {
   const now = Math.floor(Date.now() / 1000);
+  const key = harnessSigningKey();
   const encode = (value: object) =>
     Buffer.from(JSON.stringify(value))
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=/g, "");
-  const data = `${encode({ alg: "HS256", typ: "JWT" })}.${encode({
+  const data = `${encode({ alg: "HS256", typ: "JWT", kid: key.id })}.${encode({
     sub: claims.deviceId,
     uid: claims.userId,
     iat: now,
     exp: now + claims.expiresInSeconds,
   })}`;
-  const signature = createHmac("sha256", process.env.JWT_SECRET!)
+  const signature = createHmac("sha256", key.secret)
     .update(data)
     .digest("base64")
     .replace(/\+/g, "-")

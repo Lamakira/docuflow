@@ -183,7 +183,7 @@ The Desktop Agent is an Electron app that:
 
 ## Points of Vigilance
 
-1. **`JWT_SECRET` must be set as a persistent env var** in production — if not set, server generates a random key on each restart, invalidating all tokens.
+1. **`JWT_SECRET` must be set as a persistent env var** in production, as `<key-id>:<secret>`. The server used to generate a random key per boot when it was unset, invalidating every token on restart; since [#23](https://github.com/Lamakira/docuflow/issues/23) it refuses to boot instead, and rotation goes through `JWT_PREVIOUS_SECRET` ([CONFIGURATION.md](CONFIGURATION.md#desktop-access-token-signing-keys)).
 2. **`DEFAULT_API_URL` in `config.ts`** must be updated to the production URL before distributing the installer.
 3. **Tasks table migration** must be applied on every DB environment (dev + prod) before the tasks feature works.
 4. **Avast/Windows Defender** will block the NSIS installer write during build — disable File Shield temporarily when building.

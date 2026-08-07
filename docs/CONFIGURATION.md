@@ -49,6 +49,7 @@ Required:
 | --- | --- |
 | `DATABASE_URL`, or all of `PGHOST` / `PGUSER` / `PGPASSWORD` / `PGDATABASE` | The one PostgreSQL database. `DATABASE_URL` wins when both are set; `PGPORT` defaults to 5432. See [DB_ENV_SETUP.md](DB_ENV_SETUP.md) |
 | `SESSION_SECRET` | Signs session cookies. Rotating it logs everyone out |
+| `JWT_SECRET` | Signs desktop-agent access tokens, as `<key-id>:<secret>`. See [Desktop access-token signing keys](#desktop-access-token-signing-keys) |
 | `PRIVATE_OBJECT_DIR` | Bucket root for private objects, as `/<bucket>/<prefix>` |
 | `PUBLIC_OBJECT_SEARCH_PATHS` | Comma-separated bucket roots for public objects; the first receives public uploads |
 | `GCS_SERVICE_ACCOUNT_KEY`, or `GOOGLE_APPLICATION_CREDENTIALS` | The storage identity. Either the key file's JSON inline, or a path to it. One or the other — see [Object storage](#object-storage) |
@@ -61,7 +62,7 @@ Optional — each gates one feature, which reports its own failure while unset:
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Email sends fail and report why; the request that triggered them still succeeds |
 | `OPENAI_API_KEY` | Embeddings, chat, and transcription fail when used |
 | `FATHOM_API_KEY` | Fathom transcripts fall back to the browser scraper |
-| `JWT_SECRET` | Desktop-agent tokens are signed with a key generated per boot, so a restart invalidates every one of them |
+| `JWT_PREVIOUS_SECRET` | Only the current signing key is accepted, which is the steady state. Set it during a rotation — see below |
 | `MCP_API_KEY` | The MCP admin-impersonation header is refused. Phase 5 removes it |
 | `DESKTOP_RELEASE_CI_TOKEN` | Release registration is refused |
 | `APP_URL` | Links in outbound email fall back to the Replit domain variables, then `http://localhost:5000` |
@@ -73,6 +74,55 @@ Optional — each gates one feature, which reports its own failure while unset:
 
 `MCP_API_KEY` and `DESKTOP_RELEASE_CI_TOKEN` are read per request rather than at
 boot, so rotating either takes effect without a restart.
+
+## Desktop access-token signing keys
+
+The desktop agent authenticates with an hour-long HS256 token, minted at login
+and at every refresh by [`server/desktopTokens.ts`](../server/desktopTokens.ts).
+The key it is signed with comes from the environment, written as an id and a
+secret joined by a colon:
+
+```
+JWT_SECRET=2026-08:9f3c…            # openssl rand -hex 32 for the secret
+```
+
+The id is not a secret — it travels in the header of every token that key signs
+(`kid`), which is how a verifier picks the right key when two are in
+circulation. It has to be short and printable: letters, digits, `.`, `-`, `_`.
+Keeping it in the same variable as the secret is deliberate; the two cannot be
+rotated apart.
+
+**There is no generated fallback, and boot fails without the variable.** A key
+the process invents does not survive the process: every agent's token would stop
+verifying at the next restart, at every deploy, and on any second replica —
+which is exactly what happened before this was required. Failing at boot is the
+loud version of a failure that otherwise arrives an hour later as a fleet-wide
+sign-out.
+
+### Rotating the key
+
+`JWT_PREVIOUS_SECRET` is the overlap. While it is set, tokens signed with either
+key verify, and every newly issued one carries the current key's id — so a
+rotation costs nobody their session:
+
+1. **Introduce.** Put the new key in `JWT_SECRET` with a new id, and move the
+   old value verbatim into `JWT_PREVIOUS_SECRET`. Restart. New tokens now name
+   the new key; the ones already out there still verify against the old one.
+2. **Wait.** One access-token lifetime — an hour. After that nothing signed with
+   the old key is still valid, whether or not its holder came back.
+3. **Retire.** Clear `JWT_PREVIOUS_SECRET` and restart.
+
+Both keys must have different ids; boot refuses a pair that does not, because a
+`kid` naming two secrets is the one question it exists to answer. The boot line
+reports the ids in use, and never the secrets:
+
+```
+[config] production — … desktop tokens on key 2026-08, retiring 2026-05, …
+```
+
+Rotating the key does **not** sign devices out on its own. Device tokens — the
+long-lived credential the agent stores and refreshes with — are a separate
+credential, held as a hash in the database, and are untouched by any of this.
 
 ## Object storage
 

@@ -7,7 +7,7 @@ Desktop Agent — SQLite Queue + Screenshot Pipeline + JWT Auth
 - Windows 10/11 (or macOS/Linux — same code path)
 - Node.js 18+ installed
 - DocuFlow server running (Replit or local)
-- `JWT_SECRET` set in server environment (optional but recommended for production)
+- `JWT_SECRET` set in the server environment as `<key-id>:<secret>` — required; the server will not boot without it
 - GCS Object Storage configured (`PRIVATE_OBJECT_DIR` env var) for screenshot upload
 
 ---
@@ -105,8 +105,9 @@ Expected log after server restart:
 [HeartbeatWorker] OK (server: <timestamp>)   ← token refreshed successfully
 ```
 
-Set `JWT_SECRET` in the server environment for tokens to survive server restarts
-with the same key. Without it, an ephemeral random key is used per server process.
+Tokens survive the restart because `JWT_SECRET` holds the signing key: the server
+reads it at boot rather than generating one, so the next process verifies what
+the last one issued. See [CONFIGURATION.md](CONFIGURATION.md#desktop-access-token-signing-keys).
 
 ---
 

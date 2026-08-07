@@ -48,6 +48,23 @@ export interface EmailConfig {
   fromAddress: string;
 }
 
+/**
+ * One HMAC key the desktop agent's access tokens are signed and checked with.
+ * The id is not a secret: it rides in every token's header, which is what lets a
+ * verifier pick the right key while two of them are in circulation.
+ */
+export interface SigningKey {
+  id: string;
+  secret: string;
+}
+
+export interface DesktopTokenConfig {
+  /** Signs every access token this process issues. */
+  current: SigningKey;
+  /** Still accepted, for the rotation window in which its tokens expire. */
+  previous?: SigningKey;
+}
+
 /** Replit OIDC login. Phase 5 replaces it with Clerk and deletes this section. */
 export interface ReplitAuthConfig {
   clientId?: string;
@@ -60,8 +77,8 @@ export interface AppConfig {
   port: number;
   database: DatabaseConfig;
   sessionSecret: string;
-  /** Absent means the desktop agent mints an ephemeral signing key per boot. */
-  jwtSecret?: string;
+  /** The keys desktop-agent access tokens are issued and verified with. */
+  desktopTokens: DesktopTokenConfig;
   objectStorage: ObjectStorageConfig;
   email: EmailConfig;
   /** Absolute base URL this deployment is reached at, used in outbound email links. */
@@ -212,6 +229,66 @@ function resolveObjectStorage(): Resolved<ObjectStorageConfig> {
 }
 
 /**
+ * `<key-id>:<secret>` — an id naming the key, then the secret itself. Split on
+ * the first colon, so a secret containing one survives intact.
+ */
+function parseSigningKey(name: string, raw: string): SigningKey {
+  const separator = raw.indexOf(":");
+  const id = separator > 0 ? raw.slice(0, separator) : "";
+  const secret = separator > 0 ? raw.slice(separator + 1) : "";
+
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(id) || secret.length === 0) {
+    throw new Error(
+      `${name} must be written as <key-id>:<secret> — an id of letters, digits, ` +
+        `'.', '-' or '_' naming the key, a colon, then the secret. Carrying the id ` +
+        `with the secret is what keeps the two from being rotated apart.`
+    );
+  }
+
+  return { id, secret };
+}
+
+/**
+ * The keys behind the desktop agent's access tokens. Both the signing and the
+ * verifying side read them from here, so the tokens a process issued outlive it:
+ * a restart, a deploy, or a second replica goes on accepting them. There is no
+ * generated fallback — a key this process invented would be gone at the next
+ * boot, and every signed-in agent with it — so an absent key stops boot rather
+ * than quietly signing the fleet out an hour later.
+ *
+ * `JWT_PREVIOUS_SECRET` is the rotation window: while it is set, tokens signed
+ * with either key verify, and every newly issued one names the current key.
+ * docs/CONFIGURATION.md has the procedure.
+ */
+function resolveDesktopTokens(): Resolved<DesktopTokenConfig> {
+  const currentRaw = read("JWT_SECRET");
+  if (!currentRaw) {
+    return {
+      value: { current: { id: "", secret: "" } },
+      missing: [
+        "JWT_SECRET — signs desktop-agent access tokens, written as <key-id>:<secret>, " +
+          "e.g. 2026-08:$(openssl rand -hex 32)",
+      ],
+    };
+  }
+
+  const current = parseSigningKey("JWT_SECRET", currentRaw);
+  const previousRaw = read("JWT_PREVIOUS_SECRET");
+  const previous = previousRaw ? parseSigningKey("JWT_PREVIOUS_SECRET", previousRaw) : undefined;
+
+  // One id answering to two secrets would make the id in a token's header
+  // ambiguous, which is the single thing it is there to settle.
+  if (previous && previous.id === current.id) {
+    throw new Error(
+      `JWT_PREVIOUS_SECRET and JWT_SECRET both name the key "${current.id}". A rotation ` +
+        `puts a new id alongside the old one; give the incoming key a different id.`
+    );
+  }
+
+  return { value: { current, previous }, missing: [] };
+}
+
+/**
  * Where this deployment is reachable, for links in outbound email. `APP_URL` is
  * the standard setting; the Replit variables remain as a fallback so the Replit
  * deployment keeps producing the URLs it always did, and go with the OIDC login
@@ -235,6 +312,7 @@ function resolveConfig(): AppConfig {
   const database = resolveDatabase();
   const objectStorage = resolveObjectStorage();
   const sessionSecret = read("SESSION_SECRET");
+  const desktopTokens = resolveDesktopTokens();
 
   const missing = [
     ...database.missing,
@@ -242,6 +320,7 @@ function resolveConfig(): AppConfig {
     ...(sessionSecret
       ? []
       : ["SESSION_SECRET — signs session cookies; any long random string"]),
+    ...desktopTokens.missing,
   ];
 
   if (missing.length > 0) {
@@ -258,7 +337,7 @@ function resolveConfig(): AppConfig {
     port: Number.parseInt(read("PORT") ?? String(DEFAULT_PORT), 10),
     database: database.value,
     sessionSecret: sessionSecret!,
-    jwtSecret: read("JWT_SECRET"),
+    desktopTokens: desktopTokens.value,
     objectStorage: objectStorage.value,
     email: {
       apiKey: read("RESEND_API_KEY"),
@@ -297,6 +376,16 @@ function storageCredentialMode(): string {
 }
 
 /**
+ * Which signing keys this process will accept, by id — never by secret. Printing
+ * it is how an operator confirms mid-rotation that the replica in front of them
+ * picked up the new key and still honours the old one.
+ */
+function desktopTokenKeys(): string {
+  const { current, previous } = config.desktopTokens;
+  return previous ? `${current.id}, retiring ${previous.id}` : current.id;
+}
+
+/**
  * One boot line describing what this process is configured with. The connection
  * string is masked: the password never reaches the log.
  *
@@ -308,6 +397,7 @@ export function logConfigSummary(): void {
     `[config] ${config.nodeEnv} — database ${config.database.source} over ${config.database.driver} ` +
       `(${config.database.connectionString.replace(/:([^@/]+)@/, ":<hidden>@")}), ` +
       `object storage via ${storageCredentialMode()}, ` +
+      `desktop tokens on key ${desktopTokenKeys()}, ` +
       `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
       `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}`
   );

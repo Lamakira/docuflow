@@ -18,8 +18,9 @@ import { bearer, decodeJwtPayload, loginDevice, mintAccessToken, sha256Hex } fro
  *  - §3 says the device token lives 90 days. Nothing expires it — a device token
  *    is valid until the device is revoked.
  *  - §3's security details say `accessToken` may be "JWT or opaque". It is always
- *    an HS256 JWT assembled by hand in `agentRoutes.ts`, carrying
- *    `sub`/`uid`/`iat`/`exp`.
+ *    an HS256 JWT assembled by hand in `desktopTokens.ts`, carrying
+ *    `sub`/`uid`/`iat`/`exp` and naming its signing key in the header. The keys
+ *    themselves are covered in `tests/smoke/desktop-tokens.test.ts`.
  *  - §4.1 documents `POST /api/agent/device/revoke` as owner-or-admin. Only the
  *    owner can revoke; an admin gets the same 404 a stranger does.
  *  - The document never mentions `GET /api/agent/ping`,

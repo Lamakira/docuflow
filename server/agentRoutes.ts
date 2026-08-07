@@ -7,7 +7,7 @@
 
 import express from "express";
 import type { Express, Request, Response, NextFunction } from "express";
-import { randomBytes, createHash, createHmac } from "crypto";
+import { randomBytes, createHash } from "crypto";
 import { z } from "zod";
 // sharp is optional — loaded lazily so the server starts even if libvips is unavailable
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,6 +23,7 @@ let sharpLib: ((input: Buffer) => any) | null = null;
 import { storage } from "./storage";
 import { isAuthenticated, getUserId, verifyPassword } from "./auth";
 import { config } from "./config";
+import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
 import { logInfo, logError, logTimeEvent } from "./logger";
 import { parseObjectPath, signObjectURL } from "./objectStorage";
 import { isTasksEnabled } from "./migrationFlags";
@@ -31,7 +32,6 @@ import { isTasksEnabled } from "./migrationFlags";
 
 const PAIRING_CODE_LENGTH = 6;
 const PAIRING_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const DEVICE_TOKEN_LENGTH = 48; // bytes -> 96 hex chars
 const ACCESS_TOKEN_LENGTH = 32; // bytes -> 64 hex chars
 
@@ -55,65 +55,6 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-// ─── JWT (HMAC-SHA256, no external dependency) ───
-
-const JWT_SECRET = config.jwtSecret ?? generateToken(32); // fallback: ephemeral random key
-
-interface JwtPayload {
-  sub: string;  // deviceId
-  uid: string;  // userId
-  exp: number;  // unix seconds
-  iat: number;
-}
-
-function base64urlEncode(buf: Buffer | string): string {
-  const b = typeof buf === "string" ? Buffer.from(buf) : buf;
-  return b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
-function base64urlDecode(str: string): Buffer {
-  const padded = str.replace(/-/g, "+").replace(/_/g, "/");
-  return Buffer.from(padded, "base64");
-}
-
-function signJwt(payload: JwtPayload): string {
-  const header = base64urlEncode(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const body = base64urlEncode(JSON.stringify(payload));
-  const data = `${header}.${body}`;
-  const sig = createHmac("sha256", JWT_SECRET).update(data).digest();
-  return `${data}.${base64urlEncode(sig)}`;
-}
-
-function verifyJwt(token: string): JwtPayload | null {
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const data = `${parts[0]}.${parts[1]}`;
-  const expected = base64urlEncode(createHmac("sha256", JWT_SECRET).update(data).digest());
-  // Constant-time comparison
-  if (expected.length !== parts[2].length) return null;
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++) {
-    diff |= expected.charCodeAt(i) ^ parts[2].charCodeAt(i);
-  }
-  if (diff !== 0) return null;
-  try {
-    return JSON.parse(base64urlDecode(parts[1]).toString()) as JwtPayload;
-  } catch {
-    return null;
-  }
-}
-
-function createAccessToken(deviceId: string, userId: string): { accessToken: string; expiresAt: Date } {
-  const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS);
-  const payload: JwtPayload = {
-    sub: deviceId,
-    uid: userId,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(expiresAt.getTime() / 1000),
-  };
-  return { accessToken: signJwt(payload), expiresAt };
-}
-
 // ─── Agent auth middleware ───
 
 interface AgentAuthRequest extends Request {
@@ -129,14 +70,14 @@ async function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: 
   }
 
   const token = authHeader.slice(7);
-  const payload = verifyJwt(token);
+  const claims = verifyAccessToken(token);
 
-  if (!payload) {
+  if (!claims) {
     res.status(401).json({ message: "Invalid access token" });
     return;
   }
 
-  if (Math.floor(Date.now() / 1000) > payload.exp) {
+  if (Math.floor(Date.now() / 1000) > claims.expiresAt) {
     res.status(401).json({ message: "Access token expired" });
     return;
   }
@@ -145,7 +86,7 @@ async function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: 
   // since a valid token can live up to 1h after an admin revokes the device.
   // Checking here applies uniformly to all agent routes, not just heartbeat.
   try {
-    const device = await storage.getDevice(payload.sub);
+    const device = await storage.getDevice(claims.deviceId);
     if (!device || device.revokedAt) {
       res.status(403).json({ code: "device_revoked", message: "Device has been revoked" });
       return;
@@ -155,8 +96,8 @@ async function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: 
     return;
   }
 
-  req.agentDeviceId = payload.sub;
-  req.agentUserId = payload.uid;
+  req.agentDeviceId = claims.deviceId;
+  req.agentUserId = claims.userId;
   next();
 }
 
@@ -301,7 +242,7 @@ export function registerAgentRoutes(app: Express): void {
         lastSeenAt: new Date(),
       });
 
-      const { accessToken, expiresAt } = createAccessToken(device.id, user.id);
+      const { accessToken, expiresAt } = issueAccessToken(device.id, user.id);
 
       logInfo("agent.auth.login.success", { userId: user.id, deviceId: device.id });
       res.json({
@@ -342,7 +283,7 @@ export function registerAgentRoutes(app: Express): void {
       // Update lastSeenAt
       await storage.updateDeviceLastSeen(device.id);
 
-      const { accessToken, expiresAt } = createAccessToken(device.id, device.userId);
+      const { accessToken, expiresAt } = issueAccessToken(device.id, device.userId);
 
       logInfo("agent.auth.refresh", { deviceId: device.id });
       res.json({ accessToken, expiresAt: expiresAt.toISOString() });

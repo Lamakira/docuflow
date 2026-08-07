@@ -18,9 +18,9 @@ Blocking items listed below. All non-blockers can ship with documented known iss
 
 ### B1 — JWT_SECRET must be a persistent deployment secret
 - **Impact:** Every server restart invalidates all desktop JWTs → agents forcibly log out, session cleared, user must re-authenticate.
-- **Zone:** `server/agentRoutes.ts` line ~48: `const JWT_SECRET = process.env.JWT_SECRET ?? generateToken(32)`
-- **Status:** TODO — no code change needed; requires setting `JWT_SECRET` as a persistent env secret in Replit/production deployment.
-- **Fix:** Add `JWT_SECRET` to Replit Secrets. Value: any 32+ char random string, must never change between deploys.
+- **Zone:** `server/desktopTokens.ts`, reading `config.desktopTokens` from `server/config.ts`.
+- **Status:** DONE ([#23](https://github.com/Lamakira/docuflow/issues/23)) — the ephemeral fallback is gone; the server refuses to boot without `JWT_SECRET`, so the misconfiguration can no longer reach production silently.
+- **Fix:** Set `JWT_SECRET` as `<key-id>:<secret>` in the deployment's secret store, e.g. `2026-08:$(openssl rand -hex 32)`. Rotate it through `JWT_PREVIOUS_SECRET` — procedure in [CONFIGURATION.md](CONFIGURATION.md#desktop-access-token-signing-keys).
 
 ### B2 — Server must be restarted on Replit with latest code
 - **Impact:** Tasks feature still blocked by old `isTasksEnabled()` = false behavior until server picks up commit `1495f15`.
