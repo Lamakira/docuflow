@@ -458,7 +458,10 @@ export class ApiClient {
         console.log(`[ApiClient] Device revoked (403): ${msg}`);
         this.onRevoke?.();
       } else {
-        console.log(`[ApiClient] Forbidden (403, not a revocation): ${msg}`);
+        // The path is the whole diagnosis: "Access denied" is the same sentence
+        // from three different routes, and a log without it says a refusal
+        // happened somewhere. Query included — the denial is about that project.
+        console.log(`[ApiClient] Forbidden (403, not a revocation): ${init.method ?? 'GET'} ${path} — ${msg}`);
       }
       throw new Error(msg);
     }
