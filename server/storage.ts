@@ -165,10 +165,7 @@ export interface IStorage {
   deleteCrmProject(id: string): Promise<void>;
   toggleDocumentation(crmProjectId: string, enabled: boolean): Promise<CrmProject | undefined>;
   getDocumentationEnabledProjects(userId?: string): Promise<Project[]>;
-  
-  // Link orphan projects to CRM (for migration of existing projects)
-  linkOrphanProjectsToCrm(): Promise<{ linkedCount: number }>;
-  
+
   getMainAdmin(): Promise<SafeUser | undefined>;
   getAllUsers(opts?: { includeArchived?: boolean }): Promise<SafeUser[]>;
   archiveUser(userId: string, isArchived: boolean): Promise<SafeUser | undefined>;
@@ -1364,42 +1361,9 @@ export class DatabaseStorage implements IStorage {
     return result.map(r => r.project);
   }
 
-  async linkOrphanProjectsToCrm(): Promise<{ linkedCount: number }> {
-    // Find all projects that don't have a corresponding CRM project
-    const orphanProjects = await db
-      .select({ project: projects })
-      .from(projects)
-      .leftJoin(crmProjects, eq(projects.id, crmProjects.projectId))
-      .where(isNull(crmProjects.id));
-    
-    let linkedCount = 0;
-    
-    for (const { project } of orphanProjects) {
-      try {
-        // Create CRM project for the orphan project
-        // Default status is 'documented' since these are existing documentation projects
-        // Enable documentation by default since these were accessible before the CRM system
-        await db.insert(crmProjects).values({
-          id: randomUUID(),
-          projectId: project.id,
-          clientId: null,
-          status: "documented",
-          assigneeId: null,
-          startDate: null,
-          dueDate: null,
-          actualFinishDate: null,
-          comments: "Auto-migrated from standalone documentation project",
-          documentationEnabled: 1,
-        });
-        linkedCount++;
-        console.log(`Linked orphan project to CRM: ${project.name} (${project.id})`);
-      } catch (error) {
-        console.error(`Failed to link orphan project ${project.id}:`, error);
-      }
-    }
-    
-    return { linkedCount };
-  }
+  // linkOrphanProjectsToCrm lived here and ran on every boot. It is a one-time
+  // backfill, so #24 moved it to `scripts/backfill-crm-links.ts`, where it is
+  // run on purpose and reports what it did.
 
   async getMainAdmin(): Promise<SafeUser | undefined> {
     const [admin] = await db.select().from(users).where(eq(users.isMainAdmin, 1)).limit(1);
@@ -2240,98 +2204,9 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async seedDefaultCrmModules(): Promise<void> {
-    const existingModules = await db.select().from(crmModules);
-    if (existingModules.length > 0) {
-      return;
-    }
-
-    // Two top-level modules: Projects and Contacts
-    const defaultModules = [
-      {
-        id: randomUUID(),
-        name: "Projects",
-        slug: "projects",
-        description: "Project management and tracking",
-        icon: "folder",
-        displayOrder: 1,
-        isEnabled: 1,
-        isSystem: 1,
-      },
-      {
-        id: randomUUID(),
-        name: "Contacts",
-        slug: "contacts",
-        description: "Client and contact management",
-        icon: "users",
-        displayOrder: 2,
-        isEnabled: 1,
-        isSystem: 1,
-      },
-    ];
-
-    for (const mod of defaultModules) {
-      await db.insert(crmModules).values(mod);
-    }
-
-    const projectsModule = defaultModules[0];
-    const contactsModule = defaultModules[1];
-
-    const defaultFields = [
-      // Projects fields
-      { moduleId: projectsModule.id, name: "Project Name", slug: "name", fieldType: "text" as const, displayOrder: 1, isRequired: 1, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Status", slug: "status", fieldType: "select" as const, options: [
-        '{"label":"lead","color":"#64748b"}',
-        '{"label":"discovering_call_completed","color":"#8b5cf6"}',
-        '{"label":"proposal_sent","color":"#f59e0b"}',
-        '{"label":"follow_up","color":"#06b6d4"}',
-        '{"label":"in_negotiation","color":"#3b82f6"}',
-        '{"label":"won","color":"#22c55e"}',
-        '{"label":"won_not_started","color":"#10b981"}',
-        '{"label":"won_in_progress","color":"#14b8a6"}',
-        '{"label":"won_in_review","color":"#0ea5e9"}',
-        '{"label":"won_completed","color":"#84cc16"}',
-        '{"label":"lost","color":"#ef4444"}',
-        '{"label":"won_cancelled","color":"#f43f5e"}'
-      ], displayOrder: 2, isRequired: 1, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Project Type", slug: "project_type", fieldType: "select" as const, options: ["one_time", "monthly", "hourly_budget", "internal"], displayOrder: 3, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Client", slug: "client_id", fieldType: "select" as const, description: "Associated client", displayOrder: 4, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Assignee", slug: "assignee_id", fieldType: "select" as const, description: "Team member responsible", displayOrder: 5, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Description", slug: "description", fieldType: "textarea" as const, displayOrder: 6, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Comments", slug: "comments", fieldType: "textarea" as const, displayOrder: 7, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Start Date", slug: "start_date", fieldType: "date" as const, displayOrder: 8, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Due Date", slug: "due_date", fieldType: "date" as const, displayOrder: 9, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Actual Finish Date", slug: "actual_finish_date", fieldType: "date" as const, displayOrder: 10, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Budgeted Hours", slug: "budgeted_hours", fieldType: "number" as const, displayOrder: 11, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Actual Hours", slug: "actual_hours", fieldType: "number" as const, displayOrder: 12, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Documentation Enabled", slug: "documentation_enabled", fieldType: "checkbox" as const, displayOrder: 13, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: projectsModule.id, name: "Documentation Only", slug: "is_documentation_only", fieldType: "checkbox" as const, displayOrder: 14, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      
-      // Contacts fields
-      { moduleId: contactsModule.id, name: "First Name", slug: "first_name", fieldType: "text" as const, displayOrder: 1, isRequired: 1, isEnabled: 1, isSystem: 1 },
-      { moduleId: contactsModule.id, name: "Last Name", slug: "last_name", fieldType: "text" as const, displayOrder: 2, isRequired: 1, isEnabled: 1, isSystem: 1 },
-      { moduleId: contactsModule.id, name: "Status", slug: "status", fieldType: "select" as const, options: [
-        '{"label":"lead","color":"#64748b"}',
-        '{"label":"prospect","color":"#8b5cf6"}',
-        '{"label":"client","color":"#22c55e"}',
-        '{"label":"client_recurrent","color":"#14b8a6"}'
-      ], displayOrder: 3, isRequired: 1, isEnabled: 1, isSystem: 1 },
-      { moduleId: contactsModule.id, name: "Email", slug: "email", fieldType: "email" as const, displayOrder: 4, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: contactsModule.id, name: "Phone", slug: "phone", fieldType: "phone" as const, displayOrder: 5, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: contactsModule.id, name: "Company", slug: "company", fieldType: "text" as const, displayOrder: 6, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: contactsModule.id, name: "Job Title", slug: "job_title", fieldType: "text" as const, displayOrder: 7, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: contactsModule.id, name: "Address", slug: "address", fieldType: "textarea" as const, displayOrder: 8, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: contactsModule.id, name: "Website", slug: "website", fieldType: "url" as const, displayOrder: 9, isRequired: 0, isEnabled: 1, isSystem: 1 },
-      { moduleId: contactsModule.id, name: "Notes", slug: "notes", fieldType: "textarea" as const, displayOrder: 10, isRequired: 0, isEnabled: 1, isSystem: 1 },
-    ];
-
-    for (const field of defaultFields) {
-      await db.insert(crmModuleFields).values({
-        id: randomUUID(),
-        ...field,
-      });
-    }
-  }
+  // seedDefaultCrmModules lived here and ran on every boot. Default rows are
+  // seed data, not application behaviour, so #24 moved it to
+  // `scripts/seed-defaults.ts`, run once against a new database.
 
   // Time Tracking methods
   async getTimeEntries(options: {

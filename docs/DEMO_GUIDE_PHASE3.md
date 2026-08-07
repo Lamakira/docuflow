@@ -4,7 +4,7 @@
 
 1. DocuFlow web app running (Replit)
 2. `DATABASE_URL` configured in Replit Secrets
-3. Run `npm run db:push` to create agent tables (devices, agent_pairing_codes, etc.)
+3. Run `npm run db:migrate` to create agent tables (devices, agent_pairing_codes, etc.)
 4. Desktop Agent built (`cd desktop-agent && npm install && npm run dev`)
 
 ---

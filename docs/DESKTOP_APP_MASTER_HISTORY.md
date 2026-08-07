@@ -149,7 +149,7 @@ The Desktop Agent is an Electron app that:
 ## Stabilization Phase (2026-03-12)
 
 **Bugs found and fixed:**
-1. `detectMigrationFlags()` was clobbering `setTasksEnabled(true)` because it ran on the same boot cycle, using Drizzle's `db` which could target a different DB in environments where `DATABASE_URL` and `PG*` vars differ. **Fix:** skip `detectMigrationFlags()` when `ensureTasksMigration()` succeeds.
+1. `detectMigrationFlags()` was clobbering `setTasksEnabled(true)` because it ran on the same boot cycle, using Drizzle's `db` which could target a different DB in environments where `DATABASE_URL` and `PG*` vars differ. **Fix:** skip `detectMigrationFlags()` when `ensureTasksMigration()` succeeds. *(Superseded by #24: boot no longer applies migrations, so `ensureTasksMigration()` and `setTasksEnabled()` are gone and `detectMigrationFlags()` — a read-only probe — always runs.)*
 2. `apiRequest` in the web client already parses JSON — `TasksSection` was calling `.then(r => r.json())` on the result, causing a runtime error. **Fix:** removed the double-parse.
 3. `requireActiveDevice()` accepted `deviceId` from request body as fallback, allowing potential device identity spoofing. **Fix:** use only JWT-derived device ID.
 

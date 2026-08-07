@@ -76,17 +76,19 @@ Exemple de sortie en mode PG* :
 
 ---
 
-## Migrations / drizzle-kit
+## Migrations
 
-`npm run db:push` utilise `drizzle.config.ts` qui embarque la même logique de résolution. Aucune variable supplémentaire nécessaire.
+`npm run db:migrate` applique le journal de `migrations/` et embarque la même logique de résolution — aucune variable supplémentaire nécessaire. Le serveur ne crée plus rien au démarrage (#24) : une base à jour est une précondition du déploiement, pas un effet de bord du boot.
 
 ```bash
 # Fonctionne avec DATABASE_URL défini
-npm run db:push
+npm run db:migrate
 
 # Fonctionne aussi avec PG* définis (sans DATABASE_URL)
-PGHOST=localhost PGUSER=me PGPASSWORD=x PGDATABASE=mydb npm run db:push
+PGHOST=localhost PGUSER=me PGPASSWORD=x PGDATABASE=mydb npm run db:migrate
 ```
+
+`migrations/README.md` détaille l'ordre du journal, les scripts de seed et de backfill, et la procédure `--baseline` pour une base antérieure au journal.
 
 ---
 
@@ -108,7 +110,7 @@ PGHOST=localhost PGUSER=me PGPASSWORD=x PGDATABASE=mydb npm run db:push
 - [ ] `npm run db:env:check` retourne ✅ en mode PG*
 - [ ] Le serveur démarre et loggue `[config] ... database PG_VARS ...`
 - [ ] La session utilisateur fonctionne (login / logout)
-- [ ] `npm run db:push` fonctionne en mode PG* sur un environnement de staging
+- [ ] `npm run db:migrate` fonctionne en mode PG* sur un environnement de staging
 - [ ] Aucun log ne contient le mot de passe (`grep -i password` dans les logs)
 - [ ] Le desktop agent n'est pas impacté (il parle HTTP à l'API — pas de DB directe)
 
