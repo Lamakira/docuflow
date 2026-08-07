@@ -1,6 +1,11 @@
-import { createHash, createHmac } from "crypto";
+import { createHash } from "crypto";
 import type { Express } from "express";
 import { newAgent, type Agent, type TestUser } from "./auth";
+import { decodeSegment, signJwt } from "./jwt";
+// `server/signingKeys.ts` reads no environment and resolves nothing at import,
+// so unlike the rest of `server/` it is safe to pull in statically — and a
+// harness that split a key by its own rules is a second spelling to keep true.
+import { parseSigningKey } from "../../server/signingKeys";
 
 /**
  * Desktop-agent fixtures: the v1 protocol's door is a bearer token minted for a
@@ -65,16 +70,22 @@ export function decodeJwtPayload(token: string): {
   iat: number;
   exp: number;
 } {
-  const [, payload] = token.split(".");
-  return JSON.parse(Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString());
+  return decodeSegment(token.split(".")[1]) as {
+    sub: string;
+    uid: string;
+    iat: number;
+    exp: number;
+  };
 }
 
 /**
  * Mint an access token the server will accept as genuine.
  *
  * `tests/setup.ts` fixes `JWT_SECRET`, so a suite can sign the same HS256 token
- * `agentRoutes.ts` does — the only way to reach branches the live endpoints
- * cannot produce, such as an already-expired token.
+ * `desktopTokens.ts` does — the only way to reach branches the live endpoints
+ * cannot produce, such as an already-expired token. That it works at all is the
+ * point of the key living in the environment: nothing but the configured key
+ * connects this token to the running server.
  */
 export function mintAccessToken(claims: {
   deviceId: string;
@@ -83,25 +94,17 @@ export function mintAccessToken(claims: {
   expiresInSeconds: number;
 }): string {
   const now = Math.floor(Date.now() / 1000);
-  const encode = (value: object) =>
-    Buffer.from(JSON.stringify(value))
-      .toString("base64")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=/g, "");
-  const data = `${encode({ alg: "HS256", typ: "JWT" })}.${encode({
-    sub: claims.deviceId,
-    uid: claims.userId,
-    iat: now,
-    exp: now + claims.expiresInSeconds,
-  })}`;
-  const signature = createHmac("sha256", process.env.JWT_SECRET!)
-    .update(data)
-    .digest("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-  return `${data}.${signature}`;
+  const key = parseSigningKey("JWT_SECRET", process.env.JWT_SECRET!);
+  return signJwt(
+    key.secret,
+    { alg: "HS256", typ: "JWT", kid: key.id },
+    {
+      sub: claims.deviceId,
+      uid: claims.userId,
+      iat: now,
+      exp: now + claims.expiresInSeconds,
+    }
+  );
 }
 
 /** The SHA-256 the server stores instead of the raw device token. */

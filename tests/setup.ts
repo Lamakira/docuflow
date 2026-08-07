@@ -17,7 +17,11 @@ process.env.DB_DRIVER = "pg"; // local/CI Postgres — Neon serverless driver ca
 // Assigned, not defaulted (ADR-0018): a developer's real exported secrets must
 // never reach the harness, and fixed values keep token assertions deterministic.
 process.env.SESSION_SECRET = "test-session-secret";
-process.env.JWT_SECRET = "test-jwt-secret";
+// `<key-id>:<secret>`; the id is what a token's header names. No previous key —
+// the harness runs the steady state, and `tests/smoke/desktop-tokens.test.ts` is
+// where a rotation's two-key window is set up and exercised.
+process.env.JWT_SECRET = "test-key-1:test-jwt-signing-secret-for-the-harness";
+delete process.env.JWT_PREVIOUS_SECRET;
 process.env.OPENAI_API_KEY = "test-openai-key"; // consumed by the aliased fake, never sent anywhere
 // Object-storage layout the fake GCS bucket mirrors. Without these, config
 // refuses to boot, and it likewise refuses to boot without a credential — so one

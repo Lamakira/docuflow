@@ -85,8 +85,9 @@ a database you care about, and never at anything production-related.
   no HTTP path to the first admin.
 - Sign desktop agents in with `loginDevice` from `tests/helpers/agent.ts`, which
   returns a request agent already carrying the bearer token. The same module
-  mints tokens with the harness's fixed `JWT_SECRET`, for the middleware branches
-  (an expired token, a token for a deleted device) no live login can produce.
+  mints tokens with the harness's fixed `JWT_SECRET` — a `<key-id>:<secret>` pair,
+  both halves of which a minted token needs — for the middleware branches (an
+  expired token, a token for a deleted device) no live login can produce.
 - Get every request from `newAgent`/`registerUser` rather than `supertest`
   directly, authenticated or not. They attach a unique `X-Forwarded-For`, which
   keeps unrelated suites from spending each other's rate-limit budget;
@@ -98,10 +99,15 @@ a database you care about, and never at anything production-related.
 ## Suites
 
 `tests/smoke/` holds the boot-level suites: the two from the harness ticket, plus
-`config` ([#22](https://github.com/Lamakira/docuflow/issues/22)), which is the one
-suite that does **not** use the fixed environment — it clears the variables,
-re-imports `server/config.ts`, and pins what each environment resolves to,
-including the boot failures the rest of the harness can never reach.
+the two that do **not** use the fixed environment but build their own and import
+a server module again, which is what a boot is.
+`config` ([#22](https://github.com/Lamakira/docuflow/issues/22)) clears the
+variables, re-imports `server/config.ts`, and pins what each environment resolves
+to, including the boot failures the rest of the harness can never reach.
+`desktop-tokens` ([#23](https://github.com/Lamakira/docuflow/issues/23)) loads
+`server/desktopTokens.ts` under one set of signing keys and presents its tokens
+to the next load — a restart, and a key rotation — without going near the
+database.
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`

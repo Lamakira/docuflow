@@ -2,17 +2,21 @@
  * config.ts — the one place the server reads `process.env`.
  *
  * Everything the process needs is resolved here, once, at module load. The
- * variables the app cannot serve without are validated together: a missing one
- * aborts boot naming every var that is absent, instead of surfacing hours later
- * as a 500 on the first request that happens to need it. Variables that gate a
- * feature stay optional — the feature keeps deciding what "not configured"
- * means, so an unset `OPENAI_API_KEY` or `RESEND_API_KEY` behaves exactly as it
- * did before this module existed.
+ * variables the app cannot serve without are validated together: one that is
+ * absent, or set to something unusable, aborts boot naming every var that needs
+ * attention, instead of surfacing hours later as a 500 on the first request that
+ * happens to need it. Variables that gate a feature stay optional — the feature
+ * keeps deciding what "not configured" means, so an unset `OPENAI_API_KEY` or
+ * `RESEND_API_KEY` behaves exactly as it did before this module existed.
  *
  * `.env.example` documents every variable and `docs/CONFIGURATION.md` explains
  * how they reach the process, including the ADR-0018 rule this repository runs
  * under: no production credential, URL, or dataset ever lands here.
  */
+
+import { parseSigningKey, type SigningKey } from "./signingKeys";
+
+export type { SigningKey };
 
 export type DatabaseSource = "DATABASE_URL" | "PG_VARS";
 export type DatabaseDriver = "neon" | "pg";
@@ -48,6 +52,13 @@ export interface EmailConfig {
   fromAddress: string;
 }
 
+export interface DesktopTokenConfig {
+  /** Signs every access token this process issues. */
+  current: SigningKey;
+  /** Still accepted, for the rotation window in which its tokens expire. */
+  previous?: SigningKey;
+}
+
 /** Replit OIDC login. Phase 5 replaces it with Clerk and deletes this section. */
 export interface ReplitAuthConfig {
   clientId?: string;
@@ -60,8 +71,8 @@ export interface AppConfig {
   port: number;
   database: DatabaseConfig;
   sessionSecret: string;
-  /** Absent means the desktop agent mints an ephemeral signing key per boot. */
-  jwtSecret?: string;
+  /** The keys desktop-agent access tokens are issued and verified with. */
+  desktopTokens: DesktopTokenConfig;
   objectStorage: ObjectStorageConfig;
   email: EmailConfig;
   /** Absolute base URL this deployment is reached at, used in outbound email links. */
@@ -98,8 +109,8 @@ function readList(name: string): string[] {
 
 /**
  * One section of the configuration, alongside the required variables it found
- * absent. Sections report what is missing rather than aborting on the first gap,
- * so a single boot failure can name every one of them.
+ * absent or unusable. Sections report what is wrong rather than aborting on the
+ * first gap, so a single boot failure can name every one of them.
  */
 interface Resolved<T> {
   value: T;
@@ -140,27 +151,30 @@ function resolveDatabase(): Resolved<DatabaseConfig> {
  * `GCS_SERVICE_ACCOUNT_KEY` holds the key file's JSON, either verbatim or
  * base64-encoded — the encoded form is what survives secret managers and CI
  * variables that mangle newlines in `private_key`.
+ *
+ * A value that cannot be read goes on the caller's pile rather than aborting
+ * here, so a mangled key does not hide every other variable the environment is
+ * also short of.
  */
-function resolveServiceAccount(): ServiceAccountKey | undefined {
-  const raw = read("GCS_SERVICE_ACCOUNT_KEY");
-  if (!raw) return undefined;
-
+function readServiceAccount(raw: string, missing: string[]): ServiceAccountKey | undefined {
   const json = raw.startsWith("{") ? raw : Buffer.from(raw, "base64").toString("utf8");
   let parsed: { client_email?: string; private_key?: string; project_id?: string };
   try {
     parsed = JSON.parse(json);
   } catch {
-    throw new Error(
+    missing.push(
       "GCS_SERVICE_ACCOUNT_KEY is not valid JSON. Supply the service-account key " +
         "file's contents, either verbatim or base64-encoded."
     );
+    return undefined;
   }
 
   if (!parsed.client_email || !parsed.private_key) {
-    throw new Error(
+    missing.push(
       "GCS_SERVICE_ACCOUNT_KEY is missing client_email or private_key — it does " +
         "not look like a service-account key file."
     );
+    return undefined;
   }
 
   return {
@@ -192,8 +206,14 @@ function resolveObjectStorage(): Resolved<ObjectStorageConfig> {
   // upload. Bare workload identity — a Google host inferring an identity from no
   // variable at all — is not among them: nothing this app runs on is a Google
   // host, so it would be a mode no deployment has ever exercised.
-  const serviceAccount = resolveServiceAccount();
-  if (!serviceAccount && !read("GOOGLE_APPLICATION_CREDENTIALS")) {
+  //
+  // Naming neither is the complaint below; naming one that cannot be read is a
+  // different complaint, which `readServiceAccount` files itself.
+  const serviceAccountKey = read("GCS_SERVICE_ACCOUNT_KEY");
+  const serviceAccount = serviceAccountKey
+    ? readServiceAccount(serviceAccountKey, missing)
+    : undefined;
+  if (!serviceAccountKey && !read("GOOGLE_APPLICATION_CREDENTIALS")) {
     missing.push(
       "GCS_SERVICE_ACCOUNT_KEY — the service-account key file's JSON, verbatim or " +
         "base64-encoded; or GOOGLE_APPLICATION_CREDENTIALS naming a key file on disk"
@@ -209,6 +229,64 @@ function resolveObjectStorage(): Resolved<ObjectStorageConfig> {
     },
     missing,
   };
+}
+
+/** Stands in until boot aborts: nothing reads it while `missing` is non-empty. */
+const UNRESOLVED_KEY: SigningKey = { id: "", secret: "" };
+
+/**
+ * A written key, or nothing and the reason on the pile. A value that cannot be
+ * read is reported the way an absent one is, so a malformed key does not hide
+ * every other variable the environment is also short of.
+ */
+function readSigningKey(name: string, raw: string, missing: string[]): SigningKey | undefined {
+  try {
+    return parseSigningKey(name, raw);
+  } catch (error) {
+    missing.push((error as Error).message);
+    return undefined;
+  }
+}
+
+/**
+ * The keys behind the desktop agent's access tokens. Both the signing and the
+ * verifying side read them from here, so the tokens a process issued outlive it:
+ * a restart, a deploy, or a second replica goes on accepting them. There is no
+ * generated fallback — a key this process invented would be gone at the next
+ * boot, and every signed-in agent with it — so an absent key stops boot rather
+ * than quietly signing the fleet out an hour later.
+ *
+ * `JWT_PREVIOUS_SECRET` is the rotation window: while it is set, tokens signed
+ * with either key verify, and every newly issued one names the current key.
+ * docs/CONFIGURATION.md has the procedure.
+ */
+function resolveDesktopTokens(): Resolved<DesktopTokenConfig> {
+  const missing: string[] = [];
+
+  const currentRaw = read("JWT_SECRET");
+  if (!currentRaw) {
+    missing.push(
+      "JWT_SECRET — signs desktop-agent access tokens, written as <key-id>:<secret>, " +
+        "e.g. 2026-08:$(openssl rand -hex 32)"
+    );
+  }
+  const current = currentRaw ? readSigningKey("JWT_SECRET", currentRaw, missing) : undefined;
+
+  const previousRaw = read("JWT_PREVIOUS_SECRET");
+  const previous = previousRaw
+    ? readSigningKey("JWT_PREVIOUS_SECRET", previousRaw, missing)
+    : undefined;
+
+  // One id answering to two secrets would make the id in a token's header
+  // ambiguous, which is the single thing it is there to settle.
+  if (current && previous && previous.id === current.id) {
+    missing.push(
+      `JWT_PREVIOUS_SECRET and JWT_SECRET both name the key "${current.id}". A rotation ` +
+        `puts a new id alongside the old one; give the incoming key a different id.`
+    );
+  }
+
+  return { value: { current: current ?? UNRESOLVED_KEY, previous }, missing };
 }
 
 /**
@@ -235,6 +313,7 @@ function resolveConfig(): AppConfig {
   const database = resolveDatabase();
   const objectStorage = resolveObjectStorage();
   const sessionSecret = read("SESSION_SECRET");
+  const desktopTokens = resolveDesktopTokens();
 
   const missing = [
     ...database.missing,
@@ -242,6 +321,7 @@ function resolveConfig(): AppConfig {
     ...(sessionSecret
       ? []
       : ["SESSION_SECRET — signs session cookies; any long random string"]),
+    ...desktopTokens.missing,
   ];
 
   if (missing.length > 0) {
@@ -258,7 +338,7 @@ function resolveConfig(): AppConfig {
     port: Number.parseInt(read("PORT") ?? String(DEFAULT_PORT), 10),
     database: database.value,
     sessionSecret: sessionSecret!,
-    jwtSecret: read("JWT_SECRET"),
+    desktopTokens: desktopTokens.value,
     objectStorage: objectStorage.value,
     email: {
       apiKey: read("RESEND_API_KEY"),
@@ -297,6 +377,16 @@ function storageCredentialMode(): string {
 }
 
 /**
+ * Which signing keys this process will accept, by id — never by secret. Printing
+ * it is how an operator confirms mid-rotation that the replica in front of them
+ * picked up the new key and still honours the old one.
+ */
+function desktopTokenKeys(): string {
+  const { current, previous } = config.desktopTokens;
+  return previous ? `${current.id}, retiring ${previous.id}` : current.id;
+}
+
+/**
  * One boot line describing what this process is configured with. The connection
  * string is masked: the password never reaches the log.
  *
@@ -308,6 +398,7 @@ export function logConfigSummary(): void {
     `[config] ${config.nodeEnv} — database ${config.database.source} over ${config.database.driver} ` +
       `(${config.database.connectionString.replace(/:([^@/]+)@/, ":<hidden>@")}), ` +
       `object storage via ${storageCredentialMode()}, ` +
+      `desktop tokens on key ${desktopTokenKeys()}, ` +
       `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
       `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}`
   );

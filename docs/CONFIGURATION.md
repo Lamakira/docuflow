@@ -33,8 +33,10 @@ needs the file edited.
 ## Required, and what happens when one is missing
 
 `server/config.ts` resolves at import — that is, before the app assembles — and
-aborts boot listing **every** required variable that is absent, rather than
-letting the first request that needs one fail with a 500:
+aborts boot listing **every** required variable that is absent or unusable,
+rather than letting the first request that needs one fail with a 500. A value
+that cannot be read is reported the way a missing one is, so one restart shows
+everything that needs attention rather than the first problem alone:
 
 ```
 Configuration incomplete. Set the following, then start again:
@@ -49,11 +51,13 @@ Required:
 | --- | --- |
 | `DATABASE_URL`, or all of `PGHOST` / `PGUSER` / `PGPASSWORD` / `PGDATABASE` | The one PostgreSQL database. `DATABASE_URL` wins when both are set; `PGPORT` defaults to 5432. See [DB_ENV_SETUP.md](DB_ENV_SETUP.md) |
 | `SESSION_SECRET` | Signs session cookies. Rotating it logs everyone out |
+| `JWT_SECRET` | Signs desktop-agent access tokens, as `<key-id>:<secret>`. See [Desktop access-token signing keys](#desktop-access-token-signing-keys) |
 | `PRIVATE_OBJECT_DIR` | Bucket root for private objects, as `/<bucket>/<prefix>` |
 | `PUBLIC_OBJECT_SEARCH_PATHS` | Comma-separated bucket roots for public objects; the first receives public uploads |
 | `GCS_SERVICE_ACCOUNT_KEY`, or `GOOGLE_APPLICATION_CREDENTIALS` | The storage identity. Either the key file's JSON inline, or a path to it. One or the other — see [Object storage](#object-storage) |
 
-Optional — each gates one feature, which reports its own failure while unset:
+Optional — unset is a supported state, and the second column is what that state
+is. Most gate one feature, which reports its own failure while it is missing:
 
 | Variable | Effect while unset |
 | --- | --- |
@@ -61,7 +65,7 @@ Optional — each gates one feature, which reports its own failure while unset:
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Email sends fail and report why; the request that triggered them still succeeds |
 | `OPENAI_API_KEY` | Embeddings, chat, and transcription fail when used |
 | `FATHOM_API_KEY` | Fathom transcripts fall back to the browser scraper |
-| `JWT_SECRET` | Desktop-agent tokens are signed with a key generated per boot, so a restart invalidates every one of them |
+| `JWT_PREVIOUS_SECRET` | Only the current signing key is accepted, which is the steady state. Set it during a rotation — see below |
 | `MCP_API_KEY` | The MCP admin-impersonation header is refused. Phase 5 removes it |
 | `DESKTOP_RELEASE_CI_TOKEN` | Release registration is refused |
 | `APP_URL` | Links in outbound email fall back to the Replit domain variables, then `http://localhost:5000` |
@@ -73,6 +77,72 @@ Optional — each gates one feature, which reports its own failure while unset:
 
 `MCP_API_KEY` and `DESKTOP_RELEASE_CI_TOKEN` are read per request rather than at
 boot, so rotating either takes effect without a restart.
+
+## Desktop access-token signing keys
+
+The desktop agent authenticates with an hour-long HS256 token, minted at login
+and at every refresh by [`server/desktopTokens.ts`](../server/desktopTokens.ts).
+The key it is signed with comes from the environment, written as an id and a
+secret joined by a colon:
+
+```
+JWT_SECRET=2026-08:9f3c…            # openssl rand -hex 32 for the secret
+```
+
+The id is not a secret — it travels in the header of every token that key signs
+(`kid`), which is how a verifier picks the right key when two are in
+circulation. It has to be short and printable: letters, digits, `.`, `-`, `_`.
+Keeping it in the same variable as the secret is deliberate; the two cannot be
+rotated apart.
+
+The secret must be **at least 32 characters**, and boot refuses a shorter one.
+The id is validated against a pattern, and the secret is the half that actually
+holds the door — it would be the wrong one to check less carefully.
+
+**There is no generated fallback, and boot fails without the variable.** A key
+the process invents does not survive the process: every agent's token would stop
+verifying at the next restart, at every deploy, and on any second replica —
+which is exactly what happened before this was required. Failing at boot is the
+loud version of a failure that otherwise arrives an hour later as a fleet-wide
+sign-out.
+
+### Rotating the key
+
+`JWT_PREVIOUS_SECRET` is the overlap. While it is set, tokens signed with either
+key verify, and every newly issued one carries the current key's id — so a
+rotation costs nobody their session:
+
+1. **Introduce.** Put the new key in `JWT_SECRET` with a new id, and move the
+   old value verbatim into `JWT_PREVIOUS_SECRET`. Restart. New tokens now name
+   the new key; the ones already out there still verify against the old one.
+2. **Wait.** One access-token lifetime — an hour — counted from the moment the
+   **last** replica picked the new configuration up, not from the first restart.
+   A replica still on the old value goes on minting tokens signed with the old
+   key, and those live an hour from when they were issued. The boot line below is
+   what tells you a replica has caught up.
+3. **Retire.** Clear `JWT_PREVIOUS_SECRET` and restart.
+
+Both keys must have different ids; boot refuses a pair that does not, because a
+`kid` naming two secrets is the one question it exists to answer. The boot line
+reports the ids in use, and never the secrets:
+
+```
+[config] production — … desktop tokens on key 2026-08, retiring 2026-05, …
+```
+
+One case sits outside the two-key rule. A token carrying **no** `kid` at all —
+the shape the server issued before
+[#23](https://github.com/Lamakira/docuflow/issues/23) — is checked against every
+key configured, because the deploy that introduced ids would otherwise sign the
+whole fleet out at once. Nothing has issued such a token since, so the branch is
+a contract step rather than a permanent one, scheduled for removal under B1 in
+[RELEASE_CANDIDATE_CHECKLIST.md](RELEASE_CANDIDATE_CHECKLIST.md). Until it goes,
+a `kid`-less token is as good as its signature and no better — which is what it
+was before ids existed.
+
+Rotating the key does **not** sign devices out on its own. Device tokens — the
+long-lived credential the agent stores and refreshes with — are a separate
+credential, held as a hash in the database, and are untouched by any of this.
 
 ## Object storage
 
