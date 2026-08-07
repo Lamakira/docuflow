@@ -42,11 +42,12 @@ PGDATABASE=docuflow_dev
 
 | Fichier | Rôle |
 |---|---|
-| `server/config.ts` | **Source unique** — résout la connection string au démarrage avec le reste de la configuration, loggue la source (sans le mot de passe). Voir [CONFIGURATION.md](CONFIGURATION.md) |
+| `shared/databaseUrl.ts` | **Source unique** — la règle elle-même : `DATABASE_URL`, sinon les `PG*` assemblés. Tout le reste l'importe |
+| `server/config.ts` | Résout la connection string au démarrage avec le reste de la configuration, loggue la source (sans le mot de passe). Voir [CONFIGURATION.md](CONFIGURATION.md) |
 | `server/db.ts` | Utilise `config.database` — plus de lecture directe de `DATABASE_URL` ni de `DB_DRIVER` |
 | `server/auth.ts` | Session store (`connect-pg-simple`) — utilise `config.database.connectionString` |
-| `drizzle.config.ts` | drizzle-kit CLI — contient la même logique inline (le CLI ne peut pas importer un module serveur TS) |
-| `scripts/resolve-db-url.js` | Utilitaire Node.js — imprime la connection string résolue sur stdout, pour scripts shell |
+| `drizzle.config.ts` | drizzle-kit CLI — importe `shared/databaseUrl.ts` |
+| `scripts/lib/db.ts` | Connexion des scripts opérationnels (`db:migrate`, `db:seed`, `db:backfill:crm-links`, `db:verify`) — node-postgres, sans passer par `server/config.ts` |
 
 ---
 

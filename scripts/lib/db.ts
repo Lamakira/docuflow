@@ -6,42 +6,27 @@
  * including object storage and email. A migration or seed run needs a database
  * URL and nothing else, and must not be blocked by a variable it will never use.
  *
- * Resolution matches `server/config.ts` and `drizzle.config.ts`: `DATABASE_URL`,
- * or every `PG*` variable instead. node-postgres over TLS reaches Neon the same
- * way it reaches a local container, so no script depends on the serverless
- * driver (ADR-0016: no Neon-specific features).
+ * The URL itself is resolved by `shared/databaseUrl.ts`, the one rule the server
+ * follows too. node-postgres over TLS reaches Neon the same way it reaches a
+ * local container, so no script depends on the serverless driver (ADR-0016: no
+ * Neon-specific features).
  */
 
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
+import { requireDatabaseUrl } from "../../shared/databaseUrl";
 import * as schema from "../../shared/schema";
-
-export function resolveDatabaseUrl(): string {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-
-  const missing = ["PGHOST", "PGUSER", "PGPASSWORD", "PGDATABASE"].filter(
-    (name) => !process.env[name]
-  );
-  if (missing.length > 0) {
-    throw new Error(
-      `Database not configured.\n` +
-        `Set DATABASE_URL, or all PG* variables.\n` +
-        `Missing: ${missing.join(", ")}`
-    );
-  }
-
-  const password = encodeURIComponent(process.env.PGPASSWORD!);
-  const port = process.env.PGPORT ?? "5432";
-  return (
-    `postgresql://${process.env.PGUSER}:${password}` +
-    `@${process.env.PGHOST}:${port}/${process.env.PGDATABASE}`
-  );
-}
 
 export type ScriptDb = ReturnType<typeof drizzle<typeof schema>>;
 
+/**
+ * Where a script sends its progress. Defaulted to silence so a test can call the
+ * same function the CLI does without printing through the run.
+ */
+export type Report = (message: string) => void;
+
 /** Opens a pool for one script run. The caller closes it. */
-export function openDb(url: string = resolveDatabaseUrl()): {
+export function openDb(url: string = requireDatabaseUrl()): {
   db: ScriptDb;
   close: () => Promise<void>;
 } {

@@ -1361,10 +1361,6 @@ export class DatabaseStorage implements IStorage {
     return result.map(r => r.project);
   }
 
-  // linkOrphanProjectsToCrm lived here and ran on every boot. It is a one-time
-  // backfill, so #24 moved it to `scripts/backfill-crm-links.ts`, where it is
-  // run on purpose and reports what it did.
-
   async getMainAdmin(): Promise<SafeUser | undefined> {
     const [admin] = await db.select().from(users).where(eq(users.isMainAdmin, 1)).limit(1);
     if (admin) return admin;
@@ -2203,10 +2199,6 @@ export class DatabaseStorage implements IStorage {
         .where(eq(crmClients.status, oldLabel));
     }
   }
-
-  // seedDefaultCrmModules lived here and ran on every boot. Default rows are
-  // seed data, not application behaviour, so #24 moved it to
-  // `scripts/seed-defaults.ts`, run once against a new database.
 
   // Time Tracking methods
   async getTimeEntries(options: {

@@ -21,9 +21,10 @@
  * checkpoint file to go stale against the database.
  */
 
-import { eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { crmProjects, projects } from "../shared/schema";
-import { openDb, type ScriptDb } from "./lib/db";
+import { openDb, type Report, type ScriptDb } from "./lib/db";
+import { isEntryPoint } from "./lib/entrypoint";
 
 /** Rows per pass. Bounds memory and transaction size on a first run. */
 const BATCH_SIZE = 200;
@@ -39,12 +40,14 @@ interface BackfillResult {
   remainingOrphans: number;
 }
 
-async function orphanBatch(db: ScriptDb, limit: number) {
+/** The next `limit` orphans by id, so successive calls walk the table forward. */
+async function orphanBatch(db: ScriptDb, afterId: string, limit: number) {
   return db
     .select({ id: projects.id, name: projects.name })
     .from(projects)
     .leftJoin(crmProjects, eq(projects.id, crmProjects.projectId))
-    .where(isNull(crmProjects.id))
+    .where(and(isNull(crmProjects.id), gt(projects.id, afterId)))
+    .orderBy(projects.id)
     .limit(limit);
 }
 
@@ -60,7 +63,7 @@ async function countOrphans(db: ScriptDb): Promise<number> {
 export async function backfillCrmLinks(
   db: ScriptDb,
   options: { dryRun?: boolean } = {},
-  report: (message: string) => void = () => {}
+  report: Report = () => {}
 ): Promise<BackfillResult> {
   if (options.dryRun) {
     const remainingOrphans = await countOrphans(db);
@@ -69,17 +72,22 @@ export async function backfillCrmLinks(
   }
 
   let linkedCount = 0;
-  // A project whose insert failed stays an orphan and would come back in the
-  // next batch forever. Remembering what this run already tried is what ends
-  // the loop; the failures are reported and left for a human.
-  const attempted = new Set<string>();
+  let attemptedCount = 0;
+  // Paged by id rather than by "the next unlinked rows". A linked project stops
+  // being an orphan, so an unordered `LIMIT` would work — until an insert fails.
+  // That project stays an orphan and an unordered query hands back the same page
+  // forever, or, once the page is skipped, ends the loop with every project
+  // behind it untouched. Walking ids upward passes over a failure once and
+  // carries on, so a failure costs one project instead of all the rest.
+  let afterId = "";
 
   for (;;) {
-    const batch = (await orphanBatch(db, BATCH_SIZE)).filter((p) => !attempted.has(p.id));
+    const batch = await orphanBatch(db, afterId, BATCH_SIZE);
     if (batch.length === 0) break;
+    afterId = batch[batch.length - 1].id;
 
     for (const project of batch) {
-      attempted.add(project.id);
+      attemptedCount++;
       try {
         await db.insert(crmProjects).values({
           projectId: project.id,
@@ -101,12 +109,10 @@ export async function backfillCrmLinks(
   }
 
   const remainingOrphans = await countOrphans(db);
-  return { linkedCount, failedCount: attempted.size - linkedCount, remainingOrphans };
+  return { linkedCount, failedCount: attemptedCount - linkedCount, remainingOrphans };
 }
 
-const isEntryPoint = process.argv[1]?.endsWith("backfill-crm-links.ts");
-
-if (isEntryPoint) {
+if (isEntryPoint(import.meta.url)) {
   const dryRun = process.argv.includes("--dry-run");
   const { db, close } = openDb();
 

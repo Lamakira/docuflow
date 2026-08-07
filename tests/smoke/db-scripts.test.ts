@@ -180,6 +180,34 @@ describe("db:backfill:crm-links", () => {
     expect(await db.query.crmProjects.findMany()).toHaveLength(1);
   });
 
+  it("links every orphan past the first batch", async () => {
+    // The backfill reads 200 rows at a time, and a legacy database has more
+    // than that. This pins that the loop clears all of them — the property the
+    // id paging exists to give it. (What the paging additionally protects, and
+    // what no test here forces, is a run where an insert fails: the failing
+    // project stays an orphan, and only ordering keeps the loop from handing
+    // back the same page forever or stopping with the rest untouched.)
+    const count = 250;
+    const owners = await db
+      .insert(users)
+      .values(
+        Array.from({ length: count }, () => ({
+          id: randomUUID(),
+          email: `${randomUUID()}@example.test`,
+          password: "not-a-real-hash",
+          role: "user",
+        }))
+      )
+      .returning({ id: users.id });
+    await db
+      .insert(projects)
+      .values(owners.map((owner, at) => ({ name: `Legacy ${at}`, ownerId: owner.id })));
+
+    const result = await backfillCrmLinks(db);
+
+    expect(result).toEqual({ linkedCount: count, failedCount: 0, remainingOrphans: 0 });
+  }, 60_000);
+
   it("counts without writing under --dry-run", async () => {
     await insertOrphanProject("Legacy handbook");
 

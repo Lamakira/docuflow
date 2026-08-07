@@ -23,14 +23,15 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { crmModuleFields, crmModules, orgSettings } from "../shared/schema";
-import { openDb, type ScriptDb } from "./lib/db";
+import { openDb, type Report, type ScriptDb } from "./lib/db";
+import { isEntryPoint } from "./lib/entrypoint";
 
 /** The `org_settings` primary key the settings endpoints read and write. */
 const ORG_SETTINGS_ROW_ID = "default";
 
 export async function seedCrmDefaults(
   db: ScriptDb,
-  report: (message: string) => void = () => {}
+  report: Report = () => {}
 ): Promise<{ seeded: boolean }> {
   const existingModules = await db.select().from(crmModules);
   if (existingModules.length > 0) {
@@ -135,7 +136,7 @@ export async function seedCrmDefaults(
  */
 export async function seedOrgSettings(
   db: ScriptDb,
-  report: (message: string) => void = () => {}
+  report: Report = () => {}
 ): Promise<{ seeded: boolean }> {
   const inserted = await db
     .insert(orgSettings)
@@ -150,15 +151,13 @@ export async function seedOrgSettings(
 
 export async function seedDefaults(
   db: ScriptDb,
-  report: (message: string) => void = () => {}
+  report: Report = () => {}
 ): Promise<void> {
   await seedCrmDefaults(db, report);
   await seedOrgSettings(db, report);
 }
 
-const isEntryPoint = process.argv[1]?.endsWith("seed-defaults.ts");
-
-if (isEntryPoint) {
+if (isEntryPoint(import.meta.url)) {
   const { db, close } = openDb();
   // A seed against a database whose schema is not current would half-succeed and
   // leave a confusing partial state; fail with the reason instead.

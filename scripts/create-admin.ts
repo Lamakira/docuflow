@@ -10,31 +10,16 @@
  *
  * The script uses DATABASE_URL (or PG* vars as fallback), hashes the password
  * with bcrypt (12 rounds), and inserts a user with role='admin' and isMainAdmin=1.
+ *
+ * Plain node-postgres, like every other script here: nothing an operational
+ * command does needs the Neon serverless driver (ADR-0016).
  */
 
 import bcrypt from "bcrypt";
-import { Pool, neonConfig } from "@neondatabase/serverless";
-import ws from "ws";
+import pg from "pg";
+import { maskDatabaseUrl, requireDatabaseUrl } from "../shared/databaseUrl";
 
 const SALT_ROUNDS = 12;
-
-function resolveConnectionString(): string {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-
-  const host = process.env.PGHOST;
-  const port = process.env.PGPORT ?? "5432";
-  const user = process.env.PGUSER;
-  const password = process.env.PGPASSWORD;
-  const database = process.env.PGDATABASE;
-
-  if (!host || !user || !password || !database) {
-    throw new Error(
-      "Database not configured. Set DATABASE_URL or all PG* variables (PGHOST, PGUSER, PGPASSWORD, PGDATABASE)."
-    );
-  }
-
-  return `postgresql://${user}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
-}
 
 async function main() {
   const [, , email, password, firstName, lastName] = process.argv;
@@ -44,12 +29,10 @@ async function main() {
     process.exit(1);
   }
 
-  const connStr = resolveConnectionString();
-  const masked = connStr.replace(/:([^@]+)@/, ":<hidden>@");
-  console.log(`[DB] Connecting to: ${masked}`);
+  const connStr = requireDatabaseUrl();
+  console.log(`[DB] Connecting to: ${maskDatabaseUrl(connStr)}`);
 
-  neonConfig.webSocketConstructor = ws;
-  const pool = new Pool({ connectionString: connStr });
+  const pool = new pg.Pool({ connectionString: connStr });
 
   try {
     // Check for duplicate
