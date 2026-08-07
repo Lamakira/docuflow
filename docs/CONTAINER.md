@@ -82,10 +82,10 @@ oversight:
   or without a browser in the image. The build therefore skips Playwright's
   ~400 MB browser download rather than paying for one the code will not look at.
   Loom and Fathom scraping fails at launch until that path is replaced.
-- **Migrations run outside the image**, as above. ADR-0016 makes them a gated
-  pre-deploy step, which on Render means a command run against this image — so
-  the deploy ticket needs a second built entry point for `scripts/migrate.ts`.
-- **The image is large** (~1.1 GB) because `package.json` puts the client's
+- **Migrations run outside the image** (#35), as above. ADR-0016 makes them a
+  gated pre-deploy step, which on Render means a command run against this image
+  — so Phase 2 needs a second built entry point for `scripts/migrate.ts`.
+- **The image is large** (#36, ~1.1 GB) because `package.json` puts the client's
   dependencies — `react-icons`, `lucide-react`, `@tiptap`, `@radix-ui` — under
   `dependencies`, so `npm ci --omit=dev` installs them into a runtime that only
   ever serves them pre-bundled from `dist/public`. Splitting client from server
