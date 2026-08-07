@@ -33,7 +33,6 @@ import { isTasksEnabled } from "./migrationFlags";
 const PAIRING_CODE_LENGTH = 6;
 const PAIRING_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const DEVICE_TOKEN_LENGTH = 48; // bytes -> 96 hex chars
-const ACCESS_TOKEN_LENGTH = 32; // bytes -> 64 hex chars
 
 // ─── Helpers ───
 

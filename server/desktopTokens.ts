@@ -18,7 +18,8 @@
  */
 
 import { createHmac } from "crypto";
-import { config, type SigningKey } from "./config";
+import { config } from "./config";
+import type { SigningKey } from "./signingKeys";
 
 /** An hour, unchanged since the protocol's first version. */
 const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -114,10 +115,16 @@ export function verifyAccessToken(token: string): AccessTokenClaims | null {
 
 /**
  * The keys a token's header points at. A `kid` names exactly one, so an id this
- * deployment does not hold leaves nothing to check the signature against. A
- * token carrying no `kid` predates the versioning and is checked against every
- * key it could have come from; those disappear within one token lifetime of the
- * deploy that introduced this.
+ * deployment does not hold leaves nothing to check the signature against.
+ *
+ * A token carrying no `kid` predates the versioning and is checked against every
+ * key it could have come from — without that, the deploy introducing ids would
+ * sign the whole fleet out at once. It is a contract step, not a permanent
+ * branch: nothing has issued a `kid`-less token since #23, so once every replica
+ * has been on post-#23 code for longer than one access-token lifetime, the only
+ * thing this arm can still admit is a forgery attempt. Delete it then, together
+ * with the case covering it in `tests/smoke/desktop-tokens.test.ts` — tracked as
+ * the follow-up under B1 in docs/RELEASE_CANDIDATE_CHECKLIST.md.
  */
 function keysNamedBy(encodedHeader: string): SigningKey[] {
   let header: unknown;

@@ -1,5 +1,6 @@
-import { createHmac } from "crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { base64url, decodeSegment, headerOf, signJwt } from "../helpers/jwt";
+import { parseSigningKey } from "../../server/signingKeys";
 
 /**
  * The desktop agent's access-token signing keys, exercised the way a deployment
@@ -22,8 +23,8 @@ const DEVICE_ID = "0d4d1a3a-b5f4-4a0e-9f8f-0b4a6c8d9e10";
 const USER_ID = "9f2c7b61-2b7e-4f30-9d2a-1c3b5e7f8a90";
 
 /** ADR-0018: invented values. Ids are dates because a rotation is an event. */
-const IN_USE = "2026-08:signing-secret-in-use";
-const TAKING_OVER = "2026-11:signing-secret-taking-over";
+const IN_USE = "2026-08:the-signing-secret-currently-in-use";
+const TAKING_OVER = "2026-11:the-signing-secret-that-is-taking-over";
 /** The incoming key's id over somebody else's secret. */
 const IMPOSTOR = "2026-11:a-secret-this-deployment-never-had";
 
@@ -54,24 +55,8 @@ async function boot(keys: { current: string; previous?: string }) {
   return import("../../server/desktopTokens");
 }
 
-function base64urlEncode(value: string): string {
-  return Buffer.from(value)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-}
-
-function decodeSegment(segment: string): Record<string, unknown> {
-  return JSON.parse(
-    Buffer.from(segment.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString()
-  );
-}
-
-const headerOf = (token: string) => decodeSegment(token.split(".")[0]);
-
-/** The secret half of a `<key-id>:<secret>` pair, for signing something by hand. */
-const secretOf = (key: string) => key.slice(key.indexOf(":") + 1);
+/** The secret half of a written key, split by the server's own rules. */
+const secretOf = (key: string) => parseSigningKey("JWT_SECRET", key).secret;
 
 describe("desktop access tokens — surviving the process", () => {
   it("verifies a token the running process never issued, because the key outlived the last one", async () => {
@@ -119,7 +104,7 @@ describe("desktop access tokens — surviving the process", () => {
     const { issueAccessToken, verifyAccessToken } = await boot({ current: IN_USE });
     const [header, payload, signature] = issueAccessToken(DEVICE_ID, USER_ID).accessToken.split(".");
 
-    const escalated = base64urlEncode(
+    const escalated = base64url(
       JSON.stringify({ ...decodeSegment(payload), sub: "someone-elses-device" })
     );
 
@@ -166,17 +151,15 @@ describe("desktop access tokens — rotation", () => {
     // Shaped exactly like what the server emitted before this change: the same
     // claims under a header naming no key. It has to keep working across the
     // deploy that starts naming them, or every signed-in agent is logged out at
-    // once; it then ages out on its own within a token lifetime.
+    // once; it then ages out on its own within a token lifetime. This case goes
+    // when the branch does — the follow-up under B1 in
+    // docs/RELEASE_CANDIDATE_CHECKLIST.md.
     const now = Math.floor(Date.now() / 1000);
-    const data =
-      `${base64urlEncode(JSON.stringify({ alg: "HS256", typ: "JWT" }))}.` +
-      `${base64urlEncode(JSON.stringify({ sub: DEVICE_ID, uid: USER_ID, iat: now, exp: now + 3600 }))}`;
-    const legacy = `${data}.${createHmac("sha256", secretOf(IN_USE))
-      .update(data)
-      .digest("base64")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=/g, "")}`;
+    const legacy = signJwt(
+      secretOf(IN_USE),
+      { alg: "HS256", typ: "JWT" },
+      { sub: DEVICE_ID, uid: USER_ID, iat: now, exp: now + 3600 }
+    );
 
     const upgraded = await boot({ current: TAKING_OVER, previous: IN_USE });
 

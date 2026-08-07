@@ -2,17 +2,21 @@
  * config.ts — the one place the server reads `process.env`.
  *
  * Everything the process needs is resolved here, once, at module load. The
- * variables the app cannot serve without are validated together: a missing one
- * aborts boot naming every var that is absent, instead of surfacing hours later
- * as a 500 on the first request that happens to need it. Variables that gate a
- * feature stay optional — the feature keeps deciding what "not configured"
- * means, so an unset `OPENAI_API_KEY` or `RESEND_API_KEY` behaves exactly as it
- * did before this module existed.
+ * variables the app cannot serve without are validated together: one that is
+ * absent, or set to something unusable, aborts boot naming every var that needs
+ * attention, instead of surfacing hours later as a 500 on the first request that
+ * happens to need it. Variables that gate a feature stay optional — the feature
+ * keeps deciding what "not configured" means, so an unset `OPENAI_API_KEY` or
+ * `RESEND_API_KEY` behaves exactly as it did before this module existed.
  *
  * `.env.example` documents every variable and `docs/CONFIGURATION.md` explains
  * how they reach the process, including the ADR-0018 rule this repository runs
  * under: no production credential, URL, or dataset ever lands here.
  */
+
+import { parseSigningKey, type SigningKey } from "./signingKeys";
+
+export type { SigningKey };
 
 export type DatabaseSource = "DATABASE_URL" | "PG_VARS";
 export type DatabaseDriver = "neon" | "pg";
@@ -46,16 +50,6 @@ export interface EmailConfig {
   /** Absent means email is unconfigured: sends fail and report the reason. */
   apiKey?: string;
   fromAddress: string;
-}
-
-/**
- * One HMAC key the desktop agent's access tokens are signed and checked with.
- * The id is not a secret: it rides in every token's header, which is what lets a
- * verifier pick the right key while two of them are in circulation.
- */
-export interface SigningKey {
-  id: string;
-  secret: string;
 }
 
 export interface DesktopTokenConfig {
@@ -115,8 +109,8 @@ function readList(name: string): string[] {
 
 /**
  * One section of the configuration, alongside the required variables it found
- * absent. Sections report what is missing rather than aborting on the first gap,
- * so a single boot failure can name every one of them.
+ * absent or unusable. Sections report what is wrong rather than aborting on the
+ * first gap, so a single boot failure can name every one of them.
  */
 interface Resolved<T> {
   value: T;
@@ -157,27 +151,30 @@ function resolveDatabase(): Resolved<DatabaseConfig> {
  * `GCS_SERVICE_ACCOUNT_KEY` holds the key file's JSON, either verbatim or
  * base64-encoded — the encoded form is what survives secret managers and CI
  * variables that mangle newlines in `private_key`.
+ *
+ * A value that cannot be read goes on the caller's pile rather than aborting
+ * here, so a mangled key does not hide every other variable the environment is
+ * also short of.
  */
-function resolveServiceAccount(): ServiceAccountKey | undefined {
-  const raw = read("GCS_SERVICE_ACCOUNT_KEY");
-  if (!raw) return undefined;
-
+function readServiceAccount(raw: string, missing: string[]): ServiceAccountKey | undefined {
   const json = raw.startsWith("{") ? raw : Buffer.from(raw, "base64").toString("utf8");
   let parsed: { client_email?: string; private_key?: string; project_id?: string };
   try {
     parsed = JSON.parse(json);
   } catch {
-    throw new Error(
+    missing.push(
       "GCS_SERVICE_ACCOUNT_KEY is not valid JSON. Supply the service-account key " +
         "file's contents, either verbatim or base64-encoded."
     );
+    return undefined;
   }
 
   if (!parsed.client_email || !parsed.private_key) {
-    throw new Error(
+    missing.push(
       "GCS_SERVICE_ACCOUNT_KEY is missing client_email or private_key — it does " +
         "not look like a service-account key file."
     );
+    return undefined;
   }
 
   return {
@@ -209,8 +206,14 @@ function resolveObjectStorage(): Resolved<ObjectStorageConfig> {
   // upload. Bare workload identity — a Google host inferring an identity from no
   // variable at all — is not among them: nothing this app runs on is a Google
   // host, so it would be a mode no deployment has ever exercised.
-  const serviceAccount = resolveServiceAccount();
-  if (!serviceAccount && !read("GOOGLE_APPLICATION_CREDENTIALS")) {
+  //
+  // Naming neither is the complaint below; naming one that cannot be read is a
+  // different complaint, which `readServiceAccount` files itself.
+  const serviceAccountKey = read("GCS_SERVICE_ACCOUNT_KEY");
+  const serviceAccount = serviceAccountKey
+    ? readServiceAccount(serviceAccountKey, missing)
+    : undefined;
+  if (!serviceAccountKey && !read("GOOGLE_APPLICATION_CREDENTIALS")) {
     missing.push(
       "GCS_SERVICE_ACCOUNT_KEY — the service-account key file's JSON, verbatim or " +
         "base64-encoded; or GOOGLE_APPLICATION_CREDENTIALS naming a key file on disk"
@@ -228,24 +231,21 @@ function resolveObjectStorage(): Resolved<ObjectStorageConfig> {
   };
 }
 
+/** Stands in until boot aborts: nothing reads it while `missing` is non-empty. */
+const UNRESOLVED_KEY: SigningKey = { id: "", secret: "" };
+
 /**
- * `<key-id>:<secret>` — an id naming the key, then the secret itself. Split on
- * the first colon, so a secret containing one survives intact.
+ * A written key, or nothing and the reason on the pile. A value that cannot be
+ * read is reported the way an absent one is, so a malformed key does not hide
+ * every other variable the environment is also short of.
  */
-function parseSigningKey(name: string, raw: string): SigningKey {
-  const separator = raw.indexOf(":");
-  const id = separator > 0 ? raw.slice(0, separator) : "";
-  const secret = separator > 0 ? raw.slice(separator + 1) : "";
-
-  if (!/^[A-Za-z0-9._-]{1,64}$/.test(id) || secret.length === 0) {
-    throw new Error(
-      `${name} must be written as <key-id>:<secret> — an id of letters, digits, ` +
-        `'.', '-' or '_' naming the key, a colon, then the secret. Carrying the id ` +
-        `with the secret is what keeps the two from being rotated apart.`
-    );
+function readSigningKey(name: string, raw: string, missing: string[]): SigningKey | undefined {
+  try {
+    return parseSigningKey(name, raw);
+  } catch (error) {
+    missing.push((error as Error).message);
+    return undefined;
   }
-
-  return { id, secret };
 }
 
 /**
@@ -261,31 +261,32 @@ function parseSigningKey(name: string, raw: string): SigningKey {
  * docs/CONFIGURATION.md has the procedure.
  */
 function resolveDesktopTokens(): Resolved<DesktopTokenConfig> {
+  const missing: string[] = [];
+
   const currentRaw = read("JWT_SECRET");
   if (!currentRaw) {
-    return {
-      value: { current: { id: "", secret: "" } },
-      missing: [
-        "JWT_SECRET — signs desktop-agent access tokens, written as <key-id>:<secret>, " +
-          "e.g. 2026-08:$(openssl rand -hex 32)",
-      ],
-    };
+    missing.push(
+      "JWT_SECRET — signs desktop-agent access tokens, written as <key-id>:<secret>, " +
+        "e.g. 2026-08:$(openssl rand -hex 32)"
+    );
   }
+  const current = currentRaw ? readSigningKey("JWT_SECRET", currentRaw, missing) : undefined;
 
-  const current = parseSigningKey("JWT_SECRET", currentRaw);
   const previousRaw = read("JWT_PREVIOUS_SECRET");
-  const previous = previousRaw ? parseSigningKey("JWT_PREVIOUS_SECRET", previousRaw) : undefined;
+  const previous = previousRaw
+    ? readSigningKey("JWT_PREVIOUS_SECRET", previousRaw, missing)
+    : undefined;
 
   // One id answering to two secrets would make the id in a token's header
   // ambiguous, which is the single thing it is there to settle.
-  if (previous && previous.id === current.id) {
-    throw new Error(
+  if (current && previous && previous.id === current.id) {
+    missing.push(
       `JWT_PREVIOUS_SECRET and JWT_SECRET both name the key "${current.id}". A rotation ` +
         `puts a new id alongside the old one; give the incoming key a different id.`
     );
   }
 
-  return { value: { current, previous }, missing: [] };
+  return { value: { current: current ?? UNRESOLVED_KEY, previous }, missing };
 }
 
 /**

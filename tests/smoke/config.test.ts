@@ -45,7 +45,7 @@ const BOOTABLE = {
   NODE_ENV: "test",
   DATABASE_URL: "postgresql://docuflow:pa55w0rd@localhost:5432/docuflow",
   SESSION_SECRET: "test-session-secret",
-  JWT_SECRET: "2026-08:current-signing-secret",
+  JWT_SECRET: "2026-08:the-signing-secret-currently-in-use",
   PRIVATE_OBJECT_DIR: "/test-bucket/.private",
   PUBLIC_OBJECT_SEARCH_PATHS: "/test-bucket/public",
   // The cheaper of the two storage credentials to name: a path, never opened here.
@@ -92,7 +92,7 @@ describe("config — required variables", () => {
     expect(config.sessionSecret).toBe("test-session-secret");
     expect(config.desktopTokens.current).toEqual({
       id: "2026-08",
-      secret: "current-signing-secret",
+      secret: "the-signing-secret-currently-in-use",
     });
     expect(config.desktopTokens.previous).toBeUndefined();
     expect(config.objectStorage.privateDir).toBe("/test-bucket/.private");
@@ -243,6 +243,22 @@ describe("config — service-account key", () => {
     expect((error as Error).message).toContain("missing client_email or private_key");
   });
 
+  it("reports an unreadable key alongside the other gaps, not instead of them", async () => {
+    const error = await load({
+      NODE_ENV: "test",
+      GCS_SERVICE_ACCOUNT_KEY: "{not json at all",
+    }).catch((e: Error) => e);
+
+    const message = (error as Error).message;
+    expect(message).toContain("GCS_SERVICE_ACCOUNT_KEY is not valid JSON");
+    expect(message).toContain("DATABASE_URL");
+    expect(message).toContain("SESSION_SECRET");
+    expect(message).toContain("JWT_SECRET");
+    // And one complaint rather than two: a credential was named, it just cannot
+    // be read, which is not the same as naming neither.
+    expect(message).not.toContain("naming a key file on disk");
+  });
+
   it("takes the project from GCS_PROJECT_ID, falling back to the key's", async () => {
     const fromKey = await load({
       ...BOOTABLE,
@@ -271,21 +287,27 @@ describe("config — desktop token signing keys", () => {
   });
 
   it("splits on the first colon, so a secret may contain one", async () => {
-    const { config } = await load({ ...BOOTABLE, JWT_SECRET: "2026-08:head:tail" });
+    const { config } = await load({
+      ...BOOTABLE,
+      JWT_SECRET: "2026-08:head:tail-of-one-long-enough-secret",
+    });
 
-    expect(config.desktopTokens.current).toEqual({ id: "2026-08", secret: "head:tail" });
+    expect(config.desktopTokens.current).toEqual({
+      id: "2026-08",
+      secret: "head:tail-of-one-long-enough-secret",
+    });
   });
 
   it("accepts a previous key alongside the current one", async () => {
     const { config } = await load({
       ...BOOTABLE,
-      JWT_PREVIOUS_SECRET: "2026-05:retiring-signing-secret",
+      JWT_PREVIOUS_SECRET: "2026-05:the-signing-secret-being-retired",
     });
 
     expect(config.desktopTokens.current.id).toBe("2026-08");
     expect(config.desktopTokens.previous).toEqual({
       id: "2026-05",
-      secret: "retiring-signing-secret",
+      secret: "the-signing-secret-being-retired",
     });
   });
 
@@ -307,10 +329,34 @@ describe("config — desktop token signing keys", () => {
     expect((previous as Error).message).toContain("JWT_PREVIOUS_SECRET must be written as");
   });
 
+  it("rejects a secret too short to be one, and says how short it is", async () => {
+    const error = await load({ ...BOOTABLE, JWT_SECRET: "2026-08:too-short" }).catch(
+      (e: Error) => e
+    );
+
+    // The id is checked against a pattern; a secret waved through on being
+    // merely non-empty would be the wrong half to take on trust.
+    expect((error as Error).message).toContain("JWT_SECRET names a secret of 9 characters");
+  });
+
+  it("reports an unusable key alongside the other gaps, not instead of them", async () => {
+    const error = await load({ NODE_ENV: "test", JWT_SECRET: "no-id-here" }).catch(
+      (e: Error) => e
+    );
+
+    // A malformed key that aborted on the spot would hide every variable behind
+    // it, and cost an operator one restart per problem to find them all.
+    const message = (error as Error).message;
+    expect(message).toContain("JWT_SECRET must be written as");
+    expect(message).toContain("DATABASE_URL");
+    expect(message).toContain("SESSION_SECRET");
+    expect(message).toContain("PRIVATE_OBJECT_DIR");
+  });
+
   it("refuses two keys answering to the same id", async () => {
     const error = await load({
       ...BOOTABLE,
-      JWT_PREVIOUS_SECRET: "2026-08:the-secret-being-retired",
+      JWT_PREVIOUS_SECRET: "2026-08:the-signing-secret-being-retired",
     }).catch((e: Error) => e);
 
     // A token's `kid` would then name both, which is the one question it exists
@@ -323,14 +369,14 @@ describe("config — desktop token signing keys", () => {
     try {
       const rotating = await load({
         ...BOOTABLE,
-        JWT_PREVIOUS_SECRET: "2026-05:retiring-signing-secret",
+        JWT_PREVIOUS_SECRET: "2026-05:the-signing-secret-being-retired",
       });
       rotating.logConfigSummary();
 
       const line = spy.mock.calls.flat().join("\n");
       expect(line).toContain("desktop tokens on key 2026-08, retiring 2026-05");
-      expect(line).not.toContain("current-signing-secret");
-      expect(line).not.toContain("retiring-signing-secret");
+      expect(line).not.toContain("the-signing-secret-currently-in-use");
+      expect(line).not.toContain("the-signing-secret-being-retired");
     } finally {
       spy.mockRestore();
     }

@@ -21,6 +21,7 @@ Blocking items listed below. All non-blockers can ship with documented known iss
 - **Zone:** `server/desktopTokens.ts`, reading `config.desktopTokens` from `server/config.ts`.
 - **Status:** DONE ([#23](https://github.com/Lamakira/docuflow/issues/23)) — the ephemeral fallback is gone; the server refuses to boot without `JWT_SECRET`, so the misconfiguration can no longer reach production silently.
 - **Fix:** Set `JWT_SECRET` as `<key-id>:<secret>` in the deployment's secret store, e.g. `2026-08:$(openssl rand -hex 32)`. Rotate it through `JWT_PREVIOUS_SECRET` — procedure in [CONFIGURATION.md](CONFIGURATION.md#desktop-access-token-signing-keys).
+- **Follow-up:** `keysNamedBy` in `server/desktopTokens.ts` still accepts a token carrying no `kid`, which is what kept the #23 deploy from signing the fleet out. Nothing has issued one since. Delete the branch, and the case covering it in `tests/smoke/desktop-tokens.test.ts`, once every replica has been on post-#23 code for longer than one access-token lifetime — an hour. Left in place, `kid` is advisory rather than required, which is not what #23 asked for.
 
 ### B2 — Server must be restarted on Replit with latest code
 - **Impact:** Tasks feature still blocked by old `isTasksEnabled()` = false behavior until server picks up commit `1495f15`.
