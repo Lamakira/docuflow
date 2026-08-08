@@ -482,7 +482,7 @@ function resolveTelemetry(nodeEnv: string): Resolved<TelemetryConfig> {
 
 function resolveConfig(): AppConfig {
   // Read as a static member expression: the production bundle replaces exactly
-  // this text with a literal (see script/build.ts), which a dynamic lookup misses.
+  // this text with a literal (see script/bundles.ts), which a dynamic lookup misses.
   const nodeEnv = process.env.NODE_ENV ?? "development";
 
   const database = resolveDatabase();

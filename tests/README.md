@@ -120,6 +120,15 @@ still produces exactly what it produced; migration `0004` exists because it did
 not. `db-scripts` freezes the rows `npm run db:seed` and
 `npm run db:backfill:crm-links` write, which are the rows `server/index.ts` used
 to write on every start.
+`migrate-bundle` ([#35](https://github.com/Lamakira/docuflow/issues/35)) covers
+the other form of the same runner: `dist/migrate.mjs`, built from
+`script/bundles.ts` and run as a command against a staged `/app` with no
+checkout in it, so the three things only the bundle can lose — an empty
+`import.meta` under `format: "cjs"`, a journal that did not travel beside it, a
+flag dropped in the move — fail here rather than during a deploy. It also pins
+the bundle's external imports to `dependencies`, which is the one difference
+between that staging and the real image: the runtime stage installs
+`npm ci --omit=dev`.
 
 None of the three can see DDL applied to a database from outside this repository
 — both sides of every comparison here are built from the repository. That is

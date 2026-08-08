@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { isBuiltin } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildMigrateRunner } from "../../script/build";
+import { buildMigrateRunner } from "../../script/bundles";
 import { loadMigrations } from "../../scripts/migrate";
+import { urlForDatabase, withClient } from "../helpers/db";
 import { resolveTestDatabaseUrl } from "../test-db-url";
 
 /**
@@ -28,9 +29,16 @@ import { resolveTestDatabaseUrl } from "../test-db-url";
  *    predating the journal needs, and Phase 2 points this at exactly such a
  *    database, once, with no second chance to notice the flag was inert.
  *
- * So the bundle is built from `script/build.ts` — the same function the image
+ * So the bundle is built from `script/bundles.ts` — the same function the image
  * build calls, not a second copy of its configuration — laid out the way the
  * runtime stage lays it out, and run as a command.
+ *
+ * **What this stages is not the image.** `stagedApp` symlinks the checkout's
+ * `node_modules`, where the runtime stage installs `npm ci --omit=dev`, so a
+ * bundle that reached for a devDependency would resolve here and fail there.
+ * "imports nothing the runtime image would not have" is what covers that, off
+ * the build's own metafile rather than off what happened to resolve. Building
+ * and running the real image is `.github/workflows/ci.yml`'s `image` job.
  */
 
 const REPO = join(import.meta.dirname, "..", "..");
@@ -41,13 +49,16 @@ const PROBE_DB = "docuflow_migrate_bundle";
 
 /**
  * /app as the runtime stage builds it: the bundle under `dist/`, the journal
- * beside it, and the runtime dependency tree the bundle's externals resolve
- * from. Nothing else — no source, no package.json, no tsx.
+ * beside it, and a dependency tree the bundle's externals resolve from. No
+ * source, no package.json, no tsx.
  */
-let image: string;
+let stagedApp: string;
+
+/** What the build left for node_modules to answer, from its metafile. */
+let externalImports: string[];
 
 function bundlePath(): string {
-  return join(image, "dist", "migrate.mjs");
+  return join(stagedApp, "dist", "migrate.mjs");
 }
 
 /**
@@ -60,26 +71,10 @@ function bundlePath(): string {
  */
 function runMigrate(url: string, ...args: string[]): string {
   return execFileSync(process.execPath, [bundlePath(), ...args], {
-    cwd: image,
+    cwd: stagedApp,
     env: { PATH: process.env.PATH ?? "", DATABASE_URL: url },
     encoding: "utf8",
   });
-}
-
-function urlForDatabase(name: string): string {
-  const url = new URL(TEST_DB_URL);
-  url.pathname = `/${name}`;
-  return url.toString();
-}
-
-async function withClient<T>(url: string, use: (client: Client) => Promise<T>): Promise<T> {
-  const client = new Client({ connectionString: url });
-  await client.connect();
-  try {
-    return await use(client);
-  } finally {
-    await client.end();
-  }
 }
 
 /** Does `table` exist? Used for the ledger and for the schema itself. */
@@ -102,21 +97,43 @@ async function freshProbe(): Promise<string> {
 
 describe("dist/migrate.mjs", () => {
   beforeAll(async () => {
-    image = mkdtempSync(join(tmpdir(), "docuflow-image-"));
-    mkdirSync(join(image, "dist"));
-    cpSync(join(REPO, "migrations"), join(image, "migrations"), { recursive: true });
-    // The image installs its own; a symlink is the cheap stand-in, and Node
-    // resolves the bundle's externals through it the same way either way.
-    symlinkSync(join(REPO, "node_modules"), join(image, "node_modules"), "dir");
+    stagedApp = mkdtempSync(join(tmpdir(), "docuflow-staged-app-"));
+    mkdirSync(join(stagedApp, "dist"));
+    cpSync(join(REPO, "migrations"), join(stagedApp, "migrations"), { recursive: true });
+    // The image installs its own, without the devDependency half; a symlink is
+    // the cheap stand-in for resolution, and the test below is what makes the
+    // difference between the two trees visible rather than lucky.
+    symlinkSync(join(REPO, "node_modules"), join(stagedApp, "node_modules"), "dir");
 
-    await buildMigrateRunner(bundlePath());
+    const built = await buildMigrateRunner(bundlePath());
+    const [output] = Object.values(built.metafile.outputs);
+    externalImports = output.imports.filter((i) => i.external).map((i) => i.path);
   }, 60_000);
 
   afterAll(async () => {
     await withClient(urlForDatabase("postgres"), (client) =>
       client.query(`DROP DATABASE IF EXISTS ${PROBE_DB}`)
     );
-    rmSync(image, { recursive: true, force: true });
+    rmSync(stagedApp, { recursive: true, force: true });
+  });
+
+  it("imports nothing the runtime image would not have", () => {
+    // The runtime stage installs `npm ci --omit=dev`, so every bare specifier
+    // the bundle left external has to be a `dependencies` entry or a builtin.
+    // A devDependency would resolve against the symlinked checkout above and
+    // then crash the pre-deploy step on a host with no second chance — and it
+    // is the one failure mode staging /app in a tmpdir cannot reproduce.
+    const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
+    const runtimeDeps = new Set(Object.keys(pkg.dependencies ?? {}));
+
+    const notInstalled = externalImports.filter((specifier) => {
+      if (isBuiltin(specifier)) return false;
+      const parts = specifier.split("/");
+      const name = specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
+      return !runtimeDeps.has(name);
+    });
+
+    expect(notInstalled).toEqual([]);
   });
 
   it("lists the journal against a real database", () => {
