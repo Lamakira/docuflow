@@ -25,6 +25,16 @@
 !shared
 !script
 
+# `script/` builds; `scripts/` is what the second build output is built from —
+# `scripts/migrate.ts` becomes dist/migrate.mjs (#35). The two names are one
+# letter apart and neither is optional.
+!scripts
+
+# Read at runtime rather than build time: the migration runner in the image
+# resolves the journal beside itself, so `migrations/` is copied into the final
+# stage and never touched by the build.
+!migrations
+
 # The directories above bring anything nested inside them; these never belong in
 # an image regardless of where they turn up.
 **/node_modules

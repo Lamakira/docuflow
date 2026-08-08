@@ -3,10 +3,14 @@
 ####
 # The one image both runtimes ship from (#25, ADR-0016).
 #
-# Today it runs the HTTP server. The Phase 3 worker will be this same image
+# By default it runs the HTTP server. The Phase 3 worker will be this same image
 # started with a different command, so the entry point is a CMD and not an
 # ENTRYPOINT: `docker run <image> node dist/something-else.cjs` replaces it
 # without rebuilding, and the two runtimes stay one digest apart from nothing.
+#
+# `node dist/migrate.mjs` is the first command to use that (#35): the migration
+# runner ADR-0016 makes a gated pre-deploy step, run against the same image the
+# service runs, so no host needs a checkout to apply the schema.
 #
 # The image holds no configuration. Every setting arrives as an environment
 # variable read by `server/config.ts` and nowhere else (#22), which refuses to
@@ -67,10 +71,14 @@ COPY tsconfig.json vite.config.ts tailwind.config.ts postcss.config.js ./
 COPY client ./client
 COPY server ./server
 COPY shared ./shared
+# One letter apart and both required: `script/` is the build itself,
+# `scripts/` holds the operational commands, one of which is now built too.
 COPY script ./script
+COPY scripts ./scripts
 
 # Writes dist/public (the client bundle, served by server/static.ts from
-# `<dist>/public`) and dist/index.cjs (the server).
+# `<dist>/public`), dist/index.cjs (the server), and dist/migrate.mjs (the
+# migration runner, #35).
 RUN npm run build
 
 ####
@@ -106,6 +114,13 @@ EXPOSE 5000
 COPY --chown=node:node --from=runtime-deps /app/node_modules ./node_modules
 COPY --chown=node:node --from=build /app/dist ./dist
 COPY --chown=node:node package.json ./
+
+# The journal, from the context rather than the build: nothing compiles it, and
+# dist/migrate.mjs reads the `.sql` files at runtime from `<its own dir>/../
+# migrations` — so /app/migrations is exactly where it looks. Copied whole,
+# `legacy/` and `meta/` included, so the image's journal is the checkout's and
+# there is no second answer to what "the journal" is.
+COPY --chown=node:node migrations ./migrations
 
 USER node
 
