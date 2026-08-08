@@ -1,7 +1,7 @@
-import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { describeSchema, onlyTables } from "../../scripts/lib/schemaSnapshot";
 import { migrate } from "../../scripts/migrate";
+import { urlForDatabase, withClient } from "../helpers/db";
 import { resolveTestDatabaseUrl } from "../test-db-url";
 
 /**
@@ -110,22 +110,6 @@ const BOOT_OWNED_COLUMN = { table: "time_entries", column: "task_id" } as const;
 
 const TEST_DB_URL = resolveTestDatabaseUrl();
 const SCRATCH_DB = "docuflow_boot_ddl";
-
-function urlForDatabase(name: string): string {
-  const url = new URL(TEST_DB_URL);
-  url.pathname = `/${name}`;
-  return url.toString();
-}
-
-async function withClient<T>(url: string, use: (client: Client) => Promise<T>): Promise<T> {
-  const client = new Client({ connectionString: url });
-  await client.connect();
-  try {
-    return await use(client);
-  } finally {
-    await client.end();
-  }
-}
 
 /** Definitions only, sorted — the shape without the names Postgres chose for it. */
 function definitions(rows: { table_name: string; definition: string }[]): string[] {
