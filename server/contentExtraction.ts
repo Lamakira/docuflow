@@ -1,12 +1,27 @@
 import mammoth from "mammoth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 
-let pdfParse: any = null;
+type PDFParseClass = typeof import("pdf-parse").PDFParse;
 
-async function getPdfParser() {
+let pdfParse: PDFParseClass | null = null;
+
+/**
+ * pdf-parse's parser class, imported on the first PDF rather than at load.
+ *
+ * The import stays lazy for two reasons: boot does not pay for pdfjs-dist, and
+ * the specifier is a string literal esbuild can see, so `script/bundles.ts`
+ * leaves the package external instead of inlining 115 MB into `dist/index.cjs`
+ * (#36).
+ *
+ * **v2 is a class, not a callable module.** Until #36 exercised this path, the
+ * import was read as `module.default || module` — and pdf-parse 2.x publishes
+ * no default export, so that resolved to the namespace object and every
+ * extraction died calling it. A version that changes this shape does not fail
+ * the build; it fails the first upload.
+ */
+async function getPdfParser(): Promise<PDFParseClass> {
   if (!pdfParse) {
-    const module = await import("pdf-parse") as any;
-    pdfParse = module.default || module;
+    ({ PDFParse: pdfParse } = await import("pdf-parse"));
   }
   return pdfParse;
 }
@@ -112,11 +127,16 @@ export function isVideoFile(mimeType: string, fileName: string): boolean {
 }
 
 async function extractTextFromPdf(buffer: Buffer): Promise<ContentExtractionResult> {
+  let parser: InstanceType<PDFParseClass> | undefined;
+
   try {
-    const parser = await getPdfParser();
-    const data = await parser(buffer);
-    const text = data.text?.trim() || "";
-    
+    const PDFParse = await getPdfParser();
+    parser = new PDFParse({ data: buffer });
+    // `pageJoiner` defaults to appending "-- 1 of 12 --" after every page. This
+    // text becomes the document's searchable content, so the marker would be
+    // indexed as if the document said it.
+    const text = (await parser.getText({ pageJoiner: "" })).text?.trim() || "";
+
     if (!text) {
       return {
         success: true,
@@ -136,6 +156,11 @@ async function extractTextFromPdf(buffer: Buffer): Promise<ContentExtractionResu
       text: "",
       error: error instanceof Error ? error.message : "Failed to parse PDF"
     };
+  } finally {
+    // Releases the pdfjs worker and the document's buffers; a parser left
+    // undestroyed holds both for the life of the process. Cleanup failing is
+    // not the caller's problem and must not replace the answer above.
+    await parser?.destroy().catch(() => {});
   }
 }
 
