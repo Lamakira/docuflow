@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { createServer, type Server } from "http";
-import { logError } from "./logger";
+import { logError, logHttpRequest } from "./logger";
 import { registerRoutes } from "./routes";
 
 declare module "http" {
@@ -115,16 +115,21 @@ export async function createApp(): Promise<{
       return originalResJson.apply(res, [bodyJson, ...args]);
     };
 
+    // Through the structured logger since #26, so the request line carries the
+    // trace id of the request it describes and reaches the same place every
+    // other log record does. The response body it used to append is printed
+    // outside production only — see logHttpRequest.
     res.on("finish", () => {
-      const duration = Date.now() - start;
-      if (path.startsWith("/api")) {
-        let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-        if (capturedJsonResponse) {
-          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-        }
-
-        log(logLine);
-      }
+      if (!path.startsWith("/api")) return;
+      logHttpRequest(
+        {
+          method: req.method,
+          path,
+          status: res.statusCode,
+          durationMs: Date.now() - start,
+        },
+        capturedJsonResponse
+      );
     });
 
     next();

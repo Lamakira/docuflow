@@ -75,6 +75,11 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `NODE_ENV` | `development`. The production build replaces the read with a literal (`script/build.ts`), so a deployment sets it rather than a person |
 | `DB_DRIVER` | Neon's serverless driver; `pg` selects node-postgres for a database that driver cannot reach. Permanent configuration and not a migration flag (#25): the database this points at decides it, so there is nothing to remove ([docs/CONTAINER.md](CONTAINER.md)) |
 | `REPL_ID`, `ISSUER_URL` | Replit OIDC login fails. Phase 5 removes both |
+| `OTEL_EXPORTER` | The environment decides: nothing under test, the console in development, nothing in production until a collector is named — see [Telemetry](#telemetry) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | No collector, so nothing is exported over OTLP. Instrumentation still runs |
+| `OTEL_SERVICE_NAME` | `docuflow-server` |
+| `OTEL_METRIC_EXPORT_INTERVAL_MS` | 60000 |
+| `ALLOW_REMOTE_OTLP` | A non-local `OTEL_EXPORTER_OTLP_ENDPOINT` is refused outright (ADR-0018) |
 
 `MCP_API_KEY` and `DESKTOP_RELEASE_CI_TOKEN` are read per request rather than at
 boot, so rotating either takes effect without a restart.
@@ -218,6 +223,47 @@ secrets never reach a suite.
 | --- | --- |
 | `TEST_DATABASE_URL` | The `docker-compose.test.yml` Postgres on `localhost:5433`. Whatever it points at is truncated between tests, so it must be disposable |
 | `ALLOW_REMOTE_TEST_DB` | A non-local `TEST_DATABASE_URL` is refused outright (ADR-0018). `1` permits one, and should only ever name a throwaway database |
+
+## Telemetry
+
+What the OpenTelemetry SDK collects is fixed; where it goes is these variables.
+[docs/OBSERVABILITY.md](OBSERVABILITY.md) is the whole picture — what is
+instrumented, and the IDs-only rule any new field has to satisfy.
+
+`OTEL_EXPORTER` is `none`, `console`, or `otlp`. Unset, the environment decides:
+
+| Environment | Exporter | Why |
+| --- | --- | --- |
+| `NODE_ENV=test` | `none` | A suite must not print spans, hold a batch open, or depend on what is listening on the machine. An endpoint in the shell is ignored here; `OTEL_EXPORTER=otlp` is the deliberate override |
+| An endpoint is set | `otlp` | Naming a collector is how you ask for one |
+| `NODE_ENV=development` | `console` | `npm run dev` shows a trace without a collector to run |
+| `NODE_ENV=production` | `none` | Until Phase 2 sets an endpoint. A production process printing every span fills its log drain with them |
+
+`none` is a destination, not a switch: the SDK starts, the libraries are
+patched, spans are created and discarded, and every log line still carries the
+trace id of the request it came from — which is what production has out of this
+ticket, and what makes Phase 2 a variable. `NODE_ENV=test` is the one case that
+skips the SDK entirely (`server/telemetry.ts`), so no suite runs through a
+patched express or pg.
+
+`OTEL_EXPORTER_OTLP_ENDPOINT` is the collector's **root** — `http://localhost:4318`
+— and each signal appends its own `/v1/traces`, `/v1/metrics`, `/v1/logs`.
+`OTEL_EXPORTER_OTLP_HEADERS` is `key=value,key2=value2`, the format a collector's
+own documentation gives; it is where a hosted sink's ingest token goes, and the
+boot line prints the endpoint and never the headers.
+
+Boot refuses an endpoint that is not on this machine unless `ALLOW_REMOTE_OTLP=1`
+is set — the same deliberate opt-out `ALLOW_REMOTE_TEST_DB` is for the harness.
+ADR-0018 keeps this environment's telemetry on local collectors until Phase 2
+provisions sinks of its own.
+
+`OTEL_METRIC_EXPORT_INTERVAL_MS` is how long the console exporter waits between
+metric dumps. Shortening it is the only reason to set it: 60 seconds is a long
+time to watch a terminal to find out whether a counter is moving.
+
+There is no sampling variable. Every trace is kept, which is what a deployment
+this size wants; Phase 2 adds a rate when it has an ingest bill to trade detail
+against, and can add it without touching application code.
 
 ## Email
 
