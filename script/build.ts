@@ -4,6 +4,13 @@ import { rm, readFile } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
+//
+// A library an OpenTelemetry instrumentation patches must NOT be listed here
+// (#26). Patching happens when the module is required, and a bundled module is
+// never required — inlining express here is what silently removed route spans
+// and `http.route` from every HTTP metric, with the SDK reporting nothing wrong.
+// `express` and `pg` are therefore external on purpose; so is every
+// `@opentelemetry/*` package, by not being listed. See server/telemetry.ts.
 const allowlist = [
   "@google/generative-ai",
   "@neondatabase/serverless",
@@ -13,7 +20,6 @@ const allowlist = [
   "date-fns",
   "drizzle-orm",
   "drizzle-zod",
-  "express",
   "express-rate-limit",
   "express-session",
   "jsonwebtoken",

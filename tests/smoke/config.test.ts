@@ -38,6 +38,13 @@ const CONFIG_VARS = [
   "FATHOM_API_KEY",
   "REPL_ID",
   "ISSUER_URL",
+  "OTEL_EXPORTER",
+  "OTEL_SERVICE_NAME",
+  "OTEL_EXPORTER_OTLP_ENDPOINT",
+  "OTEL_EXPORTER_OTLP_HEADERS",
+  "OTEL_TRACES_SAMPLE_RATE",
+  "OTEL_METRIC_EXPORT_INTERVAL_MS",
+  "ALLOW_REMOTE_OTLP",
 ] as const;
 
 /** The smallest environment that boots: one of each required variable. */
@@ -416,6 +423,111 @@ describe("config — app URL", () => {
   });
 });
 
+describe("config — telemetry", () => {
+  it("exports nothing under test, so a suite is never instrumented", async () => {
+    const { config } = await load(BOOTABLE);
+
+    expect(config.telemetry.exporter).toBe("none");
+    expect(config.telemetry.serviceName).toBe("docuflow-server");
+    expect(config.telemetry.traceSampleRate).toBe(1);
+  });
+
+  it("prints to the console in development and stays quiet in production", async () => {
+    const development = await load({ ...BOOTABLE, NODE_ENV: "development" });
+    expect(development.config.telemetry.exporter).toBe("console");
+
+    // Nothing is configured to receive it yet (ADR-0018), and a production
+    // process printing every span would fill its log drain with them.
+    const production = await load({ ...BOOTABLE, NODE_ENV: "production" });
+    expect(production.config.telemetry.exporter).toBe("none");
+  });
+
+  it("switches to OTLP as soon as a collector is named", async () => {
+    const { config } = await load({
+      ...BOOTABLE,
+      NODE_ENV: "production",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318/",
+      OTEL_EXPORTER_OTLP_HEADERS: "authorization=Bearer ingest-token,x-source=docuflow",
+    });
+
+    expect(config.telemetry.exporter).toBe("otlp");
+    // Trailing slash removed: each signal appends its own /v1/... path.
+    expect(config.telemetry.otlpEndpoint).toBe("http://localhost:4318");
+    expect(config.telemetry.otlpHeaders).toEqual({
+      authorization: "Bearer ingest-token",
+      "x-source": "docuflow",
+    });
+  });
+
+  it("ignores a collector a developer's shell happens to name, under test", async () => {
+    const { config } = await load({
+      ...BOOTABLE,
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318",
+    });
+
+    // A suite that exported its spans somewhere would be a suite whose result
+    // depends on what else is listening on this machine.
+    expect(config.telemetry.exporter).toBe("none");
+  });
+
+  it("lets OTEL_EXPORTER override what the environment would have chosen", async () => {
+    const { config } = await load({ ...BOOTABLE, NODE_ENV: "test", OTEL_EXPORTER: "console" });
+
+    expect(config.telemetry.exporter).toBe("console");
+  });
+
+  it("refuses an OTLP exporter with nowhere to send", async () => {
+    const error = await load({ ...BOOTABLE, OTEL_EXPORTER: "otlp" }).catch((e: Error) => e);
+
+    expect((error as Error).message).toContain("OTEL_EXPORTER_OTLP_ENDPOINT");
+  });
+
+  it("refuses a collector that is not on this machine (ADR-0018)", async () => {
+    const error = await load({
+      ...BOOTABLE,
+      OTEL_EXPORTER_OTLP_ENDPOINT: "https://in.logs.betterstack.com",
+    }).catch((e: Error) => e);
+
+    const message = (error as Error).message;
+    expect(message).toContain("in.logs.betterstack.com");
+    expect(message).toContain("ALLOW_REMOTE_OTLP=1");
+  });
+
+  it("accepts a remote collector only when the opt-out is set explicitly", async () => {
+    const { config } = await load({
+      ...BOOTABLE,
+      NODE_ENV: "production",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "https://collector.example.com",
+      ALLOW_REMOTE_OTLP: "1",
+    });
+
+    expect(config.telemetry.exporter).toBe("otlp");
+    expect(config.telemetry.otlpEndpoint).toBe("https://collector.example.com");
+  });
+
+  it("names the variable and the value it could not use", async () => {
+    const exporter = await load({ ...BOOTABLE, OTEL_EXPORTER: "jaeger" }).catch((e: Error) => e);
+    expect((exporter as Error).message).toContain('OTEL_EXPORTER is "jaeger"');
+
+    const rate = await load({ ...BOOTABLE, OTEL_TRACES_SAMPLE_RATE: "50" }).catch(
+      (e: Error) => e
+    );
+    expect((rate as Error).message).toContain("OTEL_TRACES_SAMPLE_RATE");
+
+    const interval = await load({ ...BOOTABLE, OTEL_METRIC_EXPORT_INTERVAL_MS: "0.5" }).catch(
+      (e: Error) => e
+    );
+    expect((interval as Error).message).toContain("OTEL_METRIC_EXPORT_INTERVAL_MS");
+
+    const headers = await load({
+      ...BOOTABLE,
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318",
+      OTEL_EXPORTER_OTLP_HEADERS: "authorization",
+    }).catch((e: Error) => e);
+    expect((headers as Error).message).toContain("OTEL_EXPORTER_OTLP_HEADERS");
+  });
+});
+
 describe("config — boot summary", () => {
   it("stays silent on import, so loading config never writes to a log", async () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -456,6 +568,25 @@ describe("config — boot summary", () => {
       });
       inline.logConfigSummary();
       expect(spy.mock.calls.flat().join("\n")).toContain("service-account key");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("names where telemetry goes, and never the token that gets it there", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const { logConfigSummary } = await load({
+        ...BOOTABLE,
+        NODE_ENV: "production",
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318",
+        OTEL_EXPORTER_OTLP_HEADERS: "authorization=Bearer ingest-token",
+      });
+      logConfigSummary();
+
+      const line = spy.mock.calls.flat().join("\n");
+      expect(line).toContain("telemetry otlp → http://localhost:4318 as docuflow-server");
+      expect(line).not.toContain("ingest-token");
     } finally {
       spy.mockRestore();
     }

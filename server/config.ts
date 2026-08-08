@@ -66,6 +66,26 @@ export interface ReplitAuthConfig {
   issuerUrl: string;
 }
 
+/**
+ * Where the OpenTelemetry SDK sends what it collects. `none` still instruments
+ * the process — spans exist, and logs carry their trace id — it just exports
+ * nothing.
+ */
+export type TelemetryExporterKind = "none" | "console" | "otlp";
+
+export interface TelemetryConfig {
+  exporter: TelemetryExporterKind;
+  /** `service.name` on every span, metric, and log record this process emits. */
+  serviceName: string;
+  /** OTLP/HTTP collector root, without the `/v1/traces` a signal appends. */
+  otlpEndpoint?: string;
+  /** Sent with every OTLP request; how a hosted collector authenticates us. */
+  otlpHeaders?: Record<string, string>;
+  /** 0–1. Applies to traces started here; a sampled caller is always followed. */
+  traceSampleRate: number;
+  metricExportIntervalMs: number;
+}
+
 export interface AppConfig {
   nodeEnv: string;
   isProduction: boolean;
@@ -81,10 +101,14 @@ export interface AppConfig {
   openaiApiKey?: string;
   fathomApiKey?: string;
   replitAuth: ReplitAuthConfig;
+  telemetry: TelemetryConfig;
 }
 
 const DEFAULT_FROM_ADDRESS = "DocuFlow <noreply@resend.dev>";
 const DEFAULT_PORT = 5000;
+/** ADR-0016 names the HTTP runtime and the Phase 3 worker as separate services. */
+const DEFAULT_SERVICE_NAME = "docuflow-server";
+const DEFAULT_METRIC_INTERVAL_MS = 60_000;
 
 /** A set variable that holds only whitespace is treated as unset. */
 function read(name: string): string | undefined {
@@ -296,6 +320,165 @@ function resolveAppUrl(): string {
   return `http://localhost:${DEFAULT_PORT}`;
 }
 
+/** A number inside its range, or the reason it is unusable on the pile. */
+function readNumber(
+  name: string,
+  fallback: number,
+  range: { min: number; max: number; integer?: boolean },
+  missing: string[]
+): number {
+  const raw = read(name);
+  if (!raw) return fallback;
+
+  const value = Number(raw);
+  const usable =
+    Number.isFinite(value) &&
+    value >= range.min &&
+    value <= range.max &&
+    (!range.integer || Number.isInteger(value));
+  if (!usable) {
+    missing.push(
+      `${name} is "${raw}" — expected a${range.integer ? "n integer" : " number"} between ` +
+        `${range.min} and ${range.max}.`
+    );
+    return fallback;
+  }
+  return value;
+}
+
+/**
+ * `key=value,key2=value2` — the format the OpenTelemetry specification gives
+ * `OTEL_EXPORTER_OTLP_HEADERS`, so a collector's own documentation can be pasted
+ * in unchanged. Values are credentials: they are parsed here and never printed.
+ */
+function readOtlpHeaders(missing: string[]): Record<string, string> | undefined {
+  const raw = read("OTEL_EXPORTER_OTLP_HEADERS");
+  if (!raw) return undefined;
+
+  const headers: Record<string, string> = {};
+  for (const pair of raw.split(",")) {
+    const separator = pair.indexOf("=");
+    const key = separator === -1 ? "" : pair.slice(0, separator).trim();
+    const value = separator === -1 ? "" : pair.slice(separator + 1).trim();
+    if (!key || !value) {
+      missing.push(
+        "OTEL_EXPORTER_OTLP_HEADERS is malformed. Write it as comma-separated " +
+          "key=value pairs, e.g. authorization=Bearer abc123."
+      );
+      return undefined;
+    }
+    headers[key] = value;
+  }
+  return headers;
+}
+
+/**
+ * The OTLP collector this process ships to, checked against ADR-0018 before it
+ * is accepted: while this repository is the parallel environment, telemetry may
+ * only reach a collector on this machine. `ALLOW_REMOTE_OTLP=1` is the same
+ * deliberate opt-out `ALLOW_REMOTE_TEST_DB` is for the harness — for a
+ * collector that is known to be a scratch one, never for a production sink.
+ */
+function readOtlpEndpoint(missing: string[]): string | undefined {
+  const raw = read("OTEL_EXPORTER_OTLP_ENDPOINT");
+  if (!raw) return undefined;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    missing.push(
+      `OTEL_EXPORTER_OTLP_ENDPOINT is "${raw}" — expected the collector's root URL, ` +
+        `e.g. http://localhost:4318 (the /v1/traces suffix is added per signal).`
+    );
+    return undefined;
+  }
+
+  const host = parsed.hostname;
+  const isLocal =
+    host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  if (!isLocal && read("ALLOW_REMOTE_OTLP") !== "1") {
+    missing.push(
+      `OTEL_EXPORTER_OTLP_ENDPOINT points at "${host}", which is not this machine. ` +
+        `ADR-0018 keeps this environment's telemetry on local collectors until Phase 2 ` +
+        `provisions its own sinks; set ALLOW_REMOTE_OTLP=1 only for a collector you know ` +
+        `is not a production one.`
+    );
+    return undefined;
+  }
+
+  return raw.replace(/\/+$/, "");
+}
+
+/**
+ * What the OpenTelemetry SDK does in this process (#26, ADR-0016).
+ *
+ * Instrumentation is always on; only the exporter follows the environment, so
+ * that turning telemetry into something a sink can see is a variable and never a
+ * code change (which is the whole point of instrumenting once, in Phase 1, for
+ * Phase 2 to point somewhere). Unset, the exporter is chosen the way each
+ * environment wants it:
+ *
+ *   test         nothing. A suite must not print spans or hold a batch open.
+ *   an endpoint  OTLP. Naming a collector is how you ask for one.
+ *   development  the console, so `npm run dev` shows a trace without a collector.
+ *   production   nothing, until Phase 2 sets an endpoint. A production process
+ *                printing every span would fill its log drain with them.
+ *
+ * `OTEL_EXPORTER` overrides all four.
+ */
+function resolveTelemetry(nodeEnv: string): Resolved<TelemetryConfig> {
+  const missing: string[] = [];
+
+  const otlpEndpoint = readOtlpEndpoint(missing);
+  const otlpHeaders = readOtlpHeaders(missing);
+
+  const requested = read("OTEL_EXPORTER");
+  let exporter: TelemetryExporterKind;
+  if (requested === undefined) {
+    exporter =
+      nodeEnv === "test"
+        ? "none"
+        : otlpEndpoint
+          ? "otlp"
+          : nodeEnv === "production"
+            ? "none"
+            : "console";
+  } else if (requested === "none" || requested === "console" || requested === "otlp") {
+    exporter = requested;
+  } else {
+    missing.push(`OTEL_EXPORTER is "${requested}" — expected none, console, or otlp.`);
+    exporter = "none";
+  }
+
+  // Asked for OTLP with nowhere to send it: the exporter would retry against
+  // localhost:4318 forever, which looks like telemetry working right up until
+  // someone goes looking for it.
+  if (exporter === "otlp" && !otlpEndpoint && missing.length === 0) {
+    missing.push(
+      "OTEL_EXPORTER=otlp needs OTEL_EXPORTER_OTLP_ENDPOINT — the collector's root URL, " +
+        "e.g. http://localhost:4318."
+    );
+  }
+
+  return {
+    value: {
+      exporter,
+      serviceName: read("OTEL_SERVICE_NAME") ?? DEFAULT_SERVICE_NAME,
+      otlpEndpoint,
+      otlpHeaders,
+      traceSampleRate: readNumber("OTEL_TRACES_SAMPLE_RATE", 1, { min: 0, max: 1 }, missing),
+      metricExportIntervalMs: readNumber(
+        "OTEL_METRIC_EXPORT_INTERVAL_MS",
+        DEFAULT_METRIC_INTERVAL_MS,
+        { min: 1000, max: 3_600_000, integer: true },
+        missing
+      ),
+    },
+    missing,
+  };
+}
+
 function resolveConfig(): AppConfig {
   // Read as a static member expression: the production bundle replaces exactly
   // this text with a literal (see script/build.ts), which a dynamic lookup misses.
@@ -305,6 +488,7 @@ function resolveConfig(): AppConfig {
   const objectStorage = resolveObjectStorage();
   const sessionSecret = read("SESSION_SECRET");
   const desktopTokens = resolveDesktopTokens();
+  const telemetry = resolveTelemetry(nodeEnv);
 
   const missing = [
     ...database.missing,
@@ -313,6 +497,7 @@ function resolveConfig(): AppConfig {
       ? []
       : ["SESSION_SECRET — signs session cookies; any long random string"]),
     ...desktopTokens.missing,
+    ...telemetry.missing,
   ];
 
   if (missing.length > 0) {
@@ -342,6 +527,7 @@ function resolveConfig(): AppConfig {
       clientId: read("REPL_ID"),
       issuerUrl: read("ISSUER_URL") ?? "https://replit.com/oidc",
     },
+    telemetry: telemetry.value,
   };
 }
 
@@ -378,6 +564,16 @@ function desktopTokenKeys(): string {
 }
 
 /**
+ * Where telemetry goes, by name and destination — never by header, which is the
+ * collector's credential.
+ */
+function telemetryDestination(): string {
+  const { exporter, otlpEndpoint, serviceName } = config.telemetry;
+  const destination = exporter === "otlp" ? `${exporter} → ${otlpEndpoint}` : exporter;
+  return `${destination} as ${serviceName}`;
+}
+
+/**
  * One boot line describing what this process is configured with. The connection
  * string is masked: the password never reaches the log.
  *
@@ -391,6 +587,7 @@ export function logConfigSummary(): void {
       `object storage via ${storageCredentialMode()}, ` +
       `desktop tokens on key ${desktopTokenKeys()}, ` +
       `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
-      `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}`
+      `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}, ` +
+      `telemetry ${telemetryDestination()}`
   );
 }

@@ -1,3 +1,7 @@
+// First, and before anything that touches express, pg, or http: the
+// OpenTelemetry SDK instruments libraries by patching them as they load, so it
+// has to be running before they are loaded (#26). Imported for that side effect.
+import "./telemetry";
 import { createApp, log } from "./app";
 import { config, logConfigSummary } from "./config";
 import { serveStatic } from "./static";

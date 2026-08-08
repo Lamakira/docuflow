@@ -40,6 +40,12 @@ process.env.RESEND_FROM_EMAIL = "DocuFlow <noreply@docuflow.test>";
 // token may be inherited from a developer's shell; each suite sets what it needs.
 delete process.env.MCP_API_KEY;
 delete process.env.DESKTOP_RELEASE_CI_TOKEN;
+// Telemetry is off under NODE_ENV=test by default (#26), but a developer with an
+// OTEL_* variable exported would otherwise instrument their own test run and
+// ship its spans somewhere. The harness decides, not the shell.
+for (const name of Object.keys(process.env)) {
+  if (name.startsWith("OTEL_")) delete process.env[name];
+}
 
 installNetworkFake();
 

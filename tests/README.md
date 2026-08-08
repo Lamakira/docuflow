@@ -26,6 +26,10 @@ npm run test:db:down # stop the database
 - `tests/helpers/app.ts` boots the real app assembly (`server/app.ts`) —
   the exact middleware chain production uses, minus Vite/static and listen.
 - `tests/helpers/db.ts` truncates all tables between tests.
+- Telemetry is off (#26): `NODE_ENV=test` exports nothing, and `tests/setup.ts`
+  clears every `OTEL_*` variable so a developer's shell cannot instrument a run.
+  Nothing patches express or pg while a suite is running, and no exporter has to
+  be silenced.
 - `DB_DRIVER=pg` makes `server/db.ts` use the standard node-postgres driver;
   production default remains Neon's serverless driver.
 
@@ -121,6 +125,13 @@ None of the three can see DDL applied to a database from outside this repository
 — both sides of every comparison here are built from the repository. That is
 `npm run db:verify`, which diffs the journal against a live database; see
 `migrations/README.md`.
+`telemetry` ([#26](https://github.com/Lamakira/docuflow/issues/26)) pins the
+IDs-only rule from ADR-0016: what `server/telemetryRedaction.ts` drops, what it
+keeps, and that the logger applies it to the console line as well as to the
+record it exports. It exercises the rule rather than a running SDK on purpose —
+starting one would patch express and pg for whatever ran next in the same
+worker, which is the state this suite exists to keep the harness out of.
+
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`

@@ -245,7 +245,10 @@ export function registerAgentRoutes(app: Express): void {
 
       const user = await storage.getUserByEmail(body.email);
       if (!user) {
-        logInfo("agent.auth.login.failed", { email: body.email, reason: "user_not_found" });
+        // No id to name: the address that was tried is the payload ADR-0016
+        // keeps out of telemetry, and the reason is what a failed login is
+        // looked at for. `logInfo` would drop it anyway (#26).
+        logInfo("agent.auth.login.failed", { reason: "user_not_found" });
         return res.status(401).json({ message: "Invalid email or password" });
       }
 
@@ -352,7 +355,10 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(400).json({ message: "name is required" });
       }
       await storage.revokeDevicesByMachine(userId, name, os ?? null);
-      logInfo("agent.device.revoke-machine", { userId, name, os });
+      // The machine's name is whatever its owner called it, so it stays out of
+      // the record (#26, ADR-0016); the user and the platform are what identify
+      // which fleet member lost its tokens.
+      logInfo("agent.device.revoke-machine", { userId, os });
       res.json({ ok: true });
     } catch (error) {
       logError("agent.device.revoke-machine.failed", error);
