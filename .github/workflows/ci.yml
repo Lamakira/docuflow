@@ -114,13 +114,47 @@ jobs:
           context: .
           push: false
           # Loaded into the runner's daemon so the steps below can run it. That
-          # copies a gigabyte (#36 owns the size), and it buys the one thing no
-          # test can stage: the runtime stage's own `npm ci --omit=dev` tree,
-          # under the image's own user and working directory.
+          # copies the whole image, and it buys the one thing no test can stage:
+          # the runtime stage's own `npm ci --omit=dev` tree, under the image's
+          # own user and working directory.
           load: true
           tags: docuflow:${{ github.sha }}
           cache-from: type=gha,scope=image
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=image' || '' }}
+
+      # Declared is not installed, and installed is not loadable (#36).
+      #
+      # The runtime stage installs `dependencies` and nothing else, and
+      # `tests/smoke/server-bundle.test.ts` is what keeps that list equal to
+      # what the server bundle imports. What it cannot check is this half: that
+      # every entry resolves from the image's own tree and initialises there.
+      # `sharp` wants libvips, `bcrypt` a prebuilt binary for this glibc and
+      # this Node — a package can be present and still throw on its first line.
+      #
+      # The list is read out of the image's package.json rather than written
+      # here, so there is no second copy of the manifest to drift from it, and
+      # `import()` rather than `require()` because openid-client and parts of
+      # the OpenTelemetry SDK ship ESM only.
+      - name: Every runtime dependency loads inside the image
+        run: |
+          docker run --rm docuflow:${{ github.sha }} node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const { dependencies } = JSON.parse(readFileSync("/app/package.json", "utf8"));
+            const names = Object.keys(dependencies);
+            const failed = [];
+            for (const name of names) {
+              try {
+                await import(name);
+              } catch (error) {
+                failed.push(name + ": " + error.message);
+              }
+            }
+            if (failed.length) {
+              console.error(failed.join("\n"));
+              process.exit(1);
+            }
+            console.log(names.length + " runtime dependencies loaded");
+          '
 
       # The second entry point, from a container with no checkout in it (#35).
       #
