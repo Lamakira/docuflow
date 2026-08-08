@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { isBuiltin } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildMigrateRunner } from "../../script/bundles";
 import { loadMigrations } from "../../scripts/migrate";
 import { urlForDatabase, withClient } from "../helpers/db";
+import { REPO, installedByImage, packageOf } from "../helpers/runtimeTree";
 import { resolveTestDatabaseUrl } from "../test-db-url";
 
 /**
@@ -41,7 +42,6 @@ import { resolveTestDatabaseUrl } from "../test-db-url";
  * and running the real image is `.github/workflows/ci.yml`'s `image` job.
  */
 
-const REPO = join(import.meta.dirname, "..", "..");
 const TEST_DB_URL = resolveTestDatabaseUrl();
 
 /** Recreated per test: every case here wants a database with no history. */
@@ -119,18 +119,16 @@ describe("dist/migrate.mjs", () => {
 
   it("imports nothing the runtime image would not have", () => {
     // The runtime stage installs `npm ci --omit=dev`, so every bare specifier
-    // the bundle left external has to be a `dependencies` entry or a builtin.
-    // A devDependency would resolve against the symlinked checkout above and
-    // then crash the pre-deploy step on a host with no second chance — and it
-    // is the one failure mode staging /app in a tmpdir cannot reproduce.
-    const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
-    const runtimeDeps = new Set(Object.keys(pkg.dependencies ?? {}));
+    // the bundle left external has to be something that install puts there, or
+    // a builtin. A devDependency would resolve against the symlinked checkout
+    // above and then crash the pre-deploy step on a host with no second chance
+    // — and it is the one failure mode staging /app in a tmpdir cannot
+    // reproduce.
+    const runtimeDeps = new Set(installedByImage());
 
     const notInstalled = externalImports.filter((specifier) => {
       if (isBuiltin(specifier)) return false;
-      const parts = specifier.split("/");
-      const name = specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
-      return !runtimeDeps.has(name);
+      return !runtimeDeps.has(packageOf(specifier));
     });
 
     expect(notInstalled).toEqual([]);

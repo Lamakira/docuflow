@@ -25,6 +25,15 @@ export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // and `http.route` from every HTTP metric, with the SDK reporting nothing wrong.
 // `express` and `pg` are therefore external on purpose; so is every
 // `@opentelemetry/*` package, by not being listed. See server/telemetry.ts.
+//
+// Listing a package is also a claim about it: that it resolves nothing relative
+// to its own directory, because after bundling that directory is `dist/`. The
+// two the runtime tree would otherwise have to keep (#36) were checked against
+// that — `connect-pg-simple` reads `table.sql` from beside the module, but only
+// down the `createTableIfMissing` branch, and server/auth.ts passes it `false`;
+// `drizzle-orm` reaches its dialects through static imports. Both are safe to
+// inline and are therefore devDependencies. `optionalDependencies` is where the
+// answer came out the other way — see `externalDependencies` below.
 const allowlist = [
   "@google/generative-ai",
   "@neondatabase/serverless",
@@ -52,11 +61,22 @@ const allowlist = [
   "zod-validation-error",
 ];
 
-/** Everything outside the allowlist, resolved from node_modules at runtime. */
+/**
+ * Everything outside the allowlist, resolved from node_modules at runtime.
+ *
+ * `optionalDependencies` counts as installed: `npm ci --omit=dev` omits the dev
+ * half only, so the runtime stage has them, and a native one must not be
+ * inlined. Bundling `bufferutil` moved node-gyp-build's prebuild lookup from
+ * `node_modules/bufferutil` to `dist/`, where it throws `Cannot find module
+ * 'bufferutil'` — inside the try/catch `ws` wraps it in, so the whole symptom
+ * was `ws` quietly using its JavaScript fallback with the native speedup
+ * installed beside it and never opened.
+ */
 export async function externalDependencies(): Promise<string[]> {
   const pkg = JSON.parse(await readFile(join(ROOT, "package.json"), "utf-8"));
   const allDeps = [
     ...Object.keys(pkg.dependencies || {}),
+    ...Object.keys(pkg.optionalDependencies || {}),
     ...Object.keys(pkg.devDependencies || {}),
   ];
   return allDeps.filter((dep) => !allowlist.includes(dep));
@@ -105,7 +125,7 @@ export async function buildServer(outfile: string) {
  *
  * Not minified, unlike the server: this one is read by an operator during a
  * deploy that has just gone wrong, and its stack traces should name something.
- * It is ~7 KB in an image of ~1.1 GB.
+ * It is ~7 KB either way, so nothing about the image's size turns on it.
  *
  * `metafile` so a caller can ask what the bundle left external, which is the
  * one thing about it the runtime image can disagree with — see

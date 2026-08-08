@@ -1,17 +1,19 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { isBuiltin } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildServer } from "../../script/bundles";
+import { installedByImage, packageOf } from "../helpers/runtimeTree";
 
 /**
  * What the runtime image has to install, derived from the bundle (#36).
  *
- * `npm ci --omit=dev` in the Dockerfile's runtime stage installs
- * `dependencies` and nothing else, so that list is a claim about the server:
- * these are the modules `dist/index.cjs` still resolves from node_modules after
- * `script/bundles.ts` has inlined its allowlist. The claim used to be false in
+ * `npm ci --omit=dev` in the Dockerfile's runtime stage omits the dev half and
+ * nothing else, so `dependencies` plus `optionalDependencies` is a claim about
+ * the server: these are the modules `dist/index.cjs` still resolves from
+ * node_modules after `script/bundles.ts` has inlined its allowlist — see
+ * `tests/helpers/runtimeTree.ts`. The claim used to be false in
  * both directions at once — every client package was in it (a gigabyte of
  * `react-icons`, `@tiptap`, and `@radix-ui` installed into an image that only
  * ever serves them pre-bundled from `dist/public`) while nothing checked that
@@ -35,8 +37,6 @@ import { buildServer } from "../../script/bundles";
  * answered, on the runtime tree rather than on this checkout's.
  */
 
-const REPO = join(import.meta.dirname, "..", "..");
-
 /**
  * External imports the runtime image deliberately does not install, and why
  * each one is safe to leave out. A new entry here is a claim that the import is
@@ -52,8 +52,11 @@ const NOT_INSTALLED: Record<string, string> = {
   "@replit/vite-plugin-runtime-error-modal": "reached only through vite.config.ts, from that same branch",
   // `ws` is bundled, and its two native speedups are `require`d inside a
   // try/catch — absent, it falls back to its JavaScript implementations. The
-  // other one, `bufferutil`, is an optionalDependency and does install.
-  "utf-8-validate": "optional native speedup for ws, required in a try/catch",
+  // other one, `bufferutil`, is an `optionalDependencies` entry: it installs,
+  // and the test below pins it external so the copy that installs is the copy
+  // `ws` loads. This one is declared nowhere, which is also why esbuild cannot
+  // resolve it and it reaches the metafile as an external import at all.
+  "utf-8-validate": "declared nowhere; optional native speedup for ws, required in a try/catch",
 };
 
 /**
@@ -68,12 +71,6 @@ const NOT_INSTALLED: Record<string, string> = {
  * Adding an entry means the import is real and unanalysable; say where it is.
  */
 const CARRIED_BY_HAND: Record<string, string> = {};
-
-/** Bare package name of an import specifier: `pg`, `@opentelemetry/api`. */
-function packageOf(specifier: string): string {
-  const parts = specifier.split("/");
-  return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
-}
 
 let imported: string[];
 let declared: string[];
@@ -96,8 +93,7 @@ describe("dist/index.cjs", () => {
       ),
     ].sort();
 
-    const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));
-    declared = Object.keys(pkg.dependencies).sort();
+    declared = installedByImage();
   }, 60_000);
 
   afterAll(() => {
@@ -137,5 +133,39 @@ describe("dist/index.cjs", () => {
     // fails, its import in server/agentRoutes.ts stopped being a string literal
     // and the package now has to be carried in CARRIED_BY_HAND by hand.
     expect(imported).toContain("sharp");
+  });
+
+  it("leaves the native optional speedup for node_modules to answer", () => {
+    // Bundling `bufferutil` inlines node-gyp-build with it, and node-gyp-build
+    // finds the prebuild beside `__dirname` — which after bundling is `dist/`
+    // and not `node_modules/bufferutil`. It throws there, inside the try/catch
+    // `ws` wraps it in, so the image installed the speedup, `ws` used its
+    // JavaScript fallback, and nothing anywhere said so. Only the manifest
+    // field it is declared under kept it out of the external list.
+    expect(imported).toContain("bufferutil");
+  });
+
+  it("keeps its exception lists honest", () => {
+    // An exception outlives what it excused: the import moves, the package
+    // goes, and the entry stays behind quietly excusing a name that no longer
+    // appears. Reading both lists back against the build is what makes a stale
+    // one fail rather than sit, and it is the only thing that reads the reasons.
+    for (const [name, reason] of Object.entries(NOT_INSTALLED)) {
+      expect(
+        imported,
+        `${name} is excused as "${reason}", but the bundle no longer imports it`
+      ).toContain(name);
+    }
+
+    for (const [name, reason] of Object.entries(CARRIED_BY_HAND)) {
+      expect(
+        declared,
+        `${name} is carried by hand as "${reason}", but nothing installs it`
+      ).toContain(name);
+      expect(
+        imported,
+        `${name} is carried by hand as "${reason}", but the metafile sees it — drop the entry`
+      ).not.toContain(name);
+    }
   });
 });

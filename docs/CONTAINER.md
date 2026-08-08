@@ -29,8 +29,8 @@ where the server is CJS, because it resolves the journal beside itself with
 
 ### What the image installs
 
-`dependencies` is the server's runtime tree and nothing else — 27 packages,
-derived rather than chosen. `script/bundles.ts` inlines a short allowlist into
+`dependencies` is the server's runtime tree and nothing else, derived rather
+than chosen. `script/bundles.ts` inlines a short allowlist into
 `dist/index.cjs` and marks every other package external, so what the runtime
 stage has to install is exactly what the bundle left external. The build emits
 an esbuild `metafile` saying what that is, and
@@ -54,8 +54,14 @@ Three kinds of entry sit outside that derivation:
   what answers under `NODE_ENV=production`. The smoke test lists them, with that
   reason.
 - **Optional native speedups.** `ws` is bundled and `require`s `bufferutil` and
-  `utf-8-validate` inside a try/catch; the first is an `optionalDependencies`
-  entry and installs, the second is absent and `ws` falls back to JavaScript.
+  `utf-8-validate` inside a try/catch. `utf-8-validate` is declared nowhere, so
+  it is absent and `ws` falls back to its JavaScript implementation.
+  `bufferutil` is an `optionalDependencies` entry, which `npm ci --omit=dev`
+  installs — `--omit=dev` omits the dev half and nothing else — so it is
+  external for the same reason every other installed package is. Bundling it
+  would inline node-gyp-build with it and move the prebuild lookup to `dist/`,
+  where it throws inside that same try/catch: the image would carry the speedup,
+  `ws` would fall back anyway, and nothing would say so.
 - **Imports the build cannot see.** None today. `sharp` looked like one —
   `server/agentRoutes.ts` loads it as `await import("sharp" as any)` so that a
   missing libvips degrades to storing raw PNGs instead of failing boot — but the
@@ -171,7 +177,15 @@ a package that resolves but cannot initialise — `sharp` without libvips,
 with no database configured, which has to fail in `shared/databaseUrl.ts`'s
 words rather than on a missing module; a listing of `/app/migrations`, which has
 to hold the journal; and the default `CMD`, waited on until the image's own
-`HEALTHCHECK` reports `healthy`. Every value passed there is a placeholder that
+`HEALTHCHECK` reports `healthy`.
+
+That first check is what stands in for exercising routes by hand. It is
+shallower — a module load, not the route that reaches it — and broader: every
+entry rather than the handful anyone thinks to try, on every push rather than
+once at review. `Cannot find module` is the failure it exists for, and that one
+it answers completely.
+
+Every value passed there is a placeholder that
 reaches nothing — `/health` answers before authentication and both the pool and
 the session store connect on first use, so this is a boot test, and ADR-0018
 keeps real URLs and credentials out of the workflow.
@@ -182,7 +196,7 @@ one.
 
 ## Known gaps
 
-Two things about this image that are known rather than overlooked:
+Two things about this image, each waiting on a ticket rather than an oversight:
 
 - **Transcript scraping is inoperable** (#37). `server/browser-transcript.ts:4`
   launches Chromium from a hard-coded Replit Nix path, so it cannot work off
@@ -190,10 +204,10 @@ Two things about this image that are known rather than overlooked:
   Playwright's ~400 MB browser download rather than paying for one the code will
   not look at, and #37 is the removal gate on that skip. Loom and Fathom
   scraping fails at launch until that path is replaced.
-- **Most of what is left is one package.** `pdf-parse` is 115 MB of the runtime
-  tree's 259 MB, because it vendors its own copy of `pdfjs-dist` instead of
-  sharing the one the client is built with. Nothing in the packaging can move
+- **Most of what is left is one package** (#43). `pdf-parse` is 115 MB of the
+  runtime tree's 259 MB, because it vendors its own copy of `pdfjs-dist` instead
+  of sharing the one the client is built with. Nothing in the packaging can move
   it: the server really does extract PDFs, on a request rather than at boot.
   Getting that extraction from something smaller is a dependency change with a
-  behavioural blast radius, not the packaging move #36 was, and no ticket owns
-  it yet.
+  behavioural blast radius, not the packaging move #36 was — which is what #43
+  owns, and the removal gate on this entry.
