@@ -59,39 +59,29 @@ function hashToken(token: string): string {
 // Existing is enough: any CRM project id the server can find will answer its
 // tasks, take a new one, and start a timer against it. There is no membership
 // gate on the agent routes and no visibility check either — the picker's list is
-// company-wide, so for everything it offers, existing and being listed are the
+// workspace-wide, so for everything it offers, existing and being listed are the
 // same thing. They part on documentation-only projects: `getCrmProjects` filters
 // those out, so the picker never offers one, but an id held from elsewhere still
 // works here. The SPA answers the same way — `/api/time-tracking/start` does not
 // look the project up at all.
 //
-// #31 settled this. Three routes — task list, task create, timer start — used to
-// require a membership row or ownership of the underlying project, while
-// `GET /api/agent/projects` listed every project in the company. The picker
-// offered a project and the next call refused it with 403, once per project
-// viewed. The gate was also the only one of its kind: `getCrmProjects` takes a
-// user id and ignores it ("company-wide visibility"), and the SPA's
-// `/api/tasks`, `POST /api/tasks` and `/api/time-tracking/start` never checked
-// membership at all. So the refusal protected nothing — the same user could open
-// the browser and do exactly what the desktop denied — while making the agent
-// the one surface where the picker lied about what it could open.
+// #31 settled this, and ADR-0019 records it. Three routes — task list, task
+// create, timer start — used to require a membership row or ownership of the
+// underlying project, while `GET /api/agent/projects` listed every project in
+// the workspace. The picker offered a project and the next call refused it with
+// 403, once per project viewed. The gate was also the only one of its kind:
+// `getCrmProjects` takes a user id and ignores it, and the SPA's `/api/tasks`,
+// `POST /api/tasks` and `/api/time-tracking/start` never checked membership at
+// all. So the refusal protected nothing — the same user could open the browser
+// and do exactly what the desktop denied — while making the agent the one
+// surface where the picker lied about what it could open.
 //
 // Dropping it is the parity fix, not a widening: nothing became possible that a
-// browser session could not already do. Tightening instead would have meant
-// narrowing the SPA too, which is a workspace-permissions design (#18), not a
-// desktop bug. If that design lands and membership becomes the real boundary, it
-// belongs on both surfaces at once.
-//
-// Contradicts ADR-0004 and ADR-0006, deliberately and temporarily. ADR-0004
-// rejects "the current global-organization assumption ... because it cannot
-// provide tenant isolation"; ADR-0006 puts a workspace id on every owned row and
-// enforces scoping in depth. Company-wide project visibility is that rejected
-// assumption, and these routes now depend on it: the characterization suites
-// assert that a user with no relation to a project reads its tasks, creates one,
-// and starts a timer. The deleted gate was not the ADRs arriving early — it
-// guarded three of the agent's routes and nothing else, so keeping it bought no
-// isolation and cost the picker its honesty. When #18 lands the boundary, these
-// three routes and their suites move with the SPA, and this note goes with them.
+// browser session could not already do. ADR-0019 has the rejected alternatives
+// and the supersession: it is a deliberate, temporary exception to ADR-0004 and
+// ADR-0006, and when the workspace-permissions design those describe lands (#18)
+// these three routes, the SPA's, and the characterization suites that freeze the
+// current answer move together.
 
 // ─── Agent auth middleware ───
 

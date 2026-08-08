@@ -1,3 +1,6 @@
+import { Client } from "pg";
+import { resolveTestDatabaseUrl } from "../test-db-url";
+
 /**
  * Truncate every application table between tests. RESTART IDENTITY + CASCADE
  * gives each test a clean database without re-running the migrations.
@@ -17,4 +20,32 @@ export async function resetDb(): Promise<void> {
   if (rows.length === 0) return;
   const tables = rows.map((r: { tablename: string }) => `"${r.tablename}"`).join(", ");
   await pool.query(`TRUNCATE TABLE ${tables} RESTART IDENTITY CASCADE`);
+}
+
+/**
+ * Another database on the harness's own Postgres server, by name.
+ *
+ * The smoke suites that build a database from scratch each need two connections
+ * — one to `postgres` to CREATE/DROP, one to the throwaway they made — and the
+ * server they use has to be the harness's, which `tests/test-db-url.ts` refuses
+ * to let point anywhere remote (ADR-0018).
+ */
+export function urlForDatabase(name: string): string {
+  const url = new URL(resolveTestDatabaseUrl());
+  url.pathname = `/${name}`;
+  return url.toString();
+}
+
+/** One `pg` connection for one job, closed however the job ends. */
+export async function withClient<T>(
+  url: string,
+  use: (client: Client) => Promise<T>
+): Promise<T> {
+  const client = new Client({ connectionString: url });
+  await client.connect();
+  try {
+    return await use(client);
+  } finally {
+    await client.end();
+  }
 }

@@ -67,23 +67,32 @@ export function TimerPanel() {
    * server or network fault, which the next open may well find cleared.
    */
   const requested = useRef<Set<string>>(new Set());
+
+  /**
+   * The one place a task response is applied. Both callers of `getTasks` — the
+   * fetch below and the post-timer refresh — go through it, so a refresh cannot
+   * leave behind an error its own success just disproved, and cannot fail
+   * silently either.
+   */
+  function receiveTasks(projectId: string, r: Awaited<ReturnType<typeof bridge.getTasks>>) {
+    if (!r.ok) {
+      requested.current.delete(projectId);
+      setTaskError((e) => ({ ...e, [projectId]: r.error ?? 'Could not load tasks' }));
+      return;
+    }
+    setTaskCache((c) => ({ ...c, [projectId]: r.data }));
+    setTaskError((e) => {
+      if (!(projectId in e)) return e;
+      const next = { ...e };
+      delete next[projectId];
+      return next;
+    });
+  }
+
   function ensureTasks(projectId: string) {
     if (requested.current.has(projectId)) return;
     requested.current.add(projectId);
-    void bridge.getTasks({ crmProjectId: projectId }).then((r) => {
-      if (!r.ok) {
-        requested.current.delete(projectId);
-        setTaskError((e) => ({ ...e, [projectId]: r.error ?? 'Could not load tasks' }));
-        return;
-      }
-      setTaskCache((c) => ({ ...c, [projectId]: r.data }));
-      setTaskError((e) => {
-        if (!(projectId in e)) return e;
-        const next = { ...e };
-        delete next[projectId];
-        return next;
-      });
-    });
+    void bridge.getTasks({ crmProjectId: projectId }).then((r) => receiveTasks(projectId, r));
   }
 
   useEffect(() => {
@@ -95,9 +104,9 @@ export function TimerPanel() {
   useEffect(() => {
     if (!openProjectId) return;
     const t = setTimeout(() => {
-      void bridge.getTasks({ crmProjectId: openProjectId }).then((r) => {
-        if (r.ok) setTaskCache((c) => ({ ...c, [openProjectId]: r.data }));
-      });
+      void bridge.getTasks({ crmProjectId: openProjectId }).then((r) =>
+        receiveTasks(openProjectId, r),
+      );
     }, 1500);
     return () => clearTimeout(t);
   }, [timer?.entryId, openProjectId]);

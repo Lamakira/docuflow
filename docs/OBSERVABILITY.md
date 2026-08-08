@@ -140,7 +140,7 @@ just stops saying anything useful.
 - **`import "./telemetry"` is the first line of `server/index.ts`.** Below
   express or pg, the SDK still starts and still exports, and produces almost
   nothing.
-- **An instrumented library must not be bundled.** `script/build.ts` marks
+- **An instrumented library must not be bundled.** `script/bundles.ts` marks
   `express` external for exactly this reason — a bundled module is never
   required, so it is never patched. `pg` and every `@opentelemetry/*` package are
   external too.

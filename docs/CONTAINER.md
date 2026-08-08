@@ -1,10 +1,14 @@
 # The container
 
-One image, both runtimes (ADR-0016). Today it runs the HTTP server; the Phase 3
-worker will be this same image started with a different command. That is why the
-[`Dockerfile`](../Dockerfile) ends in a `CMD` rather than an `ENTRYPOINT` —
-`docker run <image> <other command>` replaces it without a rebuild — and why the
-image carries no configuration of its own.
+One image, both runtimes (ADR-0016). By default it runs the HTTP server; the
+Phase 3 worker will be this same image started with a different command. That is
+why the [`Dockerfile`](../Dockerfile) ends in a `CMD` rather than an
+`ENTRYPOINT` — `docker run <image> <other command>` replaces it without a
+rebuild — and why the image carries no configuration of its own.
+
+The migration runner is the first command to use that (#35): `node
+dist/migrate.mjs` applies the journal from inside the image, so the gated
+pre-deploy step ADR-0016 requires runs against the same digest the service does.
 
 ## Build
 
@@ -15,8 +19,13 @@ docker build -t docuflow .
 Four stages: a shared base holding the dependency manifest, a build stage with
 the full dependency tree (`vite`, `esbuild`, and `typescript` are all
 devDependencies), a second install stage that resolves the runtime tree only,
-and the runtime image that copies `dist/` and those runtime dependencies in.
-Nothing from the build stage's toolchain ships.
+and the runtime image that copies `dist/`, those runtime dependencies, and
+`migrations/` in. Nothing from the build stage's toolchain ships.
+
+`npm run build` writes three things: `dist/public` (the client), `dist/index.cjs`
+(the server), and `dist/migrate.mjs` (the migration runner). The runner is ESM
+where the server is CJS, because it resolves the journal beside itself with
+`import.meta.url` — a value esbuild's `cjs` format leaves empty.
 
 `.dockerignore` is an allow-list: everything is excluded, then the files the
 build actually opens are added back. The repository holds a gigabyte of
@@ -33,14 +42,22 @@ a required variable stops in its first second, naming all of them at once —
 `docs/CONFIGURATION.md` lists what each one is and `.env.example` is the
 template.
 
-The schema is not applied by the container. Boot reads the database and never
-changes it (#24), so `npm run db:migrate` runs first, from a checkout, against
-the same database — see `migrations/README.md`. Getting that into the image as a
-second command is the deploy ticket's business, not this one's.
+The schema is not applied by boot. Boot reads the database and never changes it
+(#24), so the journal is applied first, by its own command, against the same
+database — see `migrations/README.md`. From a checkout that is
+`npm run db:migrate`; from the image it is `node dist/migrate.mjs`, which is
+what a host with no checkout runs.
 
 ```bash
-# Schema first, from a checkout.
-DATABASE_URL=postgresql://user:password@host:5432/docuflow npm run db:migrate
+# Schema first. --status and --dry-run change nothing, ledger included, so
+# either is safe to point at a database you are only asking about.
+docker run --rm \
+  -e DATABASE_URL=postgresql://user:password@host:5432/docuflow \
+  docuflow node dist/migrate.mjs --status
+
+docker run --rm \
+  -e DATABASE_URL=postgresql://user:password@host:5432/docuflow \
+  docuflow node dist/migrate.mjs
 
 docker run --rm -p 5000:5000 \
   -e DATABASE_URL=postgresql://user:password@host:5432/docuflow \
@@ -52,9 +69,21 @@ docker run --rm -p 5000:5000 \
   docuflow
 ```
 
+The runner needs a database and nothing else, where the server needs the whole
+list. It resolves that database the way everything here does, through
+[`shared/databaseUrl.ts`](../shared/databaseUrl.ts): `DATABASE_URL`, or the
+`PG*` set it assembles one from. What it does *not* read is the rest — and that
+is `scripts/lib/db.ts`'s doing, which opens a pool directly instead of importing
+`server/config.ts`, so a migration cannot be blocked by an object-storage
+variable it will never use. That carries into the image with it.
+`--baseline <version>` is here too, and `migrations/README.md` is when to reach
+for it — a database that predates the journal needs it exactly once.
+
 Against a plain PostgreSQL — a local container, a CI service — add
 `-e DB_DRIVER=pg`: the default Neon serverless driver speaks WebSockets to Neon
-and cannot reach one.
+and cannot reach one. That is a server setting only; the migration runner is
+node-postgres under every setting, which is ADR-0016's "no Neon-only features"
+made literal — it reaches Neon and a local container the same way.
 
 **`DB_DRIVER` is permanent configuration, not a migration flag.** The test
 harness (#27) introduced it as a seam and left it without the owner and removal
@@ -89,13 +118,26 @@ layers reusable, and at this image's size a copy per pull request would evict
 both the image cache and the npm cache out of one 10 GB per-repository budget.
 Pull requests read main's entry, which is what they branched from.
 
+Then it runs it, which is the part no test can stage. `tests/smoke/migrate-bundle.test.ts`
+builds `dist/migrate.mjs` and executes it against a `/app` laid out in a
+temporary directory, but that directory borrows the checkout's `node_modules` —
+where the runtime stage installs `npm ci --omit=dev`. So CI loads the image and
+runs three things against the real tree: `node dist/migrate.mjs --status` with no
+database configured, which has to fail in `shared/databaseUrl.ts`'s words rather
+than on a missing module; a listing of `/app/migrations`, which has to hold the
+journal; and the default `CMD`, waited on until the image's own `HEALTHCHECK`
+reports `healthy`. Every value passed there is a placeholder that reaches
+nothing — `/health` answers before authentication and both the pool and the
+session store connect on first use, so this is a boot test, and ADR-0018 keeps
+real URLs and credentials out of the workflow.
+
 Nothing is pushed to a registry: there is no deployment target yet, and no
 registry credential belongs in this repository until Phase 2 provisions a fresh
 one.
 
 ## Known gaps
 
-Three things this image does not do, each waiting on a ticket rather than an
+Two things this image does not do, each waiting on a ticket rather than an
 oversight:
 
 - **Transcript scraping is inoperable** (#37). `server/browser-transcript.ts:4`
@@ -104,9 +146,6 @@ oversight:
   Playwright's ~400 MB browser download rather than paying for one the code will
   not look at, and #37 is the removal gate on that skip. Loom and Fathom
   scraping fails at launch until that path is replaced.
-- **Migrations run outside the image** (#35), as above. ADR-0016 makes them a
-  gated pre-deploy step, which on Render means a command run against this image
-  — so Phase 2 needs a second built entry point for `scripts/migrate.ts`.
 - **The image is large** (#36, ~1.1 GB) because `package.json` puts the client's
   dependencies — `react-icons`, `lucide-react`, `@tiptap`, `@radix-ui` — under
   `dependencies`, so `npm ci --omit=dev` installs them into a runtime that only

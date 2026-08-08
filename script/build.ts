@@ -1,70 +1,25 @@
-import { build as esbuild } from "esbuild";
-import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+/**
+ * `npm run build`, and nothing else. What each output is and why it is shaped
+ * the way it is lives in `script/bundles.ts`; this file is the command that
+ * runs them in order. Importing it starts a build — so nothing imports it.
+ */
 
-// server deps to bundle to reduce openat(2) syscalls
-// which helps cold start times
-//
-// A library an OpenTelemetry instrumentation patches must NOT be listed here
-// (#26). Patching happens when the module is required, and a bundled module is
-// never required — inlining express here is what silently removed route spans
-// and `http.route` from every HTTP metric, with the SDK reporting nothing wrong.
-// `express` and `pg` are therefore external on purpose; so is every
-// `@opentelemetry/*` package, by not being listed. See server/telemetry.ts.
-const allowlist = [
-  "@google/generative-ai",
-  "@neondatabase/serverless",
-  "axios",
-  "connect-pg-simple",
-  "cors",
-  "date-fns",
-  "drizzle-orm",
-  "drizzle-zod",
-  "express-rate-limit",
-  "express-session",
-  "jsonwebtoken",
-  "memorystore",
-  "multer",
-  "nanoid",
-  "nodemailer",
-  "openai",
-  "passport",
-  "passport-local",
-  "stripe",
-  "uuid",
-  "ws",
-  "xlsx",
-  "zod",
-  "zod-validation-error",
-];
+import { build as viteBuild } from "vite";
+import { rm } from "fs/promises";
+import { join } from "node:path";
+import { ROOT, buildMigrateRunner, buildServer } from "./bundles";
 
 async function buildAll() {
-  await rm("dist", { recursive: true, force: true });
+  await rm(join(ROOT, "dist"), { recursive: true, force: true });
 
   console.log("building client...");
   await viteBuild();
 
   console.log("building server...");
-  const pkg = JSON.parse(await readFile("package.json", "utf-8"));
-  const allDeps = [
-    ...Object.keys(pkg.dependencies || {}),
-    ...Object.keys(pkg.devDependencies || {}),
-  ];
-  const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+  await buildServer(join(ROOT, "dist/index.cjs"));
 
-  await esbuild({
-    entryPoints: ["server/index.ts"],
-    platform: "node",
-    bundle: true,
-    format: "cjs",
-    outfile: "dist/index.cjs",
-    define: {
-      "process.env.NODE_ENV": '"production"',
-    },
-    minify: true,
-    external: externals,
-    logLevel: "info",
-  });
+  console.log("building migration runner...");
+  await buildMigrateRunner(join(ROOT, "dist/migrate.mjs"));
 }
 
 buildAll().catch((err) => {

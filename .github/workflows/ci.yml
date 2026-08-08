@@ -113,9 +113,78 @@ jobs:
         with:
           context: .
           push: false
-          # Built and discarded: nothing in CI runs the image yet, and loading it
-          # into the runner's daemon would copy a gigabyte for no reader.
-          load: false
+          # Loaded into the runner's daemon so the steps below can run it. That
+          # copies a gigabyte (#36 owns the size), and it buys the one thing no
+          # test can stage: the runtime stage's own `npm ci --omit=dev` tree,
+          # under the image's own user and working directory.
+          load: true
           tags: docuflow:${{ github.sha }}
           cache-from: type=gha,scope=image
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=image' || '' }}
+
+      # The second entry point, from a container with no checkout in it (#35).
+      #
+      # No database is reached, and none should be: ADR-0018 keeps every real
+      # URL out of this workflow. What is being proved is everything up to the
+      # connection — that dist/migrate.mjs exists in the shipped image, runs as
+      # ESM under `node`, resolves its externals from the runtime-only
+      # dependency tree, finds the journal beside itself, and refuses in the way
+      # `shared/databaseUrl.ts` says it should rather than by crashing. A
+      # devDependency import or a missing `migrations/` fails here.
+      - name: The migration entry point runs in the image
+        run: |
+          set -o pipefail
+          output=$(docker run --rm docuflow:${{ github.sha }} \
+            node dist/migrate.mjs --status 2>&1) && exit_code=0 || exit_code=$?
+
+          echo "$output"
+          if [ "$exit_code" -eq 0 ]; then
+            echo "::error::migrate.mjs exited 0 with no database configured"
+            exit 1
+          fi
+          echo "$output" | grep -q "Database not configured"
+
+      - name: The journal shipped with it
+        run: |
+          docker run --rm docuflow:${{ github.sha }} \
+            node -e "const {readdirSync}=require('node:fs');
+              const files=readdirSync('/app/migrations');
+              if(!files.includes('meta')) { console.error(files); process.exit(1) }
+              console.log(files.filter(f=>f.endsWith('.sql')).sort().join('\n'))"
+
+      # The default CMD, against the HEALTHCHECK the image declares. `docker run
+      # --health-*` is not a thing: the check is baked in, so this waits for the
+      # container's own status to leave `starting`, which is the image's answer
+      # rather than a second copy of the health command written out here.
+      #
+      # Every value is a placeholder and none of them is reached: `/health`
+      # answers before authentication and touches nothing, and both the pg pool
+      # and the session store connect on first use rather than at boot. That is
+      # what makes this a boot test and not a database test, and it is what
+      # ADR-0018 requires — no real credential or URL belongs in this workflow.
+      - name: The default command still boots
+        run: |
+          id=$(docker run -d \
+            -e DB_DRIVER=pg \
+            -e DATABASE_URL=postgresql://unused:unused@127.0.0.1:5432/unused \
+            -e SESSION_SECRET=ci-placeholder-not-a-real-secret \
+            -e JWT_SECRET=2026-08:ci-placeholder-not-a-real-secret-0000 \
+            -e PRIVATE_OBJECT_DIR=/ci-bucket/.private \
+            -e PUBLIC_OBJECT_SEARCH_PATHS=/ci-bucket/public \
+            -e GCS_SERVICE_ACCOUNT_KEY='{"client_email":"ci@example.invalid","private_key":"not-a-key"}' \
+            docuflow:${{ github.sha }})
+
+          # `starting` until the first check outside the start period lands, so
+          # this waits it out rather than reading the answer before there is one.
+          health=starting
+          for _ in $(seq 1 45); do
+            health=$(docker inspect --format '{{.State.Health.Status}}' "$id")
+            [ "$health" = "starting" ] || break
+            sleep 2
+          done
+
+          # Tailed: a configuration refusal prints its list last, and ahead of it
+          # is the minified bundle the stack trace points into.
+          docker logs "$id" 2>&1 | tail -30
+          docker rm -f "$id" >/dev/null
+          [ "$health" = "healthy" ] || { echo "::error::HEALTHCHECK reported $health"; exit 1; }

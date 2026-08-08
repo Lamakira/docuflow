@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { describeSchema } from "../../scripts/lib/schemaSnapshot";
 import { loadMigrations, migrate } from "../../scripts/migrate";
+import { urlForDatabase, withClient } from "../helpers/db";
 import { resolveTestDatabaseUrl } from "../test-db-url";
 
 /**
@@ -30,22 +30,6 @@ const TEST_DB_URL = resolveTestDatabaseUrl();
 
 /** A throwaway database on the same server, created and dropped per run. */
 const SCRATCH_DB = "docuflow_schema_diff";
-
-function urlForDatabase(name: string): string {
-  const url = new URL(TEST_DB_URL);
-  url.pathname = `/${name}`;
-  return url.toString();
-}
-
-async function withClient<T>(url: string, use: (client: Client) => Promise<T>): Promise<T> {
-  const client = new Client({ connectionString: url });
-  await client.connect();
-  try {
-    return await use(client);
-  } finally {
-    await client.end();
-  }
-}
 
 /** The same introspection `npm run db:verify` runs, so the two cannot disagree. */
 async function describeDatabase(url: string) {

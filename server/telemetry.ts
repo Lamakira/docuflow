@@ -17,7 +17,7 @@
  * below them and the SDK still starts, still exports, and produces almost
  * nothing. Two consequences are load-bearing and easy to undo by accident:
  *
- *   `script/build.ts` must not bundle an instrumented library into
+ *   `script/bundles.ts` must not bundle an instrumented library into
  *   dist/index.cjs — a bundled express is not a module that gets required, so it
  *   is not a module that can be patched. That is why express is external there.
  *
