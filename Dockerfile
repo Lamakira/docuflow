@@ -73,8 +73,15 @@ COPY server ./server
 COPY shared ./shared
 # One letter apart and both required: `script/` is the build itself,
 # `scripts/` holds the operational commands, one of which is now built too.
+#
+# From `scripts/` only what dist/migrate.mjs is built from. The rest of that
+# directory is release and upload tooling that no build reads, and copying it
+# whole would invalidate this layer — and the `npm run build` below it — every
+# time one of those scripts is edited, which is the same thing the file-by-file
+# list above exists to avoid.
 COPY script ./script
-COPY scripts ./scripts
+COPY scripts/migrate.ts ./scripts/
+COPY scripts/lib ./scripts/lib
 
 # Writes dist/public (the client bundle, served by server/static.ts from
 # `<dist>/public`), dist/index.cjs (the server), and dist/migrate.mjs (the
@@ -87,7 +94,7 @@ RUN npm run build
 ####
 FROM base AS runtime-deps
 
-# `script/build.ts` bundles a short allowlist into dist/index.cjs and marks every
+# `script/bundles.ts` bundles a short allowlist into dist/index.cjs and marks every
 # other dependency external, so the server still resolves most of its imports
 # from node_modules at runtime. This tree is not optional.
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
