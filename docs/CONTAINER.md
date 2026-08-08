@@ -56,6 +56,21 @@ Against a plain PostgreSQL — a local container, a CI service — add
 `-e DB_DRIVER=pg`: the default Neon serverless driver speaks WebSockets to Neon
 and cannot reach one.
 
+**`DB_DRIVER` is permanent configuration, not a migration flag.** The test
+harness (#27) introduced it as a seam and left it without the owner and removal
+gate ADR-0017 requires of a temporary switch; defining the image is what settles
+it, because the image is the one thing every host runs. Which driver the server
+wants is a property of the database it is pointed at — Neon's serverless driver
+for Neon, node-postgres for anything reachable over plain TCP — and that stays
+true after the migration ends, so the seam becomes a documented setting rather
+than something to remove. Both drivers ship in the image deliberately.
+
+`pg`'s place in `dependencies` follows from the same reading, and is correct as
+it stands: it loads at boot under either driver, statically imported by
+[`server/db.ts`](../server/db.ts), and again by `connect-pg-simple`, which is
+handed a `conString` in [`server/auth.ts`](../server/auth.ts) and builds its own
+pool from it whatever Drizzle was given. It is not a test-only dependency.
+
 The server binds `0.0.0.0` on `PORT`, which defaults to 5000, so a host that
 injects its own port is served by the same image. `/health` answers before
 authentication and touches nothing, and the image's `HEALTHCHECK` calls it every
@@ -68,20 +83,27 @@ one is a fresh credential provisioned for this effort, never a production one.
 
 `.github/workflows/ci.yml` builds the image on every push to main and every pull
 request, with the layer cache in the Actions cache so an unchanged
-`package-lock.json` reuses both `npm ci` layers. Nothing is pushed: there is no
-deployment target yet, and no registry credential belongs in this repository
-until Phase 2 provisions a fresh one.
+`package-lock.json` reuses both `npm ci` layers. Only pushes to main write that
+cache — `mode=max` exports every intermediate stage, which is what makes those
+layers reusable, and at this image's size a copy per pull request would evict
+both the image cache and the npm cache out of one 10 GB per-repository budget.
+Pull requests read main's entry, which is what they branched from.
+
+Nothing is pushed to a registry: there is no deployment target yet, and no
+registry credential belongs in this repository until Phase 2 provisions a fresh
+one.
 
 ## Known gaps
 
 Three things this image does not do, each waiting on a ticket rather than an
 oversight:
 
-- **Transcript scraping is inoperable.** `server/browser-transcript.ts` launches
-  Chromium from a hard-coded Replit Nix path, so it cannot work off Replit with
-  or without a browser in the image. The build therefore skips Playwright's
-  ~400 MB browser download rather than paying for one the code will not look at.
-  Loom and Fathom scraping fails at launch until that path is replaced.
+- **Transcript scraping is inoperable** (#37). `server/browser-transcript.ts:4`
+  launches Chromium from a hard-coded Replit Nix path, so it cannot work off
+  Replit with or without a browser in the image. The build therefore skips
+  Playwright's ~400 MB browser download rather than paying for one the code will
+  not look at, and #37 is the removal gate on that skip. Loom and Fathom
+  scraping fails at launch until that path is replaced.
 - **Migrations run outside the image** (#35), as above. ADR-0016 makes them a
   gated pre-deploy step, which on Render means a command run against this image
   — so Phase 2 needs a second built entry point for `scripts/migrate.ts`.

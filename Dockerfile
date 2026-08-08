@@ -19,7 +19,9 @@
 # glibc, and building them from source would mean a C toolchain and a Python in
 # a stage whose whole job is to install dependencies.
 #
-# Node 22 is what `.github/workflows/ci.yml` tests on. Bump both together.
+# This exact version is what `.github/workflows/ci.yml` pins its `node-version`
+# to, so the tree is typechecked, built, and tested on the Node it ships on.
+# Bump both together — #38 owns collapsing the two copies into one.
 ARG NODE_VERSION=22.21.1-bookworm-slim
 
 ####
@@ -33,13 +35,20 @@ WORKDIR /app
 # vitest's nested vite for the installer to resolve; the npm 10 bundled with node
 # 22 rejects that as "Missing: @esbuild/...@0.28.1 from lock file". CI installs
 # npm 11 for the same reason — keep the two in step.
+#
+# Temporary (ADR-0017): #38 owns removing this, gated on `npm ci` succeeding on
+# the npm this base image already ships.
 RUN npm install --global npm@11
 
 # `playwright` ships a postinstall that downloads ~400 MB of browsers. The
 # transcript scraper that uses it launches Chromium from a hard-coded Replit Nix
-# path (`server/browser-transcript.ts`), so a browser here would not be the one
+# path (`server/browser-transcript.ts:4`), so a browser here would not be the one
 # it looks for: the feature is inoperable in a container either way, and paying
-# for the download would only hide that. Tracked as a follow-up.
+# for the download would only hide that.
+#
+# Temporary (ADR-0017): #37 owns removing this, gated on that launch path no
+# longer naming a machine — at which point whether the image carries a browser
+# becomes a real decision instead of a moot one.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 COPY package.json package-lock.json ./

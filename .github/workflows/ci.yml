@@ -11,9 +11,10 @@
 #          no deployment target yet, and under ADR-0018 it never gets production
 #          credentials or URLs. The job proves the image still builds.
 #
-# The database is a service container rather than docker-compose.test.yml: the
-# image, credentials, and port are the same, but a service container is already
-# healthy before the first step runs. Keep the two in step.
+# The database is a service container rather than docker-compose.test.yml, but
+# every setting the compose file makes is made here too — image, credentials,
+# port, healthcheck, and the tmpfs data directory — because a service container
+# is already healthy before the first step runs. Keep the two in step.
 #
 # This file replaces the earlier test.yml — same job, same service container,
 # with the typecheck, build, and image steps #25 added around it.
@@ -44,6 +45,7 @@ jobs:
         ports:
           - 5433:5432
         options: >-
+          --tmpfs /var/lib/postgresql/data
           --health-cmd "pg_isready -U postgres -d docuflow_test"
           --health-interval 2s
           --health-timeout 3s
@@ -52,9 +54,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pinned to the exact version the image ships, not the '22' line: a floating
+      # major would typecheck, build, and test on a different 22.x than production
+      # runs. The `ARG NODE_VERSION` in the Dockerfile is the other copy of this
+      # fact — bump both together, and #38 owns collapsing them into one.
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.21.1'
           cache: npm
 
       # package-lock.json was written by npm 11, which leaves the esbuild peer of
@@ -62,6 +68,9 @@ jobs:
       # node 22 rejects that as "Missing: @esbuild/...@0.28.1 from lock file".
       # Match the toolchain the lockfile came from instead of loosening npm ci.
       # The Dockerfile does the same, for the same reason.
+      #
+      # Temporary (ADR-0017): #38 owns removing this, gated on `npm ci` succeeding
+      # on the npm the runner and base image already ship.
       - run: npm install --global npm@11
 
       - run: npm ci
@@ -93,6 +102,13 @@ jobs:
 
       # Layer cache keyed by the Actions cache, so an unchanged package-lock.json
       # reuses the two `npm ci` layers — the only slow part of the build.
+      #
+      # Only pushes to main write the cache. `mode=max` exports every intermediate
+      # stage, which is what makes the `npm ci` layers reusable at all, but for an
+      # image this size that is gigabytes per writing ref; letting each pull
+      # request export its own copy would evict the npm cache and the image cache
+      # both, under one 10 GB per-repository budget. Pull requests read main's
+      # entry instead, which is the one they branched from.
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -101,5 +117,5 @@ jobs:
           # into the runner's daemon would copy a gigabyte for no reader.
           load: false
           tags: docuflow:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=image
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=image' || '' }}
