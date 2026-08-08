@@ -24,6 +24,7 @@ make a production secret acceptable to put there.
 | Context | Mechanism |
 | --- | --- |
 | `npm run dev`, `npm start` | Node loads `.env` if it exists (`--env-file-if-exists=.env`) |
+| The container | `docker run -e` or `--env-file`; the image carries no configuration of its own ([docs/CONTAINER.md](CONTAINER.md)) |
 | Deployments | The platform's own environment configuration |
 | Tests | `tests/setup.ts` assigns fixed values before any server module loads; a developer's exported secrets never reach the harness |
 
@@ -72,7 +73,7 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `REPLIT_DOMAINS`, `REPLIT_DEV_DOMAIN` | Set by the Replit runtime, never by hand. The first entry stands in for `APP_URL` while that is unset. They leave with the OIDC login in Phase 5 |
 | `PORT` | 5000 |
 | `NODE_ENV` | `development`. The production build replaces the read with a literal (`script/build.ts`), so a deployment sets it rather than a person |
-| `DB_DRIVER` | Neon's serverless driver; `pg` selects node-postgres for a database that driver cannot reach |
+| `DB_DRIVER` | Neon's serverless driver; `pg` selects node-postgres for a database that driver cannot reach. Permanent configuration and not a migration flag (#25): the database this points at decides it, so there is nothing to remove ([docs/CONTAINER.md](CONTAINER.md)) |
 | `REPL_ID`, `ISSUER_URL` | Replit OIDC login fails. Phase 5 removes both |
 
 `MCP_API_KEY` and `DESKTOP_RELEASE_CI_TOKEN` are read per request rather than at

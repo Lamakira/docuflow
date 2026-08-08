@@ -1,0 +1,33 @@
+####
+# Build-context allow-list.
+#
+# The repository carries a gigabyte of desktop-agent build trees, an installed
+# node_modules, and every document the product has ever been tested with. None
+# of it is read by `npm run build`, and sending it to the daemon costs more than
+# the build itself. So: exclude everything, then add back the files the client
+# and server builds actually open.
+#
+# A new top-level input to the build needs a line here as well as a COPY in the
+# Dockerfile, or the COPY fails with "file not found" — a loud failure, which is
+# the point of the allow-list over a deny-list.
+####
+
+*
+
+!package.json
+!package-lock.json
+!tsconfig.json
+!vite.config.ts
+!tailwind.config.ts
+!postcss.config.js
+!client
+!server
+!shared
+!script
+
+# The directories above bring anything nested inside them; these never belong in
+# an image regardless of where they turn up.
+**/node_modules
+**/dist
+**/.env
+**/.env.*

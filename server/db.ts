@@ -35,6 +35,14 @@ export type Db = PgDatabase<NodePgQueryResultHKT, typeof schema>;
 // Neon serverless (WebSocket) driver cannot reach — local and CI Postgres.
 // Default remains the Neon driver used in production. Both satisfy DbPool and
 // Db below, so the rest of the server is driver-agnostic by type, not by cast.
+//
+// Settled by #25 as permanent configuration rather than the migration seam it
+// started as: the driver follows the database this is pointed at, which does not
+// stop being true when the migration ends. So there is no removal gate to carry
+// (ADR-0017 wants one only for temporary switches), both drivers ship in the
+// image on purpose, and `pg` is a runtime dependency — it is imported above
+// whichever branch below runs, and `connect-pg-simple` builds a second pool from
+// `conString` regardless. See docs/CONTAINER.md.
 const usePg = driver === "pg";
 
 neonConfig.webSocketConstructor = ws;

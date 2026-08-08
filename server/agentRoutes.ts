@@ -21,6 +21,7 @@ let sharpLib: ((input: Buffer) => any) | null = null;
   }
 })();
 import { storage } from "./storage";
+import type { CrmProjectWithDetails } from "@shared/schema";
 import { isAuthenticated, getUserId, verifyPassword } from "./auth";
 import { config } from "./config";
 import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
@@ -52,6 +53,32 @@ function generateToken(lengthBytes: number): string {
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+/**
+ * Whether `userId` may act on a CRM project: a membership row, or ownership of
+ * the underlying project.
+ *
+ * The three agent routes that guard on this — task list, task create, timer
+ * start — must agree, so they ask here rather than each spelling the predicate
+ * out. **#31 owns the policy this encodes, and it is an open question**:
+ * `GET /api/agent/projects` lists everything the user can *see*, which is wider
+ * than this, so the picker can offer a project whose tasks this then refuses
+ * with a 403. Whichever way #31 resolves — tighten the list, loosen this guard,
+ * or show-and-mark — it is this function that moves, and the characterization
+ * suites in `tests/characterization/agent-workspace.test.ts` and
+ * `agent-timer.test.ts` freeze the current answer deliberately (#21).
+ *
+ * `members` is optional on `CrmProjectWithDetails` even though
+ * `storage.getCrmProject` always populates it, so absent members deny here
+ * rather than throw. That is the conservative reading and not a decision about
+ * #31; it is the only reading that typechecks.
+ */
+function canActOnCrmProject(crmProject: CrmProjectWithDetails, userId: string): boolean {
+  return (
+    crmProject.members?.some((m) => m.userId === userId) === true ||
+    crmProject.project?.ownerId === userId
+  );
 }
 
 // ─── Agent auth middleware ───
@@ -831,9 +858,7 @@ export function registerAgentRoutes(app: Express): void {
       if (!crmProjectId) return res.status(400).json({ message: "crmProjectId is required" });
       const crmProject = await storage.getCrmProject(crmProjectId);
       if (!crmProject) return res.status(404).json({ message: "Project not found" });
-      const isMember =
-        crmProject.members.some((m: any) => m.userId === userId) ||
-        crmProject.project?.ownerId === userId;
+      const isMember = canActOnCrmProject(crmProject, userId);
       if (!isMember) return res.status(403).json({ message: "Access denied" });
       const taskList = await storage.getTasks({ crmProjectId });
       const now = new Date();
@@ -865,9 +890,7 @@ export function registerAgentRoutes(app: Express): void {
       }
       const crmProject = await storage.getCrmProject(crmProjectId);
       if (!crmProject) return res.status(404).json({ message: "Project not found" });
-      const isMember =
-        crmProject.members.some((m: any) => m.userId === userId) ||
-        crmProject.project?.ownerId === userId;
+      const isMember = canActOnCrmProject(crmProject, userId);
       if (!isMember) return res.status(403).json({ message: "Access denied" });
       const task = await storage.createTask({
         crmProjectId,
@@ -949,9 +972,7 @@ export function registerAgentRoutes(app: Express): void {
       if (!crmProject) {
         return res.status(404).json({ message: "Project not found" });
       }
-      const isMember =
-        crmProject.members.some((m: any) => m.userId === userId) ||
-        crmProject.project?.ownerId === userId;
+      const isMember = canActOnCrmProject(crmProject, userId);
       if (!isMember) {
         return res.status(403).json({ message: "Access denied" });
       }
