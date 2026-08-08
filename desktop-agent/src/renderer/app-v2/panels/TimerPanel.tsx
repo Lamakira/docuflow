@@ -59,18 +59,30 @@ export function TimerPanel() {
   /**
    * Fetch a project's tasks once; used for counts, search and the drill-down.
    *
-   * A failure is not retried. It used to be a 403 on every project this user
-   * could see but held no membership on, and retrying only repeated a call that
-   * could not succeed; #31 removed that gate, so what is left is a server or
-   * network fault, which a silent immediate retry would not fix either.
+   * A failure is not retried on its own, but it does not stick either: the
+   * project drops out of `requested`, so opening it again — what the empty state
+   * tells you to do — asks afresh. The failure used to be a 403 on every project
+   * this user could see but held no membership on, where any retry repeated a
+   * call that could not succeed; #31 removed that gate, so what is left is a
+   * server or network fault, which the next open may well find cleared.
    */
   const requested = useRef<Set<string>>(new Set());
   function ensureTasks(projectId: string) {
     if (requested.current.has(projectId)) return;
     requested.current.add(projectId);
     void bridge.getTasks({ crmProjectId: projectId }).then((r) => {
-      if (r.ok) setTaskCache((c) => ({ ...c, [projectId]: r.data }));
-      else setTaskError((e) => ({ ...e, [projectId]: r.error ?? 'Could not load tasks' }));
+      if (!r.ok) {
+        requested.current.delete(projectId);
+        setTaskError((e) => ({ ...e, [projectId]: r.error ?? 'Could not load tasks' }));
+        return;
+      }
+      setTaskCache((c) => ({ ...c, [projectId]: r.data }));
+      setTaskError((e) => {
+        if (!(projectId in e)) return e;
+        const next = { ...e };
+        delete next[projectId];
+        return next;
+      });
     });
   }
 
