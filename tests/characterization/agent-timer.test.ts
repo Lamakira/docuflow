@@ -27,9 +27,9 @@ import { loginDevice } from "../helpers/agent";
  *  - Start answers with an extra `taskAccumulatedToday` field that is not part
  *    of the entry row; an idempotent replay always reports it as 0, whatever has
  *    accrued since.
- *  - `crmProjectId` is checked for existence only — any project the workspace
- *    can see is trackable, matching the SPA's start route (#31) — and `deviceId`
- *    in the body is ignored entirely, since the device comes from the token.
+ *  - `crmProjectId` is checked for existence only — any project that exists is
+ *    trackable, listed or not, matching the SPA's start route (#31) — and
+ *    `deviceId` in the body is ignored, since the device comes from the token.
  *  - Ownership still guards an entry once it exists: pause, resume and stop
  *    refuse another user's entry with "Not authorized".
  */

@@ -18,10 +18,12 @@ import { loginDevice, type AgentDevice } from "../helpers/agent";
  * `/api/agent/worked-today`, `/api/agent/today-breakdown` — is undocumented.
  *
  * Behavior quirks frozen here:
- *  - Visibility is the whole rule: the picker is company-wide, and so are the
- *    endpoints behind it. Anything the desktop offers, it can open. #31 removed
- *    the membership gate that used to make the picker lie — it was the only such
- *    gate in the product, and the SPA's task routes never had one.
+ *  - Existence is the whole rule: the picker is company-wide, and the endpoints
+ *    behind it check only that the id resolves. Anything the desktop offers, it
+ *    can open; a documentation-only project, which the picker never offers,
+ *    opens too. #31 removed the membership gate that used to make the picker lie
+ *    — it was the only such gate in the product, and the SPA's task routes never
+ *    had one.
  *  - The agent and the SPA share one workspace: a project created from the
  *    desktop is a normal CRM project, owned by whoever created it.
  *  - Day totals count stopped entries only; the running one is the client's job
@@ -71,7 +73,7 @@ describe("desktop agent workspace (characterization)", () => {
     expect(res.body).toEqual({ requiresTask: true });
   });
 
-  it("lists every project in the workspace, and opens the ones it lists", async () => {
+  it("lists every project in the company, and opens the ones it lists", async () => {
     const app = await makeApp();
     const { user, device } = await agentUser(app);
     const stranger = await registerUser(app);
