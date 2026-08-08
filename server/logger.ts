@@ -61,7 +61,27 @@ function traceContext(): string {
   return ` trace=${spanContext.traceId} span=${spanContext.spanId}`;
 }
 
-function formatLog(entry: LogEntry, data: TelemetryAttributes | undefined): string {
+/**
+ * The thrown error as `exception.*` attributes, through the same rule as every
+ * other field. Redacted here rather than merged in afterwards so the console
+ * line and the exported record cannot disagree about what an error may say —
+ * `exception.stacktrace` is exempt from the length cap (it is frames, not an
+ * identifier) and `exception.message` is not exempt from anything.
+ */
+function exceptionAttributes(error: LogEntry["error"]): TelemetryAttributes | undefined {
+  if (!error) return undefined;
+
+  return redactAttributes({
+    "exception.message": error.message,
+    ...(error.stack ? { "exception.stacktrace": error.stack } : {}),
+  });
+}
+
+function formatLog(
+  entry: LogEntry,
+  data: TelemetryAttributes | undefined,
+  exception: TelemetryAttributes | undefined
+): string {
   const time = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -72,21 +92,25 @@ function formatLog(entry: LogEntry, data: TelemetryAttributes | undefined): stri
   // Human-readable prefix + JSON payload for machine parsing
   const prefix = `${time} [${entry.level.toUpperCase()}] ${entry.event}`;
   const payload = data && Object.keys(data).length > 0 ? ` ${JSON.stringify(data)}` : "";
-  const errStr = entry.error ? ` ERR: ${entry.error.message}` : "";
+  const message = exception?.["exception.message"];
+  const errStr = message === undefined ? "" : ` ERR: ${String(message)}`;
 
   return `${prefix}${payload}${errStr}${traceContext()}`;
 }
 
 /**
- * The one path out. `consoleTail` is for what may be printed locally and must
- * never be exported — today only the response body in the request line below.
+ * The one path out. `consoleTail` is the single documented hole in the rule: it
+ * is appended to the console line and never to the exported record, and today
+ * only `logHttpRequest` uses it, for the response body it prints outside
+ * production. docs/OBSERVABILITY.md names it as the exception it is.
  */
 function write(entry: LogEntry, consoleTail = ""): void {
   const data = entry.data
     ? redactAttributes(entry.data as TelemetryAttributes)
     : undefined;
+  const exception = exceptionAttributes(entry.error);
 
-  const line = `${formatLog(entry, data)}${consoleTail}`;
+  const line = `${formatLog(entry, data, exception)}${consoleTail}`;
   if (entry.level === "error") console.error(line);
   else if (entry.level === "warn") console.warn(line);
   else console.log(line);
@@ -98,15 +122,7 @@ function write(entry: LogEntry, consoleTail = ""): void {
     severityNumber: SEVERITY[entry.level],
     severityText: entry.level.toUpperCase(),
     body: entry.event,
-    attributes: {
-      ...data,
-      ...(entry.error
-        ? {
-            "exception.message": entry.error.message,
-            ...(entry.error.stack ? { "exception.stacktrace": entry.error.stack } : {}),
-          }
-        : {}),
-    },
+    attributes: { ...data, ...exception },
   });
 }
 
@@ -129,20 +145,26 @@ export function logError(event: string, err: unknown, data?: Record<string, unkn
   write({ timestamp: new Date().toISOString(), level: "error", event, data, error });
 }
 
+/** What one finished API request is worth recording: the SLO's four fields. */
+export interface FinishedRequest {
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+}
+
 /**
  * One finished API request.
  *
  * The response body is the reason this is not a plain `logInfo`. It is the
  * fastest way to see what the server actually answered, and it is also every
  * document title, file name, and email address the API returns — so it is
- * printed where a developer is watching and nowhere else. Outside development
- * and the test harness the line is method, path, status, and duration: what an
- * SLO is measured from, and nothing that ADR-0016 keeps out of a sink.
+ * printed where a developer is watching and nowhere else, as a console tail
+ * that no exporter ever sees. Outside development and the test harness the line
+ * is {@link FinishedRequest} and nothing more: what an SLO is measured from,
+ * and nothing that ADR-0016 keeps out of a sink.
  */
-export function logHttpRequest(
-  request: { method: string; path: string; status: number; durationMs: number },
-  responseBody?: unknown
-): void {
+export function logHttpRequest(request: FinishedRequest, responseBody?: unknown): void {
   const tail =
     !config.isProduction && responseBody !== undefined
       ? ` :: ${JSON.stringify(responseBody)}`
@@ -153,12 +175,7 @@ export function logHttpRequest(
       timestamp: new Date().toISOString(),
       level: "info",
       event: "http.request",
-      data: {
-        method: request.method,
-        path: request.path,
-        status: request.status,
-        durationMs: request.durationMs,
-      },
+      data: { ...request },
     },
     tail
   );

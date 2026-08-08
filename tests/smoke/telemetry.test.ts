@@ -64,13 +64,44 @@ describe("telemetry redaction — what may not leave the process", () => {
       status: 401,
       durationMs: 29,
       "http.request.method": "POST",
-      "db.statement": "select * from users where email = $1",
       "client.address": "127.0.0.1",
       "user_agent.original": "DocuFlow-Agent/0.1.4",
       "exception.message": "connection terminated unexpectedly",
     };
 
     expect(redactAttributes(attributes)).toEqual(attributes);
+  });
+
+  it("keeps the SQL statement, under whichever name the pg instrumentation uses", async () => {
+    // `query` and `text` are both denied segments, so the blunt key rule reads
+    // `db.query.text` as content and empties every query span of the one thing
+    // it is read for. The value is parameterised — `$1`, never the address.
+    const statement = "select * from users where email = $1";
+
+    expect(
+      redactAttributes({ "db.query.text": statement, "db.statement": statement })
+    ).toEqual({ "db.query.text": statement, "db.statement": statement });
+
+    // The exception is the exact key and nothing near it: a hand-written field
+    // that happens to hold a query must still be dropped.
+    expect(redactAttributes({ "search.query.text": statement, dbQueryText: statement })).toEqual(
+      {}
+    );
+  });
+
+  it("keeps a stack trace whole and still cuts everything else", async () => {
+    const stack = `Error: connection terminated\n${"    at handler (server/routes.ts:1:1)\n".repeat(50)}`;
+    expect(stack.length).toBeGreaterThan(MAX_ATTRIBUTE_LENGTH);
+
+    const redacted = redactAttributes({
+      "exception.stacktrace": stack,
+      "exception.message": "y".repeat(5_000),
+    });
+
+    // Five frames of a stack are not worth exporting; a 5000-character error
+    // message is a thrower quoting something it should not have.
+    expect(redacted["exception.stacktrace"]).toBe(stack);
+    expect(String(redacted["exception.message"])).toHaveLength(MAX_ATTRIBUTE_LENGTH + 1);
   });
 
   it("cuts a URL back to its path, taking the signature with the query", async () => {
@@ -158,6 +189,20 @@ describe("logger — one rule for the console and the export", () => {
     expect(line).not.toContain("trace=");
   });
 
+  it("puts an error's message through the same rule as every other field", async () => {
+    const { logError } = await import("../../server/logger");
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // A thrower that quotes the row it failed on. The console line and the
+    // exported record are built from one redacted bag, so neither can be the
+    // one that ships the whole of it.
+    logError("document.index.failed", new Error("z".repeat(5_000)));
+
+    const line = spy.mock.calls.flat().join("\n");
+    expect(line).toContain("…");
+    expect(line).not.toContain("z".repeat(MAX_ATTRIBUTE_LENGTH + 1));
+  });
+
   it("shows the response body while developing and never in production", async () => {
     const local = await import("../../server/logger");
     const localSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -191,16 +236,40 @@ describe("logger — one rule for the console and the export", () => {
 });
 
 describe("telemetry SDK — off under test", () => {
+  afterEach(() => {
+    delete process.env.OTEL_EXPORTER;
+    process.env.NODE_ENV = "test";
+    vi.resetModules();
+  });
+
+  /**
+   * Starting registers the handlers that flush and then exit the process —
+   * which a test run must never acquire. Their absence is the observable
+   * difference between an SDK that started and one that did not, and the only
+   * one that can be asserted without starting one in this worker.
+   */
+  const signalListeners = () =>
+    process.listenerCount("SIGTERM") + process.listenerCount("SIGINT");
+
   it("starts nothing when it is imported by a suite", async () => {
-    const signalListeners = () =>
-      process.listenerCount("SIGTERM") + process.listenerCount("SIGINT");
     const before = signalListeners();
 
     await import("../../server/telemetry");
 
-    // Starting registers the handlers that flush and then exit the process —
-    // which a test run must never acquire. Their absence is the observable
-    // difference between an SDK that started and one that did not.
+    expect(signalListeners()).toBe(before);
+  });
+
+  it("is the environment that stops it, not the exporter", async () => {
+    // The distinction matters in the other direction: `OTEL_EXPORTER=none` is
+    // where production runs until Phase 2, and it has to stay instrumented so
+    // its log lines carry a trace id. `NODE_ENV=test` is the one case that
+    // skips the SDK — so an exporter named in a suite must not start one.
+    process.env.OTEL_EXPORTER = "console";
+    vi.resetModules();
+    const before = signalListeners();
+
+    await import("../../server/telemetry");
+
     expect(signalListeners()).toBe(before);
   });
 });

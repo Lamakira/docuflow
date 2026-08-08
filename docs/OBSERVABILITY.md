@@ -13,24 +13,40 @@ lists the variables.
 
 | Signal | Source | What you get |
 | --- | --- | --- |
-| Traces | `instrumentation-http`, `instrumentation-express`, `instrumentation-pg` | A span per request, named `POST /api/agent/auth/login` with `http.route` on it, and a child span per SQL query underneath |
+| Traces | `instrumentation-http`, `instrumentation-express`, `instrumentation-pg` | A span per API request, named `POST /api/agent/auth/login` with `http.route` on it, and a child span per SQL query underneath, carrying `db.query.text` |
 | Metrics | the same HTTP instrumentation, plus `instrumentation-runtime-node` | `http.server.request.duration` by route and status, and event-loop, heap, and GC metrics for the process |
 | Logs | [`server/logger.ts`](../server/logger.ts) | Every `logInfo` / `logWarn` / `logError`, as an OTLP log record carrying the trace and span it happened inside. Under the console exporter the readable line is the record — there is no second copy |
 
-The three share a trace id, which is what makes them one thing to read. Every
-console line the logger writes ends in `trace=<id> span=<id>` when there is an
-active span, so a line copied out of a terminal is enough to find the request it
-came from.
+Two kinds of request get no span at all (`isUninterestingRequest` in
+`server/telemetry.ts`): `/health`, which the container probes every 30 seconds
+forever, and the dev server's own asset traffic — `/@…`, `/src/…`,
+`/node_modules/…` — which would bury the request being looked at under a hundred
+module fetches. Middleware layers get no span either: helmet, two rate limiters,
+the body parsers, the session, and passport run on every request, and a span
+each would treble a trace to say what `server/app.ts` already says in order.
 
-W3C `traceparent` is the request id: it is read off an incoming request when one
-sends it, generated when one does not, and propagated onward. There is no
-separate request-id header to maintain.
+The three signals share a trace id, which is what makes them one thing to read.
+Every console line the logger writes ends in `trace=<id> span=<id>` when there is
+an active span, so a line copied out of a terminal is enough to find the request
+it came from. This holds under `OTEL_EXPORTER=none` too — the process is still
+instrumented, the spans are simply discarded instead of exported — which is what
+production has out of this ticket.
+
+W3C `traceparent` is the request id *inside* the process: it is read off an
+incoming request when one sends it, generated when one does not, and propagated
+onward — so there is no second request-id header to maintain. It is not yet
+handed back to a caller; ADR-0011's problem+json request id is under Known gaps.
 
 ## The rule for new code: IDs only
 
 ADR-0016 commits this deployment to telemetry that **carries IDs only**. A span,
 a log record, or a metric label may name *which* row, request, device, or route
 something happened to. It may never carry *what was in it*.
+
+In ADR-0015's terms, telemetry is a **Workspace-Operational** surface and only
+that. No **Identity**, **Sensitive-Evidence**, **Financial**, or **Secret** Data
+Class field belongs in a span, a log record, or a metric label — which is where
+the specific lists below come from.
 
 May be named:
 
@@ -39,8 +55,9 @@ May be named:
 - enumerations and outcomes — `reason: "user_not_found"`, `status: 401`,
   `clientType`, `os`;
 - counts, sizes, and durations — `eventCount`, `durationMs`, `finalDuration`;
-- route templates and technical metadata — `http.route`, `db.statement`
-  (Drizzle-parameterised, `$1` and not values), user agents, addresses.
+- route templates and technical metadata — `http.route`, `db.query.text`
+  (Drizzle-parameterised, `$1` and not values), user agents, addresses,
+  `exception.message` and `exception.stacktrace`.
 
 May never be named: document text or titles, file names, email addresses or
 bodies, transcripts, chat prompts and completions, client and contact names,
@@ -52,8 +69,9 @@ When a field would help but is not allowed, log the id of the row that holds it.
 
 ### The backstop, and its edges
 
-`server/telemetryRedaction.ts` applies the rule to every span attribute on its
-way to an exporter and to every log record and console line, in one place:
+`server/telemetryRedaction.ts` is the one function all three signals go through:
+span attributes and metric labels on their way to an exporter, and log records
+and the console line inside `server/logger.ts`, where they are built.
 
 - an attribute whose key has a segment naming content — `email`, `title`, `body`,
   `name`, `token`, `search`, singular or plural, dotted or camelCase — is
@@ -64,16 +82,33 @@ way to an exporter and to every log record and console line, in one place:
 - anything longer than 512 characters is cut, on the grounds that it was not an
   identifier.
 
+Four exceptions, each argued for one key at a time rather than by pattern:
+
+- **`db.query.text`** (and `db.statement`, its name before semantic conventions
+  1.30) is kept although `query` and `text` are both denied segments. The value
+  is parameterised SQL and `enhancedDatabaseReporting` is off, so no bound value
+  reaches it; without the exception a query span carries timings and nothing
+  that says which query was slow.
+- **`exception.stacktrace`** is exempt from the 512-character cut, because five
+  frames of a stack are not worth exporting. It is still subject to the key
+  rule, and whatever a thrower put in the message is `exception.message`, which
+  is capped like everything else.
+- **Resource attributes** are outside the rule by design: `service.name`,
+  `host.name`, and the process attributes identify the instance a signal came
+  from, which is what an operator needs to tell two replicas apart.
+- **The response body on a request line.** `logHttpRequest` appends the JSON the
+  API answered with to the *console line only*, outside production, past the
+  rule — it is the fastest way to see what the server actually said, and it is
+  also every document title and email address the API returns. Nothing exported
+  ever carries it, and in production it is not printed either. It is the single
+  hole in "one rule for the console and the export", and it is deliberate.
+
 Two consequences worth knowing. `db.name` and `express.name` are dropped as
 collateral of the `name` rule — the span's own name and `http.route` say the same
 thing. And the rule reads keys, not values: a field called `documentSummary`
 would sail straight through it. **The backstop is not the rule.** It catches what
 an instrumentation collects on our behalf; what our own code passes is a review
 question, and this section is what to review against.
-
-Resource attributes are outside it by design: `service.name`, `host.name`, and
-the process attributes identify the instance a signal came from, which is what an
-operator needs to tell two replicas apart.
 
 ## Seeing a trace locally
 
@@ -126,3 +161,9 @@ just stops saying anything useful.
   point somewhere.
 - **No collector, no sinks, no dashboards.** ADR-0018 keeps them out of this
   environment; this ticket is the instrumentation they will plug into.
+- **No trace id reaches a client.** ADR-0011 requires the public surfaces to
+  answer errors as RFC 9457 problem+json carrying a request id; the legacy web
+  API still answers `{ message }`, and nothing puts `traceparent` on a response.
+  That is Phase 7's contract-surface work, not this ticket's — recorded here
+  because the request id it will use already exists, and should be the trace id
+  rather than a second identifier invented alongside it.

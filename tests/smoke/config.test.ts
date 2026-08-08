@@ -42,7 +42,6 @@ const CONFIG_VARS = [
   "OTEL_SERVICE_NAME",
   "OTEL_EXPORTER_OTLP_ENDPOINT",
   "OTEL_EXPORTER_OTLP_HEADERS",
-  "OTEL_TRACES_SAMPLE_RATE",
   "OTEL_METRIC_EXPORT_INTERVAL_MS",
   "ALLOW_REMOTE_OTLP",
 ] as const;
@@ -429,7 +428,6 @@ describe("config — telemetry", () => {
 
     expect(config.telemetry.exporter).toBe("none");
     expect(config.telemetry.serviceName).toBe("docuflow-server");
-    expect(config.telemetry.traceSampleRate).toBe(1);
   });
 
   it("prints to the console in development and stays quiet in production", async () => {
@@ -508,11 +506,6 @@ describe("config — telemetry", () => {
   it("names the variable and the value it could not use", async () => {
     const exporter = await load({ ...BOOTABLE, OTEL_EXPORTER: "jaeger" }).catch((e: Error) => e);
     expect((exporter as Error).message).toContain('OTEL_EXPORTER is "jaeger"');
-
-    const rate = await load({ ...BOOTABLE, OTEL_TRACES_SAMPLE_RATE: "50" }).catch(
-      (e: Error) => e
-    );
-    expect((rate as Error).message).toContain("OTEL_TRACES_SAMPLE_RATE");
 
     const interval = await load({ ...BOOTABLE, OTEL_METRIC_EXPORT_INTERVAL_MS: "0.5" }).catch(
       (e: Error) => e

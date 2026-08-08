@@ -357,7 +357,7 @@ export function registerAgentRoutes(app: Express): void {
       await storage.revokeDevicesByMachine(userId, name, os ?? null);
       // The machine's name is whatever its owner called it, so it stays out of
       // the record (#26, ADR-0016); the user and the platform are what identify
-      // which fleet member lost its tokens.
+      // which device lost its tokens.
       logInfo("agent.device.revoke-machine", { userId, os });
       res.json({ ok: true });
     } catch (error) {

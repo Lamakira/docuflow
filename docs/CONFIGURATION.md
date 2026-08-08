@@ -78,7 +78,6 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `OTEL_EXPORTER` | The environment decides: nothing under test, the console in development, nothing in production until a collector is named — see [Telemetry](#telemetry) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | No collector, so nothing is exported over OTLP. Instrumentation still runs |
 | `OTEL_SERVICE_NAME` | `docuflow-server` |
-| `OTEL_TRACES_SAMPLE_RATE` | `1` — every trace |
 | `OTEL_METRIC_EXPORT_INTERVAL_MS` | 60000 |
 | `ALLOW_REMOTE_OTLP` | A non-local `OTEL_EXPORTER_OTLP_ENDPOINT` is refused outright (ADR-0018) |
 
@@ -240,6 +239,13 @@ instrumented, and the IDs-only rule any new field has to satisfy.
 | `NODE_ENV=development` | `console` | `npm run dev` shows a trace without a collector to run |
 | `NODE_ENV=production` | `none` | Until Phase 2 sets an endpoint. A production process printing every span fills its log drain with them |
 
+`none` is a destination, not a switch: the SDK starts, the libraries are
+patched, spans are created and discarded, and every log line still carries the
+trace id of the request it came from — which is what production has out of this
+ticket, and what makes Phase 2 a variable. `NODE_ENV=test` is the one case that
+skips the SDK entirely (`server/telemetry.ts`), so no suite runs through a
+patched express or pg.
+
 `OTEL_EXPORTER_OTLP_ENDPOINT` is the collector's **root** — `http://localhost:4318`
 — and each signal appends its own `/v1/traces`, `/v1/metrics`, `/v1/logs`.
 `OTEL_EXPORTER_OTLP_HEADERS` is `key=value,key2=value2`, the format a collector's
@@ -251,9 +257,13 @@ is set — the same deliberate opt-out `ALLOW_REMOTE_TEST_DB` is for the harness
 ADR-0018 keeps this environment's telemetry on local collectors until Phase 2
 provisions sinks of its own.
 
-`OTEL_TRACES_SAMPLE_RATE` (0–1) exists so that trading detail against a sink's
-ingest bill stays a variable rather than a code change. It is parent-based: a
-sampled request keeps its whole trace.
+`OTEL_METRIC_EXPORT_INTERVAL_MS` is how long the console exporter waits between
+metric dumps. Shortening it is the only reason to set it: 60 seconds is a long
+time to watch a terminal to find out whether a counter is moving.
+
+There is no sampling variable. Every trace is kept, which is what a deployment
+this size wants; Phase 2 adds a rate when it has an ingest bill to trade detail
+against, and can add it without touching application code.
 
 ## Email
 

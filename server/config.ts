@@ -69,7 +69,7 @@ export interface ReplitAuthConfig {
 /**
  * Where the OpenTelemetry SDK sends what it collects. `none` still instruments
  * the process — spans exist, and logs carry their trace id — it just exports
- * nothing.
+ * nothing. Only `NODE_ENV=test` leaves the process unpatched entirely.
  */
 export type TelemetryExporterKind = "none" | "console" | "otlp";
 
@@ -81,8 +81,6 @@ export interface TelemetryConfig {
   otlpEndpoint?: string;
   /** Sent with every OTLP request; how a hosted collector authenticates us. */
   otlpHeaders?: Record<string, string>;
-  /** 0–1. Applies to traces started here; a sampled caller is always followed. */
-  traceSampleRate: number;
   metricExportIntervalMs: number;
 }
 
@@ -413,17 +411,21 @@ function readOtlpEndpoint(missing: string[]): string | undefined {
 /**
  * What the OpenTelemetry SDK does in this process (#26, ADR-0016).
  *
- * Instrumentation is always on; only the exporter follows the environment, so
- * that turning telemetry into something a sink can see is a variable and never a
- * code change (which is the whole point of instrumenting once, in Phase 1, for
- * Phase 2 to point somewhere). Unset, the exporter is chosen the way each
- * environment wants it:
+ * Instrumentation is on in every process but a test run; only the exporter
+ * follows the environment, so that turning telemetry into something a sink can
+ * see is a variable and never a code change (which is the whole point of
+ * instrumenting once, in Phase 1, for Phase 2 to point somewhere). Unset, the
+ * exporter is chosen the way each environment wants it:
  *
- *   test         nothing. A suite must not print spans or hold a batch open.
+ *   test         nothing. A suite must not print spans or hold a batch open —
+ *                and `NODE_ENV=test` also stops the SDK from starting at all,
+ *                in server/telemetry.ts, so nothing is patched under it either.
  *   an endpoint  OTLP. Naming a collector is how you ask for one.
  *   development  the console, so `npm run dev` shows a trace without a collector.
  *   production   nothing, until Phase 2 sets an endpoint. A production process
- *                printing every span would fill its log drain with them.
+ *                printing every span would fill its log drain with them. It is
+ *                still instrumented: its log lines carry the trace id of the
+ *                request they came from, and Phase 2 changes a variable.
  *
  * `OTEL_EXPORTER` overrides all four.
  */
@@ -467,7 +469,6 @@ function resolveTelemetry(nodeEnv: string): Resolved<TelemetryConfig> {
       serviceName: read("OTEL_SERVICE_NAME") ?? DEFAULT_SERVICE_NAME,
       otlpEndpoint,
       otlpHeaders,
-      traceSampleRate: readNumber("OTEL_TRACES_SAMPLE_RATE", 1, { min: 0, max: 1 }, missing),
       metricExportIntervalMs: readNumber(
         "OTEL_METRIC_EXPORT_INTERVAL_MS",
         DEFAULT_METRIC_INTERVAL_MS,

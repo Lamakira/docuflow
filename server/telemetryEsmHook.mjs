@@ -19,6 +19,11 @@
  * instrumentations patch objects in place — and silently loses every express
  * route span and the `http.route` attribute with them. The failure is invisible:
  * traces still arrive, they are just anonymous.
+ *
+ * `@opentelemetry/instrumentation` is a direct dependency for this line alone.
+ * Every other OpenTelemetry package pulls it in transitively, so it resolves
+ * either way today — and a hoisting change or a `--omit` would take the hook
+ * out from under the dev script with nothing to say why.
  */
 
 import { register } from "node:module";
