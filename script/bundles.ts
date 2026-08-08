@@ -62,7 +62,16 @@ export async function externalDependencies(): Promise<string[]> {
   return allDeps.filter((dep) => !allowlist.includes(dep));
 }
 
-/** The server, as the image's default CMD runs it. */
+/**
+ * The server, as the image's default CMD runs it.
+ *
+ * `metafile` so a caller can ask what the bundle left for node_modules to
+ * answer. That list is what `dependencies` has to hold and the reason the
+ * client's half of the tree may leave it (#36) — derived from the build rather
+ * than read off the manifest, because a package moved wrongly does not fail the
+ * build, it fails the first request that needed it. See
+ * `tests/smoke/server-bundle.test.ts`.
+ */
 export async function buildServer(outfile: string) {
   return esbuild({
     entryPoints: [join(ROOT, "server/index.ts")],
@@ -75,6 +84,7 @@ export async function buildServer(outfile: string) {
     },
     minify: true,
     external: await externalDependencies(),
+    metafile: true,
     logLevel: "info",
   });
 }

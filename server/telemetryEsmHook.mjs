@@ -20,10 +20,13 @@
  * route span and the `http.route` attribute with them. The failure is invisible:
  * traces still arrive, they are just anonymous.
  *
- * `@opentelemetry/instrumentation` is a direct dependency for this line alone.
- * Every other OpenTelemetry package pulls it in transitively, so it resolves
- * either way today — and a hoisting change or a `--omit` would take the hook
- * out from under the dev script with nothing to say why.
+ * `@opentelemetry/instrumentation` is a direct devDependency for this line
+ * alone. Every other OpenTelemetry package pulls it in transitively, so it
+ * resolves either way today — and a hoisting change would take the hook out
+ * from under the dev script with nothing to say why. A devDependency because
+ * this file is: `npm run dev` is the only thing that loads it, and the bundle
+ * the image runs is CommonJS, where `require` is the seam the SDK already wraps
+ * (#36).
  */
 
 import { register } from "node:module";

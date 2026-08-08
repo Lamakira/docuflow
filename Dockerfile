@@ -58,8 +58,9 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 COPY package.json package-lock.json ./
 
 ####
-# Stage 2: the build. Needs the full tree — vite, esbuild, and typescript are all
-# devDependencies.
+# Stage 2: the build. Needs the full tree, which since #36 is most of the
+# manifest: the toolchain (vite, esbuild, typescript) and every package the
+# client bundle is built from are all devDependencies. Nothing here ships.
 ####
 FROM base AS build
 
@@ -94,9 +95,13 @@ RUN npm run build
 ####
 FROM base AS runtime-deps
 
-# `script/bundles.ts` bundles a short allowlist into dist/index.cjs and marks every
-# other dependency external, so the server still resolves most of its imports
-# from node_modules at runtime. This tree is not optional.
+# `script/bundles.ts` bundles a short allowlist into dist/index.cjs and marks
+# every other dependency external, so the server still resolves some of its
+# imports from node_modules at runtime. This tree is not optional — it is just
+# small now (#36): `dependencies` holds exactly what the bundle leaves external,
+# derived from the build's metafile and checked by
+# `tests/smoke/server-bundle.test.ts`, so what the client is built from no
+# longer arrives here to be installed and never opened.
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 
 ####
