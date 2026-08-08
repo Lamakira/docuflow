@@ -69,11 +69,13 @@ docker run --rm -p 5000:5000 \
   docuflow
 ```
 
-The runner takes `DATABASE_URL` and nothing else, where the server takes the
-whole list. That is deliberate and is `scripts/lib/db.ts`'s doing: the
-operational scripts resolve their URL through `shared/databaseUrl.ts` instead of
-importing `server/config.ts`, so a migration cannot be blocked by an
-object-storage variable it will never read. It carries into the image with them.
+The runner needs a database and nothing else, where the server needs the whole
+list. It resolves that database the way everything here does, through
+[`shared/databaseUrl.ts`](../shared/databaseUrl.ts): `DATABASE_URL`, or the
+`PG*` set it assembles one from. What it does *not* read is the rest — and that
+is `scripts/lib/db.ts`'s doing, which opens a pool directly instead of importing
+`server/config.ts`, so a migration cannot be blocked by an object-storage
+variable it will never use. That carries into the image with it.
 `--baseline <version>` is here too, and `migrations/README.md` is when to reach
 for it — a database that predates the journal needs it exactly once.
 
@@ -115,6 +117,19 @@ cache — `mode=max` exports every intermediate stage, which is what makes those
 layers reusable, and at this image's size a copy per pull request would evict
 both the image cache and the npm cache out of one 10 GB per-repository budget.
 Pull requests read main's entry, which is what they branched from.
+
+Then it runs it, which is the part no test can stage. `tests/smoke/migrate-bundle.test.ts`
+builds `dist/migrate.mjs` and executes it against a `/app` laid out in a
+temporary directory, but that directory borrows the checkout's `node_modules` —
+where the runtime stage installs `npm ci --omit=dev`. So CI loads the image and
+runs three things against the real tree: `node dist/migrate.mjs --status` with no
+database configured, which has to fail in `shared/databaseUrl.ts`'s words rather
+than on a missing module; a listing of `/app/migrations`, which has to hold the
+journal; and the default `CMD`, waited on until the image's own `HEALTHCHECK`
+reports `healthy`. Every value passed there is a placeholder that reaches
+nothing — `/health` answers before authentication and both the pool and the
+session store connect on first use, so this is a boot test, and ADR-0018 keeps
+real URLs and credentials out of the workflow.
 
 Nothing is pushed to a registry: there is no deployment target yet, and no
 registry credential belongs in this repository until Phase 2 provisions a fresh

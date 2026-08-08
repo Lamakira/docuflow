@@ -69,17 +69,13 @@ pre-deploy step; nothing about it belongs on the request path or on boot.
 A host that deploys the container has no checkout to run `npm run db:migrate`
 from, and no `tsx` to run it with. So `scripts/migrate.ts` is built into the
 image as a second entry point (#35), reading the `migrations/` directory copied
-in beside it:
+in beside it: `node dist/migrate.mjs` is every command above, same file, same
+journal, same flags — one runner built two ways, not two runners. Wherever this
+document says `npm run db:migrate --`, that is the other half of the sentence.
 
-```bash
-docker run --rm -e DATABASE_URL=... docuflow node dist/migrate.mjs --status
-docker run --rm -e DATABASE_URL=... docuflow node dist/migrate.mjs
-docker run --rm -e DATABASE_URL=... docuflow node dist/migrate.mjs --baseline 0002_slimy_whirlwind
-```
-
-Same file, same journal, same flags — one runner built two ways, not two
-runners. `docs/CONTAINER.md` covers the image; `tests/smoke/migrate-bundle.test.ts`
-is what keeps the built form honest.
+`docs/CONTAINER.md` has the `docker run` recipe and is the one place it is
+written out; `tests/smoke/migrate-bundle.test.ts` is what keeps the built form
+honest.
 
 ## Auditing a real database
 
