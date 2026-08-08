@@ -95,6 +95,12 @@ jobs:
   image:
     runs-on: ubuntu-latest
 
+    # One tag, named once. Every step below runs the image the step above built,
+    # and the commit SHA is what keeps concurrent runs on the same runner from
+    # reading each other's.
+    env:
+      IMAGE: docuflow:${{ github.sha }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -118,7 +124,7 @@ jobs:
           # the runtime stage's own `npm ci --omit=dev` tree, under the image's
           # own user and working directory.
           load: true
-          tags: docuflow:${{ github.sha }}
+          tags: ${{ env.IMAGE }}
           cache-from: type=gha,scope=image
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=image' || '' }}
 
@@ -137,7 +143,7 @@ jobs:
       # the OpenTelemetry SDK ship ESM only.
       - name: Every runtime dependency loads inside the image
         run: |
-          docker run --rm docuflow:${{ github.sha }} node --input-type=module -e '
+          docker run --rm "$IMAGE" node --input-type=module -e '
             import { readFileSync } from "node:fs";
             const { dependencies } = JSON.parse(readFileSync("/app/package.json", "utf8"));
             const names = Object.keys(dependencies);
@@ -168,7 +174,7 @@ jobs:
       - name: The migration entry point runs in the image
         run: |
           set -o pipefail
-          output=$(docker run --rm docuflow:${{ github.sha }} \
+          output=$(docker run --rm "$IMAGE" \
             node dist/migrate.mjs --status 2>&1) && exit_code=0 || exit_code=$?
 
           echo "$output"
@@ -180,7 +186,7 @@ jobs:
 
       - name: The journal shipped with it
         run: |
-          docker run --rm docuflow:${{ github.sha }} \
+          docker run --rm "$IMAGE" \
             node -e "const {readdirSync}=require('node:fs');
               const files=readdirSync('/app/migrations');
               if(!files.includes('meta')) { console.error(files); process.exit(1) }
@@ -206,7 +212,7 @@ jobs:
             -e PRIVATE_OBJECT_DIR=/ci-bucket/.private \
             -e PUBLIC_OBJECT_SEARCH_PATHS=/ci-bucket/public \
             -e GCS_SERVICE_ACCOUNT_KEY='{"client_email":"ci@example.invalid","private_key":"not-a-key"}' \
-            docuflow:${{ github.sha }})
+            "$IMAGE")
 
           # `starting` until the first check outside the start period lands, so
           # this waits it out rather than reading the answer before there is one.
