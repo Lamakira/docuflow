@@ -36,8 +36,8 @@ export function TimerPanel() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [taskCache, setTaskCache] = useState<Record<string, Task[]>>({});
-  /** Projects whose tasks could not be read — usually "Access denied". */
-  const [denied, setDenied] = useState<Record<string, string>>({});
+  /** Projects whose tasks could not be read, by the message the server gave. */
+  const [taskError, setTaskError] = useState<Record<string, string>>({});
   const [page, setPage] = useState(0);
 
   const [creating, setCreating] = useState(false);
@@ -59,9 +59,10 @@ export function TimerPanel() {
   /**
    * Fetch a project's tasks once; used for counts, search and the drill-down.
    *
-   * A failure is not retried. The common one is a 403: the project list can
-   * include projects this user is not a member of, and asking for their tasks
-   * is denied every time — retrying only repeats a call that cannot succeed.
+   * A failure is not retried. It used to be a 403 on every project this user
+   * could see but held no membership on, and retrying only repeated a call that
+   * could not succeed; #31 removed that gate, so what is left is a server or
+   * network fault, which a silent immediate retry would not fix either.
    */
   const requested = useRef<Set<string>>(new Set());
   function ensureTasks(projectId: string) {
@@ -69,7 +70,7 @@ export function TimerPanel() {
     requested.current.add(projectId);
     void bridge.getTasks({ crmProjectId: projectId }).then((r) => {
       if (r.ok) setTaskCache((c) => ({ ...c, [projectId]: r.data }));
-      else setDenied((d) => ({ ...d, [projectId]: r.error ?? 'Could not load tasks' }));
+      else setTaskError((e) => ({ ...e, [projectId]: r.error ?? 'Could not load tasks' }));
     });
   }
 
@@ -260,10 +261,10 @@ export function TimerPanel() {
               {query
                 ? 'No match.'
                 : openProject
-                  // An empty task list and a denied one look identical otherwise,
+                  // An empty task list and a failed one look identical otherwise,
                   // and "use + to add one" is wrong advice for the second.
-                  ? denied[openProject.id]
-                    ? `${denied[openProject.id]} — you are not a member of this project.`
+                  ? taskError[openProject.id]
+                    ? `${taskError[openProject.id]} — try opening the project again.`
                     : 'No tasks yet — use + to add one.'
                   : 'No projects yet — use + to create one.'}
             </p>

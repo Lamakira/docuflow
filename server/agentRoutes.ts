@@ -21,7 +21,6 @@ let sharpLib: ((input: Buffer) => any) | null = null;
   }
 })();
 import { storage } from "./storage";
-import type { CrmProjectWithDetails } from "@shared/schema";
 import { isAuthenticated, getUserId, verifyPassword } from "./auth";
 import { config } from "./config";
 import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
@@ -55,31 +54,29 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+// ─── Project access policy ───
+
 /**
- * Whether `userId` may act on a CRM project: a membership row, or ownership of
- * the underlying project.
+ * Seeing a CRM project is enough to read its tasks, add one, and start a timer
+ * against it. There is no membership gate on the agent routes.
  *
- * The three agent routes that guard on this — task list, task create, timer
- * start — must agree, so they ask here rather than each spelling the predicate
- * out. **#31 owns the policy this encodes, and it is an open question**:
- * `GET /api/agent/projects` lists everything the user can *see*, which is wider
- * than this, so the picker can offer a project whose tasks this then refuses
- * with a 403. Whichever way #31 resolves — tighten the list, loosen this guard,
- * or show-and-mark — it is this function that moves, and the characterization
- * suites in `tests/characterization/agent-workspace.test.ts` and
- * `agent-timer.test.ts` freeze the current answer deliberately (#21).
+ * #31 settled this. Three routes — task list, task create, timer start — used to
+ * require a membership row or ownership of the underlying project, while
+ * `GET /api/agent/projects` listed everything the workspace can see. The picker
+ * offered a project and the next call refused it with 403, once per project
+ * viewed. The gate was also the only one of its kind: `getCrmProjects` takes a
+ * user id and ignores it ("company-wide visibility"), and the SPA's
+ * `/api/tasks`, `POST /api/tasks` and `/api/time-tracking/start` never checked
+ * membership at all. So the refusal protected nothing — the same user could open
+ * the browser and do exactly what the desktop denied — while making the agent
+ * the one surface where the picker lied about what it could open.
  *
- * `members` is optional on `CrmProjectWithDetails` even though
- * `storage.getCrmProject` always populates it, so absent members deny here
- * rather than throw. That is the conservative reading and not a decision about
- * #31; it is the only reading that typechecks.
+ * Dropping it is the parity fix, not a widening: nothing became possible that a
+ * browser session could not already do. Tightening instead would have meant
+ * narrowing the SPA too, which is a workspace-permissions design (#18), not a
+ * desktop bug. If that design lands and membership becomes the real boundary, it
+ * belongs on both surfaces at once.
  */
-function canActOnCrmProject(crmProject: CrmProjectWithDetails, userId: string): boolean {
-  return (
-    crmProject.members?.some((m) => m.userId === userId) === true ||
-    crmProject.project?.ownerId === userId
-  );
-}
 
 // ─── Agent auth middleware ───
 
@@ -864,8 +861,6 @@ export function registerAgentRoutes(app: Express): void {
       if (!crmProjectId) return res.status(400).json({ message: "crmProjectId is required" });
       const crmProject = await storage.getCrmProject(crmProjectId);
       if (!crmProject) return res.status(404).json({ message: "Project not found" });
-      const isMember = canActOnCrmProject(crmProject, userId);
-      if (!isMember) return res.status(403).json({ message: "Access denied" });
       const taskList = await storage.getTasks({ crmProjectId });
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -896,8 +891,6 @@ export function registerAgentRoutes(app: Express): void {
       }
       const crmProject = await storage.getCrmProject(crmProjectId);
       if (!crmProject) return res.status(404).json({ message: "Project not found" });
-      const isMember = canActOnCrmProject(crmProject, userId);
-      if (!isMember) return res.status(403).json({ message: "Access denied" });
       const task = await storage.createTask({
         crmProjectId,
         name: name.trim(),
@@ -973,14 +966,10 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(400).json({ message: "crmProjectId is required" });
       }
 
-      // Verify user is a member of the project
+      // The project must exist; seeing it is enough to track against it (#31).
       const crmProject = await storage.getCrmProject(crmProjectId);
       if (!crmProject) {
         return res.status(404).json({ message: "Project not found" });
-      }
-      const isMember = canActOnCrmProject(crmProject, userId);
-      if (!isMember) {
-        return res.status(403).json({ message: "Access denied" });
       }
 
       if (isTasksEnabled() && !taskId) {

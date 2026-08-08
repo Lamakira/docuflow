@@ -27,8 +27,11 @@ import { loginDevice } from "../helpers/agent";
  *  - Start answers with an extra `taskAccumulatedToday` field that is not part
  *    of the entry row; an idempotent replay always reports it as 0, whatever has
  *    accrued since.
- *  - `crmProjectId` is checked for membership, but `deviceId` in the body is
- *    ignored entirely — the device comes from the token.
+ *  - `crmProjectId` is checked for existence only — any project the workspace
+ *    can see is trackable, matching the SPA's start route (#31) — and `deviceId`
+ *    in the body is ignored entirely, since the device comes from the token.
+ *  - Ownership still guards an entry once it exists: pause, resume and stop
+ *    refuse another user's entry with "Not authorized".
  */
 describe("desktop agent timer (characterization)", () => {
   beforeEach(async () => {
@@ -139,7 +142,7 @@ describe("desktop agent timer (characterization)", () => {
     expect(refresh.body).toEqual({ code: "device_revoked", message: "Device has been revoked" });
   });
 
-  it("validates a start against the project, the task, and membership", async () => {
+  it("validates a start against the project and the task, but not membership", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const stranger = await registerUser(app);
@@ -157,12 +160,16 @@ describe("desktop agent timer (characterization)", () => {
     expect(unknownProject.status).toBe(404);
     expect(unknownProject.body).toEqual({ message: "Project not found" });
 
+    // A stranger to the project starts a timer on it (#31): visibility is the
+    // rule, as it already was on the SPA's `/api/time-tracking/start`. The entry
+    // belongs to whoever started it, not to the project's owner.
     const strangerDevice = await loginDevice(app, stranger);
     const foreign = await strangerDevice.request
       .post("/api/agent/timer/start")
       .send({ crmProjectId, taskId });
-    expect(foreign.status).toBe(403);
-    expect(foreign.body).toEqual({ message: "Access denied" });
+    expect(foreign.status).toBe(200);
+    expect(foreign.body.userId).toBe(stranger.id);
+    await strangerDevice.request.post(`/api/agent/timer/${foreign.body.id}/stop`);
 
     // With the tasks migration applied, a task is mandatory — the same rule the
     // SPA's `/api/time-tracking/capabilities` advertises.

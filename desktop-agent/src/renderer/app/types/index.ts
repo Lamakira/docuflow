@@ -61,7 +61,7 @@ export interface AgentBridge {
   login: (data: { email: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
   unpair: () => Promise<{ ok: boolean }>;
   getProjects: () => Promise<{ ok: boolean; data: Project[]; error?: string }>;
-  /** Fails with "Access denied" when the user is not a member of the project. */
+  /** Answers for any project the workspace can see; 404s on one that does not exist. */
   getTasks: (data: { crmProjectId: string }) => Promise<{ ok: boolean; data: Task[]; error?: string }>;
   /** Creates a CRM project on the server — it appears in the web app too. */
   createProject: (data: { name: string }) => Promise<{ ok: boolean; data?: Project; error?: string }>;
