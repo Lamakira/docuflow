@@ -448,19 +448,19 @@ export class ApiClient {
     if (res.status === 403) {
       const data = await res.json().catch(() => ({ message: res.statusText }));
       const msg = data.message || `Request failed: ${res.status}`;
-      // 403 means two different things on these routes: the device was revoked,
-      // or this user is not a member of the project being asked about. Treating
-      // every 403 as revocation signed the user out the moment they touched a
-      // project they do not belong to — one GET /api/agent/tasks was enough.
-      // The revocation responses carry `code: "device_revoked"`; the message
-      // check keeps older servers working.
+      // 403 does not mean revocation by itself, and treating it that way signed
+      // the user out on an ordinary refusal — one GET /api/agent/tasks against a
+      // project they were not a member of was enough, before #31 removed that
+      // gate. Timer pause, resume and stop still answer 403 "Not authorized" on
+      // another user's entry, and a server older than #31 still refuses tasks,
+      // so the distinction is load-bearing. Revocation responses carry
+      // `code: "device_revoked"`; the message check keeps older servers working.
       if (data.code === 'device_revoked' || /device has been revoked/i.test(msg)) {
         console.log(`[ApiClient] Device revoked (403): ${msg}`);
         this.onRevoke?.();
       } else {
-        // The path is the whole diagnosis: "Access denied" is the same sentence
-        // from three different routes, and a log without it says a refusal
-        // happened somewhere. Query included — the denial is about that project.
+        // The path is the whole diagnosis: a refusal message alone says only
+        // that one happened somewhere. Query included — it names the project.
         console.log(`[ApiClient] Forbidden (403, not a revocation): ${init.method ?? 'GET'} ${path} — ${msg}`);
       }
       throw new Error(msg);
