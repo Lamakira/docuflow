@@ -30,10 +30,24 @@
 # glibc, and building them from source would mean a C toolchain and a Python in
 # a stage whose whole job is to install dependencies.
 #
-# This exact version is what `.github/workflows/ci.yml` pins its `node-version`
-# to, so the tree is typechecked, built, and tested on the Node it ships on.
-# Bump both together — #38 owns collapsing the two copies into one.
-ARG NODE_VERSION=22.21.1-bookworm-slim
+# This line is where the Node version is decided, for the image and for CI both
+# (#38). `.github/workflows/ci.yml` reads it out of this file rather than
+# repeating it, so the tree is typechecked, built, and tested on the Node it
+# ships on because there is one version to ship, not two that agree.
+#
+# 24 rather than 22 because the lockfile settles it. `package-lock.json` is
+# written by npm 11, and npm 11 leaves the optional esbuild peer of vitest's
+# nested vite out of the tree — `vitest/node_modules/vite` asks for
+# `esbuild@^0.27.0 || ^0.28.0` and the lockfile carries no entry for it. The npm
+# 10 that every node 22 release bundles resolves that range instead, to whatever
+# the registry answers with on the day, and refuses with "Missing:
+# @esbuild/...@<that version> from lock file". No node 22 will ever ship npm 11
+# — the line is on 10.9.x for the rest of its life — so on 22 the two npms
+# disagree permanently and something has to install npm 11 on top before every
+# install. 24 is the current LTS (Krypton) and bundles npm 11, which makes the
+# toolchain the lockfile came from the toolchain that reads it. `engines` in
+# package.json states that floor for installs outside this file and CI.
+ARG NODE_VERSION=24.19.0-bookworm-slim
 
 ####
 # Stage 1: the dependency manifest, shared by both install stages.
@@ -41,15 +55,6 @@ ARG NODE_VERSION=22.21.1-bookworm-slim
 FROM node:${NODE_VERSION} AS base
 
 WORKDIR /app
-
-# package-lock.json was written by npm 11, which leaves the esbuild peer of
-# vitest's nested vite for the installer to resolve; the npm 10 bundled with node
-# 22 rejects that as "Missing: @esbuild/...@0.28.1 from lock file". CI installs
-# npm 11 for the same reason — keep the two in step.
-#
-# Temporary (ADR-0017): #38 owns removing this, gated on `npm ci` succeeding on
-# the npm this base image already ships.
-RUN npm install --global npm@11
 
 # `playwright`'s postinstall downloads a browser set into whichever stage runs
 # `npm ci`. Neither of the two that do ships anything but files it is asked for —

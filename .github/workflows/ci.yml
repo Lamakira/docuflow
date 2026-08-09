@@ -54,24 +54,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pinned to the exact version the image ships, not the '22' line: a floating
-      # major would typecheck, build, and test on a different 22.x than production
-      # runs. The `ARG NODE_VERSION` in the Dockerfile is the other copy of this
-      # fact — bump both together, and #38 owns collapsing them into one.
+      # Read out of the Dockerfile rather than written here (#38). The exact
+      # version matters — a floating major would typecheck, build, and test on a
+      # different patch than production runs — and the image is where that
+      # version is decided, so this job asks it rather than holding a second
+      # copy that has to be remembered on every bump. This comment names no
+      # version for the same reason. The tag carries a Debian suffix the runner
+      # has no use for; only the three numbers are taken.
+      #
+      # Whatever `npm ci` needs arrives with that Node, which is what removed
+      # the global npm install this step used to be preceded by. `engines` in
+      # package.json states the floor for anyone installing outside these two
+      # files; the Dockerfile decides which release above it ships.
+      #
+      # Only the first `ARG NODE_VERSION=` is read: a stage that redeclares the
+      # argument with a default of its own must not turn `$version` into two
+      # lines, which would write a `$GITHUB_OUTPUT` entry with no `=` in it. The
+      # address block quits on that first line whether or not the substitution
+      # matched, so a tag with no numbers in it still falls through to the error
+      # below rather than being skipped over in favour of a later line.
+      - id: node
+        name: The Node version the image ships
+        run: |
+          version=$(sed -n '/^ARG NODE_VERSION=/{s/^ARG NODE_VERSION=\([0-9][0-9.]*\).*/\1/p;q}' Dockerfile)
+          if [ -z "$version" ]; then
+            echo "::error file=Dockerfile::no ARG NODE_VERSION to read a Node version from"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Dockerfile says node $version"
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.21.1'
+          node-version: ${{ steps.node.outputs.version }}
           cache: npm
-
-      # package-lock.json was written by npm 11, which leaves the esbuild peer of
-      # vitest's nested vite for the installer to resolve. The npm 10 bundled with
-      # node 22 rejects that as "Missing: @esbuild/...@0.28.1 from lock file".
-      # Match the toolchain the lockfile came from instead of loosening npm ci.
-      # The Dockerfile does the same, for the same reason.
-      #
-      # Temporary (ADR-0017): #38 owns removing this, gated on `npm ci` succeeding
-      # on the npm the runner and base image already ship.
-      - run: npm install --global npm@11
 
       - run: npm ci
 
