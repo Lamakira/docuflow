@@ -17,6 +17,13 @@
 # boot naming each one it is short of — so a misconfigured container fails in its
 # first second with a list, rather than on the first request that needed it.
 # `docs/CONTAINER.md` has the run recipe; `.env.example` lists the variables.
+#
+# The `ENV` lines below are not that. `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` and
+# `PLAYWRIGHT_BROWSERS_PATH` are read by npm and by Playwright, never by
+# `server/config.ts`; they describe how this image was assembled rather than how
+# a deployment is configured, which is why they are baked here and absent from
+# `.env.example`. Overriding either from outside only breaks the browser the
+# image installed.
 ####
 
 # Debian rather than Alpine: bcrypt and sharp publish prebuilt binaries for
@@ -52,6 +59,13 @@ RUN npm install --global npm@11
 # The image does carry a browser (#37): the runtime stage installs the one the
 # scraper opens, and that is the copy that ships. This skip is what keeps it from
 # being downloaded twice more to ship once.
+#
+# Permanent, and not a migration flag (#37, ADR-0017). It arrived as a temporary
+# switch gated on that ticket, and the ticket re-decided it rather than removed
+# it: as long as two stages run `npm ci` and neither ships browsers, the skip is
+# what the build wants. What would end it is a stage layout where the installing
+# stage is the shipping one, not a phase completing — so there is nothing left to
+# gate it on.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 COPY package.json package-lock.json ./
@@ -135,7 +149,7 @@ COPY --chown=node:node package.json ./
 # would download Chromium again.
 #
 # `--with-deps` is the apt half: the shared libraries a slim Debian does not
-# ship (~325 MB, which is also why this cannot be a `COPY` from another stage).
+# ship (~337 MB, which is also why this cannot be a `COPY` from another stage).
 # `--only-shell` is the browser half, and it is the half that runs — a headless
 # `chromium.launch()` opens Chromium's headless shell, so the full browser that
 # `install chromium` would put beside it is ~360 MB this image never starts. What

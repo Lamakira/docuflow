@@ -43,8 +43,8 @@ The build stage installs the full tree, so `dist/public` is built from exactly
 the packages it was before — they simply stop being installed a second time into
 a runtime that only ever serves them pre-bundled. That is what took the image
 from 1.17 GB to 676 MB (#36), and `node_modules` inside it from 655 MB to
-259 MB. The browser #37 put in afterwards is a separate 588 MB on top of that
-676 — its own decision, further down.
+259 MB. The browser #37 put in afterwards is a separate 588 MB layer on top of
+that — its own decision, and its own measurements, further down.
 
 Three kinds of entry sit outside that derivation:
 
@@ -102,7 +102,7 @@ RUN npx playwright install --with-deps --only-shell chromium
 Both halves are choices, and their sizes are the argument for each:
 
 - **`--with-deps`** is `apt-get install` of the library list Playwright keeps for
-  this Debian — ~325 MB, and the reason none of this can be a `COPY` from a
+  this Debian — ~337 MB, and the reason none of this can be a `COPY` from a
   builder stage: they are packages, not a directory.
 - **`--only-shell`** is 251 MB, and it is the half that runs. A headless
   `chromium.launch()` opens Chromium's *headless shell*, so installing the full
@@ -110,21 +110,39 @@ Both halves are choices, and their sizes are the argument for each:
   arrives with the shell, for recording video nothing here records, and is
   removed.
 
-588 MB in one layer: **676 MB → 1.5 GB** as `docker images` counts it, 147 MB →
-371 MB to pull. That is the largest single thing in the image — larger than the
-runtime dependency tree #36 spent itself shrinking — and it buys a feature that
-until now worked on one machine in the world. Two things follow from the price.
-The layer sits ahead of the `dist` copy, so a commit does not re-download a
-browser; only a lockfile change does. And when Phase 3 moves transcript work to
-the worker, "one image" is worth re-deciding, because 40% of this one would then
-be a browser the HTTP runtime never launches.
+588 MB in one layer: **153 MB → 388 MB to pull**, and 522 MB → 1.11 GB unpacked.
+The `docker images` disk-usage column reads 676 MB → 1.5 GB, which is a larger
+jump than the layer because it counts the pulled blobs alongside the unpacked
+layers and the browser grows both — the 676 MB #36 landed on is that same
+double-counted measure, so compare it only against the 1.5 GB beside it.
+
+Whichever measure, this is the largest single thing in the image — larger than
+the runtime dependency tree #36 spent itself shrinking — and it buys a feature
+that until now worked on one machine in the world. Two things follow from the
+price. The layer sits ahead of the `dist` copy, so a commit does not re-download
+a browser; only a lockfile change does. And when Phase 3 moves transcript work to
+the worker, "one image" is worth re-deciding, because more than half of this one
+(588 of 1110 MB unpacked) would then be a browser the HTTP runtime never
+launches.
+
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` stays set in the base stage, and is now
+**permanent configuration rather than a migration flag** — the same standing
+`DB_DRIVER` has. It arrived under ADR-0017 as a temporary switch gated on this
+ticket, and this ticket re-decided it: two stages run `npm ci` and neither ships
+what it downloads, so skipping there and installing once in the runtime stage is
+what the build wants for as long as it has that shape. A stage layout where the
+installing stage is the shipping one would end it; no phase completing will.
 
 `PLAYWRIGHT_BROWSERS_PATH` is where it lands and why it is readable: root
 installs the browser, `node` runs it, and Playwright's default location is the
-installing user's home cache. Nothing in `server/` names any of this — the
-scraper launches with no `executablePath` and lets Playwright resolve, which is
-what makes the same code path work on a developer machine that has run
-`npx playwright install chromium`.
+installing user's home cache. Both of these are the image describing itself
+rather than settings a deployment passes — they are read by npm and Playwright,
+never by `server/config.ts`, which is why neither appears in `.env.example` or in
+the tables in [CONFIGURATION.md](CONFIGURATION.md), and why overriding either
+from outside only breaks the browser the image installed. Nothing in `server/`
+names any of this — the scraper launches with no `executablePath` and lets
+Playwright resolve, which is what makes the same code path work on a developer
+machine that has run `npx playwright install chromium`.
 
 ## Run
 
