@@ -161,6 +161,11 @@ options are readable without a browser. That a browser *exists* where Playwright
 looks is the image's half of the question, which only
 `.github/workflows/ci.yml` can answer, and it does — by opening a page and
 reading a clipboard inside the built image.
+It also pins what a scrape may *call* a transcript
+([#45](https://github.com/Lamakira/docuflow/issues/45)). `looksLikeTranscript`
+decides that in Node rather than in the page, so it is answerable with neither
+browser nor network, and the cookie banner Loom once served in place of a
+transcript is kept verbatim as the thing that must not pass.
 
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1

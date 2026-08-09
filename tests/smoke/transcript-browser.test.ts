@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * How `server/browser-transcript.ts` finds a browser (#37).
+ * How `server/browser-transcript.ts` finds a browser (#37), and what it accepts
+ * once it has one (#45).
  *
  * The scraper used to hold an absolute `/nix` store path as a constant: it named
  * one Replit machine's Chromium, so `chromium.launch()` threw on every other
@@ -16,6 +17,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * names one — that is the image's half, and `.github/workflows/ci.yml` opens a
  * page inside the built image to answer it. An override that names one *is*
  * checked here, because refusing it is this module's own work.
+ *
+ * `looksLikeTranscript` is checked here for the same reason: it decides what a
+ * scrape is allowed to call a transcript, and it decides it in Node rather than
+ * in the page, so it is answerable without either.
  */
 
 /** Every `.ts` under `server/`, which is the tree the ban below applies to. */
@@ -106,5 +111,82 @@ describe("the transcript scraper's browser", () => {
     // one above it: a machine's filesystem layout is configuration, and
     // configuration reaches this server through `server/config.ts` alone.
     expect(naming).toEqual([]);
+  });
+});
+
+/**
+ * What Loom's share page actually handed the scraper when it was asked for a
+ * transcript: OneTrust's cookie preference text, swept up by a
+ * `[class*="row"]` selector matching `ot-sdk-row` (#45). Kept verbatim, because
+ * the whole point is that it is long, prose-shaped, and not a transcript.
+ */
+const COOKIE_BANNER =
+  "Strictly Necessary CookiesAlways ActiveThese cookies are necessary for the " +
+  "website to function and cannot be switched off in our systems. They are usually " +
+  "only set in response to actions made by you which amount to a request for " +
+  "services, such as setting your privacy preferences, logging in or filling in " +
+  "forms. You can set your browser to block or alert you about these cookies, but " +
+  "some parts of the site will not then work. These cookies do not store any " +
+  "personally identifiable information.Targeting CookiesAlways ActiveThese cookies " +
+  "may be set through our site by our advertising partners.";
+
+/** The shape a real one arrives in — timestamp, speaker, what they said. */
+const TRANSCRIPT = [
+  "Weekly sync - 3 March",
+  "VIEW RECORDING - 55 mins (No highlights):",
+  "",
+  "0:00 - Alex Rivera",
+  "  Morning, thanks for joining.",
+  "",
+  "1:24 - Sam Okonkwo",
+  "  Let us start with the migration status.",
+  "",
+  "12:07 - Alex Rivera",
+  "  Agreed, we ship on Thursday.",
+].join("\n");
+
+describe("what a scrape may call a transcript", () => {
+  it("refuses the cookie banner Loom served in place of one", async () => {
+    const { looksLikeTranscript } = await import("../../server/browser-transcript");
+
+    // 800-odd characters, comfortably past the length gate that used to be the
+    // only question asked — and written as a Transcript row, embedded, and made
+    // citable, had it passed.
+    expect(COOKIE_BANNER.length).toBeGreaterThan(50);
+    expect(looksLikeTranscript(COOKIE_BANNER)).toBe(false);
+  });
+
+  it("accepts a timestamped record of who said what", async () => {
+    const { looksLikeTranscript } = await import("../../server/browser-transcript");
+
+    expect(looksLikeTranscript(TRANSCRIPT)).toBe(true);
+  });
+
+  it("refuses prose however much of it there is", async () => {
+    const { looksLikeTranscript } = await import("../../server/browser-transcript");
+
+    // The general rule under the specific banner: a Transcript is the
+    // "immutable, timestamped text record" (CONTEXT.md), so length is never the
+    // evidence and no quantity of untimed prose becomes one.
+    expect(looksLikeTranscript("word ".repeat(4000))).toBe(false);
+  });
+
+  it("refuses a stray clock reading in ordinary text", async () => {
+    const { looksLikeTranscript } = await import("../../server/browser-transcript");
+
+    expect(
+      looksLikeTranscript(
+        "The recording starts at 14:30 and the meeting room is booked until then."
+      )
+    ).toBe(false);
+  });
+
+  it("refuses nothing at all", async () => {
+    const { looksLikeTranscript } = await import("../../server/browser-transcript");
+
+    expect(looksLikeTranscript(null)).toBe(false);
+    expect(looksLikeTranscript(undefined)).toBe(false);
+    expect(looksLikeTranscript("")).toBe(false);
+    expect(looksLikeTranscript("0:00 - Alex")).toBe(false);
   });
 });

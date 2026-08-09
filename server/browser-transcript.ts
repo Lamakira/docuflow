@@ -5,6 +5,42 @@ import { config } from './config';
 
 const BROWSER_TIMEOUT = 30000;
 
+/** How long to wait for a copy button to put something on the clipboard. */
+const CLIPBOARD_ATTEMPTS = 5;
+const CLIPBOARD_POLL_MS = 1000;
+
+/** Below this, there is nothing worth calling a transcript. */
+const MINIMUM_CHARACTERS = 50;
+
+/** `0:00`, `12:34`, `1:02:03` — the mark a spoken record is indexed by. */
+const TIMESTAMP = /\b\d{1,2}:\d{2}(?::\d{2})?\b/g;
+const TIMESTAMPS_REQUIRED = 3;
+
+/**
+ * Whether a scraped text is a transcript at all (#45).
+ *
+ * Length used to be the only question asked, and length is not evidence. A Loom
+ * share page answered it with its cookie banner — `[class*="row"]` matched
+ * OneTrust's `ot-sdk-row`, two elements joined past fifty characters, and the
+ * scrape reported success. `syncTranscript` does not re-examine what it is
+ * given: it hashes, chunks, embeds, and writes a Transcript, which is searchable
+ * and citable. A failed scrape is recoverable; that is not, because it looks
+ * like data.
+ *
+ * Timestamps are the test because they are the definition — a Transcript is the
+ * "immutable, timestamped text record" (`CONTEXT.md`). Prose about cookies
+ * carries none, and no amount of it ever will. A page holding no transcript now
+ * fails, which is the outcome this replaces.
+ */
+export function looksLikeTranscript(text: string | null | undefined): boolean {
+  if (!text) return false;
+
+  const trimmed = text.trim();
+  if (trimmed.length < MINIMUM_CHARACTERS) return false;
+
+  return (trimmed.match(TIMESTAMP) ?? []).length >= TIMESTAMPS_REQUIRED;
+}
+
 /**
  * Which Chromium this launches, and how (#37).
  *
@@ -90,59 +126,90 @@ async function createContext(browser: Browser): Promise<BrowserContext> {
   });
 }
 
-async function extractTranscriptFromDOM(page: Page): Promise<string | null> {
+/** Whitespace collapsed and the copy widget's own label dropped. */
+function tidy(text: string): string {
+  return text.replace(/\s+/g, ' ').replace(/CopySearch/g, '').trim();
+}
+
+/**
+ * Every text on the page that could be a transcript, most specific first. The
+ * page cannot decide which one is (`looksLikeTranscript` runs here, not there),
+ * so it offers rather than chooses.
+ *
+ * Both rungs key on the word "transcript" in a selector or a class. A third one
+ * used to sweep `[class*="segment"], [class*="row"]` and join whatever it found,
+ * which is what returned a cookie banner (#45). It is gone rather than
+ * tightened: an arbitrary substring sweep of page classes has no version that
+ * tells content from furniture.
+ */
+async function transcriptCandidatesFromDOM(page: Page): Promise<string[]> {
   return await page.evaluate(() => {
+    const candidates: string[] = [];
+
     const transcriptSelectors = [
       '[class*="transcript-list"]',
       '[class*="TranscriptList"]',
       '[class*="transcript-content"]',
+      '[class*="transcript-body"]',
       '[class*="transcript-row"]',
       '[data-testid="transcript-text"]',
       '.transcript-text',
       '.transcript-content',
     ];
-    
+
     for (const selector of transcriptSelectors) {
-      const container = document.querySelector(selector);
-      if (container && container.textContent && container.textContent.length > 50) {
-        const text = container.textContent.replace(/\s+/g, ' ').trim();
-        const cleaned = text.replace(/CopySearch|^\d{1,2}:\d{2}/gm, '').trim();
-        if (cleaned.length > 50) {
-          return cleaned;
-        }
-      }
+      const text = document.querySelector(selector)?.textContent ?? '';
+      if (text.trim().length > 0) candidates.push(text);
     }
-    
-    const allTranscript = Array.from(document.querySelectorAll('[class*="transcript"]'));
-    let bestText = '';
-    for (let i = 0; i < allTranscript.length; i++) {
-      const el = allTranscript[i];
-      const text = el.textContent || '';
-      if (text.length > bestText.length && text.length > 50) {
-        const cleaned = text.replace(/\s+/g, ' ').replace(/CopySearch/g, '').trim();
-        if (!cleaned.includes('Transcript') || cleaned.length > 200) {
-          bestText = cleaned;
-        }
-      }
+
+    // Loom ships CSS-module names now — `transcript-header_header_VVf` — so the
+    // class substring outlives any one of the names above. Longest wins: the
+    // headers beside the content carry the same prefix and no text.
+    let longest = '';
+    for (const element of Array.from(document.querySelectorAll('[class*="transcript" i]'))) {
+      const text = element.textContent ?? '';
+      if (text.length > longest.length) longest = text;
     }
-    
-    if (bestText.length > 50) {
-      return bestText;
-    }
-    
-    const segments = document.querySelectorAll('[class*="segment"], [class*="row"]');
-    if (segments.length > 0) {
-      const texts = Array.from(segments)
-        .map(el => el.textContent?.trim() || '')
-        .filter(t => t.length > 0 && !t.match(/^[\d:]+$/));
-      const combined = texts.join(' ').replace(/\s+/g, ' ').trim();
-      if (combined.length > 50) {
-        return combined;
-      }
-    }
-    
-    return null;
+    if (longest.trim().length > 0) candidates.push(longest);
+
+    return candidates;
   });
+}
+
+/** The first candidate that is a transcript, tidied; null when none is. */
+async function transcriptFromDOM(page: Page): Promise<string | null> {
+  for (const candidate of await transcriptCandidatesFromDOM(page)) {
+    const text = tidy(candidate);
+    if (looksLikeTranscript(text)) return text;
+  }
+
+  return null;
+}
+
+/**
+ * The clipboard once a copy button has filled it, or null.
+ *
+ * Polled rather than read once after a fixed second. Fathom's extraction used to
+ * survive on an accident: `copySelectors` named the same button twice, the loop
+ * did not break, and the second click bought the second attempt that the first
+ * one's timing had missed (#45).
+ */
+async function clipboardTranscript(page: Page): Promise<string | null> {
+  for (let attempt = 0; attempt < CLIPBOARD_ATTEMPTS; attempt++) {
+    await page.waitForTimeout(CLIPBOARD_POLL_MS);
+
+    const text = await page.evaluate(async () => {
+      try {
+        return await navigator.clipboard.readText();
+      } catch (err) {
+        return null;
+      }
+    });
+
+    if (looksLikeTranscript(text)) return text!.trim();
+  }
+
+  return null;
 }
 
 export async function extractLoomTranscript(videoId: string): Promise<{ success: boolean; transcript?: string; error?: string }> {
@@ -167,6 +234,8 @@ export async function extractLoomTranscript(videoId: string): Promise<{ success:
     
     console.log('[Loom] Looking for transcript button/tab...');
     const transcriptButtonSelectors = [
+      // What Loom serves today, observed on a real share page (#45).
+      '[data-testid="sidebar-tab-Transcript"]',
       'button:has-text("Transcript")',
       '[aria-label="Transcript"]',
       '[data-qa="transcript-button"]',
@@ -219,27 +288,18 @@ export async function extractLoomTranscript(videoId: string): Promise<{ success:
       await copyButton.waitFor({ state: 'visible', timeout: 5000 });
       await copyButton.click();
       console.log('[Loom] Copy button clicked');
-      
-      await page.waitForTimeout(1000);
-      
-      const transcript = await page.evaluate(async () => {
-        try {
-          return await navigator.clipboard.readText();
-        } catch (err) {
-          return null;
-        }
-      });
-      
-      if (transcript && transcript.trim().length > 50) {
+
+      const transcript = await clipboardTranscript(page);
+      if (transcript) {
         console.log(`[Loom] Transcript extracted via clipboard (${transcript.length} chars)`);
-        return { success: true, transcript: transcript.trim() };
+        return { success: true, transcript };
       }
     } catch (error) {
       console.log('[Loom] Copy button not found, trying DOM extraction');
     }
-    
-    const domTranscript = await extractTranscriptFromDOM(page);
-    if (domTranscript && domTranscript.length > 50) {
+
+    const domTranscript = await transcriptFromDOM(page);
+    if (domTranscript) {
       console.log(`[Loom] Transcript extracted via DOM (${domTranscript.length} chars)`);
       return { success: true, transcript: domTranscript };
     }
@@ -270,9 +330,9 @@ export async function extractLoomTranscript(videoId: string): Promise<{ success:
       return null;
     });
     
-    if (apolloTranscript && apolloTranscript.length > 50) {
+    if (looksLikeTranscript(apolloTranscript)) {
       console.log(`[Loom] Transcript extracted via Apollo state (${apolloTranscript.length} chars)`);
-      return { success: true, transcript: apolloTranscript };
+      return { success: true, transcript: apolloTranscript.trim() };
     }
     
     return { 
@@ -321,42 +381,37 @@ export async function extractFathomTranscript(videoId: string): Promise<{ succes
       console.log('[Fathom] No TRANSCRIPT tab found, continuing...');
     }
     
+    // `has-text` matches case-insensitively, so one spelling covers both. A
+    // second, differently-cased copy of the first entry used to sit here and was
+    // doing the retry's work — clicking the same button again bought the attempt
+    // the fixed one-second wait had missed. `clipboardTranscript` polls now, so
+    // the duplicate is finally what it always looked like (#45).
     const copySelectors = [
       'button:has-text("Copy transcript")',
-      'button:has-text("Copy Transcript")',
       '[aria-label*="transcript" i]',
       '.transcript-copy-button',
     ];
-    
+
     for (const selector of copySelectors) {
       try {
         const button = page.locator(selector).first();
         await button.waitFor({ state: 'visible', timeout: 5000 });
         await button.click();
         console.log(`[Fathom] Clicked: ${selector}`);
-        
-        await page.waitForTimeout(1000);
-        
-        const transcript = await page.evaluate(async () => {
-          try {
-            return await navigator.clipboard.readText();
-          } catch (err) {
-            return null;
-          }
-        });
-        
-        if (transcript && transcript.trim().length > 50) {
+
+        const transcript = await clipboardTranscript(page);
+        if (transcript) {
           console.log(`[Fathom] Transcript extracted via clipboard (${transcript.length} chars)`);
-          return { success: true, transcript: transcript.trim() };
+          return { success: true, transcript };
         }
       } catch {
         continue;
       }
     }
-    
+
     console.log('[Fathom] Trying DOM extraction...');
-    const domTranscript = await extractTranscriptFromDOM(page);
-    if (domTranscript && domTranscript.length > 50) {
+    const domTranscript = await transcriptFromDOM(page);
+    if (domTranscript) {
       console.log(`[Fathom] Transcript extracted via DOM (${domTranscript.length} chars)`);
       return { success: true, transcript: domTranscript };
     }
