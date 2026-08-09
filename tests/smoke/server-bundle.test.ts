@@ -127,7 +127,7 @@ describe("dist/index.cjs", () => {
     // so a missing entry survives boot and the image's HEALTHCHECK both, and
     // surfaces on a screenshot upload or a document extraction instead.
     expect(declared).toContain("sharp");
-    expect(declared).toContain("pdf-parse");
+    expect(declared).toContain("unpdf");
 
     // ...and sharp specifically is still visible to the derivation. If this
     // fails, its import in server/agentRoutes.ts stopped being a string literal

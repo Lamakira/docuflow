@@ -43,10 +43,16 @@ The build stage installs the full tree, so `dist/public` is built from exactly
 the packages it was before — they simply stop being installed a second time into
 a runtime that only ever serves them pre-bundled. That is what took the image
 from 1.17 GB to 676 MB (#36), and `node_modules` inside it from 655 MB to
-259 MB. The browser #37 put in afterwards is a separate 588 MB layer on top of
-that — its own decision, and its own measurements, further down.
+259 MB. #43 took that tree to 147 MB by changing what extracts PDFs; the
+paragraph under "Known gaps" that used to describe the 115 MB it removed is
+gone, and what it found is below. The browser #37 put in afterwards is a
+separate 588 MB layer on top of that — its own decision, and its own
+measurements, further down.
 
-Three kinds of entry sit outside that derivation:
+The largest entries left are `@opentelemetry` at 38 MB and sharp's `@img`
+binaries at 33 MB. Nothing is now a majority of the tree.
+
+Four kinds of entry sit outside that derivation:
 
 - **Imports never reached in production.** `vite` and the two plugins
   `vite.config.ts` loads are imports of the bundle, because `server/index.ts`
@@ -69,6 +75,16 @@ Three kinds of entry sit outside that derivation:
   cast is TypeScript's and esbuild reads through it to a string literal. A
   specifier assembled at runtime would be invisible, and would have to be carried
   by hand in the smoke test's `CARRIED_BY_HAND` with a note saying where it is.
+- **Installed, then deleted.** One: `@napi-rs/canvas`, 61 MB of Skia, removed by
+  an `rm -rf` after `npm ci --omit=dev` (#43). No manifest field can keep it
+  out. `pdfjs-dist` is a devDependency for the client's PDF viewer and declares
+  it an `optionalDependency`, so npm installs a hoisted copy; `unpdf`, which
+  extracts text on the server, names the same package an *optional peer* for an
+  image renderer nothing calls, and that production-side edge is enough for
+  `--omit=dev` to leave it behind. `--omit=optional` would take sharp's `@img`
+  binaries with it. The Dockerfile comment carries the reason; CI's
+  every-dependency import step runs after the deletion, so a version that starts
+  needing it fails there rather than on an upload.
 
 What the derivation cannot prove is that a declared package *loads*: `sharp`
 wants libvips, `bcrypt` a prebuilt binary for this glibc and this Node. CI
@@ -279,12 +295,23 @@ one.
 
 ## Known gaps
 
-One thing about this image is waiting on a ticket rather than being an oversight:
+Nothing about this image is currently waiting on a ticket. The last entry here
+was `pdf-parse`, 115 MB of a 259 MB tree, and #43 closed it — the note below is
+what that turned out to be, because the reason in the entry was wrong.
 
-- **Most of what is left is one package** (#43). `pdf-parse` is 115 MB of the
-  runtime tree's 259 MB, because it vendors its own copy of `pdfjs-dist` instead
-  of sharing the one the client is built with. Nothing in the packaging can move
-  it: the server really does extract PDFs, on a request rather than at boot.
-  Getting that extraction from something smaller is a dependency change with a
-  behavioural blast radius, not the packaging move #36 was — which is what #43
-  owns, and the removal gate on this entry.
+`pdf-parse` was described here as 115 MB because it vendored its own copy of
+`pdfjs-dist` rather than sharing the client's. That copy was 37 MB of it. The
+other 58 MB was `@napi-rs/canvas`, which pdf-parse needs to render pages to
+images — something this server never asks it for. Depending on `pdfjs-dist`
+directly, the obvious fix and the one the ticket proposed, would have carried
+the same binary: pdfjs's Node build has no `DOMMatrix`, borrows one from canvas,
+and throws `ReferenceError: DOMMatrix is not defined` out of `getTextContent()`
+without it. Measured, that route took the tree from 259 MB to 242 MB.
+
+What shipped instead is `unpdf` — pdfjs with the canvas dependency compiled out,
+2.6 MB, no dependencies — plus the deletion described above. 259 MB → 147 MB.
+
+The lesson worth keeping is about the shape of the claim, not the packages: the
+entry named a cause that sounded sufficient and was never measured, and the
+number it implied was off by a factor of three in the direction that would have
+made the work look worthwhile for the wrong reason.
