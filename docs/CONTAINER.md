@@ -82,9 +82,17 @@ Four kinds of entry sit outside that derivation:
   extracts text on the server, names the same package an *optional peer* for an
   image renderer nothing calls, and that production-side edge is enough for
   `--omit=dev` to leave it behind. `--omit=optional` would take sharp's `@img`
-  binaries with it. The Dockerfile comment carries the reason; CI's
-  every-dependency import step runs after the deletion, so a version that starts
-  needing it fails there rather than on an upload.
+  binaries with it.
+
+  What keeps the deletion honest is **not** the every-dependency import step:
+  `unpdf` resolves its pdfjs build lazily inside `getResolvedPDFJS()`, so
+  `import("unpdf")` touches a 15 KB wrapper and succeeds whether the canvas is
+  there or not. The failure that would matter — `ReferenceError: DOMMatrix is
+  not defined` — comes out of `getTextContent()` on the first uploaded PDF,
+  which is a request and not a load. So CI has a step of its own that extracts
+  text from a generated PDF inside the image, after the deletion, through that
+  same call. A parser version that starts wanting the canvas fails there rather
+  than on an upload.
 
 What the derivation cannot prove is that a declared package *loads*: `sharp`
 wants libvips, `bcrypt` a prebuilt binary for this glibc and this Node. CI
@@ -263,11 +271,14 @@ and `tests/smoke/server-bundle.test.ts` both reason about the runtime dependency
 tree from the checkout's — the first stages a `/app` that borrows this
 repository's `node_modules`, the second reads the manifest rather than an
 install. Neither can see `npm ci --omit=dev` as the image runs it. So CI loads
-the image and runs five things against the real tree: an `import()` of every
+the image and runs six things against the real tree: an `import()` of every
 `dependencies` entry read out of the image's own `package.json`, which is where
 a package that resolves but cannot initialise — `sharp` without libvips,
-`bcrypt` without a matching binary — is caught; a page rendered and a clipboard
-read in the image's own Chromium, under the image's own user, which asks the
+`bcrypt` without a matching binary — is caught; `getTextContent()` over a
+generated PDF, which is the one thing that import cannot answer, because
+`unpdf` loads its pdfjs build lazily and the runtime stage deletes a package
+out from under it (above, "Installed, then deleted"); a page rendered and a
+clipboard read in the image's own Chromium, under the image's own user, which asks the
 browser the same question, since `playwright` imports perfectly well while the
 browser it drives is missing, unreadable, or short a shared library — and the
 clipboard because it is the capability `--only-shell` puts at risk and the one
@@ -282,7 +293,9 @@ That first check is what stands in for exercising routes by hand. It is
 shallower — a module load, not the route that reaches it — and broader: every
 entry rather than the handful anyone thinks to try, on every push rather than
 once at review. `Cannot find module` is the failure it exists for, and that one
-it answers completely.
+it answers completely. Where a package can load and still fail on the call the
+server makes, the breadth stops being enough and a second step has to make that
+call; the PDF one is the only place that is true today, and #43 is why.
 
 Every value passed there is a placeholder that
 reaches nothing — `/health` answers before authentication and both the pool and
@@ -310,6 +323,12 @@ without it. Measured, that route took the tree from 259 MB to 242 MB.
 
 What shipped instead is `unpdf` — pdfjs with the canvas dependency compiled out,
 2.6 MB, no dependencies — plus the deletion described above. 259 MB → 147 MB.
+
+Worth naming what that is *not*. The ticket's goal was written as "the runtime
+image stops carrying a second copy of `pdfjs-dist`", and it still carries one:
+`unpdf` ships its own pdfjs build, 1.7 MB of that 2.6. Sharing the client's copy
+was the 242 MB route above. A duplicate was never the expense — the canvas
+behind it was.
 
 The lesson worth keeping is about the shape of the claim, not the packages: the
 entry named a cause that sounded sufficient and was never measured, and the

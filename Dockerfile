@@ -124,24 +124,25 @@ RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 
 # The one package `--omit=dev` cannot reach (#43).
 #
-# `@napi-rs/canvas` is 61 MB of Skia — two prebuilt binaries, glibc and musl —
-# and nothing in the server opens it. It is here because two halves of the tree
-# point at it from opposite sides: `pdfjs-dist` is a devDependency, for the
-# client's PDF viewer, and declares it an `optionalDependency`; `unpdf`, which
-# extracts text on the server, names it an *optional peer* for an image renderer
-# this codebase never calls. npm installs one hoisted copy for the dev half, and
-# the peer edge from a production package is enough to keep `--omit=dev` from
-# taking it away again.
+# `@napi-rs/canvas` is 61 MB of Skia that nothing in the server opens. No
+# manifest field keeps it out — two halves of the tree point at it from opposite
+# sides, and `--omit=optional` would take sharp's `@img` binaries with it.
+# `docs/CONTAINER.md`, under "Installed, then deleted", is where that derivation
+# is written down; this line is the consequence.
 #
-# `--omit=optional` is not the answer: sharp's `@img/*` binaries are optional
-# too and are required, so that flag trades 61 MB for a broken image pipeline.
+# A glob rather than the scope. The 61 MB is three directories — `canvas` and
+# its two prebuilt binaries, `canvas-linux-x64-gnu` and `-musl` — and they are
+# what the paragraph above is about. A future `@napi-rs/<something the server
+# does open>` should arrive as a build failure, not disappear quietly here.
 #
-# Deleting it is safe because unpdf does not need it — its pdfjs build has the
-# canvas dependency compiled out, and extraction runs against a `node_modules`
-# holding nothing but `unpdf/`. If a future version stops being true, the
-# "Every runtime dependency loads inside the image" step in
-# `.github/workflows/ci.yml` runs after this line and fails on it.
-RUN rm -rf node_modules/@napi-rs
+# Safe because unpdf does not need it: its pdfjs build has the canvas dependency
+# compiled out. Measured rather than assumed — the "PDF text extracts inside the
+# image" step in `.github/workflows/ci.yml` runs `getTextContent()` against the
+# tree this line leaves behind, which is the call that throws `ReferenceError:
+# DOMMatrix is not defined` when a parser wants the canvas that is gone. The
+# every-dependency import step beside it cannot answer this: `unpdf` resolves
+# its pdfjs build lazily, so importing it succeeds either way.
+RUN rm -rf node_modules/@napi-rs/canvas*
 
 ####
 # Stage 4: what ships.

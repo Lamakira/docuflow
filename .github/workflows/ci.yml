@@ -178,6 +178,66 @@ jobs:
             console.log(names.length + " runtime dependencies loaded");
           '
 
+      # What the step above cannot reach (#43).
+      #
+      # The runtime stage deletes `@napi-rs/canvas` after `npm ci --omit=dev`,
+      # 61 MB of Skia that npm installs for the dev half of the tree and
+      # `--omit=dev` will not take away. The import check is blind to whether
+      # that was safe: `unpdf` resolves its pdfjs build lazily inside
+      # `getResolvedPDFJS()`, so `import("unpdf")` touches a 15 KB wrapper and
+      # succeeds with the canvas present or absent. The failure it would miss is
+      # `ReferenceError: DOMMatrix is not defined`, thrown out of
+      # `getTextContent()` on the first uploaded PDF — a request, not a load.
+      #
+      # So this runs that call, in the image, against the tree the deletion
+      # leaves. The PDF is assembled here rather than checked in: ADR-0018 wants
+      # generated or synthetic, and a few hundred bytes with a real xref table is
+      # enough for a parser to open. `tests/characterization/content-extraction.test.ts`
+      # is what pins the extracted text itself; this asks only whether the parser
+      # runs at all where it has to.
+      - name: PDF text extracts inside the image
+        run: |
+          docker run --rm "$IMAGE" node --input-type=module -e '
+            import { getDocumentProxy, getResolvedPDFJS } from "unpdf";
+
+            const content = "BT /F1 18 Tf 40 700 Td (extracted in the image) Tj ET";
+            const objects = [
+              "<</Type/Catalog/Pages 2 0 R>>",
+              "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+              "<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>",
+              "<</Length " + content.length + ">>\nstream\n" + content + "\nendstream",
+              "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+            ];
+
+            const header = "%PDF-1.4\n";
+            const offsets = [];
+            let body = "";
+            objects.forEach((object, index) => {
+              offsets.push(header.length + body.length);
+              body += (index + 1) + " 0 obj\n" + object + "\nendobj\n";
+            });
+            const startxref = header.length + body.length;
+            let xref = "xref\n0 " + (objects.length + 1) + "\n0000000000 65535 f \n";
+            for (const offset of offsets) xref += String(offset).padStart(10, "0") + " 00000 n \n";
+            const trailer = "trailer\n<</Size " + (objects.length + 1) + "/Root 1 0 R>>\n" +
+              "startxref\n" + startxref + "\n%%EOF\n";
+            // latin1: the xref offsets above are byte offsets, and any
+            // multi-byte encoding moves them.
+            const pdf = Buffer.from(header + body + xref + trailer, "latin1");
+
+            const { VerbosityLevel } = await getResolvedPDFJS();
+            const doc = await getDocumentProxy(new Uint8Array(pdf), {
+              verbosity: VerbosityLevel.ERRORS,
+            });
+            const page = await doc.getPage(1);
+            const { items } = await page.getTextContent();
+            const text = items.map((item) => item.str).join("").trim();
+            await doc.loadingTask.destroy();
+
+            console.log("extracted: " + text);
+            if (text !== "extracted in the image") process.exit(1);
+          '
+
       # The browser half of the same question (#37). `server/browser-transcript.ts`
       # names no executable — Playwright resolves the build the runtime stage
       # installed — so what proves that resolution is a launch, under the image's

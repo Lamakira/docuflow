@@ -9,8 +9,10 @@ import { completeUpload } from "../helpers/objects";
  * This is the path `server/routes.ts` takes after a company-document upload, on
  * its way to the embeddings the document is searched by — storage read, parser,
  * and the shape of the answer. Nothing covered it before #43 moved PDF
- * extraction off `pdf-parse` onto `pdfjs-dist` directly, which is a change to
- * the text itself and not only to what the image installs.
+ * extraction off `pdf-parse` onto `unpdf`, which is a change to the text itself
+ * and not only to what the image installs. (Not onto `pdfjs-dist` directly,
+ * which is what the ticket proposed and what measuring it ruled out — see
+ * `server/contentExtraction.ts`.)
  *
  * The three PDFs are the three outcomes the route distinguishes, and none of
  * them is an exception:
