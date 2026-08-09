@@ -232,10 +232,13 @@ install. Neither can see `npm ci --omit=dev` as the image runs it. So CI loads
 the image and runs five things against the real tree: an `import()` of every
 `dependencies` entry read out of the image's own `package.json`, which is where
 a package that resolves but cannot initialise — `sharp` without libvips,
-`bcrypt` without a matching binary — is caught; a page rendered in the image's
-own Chromium, under the image's own user, which asks the browser the same
-question, since `playwright` imports perfectly well while the browser it drives
-is missing, unreadable, or short a shared library; `node dist/migrate.mjs --status`
+`bcrypt` without a matching binary — is caught; a page rendered and a clipboard
+read in the image's own Chromium, under the image's own user, which asks the
+browser the same question, since `playwright` imports perfectly well while the
+browser it drives is missing, unreadable, or short a shared library — and the
+clipboard because it is the capability `--only-shell` puts at risk and the one
+both scrapers try before falling back to the DOM, so a shell that refused it
+would degrade silently rather than fail; `node dist/migrate.mjs --status`
 with no database configured, which has to fail in `shared/databaseUrl.ts`'s
 words rather than on a missing module; a listing of `/app/migrations`, which has
 to hold the journal; and the default `CMD`, waited on until the image's own

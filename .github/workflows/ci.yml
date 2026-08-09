@@ -173,17 +173,43 @@ jobs:
       # this workflow holds no second copy of that list. A page is rendered
       # rather than a version printed: `--version` answers from a binary that
       # cannot start.
+      #
+      # The clipboard is read as well as the page, because that is the capability
+      # `--only-shell` puts at risk. Both scrapers try `navigator.clipboard`
+      # first and fall back to reading the DOM (`server/browser-transcript.ts`),
+      # so a headless shell that refused the permission would not fail — it would
+      # quietly take the weaker path on every transcript. Reading it here is what
+      # keeps "the shell can do this" a measurement rather than an assumption.
+      # Served over 127.0.0.1 rather than `setContent`, since the Clipboard API
+      # is only offered to a secure context.
       - name: The transcript scraper's browser opens a page in the image
         run: |
           docker run --rm "$IMAGE" node --input-type=module -e '
             import { chromium } from "playwright";
+            import { createServer } from "node:http";
+            const server = createServer((_request, response) => {
+              response.setHeader("content-type", "text/html");
+              response.end("<h1 id=headline>rendered in the image</h1>");
+            }).listen(0, "127.0.0.1");
+            await new Promise((resolve) => server.once("listening", resolve));
+            const origin = "http://127.0.0.1:" + server.address().port;
+
             const browser = await chromium.launch();
-            const page = await browser.newPage();
-            await page.setContent("<h1 id=headline>rendered in the image</h1>");
+            const context = await browser.newContext({
+              permissions: ["clipboard-read", "clipboard-write"],
+            });
+            await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin });
+            const page = await context.newPage();
+            await page.goto(origin);
             const text = await page.textContent("#headline");
+            await page.evaluate(() => navigator.clipboard.writeText("copied in the image"));
+            const clipboard = await page.evaluate(() => navigator.clipboard.readText());
             await browser.close();
-            console.log(browser.version() + " rendered: " + text);
+            server.close();
+
+            console.log(browser.version() + " rendered: " + text + ", clipboard: " + clipboard);
             if (text !== "rendered in the image") process.exit(1);
+            if (clipboard !== "copied in the image") process.exit(1);
           '
 
       # The second entry point, from a container with no checkout in it (#35).
