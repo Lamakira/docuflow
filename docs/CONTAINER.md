@@ -43,7 +43,8 @@ The build stage installs the full tree, so `dist/public` is built from exactly
 the packages it was before — they simply stop being installed a second time into
 a runtime that only ever serves them pre-bundled. That is what took the image
 from 1.17 GB to 676 MB (#36), and `node_modules` inside it from 655 MB to
-259 MB.
+259 MB. The browser #37 put in afterwards is a separate 588 MB layer on top of
+that — its own decision, and its own measurements, further down.
 
 Three kinds of entry sit outside that derivation:
 
@@ -80,6 +81,68 @@ desktop-agent build output that no server build reads, and a deny-list would
 have to keep growing to stay ahead of it. **A new top-level input to the build
 needs a line in `.dockerignore` as well as a `COPY` in the `Dockerfile`** — the
 `COPY` then fails loudly rather than the file silently going missing.
+
+### The browser it installs as well
+
+`node_modules` is not the only install in the runtime stage. Transcript scraping
+drives a headless Chromium ([`server/browser-transcript.ts`](../server/browser-transcript.ts)),
+and until #37 the image could not answer whether to carry one: the scraper
+launched an absolute Nix store path belonging to a single Replit machine, so the
+feature was inoperable in a container whatever the image held, and the build
+skipped Playwright's browser download rather than pay for one nothing would open.
+With that path gone the question is real, and the answer is yes — one image, both
+runtimes (ADR-0016), and the runtime that scrapes today is the HTTP server
+itself:
+
+```dockerfile
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npx playwright install --with-deps --only-shell chromium
+```
+
+Both halves are choices, and their sizes are the argument for each:
+
+- **`--with-deps`** is `apt-get install` of the library list Playwright keeps for
+  this Debian — ~337 MB, and the reason none of this can be a `COPY` from a
+  builder stage: they are packages, not a directory.
+- **`--only-shell`** is 251 MB, and it is the half that runs. A headless
+  `chromium.launch()` opens Chromium's *headless shell*, so installing the full
+  browser would put ~360 MB beside it that this image never starts. ffmpeg
+  arrives with the shell, for recording video nothing here records, and is
+  removed.
+
+588 MB in one layer: **153 MB → 388 MB to pull**, and 522 MB → 1.11 GB unpacked.
+The `docker images` disk-usage column reads 676 MB → 1.5 GB, which is a larger
+jump than the layer because it counts the pulled blobs alongside the unpacked
+layers and the browser grows both — the 676 MB #36 landed on is that same
+double-counted measure, so compare it only against the 1.5 GB beside it.
+
+Whichever measure, this is the largest single thing in the image — larger than
+the runtime dependency tree #36 spent itself shrinking — and it buys a feature
+that until now worked on one machine in the world. Two things follow from the
+price. The layer sits ahead of the `dist` copy, so a commit does not re-download
+a browser; only a lockfile change does. And when Phase 3 moves transcript work to
+the worker, "one image" is worth re-deciding, because more than half of this one
+(588 of 1110 MB unpacked) would then be a browser the HTTP runtime never
+launches.
+
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` stays set in the base stage, and is now
+**permanent configuration rather than a migration flag** — the same standing
+`DB_DRIVER` has. It arrived under ADR-0017 as a temporary switch gated on this
+ticket, and this ticket re-decided it: two stages run `npm ci` and neither ships
+what it downloads, so skipping there and installing once in the runtime stage is
+what the build wants for as long as it has that shape. A stage layout where the
+installing stage is the shipping one would end it; no phase completing will.
+
+`PLAYWRIGHT_BROWSERS_PATH` is where it lands and why it is readable: root
+installs the browser, `node` runs it, and Playwright's default location is the
+installing user's home cache. Both of these are the image describing itself
+rather than settings a deployment passes — they are read by npm and Playwright,
+never by `server/config.ts`, which is why neither appears in `.env.example` or in
+the tables in [CONFIGURATION.md](CONFIGURATION.md), and why overriding either
+from outside only breaks the browser the image installed. Nothing in `server/`
+names any of this — the scraper launches with no `executablePath` and lets
+Playwright resolve, which is what makes the same code path work on a developer
+machine that has run `npx playwright install chromium`.
 
 ## Run
 
@@ -152,6 +215,20 @@ injects its own port is served by the same image. `/health` answers before
 authentication and touches nothing, and the image's `HEALTHCHECK` calls it every
 30 seconds.
 
+Transcript scraping needs nothing added to that `docker run`.
+`--disable-dev-shm-usage` is in the launch options, so the 64 MB `/dev/shm` a
+container gets by default is not a reason to pass `--shm-size`. The renderer runs
+unsandboxed, which is Playwright's own default and as much as Docker's default
+seccomp profile allows — `chromiumSandbox: true` dies during browser startup here
+unless the host adds `--security-opt seccomp=<playwright's profile>` — and what
+keeps that bounded is the scraper building its URLs from a video id against two
+known hosts rather than opening what a document points at. A host that would
+rather launch a browser of its own names it in `PLAYWRIGHT_CHROMIUM_PATH`. A
+value with nothing runnable at it fails the scrape immediately, in that
+variable's own name, rather than thirty seconds later in Playwright's — which is
+exactly the failure #37 was. It fails the scrape and not the boot: the server has
+no reason to refuse to start over a browser only one feature opens.
+
 ADR-0018 applies to every value above: this is a parallel environment, so each
 one is a fresh credential provisioned for this effort, never a production one.
 
@@ -170,10 +247,16 @@ and `tests/smoke/server-bundle.test.ts` both reason about the runtime dependency
 tree from the checkout's — the first stages a `/app` that borrows this
 repository's `node_modules`, the second reads the manifest rather than an
 install. Neither can see `npm ci --omit=dev` as the image runs it. So CI loads
-the image and runs four things against the real tree: an `import()` of every
+the image and runs five things against the real tree: an `import()` of every
 `dependencies` entry read out of the image's own `package.json`, which is where
 a package that resolves but cannot initialise — `sharp` without libvips,
-`bcrypt` without a matching binary — is caught; `node dist/migrate.mjs --status`
+`bcrypt` without a matching binary — is caught; a page rendered and a clipboard
+read in the image's own Chromium, under the image's own user, which asks the
+browser the same question, since `playwright` imports perfectly well while the
+browser it drives is missing, unreadable, or short a shared library — and the
+clipboard because it is the capability `--only-shell` puts at risk and the one
+both scrapers try before falling back to the DOM, so a shell that refused it
+would degrade silently rather than fail; `node dist/migrate.mjs --status`
 with no database configured, which has to fail in `shared/databaseUrl.ts`'s
 words rather than on a missing module; a listing of `/app/migrations`, which has
 to hold the journal; and the default `CMD`, waited on until the image's own
@@ -196,14 +279,8 @@ one.
 
 ## Known gaps
 
-Two things about this image, each waiting on a ticket rather than an oversight:
+One thing about this image is waiting on a ticket rather than being an oversight:
 
-- **Transcript scraping is inoperable** (#37). `server/browser-transcript.ts:4`
-  launches Chromium from a hard-coded Replit Nix path, so it cannot work off
-  Replit with or without a browser in the image. The build therefore skips
-  Playwright's ~400 MB browser download rather than paying for one the code will
-  not look at, and #37 is the removal gate on that skip. Loom and Fathom
-  scraping fails at launch until that path is replaced.
 - **Most of what is left is one package** (#43). `pdf-parse` is 115 MB of the
   runtime tree's 259 MB, because it vendors its own copy of `pdfjs-dist` instead
   of sharing the one the client is built with. Nothing in the packaging can move

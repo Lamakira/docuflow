@@ -17,6 +17,13 @@
 # boot naming each one it is short of — so a misconfigured container fails in its
 # first second with a list, rather than on the first request that needed it.
 # `docs/CONTAINER.md` has the run recipe; `.env.example` lists the variables.
+#
+# The `ENV` lines below are not that. `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD` and
+# `PLAYWRIGHT_BROWSERS_PATH` are read by npm and by Playwright, never by
+# `server/config.ts`; they describe how this image was assembled rather than how
+# a deployment is configured, which is why they are baked here and absent from
+# `.env.example`. Overriding either from outside only breaks the browser the
+# image installed.
 ####
 
 # Debian rather than Alpine: bcrypt and sharp publish prebuilt binaries for
@@ -44,15 +51,21 @@ WORKDIR /app
 # the npm this base image already ships.
 RUN npm install --global npm@11
 
-# `playwright` ships a postinstall that downloads ~400 MB of browsers. The
-# transcript scraper that uses it launches Chromium from a hard-coded Replit Nix
-# path (`server/browser-transcript.ts:4`), so a browser here would not be the one
-# it looks for: the feature is inoperable in a container either way, and paying
-# for the download would only hide that.
+# `playwright`'s postinstall downloads a browser set into whichever stage runs
+# `npm ci`. Neither of the two that do ships anything but files it is asked for —
+# the build stage emits `dist/`, the install stage a `node_modules` — so a
+# browser downloaded here is one nothing ever launches.
 #
-# Temporary (ADR-0017): #37 owns removing this, gated on that launch path no
-# longer naming a machine — at which point whether the image carries a browser
-# becomes a real decision instead of a moot one.
+# The image does carry a browser (#37): the runtime stage installs the one the
+# scraper opens, and that is the copy that ships. This skip is what keeps it from
+# being downloaded twice more to ship once.
+#
+# Permanent, and not a migration flag (#37, ADR-0017). It arrived as a temporary
+# switch gated on that ticket, and the ticket re-decided it rather than removed
+# it: as long as two stages run `npm ci` and neither ships browsers, the skip is
+# what the build wants. What would end it is a stage layout where the installing
+# stage is the shipping one, not a phase completing — so there is nothing left to
+# gate it on.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 COPY package.json package-lock.json ./
@@ -124,8 +137,35 @@ EXPOSE 5000
 # Unprivileged from the start: the node images ship a `node` user, and nothing
 # here writes outside /tmp.
 COPY --chown=node:node --from=runtime-deps /app/node_modules ./node_modules
-COPY --chown=node:node --from=build /app/dist ./dist
 COPY --chown=node:node package.json ./
+
+# The browser the transcript scraper opens (#37), installed by the `playwright`
+# that just arrived in node_modules — so the build that lands is the one this
+# exact library version asks for, and the version is not written down a second
+# time here to drift from it.
+#
+# Ahead of the `dist` copy below deliberately. This layer is ~590 MB and changes
+# with the lockfile; `dist` changes on every commit, and behind it every commit
+# would download Chromium again.
+#
+# `--with-deps` is the apt half: the shared libraries a slim Debian does not
+# ship (~337 MB, which is also why this cannot be a `COPY` from another stage).
+# `--only-shell` is the browser half, and it is the half that runs — a headless
+# `chromium.launch()` opens Chromium's headless shell, so the full browser that
+# `install chromium` would put beside it is ~360 MB this image never starts. What
+# does come with the shell is ffmpeg, for recording video that nothing here
+# records.
+#
+# PLAYWRIGHT_BROWSERS_PATH puts it where the `node` user can reach it. The
+# default is the installing user's home cache, and the user installing here is
+# root; it is also what `server/browser-transcript.ts` relies on to name no path
+# of its own.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npx playwright install --with-deps --only-shell chromium \
+  && rm -rf /ms-playwright/ffmpeg-* /var/lib/apt/lists/* \
+  && chmod -R a+rX /ms-playwright
+
+COPY --chown=node:node --from=build /app/dist ./dist
 
 # The journal, from the context rather than the build: nothing compiles it, and
 # dist/migrate.mjs reads the `.sql` files at runtime from `<its own dir>/../

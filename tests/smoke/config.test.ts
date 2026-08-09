@@ -36,6 +36,7 @@ const CONFIG_VARS = [
   "REPLIT_DEV_DOMAIN",
   "OPENAI_API_KEY",
   "FATHOM_API_KEY",
+  "PLAYWRIGHT_CHROMIUM_PATH",
   "REPL_ID",
   "ISSUER_URL",
   "OTEL_EXPORTER",
@@ -419,6 +420,38 @@ describe("config — app URL", () => {
     });
 
     expect(config.appUrl).toBe("https://docuflow.example.com");
+  });
+});
+
+describe("config — the transcript browser", () => {
+  it("names no browser, which is how Playwright gets to resolve its own", async () => {
+    const { config } = await load(BOOTABLE);
+
+    // Undefined reaches `chromium.launch()` as no `executablePath` at all, and
+    // the build `playwright install chromium` put in place is what opens (#37).
+    expect(config.chromiumPath).toBeUndefined();
+  });
+
+  it("takes the browser a host names for itself", async () => {
+    // Any executable this machine certainly has; the value is never launched here.
+    const { config } = await load({
+      ...BOOTABLE,
+      PLAYWRIGHT_CHROMIUM_PATH: process.execPath,
+    });
+
+    expect(config.chromiumPath).toBe(process.execPath);
+  });
+
+  it("boots on a path that is not on this machine, which is the scrape's problem", async () => {
+    // The shape of the constant this replaced: a store path belonging to one
+    // Replit machine. This module reads it and does not open it — a variable
+    // that gates one feature leaves that feature to say what it cannot do, and
+    // `tests/smoke/transcript-browser.test.ts` is where it says it. Boot stopping
+    // here would take auth, documents, and search down over a scraper's knob.
+    const elsewhere = "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125/bin/chromium";
+    const { config } = await load({ ...BOOTABLE, PLAYWRIGHT_CHROMIUM_PATH: elsewhere });
+
+    expect(config.chromiumPath).toBe(elsewhere);
   });
 });
 

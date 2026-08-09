@@ -66,6 +66,7 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Email sends fail and report why; the request that triggered them still succeeds |
 | `OPENAI_API_KEY` | Embeddings, chat, and transcription fail when used |
 | `FATHOM_API_KEY` | Fathom transcripts fall back to the browser scraper |
+| `PLAYWRIGHT_CHROMIUM_PATH` | That scraper launches the browser Playwright installed — `npx playwright install chromium` on a developer machine, the copy the image installs into its own `PLAYWRIGHT_BROWSERS_PATH`. Name one only for a host carrying its own; a path with nothing runnable at it fails the scrape in this variable's name, never the boot. Permanent configuration and not a migration flag (#37): the host it runs on decides it, so there is nothing to remove ([docs/CONTAINER.md](CONTAINER.md)) |
 | `JWT_PREVIOUS_SECRET` | Only the current signing key is accepted, which is the steady state. Set it during a rotation — see below |
 | `MCP_API_KEY` | The MCP admin-impersonation header is refused. Phase 5 removes it |
 | `DESKTOP_RELEASE_CI_TOKEN` | Release registration is refused |

@@ -1,21 +1,85 @@
-import { chromium, Browser, Page, BrowserContext } from 'playwright';
+import { accessSync, constants, statSync } from 'node:fs';
+
+import { chromium, Browser, Page, BrowserContext, type LaunchOptions } from 'playwright';
+import { config } from './config';
 
 const BROWSER_TIMEOUT = 30000;
-const CHROMIUM_PATH = '/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium';
 
-async function launchBrowser(): Promise<Browser> {
-  console.log('[Browser] Launching headless Chromium...');
-  
-  return await chromium.launch({
-    executablePath: CHROMIUM_PATH,
+/**
+ * Which Chromium this launches, and how (#37).
+ *
+ * Finding it is Playwright's job. Given no `executablePath`, `chromium.launch()`
+ * opens what `playwright install chromium` put in place — Chromium's headless
+ * shell, which is what a headless launch uses, under `PLAYWRIGHT_BROWSERS_PATH`
+ * in the image and in `~/.cache/ms-playwright` on a developer machine. In neither
+ * case is it a path written down here. What stood here before was one absolute
+ * Nix store path belonging to a single Replit machine, so every launch anywhere
+ * else threw before the first navigation. `PLAYWRIGHT_CHROMIUM_PATH` is the
+ * override for a host that has a browser of its own — that Nix path is a
+ * perfectly good value for it, set on the machine that has it.
+ *
+ * An override naming nothing this host can execute is refused right here, before
+ * `chromium.launch()` is asked to find out. That is the shape the old constant
+ * failed in — thirty seconds into a background job, in Playwright's words, left
+ * on a transcript row nobody was watching — and one scrape is the right size for
+ * it: `server/config.ts` reads the variable without opening it, because a
+ * scraper's knob does not get to keep the server from booting.
+ *
+ * The flags are the container's, each one a decision rather than an inheritance:
+ *
+ *  - **The sandbox stays off.** That is already Playwright's default, and saying
+ *    it here is what makes it a choice: Chromium's namespace sandbox needs
+ *    syscalls Docker's default seccomp profile denies, so `chromiumSandbox: true`
+ *    in this image dies during browser startup unless the host is run with
+ *    `--security-opt seccomp=<playwright's profile>`. What that costs is the
+ *    boundary between a scraped page's renderer and this process, which is why
+ *    the URLs stay assembled from a video id against two known hosts
+ *    (`server/transcripts.ts`) rather than taken from a document.
+ *  - `--disable-dev-shm-usage` moves Chromium's shared-memory files off /dev/shm,
+ *    which Docker gives a container 64 MB of. Without it a page large enough to
+ *    exhaust that takes the tab down mid-scrape; the alternative is a
+ *    `--shm-size` flag on every host that runs the image.
+ *  - `--disable-gpu`: there is no display and nothing to accelerate.
+ */
+export function browserLaunchOptions(): LaunchOptions {
+  const executablePath = config.chromiumPath;
+
+  if (executablePath !== undefined) {
+    try {
+      // Runnable, not merely present. Existence alone is the weaker question:
+      // a directory answers it, and so does a file with no execute bit, and both
+      // then die inside the launch — which is the reporting this check exists to
+      // take back from Playwright. `X_OK` on a directory means "traverse", so
+      // being a file is asked separately.
+      if (!statSync(executablePath).isFile()) throw new Error('not a file');
+      accessSync(executablePath, constants.X_OK);
+    } catch {
+      throw new Error(
+        `PLAYWRIGHT_CHROMIUM_PATH is "${executablePath}", and there is nothing this ` +
+          `machine can run there. Leave it unset to launch the browser Playwright ` +
+          `installed, or name one this host can execute.`
+      );
+    }
+  }
+
+  return {
+    executablePath,
     headless: true,
+    chromiumSandbox: false,
     args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
     ],
-  });
+  };
+}
+
+async function launchBrowser(): Promise<Browser> {
+  const options = browserLaunchOptions();
+  console.log(
+    `[Browser] Launching headless Chromium${options.executablePath ? ` from ${options.executablePath}` : ''}...`
+  );
+
+  return await chromium.launch(options);
 }
 
 async function createContext(browser: Browser): Promise<BrowserContext> {

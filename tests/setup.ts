@@ -40,6 +40,10 @@ process.env.RESEND_FROM_EMAIL = "DocuFlow <noreply@docuflow.test>";
 // token may be inherited from a developer's shell; each suite sets what it needs.
 delete process.env.MCP_API_KEY;
 delete process.env.DESKTOP_RELEASE_CI_TOKEN;
+// Likewise the browser the transcript scraper would launch (#37): a developer
+// with PLAYWRIGHT_CHROMIUM_PATH exported would otherwise run these suites with
+// launch options no other machine produces.
+delete process.env.PLAYWRIGHT_CHROMIUM_PATH;
 // Telemetry is off under NODE_ENV=test by default (#26), but a developer with an
 // OTEL_* variable exported would otherwise instrument their own test run and
 // ship its spans somewhere. The harness decides, not the shell.

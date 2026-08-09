@@ -55,7 +55,7 @@ module knows it is under test:
 | `@google-cloud/storage` | `tests/fakes/gcs.ts`    | In-memory bucket, and deterministic signed URLs. `putObject` seeds an object, `objectMetadata` reads its ACL, `signedUrlCalls` lists what was signed. |
 | `openai`                | `tests/fakes/openai.ts` | Deterministic bag-of-words embeddings, canned chat and Whisper replies, call log. |
 | `resend`                | `tests/fakes/resend.ts` | Always-succeeding delivery into an inspectable outbox.                        |
-| `playwright`            | `tests/fakes/playwright.ts` | Throws — the Loom/Fathom transcript scraper must never be reached.        |
+| `playwright`            | `tests/fakes/playwright.ts` | `launch()` throws — the Loom/Fathom transcript scraper must never open a browser. Nothing else does, so `tests/smoke/transcript-browser.test.ts` can import the module and read the options it would have launched with. |
 
 One provider boundary is crossed with a raw `fetch` rather than an SDK: the signed
 storage URL itself, which the server PUTs to when it relays a desktop-agent
@@ -102,9 +102,9 @@ a database you care about, and never at anything production-related.
 
 ## Suites
 
-`tests/smoke/` holds the boot-level suites: the two from the harness ticket, plus
-the two that do **not** use the fixed environment but build their own and import
-a server module again, which is what a boot is.
+`tests/smoke/` holds the boot-level suites: the ones from the harness ticket,
+plus those that do **not** use the fixed environment but build their own and
+import a server module again, which is what a boot is.
 `config` ([#22](https://github.com/Lamakira/docuflow/issues/22)) clears the
 variables, re-imports `server/config.ts`, and pins what each environment resolves
 to, including the boot failures the rest of the harness can never reach.
@@ -151,6 +151,16 @@ keeps, and that the logger applies it to the console line as well as to the
 record it exports. It exercises the rule rather than a running SDK on purpose —
 starting one would patch express and pg for whatever ran next in the same
 worker, which is the state this suite exists to keep the harness out of.
+`transcript-browser` ([#37](https://github.com/Lamakira/docuflow/issues/37))
+pins how the Loom/Fathom scraper finds a browser: no `executablePath` at all
+unless `PLAYWRIGHT_CHROMIUM_PATH` names one, the two container flags kept as
+flags, the refusal of an override naming nothing this host can run, and the
+absence of any `/nix` store path under `server/` — the constant all of it
+replaced. The `playwright` fake throws on `launch()` and nowhere else, so the
+options are readable without a browser. That a browser *exists* where Playwright
+looks is the image's half of the question, which only
+`.github/workflows/ci.yml` can answer, and it does — by opening a page and
+reading a clipboard inside the built image.
 
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
