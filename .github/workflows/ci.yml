@@ -162,6 +162,30 @@ jobs:
             console.log(names.length + " runtime dependencies loaded");
           '
 
+      # The browser half of the same question (#37). `server/browser-transcript.ts`
+      # names no executable — Playwright resolves the build the runtime stage
+      # installed — so what proves that resolution is a launch, under the image's
+      # own user, against the shared libraries the image's own apt step put there.
+      # `tests/smoke/transcript-browser.test.ts` checks the options; only this can
+      # check that a browser is there to take them.
+      #
+      # Launched with Playwright's defaults rather than the scraper's flags, so
+      # this workflow holds no second copy of that list. A page is rendered
+      # rather than a version printed: `--version` answers from a binary that
+      # cannot start.
+      - name: The transcript scraper's browser opens a page in the image
+        run: |
+          docker run --rm "$IMAGE" node --input-type=module -e '
+            import { chromium } from "playwright";
+            const browser = await chromium.launch();
+            const page = await browser.newPage();
+            await page.setContent("<h1 id=headline>rendered in the image</h1>");
+            const text = await page.textContent("#headline");
+            await browser.close();
+            console.log(browser.version() + " rendered: " + text);
+            if (text !== "rendered in the image") process.exit(1);
+          '
+
       # The second entry point, from a container with no checkout in it (#35).
       #
       # No database is reached, and none should be: ADR-0018 keeps every real
