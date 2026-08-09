@@ -36,6 +36,7 @@ const CONFIG_VARS = [
   "REPLIT_DEV_DOMAIN",
   "OPENAI_API_KEY",
   "FATHOM_API_KEY",
+  "PLAYWRIGHT_CHROMIUM_PATH",
   "REPL_ID",
   "ISSUER_URL",
   "OTEL_EXPORTER",
@@ -419,6 +420,39 @@ describe("config — app URL", () => {
     });
 
     expect(config.appUrl).toBe("https://docuflow.example.com");
+  });
+});
+
+describe("config — the transcript browser", () => {
+  it("names no browser, which is how Playwright gets to resolve its own", async () => {
+    const { config } = await load(BOOTABLE);
+
+    // Undefined reaches `chromium.launch()` as no `executablePath` at all, and
+    // the build `playwright install chromium` put in place is what opens (#37).
+    expect(config.chromiumPath).toBeUndefined();
+  });
+
+  it("takes the browser a host names for itself", async () => {
+    // Any executable this machine certainly has; the value is never launched here.
+    const { config } = await load({
+      ...BOOTABLE,
+      PLAYWRIGHT_CHROMIUM_PATH: process.execPath,
+    });
+
+    expect(config.chromiumPath).toBe(process.execPath);
+  });
+
+  it("refuses a path that is not on this machine", async () => {
+    // The shape of the constant this replaced: a store path belonging to one
+    // Replit machine, which every other host launched into an exception.
+    const missing = "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125/bin/chromium";
+    const error = await load({ ...BOOTABLE, PLAYWRIGHT_CHROMIUM_PATH: missing }).catch(
+      (e: Error) => e
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("PLAYWRIGHT_CHROMIUM_PATH");
+    expect((error as Error).message).toContain(missing);
   });
 });
 
