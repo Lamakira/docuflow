@@ -14,8 +14,6 @@
  * under: no production credential, URL, or dataset ever lands here.
  */
 
-import { existsSync } from "node:fs";
-
 import { PG_VARS, resolveDatabaseUrl, type DatabaseUrlSource } from "../shared/databaseUrl";
 import { parseSigningKey, type SigningKey } from "./signingKeys";
 
@@ -101,8 +99,16 @@ export interface AppConfig {
   openaiApiKey?: string;
   fathomApiKey?: string;
   /**
-   * The browser the transcript scraper launches. Absent is the normal state:
-   * Playwright then finds the build its own installer put in place.
+   * The browser the transcript scraper launches. Absent is the normal state,
+   * and the one both the image and a developer machine run in: Playwright then
+   * finds the build its own installer put in place. Name one only on a host
+   * carrying a browser of its own — a distribution's `/usr/bin/chromium`, or
+   * the Nix store path the Replit machine has, which is what used to stand as a
+   * constant in `server/browser-transcript.ts` (#37).
+   *
+   * Read as written and never opened. Whether the path names something runnable
+   * is the launch's question, and `server/browser-transcript.ts` asks it there,
+   * where the answer costs one scrape instead of the whole server's boot.
    */
   chromiumPath?: string;
   replitAuth: ReplitAuthConfig;
@@ -325,37 +331,6 @@ function resolveAppUrl(): string {
   return `http://localhost:${DEFAULT_PORT}`;
 }
 
-/**
- * The Chromium `server/browser-transcript.ts` launches, for a host that wants a
- * particular one. Unset is the normal state, and the one both the image and a
- * developer machine run in: `chromium.launch()` given no `executablePath` finds
- * the build `playwright install chromium` put in place, wherever that is.
- *
- * This is for the host that has a browser of its own and no Playwright download
- * — a distribution's `/usr/bin/chromium`, or the Nix store path the Replit
- * machine carries. That store path used to be a constant in the source, which
- * is why a value naming nothing stops boot here: what it replaces is a scrape
- * that threw thirty seconds into a background job, leaving its reason in a
- * transcript row nobody was watching (#37).
- */
-function resolveChromiumPath(): Resolved<string | undefined> {
-  const path = read("PLAYWRIGHT_CHROMIUM_PATH");
-  if (!path) return { value: undefined, missing: [] };
-
-  if (!existsSync(path)) {
-    return {
-      value: undefined,
-      missing: [
-        `PLAYWRIGHT_CHROMIUM_PATH is "${path}", and there is nothing there on this ` +
-          `machine. Leave it unset to launch the browser Playwright installed, or name ` +
-          `one this host has.`,
-      ],
-    };
-  }
-
-  return { value: path, missing: [] };
-}
-
 /** A number inside its range, or the reason it is unusable on the pile. */
 function readNumber(
   name: string,
@@ -528,7 +503,6 @@ function resolveConfig(): AppConfig {
   const sessionSecret = read("SESSION_SECRET");
   const desktopTokens = resolveDesktopTokens();
   const telemetry = resolveTelemetry(nodeEnv);
-  const chromiumPath = resolveChromiumPath();
 
   const missing = [
     ...database.missing,
@@ -538,7 +512,6 @@ function resolveConfig(): AppConfig {
       : ["SESSION_SECRET — signs session cookies; any long random string"]),
     ...desktopTokens.missing,
     ...telemetry.missing,
-    ...chromiumPath.missing,
   ];
 
   if (missing.length > 0) {
@@ -564,7 +537,7 @@ function resolveConfig(): AppConfig {
     appUrl: resolveAppUrl(),
     openaiApiKey: read("OPENAI_API_KEY"),
     fathomApiKey: read("FATHOM_API_KEY"),
-    chromiumPath: chromiumPath.value,
+    chromiumPath: read("PLAYWRIGHT_CHROMIUM_PATH"),
     replitAuth: {
       clientId: read("REPL_ID"),
       issuerUrl: read("ISSUER_URL") ?? "https://replit.com/oidc",
@@ -630,6 +603,7 @@ export function logConfigSummary(): void {
       `desktop tokens on key ${desktopTokenKeys()}, ` +
       `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
       `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}, ` +
+      `transcript browser ${config.chromiumPath ?? "as Playwright resolves it"}, ` +
       `telemetry ${telemetryDestination()}`
   );
 }

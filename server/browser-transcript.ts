@@ -1,3 +1,5 @@
+import { accessSync, constants, statSync } from 'node:fs';
+
 import { chromium, Browser, Page, BrowserContext, type LaunchOptions } from 'playwright';
 import { config } from './config';
 
@@ -14,8 +16,14 @@ const BROWSER_TIMEOUT = 30000;
  * Nix store path belonging to a single Replit machine, so every launch anywhere
  * else threw before the first navigation. `PLAYWRIGHT_CHROMIUM_PATH` is the
  * override for a host that has a browser of its own — that Nix path is a
- * perfectly good value for it, set on the machine that has it — and
- * `server/config.ts` refuses to boot on one that names nothing.
+ * perfectly good value for it, set on the machine that has it.
+ *
+ * An override naming nothing this host can execute is refused right here, before
+ * `chromium.launch()` is asked to find out. That is the shape the old constant
+ * failed in — thirty seconds into a background job, in Playwright's words, left
+ * on a transcript row nobody was watching — and one scrape is the right size for
+ * it: `server/config.ts` reads the variable without opening it, because a
+ * scraper's knob does not get to keep the server from booting.
  *
  * The flags are the container's, each one a decision rather than an inheritance:
  *
@@ -34,8 +42,28 @@ const BROWSER_TIMEOUT = 30000;
  *  - `--disable-gpu`: there is no display and nothing to accelerate.
  */
 export function browserLaunchOptions(): LaunchOptions {
+  const executablePath = config.chromiumPath;
+
+  if (executablePath !== undefined) {
+    try {
+      // Runnable, not merely present. Existence alone is the weaker question:
+      // a directory answers it, and so does a file with no execute bit, and both
+      // then die inside the launch — which is the reporting this check exists to
+      // take back from Playwright. `X_OK` on a directory means "traverse", so
+      // being a file is asked separately.
+      if (!statSync(executablePath).isFile()) throw new Error('not a file');
+      accessSync(executablePath, constants.X_OK);
+    } catch {
+      throw new Error(
+        `PLAYWRIGHT_CHROMIUM_PATH is "${executablePath}", and there is nothing this ` +
+          `machine can run there. Leave it unset to launch the browser Playwright ` +
+          `installed, or name one this host can execute.`
+      );
+    }
+  }
+
   return {
-    executablePath: config.chromiumPath,
+    executablePath,
     headless: true,
     chromiumSandbox: false,
     args: [

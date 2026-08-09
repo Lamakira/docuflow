@@ -12,9 +12,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * decision, and they are checkable without a browser: `playwright` is aliased to
  * a fake that throws on `launch()` (ADR-0018), so nothing here starts one.
  *
- * What is *not* checked here is that a browser exists to be found — that is the
- * image's half, and `.github/workflows/ci.yml` opens a page inside the built
- * image to answer it.
+ * What is *not* checked here is that a browser exists to be found when nothing
+ * names one — that is the image's half, and `.github/workflows/ci.yml` opens a
+ * page inside the built image to answer it. An override that names one *is*
+ * checked here, because refusing it is this module's own work.
  */
 
 /** Every `.ts` under `server/`, which is the tree the ban below applies to. */
@@ -73,7 +74,30 @@ describe("the transcript scraper's browser", () => {
     expect(options.chromiumSandbox).toBe(false);
   });
 
-  it("holds no path belonging to one machine", () => {
+  it("refuses an override with nothing at it, in its own words", async () => {
+    // The shape of the constant this replaced: a store path belonging to one
+    // Replit machine. `chromium.launch()` would reach the same verdict thirty
+    // seconds later, in Playwright's words, from inside a background job.
+    const elsewhere = "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125/bin/chromium";
+
+    await expect(launchOptions(elsewhere)).rejects.toThrow(/PLAYWRIGHT_CHROMIUM_PATH/);
+    await expect(launchOptions(elsewhere)).rejects.toThrow(elsewhere);
+  });
+
+  it("refuses an override that is a directory", async () => {
+    // Present, and `X_OK` on a directory means "traverse" rather than "run" —
+    // so existence alone would have let this through to die in the launch.
+    await expect(launchOptions(SERVER_DIR)).rejects.toThrow(/PLAYWRIGHT_CHROMIUM_PATH/);
+  });
+
+  it("refuses an override this host cannot execute", async () => {
+    // A real file, no execute bit: the other half existence alone misses.
+    const notExecutable = join(SERVER_DIR, "..", "package.json");
+
+    await expect(launchOptions(notExecutable)).rejects.toThrow(/PLAYWRIGHT_CHROMIUM_PATH/);
+  });
+
+  it("names no /nix store path anywhere under server/", () => {
     const naming = serverSources(SERVER_DIR).filter((path) =>
       readFileSync(path, "utf8").includes("/nix/store")
     );

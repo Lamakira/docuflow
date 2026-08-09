@@ -205,8 +205,11 @@ seccomp profile allows — `chromiumSandbox: true` dies during browser startup h
 unless the host adds `--security-opt seccomp=<playwright's profile>` — and what
 keeps that bounded is the scraper building its URLs from a video id against two
 known hosts rather than opening what a document points at. A host that would
-rather launch a browser of its own names it in `PLAYWRIGHT_CHROMIUM_PATH`; boot
-refuses a value with nothing at it, which is exactly the failure #37 was.
+rather launch a browser of its own names it in `PLAYWRIGHT_CHROMIUM_PATH`. A
+value with nothing runnable at it fails the scrape immediately, in that
+variable's own name, rather than thirty seconds later in Playwright's — which is
+exactly the failure #37 was. It fails the scrape and not the boot: the server has
+no reason to refuse to start over a browser only one feature opens.
 
 ADR-0018 applies to every value above: this is a parallel environment, so each
 one is a fresh credential provisioned for this effort, never a production one.
