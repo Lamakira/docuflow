@@ -26,6 +26,9 @@ npm run test:db:down # stop the database
 - `tests/helpers/app.ts` boots the real app assembly (`server/app.ts`) —
   the exact middleware chain production uses, minus Vite/static and listen.
 - `tests/helpers/db.ts` truncates all tables between tests.
+- `tests/helpers/runtimeTree.ts` is the single answer to what `npm ci --omit=dev`
+  puts in the image — `dependencies` and `optionalDependencies` both. The two
+  bundle suites below read it rather than each keeping their own copy.
 - Telemetry is off (#26): `NODE_ENV=test` exports nothing, and `tests/setup.ts`
   clears every `OTEL_*` variable so a developer's shell cannot instrument a run.
   Nothing patches express or pg while a suite is running, and no exporter has to
@@ -126,9 +129,17 @@ the other form of the same runner: `dist/migrate.mjs`, built from
 checkout in it, so the three things only the bundle can lose — an empty
 `import.meta` under `format: "cjs"`, a journal that did not travel beside it, a
 flag dropped in the move — fail here rather than during a deploy. It also pins
-the bundle's external imports to `dependencies`, which is the one difference
-between that staging and the real image: the runtime stage installs
+the bundle's external imports to what the image installs, which is the one
+difference between that staging and the real image: the runtime stage installs
 `npm ci --omit=dev`.
+`server-bundle` ([#36](https://github.com/Lamakira/docuflow/issues/36)) asks the
+same question of `dist/index.cjs` and answers it both ways round: nothing the
+bundle imports is missing from the runtime tree, and nothing in that tree goes
+unimported. Both come off the build's own metafile rather than the manifest,
+because the two errors hide differently — a client package left in
+`dependencies` costs disk and nothing else, while a server import missing from
+it builds, typechecks, tests, boots, and then fails on the first request that
+reached the route using it.
 
 None of the three can see DDL applied to a database from outside this repository
 — both sides of every comparison here are built from the repository. That is

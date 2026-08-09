@@ -17,8 +17,8 @@ docker build -t docuflow .
 ```
 
 Four stages: a shared base holding the dependency manifest, a build stage with
-the full dependency tree (`vite`, `esbuild`, and `typescript` are all
-devDependencies), a second install stage that resolves the runtime tree only,
+the full dependency tree (the toolchain and everything the client is built from
+are devDependencies), a second install stage that resolves the runtime tree only,
 and the runtime image that copies `dist/`, those runtime dependencies, and
 `migrations/` in. Nothing from the build stage's toolchain ships.
 
@@ -26,6 +26,53 @@ and the runtime image that copies `dist/`, those runtime dependencies, and
 (the server), and `dist/migrate.mjs` (the migration runner). The runner is ESM
 where the server is CJS, because it resolves the journal beside itself with
 `import.meta.url` — a value esbuild's `cjs` format leaves empty.
+
+### What the image installs
+
+`dependencies` is the server's runtime tree and nothing else, derived rather
+than chosen. `script/bundles.ts` inlines a short allowlist into
+`dist/index.cjs` and marks every other package external, so what the runtime
+stage has to install is exactly what the bundle left external. The build emits
+an esbuild `metafile` saying what that is, and
+[`tests/smoke/server-bundle.test.ts`](../tests/smoke/server-bundle.test.ts)
+holds the manifest to it in both directions: nothing imported that is missing,
+nothing installed that is never imported.
+
+Everything else is a devDependency, the client's entire dependency set included.
+The build stage installs the full tree, so `dist/public` is built from exactly
+the packages it was before — they simply stop being installed a second time into
+a runtime that only ever serves them pre-bundled. That is what took the image
+from 1.17 GB to 676 MB (#36), and `node_modules` inside it from 655 MB to
+259 MB.
+
+Three kinds of entry sit outside that derivation:
+
+- **Imports never reached in production.** `vite` and the two plugins
+  `vite.config.ts` loads are imports of the bundle, because `server/index.ts`
+  dynamic-imports `./vite` when it is not production. esbuild keeps a dynamic
+  import lazy, so the `require` is emitted and never runs — `serveStatic` is
+  what answers under `NODE_ENV=production`. The smoke test lists them, with that
+  reason.
+- **Optional native speedups.** `ws` is bundled and `require`s `bufferutil` and
+  `utf-8-validate` inside a try/catch. `utf-8-validate` is declared nowhere, so
+  it is absent and `ws` falls back to its JavaScript implementation.
+  `bufferutil` is an `optionalDependencies` entry, which `npm ci --omit=dev`
+  installs — `--omit=dev` omits the dev half and nothing else — so it is
+  external for the same reason every other installed package is. Bundling it
+  would inline node-gyp-build with it and move the prebuild lookup to `dist/`,
+  where it throws inside that same try/catch: the image would carry the speedup,
+  `ws` would fall back anyway, and nothing would say so.
+- **Imports the build cannot see.** None today. `sharp` looked like one —
+  `server/agentRoutes.ts` loads it as `await import("sharp" as any)` so that a
+  missing libvips degrades to storing raw PNGs instead of failing boot — but the
+  cast is TypeScript's and esbuild reads through it to a string literal. A
+  specifier assembled at runtime would be invisible, and would have to be carried
+  by hand in the smoke test's `CARRIED_BY_HAND` with a note saying where it is.
+
+What the derivation cannot prove is that a declared package *loads*: `sharp`
+wants libvips, `bcrypt` a prebuilt binary for this glibc and this Node. CI
+imports every `dependencies` entry inside the built image, which is where that
+half is answered — see below.
 
 `.dockerignore` is an allow-list: everything is excluded, then the files the
 build actually opens are added back. The repository holds a gigabyte of
@@ -113,23 +160,35 @@ one is a fresh credential provisioned for this effort, never a production one.
 `.github/workflows/ci.yml` builds the image on every push to main and every pull
 request, with the layer cache in the Actions cache so an unchanged
 `package-lock.json` reuses both `npm ci` layers. Only pushes to main write that
-cache — `mode=max` exports every intermediate stage, which is what makes those
-layers reusable, and at this image's size a copy per pull request would evict
-both the image cache and the npm cache out of one 10 GB per-repository budget.
-Pull requests read main's entry, which is what they branched from.
+cache — `mode=max` exports every intermediate stage, including the build stage
+carrying the full dependency tree, and a copy of that per pull request would
+evict both the image cache and the npm cache out of one 10 GB per-repository
+budget. Pull requests read main's entry, which is what they branched from.
 
 Then it runs it, which is the part no test can stage. `tests/smoke/migrate-bundle.test.ts`
-builds `dist/migrate.mjs` and executes it against a `/app` laid out in a
-temporary directory, but that directory borrows the checkout's `node_modules` —
-where the runtime stage installs `npm ci --omit=dev`. So CI loads the image and
-runs three things against the real tree: `node dist/migrate.mjs --status` with no
-database configured, which has to fail in `shared/databaseUrl.ts`'s words rather
-than on a missing module; a listing of `/app/migrations`, which has to hold the
-journal; and the default `CMD`, waited on until the image's own `HEALTHCHECK`
-reports `healthy`. Every value passed there is a placeholder that reaches
-nothing — `/health` answers before authentication and both the pool and the
-session store connect on first use, so this is a boot test, and ADR-0018 keeps
-real URLs and credentials out of the workflow.
+and `tests/smoke/server-bundle.test.ts` both reason about the runtime dependency
+tree from the checkout's — the first stages a `/app` that borrows this
+repository's `node_modules`, the second reads the manifest rather than an
+install. Neither can see `npm ci --omit=dev` as the image runs it. So CI loads
+the image and runs four things against the real tree: an `import()` of every
+`dependencies` entry read out of the image's own `package.json`, which is where
+a package that resolves but cannot initialise — `sharp` without libvips,
+`bcrypt` without a matching binary — is caught; `node dist/migrate.mjs --status`
+with no database configured, which has to fail in `shared/databaseUrl.ts`'s
+words rather than on a missing module; a listing of `/app/migrations`, which has
+to hold the journal; and the default `CMD`, waited on until the image's own
+`HEALTHCHECK` reports `healthy`.
+
+That first check is what stands in for exercising routes by hand. It is
+shallower — a module load, not the route that reaches it — and broader: every
+entry rather than the handful anyone thinks to try, on every push rather than
+once at review. `Cannot find module` is the failure it exists for, and that one
+it answers completely.
+
+Every value passed there is a placeholder that
+reaches nothing — `/health` answers before authentication and both the pool and
+the session store connect on first use, so this is a boot test, and ADR-0018
+keeps real URLs and credentials out of the workflow.
 
 Nothing is pushed to a registry: there is no deployment target yet, and no
 registry credential belongs in this repository until Phase 2 provisions a fresh
@@ -137,8 +196,7 @@ one.
 
 ## Known gaps
 
-Two things this image does not do, each waiting on a ticket rather than an
-oversight:
+Two things about this image, each waiting on a ticket rather than an oversight:
 
 - **Transcript scraping is inoperable** (#37). `server/browser-transcript.ts:4`
   launches Chromium from a hard-coded Replit Nix path, so it cannot work off
@@ -146,9 +204,10 @@ oversight:
   Playwright's ~400 MB browser download rather than paying for one the code will
   not look at, and #37 is the removal gate on that skip. Loom and Fathom
   scraping fails at launch until that path is replaced.
-- **The image is large** (#36, ~1.1 GB) because `package.json` puts the client's
-  dependencies — `react-icons`, `lucide-react`, `@tiptap`, `@radix-ui` — under
-  `dependencies`, so `npm ci --omit=dev` installs them into a runtime that only
-  ever serves them pre-bundled from `dist/public`. Splitting client from server
-  dependencies is the fix, and it is a `package.json` change with its own blast
-  radius rather than a Dockerfile one.
+- **Most of what is left is one package** (#43). `pdf-parse` is 115 MB of the
+  runtime tree's 259 MB, because it vendors its own copy of `pdfjs-dist` instead
+  of sharing the one the client is built with. Nothing in the packaging can move
+  it: the server really does extract PDFs, on a request rather than at boot.
+  Getting that extraction from something smaller is a dependency change with a
+  behavioural blast radius, not the packaging move #36 was — which is what #43
+  owns, and the removal gate on this entry.
