@@ -4,6 +4,7 @@ import { db } from "./db";
 import { documentEmbeddings, documents, projects, companyDocumentEmbeddings, companyDocuments, companyDocumentFolders } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import crypto from "crypto";
+import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
 
 const CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 100;
@@ -438,15 +439,21 @@ export async function rebuildAllCompanyDocumentEmbeddings(): Promise<{ processed
   const errors: string[] = [];
   
   for (const doc of allDocs) {
-    if (!doc.content) continue;
-    
     try {
+      // Uploaded files are re-extracted from storage rather than skipped for
+      // having no `content`. Skipping them is what made this a rebuild of the
+      // native pages only, while every PDF in the index — the half whose text
+      // came from a parser that has since been replaced — had no repair path at
+      // all (#43).
+      const embeddingContent = await companyDocumentEmbeddingContent(doc);
+      if (!embeddingContent) continue;
+
       const folderName = doc.folderId ? folderMap.get(doc.folderId) || "Unknown Folder" : "Root";
       await updateCompanyDocumentEmbeddings(
         doc.id,
         doc.folderId,
         doc.name,
-        doc.content,
+        embeddingContent,
         folderName,
         doc.mimeType || undefined
       );

@@ -91,7 +91,7 @@ A companion **MCP server** exposes the app's API to Claude Desktop.
 ### 3.5 AI Assistant & Embedding Pipeline
 - ChatBot component calls `POST /api/chat` with a scope (project documentation, company documents, or both).
 - **Ingestion** (`server/embeddings.ts`, `server/contentExtraction.ts`):
-  - TipTap JSON is flattened to text; uploaded files are extracted (PDF via pdf-parse, Word via mammoth, plain text directly).
+  - TipTap JSON is flattened to text; uploaded files are extracted (PDF via unpdf, Word via mammoth, plain text directly).
   - Text is chunked into ~800-character segments with 100 overlap.
   - Each chunk gets a content hash; unchanged chunks are skipped on re-index.
   - Embeddings via OpenAI `text-embedding-3-small` (1536 dims), stored in `document_embeddings` (project docs + video transcripts) and `company_document_embeddings` (company docs).

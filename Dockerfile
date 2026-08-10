@@ -122,6 +122,44 @@ FROM base AS runtime-deps
 # longer arrives here to be installed and never opened.
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 
+# The one package `--omit=dev` will not take (#43).
+#
+# `@napi-rs/canvas` is 61 MB of Skia that nothing in the server opens. Two
+# halves of the tree point at it from opposite sides, and `--omit=optional`
+# would take sharp's `@img` binaries with it. `docs/CONTAINER.md`, under
+# "Installed, then deleted", is where that derivation is written down; this line
+# is the consequence, and it is what makes the image `npm ci --omit=dev` minus
+# one package rather than the install itself.
+#
+# A manifest field *can* keep it out — an `overrides` entry aliasing the package
+# to an empty stub was measured at 16 KB and survives `npm ci --omit=dev`. It is
+# not used because the lockfile would then name an unrelated package under the
+# canvas name, and `tests/smoke/server-bundle.test.ts` reads that lockfile as
+# the truth about what the image installs. A deletion that says what it is beats
+# an install that lies quietly.
+#
+# A glob rather than the scope. The 61 MB is three directories — `canvas` and
+# its two prebuilt binaries, `canvas-linux-x64-gnu` and `-musl` — and they are
+# what the paragraph above is about. A future `@napi-rs/<something the server
+# does open>` should arrive as a build failure, not disappear quietly here.
+#
+# Both guards are the point, because `rm -rf` on a glob that matches nothing
+# exits 0 and says nothing. `test -d` fails the build the day npm stops hoisting
+# this copy, and the `find` fails it the day npm needs two — `pdfjs-dist` asks
+# for `^0.1.81` and `unpdf` for `^0.1.69 || ^1.0.0`, ranges that share a version
+# today and will not once canvas ships 1.x. Without them a nested copy would
+# restore 61 MB with the build still green.
+#
+# Safe because unpdf does not need it: its pdfjs build has the canvas dependency
+# compiled out and carries a `DOMMatrix` polyfill of its own. pdfjs-dist is what
+# would have needed it, and would have failed at `import()` rather than here —
+# see the "PDF text extracts inside the image" step in
+# `.github/workflows/ci.yml`, which runs the server's own extraction against the
+# tree this line leaves behind.
+RUN test -d node_modules/@napi-rs/canvas \
+  && rm -rf node_modules/@napi-rs/canvas* \
+  && ! find node_modules -path '*/node_modules/@napi-rs/canvas*' -print -quit | grep -q .
+
 ####
 # Stage 4: what ships.
 ####

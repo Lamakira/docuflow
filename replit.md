@@ -143,7 +143,7 @@ Ces identifiants sont valides sur la branche `refactor/project_assignment` et l'
 - Stores vector embeddings for company documents (separate from project document embeddings)
 - Fields: id (UUID), companyDocumentId (FK), folderId (FK), chunkIndex (int), chunkText (text), contentHash (varchar), embedding (vector(1536)), metadata (JSONB), timestamps
 - Automatic embedding generation when company documents are created or updated
-- Supports text extraction from uploaded files: PDF (pdf-parse), Word (mammoth), and text files
+- Supports text extraction from uploaded files: PDF (unpdf), Word (mammoth), and text files
 - Semantic search via cosine similarity for AI chatbot knowledge base
 
 **CRM Modules Table**
