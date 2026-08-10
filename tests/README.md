@@ -59,7 +59,7 @@ module knows it is under test:
 | `@google-cloud/storage` | `tests/fakes/gcs.ts`    | In-memory bucket, and deterministic signed URLs. `putObject` seeds an object, `objectMetadata` reads its ACL, `signedUrlCalls` lists what was signed. |
 | `openai`                | `tests/fakes/openai.ts` | Deterministic bag-of-words embeddings, canned chat and Whisper replies, call log. |
 | `resend`                | `tests/fakes/resend.ts` | Always-succeeding delivery into an inspectable outbox.                        |
-| `playwright`            | `tests/fakes/playwright.ts` | `launch()` throws — the Loom/Fathom transcript scraper must never open a browser. Nothing else does, so `tests/smoke/transcript-browser.test.ts` can import the module and read the options it would have launched with. |
+| `playwright`            | `tests/fakes/playwright.ts` | `launch()` throws by default. The transcript-browser suite opts into a response/page fake to verify Loom's listener timing and fallback suppression without opening a browser or reaching a provider. |
 
 One provider boundary is crossed with a raw `fetch` rather than an SDK: the signed
 storage URL itself, which the server PUTs to when it relays a desktop-agent
@@ -160,8 +160,8 @@ pins how the Loom/Fathom scraper finds a browser: no `executablePath` at all
 unless `PLAYWRIGHT_CHROMIUM_PATH` names one, the two container flags kept as
 flags, the refusal of an override naming nothing this host can run, and the
 absence of any `/nix` store path under `server/` — the constant all of it
-replaced. The `playwright` fake throws on `launch()` and nowhere else, so the
-options are readable without a browser. That a browser *exists* where Playwright
+replaced. The `playwright` fake throws on `launch()` by default, so the options
+are readable without a browser. That a browser *exists* where Playwright
 looks is the image's half of the question, which only
 `.github/workflows/ci.yml` can answer, and it does — by opening a page and
 reading a clipboard inside the built image.
@@ -170,6 +170,15 @@ It also pins what a scrape may *call* a transcript
 decides that in Node rather than in the page, so it is answerable with neither
 browser nor network, and the cookie banner Loom once served in place of a
 transcript is kept verbatim as the thing that must not pass.
+For Loom's network path, `tests/fixtures/loom-transcription-1.1.3.json` is a
+content-neutral copy of the observed response shape: recording text and
+identifiers were replaced, while root, phrase, timestamp, text, and ranges types
+were retained. The opt-in provider fake covers listener-before-navigation,
+delayed and unreadable response bodies, JSON-before-VTT ordering, capture
+freezing, and the rule that definitive network results never touch rendered UI.
+The remaining live check belongs to the built image because only that boundary
+can prove its installed Playwright browser can load the supplied public URL; the
+URL is passed at runtime and is never stored in this repository or test output.
 
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
