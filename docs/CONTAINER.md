@@ -36,18 +36,22 @@ stage has to install is exactly what the bundle left external. The build emits
 an esbuild `metafile` saying what that is, and
 [`tests/smoke/server-bundle.test.ts`](../tests/smoke/server-bundle.test.ts)
 holds the manifest to it in both directions: nothing imported that is missing,
-nothing installed that is never imported.
+nothing installed that is never imported. Both directions are about the
+*manifest*; since #43 the image is that install minus one deleted package, and
+what keeps that honest is in the `Dockerfile` and in CI, not here — see
+"Installed, then deleted" below.
 
 Everything else is a devDependency, the client's entire dependency set included.
 The build stage installs the full tree, so `dist/public` is built from exactly
 the packages it was before — they simply stop being installed a second time into
 a runtime that only ever serves them pre-bundled. That is what took the image
 from 1.17 GB to 676 MB (#36), and `node_modules` inside it from 655 MB to
-259 MB. #43 took that tree to 147 MB by changing what extracts PDFs; the
-paragraph under "Known gaps" that used to describe the 115 MB it removed is
-gone, and what it found is below. The browser #37 put in afterwards is a
-separate 588 MB layer on top of that — its own decision, and its own
-measurements, further down.
+259 MB. #43 took that tree to 147 MB in two steps that are worth keeping apart:
+changing what extracts PDFs lands at 208 MB, and deleting the canvas neither
+parser opens takes the remaining 61. The paragraph under "Known gaps" that used
+to describe the 115 MB it removed is gone, and what it found is below. The
+browser #37 put in afterwards is a separate 588 MB layer on top of that — its
+own decision, and its own measurements, further down.
 
 The largest entries left are `@opentelemetry` at 38 MB and sharp's `@img`
 binaries at 33 MB. Nothing is now a majority of the tree.
@@ -76,23 +80,40 @@ Four kinds of entry sit outside that derivation:
   specifier assembled at runtime would be invisible, and would have to be carried
   by hand in the smoke test's `CARRIED_BY_HAND` with a note saying where it is.
 - **Installed, then deleted.** One: `@napi-rs/canvas`, 61 MB of Skia, removed by
-  an `rm -rf` after `npm ci --omit=dev` (#43). No manifest field can keep it
-  out. `pdfjs-dist` is a devDependency for the client's PDF viewer and declares
-  it an `optionalDependency`, so npm installs a hoisted copy; `unpdf`, which
-  extracts text on the server, names the same package an *optional peer* for an
-  image renderer nothing calls, and that production-side edge is enough for
-  `--omit=dev` to leave it behind. `--omit=optional` would take sharp's `@img`
-  binaries with it.
+  an `rm -rf` after `npm ci --omit=dev` (#43). `pdfjs-dist` is a devDependency
+  for the client's PDF viewer and declares it an `optionalDependency`, so npm
+  installs a hoisted copy; `unpdf`, which extracts text on the server, names the
+  same package an *optional peer* for an image renderer nothing calls, and that
+  production-side edge is enough for `--omit=dev` to leave it behind.
+  `--omit=optional` would take sharp's `@img` binaries with it.
+
+  A manifest field *can* keep it out, contrary to what this entry said first: an
+  `overrides` entry aliasing the package to an empty stub was measured at 16 KB
+  and survives `npm ci --omit=dev`, with both text paths still working. It is
+  not what ships, because the lockfile would then carry an unrelated package
+  under the canvas name and `tests/smoke/server-bundle.test.ts` reads that
+  lockfile as the truth about the image. The trade is a visible deletion against
+  an invisible substitution, and visible won.
+
+  Two guards make the deletion assertable, because `rm -rf` over a glob that
+  matches nothing exits 0: a `test -d` that fails the build if npm stops
+  hoisting this copy, and a `find` that fails it if npm ever needs two and nests
+  one — `pdfjs-dist` asks for `^0.1.81`, `unpdf` for `^0.1.69 || ^1.0.0`, ranges
+  that share a version today and will not once canvas ships 1.x.
 
   What keeps the deletion honest is **not** the every-dependency import step:
   `unpdf` resolves its pdfjs build lazily inside `getResolvedPDFJS()`, so
   `import("unpdf")` touches a 15 KB wrapper and succeeds whether the canvas is
-  there or not. The failure that would matter — `ReferenceError: DOMMatrix is
-  not defined` — comes out of `getTextContent()` on the first uploaded PDF,
-  which is a request and not a load. So CI has a step of its own that extracts
-  text from a generated PDF inside the image, after the deletion, through that
-  same call. A parser version that starts wanting the canvas fails there rather
-  than on an upload.
+  there or not. So CI has a step of its own that runs the server's own
+  extraction sequence — viewport, text content, point conversion — over a
+  generated PDF inside the image, after the deletion. A parser version that
+  starts wanting the canvas fails there rather than on an upload.
+
+  Worth naming precisely, since the first version of this entry got it backwards:
+  `ReferenceError: DOMMatrix is not defined` is *pdfjs-dist's* failure, and it
+  raises it at **import**, from a `new DOMMatrix()` at module scope — not out of
+  `getTextContent()` on a request. unpdf polyfills `DOMMatrix` itself, so what a
+  canvas-hungry build would fail on here is the canvas factory instead.
 
 What the derivation cannot prove is that a declared package *loads*: `sharp`
 wants libvips, `bcrypt` a prebuilt binary for this glibc and this Node. CI
@@ -274,12 +295,13 @@ install. Neither can see `npm ci --omit=dev` as the image runs it. So CI loads
 the image and runs six things against the real tree: an `import()` of every
 `dependencies` entry read out of the image's own `package.json`, which is where
 a package that resolves but cannot initialise — `sharp` without libvips,
-`bcrypt` without a matching binary — is caught; `getTextContent()` over a
-generated PDF, which is the one thing that import cannot answer, because
-`unpdf` loads its pdfjs build lazily and the runtime stage deletes a package
-out from under it (above, "Installed, then deleted"); a page rendered and a
-clipboard read in the image's own Chromium, under the image's own user, which asks the
-browser the same question, since `playwright` imports perfectly well while the
+`bcrypt` without a matching binary — is caught; the server's own extraction
+sequence over a generated PDF, which is the one thing that import cannot
+answer, because `unpdf` loads its pdfjs build lazily and the runtime stage
+deletes a package out from under it (above, "Installed, then deleted"); a page
+rendered and a clipboard read in the image's own Chromium, under the image's
+own user, which asks the browser the same question, since `playwright` imports
+perfectly well while the
 browser it drives is missing, unreadable, or short a shared library — and the
 clipboard because it is the capability `--only-shell` puts at risk and the one
 both scrapers try before falling back to the DOM, so a shell that refused it
@@ -306,23 +328,28 @@ Nothing is pushed to a registry: there is no deployment target yet, and no
 registry credential belongs in this repository until Phase 2 provisions a fresh
 one.
 
-## Known gaps
+## What #43 measured
 
-Nothing about this image is currently waiting on a ticket. The last entry here
-was `pdf-parse`, 115 MB of a 259 MB tree, and #43 closed it — the note below is
-what that turned out to be, because the reason in the entry was wrong.
+Not a gap — the retrospective for one that closed, kept because the reason
+written in the entry was wrong and the correction is the useful part.
 
 `pdf-parse` was described here as 115 MB because it vendored its own copy of
-`pdfjs-dist` rather than sharing the client's. That copy was 37 MB of it. The
-other 58 MB was `@napi-rs/canvas`, which pdf-parse needs to render pages to
-images — something this server never asks it for. Depending on `pdfjs-dist`
-directly, the obvious fix and the one the ticket proposed, would have carried
-the same binary: pdfjs's Node build has no `DOMMatrix`, borrows one from canvas,
-and throws `ReferenceError: DOMMatrix is not defined` out of `getTextContent()`
-without it. Measured, that route took the tree from 259 MB to 242 MB.
+`pdfjs-dist` rather than sharing the client's. Measured, that copy was 37 MB of
+it; `@napi-rs/canvas`, nested underneath at the version pdf-parse pinned, was
+58 MB; and pdf-parse's own `dist/` — largely a third bundled pdfjs, worker and
+source map included — was the remaining 20 MB. (The hoisted copy the image
+installs today is 61 MB, a later canvas release; the two numbers describe
+different versions, not a discrepancy.)
+
+Depending on `pdfjs-dist` directly, the obvious fix and the one the ticket
+proposed, would have carried the same binary: pdfjs's Node build evaluates
+`new DOMMatrix()` at module scope and borrows the class from canvas, so without
+it the *import* throws `ReferenceError: DOMMatrix is not defined` — before any
+call. Measured, that route took the tree from 259 MB to 242 MB.
 
 What shipped instead is `unpdf` — pdfjs with the canvas dependency compiled out,
-2.6 MB, no dependencies — plus the deletion described above. 259 MB → 147 MB.
+2.6 MB, no dependencies — plus the deletion described above. 259 MB → 208 MB on
+the swap, → 147 MB with the deletion.
 
 Worth naming what that is *not*. The ticket's goal was written as "the runtime
 image stops carrying a second copy of `pdfjs-dist`", and it still carries one:
@@ -330,7 +357,37 @@ image stops carrying a second copy of `pdfjs-dist`", and it still carries one:
 was the 242 MB route above. A duplicate was never the expense — the canvas
 behind it was.
 
-The lesson worth keeping is about the shape of the claim, not the packages: the
-entry named a cause that sounded sufficient and was never measured, and the
-number it implied was off by a factor of three in the direction that would have
-made the work look worthwhile for the wrong reason.
+The lesson worth keeping is about the shape of the claim, not the packages. The
+entry named a cause that sounded sufficient and was never measured: the vendored
+pdfjs it blamed was a third of the package, the binary nobody had looked at was
+half, and pdf-parse's own bundle was the rest. Naming it that way would have
+made the work look worthwhile for a reason that was not true. The same habit is
+why this section now cites what was run rather than what was expected — three
+claims in the first version of it, including the `DOMMatrix` one above, were
+reasoning that no one had executed.
+
+## Known gaps
+
+Two, both from #43, both measured and neither yet ticketed.
+
+**The image's parser is configured differently from the one under test.**
+`unpdf` fills in `standardFontDataUrl`, `cMapUrl`, `cMapPacked` and
+`disableFontFace` by resolving the installed `pdfjs-dist`, inside a `try` whose
+`catch` is empty. `pdfjs-dist` is a devDependency, so under `npm ci --omit=dev`
+that resolve throws and all four defaults vanish; in dev and in CI they are
+present. Latin text is unaffected — the repo's own fixtures extract identically
+either way — but a CID/CJK document decoded through a predefined CMap has no
+CMap to reach in the image, and would come back empty with
+`may be image-based`, which is what a scan looks like. No test can see this:
+`tests/characterization/content-extraction.test.ts` runs with the data files
+present. Closing it means shipping `pdfjs-dist`'s `cmaps/` and
+`standard_fonts/` into the image and naming them explicitly at
+`getDocumentProxy`, so that both halves are configured rather than one being
+configured by accident.
+
+**Two pdfjs majors read the same document.** The server extracts through
+`unpdf`'s bundled pdfjs 6.1.200; `client/src/pages/FileViewerPage.tsx` renders
+through `pdfjs-dist` 5.4.449 and pins a 5.4.449 worker URL by hand. The indexed
+text and the text layer a reader sees can therefore disagree, and the two
+versions differ in exactly the place #43 measured — pdfjs 6 leaves `hasEOL`
+unset where 5.4 sets it on a text-rise step.

@@ -180,18 +180,26 @@ jobs:
 
       # What the step above cannot reach (#43).
       #
-      # The runtime stage deletes `@napi-rs/canvas` after `npm ci --omit=dev`,
-      # 61 MB of Skia that npm installs for the dev half of the tree and
-      # `--omit=dev` will not take away. The import check is blind to whether
-      # that was safe: `unpdf` resolves its pdfjs build lazily inside
-      # `getResolvedPDFJS()`, so `import("unpdf")` touches a 15 KB wrapper and
-      # succeeds with the canvas present or absent. The failure it would miss is
-      # `ReferenceError: DOMMatrix is not defined`, thrown out of
-      # `getTextContent()` on the first uploaded PDF — a request, not a load.
+      # The runtime stage deletes `@napi-rs/canvas` after `npm ci --omit=dev`.
+      # It is installed because `unpdf` names it an optional peer — a
+      # production-side edge, which is why `--omit=dev` leaves it — and
+      # `pdfjs-dist` names it an optional dependency from the dev half besides.
+      # The import check is blind to whether deleting it was safe: `unpdf`
+      # resolves its pdfjs build lazily inside `getResolvedPDFJS()`, so
+      # `import("unpdf")` touches a 15 KB wrapper and succeeds with the canvas
+      # present or absent.
       #
-      # So this runs that call, in the image, against the tree the deletion
-      # leaves. The PDF is assembled here rather than checked in: ADR-0018 wants
-      # generated or synthetic, and a few hundred bytes with a real xref table is
+      # So this runs the parser itself, in the image, against the tree the
+      # deletion leaves — the same call sequence `extractPageText` makes,
+      # `getViewport` and `convertToViewportPoint` included, because those are
+      # the calls a canvas-hungry pdfjs build would fail on. (Not
+      # `getTextContent()` alone, and not `DOMMatrix is not defined`: that error
+      # belongs to pdfjs-dist, which raises it at *import* from a module-scope
+      # `new DOMMatrix()`. unpdf polyfills it, so the failure here would be a
+      # missing canvas factory instead.)
+      #
+      # The PDF is assembled inline rather than checked in — a real one is
+      # someone's document, and a few hundred bytes with a real xref table is
       # enough for a parser to open. `tests/characterization/content-extraction.test.ts`
       # is what pins the extracted text itself; this asks only whether the parser
       # runs at all where it has to.
@@ -222,7 +230,9 @@ jobs:
             const trailer = "trailer\n<</Size " + (objects.length + 1) + "/Root 1 0 R>>\n" +
               "startxref\n" + startxref + "\n%%EOF\n";
             // latin1: the xref offsets above are byte offsets, and any
-            // multi-byte encoding moves them.
+            // multi-byte encoding moves them. This PDF is ASCII, so the two
+            // agree today — named so that an accent added here does not
+            // silently break the table.
             const pdf = Buffer.from(header + body + xref + trailer, "latin1");
 
             const { VerbosityLevel } = await getResolvedPDFJS();
@@ -230,8 +240,22 @@ jobs:
               verbosity: VerbosityLevel.ERRORS,
             });
             const page = await doc.getPage(1);
+
+            // The sequence `extractPageText` makes, in its order: the viewport
+            // and the point conversion are the calls that reach pdfjs geometry,
+            // and a probe that skipped them would pass in a tree where the
+            // production path does not run.
+            const viewport = page.getViewport({ scale: 1 });
             const { items } = await page.getTextContent();
-            const text = items.map((item) => item.str).join("").trim();
+            const parts = [];
+            for (const item of items) {
+              if (!("str" in item)) continue;
+              viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
+              parts.push(item.str);
+              if (item.hasEOL) parts.push("\n");
+            }
+            const text = parts.join("").trim();
+            page.cleanup();
             await doc.loadingTask.destroy();
 
             console.log("extracted: " + text);

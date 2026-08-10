@@ -20,11 +20,17 @@ export function packageOf(specifier: string): string {
 }
 
 /**
- * Every package name `npm ci --omit=dev` puts in the image, sorted.
+ * Every package name `npm ci --omit=dev` installs, sorted.
  *
  * `--omit=dev` omits the dev half and nothing else, so `optionalDependencies`
  * is installed too and belongs here — it is a tree the bundle's externals may
  * resolve from, and `script/bundles.ts` marks it external for that reason.
+ *
+ * The install, not the image: since #43 the `Dockerfile` deletes
+ * `@napi-rs/canvas` after this install, so the image is one package short of
+ * what this function returns. Nothing here should learn about that — the
+ * deletion is a packaging decision guarded where it happens, and a suite that
+ * mirrored it would be a second copy of the answer to drift from.
  */
 export function installedByImage(): string[] {
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8"));

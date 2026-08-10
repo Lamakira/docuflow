@@ -27,8 +27,12 @@ npm run test:db:down # stop the database
   the exact middleware chain production uses, minus Vite/static and listen.
 - `tests/helpers/db.ts` truncates all tables between tests.
 - `tests/helpers/runtimeTree.ts` is the single answer to what `npm ci --omit=dev`
-  puts in the image — `dependencies` and `optionalDependencies` both. The two
-  bundle suites below read it rather than each keeping their own copy.
+  installs — `dependencies` and `optionalDependencies` both. The two bundle
+  suites below read it rather than each keeping their own copy. Since #43 the
+  image is that install *minus* `@napi-rs/canvas`, deleted by the `Dockerfile`
+  after the install and guarded there; a package the manifest declares and the
+  image does not have is a difference only CI can see, which is why the
+  deletion is asserted in the Dockerfile itself rather than here.
 - Telemetry is off (#26): `NODE_ENV=test` exports nothing, and `tests/setup.ts`
   clears every `OTEL_*` variable so a developer's shell cannot instrument a run.
   Nothing patches express or pg while a suite is running, and no exporter has to
@@ -182,6 +186,7 @@ implementation and each suite's header lists what the document gets wrong):
 | `crm-projects`                   | CRM projects, pagination, stage history, review clock, assignment    |
 | `crm-tags-notes`                 | tags, project tags, notes and mention notifications                 |
 | `company-documents`              | folders, native pages, uploaded files, streaming and download        |
+| `content-extraction`             | the text an uploaded PDF, Word or text file comes out as, and the four outcomes the upload route distinguishes |
 | `tasks-members-reminders`        | tasks, project membership, per-user reminders                       |
 | `time-tracking`                  | start/pause/resume/stop/activity, visibility, stats                 |
 | `agent-timer`                    | the desktop agent's device login and its half of the shared tracker  |
