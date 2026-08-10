@@ -1,9 +1,20 @@
 import { accessSync, constants, statSync } from 'node:fs';
 
-import { chromium, Browser, Page, BrowserContext, type LaunchOptions } from 'playwright';
+import {
+  chromium,
+  Browser,
+  Page,
+  BrowserContext,
+  type LaunchOptions,
+  type Response,
+} from 'playwright';
 import { config } from './config';
 
 const BROWSER_TIMEOUT = 30000;
+const LOOM_RESPONSE_BODY_TIMEOUT = 2000;
+const LOOM_RESPONSE_LIMIT = 20;
+const LOOM_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
+const LOOM_TRANSCRIPTION_SCHEMA = '1.1.3';
 
 /** How long to wait for a copy button to put something on the clipboard. */
 const CLIPBOARD_ATTEMPTS = 5;
@@ -212,20 +223,364 @@ async function clipboardTranscript(page: Page): Promise<string | null> {
   return null;
 }
 
+type LoomTranscriptionRange = {
+  type: string;
+  start: number;
+  length: number;
+  source: {
+    monologue: number;
+    element: number;
+    elementId: string;
+  };
+};
+
+type LoomTranscriptionPhrase = {
+  ts: number;
+  value: string;
+  ranges: LoomTranscriptionRange[];
+};
+
+type LoomTranscription = {
+  schemaVersion: string;
+  phrases: LoomTranscriptionPhrase[];
+};
+
+/** A deterministic, user-safe description of an incompatible provider response. */
+export class LoomTranscriptResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LoomTranscriptResponseError';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function formatLoomTimestamp(seconds: number): string {
+  const milliseconds = Math.round(seconds * 1000);
+  if (!Number.isSafeInteger(milliseconds)) {
+    throw new LoomTranscriptResponseError('Loom transcription timestamp is outside the supported range.');
+  }
+
+  const hours = Math.floor(milliseconds / 3_600_000);
+  const minutes = Math.floor((milliseconds % 3_600_000) / 60_000);
+  const wholeSeconds = Math.floor((milliseconds % 60_000) / 1000);
+  const remainder = milliseconds % 1000;
+  const clock = hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(wholeSeconds).padStart(2, '0')}`
+    : `${minutes}:${String(wholeSeconds).padStart(2, '0')}`;
+
+  return remainder === 0 ? clock : `${clock}.${String(remainder).padStart(3, '0')}`;
+}
+
+/**
+ * Validate and format the versioned response Loom currently serves.
+ *
+ * `ts` is Loom's seconds offset. Brackets distinguish the immutable start marker
+ * from phrase text without inventing an end time or speaker.
+ */
+export function parseLoomTranscription(value: unknown): string {
+  if (!isRecord(value)) {
+    throw new LoomTranscriptResponseError('Loom transcription response must be an object.');
+  }
+
+  if (value.schemaVersion !== LOOM_TRANSCRIPTION_SCHEMA) {
+    const received = typeof value.schemaVersion === 'string' ? value.schemaVersion : 'missing';
+    throw new LoomTranscriptResponseError(
+      `Unsupported Loom transcription schema: expected ${LOOM_TRANSCRIPTION_SCHEMA}, received ${received}.`
+    );
+  }
+
+  if (!Array.isArray(value.phrases)) {
+    throw new LoomTranscriptResponseError('Loom transcription schema 1.1.3 has no phrases array.');
+  }
+
+  const transcription: LoomTranscription = {
+    schemaVersion: value.schemaVersion,
+    phrases: value.phrases.map((phrase, index) => {
+      if (!isRecord(phrase)) {
+        throw new LoomTranscriptResponseError(`Loom transcription phrase ${index} must be an object.`);
+      }
+      if (typeof phrase.ts !== 'number' || !Number.isFinite(phrase.ts) || phrase.ts < 0) {
+        throw new LoomTranscriptResponseError(
+          `Loom transcription phrase ${index} has an invalid timestamp.`
+        );
+      }
+      if (typeof phrase.value !== 'string' || phrase.value.trim() === '') {
+        throw new LoomTranscriptResponseError(`Loom transcription phrase ${index} has invalid text.`);
+      }
+      if (!Array.isArray(phrase.ranges)) {
+        throw new LoomTranscriptResponseError(`Loom transcription phrase ${index} has no ranges array.`);
+      }
+
+      const ranges = phrase.ranges.map((range, rangeIndex): LoomTranscriptionRange => {
+        const source = isRecord(range) ? range.source : null;
+        if (
+          !isRecord(range) ||
+          typeof range.type !== 'string' ||
+          !Number.isSafeInteger(range.start) ||
+          (range.start as number) < 0 ||
+          !Number.isSafeInteger(range.length) ||
+          (range.length as number) < 0 ||
+          !isRecord(source) ||
+          !Number.isSafeInteger(source.monologue) ||
+          (source.monologue as number) < 0 ||
+          !Number.isSafeInteger(source.element) ||
+          (source.element as number) < 0 ||
+          typeof source.elementId !== 'string' ||
+          source.elementId.trim() === ''
+        ) {
+          throw new LoomTranscriptResponseError(
+            `Loom transcription phrase ${index} range ${rangeIndex} has an invalid shape.`
+          );
+        }
+
+        return {
+          type: range.type,
+          start: range.start as number,
+          length: range.length as number,
+          source: {
+            monologue: source.monologue as number,
+            element: source.element as number,
+            elementId: source.elementId,
+          },
+        };
+      });
+
+      return { ts: phrase.ts, value: phrase.value.trim(), ranges };
+    }),
+  };
+
+  return transcription.phrases
+    .map(({ ts, value: text }) => `[${formatLoomTimestamp(ts)}] ${text}`)
+    .join('\n');
+}
+
+function parseVttTimestamp(value: string): number | null {
+  const parts = value.split(':');
+  if (parts.length !== 2 && parts.length !== 3) return null;
+
+  const secondsPart = parts.at(-1)!;
+  const minutesPart = parts.at(-2)!;
+  const hoursPart = parts.length === 3 ? parts[0] : '0';
+  if (!/^\d{2}\.\d{3}$/.test(secondsPart) || !/^\d{2}$/.test(minutesPart)) return null;
+  if (parts.length === 3 && !/^\d{2,}$/.test(hoursPart)) return null;
+
+  const hours = Number(hoursPart);
+  const minutes = Number(minutesPart);
+  const seconds = Number(secondsPart);
+  if (seconds >= 60 || minutes >= 60) return null;
+
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+/** Validate WebVTT and retain each cue's provider-supplied timing and text. */
+export function parseLoomVtt(value: string): string {
+  const normalized = value.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const lines = normalized.split('\n');
+  if (!/^WEBVTT(?:[ \t].*)?$/.test(lines[0] ?? '')) {
+    throw new LoomTranscriptResponseError('Loom captions response is not valid WEBVTT.');
+  }
+
+  const cues: string[] = [];
+  let index = 1;
+  while (index < lines.length && lines[index].trim() !== '') index++;
+
+  while (index < lines.length) {
+    while (index < lines.length && lines[index].trim() === '') index++;
+    if (index >= lines.length) break;
+
+    if (/^(NOTE|STYLE|REGION)(?:[ \t]|$)/.test(lines[index])) {
+      while (index < lines.length && lines[index].trim() !== '') index++;
+      continue;
+    }
+
+    let timing = lines[index];
+    if (!timing.includes('-->')) {
+      index++;
+      timing = lines[index] ?? '';
+    }
+
+    const match = timing.match(
+      /^((?:\d{2,}:)?\d{2}:\d{2}\.\d{3})[ \t]+-->[ \t]+((?:\d{2,}:)?\d{2}:\d{2}\.\d{3})(?:[ \t]+.*)?$/
+    );
+    if (!match) {
+      throw new LoomTranscriptResponseError('Loom captions response contains an invalid cue timing.');
+    }
+
+    const start = parseVttTimestamp(match[1]);
+    const end = parseVttTimestamp(match[2]);
+    if (start === null || end === null || end <= start) {
+      throw new LoomTranscriptResponseError('Loom captions response contains an invalid cue duration.');
+    }
+
+    index++;
+    const cueText: string[] = [];
+    while (index < lines.length && lines[index].trim() !== '') {
+      cueText.push(lines[index]);
+      index++;
+    }
+    if (cueText.length === 0 || cueText.every((line) => line.trim() === '')) {
+      throw new LoomTranscriptResponseError('Loom captions response contains an empty cue.');
+    }
+    cues.push(`${match[1]} --> ${match[2]}\n${cueText.join('\n')}`);
+  }
+
+  if (cues.length === 0) {
+    throw new LoomTranscriptResponseError('The Loom recording has no transcript.');
+  }
+
+  return cues.join('\n\n');
+}
+
+type LoomResponseKind = 'json' | 'vtt';
+type CapturedLoomResponse = {
+  kind: LoomResponseKind;
+  body: Promise<string | null>;
+};
+type LoomNetworkResult =
+  | { kind: 'absent' }
+  | { kind: 'success'; transcript: string }
+  | { kind: 'failure'; error: string };
+
+function loomResponseKind(response: Response, videoId: string): LoomResponseKind | null {
+  if (response.status() < 200 || response.status() >= 300) return null;
+
+  const url = new URL(response.url());
+  if (url.protocol !== 'https:' || url.hostname !== 'cdn.loom.com') return null;
+
+  const contentType = response.headers()['content-type']?.toLowerCase() ?? '';
+  const transcriptionPath = `/mediametadata/transcription/${videoId}-1.json`;
+  const captionsPath = `/mediametadata/captions/${videoId}-1.vtt`;
+
+  if (url.pathname === transcriptionPath && contentType.includes('json')) {
+    return 'json';
+  }
+  if (url.pathname === captionsPath && contentType.includes('text/vtt')) return 'vtt';
+  return null;
+}
+
+function boundedResponseBody(response: Response): Promise<string | null> {
+  const declaredLength = Number(response.headers()['content-length']);
+  if (Number.isFinite(declaredLength) && declaredLength > LOOM_RESPONSE_MAX_BYTES) {
+    return Promise.resolve(null);
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    response.text().then(
+      (body) => Buffer.byteLength(body, 'utf8') <= LOOM_RESPONSE_MAX_BYTES ? body : null,
+      () => null
+    ),
+    new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), LOOM_RESPONSE_BODY_TIMEOUT);
+    }),
+  ]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
+class LoomResponseCollector {
+  private readonly captured: CapturedLoomResponse[] = [];
+  private frozen = false;
+  private overflowed = false;
+  private settled: Promise<Array<CapturedLoomResponse & { text: string | null }>> | null = null;
+  private readonly listener = (response: Response) => {
+    if (this.frozen) return;
+    const kind = loomResponseKind(response, this.videoId);
+    if (!kind) return;
+    if (this.captured.length >= LOOM_RESPONSE_LIMIT) {
+      this.overflowed = true;
+      return;
+    }
+    this.captured.push({ kind, body: boundedResponseBody(response) });
+  };
+
+  constructor(private readonly page: Page, private readonly videoId: string) {
+    page.on('response', this.listener);
+  }
+
+  freeze(): void {
+    if (this.frozen) return;
+    this.frozen = true;
+    this.page.off('response', this.listener);
+  }
+
+  async settle(): Promise<Array<CapturedLoomResponse & { text: string | null }>> {
+    this.freeze();
+    this.settled ??= Promise.all(
+      this.captured.map(async (response) => ({ ...response, text: await response.body }))
+    );
+    return await this.settled;
+  }
+
+  async resolve(): Promise<LoomNetworkResult> {
+    const captured = await this.settle();
+    if (this.overflowed) {
+      return { kind: 'failure', error: 'Too many Loom transcript responses were observed.' };
+    }
+
+    for (const response of captured.filter(({ kind }) => kind === 'json')) {
+      if (response.text === null) continue;
+      try {
+        let decoded: unknown;
+        try {
+          decoded = JSON.parse(response.text);
+        } catch {
+          throw new LoomTranscriptResponseError('Loom transcription response is not valid JSON.');
+        }
+        const transcript = parseLoomTranscription(decoded);
+        if (transcript === '') {
+          return { kind: 'failure', error: 'The Loom recording has no transcript.' };
+        }
+        return { kind: 'success', transcript };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid Loom transcription response.';
+        return { kind: 'failure', error: message };
+      }
+    }
+
+    for (const response of captured.filter(({ kind }) => kind === 'vtt')) {
+      if (response.text === null) continue;
+      try {
+        return { kind: 'success', transcript: parseLoomVtt(response.text) };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid Loom captions response.';
+        return { kind: 'failure', error: message };
+      }
+    }
+
+    return { kind: 'absent' };
+  }
+}
+
 export async function extractLoomTranscript(videoId: string): Promise<{ success: boolean; transcript?: string; error?: string }> {
   let browser: Browser | null = null;
+  let responseCollector: LoomResponseCollector | null = null;
   
   try {
     const url = `https://www.loom.com/share/${videoId}`;
-    console.log(`[Loom] Starting Playwright extraction from: ${url}`);
+    console.log('[Loom] Starting Playwright extraction');
     
     browser = await launchBrowser();
     const context = await createContext(browser);
     const page = await context.newPage();
+    responseCollector = new LoomResponseCollector(page, videoId);
     
     console.log('[Loom] Navigating to URL...');
     await page.goto(url, { waitUntil: 'networkidle', timeout: BROWSER_TIMEOUT });
+    responseCollector.freeze();
     console.log('[Loom] Page loaded');
+
+    const networkTranscript = await responseCollector.resolve();
+    if (networkTranscript.kind === 'success') {
+      console.log(`[Loom] Transcript extracted from a network response (${networkTranscript.transcript.length} chars)`);
+      return { success: true, transcript: networkTranscript.transcript };
+    }
+    if (networkTranscript.kind === 'failure') {
+      return { success: false, error: networkTranscript.error };
+    }
     
     const urlObj = new URL(url);
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], { 
@@ -341,9 +696,13 @@ export async function extractLoomTranscript(videoId: string): Promise<{ success:
     };
     
   } catch (error: any) {
-    console.error('[Loom] Extraction failed:', error.message);
-    return { success: false, error: `Failed to extract Loom transcript: ${error.message}` };
+    const safeMessage = String(error?.message ?? error).replace(/https?:\/\/\S+/g, '[redacted URL]');
+    console.error('[Loom] Extraction failed:', safeMessage);
+    return { success: false, error: `Failed to extract Loom transcript: ${safeMessage}` };
   } finally {
+    if (responseCollector) {
+      await responseCollector.settle();
+    }
     if (browser) {
       await browser.close();
     }

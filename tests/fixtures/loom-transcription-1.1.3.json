@@ -1,0 +1,37 @@
+{
+  "phrases": [
+    {
+      "ts": 1.42,
+      "value": "Neutral opening phrase.",
+      "ranges": [
+        {
+          "type": "text",
+          "start": 0,
+          "length": 23,
+          "source": {
+            "monologue": 0,
+            "element": 0,
+            "elementId": "sanitized-element-001"
+          }
+        }
+      ]
+    },
+    {
+      "ts": 65.005,
+      "value": "Neutral follow-up phrase.",
+      "ranges": [
+        {
+          "type": "text",
+          "start": 0,
+          "length": 25,
+          "source": {
+            "monologue": 1,
+            "element": 0,
+            "elementId": "sanitized-element-002"
+          }
+        }
+      ]
+    }
+  ],
+  "schemaVersion": "1.1.3"
+}
