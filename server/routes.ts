@@ -40,7 +40,7 @@ import {
   retryTranscript,
 } from "./transcripts";
 import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail, sendReminderDueEmail, sendDailyUpdateReminderEmail } from "./email";
-import { extractTextFromFile, isSupportedForExtraction, isVideoFile } from "./contentExtraction";
+import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
 import { logTimeEvent, logError, logStaleSession, logInfo } from "./logger";
 import { isTasksEnabled } from "./migrationFlags";
 import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
@@ -920,10 +920,24 @@ export async function registerRoutes(
         }
       }
       
+      // Company documents too, and company-wide rather than per user: they are
+      // one shared library, and the uploaded half of it is the only text in the
+      // system produced by a parser rather than typed. That makes this the
+      // repair path for a parser change (#43), and until now it rebuilt project
+      // documents only while the imported company-side rebuild was never called.
+      const companyResults = await rebuildAllCompanyDocumentEmbeddings();
+      for (const error of companyResults.errors) {
+        console.error("Error rebuilding company document embeddings:", error);
+      }
+
       res.json({
         message: "Embeddings rebuild complete",
         ...results,
-        total: allDocuments.length
+        total: allDocuments.length,
+        companyDocuments: {
+          processed: companyResults.processed,
+          errors: companyResults.errors.length,
+        },
       });
     } catch (error: any) {
       console.error("Error rebuilding embeddings:", error);
@@ -2397,42 +2411,14 @@ Instructions:
             : null;
           const folderName = folder?.name || "Root";
           
-          let textContent: string | null = null;
-          
-          // For text documents with TipTap content
-          if (parsed.data.content) {
-            textContent = JSON.stringify(parsed.data.content);
-          }
-          // For uploaded files, extract text content
-          else if (parsed.data.storagePath && parsed.data.mimeType && parsed.data.fileName) {
-            if (isSupportedForExtraction(parsed.data.mimeType, parsed.data.fileName)) {
-              console.log(`[Embeddings] Extracting text from uploaded file: ${parsed.data.fileName}`);
-              const extraction = await extractTextFromFile(
-                parsed.data.storagePath,
-                parsed.data.mimeType,
-                parsed.data.fileName
-              );
-              
-              if (extraction.success && extraction.text) {
-                textContent = extraction.text;
-                console.log(`[Embeddings] Extracted ${textContent.length} characters from ${parsed.data.fileName}`);
-              } else if (extraction.error) {
-                console.log(`[Embeddings] Extraction warning for ${parsed.data.fileName}: ${extraction.error}`);
-              }
-            } else if (isVideoFile(parsed.data.mimeType, parsed.data.fileName)) {
-              console.log(`[Embeddings] Video file detected: ${parsed.data.fileName} - transcript extraction not yet implemented for direct uploads`);
-            } else {
-              console.log(`[Embeddings] Unsupported file type for extraction: ${parsed.data.mimeType}`);
-            }
-          }
-          
-          // Generate embeddings if we have content
-          if (textContent) {
+          const embeddingContent = await companyDocumentEmbeddingContent(document);
+
+          if (embeddingContent) {
             await updateCompanyDocumentEmbeddings(
               document.id,
               parsed.data.folderId || null,
               parsed.data.name,
-              { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: textContent }] }] },
+              embeddingContent,
               folderName,
               parsed.data.mimeType
             );
@@ -2472,20 +2458,28 @@ Instructions:
         return res.status(404).json({ message: "Document not found" });
       }
       
-      // Update embeddings when content changes
+      // Both edits reach the index: the title is part of every chunk's text, so
+      // a rename re-shapes what the document is searched by just as an edit does.
       if (parsed.data.content || parsed.data.name) {
         try {
-          const folder = document.folderId 
+          const folder = document.folderId
             ? await storage.getCompanyDocumentFolder(document.folderId)
             : null;
-          await updateCompanyDocumentEmbeddings(
-            document.id,
-            document.folderId || null,
-            document.name,
-            document.content,
-            folder?.name || "Root",
-            document.mimeType || undefined
-          );
+          // Re-extracted from storage for an uploaded file, whose text was never
+          // in `content`. A null answer leaves the existing chunks alone — it
+          // used to reach `updateCompanyDocumentEmbeddings` as empty content and
+          // replace them with an "(Empty page)" placeholder (#43).
+          const embeddingContent = await companyDocumentEmbeddingContent(document);
+          if (embeddingContent) {
+            await updateCompanyDocumentEmbeddings(
+              document.id,
+              document.folderId || null,
+              document.name,
+              embeddingContent,
+              folder?.name || "Root",
+              document.mimeType || undefined
+            );
+          }
         } catch (embeddingError) {
           console.error("Failed to update company document embeddings:", embeddingError);
         }
