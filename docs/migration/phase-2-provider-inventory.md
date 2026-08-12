@@ -2,7 +2,7 @@
 
 - **Recorded:** 2026-08-12
 - **Revision:** [`ac3dfb02b44549e2414aab7ba971bed2ed52dbe9`](https://github.com/Lamakira/docuflow/commit/ac3dfb02b44549e2414aab7ba971bed2ed52dbe9) (`main`)
-- **Status:** **No account is provisioned for this environment.** Every account below is **Not provisioned** and every identifier cell is empty. Of the two ADR-0021 procurement gates, the **PITR gate is Answered** and the **Clerk gate is Unanswered**. This document is the register that [#52](https://github.com/Lamakira/docuflow/issues/52) fills; it is not evidence that #52 has been done.
+- **Status:** **No account is provisioned for this environment.** Every account below is **Not provisioned** and every identifier cell is empty. Both ADR-0021 procurement gates are closed: the **PITR gate is Answered** from the provider's documentation, and the **Clerk gate is Resolved by decision** — DocuFlow owns its own Clerk account and the managed tenant is not adopted. This document is the register that [#52](https://github.com/Lamakira/docuflow/issues/52) fills; it is not evidence that #52 has been done.
 - **Known before provisioning:** the organization already holds a **Replit Pro** subscription. Per ADR-0021 the parallel environment is a **separate project**, not a separate account, so that subscription is the one it runs on — see [The existing subscription](#the-existing-subscription).
 
 ## Authority and scope
@@ -32,6 +32,7 @@ Three tiers, and the middle one is the one that gets people:
 - **Provisioned** — the account exists, someone has signed into its dashboard, and the row below was filled from what that dashboard shows.
 - **Not provisioned** — no account exists yet, or one exists and nobody has read its identifiers off the dashboard. These are the same status on purpose: an unread account cannot be named by a downstream ticket.
 - **Answered** / **Unanswered** — for the two gates only. An answer is a statement from the provider or an observation from its dashboard, recorded with its date and where it came from. An expectation is not an answer.
+- **Resolved by decision** — a gate closed by choosing a path that makes its question unnecessary, rather than by obtaining an answer. It is not a weaker **Answered** and must never be cited as evidence about the question it left unasked.
 
 No row may be filled from what a plan is assumed to include. Fill it from the dashboard.
 
@@ -49,6 +50,7 @@ Two kinds of value appear in the table below and they must not be confused. A ce
 | **AWS** (standalone) | The Object-Locked evidence copy, and nothing else | **Not provisioned** | — | **Required:** **Frankfurt** (ADR-0016), set at bucket creation in [#57](https://github.com/Lamakira/docuflow/issues/57) | — | — | — |
 | **Better Stack** | Logs, metrics, uptime, heartbeats, on-call, status page | **Not provisioned** | — | **Required:** the **EU region** | — | — | — |
 | **Sentry** | Web and desktop error tracking | **Not provisioned** | — | **Required:** the **Germany region** | — | — | — |
+| **Clerk** (DocuFlow-owned) | The managed identity provider behind ADR-0007's `IdentityProvider` seam | **Not provisioned** — registered here, bought in Phase 5 | — | Not settled. See [the Clerk gate](#gate-clerk-tenant-ownership) — every other row is EU-pinned and this one is not, per ADR-0007 | — | — | — |
 
 Region and jurisdiction are chosen at creation on several of these and cannot be moved afterwards — the Replit publishing geography, the R2 jurisdiction, the AWS bucket region, the Better Stack region, and the Sentry region are all one-way doors.
 
@@ -118,6 +120,7 @@ The table covers variables a provisioned provider's credential or address occupi
 | `APP_URL` | `[env]` | The environment's own hostname | [#53](https://github.com/Lamakira/docuflow/issues/53), [#58](https://github.com/Lamakira/docuflow/issues/58) |
 | `MCP_API_KEY`, `DESKTOP_RELEASE_CI_TOKEN` | Secret | None — issued by us | Read per request, so rotating either needs no restart. `DESKTOP_RELEASE_CI_TOKEN` is **not** server-only: the release scripts and `server/downloadRoutes.ts` read it too, and the workflow that presents it is the unresolved ADR-0018 conflict in [#60](https://github.com/Lamakira/docuflow/issues/60) |
 | `REPL_ID`, `ISSUER_URL`, `REPLIT_DOMAINS`, `REPLIT_DEV_DOMAIN` | Set by the Replit runtime, never by hand | Replit | Leave with the OIDC login in Phase 5. `REPL_ID` is also read by [`vite.config.ts`](../../vite.config.ts), so removing it in Phase 5 touches the build and not only the login |
+| The Clerk credentials | Secret | Clerk | **Phase 5**, not a Phase 2 ticket — **names not yet fixed**. They replace the Replit OIDC row above, which `server/config.ts` marks for deletion in the same phase |
 
 Two names in that table are deliberately blank, and neither is an oversight:
 
@@ -144,7 +147,7 @@ Neither database is bought here. Both arrive with Replit: **production is Neon**
 
 ## The two ADR-0021 procurement gates
 
-ADR-0021 leaves three questions gating execution. Two are procurement questions that #52 owns. The PITR gate is now **Answered** from Replit's own documentation; the Clerk gate is still **Unanswered** and needs a person to ask it. The third — whether one Replit project can run an HTTP deployment and a Reserved VM worker deployment simultaneously — is a deployment-topology question owned by [#53](https://github.com/Lamakira/docuflow/issues/53), and is named here only so that a reader counting gates finds all three.
+ADR-0021 leaves three questions gating execution. Two are procurement questions that #52 owns. Both are now closed, by different means: the PITR gate is **Answered** from Replit's own documentation, and the Clerk gate is **Resolved by decision** without its question being put. The third — whether one Replit project can run an HTTP deployment and a Reserved VM worker deployment simultaneously — is a deployment-topology question owned by [#53](https://github.com/Lamakira/docuflow/issues/53), and is named here only so that a reader counting gates finds all three.
 
 ### Gate: point-in-time restore on the Replit production database
 
@@ -165,14 +168,26 @@ ADR-0021 leaves three questions gating execution. Two are procurement questions 
 
 ### Gate: Clerk tenant ownership
 
-**Status: Unanswered.** **Escalate; do not default.**
+**Status: Resolved by decision — 2026-08-12. Not answered.** The distinction matters and is not pedantry: nobody asked Replit or Clerk anything. The decision below makes the question unnecessary, so this gate closes without an answer ever being obtained, and no later reader should cite it as evidence that an export path does or does not exist.
 
 | | |
 | --- | --- |
-| **The question** | Can users be exported from the Replit-managed Clerk tenant, by any documented path? |
-| **What is documented today** | The managed tenant is not reachable from the Clerk dashboard — it is administered from Replit's Auth tool — and no export path for its users is documented. |
-| **How to answer it** | Ask Replit and Clerk both. An export path that exists only as an undocumented API call is worth recording as exactly that, because its availability is then someone's discretion rather than a contract. |
-| **The decision it forces** | Per ADR-0021: Phase 5 adopts the managed tenant **only if** an export path is confirmed. Otherwise a **DocuFlow-owned Clerk account** is provisioned instead. |
+| **The question ADR-0021 posed** | Can users be exported from the Replit-managed Clerk tenant, by any documented path? |
+| **What is documented** | The managed tenant is not reachable from the Clerk dashboard — it is administered from Replit's Auth tool — and no export path for its users is documented. This is unchanged; it was never investigated further. |
+| **The decision** | **DocuFlow provisions and owns its own Clerk account.** The Replit-managed tenant is not adopted. This is the second of the two branches ADR-0021 provided for, taken deliberately rather than by default. |
+| **Why the question is now moot** | ADR-0021 makes the export path a precondition for adopting the managed tenant. We do not adopt it, so there is no precondition left to satisfy. Asking would cost effort and change nothing. |
+
+**What this buys.** ADR-0007 puts Clerk behind an `IdentityProvider` seam precisely so identity stays replaceable, and keeps DocuFlow authoritative for User linkage, Workspaces, Memberships, Workspace Roles, Capabilities, Service Accounts, Devices, and every authorization decision. A tenant we cannot export from would have made that seam a one-way door: we would own all the authorization logic and still be unable to move, because the immovable part is the credential set the User rows link to. Owning the tenant keeps the seam walkable.
+
+It also protects ADR-0021 itself. That decision's case for staying on Replit is that Phase 1's work "turns Replit from a platform the product depends on into one host among several" and "is what makes this decision cheap to undo." A Replit-managed identity tenant would have made Replit the custodian of the user table and reversed exactly that property — in the one component that gates every request, and the one data plane ADR-0018's export-import-verify rehearsal could not have exercised.
+
+**What this costs, stated plainly.** A second bill and more setup work in Phase 5: Clerk gets wired directly instead of enabling Replit Auth. That cost is known, small, and priceable, which is the whole reason it wins against an exit cost that could not be priced at all.
+
+**Three consequences to carry forward:**
+
+- **Phase 5 owns the purchase, #52 owns the registration.** The account is registered in the inventory now so Phase 5 does not discover it, and bought when Phase 5 needs it rather than billed idle from Phase 2.
+- **[#58](https://github.com/Lamakira/docuflow/issues/58) does not list Clerk.** Its spend-alert providers are Replit, Cloudflare/R2, AWS, Better Stack, Sentry, OpenAI, and Azure Speech. This decision creates a Clerk bill that no alert currently covers.
+- **Identity residency is now the odd one out and is not settled here.** Every other provider in this inventory is EU-pinned — Replit EU, R2 `eu`, AWS Frankfurt, Better Stack EU, Sentry Germany. ADR-0007 chose Clerk "once EU-first identity residency was no longer the launch assumption" and states that "an explicit EU-residency or enterprise-procurement requirement triggers reassessment." Owning the account is what makes that reassessment possible; it does not perform it. Record the region chosen at signup and raise it against ADR-0007 rather than letting a signup default decide it.
 
 The reason ADR-0021 calls this an escalation rather than a default is worth restating, because the cheap path is the one that looks free: a tenant we cannot export from converts ADR-0007's replaceable identity seam into a dependency whose exit cost is unknown. Unknown, not high — the cost cannot be estimated at all, which is what makes it unfit for a default. Phase 5 is far enough away that the answer can be waited on; it is not far enough away that the question can be forgotten, which is why it is registered here rather than there.
 
@@ -190,7 +205,7 @@ If the answer forces a DocuFlow-owned Clerk account, that account gets a row in 
 The acceptance criterion that **zero secret values reach the repository** is verified by inspection of the diff, and a reviewer should read every added line rather than trust a pattern. A pattern scan is a floor and not a substitute — and it carries no pathspec on purpose, because the files most likely to receive a secret by accident are `.replit` and `.env.example`, not the documentation:
 
 ```bash
-git diff origin/main... | grep -nEi 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|postgres(ql)?://[^ ]*:[^ @]*@|Authorization:[[:space:]]*(Bearer|Basic)|(sk|rk|pk)-[A-Za-z0-9_-]{16,}|[?&](X-Amz-Signature|Signature|Policy|Key-Pair-Id)='
+git diff origin/main... | grep -nE 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|postgres(ql)?://[^ ]*:[^ @]*@|Authorization:[[:space:]]*(Bearer|Basic)|\b(sk|rk|pk)[_-](live|test|proj)?[_-]?[A-Za-z0-9]{16,}|[?&](X-Amz-Signature|Signature|Policy|Key-Pair-Id)='
 ```
 
 ## What downstream tickets need from this document
