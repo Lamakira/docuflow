@@ -418,13 +418,27 @@ Do not proceed before explicit approval. After approval:
 3. Convert the approved design and domain decisions into an implementation specification.
 4. Implement through the feature-flagged parallel v2 layer recorded in ADR-0003.
 
+## Decided since this handoff was written
+
+These were open when this document was drafted and are now settled by ADR. Treat them as product truth, not placeholders. They bind the second batch — authentication, Trial onboarding, Workspace selection, and billing — more than they bind the anchor batch, but the anchor batch must not contradict them.
+
+**Authentication is Clerk** (ADR-0007). Clerk owns credentials, authentication flows, MFA, and session rotation. DocuFlow stays authoritative for Users, Workspaces, Memberships, Workspace Roles, Capabilities, Service Accounts, Devices, and every authorization decision. Design the seam honestly: the credential moment belongs to the provider, everything after it — Workspace selection, membership state, what this Member may see — belongs to DocuFlow. Do not draw a DocuFlow-branded password field as though DocuFlow stored the password.
+
+**Billing is Stripe with DocuFlow as merchant** (ADR-0010), Stripe Tax enabled. The boundary is fixed: checkout and payment-method capture live on hosted Stripe surfaces; plan changes and seat changes live only in DocuFlow's own UI. Never design a DocuFlow-native card form.
+
+**Trials carry no card and create no Stripe objects.** A Trial is a DocuFlow state, not a Stripe subscription. The start-Trial path therefore has no payment step to design.
+
+**Trial expiry, cancellation, and failed dunning all end in a Read-only Workspace** — viewing, export, and recovery preserved. Data is never held hostage. Dunning retains full access until the terminal outcome, so "past due" is not a degraded interface. Read-only is a centrally enforced entitlement outcome, so its treatment must read as a Workspace-wide condition rather than a per-button disabled state.
+
+**Seats are purchased capacity, and only accepted active Memberships consume one** (ADR-0010). Pending Invitations and Archived Memberships cost nothing. Seat increases apply immediately with proration; decreases apply at period end, floored at active consumption. People and Invitation screens should make the free states legible, or owners will assume they are being billed for invitations.
+
+**Entitlements come from a DocuFlow-owned versioned Plan Registry**, not from Stripe. Plan and entitlement values are still open; the fact that DocuFlow owns them is not.
+
 ## Deliberately open, non-blocking decisions
 
 Do not invent answers for:
 
 - final Plan names, prices, limits, or Trial duration;
-- billing provider;
-- authentication provider;
 - production domain;
 - dark-theme tokens;
 - guest/client portals;
