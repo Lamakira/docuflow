@@ -2,7 +2,8 @@
 
 - **Recorded:** 2026-08-12
 - **Revision:** [`ac3dfb02b44549e2414aab7ba971bed2ed52dbe9`](https://github.com/Lamakira/docuflow/commit/ac3dfb02b44549e2414aab7ba971bed2ed52dbe9) (`main`)
-- **Status:** **Nothing is provisioned.** Every account below is **Not provisioned**, every identifier cell is empty, and both ADR-0021 procurement gates are **Unanswered**. This document is the register that [#52](https://github.com/Lamakira/docuflow/issues/52) fills; it is not evidence that #52 has been done.
+- **Status:** **No account is provisioned for this environment.** Every account below is **Not provisioned** and every identifier cell is empty. Of the two ADR-0021 procurement gates, the **PITR gate is Answered** and the **Clerk gate is Unanswered**. This document is the register that [#52](https://github.com/Lamakira/docuflow/issues/52) fills; it is not evidence that #52 has been done.
+- **Known before provisioning:** the organization already holds a **Replit Pro** subscription. Per ADR-0021 the parallel environment is a **separate project**, not a separate account, so that subscription is the one it runs on — see [The existing subscription](#the-existing-subscription).
 
 ## Authority and scope
 
@@ -40,9 +41,9 @@ Two kinds of value appear in the table below and they must not be confused. A ce
 
 | Provider | Purpose | Status | Account identifier | Region / jurisdiction | Plan | Login held by | Spend-alert contact |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **Replit** (parallel project) | The compute plane; holds every other provider's secret | **Not provisioned** | — | **Required:** publish to **Europe (EU)**. Development runs in North America regardless | **Required:** **Core or above**, before the first publish, because Free publishes to North America | — | — |
-| **Neon** (production database) | The authoritative PostgreSQL 16 | **Not provisioned** | — | Colocated with the published Replit geography (ADR-0021) — confirm on the dashboard | Arrives with the Replit project; not bought separately | — | Billed through Replit |
-| **Replit Helium Postgres** (development database) | The development-environment database | **Not provisioned** | — | **North America** (ADR-0021) — confirm | Arrives with the Replit project | — | Billed through Replit |
+| **Replit** (parallel project) | The compute plane; holds every other provider's secret | **Not provisioned** | — | **Required:** publish to **Europe (EU)**. Development runs in North America regardless | **Pro**, already held — Replit lists geography selection on Core, Pro, and Enterprise. See [The existing subscription](#the-existing-subscription) | — | — |
+| **Neon** (production database) | The authoritative PostgreSQL 16 | **Not provisioned** | — | Colocated with the published Replit geography (ADR-0021) — confirm on the dashboard | Arrives with the Replit project; not bought separately. **Created automatically at the first publish** ([#53](https://github.com/Lamakira/docuflow/issues/53)), so these cells cannot be filled before then | — | Billed through Replit |
+| **Replit Helium Postgres** (development database) | The development-environment database | **Not provisioned** | — | **North America** (ADR-0021) — confirm | Arrives with the Replit project, free with every Replit App | — | Billed through Replit |
 | **Cloudflare** | DNS zone for the environment's own hostname; CDN, WAF, and edge rate limits in [#58](https://github.com/Lamakira/docuflow/issues/58) | **Not provisioned** | — | — | — | — | — |
 | **Cloudflare R2** | Files, screenshots, Derived Artifacts, installers | **Not provisioned** | — | **Required:** the **`eu` jurisdiction**, set at bucket creation | — | — | — |
 | **AWS** (standalone) | The Object-Locked evidence copy, and nothing else | **Not provisioned** | — | **Required:** **Frankfurt** (ADR-0016), set at bucket creation in [#57](https://github.com/Lamakira/docuflow/issues/57) | — | — | — |
@@ -58,6 +59,23 @@ Whether the Replit project hosts **both** runtimes is not settled here. ADR-0021
 Two spend signals are recorded now so [#58](https://github.com/Lamakira/docuflow/issues/58) has somewhere to attach a threshold: **R2 stored-bytes growth** is watched as its own signal, and **Replit bills in two shapes** — the subscription plus deployment pricing, where a Reserved VM bills a fixed monthly amount whether or not it is busy while Autoscale bills per request. The always-on worker is therefore a standing cost, not a variable one.
 
 The AWS account is standalone on purpose. It exists so that the evidence copy survives the compromise or loss of every other account in this table, which it does not do if it shares an organization, a payer, or an identity provider with them.
+
+### The existing subscription
+
+The organization already holds a **Replit Pro** subscription. Three things follow, and the first is the one that saves money rather than spending it.
+
+**No second Replit subscription is needed.** ADR-0021 defines this environment's isolation as "two separate Replit **projects** with disjoint secrets" — projects, not accounts. The parallel project therefore lives in the subscription already paid for. ADR-0018's older "fresh accounts" wording is superseded on this provider and on this provider only; every other row in the table above is still a genuinely new account.
+
+**Pro satisfies the geography requirement.** Replit documents publishing-geography selection as available on **Core, Pro, and Enterprise**, with Free publishing to North America by default. #52 and ADR-0021 both write the requirement as "Core or above", and Pro is above it. The constraint is met by what is already owned. Confirm the plan on the account **before** the first publish anyway: the geography is permanent, and a plan that lapsed to Free would publish to North America silently.
+
+**Pro also sets the PITR retention at 28 days** rather than Core's 7 — see [the PITR gate](#gate-point-in-time-restore-on-the-replit-production-database).
+
+Sharing one account carries two costs, and naming them is cheaper than discovering them:
+
+- **One payer, one bill.** [#58](https://github.com/Lamakira/docuflow/issues/58) wants a per-provider spend alert at 80% of budget, but the Replit alert cannot separate this environment's deployment spend from production's — they are the same subscription. The worker's Reserved VM is a fixed monthly charge that will land on the production bill. #58 should either split the cost by deployment in the Replit usage view or record that the Replit figure is a combined one.
+- **One login opens both projects.** Replit Secrets are scoped per project and per environment, so the *values* stay disjoint; but whoever can sign into the account can open either project's Secrets pane. This is project isolation, not account isolation, and ADR-0021 accepted it deliberately when it chose two projects over two accounts.
+
+Neither cost weakens what #52's acceptance actually asks for: no secret value shared between the projects, no production URL or data-plane connection in the parallel project, and no migration work done inside the production project.
 
 ### Accounts this environment needs that #52's scope list does not name
 
@@ -110,7 +128,11 @@ One requirement here is easy to miss and blocks the first telemetry export rathe
 
 ## Databases: one dialect, two operators
 
-Neither database is bought here. Both arrive with the Replit project: **production is Neon**, **development is Replit's own Helium Postgres**. They are the same PostgreSQL 16 dialect and not the same operator, and three consequences follow.
+Neither database is bought here. Both arrive with Replit: **production is Neon**, **development is Replit's own Helium Postgres**, which is included free with every Replit App. They are the same PostgreSQL 16 dialect and not the same operator, and several consequences follow.
+
+**The production database does not exist until the first publish.** Replit creates it automatically during publishing for an app whose development database is Helium. So the Neon row above cannot be filled by #52 at all — it is filled after [#53](https://github.com/Lamakira/docuflow/issues/53) publishes. An empty Neon row is a sequencing fact, not an unfinished one.
+
+**The operator is readable from the connection hostname.** Replit documents the test: open the Database tool, check `DATABASE_URL`, and a host containing `neon.tech` is Neon while one containing `helium` is Helium. Read it to settle which operator an environment is on; record **only the operator name** here. `DATABASE_URL` carries credentials and never enters this repository.
 
 **The migration journal is the single authority over schema in both.** Not Agent-applied schema changes propagated at publish; #53 turns that path off. Expand/contract discipline and the never-a-down-migration rule are load-bearing rather than merely prudent under ADR-0021, because a published app is rolled back by reverting the project to an earlier checkpoint and publishing again, not by redeploying a prior image.
 
@@ -118,24 +140,28 @@ Neither database is bought here. Both arrive with the Replit project: **producti
 
 **No restored production snapshot may be loaded into the development database.** Replit development environments run in North America regardless of publishing geography, which makes ADR-0018's snapshot rehearsal a data-residency question and not only an isolation one. Rehearsal runs against a database in the published EU environment. The same binding applies to the object half of the snapshot pair under ADR-0022: the R2 bucket carries the `eu` jurisdiction, and no copy of it may be loaded into a Replit development environment either.
 
-**We may not hold a Neon login at all.** A Replit-provisioned database is administered from Replit. If there is no Neon dashboard to sign into, the "Login held by" cell for Neon is honestly empty, and the PITR gate below becomes unanswerable by inspection — it has to be asked of Replit. Record which of the two situations is true, because it is the same shape of problem as the Clerk gate: a managed dependency whose controls we can neither see nor export from.
+**We may not hold a Neon login at all.** A Replit-provisioned database is administered from Replit. If there is no Neon dashboard to sign into, the "Login held by" cell for Neon is honestly empty. Record which of the two situations is true. Unlike the Clerk gate, this one is no longer blocking: restore is driven from Replit's own Database pane, so the recovery control is reachable without a Neon login. What a missing Neon login would still cost is direct visibility into the operator underneath — worth recording, not worth stopping for.
 
 ## The two ADR-0021 procurement gates
 
-ADR-0021 leaves three questions gating execution. Two are procurement questions that #52 owns; both are recorded below and both are still **Unanswered**, which is the status this document ships in. The third — whether one Replit project can run an HTTP deployment and a Reserved VM worker deployment simultaneously — is a deployment-topology question owned by [#53](https://github.com/Lamakira/docuflow/issues/53), and is named here only so that a reader counting gates finds all three.
+ADR-0021 leaves three questions gating execution. Two are procurement questions that #52 owns. The PITR gate is now **Answered** from Replit's own documentation; the Clerk gate is still **Unanswered** and needs a person to ask it. The third — whether one Replit project can run an HTTP deployment and a Reserved VM worker deployment simultaneously — is a deployment-topology question owned by [#53](https://github.com/Lamakira/docuflow/issues/53), and is named here only so that a reader counting gates finds all three.
 
 ### Gate: point-in-time restore on the Replit production database
 
-**Status: Unanswered.**
+**Status: Answered — 2026-08-12, from Replit's published documentation.**
 
 | | |
 | --- | --- |
 | **The question** | Does the Replit-provisioned production database support point-in-time restore, and at what retention window? |
-| **What is documented today** | No PITR. Only a seven-day soft-delete window on **deleted** databases, which is recovery from deletion and not recovery to a point in time. |
-| **How to answer it** | Ask Replit directly — this cannot be settled by reading the dashboard, because an absent control is indistinguishable from an undocumented one. Record the answer, its date, and who gave it. |
-| **What to record either way** | The answer, verbatim in substance, with its retention figure if there is one. A "no" is as much of a result as a "yes" and closes the gate identically. |
+| **The answer** | **Yes.** Replit documents point-in-time restore for **production** databases, with a **7-day window on Core** and **28 days on Pro**. The restore is driven from the Database pane: select the database, open restore settings, choose a timestamp, confirm. Restores outside the window go through Replit Support. |
+| **Source** | Replit's publishing and billing documentation (`docs.replit.com`, `references/data-and-storage/sql-database` and `billing/plans/replit-pro`), read 2026-08-12. This is a provider statement, not a dashboard observation. |
+| **What still needs confirming** | The window is retention, not granularity. "Any point within the last 28 days" is continuous restore in shape, but no document states the recovery *granularity* in minutes. Confirm that figure before ADR-0016's five-minute RPO is treated as met. |
 
-**Until it is answered, ADR-0016's five-minute RPO is unevidenced on this platform.** The real recovery point is set by the nightly logical exports to the AWS evidence account under [#57](https://github.com/Lamakira/docuflow/issues/57), which the exposed `DATABASE_URL` does permit — so the honest RPO today is one night, not five minutes, and any document that repeats the five-minute figure before this gate closes is repeating an assumption. If the answer is "no PITR", that is not a blocker for Phase 2; it is a correction that ADR-0016's recovery targets need, and it should be raised as one.
+**This corrects the position ADR-0021 recorded.** ADR-0021 states that PITR "is not documented for the Replit production database — only a seven-day soft-delete window for deleted databases — so ADR-0016's RPO of five minutes is unevidenced on this platform." The seven-day figure is real but attaches to the wrong control: it is the **Core** plan's PITR retention, and the soft-delete window is a separate mechanism. ADR-0021's gate text needs an amendment line; this document does not amend an ADR.
+
+**The retention we get is 28 days, because the subscription is Pro.** That is materially better than the ADR assumed, and it changes what #57 is for. The nightly logical exports to the AWS evidence account are no longer the *only* recovery point — they remain required, for a different reason: ADR-0015 wants an immutable evidence copy in an account that survives the loss of the Replit account, and a restore control inside the platform being restored is not that.
+
+**PITR covers production only.** The Helium **development** database is not on this control. Replit documents it with a rollback-to-checkpoint feature instead, which is not a point in time and not equivalent. Nothing in ADR-0018's rehearsal path may assume otherwise.
 
 ### Gate: Clerk tenant ownership
 
@@ -175,7 +201,7 @@ git diff origin/main... | grep -nEi 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|postg
 | [#54](https://github.com/Lamakira/docuflow/issues/54) | The project the CD path deploys to, and the database its pre-deploy migration gate runs against |
 | [#55](https://github.com/Lamakira/docuflow/issues/55) | The Better Stack (EU) and Sentry (Germany) accounts, and their ingest configuration |
 | [#56](https://github.com/Lamakira/docuflow/issues/56) | The Replit project whose Secrets hold the signing key across a restart |
-| [#57](https://github.com/Lamakira/docuflow/issues/57) | The standalone AWS account, and — through the PITR gate above — the reason the nightly exports carry the real recovery point |
+| [#57](https://github.com/Lamakira/docuflow/issues/57) | The standalone AWS account. Note the PITR gate's answer: the nightly exports are **not** the platform's recovery control, so #57's justification is ADR-0015's immutable evidence copy in an account that outlives the Replit one |
 | [#58](https://github.com/Lamakira/docuflow/issues/58) | Every provisioned provider and its registered alert contact, so a threshold has a recipient |
 | [#59](https://github.com/Lamakira/docuflow/issues/59) | The R2 bucket, its `eu` jurisdiction, and the account holding it |
 | [#61](https://github.com/Lamakira/docuflow/issues/61) | This document, filled, as an input it cites. #61 writes `docs/migration/phase-2-lift-hosting.md` in the Phase 1 vocabulary — Verified / Partial / Open — and this register is not that record |
