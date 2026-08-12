@@ -90,19 +90,25 @@ GCS's per-GB storage and egress rates could not be extracted: the pricing page i
 
 **Egress is not the discriminator here.** Screenshots are write-heavy and read-almost-never, so the transfer difference between providers is small; the cost is accumulation. The one workload where zero-egress is a real line item is desktop installer delivery — ADR-0018's cutover includes a forced fleet update, which is every device pulling an installer at once.
 
-## Replit App Storage as a third option
+## The provider is now Replit App Storage
 
-Replit's documentation describes App Storage as "backed by Google Cloud Storage (GCS)", reachable through the standard `@google-cloud/storage` client library and not only Replit's own SDK — which is the client [`server/objectStorage.ts`](../../server/objectStorage.ts) already uses. It is provisioned with the Replit App and colocated with the published geography, which would settle the residency question without a separate jurisdiction setting.
+[ADR-0023](../adr/0023-prefer-replit-provided-capability-wherever-an-exit-can-be-proved.md) settles this: the parallel environment uses **Replit App Storage**, and R2 leaves the parallel environment. App Storage is Google Cloud Storage-backed and reachable through the `@google-cloud/storage` client [`server/objectStorage.ts`](../../server/objectStorage.ts) already uses, so no adapter is written and no separate object-storage account or bill is created. Residency is met by the publishing geography rather than a jurisdiction setting.
 
-It carries the same custody question as the Replit-provisioned database and the Replit-managed Clerk tenant: Replit is the GCS customer, not DocuFlow. It would also re-introduce a Replit storage dependency of the kind Phase 1's gate G1 removed and the Phase 1 record marks **Verified**.
+**The rates above are R2's and are retained as the reference case, not as the bill.** They were the only object-storage rates verified end to end, and every conclusion this note draws — that accumulation dominates, that format is the largest lever, that egress is not the discriminator — is a property of the *workload* and survives the provider change. What does not survive is the euro figure: App Storage pricing is not recorded here, and #58 cannot use an R2 number as a Replit baseline.
 
-The coupling is genuinely weaker than the retired connector — a standard client library against a bucket is not a sidecar — so this is a custody and gate-regression question, not an API lock-in one. Recorded as an option with its cost named; not recommended here, and not decided here.
+Two things #58 must establish before its baseline means anything:
+
+- **What App Storage costs**, and whether it draws against the Replit subscription's included capacity or bills separately. Replit's documented workspace storage tiers — Starter 2 GB, Core 50 GB, Teams 256 GB, Enterprise custom — describe the **workspace**, not App Storage, and must not be read as an object-storage quota.
+- **Whether the growth curve is even visible.** On a separate provider an unbounded bucket shows up as its own rising line item. Inside a bundled subscription it may surface only as an overage, or not until a limit is hit, which is a monitoring problem rather than a pricing one and belongs in #58's alert design.
+
+ADR-0023 also records the exit that justified adopting it — list-then-download through the SDK or the GCS client, a script DocuFlow owns rather than a vendor bulk-export — and the open question of whether that client can reach the bucket with a credential DocuFlow holds or only through Replit-injected authentication.
 
 ## What this note does not settle
 
 - The **format change** has no ticket and no owner.
 - The **object retention** capability has no ticket and no owner. ADR-0016 assumes it exists.
-- **GCS rates** are unmeasured, so the provider comparison is half-priced.
+- **Replit App Storage rates** are unrecorded, so the figures above are R2's reference case rather than the expected bill.
+- **GCS rates** are unmeasured, which now matters only for comparison, since the chosen provider is neither R2 nor a DocuFlow-owned GCS account.
 - **Average object size** is assumed, not sampled.
 
 None of these blocks provisioning. All of them block a spend baseline that means anything, which is what #58 has to produce.

@@ -2,6 +2,7 @@
 
 - **Recorded:** 2026-08-10
 - **Amended:** 2026-08-10 — [ADR-0020](../adr/0020-reassign-the-deployment-observable-phase-1-gates-to-phase-2.md) reassigns gates G3, G4, G8, and G9 to Phase 2. No gate status changed and no evidence was added; only ownership moved.
+- **Amended:** 2026-08-12 — [ADR-0023](../adr/0023-prefer-replit-provided-capability-wherever-an-exit-can-be-proved.md) knowingly regresses **G1** in scope by adopting Replit App Storage for the parallel environment. G1's **Verified** status at the evaluated revision is unchanged and remains accurate for that revision; what changes is forward-looking. The reintroduced coupling is materially weaker than what G1 deleted — a standard `@google-cloud/storage` client against a bucket, not a sidecar injecting credentials — but it is a Replit-provided dependency and is recorded here rather than absorbed silently. No evidence was added or withdrawn.
 - **Evaluated revision:** [`74c7a211719bb9a00e8474bbce9e3d40a20a94a2`](https://github.com/Lamakira/docuflow/commit/74c7a211719bb9a00e8474bbce9e3d40a20a94a2) (`main`)
 - **Verdict:** **Closed on its repository-observable gates** — G1, G2, G5, G6, and G7 are Verified. G3, G4, G8, and G9 are still **Partial**, still lack their operational proof, and are now owned by Phase 2 under ADR-0020. See [Limitations and remaining exit actions](#limitations-and-remaining-exit-actions).
 
