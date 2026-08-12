@@ -16,10 +16,11 @@ When sources disagree, use this order:
 
 1. `CONTEXT.md` — confirmed product vocabulary and domain boundaries.
 2. `docs/adr/` — confirmed hard-to-reverse decisions.
-3. `PRODUCT.md` — web-app purpose, audiences, capabilities, and constraints.
-4. `../docuflow-marketing/DESIGN.md` — canonical ecosystem identity and visual language.
-5. Current code under `client/` — functional evidence only, not visual authority.
-6. `desktop-agent/src/renderer/app-v2/` — workflow evidence only; never visual authority.
+3. `FLOWS.md` — confirmed sequence, branching, and division of responsibility between Clerk, Stripe, and DocuFlow. Authoritative over this document on flow order and on who renders what; this document remains authoritative on everything visual.
+4. `PRODUCT.md` — web-app purpose, audiences, capabilities, and constraints.
+5. `../docuflow-marketing/DESIGN.md` — canonical ecosystem identity and visual language.
+6. Current code under `client/` — functional evidence only, not visual authority.
+7. `desktop-agent/src/renderer/app-v2/` — workflow evidence only; never visual authority.
 
 ## Product truth
 
@@ -404,7 +405,7 @@ The anchor batch is approved only if:
 Do not proceed before explicit approval. After approval:
 
 1. Generate the confirmed second batch as ten state-complete screen families:
-   - authentication, Trial onboarding, and Workspace selection;
+   - authentication, Trial onboarding, and Workspace selection — sequence and branching are specified in `FLOWS.md`, flows 1 through 8; follow it rather than inventing steps;
    - contributor/individual Today;
    - Opportunities;
    - Clients and Projects;
