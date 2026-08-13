@@ -1,14 +1,9 @@
-# nodejs-24 because `npm run dev` and the deployment build below run this
-# repository's package.json, and its `engines` asks for node >=24 / npm >=11:
-# `package-lock.json` was written by npm 11 and the npm 10 and 9 that earlier
-# lines bundle refuse it (see the Dockerfile's ARG NODE_VERSION). The exact
-# release ships from the Dockerfile; this only has to clear the floor.
-modules = ["nodejs-24", "web", "python-3.11", "postgresql-16"]
+modules = ["nodejs-20", "web"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
-channel = "stable-24_05"
+channel = "stable-25_05"
 packages = ["chromium"]
 
 [deployment]
