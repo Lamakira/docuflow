@@ -180,6 +180,17 @@ The remaining live check belongs to the built image because only that boundary
 can prove its installed Playwright browser can load the supplied public URL; the
 URL is passed at runtime and is never stored in this repository or test output.
 
+`snapshot-rehearsal` ([#53](https://github.com/Lamakira/docuflow/issues/53))
+covers the two checks a restored production snapshot must pass before anything
+uses it (ADR-0022, ADR-0023): no absolute storage URL pointing at a bucket that
+is not ours, and no storage key the database names that the destination lacks.
+It is a smoke suite because the scan reads `information_schema` rather than a
+table list — the failure it exists for is a column nobody thought of — so it
+needs a real schema and not a fixture. The case that earns the suite is the
+refusal: a foreign URL in a column no scrub rule covers stops the run and leaves
+the database untouched, because rewriting it on a guess is the same mistake as
+missing it.
+
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`
