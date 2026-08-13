@@ -1109,7 +1109,7 @@ export function BlockEditor({ content, onChange, onImageUpload, onDocumentUpload
                   credentials: "include",
                 });
                 if (!uploadUrlRes.ok) throw new Error("Failed to get upload URL");
-                const { uploadURL } = await uploadUrlRes.json();
+                const { uploadURL, objectPath } = await uploadUrlRes.json();
 
                 const uploadRes = await fetch(uploadURL, {
                   method: "PUT",
@@ -1122,7 +1122,7 @@ export function BlockEditor({ content, onChange, onImageUpload, onDocumentUpload
                   method: "POST",
                   credentials: "include",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ audioUrl: uploadURL.split("?")[0] }),
+                  body: JSON.stringify({ audioUrl: objectPath }),
                 });
                 if (!audioRes.ok) throw new Error("Failed to save audio");
                 const audioData = await audioRes.json();

@@ -1,3 +1,4 @@
+- [Replit run setup](replit-run-setup.md) — DB_DRIVER=pg required on Replit Postgres; firewall blocks fxp 4.x (upgrade @google-cloud/storage); GCS key is a boot-only placeholder.
 - [Stale-process route gap](stale-process-route-gap.md) — new routes not served until server restarts; Vite's catch-all returns HTML/200 masking the missing route as "success"
 - [CRM project assignment](crm-project-assignment.md) — assignment is driven by project_members (many-to-many); assigneeId is deprecated/legacy, kept but not surfaced in UI.
 - [Desktop agent forge hang fix](desktop-agent-forge-hang.md) — electron-forge postPackage hook hangs forever; fix is execSync with SIGKILL + recovery via out/ directory check.

@@ -58,7 +58,7 @@ export function useScreenCapture({
       if (!blob) return;
 
       const uploadRes = await apiRequest("POST", "/api/time-tracking/screenshots/upload-url", { timeEntryId });
-      const { uploadURL } = await uploadRes.json();
+      const { uploadURL, objectPath } = await uploadRes.json();
 
       await fetch(uploadURL, {
         method: "PUT",
@@ -66,7 +66,7 @@ export function useScreenCapture({
         headers: { "Content-Type": "image/jpeg" },
       });
 
-      const storageKey = new URL(uploadURL).pathname;
+      const storageKey = objectPath;
 
       await apiRequest("POST", "/api/time-tracking/screenshots", {
         timeEntryId,

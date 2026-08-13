@@ -130,13 +130,13 @@ export default function CompanyDocumentEditorPage() {
         }
         try {
           const urlResponse = await apiRequest("POST", "/api/company-documents/upload-url");
-          const { uploadURL } = urlResponse;
+          const { uploadURL, objectPath } = urlResponse;
           await fetch(uploadURL, {
             method: "PUT",
             body: file,
             headers: { "Content-Type": file.type },
           });
-          const imageUrl = uploadURL.split("?")[0];
+          const imageUrl = objectPath;
           cleanup();
           resolve(imageUrl);
         } catch {

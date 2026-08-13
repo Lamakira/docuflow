@@ -200,7 +200,7 @@ export default function DocumentPage() {
 
         try {
           const response = await apiRequest("POST", "/api/objects/upload");
-          const { uploadURL } = response as { uploadURL: string };
+          const { uploadURL, objectPath } = response as { uploadURL: string; objectPath: string };
           
           await fetch(uploadURL, {
             method: "PUT",
@@ -211,7 +211,7 @@ export default function DocumentPage() {
           });
 
           const updateResponse = await apiRequest("PUT", "/api/document-images", {
-            imageURL: uploadURL,
+            imageURL: objectPath,
           }) as { objectPath: string };
 
           toast({ 

@@ -236,7 +236,7 @@ export default function CompanyDocumentsPage() {
       
       for (const file of data.files) {
         const urlResponse = await apiRequest("POST", "/api/company-documents/upload-url");
-        const { uploadURL } = urlResponse;
+        const { uploadURL, objectPath } = urlResponse;
         
         const uploadResponse = await fetch(uploadURL, {
           method: "PUT",
@@ -246,7 +246,7 @@ export default function CompanyDocumentsPage() {
         
         if (!uploadResponse.ok) throw new Error(`Failed to upload ${file.name}`);
         
-        const storagePath = uploadURL.split("?")[0];
+        const storagePath = objectPath;
         const documentName = file.name.replace(/\.[^/.]+$/, "");
         
         await apiRequest("POST", "/api/company-documents", {

@@ -99,16 +99,35 @@ export class ObjectStorageService {
     return storagePort.readBytes(ref);
   }
 
-  async getObjectEntityUploadURL(): Promise<string> {
+  /**
+   * Where to PUT a new private object, alongside the canonical `/objects/…`
+   * path it will be readable at. The path is returned explicitly because it can
+   * no longer be derived from the URL: on a provider without signed URLs the
+   * URL is a relative relay endpoint carrying an opaque grant, not the object's
+   * address (ADR-0023). Callers persist `objectPath` and never parse the URL.
+   */
+  async getObjectEntityUpload(): Promise<{ uploadURL: string; objectPath: string }> {
     const privateObjectDir = this.getPrivateObjectDir();
     const objectId = randomUUID();
-    return uploadUrlFor(`${privateObjectDir}/uploads/${objectId}`);
+    return {
+      uploadURL: await uploadUrlFor(`${privateObjectDir}/uploads/${objectId}`),
+      objectPath: `/objects/uploads/${objectId}`,
+    };
   }
 
-  async getPublicUploadURL(): Promise<string> {
+  /**
+   * Where to PUT a new public object, alongside the `/public-objects/…` path it
+   * will be served from. Same contract as `getObjectEntityUpload`: the path is
+   * explicit because the URL may be a relay endpoint rather than the object's
+   * address.
+   */
+  async getPublicUpload(): Promise<{ uploadURL: string; publicPath: string }> {
     const publicDir = this.getPublicObjectSearchPaths()[0];
     const objectId = randomUUID();
-    return uploadUrlFor(`${publicDir}/uploads/${objectId}`);
+    return {
+      uploadURL: await uploadUrlFor(`${publicDir}/uploads/${objectId}`),
+      publicPath: `/public-objects/uploads/${objectId}`,
+    };
   }
 
   async getObjectEntityFile(objectPath: string): Promise<StoredObjectRef> {

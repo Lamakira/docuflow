@@ -350,7 +350,7 @@ export function NoteInput({
           credentials: "include",
         });
         if (!uploadUrlRes.ok) throw new Error("Failed to get upload URL");
-        const { uploadURL } = await uploadUrlRes.json();
+        const { uploadURL, objectPath } = await uploadUrlRes.json();
         
         const uploadRes = await fetch(uploadURL, {
           method: "PUT",
@@ -359,7 +359,7 @@ export function NoteInput({
         });
         if (!uploadRes.ok) throw new Error("Failed to upload file");
         
-        const fileUrl = uploadURL.split("?")[0];
+        const fileUrl = objectPath;
         
         uploadedAttachments.push({
           url: fileUrl,

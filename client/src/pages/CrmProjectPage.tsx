@@ -1932,7 +1932,7 @@ export default function CrmProjectPage() {
                       credentials: "include",
                     });
                     if (!uploadUrlRes.ok) throw new Error("Failed to get upload URL");
-                    const { uploadURL } = await uploadUrlRes.json();
+                    const { uploadURL, objectPath } = await uploadUrlRes.json();
 
                     const uploadRes = await fetch(uploadURL, {
                       method: "PUT",
@@ -1945,7 +1945,7 @@ export default function CrmProjectPage() {
                       method: "POST",
                       credentials: "include",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ audioUrl: uploadURL.split("?")[0] }),
+                      body: JSON.stringify({ audioUrl: objectPath }),
                     });
                     if (!audioRes.ok) throw new Error("Failed to save audio");
                     const audioData = await audioRes.json();
@@ -2074,7 +2074,7 @@ export default function CrmProjectPage() {
                             credentials: "include",
                           });
                           if (!uploadUrlRes.ok) throw new Error("Failed to get upload URL");
-                          const { uploadURL } = await uploadUrlRes.json();
+                          const { uploadURL, publicPath } = await uploadUrlRes.json();
                           
                           // Use XMLHttpRequest for progress tracking
                           await new Promise<void>((resolve, reject) => {
@@ -2104,16 +2104,10 @@ export default function CrmProjectPage() {
                             xhr.send(file);
                           });
                           
-                          // Extract the object path from GCS URL and convert to relative API URL
-                          const gcsUrl = uploadURL.split("?")[0];
-                          // GCS URL format: https://storage.googleapis.com/bucket-name/public/uploads/uuid
-                          // Extract the path after 'public/' for the proxy endpoint
-                          const urlParts = new URL(gcsUrl);
-                          const pathParts = urlParts.pathname.split('/').filter(Boolean);
-                          // pathParts[0] is bucket name, find the 'public' directory and get the path after it
-                          const publicIndex = pathParts.findIndex(p => p === 'public');
-                          const objectPath = publicIndex >= 0 ? pathParts.slice(publicIndex + 1).join('/') : pathParts.slice(1).join('/');
-                          const fileUrl = `/public-objects/${objectPath}`;
+                          // The server returns the canonical `/public-objects/…` path
+                          // alongside the upload URL; the URL itself may be a relay
+                          // endpoint and is never parsed for the object's address.
+                          const fileUrl = publicPath;
                           
                           // Remove from uploading, add to attachments
                           setUploadingFiles(prev => prev.filter(f => f.id !== fileId));

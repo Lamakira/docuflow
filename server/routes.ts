@@ -712,8 +712,8 @@ export async function registerRoutes(
   app.post("/api/objects/upload", isAuthenticated, async (req, res) => {
     const objectStorageService = new ObjectStorageService();
     try {
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-      res.json({ uploadURL });
+      const { uploadURL, objectPath } = await objectStorageService.getObjectEntityUpload();
+      res.json({ uploadURL, objectPath });
     } catch (error) {
       console.error("Error getting upload URL:", error);
       res.status(500).json({ error: "Failed to get upload URL" });
@@ -723,7 +723,7 @@ export async function registerRoutes(
   /**
    * Receives the bytes for one object when the configured provider cannot mint
    * signed URLs (ADR-0023: Replit App Storage has no signing). On a provider
-   * that can sign, `getObjectEntityUploadURL` hands the client a storage URL
+   * that can sign, `getObjectEntityUpload` hands the client a storage URL
    * instead and this endpoint is never called — the two paths differ only in
    * where the URL points, which is what keeps the browser uploader identical.
    *
@@ -761,8 +761,8 @@ export async function registerRoutes(
   app.post("/api/objects/upload-public", isAuthenticated, async (req, res) => {
     const objectStorageService = new ObjectStorageService();
     try {
-      const uploadURL = await objectStorageService.getPublicUploadURL();
-      res.json({ uploadURL });
+      const { uploadURL, publicPath } = await objectStorageService.getPublicUpload();
+      res.json({ uploadURL, publicPath });
     } catch (error) {
       console.error("Error getting public upload URL:", error);
       res.status(500).json({ error: "Failed to get upload URL" });
@@ -2380,8 +2380,8 @@ Instructions:
   app.post("/api/company-documents/upload-url", isAuthenticated, async (req: any, res) => {
     try {
       const objectStorageService = new ObjectStorageService();
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-      res.json({ uploadURL });
+      const { uploadURL, objectPath } = await objectStorageService.getObjectEntityUpload();
+      res.json({ uploadURL, objectPath });
     } catch (error) {
       console.error("Error getting upload URL:", error);
       res.status(500).json({ message: "Failed to get upload URL" });
@@ -4800,8 +4800,8 @@ Instructions:
       }
 
       const objectStorageService = new ObjectStorageService();
-      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
-      res.json({ uploadURL });
+      const { uploadURL, objectPath } = await objectStorageService.getObjectEntityUpload();
+      res.json({ uploadURL, objectPath });
     } catch (error) {
       console.error("Error getting screenshot upload URL:", error);
       res.status(500).json({ message: "Failed to get upload URL" });

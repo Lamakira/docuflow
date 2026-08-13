@@ -16,6 +16,17 @@ DocuFlow is a Notion-like documentation application designed for organizing tech
 - Dark mode support
 - Page templates (Client Project, Technical Solution)
 
+## Running on Replit
+
+- **Start**: the "Start application" workflow runs `npm run dev` (Express + Vite on port 5000).
+- **Node**: requires Node ≥ 24 (the `nodejs-24` module is installed).
+- **Database**: Replit's built-in PostgreSQL, reached through the runtime-managed `DATABASE_URL`. `DB_DRIVER=pg` is set in `.env` because the local proxy is not reachable over Neon's WebSocket driver. Apply schema changes with `npm run db:migrate` (status: `npm run db:migrate:status`).
+- **Configuration**: `server/config.ts` validates required vars at boot; `.env.example` lists them all. On Replit they come from two places:
+  - Replit Secrets: `SESSION_SECRET`
+  - `.env` (git-ignored): `JWT_SECRET` (generated dev key), `DB_DRIVER=pg`, `PRIVATE_OBJECT_DIR`, `PUBLIC_OBJECT_SEARCH_PATHS`
+- **Object storage**: with no GCS credentials set, the server selects the Replit App Storage provider (`server/replitStorage.ts`). The bucket roots in `.env` currently name a placeholder bucket (`/docuflow-dev/...`) — file upload/download fails until a real App Storage bucket is created in the workspace's App Storage tool and `PRIVATE_OBJECT_DIR`/`PUBLIC_OBJECT_SEARCH_PATHS` point at it (or a real `GCS_SERVICE_ACCOUNT_KEY` is set to select the GCS provider).
+- **Optional features**: `OPENAI_API_KEY` (AI chat/embeddings/transcription) and `RESEND_API_KEY` (email) are unset; those features report their own failures until configured.
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.

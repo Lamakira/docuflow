@@ -29,7 +29,7 @@
     "publish:windows": "node scripts/publish-windows.js"
   },
   "dependencies": {
-    "@google-cloud/storage": "^7.17.3",
+    "@google-cloud/storage": "^7.22.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/api-logs": "^0.221.0",
     "@opentelemetry/exporter-logs-otlp-http": "^0.221.0",

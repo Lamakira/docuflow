@@ -8,7 +8,7 @@ export async function uploadHelpCenterPublicImage(file: File): Promise<string> {
     credentials: "include",
   });
   if (!uploadUrlRes.ok) throw new Error("Failed to get upload URL");
-  const { uploadURL } = await uploadUrlRes.json();
+  const { uploadURL, publicPath } = await uploadUrlRes.json();
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -22,11 +22,5 @@ export async function uploadHelpCenterPublicImage(file: File): Promise<string> {
     xhr.send(file);
   });
 
-  const gcsUrl = uploadURL.split("?")[0];
-  const urlParts = new URL(gcsUrl);
-  const pathParts = urlParts.pathname.split("/").filter(Boolean);
-  const publicIndex = pathParts.findIndex((p) => p === "public");
-  const objectPath =
-    publicIndex >= 0 ? pathParts.slice(publicIndex + 1).join("/") : pathParts.slice(1).join("/");
-  return `/public-objects/${objectPath}`;
+  return publicPath;
 }

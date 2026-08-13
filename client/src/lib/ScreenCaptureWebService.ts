@@ -189,7 +189,7 @@ export class ScreenCaptureWebService {
       if (!uploadRes.ok) {
         throw new Error(`Upload URL request failed: ${uploadRes.status}`);
       }
-      const { uploadURL } = await uploadRes.json();
+      const { uploadURL, objectPath } = await uploadRes.json();
 
       // Upload to GCS
       const putRes = await fetch(uploadURL, {
@@ -202,7 +202,7 @@ export class ScreenCaptureWebService {
       }
 
       // Save metadata
-      const storageKey = new URL(uploadURL).pathname;
+      const storageKey = objectPath;
       const saveRes = await apiRequest("POST", "/api/time-tracking/screenshots", {
         timeEntryId: entryId,
         crmProjectId,
