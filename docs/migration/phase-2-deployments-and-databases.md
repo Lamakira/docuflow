@@ -61,7 +61,7 @@ The consequence is procedural and it is easy to miss: an App created in a North 
 
 The App tracking `main` has a consequence for everything below: **`.replit` reaches the App by merge, not by hand.** A change to the deployment's build command is a pull request, which is the property this ticket wants — but it also means the App runs whatever `main` says, so an unmerged branch is not what publishes.
 
-It cuts the other way too, and this is the part that goes wrong quietly. Work done **in** the App — by the Agent or by hand — lives in that checkout until somebody commits and pushes it, so the App can be running code the repository does not have. On 2026-08-13 that was already true: bringing the app up in the workspace changed the upload contract in the web uploaders, and none of it is in `main` at the revision this document was written against. **What publishes is `main`.** An App whose working copy is ahead of `main` will publish something other than what was tested there, which is the same class of surprise `.replit`-by-hand would have been. Commit it, or accept that the publish does not include it.
+It cuts the other way too, and this is the part that goes wrong quietly. Work done **in** the App — by the Agent or by hand — lives in that checkout until somebody commits and pushes it, so the App can be running code the repository does not have. On 2026-08-13 that was already true twice over: bringing the app up in the workspace changed the upload contract in the web uploaders, and added a `scripts/post-merge.sh` that installs dependencies and applies migrations after a merge. Neither is in `main` at the revision this document was written against. The hook is worth keeping and worth keeping in the repository — an unversioned script that runs migrations is the same category of thing this phase spent #24 removing — and it does **not** cover the published app, which runs the deployment's Build command and no git hook at all. **What publishes is `main`.** An App whose working copy is ahead of `main` will publish something other than what was tested there, which is the same class of surprise `.replit`-by-hand would have been. Commit it, or accept that the publish does not include it.
 
 ## Gate: can one project run HTTP and a Reserved VM worker at once?
 
@@ -190,7 +190,8 @@ The refusal is not deployment infrastructure and must not be papered over by any
 
 | | |
 | --- | --- |
-| Secrets present in the **development** workspace (names only) | 2026-08-13: `SESSION_SECRET` in Replit Secrets; `JWT_SECRET` generated; `DATABASE_URL` from the platform; the bucket roots in a git-ignored `.env` |
+| Secrets present in the **development** workspace (names only) | 2026-08-13: `SESSION_SECRET` and `JWT_SECRET` in Replit Secrets, both generated for this environment; `DATABASE_URL` from the platform; `DB_DRIVER=pg` and placeholder bucket roots as configuration |
+| Boot refusal exercised | **Yes**, 2026-08-13 — it demanded `JWT_SECRET` and would not start until one was supplied. That is the acceptance criterion met on the development side, by the refusal firing rather than by anyone testing for it |
 | Secrets present in the published environment (names only) | *(unrecorded — the publish has not happened)* |
 | Secrets scoped separately for development and production | *(unrecorded)* |
 | No value copied from the production project | *(unrecorded)* |
