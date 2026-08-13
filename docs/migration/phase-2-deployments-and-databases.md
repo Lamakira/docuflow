@@ -22,7 +22,7 @@ Four settings cannot be changed after the act that fixes them. Three of the four
 | 1 | **Plan tier** | Whether a geography can be chosen at all. Free publishes to North America by default | Before the publish, or the publish makes the choice for you | **Pro** — confirmed 2026-08-13 from the account. Replit lists publishing-geography selection on Core, Pro, and Enterprise |
 | 2 | **Workspace geography** | Where *development* compute, the development database, and any Object Storage created before publishing live | At workspace creation — already closed for an existing App | *(unrecorded)* |
 | 3 | **Publishing geography** | Where the published compute, the production database, and published Object Storage live, colocated | At the first publish, permanently | *(unrecorded — must read **Europe (EU)** before publishing)* |
-| 4 | **Project separation** | Whether this is the parallel environment ADR-0018 requires or a second deployment of production | At project creation | *(unconfirmed — the App is named `docuflow`; that the production app is a **different** App is not yet recorded)* |
+| 4 | **Project separation** | Whether this is the parallel environment ADR-0018 requires or a second deployment of production | At project creation | **Separate** — confirmed 2026-08-13: the App named `docuflow` is the parallel project, not the production one |
 
 Door 2 is new information. ADR-0021 states that "development environments run in North America regardless of publishing geography", and the register repeats it. Replit's current documentation does not: **workspace geography is selectable by Pro customers** across North America, Europe (EU), and Asia, and is fixed when the workspace is created. Publishing geography and workspace geography "do not need to match", and Replit notes that "resources such as Object Storage can be created before you publish and may not match your published geography."
 
@@ -45,8 +45,8 @@ The consequence is procedural and it is easy to miss: an App created in a North 
 
 | | |
 | --- | --- |
-| Replit App (parallel) | `docuflow` |
-| Production Replit App, for contrast | *(unrecorded)* |
+| Replit App (parallel) | `docuflow` — confirmed 2026-08-13 to be the parallel project and not production |
+| Production Replit App, for contrast | *(unrecorded — the name is what makes the separation checkable by a later reader)* |
 | Plan tier at publish | **Pro** |
 | Workspace geography | *(unrecorded)* |
 | **Published geography** | *(unrecorded — target: Europe (EU))* |
