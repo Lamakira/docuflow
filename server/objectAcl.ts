@@ -1,6 +1,13 @@
-import { File } from "@google-cloud/storage";
-
-const ACL_POLICY_METADATA_KEY = "custom:aclPolicy";
+/**
+ * Access policy for a stored object, and the decision made from it.
+ *
+ * This module used to fetch the policy itself, out of Google Cloud Storage
+ * custom metadata, which made it a second place the storage provider leaked
+ * into. Where a policy is kept is now the storage port's business — GCS keeps it
+ * in object metadata, Replit App Storage has no metadata API and keeps it
+ * beside the object — and what remains here is the part that is the same
+ * wherever it came from: what a policy means.
+ */
 
 export enum ObjectAccessGroupType {}
 
@@ -53,43 +60,16 @@ function createObjectAccessGroup(
   }
 }
 
-export async function setObjectAclPolicy(
-  objectFile: File,
-  aclPolicy: ObjectAclPolicy
-): Promise<void> {
-  const [exists] = await objectFile.exists();
-  if (!exists) {
-    throw new Error(`Object not found: ${objectFile.name}`);
-  }
-
-  await objectFile.setMetadata({
-    metadata: {
-      [ACL_POLICY_METADATA_KEY]: JSON.stringify(aclPolicy),
-    },
-  });
-}
-
-export async function getObjectAclPolicy(
-  objectFile: File
-): Promise<ObjectAclPolicy | null> {
-  const [metadata] = await objectFile.getMetadata();
-  const aclPolicy = metadata?.metadata?.[ACL_POLICY_METADATA_KEY];
-  if (!aclPolicy) {
-    return null;
-  }
-  return JSON.parse(aclPolicy as string);
-}
-
 export async function canAccessObject({
   userId,
-  objectFile,
+  aclPolicy,
   requestedPermission,
 }: {
   userId?: string;
-  objectFile: File;
+  /** Read through the storage port. A null policy denies, as it always has. */
+  aclPolicy: ObjectAclPolicy | null;
   requestedPermission: ObjectPermission;
 }): Promise<boolean> {
-  const aclPolicy = await getObjectAclPolicy(objectFile);
   if (!aclPolicy) {
     return false;
   }

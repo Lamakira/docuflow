@@ -857,8 +857,8 @@ export async function registerRoutes(
       }
 
       // Download the audio file to a buffer
-      const [buffer] = await file.download();
-      
+      const buffer = await objectStorageService.readObjectBytes(file);
+
       // Create a File object for OpenAI
       const audioFile = new File([buffer], "audio.webm", { type: "audio/webm" });
 
@@ -2558,15 +2558,8 @@ Instructions:
         const objectFile = await objectStorageService.getObjectEntityFile(normalizedPath);
         
         // Download file to buffer
-        const chunks: Buffer[] = [];
-        const stream = objectFile.createReadStream();
-        
-        for await (const chunk of stream) {
-          chunks.push(Buffer.from(chunk));
-        }
-        
-        const buffer = Buffer.concat(chunks);
-        
+        const buffer = await objectStorageService.readObjectBytes(objectFile);
+
         // Convert to HTML using mammoth
         const result = await mammoth.convertToHtml({ buffer });
         

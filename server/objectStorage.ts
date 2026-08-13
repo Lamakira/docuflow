@@ -1,4 +1,3 @@
-import { Storage, File } from "@google-cloud/storage";
 import { Response } from "express";
 import { randomUUID } from "crypto";
 import { config } from "./config";
@@ -6,29 +5,22 @@ import {
   ObjectAclPolicy,
   ObjectPermission,
   canAccessObject,
-  getObjectAclPolicy,
-  setObjectAclPolicy,
 } from "./objectAcl";
+import type { StoragePort, StoredObjectRef } from "./storagePort";
+import { GcsStoragePort } from "./gcsStorage";
+import { ReplitStoragePort } from "./replitStorage";
 
 /**
- * Storage client for the configured Google service account. An inline key
- * (`GCS_SERVICE_ACCOUNT_KEY`) is used when one is set; otherwise the client
- * reads the key file named by `GOOGLE_APPLICATION_CREDENTIALS`. Boot requires
- * one or the other, so the client is never left to discover at the first
- * signature that it has no identity — and either way that identity is a service
- * account, because signing a URL needs a key that can sign.
+ * The storage this deployment talks to, chosen once by what the environment
+ * named. `server/config.ts` selects the provider by whether a credential was
+ * supplied rather than by a switch — an environment that names a Google key
+ * means it, and one that names none is on Replit App Storage (ADR-0023), whose
+ * SDK authenticates itself.
  */
-export const objectStorageClient = new Storage({
-  ...(config.objectStorage.projectId ? { projectId: config.objectStorage.projectId } : {}),
-  ...(config.objectStorage.serviceAccount
-    ? {
-        credentials: {
-          client_email: config.objectStorage.serviceAccount.clientEmail,
-          private_key: config.objectStorage.serviceAccount.privateKey,
-        },
-      }
-    : {}),
-});
+export const storagePort: StoragePort =
+  config.objectStorage.provider === "gcs"
+    ? new GcsStoragePort()
+    : new ReplitStoragePort();
 
 export class ObjectNotFoundError extends Error {
   constructor() {
@@ -37,6 +29,16 @@ export class ObjectNotFoundError extends Error {
     Object.setPrototypeOf(this, ObjectNotFoundError.prototype);
   }
 }
+
+/**
+ * Raised where the code path requires a URL the client can transfer against
+ * directly and the configured provider cannot mint one. ADR-0016 assumed direct
+ * signed transfers; App Storage has no signing, so on that provider these
+ * callers must proxy through the server instead. Named here so the failure says
+ * which provider and why rather than surfacing as a bare SDK error.
+ */
+export { SignedUrlsUnsupportedError } from "./storagePort";
+export type { StoredObjectRef } from "./storagePort";
 
 export class ObjectStorageService {
   constructor() {}
@@ -49,34 +51,32 @@ export class ObjectStorageService {
     return config.objectStorage.privateDir;
   }
 
-  async searchPublicObject(filePath: string): Promise<File | null> {
+  async searchPublicObject(filePath: string): Promise<StoredObjectRef | null> {
     for (const searchPath of this.getPublicObjectSearchPaths()) {
-      const fullPath = `${searchPath}/${filePath}`;
-      const { bucketName, objectName } = parseObjectPath(fullPath);
-      const bucket = objectStorageClient.bucket(bucketName);
-      const file = bucket.file(objectName);
-      const [exists] = await file.exists();
-      if (exists) {
-        return file;
+      const ref = parseObjectPath(`${searchPath}/${filePath}`);
+      if (await storagePort.exists(ref)) {
+        return ref;
       }
     }
     return null;
   }
 
-  async downloadObject(file: File, res: Response, cacheTtlSec: number = 3600) {
+  async downloadObject(ref: StoredObjectRef, res: Response, cacheTtlSec: number = 3600) {
     try {
-      const [metadata] = await file.getMetadata();
-      const aclPolicy = await getObjectAclPolicy(file);
+      const metadata = await storagePort.getMetadata(ref);
+      const aclPolicy = await storagePort.getAclPolicy(ref);
       const isPublic = aclPolicy?.visibility === "public";
+
+      // `Content-Length` is only set when the provider reports a size: App
+      // Storage does not, and a header asserting the wrong length is worse than
+      // an absent one.
       res.set({
         "Content-Type": metadata.contentType || "application/octet-stream",
-        "Content-Length": metadata.size,
-        "Cache-Control": `${
-          isPublic ? "public" : "private"
-        }, max-age=${cacheTtlSec}`,
+        ...(metadata.size === undefined ? {} : { "Content-Length": String(metadata.size) }),
+        "Cache-Control": `${isPublic ? "public" : "private"}, max-age=${cacheTtlSec}`,
       });
 
-      const stream = file.createReadStream();
+      const stream = storagePort.createReadStream(ref);
 
       stream.on("error", (err) => {
         console.error("Stream error:", err);
@@ -94,37 +94,28 @@ export class ObjectStorageService {
     }
   }
 
+  /** The whole object in memory, for callers that parse rather than stream it. */
+  async readObjectBytes(ref: StoredObjectRef): Promise<Buffer> {
+    return storagePort.readBytes(ref);
+  }
+
   async getObjectEntityUploadURL(): Promise<string> {
     const privateObjectDir = this.getPrivateObjectDir();
     const objectId = randomUUID();
-    const fullPath = `${privateObjectDir}/uploads/${objectId}`;
+    const ref = parseObjectPath(`${privateObjectDir}/uploads/${objectId}`);
 
-    const { bucketName, objectName } = parseObjectPath(fullPath);
-
-    return signObjectURL({
-      bucketName,
-      objectName,
-      method: "PUT",
-      ttlSec: 900,
-    });
+    return storagePort.signUrl({ ref, method: "PUT", ttlSec: 900 });
   }
 
   async getPublicUploadURL(): Promise<string> {
     const publicDir = this.getPublicObjectSearchPaths()[0];
     const objectId = randomUUID();
-    const fullPath = `${publicDir}/uploads/${objectId}`;
+    const ref = parseObjectPath(`${publicDir}/uploads/${objectId}`);
 
-    const { bucketName, objectName } = parseObjectPath(fullPath);
-
-    return signObjectURL({
-      bucketName,
-      objectName,
-      method: "PUT",
-      ttlSec: 900,
-    });
+    return storagePort.signUrl({ ref, method: "PUT", ttlSec: 900 });
   }
 
-  async getObjectEntityFile(objectPath: string): Promise<File> {
+  async getObjectEntityFile(objectPath: string): Promise<StoredObjectRef> {
     if (!objectPath.startsWith("/objects/")) {
       throw new ObjectNotFoundError();
     }
@@ -139,15 +130,11 @@ export class ObjectStorageService {
     if (!entityDir.endsWith("/")) {
       entityDir = `${entityDir}/`;
     }
-    const objectEntityPath = `${entityDir}${entityId}`;
-    const { bucketName, objectName } = parseObjectPath(objectEntityPath);
-    const bucket = objectStorageClient.bucket(bucketName);
-    const objectFile = bucket.file(objectName);
-    const [exists] = await objectFile.exists();
-    if (!exists) {
+    const ref = parseObjectPath(`${entityDir}${entityId}`);
+    if (!(await storagePort.exists(ref))) {
       throw new ObjectNotFoundError();
     }
-    return objectFile;
+    return ref;
   }
 
   normalizeObjectEntityPath(rawPath: string): string {
@@ -180,8 +167,8 @@ export class ObjectStorageService {
       return normalizedPath;
     }
 
-    const objectFile = await this.getObjectEntityFile(normalizedPath);
-    await setObjectAclPolicy(objectFile, aclPolicy);
+    const ref = await this.getObjectEntityFile(normalizedPath);
+    await storagePort.setAclPolicy(ref, aclPolicy);
     return normalizedPath;
   }
 
@@ -191,21 +178,18 @@ export class ObjectStorageService {
     requestedPermission,
   }: {
     userId?: string;
-    objectFile: File;
+    objectFile: StoredObjectRef;
     requestedPermission?: ObjectPermission;
   }): Promise<boolean> {
     return canAccessObject({
       userId,
-      objectFile,
+      aclPolicy: await storagePort.getAclPolicy(objectFile),
       requestedPermission: requestedPermission ?? ObjectPermission.READ,
     });
   }
 }
 
-export function parseObjectPath(path: string): {
-  bucketName: string;
-  objectName: string;
-} {
+export function parseObjectPath(path: string): StoredObjectRef {
   if (!path.startsWith("/")) {
     path = `/${path}`;
   }
@@ -214,32 +198,15 @@ export function parseObjectPath(path: string): {
     throw new Error("Invalid path: must contain at least a bucket name");
   }
 
-  const bucketName = pathParts[1];
-  const objectName = pathParts.slice(2).join("/");
-
   return {
-    bucketName,
-    objectName,
+    bucketName: pathParts[1],
+    objectName: pathParts.slice(2).join("/"),
   };
 }
 
 /**
- * The storage action each HTTP method a caller signs for needs to be granted.
- * Only the two methods callers actually sign for: a V4 signature binds the
- * method, so an entry no caller uses is a promise nothing has ever verified.
- */
-const SIGNING_ACTIONS = {
-  GET: "read",
-  PUT: "write",
-} as const;
-
-/**
- * Mint a V4 signed URL the holder can use directly against storage, so large
- * uploads and downloads never pass through this process.
- *
- * Content type is deliberately left out of the signature: browsers upload with
- * whatever type the picked file has, and signing one would force every client
- * to send exactly that header.
+ * Mint a URL the holder can use directly against storage. Only the Google
+ * provider can do this; on App Storage it raises `SignedUrlsUnsupportedError`.
  */
 export async function signObjectURL({
   bucketName,
@@ -249,16 +216,8 @@ export async function signObjectURL({
 }: {
   bucketName: string;
   objectName: string;
-  method: keyof typeof SIGNING_ACTIONS;
+  method: "GET" | "PUT";
   ttlSec: number;
 }): Promise<string> {
-  const [signedURL] = await objectStorageClient
-    .bucket(bucketName)
-    .file(objectName)
-    .getSignedUrl({
-      version: "v4",
-      action: SIGNING_ACTIONS[method],
-      expires: Date.now() + ttlSec * 1000,
-    });
-  return signedURL;
+  return storagePort.signUrl({ ref: { bucketName, objectName }, method, ttlSec });
 }
