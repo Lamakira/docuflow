@@ -12,12 +12,30 @@ channel = "stable-24_05"
 packages = ["chromium"]
 
 [deployment]
+# Autoscale carries the HTTP runtime only. ADR-0013's lease-elected scheduler
+# needs a process that never sleeps, and one App holds one deployment type — so
+# the worker is a second Replit project on this same repository, Reserved VM,
+# selecting its role from DOCUFLOW_ROLE rather than from a divergent copy of
+# this file. See docs/migration/phase-2-deployments-and-databases.md (#53).
 deploymentTarget = "autoscale"
-build = ["npm", "run", "build"]
+# Migrations run here and nowhere else. A failing Build command fails the build
+# and blocks the publish, which is the gated pre-deploy step ADR-0017 requires
+# and ADR-0021 places in the build. Not at boot — #24 deleted boot-time DDL. Not
+# in `run` — Autoscale runs that in every instance and scripts/migrate.ts takes
+# no advisory lock, so two instances starting together would race the journal.
+# After `npm run build`, because dist/migrate.mjs is one of its outputs (#35).
+build = ["sh", "-c", "npm run build && node dist/migrate.mjs"]
 run = ["npm", "run", "start"]
 
 [env]
 PORT = "5000"
+# node-postgres rather than the Neon serverless driver, in both environments.
+# The serverless driver reaches Neon over WebSockets, and Replit's databases are
+# its own Postgres (Helium) since 2025-12-04; node-postgres reaches that and a
+# Neon database alike over plain TLS, which is why every script in scripts/
+# already uses it. It is also the instrumented path — the Neon driver emits no
+# query spans (docs/OBSERVABILITY.md).
+DB_DRIVER = "pg"
 
 [workflows]
 runButton = "Project"
