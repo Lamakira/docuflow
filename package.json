@@ -24,6 +24,8 @@
     "db:backfill:crm-links": "tsx --env-file-if-exists=.env scripts/backfill-crm-links.ts",
     "db:env:check": "tsx --env-file-if-exists=.env scripts/db-env-check.ts",
     "db:print:url:masked": "tsx --env-file-if-exists=.env scripts/db-print-url-masked.ts",
+    "snapshot:check": "tsx --env-file-if-exists=.env scripts/snapshot-rehearsal.ts",
+    "snapshot:scrub": "tsx --env-file-if-exists=.env scripts/snapshot-rehearsal.ts --scrub",
     "publish:windows": "node scripts/publish-windows.js"
   },
   "dependencies": {
