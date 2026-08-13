@@ -69,5 +69,14 @@ localPort = 5904
 externalPort = 3000
 
 [userenv]
+
+[userenv.shared]
+DB_DRIVER = "pg"
+PRIVATE_OBJECT_DIR = "/docuflow/.private"
+PUBLIC_OBJECT_SEARCH_PATHS = "/docuflow/public"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 180000
 # MCP_API_KEY must be set via Replit Secrets (not hardcoded here).
 # Go to Tools > Secrets in Replit and add MCP_API_KEY there.
