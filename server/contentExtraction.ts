@@ -62,15 +62,8 @@ export async function extractTextFromFile(
     const normalizedPath = objectStorageService.normalizeObjectEntityPath(storagePath);
     const objectFile = await objectStorageService.getObjectEntityFile(normalizedPath);
     
-    const chunks: Buffer[] = [];
-    const stream = objectFile.createReadStream();
-    
-    for await (const chunk of stream) {
-      chunks.push(Buffer.from(chunk));
-    }
-    
-    const buffer = Buffer.concat(chunks);
-    
+    const buffer = await objectStorageService.readObjectBytes(objectFile);
+
     if (isPdfFile(mimeType, fileName)) {
       return await extractTextFromPdf(buffer);
     } else if (isWordFile(mimeType, fileName)) {

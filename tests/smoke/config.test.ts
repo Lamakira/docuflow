@@ -116,22 +116,30 @@ describe("config — required variables", () => {
     expect(message).toContain("SESSION_SECRET");
     expect(message).toContain("PRIVATE_OBJECT_DIR");
     expect(message).toContain("PUBLIC_OBJECT_SEARCH_PATHS");
-    expect(message).toContain("GCS_SERVICE_ACCOUNT_KEY");
     expect(message).toContain("JWT_SECRET");
     expect(message).toContain(".env.example");
   });
 
-  it("refuses to boot when neither storage credential is supplied", async () => {
-    const error = await load({
+  // A storage credential is deliberately absent from that list. ADR-0023 puts
+  // this environment's objects in Replit App Storage, which authenticates from
+  // REPL_IDENTITY and exposes no key to name — probed 2026-08-13, the Google
+  // client cannot reach an App Storage bucket at all. Demanding a key would
+  // refuse a correctly configured environment, so the provider is selected by
+  // whether one is supplied rather than required.
+  it("selects Replit App Storage when no credential is named", async () => {
+    const { config } = await load({
       ...BOOTABLE,
       GOOGLE_APPLICATION_CREDENTIALS: undefined,
-    }).catch((e: Error) => e);
+    });
 
-    // The mode the app cannot detect is the one it must not start in: without a
-    // credential the first signed URL fails inside the SDK, hours after boot.
-    const message = (error as Error).message;
-    expect(message).toContain("GCS_SERVICE_ACCOUNT_KEY");
-    expect(message).toContain("GOOGLE_APPLICATION_CREDENTIALS");
+    expect(config.objectStorage.provider).toBe("replit");
+    expect(config.objectStorage.serviceAccount).toBeUndefined();
+  });
+
+  it("selects Google storage when a credential is named", async () => {
+    const { config } = await load(BOOTABLE);
+
+    expect(config.objectStorage.provider).toBe("gcs");
   });
 
   // BOOTABLE covers the other credential: it names a key file and nothing else.

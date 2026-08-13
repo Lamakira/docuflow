@@ -37,11 +37,21 @@ export interface ServiceAccountKey {
   projectId?: string;
 }
 
+/**
+ * Which storage the objects live in. `replit` is App Storage, which supplies its
+ * own identity and cannot mint signed URLs; `gcs` is a Google bucket reached
+ * with a service-account key that can sign. Selected by whether a key is named,
+ * never by a switch — an environment that supplies one means it.
+ */
+export type ObjectStorageProvider = "replit" | "gcs";
+
 export interface ObjectStorageConfig {
   /** `/bucket/prefix` root under which private objects live. */
   privateDir: string;
   /** `/bucket/prefix` roots searched for public objects; the first receives uploads. */
   publicSearchPaths: string[];
+  /** Which provider the roots above are held in. */
+  provider: ObjectStorageProvider;
   /** Inline service-account key; absent means `GOOGLE_APPLICATION_CREDENTIALS` names one. */
   serviceAccount?: ServiceAccountKey;
   projectId?: string;
@@ -235,21 +245,28 @@ function resolveObjectStorage(): Resolved<ObjectStorageConfig> {
   //
   // Naming neither is the complaint below; naming one that cannot be read is a
   // different complaint, which `readServiceAccount` files itself.
+  // ADR-0023 puts this environment's objects in Replit App Storage, which
+  // authenticates itself from `REPL_IDENTITY` against the connectors host and
+  // exposes no credential to name. Probed 2026-08-13: the Google client cannot
+  // reach an App Storage bucket at all, so a GCS key is not an alternative here
+  // and demanding one would refuse a correctly-configured environment.
+  //
+  // A key is still accepted, because the release scripts publish installers to a
+  // real GCS bucket and a deployment may point at one. Supplying it selects the
+  // Google provider; supplying nothing selects App Storage, whose bucket arrives
+  // inside PRIVATE_OBJECT_DIR rather than as a credential.
   const serviceAccountKey = read("GCS_SERVICE_ACCOUNT_KEY");
   const serviceAccount = serviceAccountKey
     ? readServiceAccount(serviceAccountKey, missing)
     : undefined;
-  if (!serviceAccountKey && !read("GOOGLE_APPLICATION_CREDENTIALS")) {
-    missing.push(
-      "GCS_SERVICE_ACCOUNT_KEY — the service-account key file's JSON, verbatim or " +
-        "base64-encoded; or GOOGLE_APPLICATION_CREDENTIALS naming a key file on disk"
-    );
-  }
+  const provider: ObjectStorageProvider =
+    serviceAccount || read("GOOGLE_APPLICATION_CREDENTIALS") ? "gcs" : "replit";
 
   return {
     value: {
       privateDir: privateDir ?? "",
       publicSearchPaths,
+      provider,
       serviceAccount,
       projectId: read("GCS_PROJECT_ID") ?? serviceAccount?.projectId,
     },

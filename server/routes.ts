@@ -1,3 +1,4 @@
+import express from "express";
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { randomBytes } from "crypto";
@@ -5,7 +6,12 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated, getUserId, hashPassword, verifyPassword, regenerateSession } from "./auth";
 import { config } from "./config";
 import { z } from "zod";
-import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
+import {
+  ObjectStorageService,
+  ObjectNotFoundError,
+  storagePort,
+  verifyUploadGrant,
+} from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
@@ -714,6 +720,44 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * Receives the bytes for one object when the configured provider cannot mint
+   * signed URLs (ADR-0023: Replit App Storage has no signing). On a provider
+   * that can sign, `getObjectEntityUploadURL` hands the client a storage URL
+   * instead and this endpoint is never called — the two paths differ only in
+   * where the URL points, which is what keeps the browser uploader identical.
+   *
+   * The destination comes from the signed grant in the path and never from the
+   * request, so a client cannot pick where its bytes land. Authentication is
+   * still required: the grant proves *which object*, the session proves *who*.
+   */
+  app.put(
+    "/api/objects/upload/:grant",
+    isAuthenticated,
+    express.raw({ type: () => true, limit: "50mb" }),
+    async (req, res) => {
+      const ref = verifyUploadGrant(req.params.grant);
+      if (!ref) {
+        return res.status(403).json({ error: "Upload grant is invalid or expired" });
+      }
+
+      const body: Buffer = req.body;
+      if (!body || body.length === 0) {
+        return res.status(400).json({ error: "Empty body" });
+      }
+
+      try {
+        await storagePort.writeBytes(ref, body, {
+          contentType: req.headers["content-type"],
+        });
+        res.status(200).json({ ok: true });
+      } catch (error) {
+        console.error("Error receiving upload:", error);
+        res.status(500).json({ error: "Failed to store object" });
+      }
+    }
+  );
+
   app.post("/api/objects/upload-public", isAuthenticated, async (req, res) => {
     const objectStorageService = new ObjectStorageService();
     try {
@@ -857,8 +901,8 @@ export async function registerRoutes(
       }
 
       // Download the audio file to a buffer
-      const [buffer] = await file.download();
-      
+      const buffer = await objectStorageService.readObjectBytes(file);
+
       // Create a File object for OpenAI
       const audioFile = new File([buffer], "audio.webm", { type: "audio/webm" });
 
@@ -2558,15 +2602,8 @@ Instructions:
         const objectFile = await objectStorageService.getObjectEntityFile(normalizedPath);
         
         // Download file to buffer
-        const chunks: Buffer[] = [];
-        const stream = objectFile.createReadStream();
-        
-        for await (const chunk of stream) {
-          chunks.push(Buffer.from(chunk));
-        }
-        
-        const buffer = Buffer.concat(chunks);
-        
+        const buffer = await objectStorageService.readObjectBytes(objectFile);
+
         // Convert to HTML using mammoth
         const result = await mammoth.convertToHtml({ buffer });
         

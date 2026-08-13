@@ -43,6 +43,7 @@
     "@opentelemetry/sdk-node": "^0.221.0",
     "@opentelemetry/sdk-trace": "^2.10.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
+    "@replit/object-storage": "^1.0.0",
     "bcrypt": "^6.0.0",
     "express": "^4.21.2",
     "helmet": "^8.1.0",
