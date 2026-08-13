@@ -65,7 +65,7 @@ const CONSTRAINTS_SQL = `
  * declares, so every comparison excludes it — a baselined database has one and a
  * freshly pushed database does not, and that is not drift.
  */
-const LEDGER_TABLE = "schema_migrations";
+export const LEDGER_TABLE = "schema_migrations";
 
 export interface ColumnRow {
   table_name: string;

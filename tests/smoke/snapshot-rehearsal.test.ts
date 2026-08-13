@@ -100,7 +100,12 @@ describe("scanning a restored database", () => {
     const findings = await withClient(url, (client) => scanStorageUrls(client, [OWN_BUCKET]));
 
     expect(findings).toContainEqual(
-      expect.objectContaining({ table: "users", column: "profile_image_url", rows: 1, scrub: "undeclared" })
+      expect.objectContaining({
+        table: "users",
+        column: "profile_image_url",
+        rows: 1,
+        rule: undefined,
+      })
     );
   });
 
@@ -116,6 +121,33 @@ describe("scanning a restored database", () => {
     const findings = await withClient(url, (client) => scanStorageUrls(client, [OWN_BUCKET]));
 
     expect(findings).toEqual([]);
+  });
+
+  it("looks inside an array column, which is neither text nor jsonb to the catalog", async () => {
+    const id = await insertUser();
+    const projectId = randomUUID();
+    const crmProjectId = randomUUID();
+    await withClient(url, async (client) => {
+      await client.query(`INSERT INTO projects (id, name, owner_id) VALUES ($1, 'P', $2)`, [
+        projectId,
+        id,
+      ]);
+      await client.query(`INSERT INTO crm_projects (id, project_id) VALUES ($1, $2)`, [
+        crmProjectId,
+        projectId,
+      ]);
+      await client.query(
+        `INSERT INTO crm_project_notes (id, crm_project_id, content, created_by_id, mentioned_user_ids)
+         VALUES ($1, $2, 'note', $3, ARRAY[$4]::text[])`,
+        [randomUUID(), crmProjectId, id, FOREIGN]
+      );
+    });
+
+    const findings = await withClient(url, (client) => scanStorageUrls(client, [OWN_BUCKET]));
+
+    expect(findings).toContainEqual(
+      expect.objectContaining({ table: "crm_project_notes", column: "mentioned_user_ids" })
+    );
   });
 
   it("looks inside jsonb, where a URL hides from a column-name search", async () => {

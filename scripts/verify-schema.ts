@@ -28,6 +28,7 @@
 
 import pg from "pg";
 import { maskDatabaseUrl, requireDatabaseUrl } from "../shared/databaseUrl";
+import { flagValue } from "./lib/args";
 import { isEntryPoint } from "./lib/entrypoint";
 import { describeSchema, diffSchemas, formatDifferences, type SchemaDifference } from "./lib/schemaSnapshot";
 import { migrate } from "./migrate";
@@ -64,13 +65,7 @@ interface Options {
 }
 
 function parseArgs(argv: string[]): Options {
-  const valueOf = (flag: string): string | undefined => {
-    const at = argv.indexOf(flag);
-    if (at === -1) return undefined;
-    const value = argv[at + 1];
-    if (!value || value.startsWith("--")) throw new Error(`${flag} needs a database URL`);
-    return value;
-  };
+  const valueOf = (flag: string) => flagValue(argv, flag, "a database URL");
 
   // Both default to the configured database: bare `db:verify` audits your own,
   // building the reference alongside it.

@@ -37,8 +37,11 @@ npm run test:db:down # stop the database
   clears every `OTEL_*` variable so a developer's shell cannot instrument a run.
   Nothing patches express or pg while a suite is running, and no exporter has to
   be silenced.
-- `DB_DRIVER=pg` makes `server/db.ts` use the standard node-postgres driver;
-  production default remains Neon's serverless driver.
+- `DB_DRIVER=pg` makes `server/db.ts` use the standard node-postgres driver.
+  So does every other environment now: `.replit` sets it for the Replit
+  workspace and the published app, because the Neon serverless driver's
+  WebSocket transport does not reach a Replit-hosted database (#53). The
+  serverless driver remains the code default and nothing sets it.
 
 ### The database image is pgvector, not plain Postgres
 

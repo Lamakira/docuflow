@@ -37,36 +37,54 @@
 import type { Client } from "pg";
 import pg from "pg";
 import { maskDatabaseUrl, requireDatabaseUrl } from "../shared/databaseUrl";
+import { flagValue } from "./lib/args";
 import { isEntryPoint } from "./lib/entrypoint";
+import { LEDGER_TABLE } from "./lib/schemaSnapshot";
 import type { Report } from "./lib/db";
 
 /** Absolute storage references, in both forms the repository has ever written. */
 const STORAGE_URL = /(?:https:\/\/storage\.googleapis\.com\/|gs:\/\/)[^\s"'<>)\\]+/g;
 
-/** Column types a URL can hide in. `json` is included; the schema uses `jsonb`. */
-const SCANNED_TYPES = ["text", "character varying", "jsonb", "json"];
+/**
+ * Column types a URL can hide in. `json` is included though the schema uses
+ * `jsonb`, and `ARRAY` is included because that is the single name
+ * `information_schema` gives every array type — `text[]` is not reported as
+ * text, so a scan built from the obvious list walks straight past
+ * `crm_project_notes.mentioned_user_ids`. Casting to text renders an array as
+ * `{a,b}`, which the same match reads.
+ */
+const SCANNED_TYPES = ["text", "character varying", "character", "jsonb", "json", "ARRAY"];
 
-/** Not application data: the runner's own ledger. */
-const SKIPPED_TABLES = ["schema_migrations"];
+/** Not application data: the runner's own ledger, which no migration declares. */
+const SKIPPED_TABLES = [LEDGER_TABLE];
 
-export interface StorageUrlFinding {
+/** One column of one table — what every list, rule, and finding here is keyed by. */
+export interface ColumnRef {
   table: string;
   column: string;
+}
+
+export interface StorageUrlFinding extends ColumnRef {
   /** Rows holding at least one foreign storage URL. */
   rows: number;
   /** The first one found, so the operator can see what they are dealing with. */
   sample: string;
-  /** The rule that covers this column, or `undeclared` when none does. */
-  scrub: string;
+  /** The rule that covers this column; absent means nobody has decided. */
+  rule?: ScrubRule;
 }
 
-/** The bucket an absolute storage reference names, or nothing if it names none. */
-function bucketOf(url: string): string | undefined {
+/** What a finding's rule is called in the report, including having none. */
+function scrubLabel(finding: StorageUrlFinding): string {
+  return finding.rule?.label ?? "undeclared";
+}
+
+/** An absolute storage reference, split where every caller needs it split. */
+function splitStorageUrl(url: string): { bucket: string; objectName: string } {
   const rest = url.startsWith("gs://")
     ? url.slice("gs://".length)
     : url.slice("https://storage.googleapis.com/".length);
-  const bucket = rest.split("/")[0];
-  return bucket.length > 0 ? bucket : undefined;
+  const [bucket, ...object] = rest.split("/");
+  return { bucket, objectName: object.join("/") };
 }
 
 /**
@@ -78,8 +96,8 @@ function bucketOf(url: string): string | undefined {
 export function foreignStorageUrls(value: string, ownBuckets: string[]): string[] {
   const found = value.match(STORAGE_URL) ?? [];
   return found.filter((url) => {
-    const bucket = bucketOf(url);
-    return bucket !== undefined && !ownBuckets.includes(bucket);
+    const { bucket } = splitStorageUrl(url);
+    return bucket.length > 0 && !ownBuckets.includes(bucket);
   });
 }
 
@@ -113,12 +131,8 @@ function privatePrefixOf(privateDir: string): string {
  * object name and passes through.
  */
 export function toObjectName(value: string, privateDir: string): string {
-  const absolute = value.match(STORAGE_URL)?.[0];
-  if (absolute === value) {
-    const rest = value.startsWith("gs://")
-      ? value.slice("gs://".length)
-      : value.slice("https://storage.googleapis.com/".length);
-    return rest.split("/").slice(1).join("/");
+  if (value.match(STORAGE_URL)?.[0] === value) {
+    return splitStorageUrl(value).objectName;
   }
 
   if (value.startsWith("/objects/")) {
@@ -131,7 +145,7 @@ export function toObjectName(value: string, privateDir: string): string {
 }
 
 /** Columns holding a storage key rather than a URL — the keys a copy must carry. */
-const KEY_SOURCES = [
+const KEY_SOURCES: ColumnRef[] = [
   { table: "time_entry_screenshots", column: "storage_key" },
   { table: "company_documents", column: "storage_path" },
 ];
@@ -142,9 +156,7 @@ const KEY_SOURCES = [
  * `undeclared` until somebody decides what the rehearsed environment should
  * hold instead — which is a decision, not a default.
  */
-interface ScrubRule {
-  table: string;
-  column: string;
+export interface ScrubRule extends ColumnRef {
   /** Shown in the report, so the run says what it did and why. */
   label: string;
   apply(client: Client, ownBuckets: string[]): Promise<number>;
@@ -181,6 +193,16 @@ function ruleFor(table: string, column: string): ScrubRule | undefined {
   return SCRUB_RULES.find((rule) => rule.table === table && rule.column === column);
 }
 
+/**
+ * A table or column name as SQL. These come from `information_schema` rather
+ * than from a caller, so this is not the injection boundary — it is the one
+ * place a name containing a quote or a capital letter would otherwise change
+ * meaning, and a restored snapshot is exactly where an unexpected name arrives.
+ */
+function quoted(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
 /** Every column in the public schema a URL could be stored in. */
 async function scannableColumns(client: Client): Promise<{ table: string; column: string }[]> {
   const { rows } = await client.query<{ table_name: string; column_name: string }>(
@@ -207,9 +229,9 @@ export async function scanStorageUrls(
 
   for (const { table, column } of await scannableColumns(client)) {
     const { rows } = await client.query<{ value: string }>(
-      `SELECT "${column}"::text AS value FROM "${table}"
-        WHERE "${column}"::text LIKE '%storage.googleapis.com/%'
-           OR "${column}"::text LIKE '%gs://%'`
+      `SELECT ${quoted(column)}::text AS value FROM ${quoted(table)}
+        WHERE ${quoted(column)}::text LIKE '%storage.googleapis.com/%'
+           OR ${quoted(column)}::text LIKE '%gs://%'`
     );
 
     const hits = rows
@@ -222,7 +244,7 @@ export async function scanStorageUrls(
       column,
       rows: hits.length,
       sample: hits[0][0],
-      scrub: ruleFor(table, column)?.label ?? "undeclared",
+      rule: ruleFor(table, column),
     });
   }
 
@@ -241,7 +263,7 @@ export async function scrubStorageUrls(
 ): Promise<StorageUrlFinding[]> {
   const findings = await scanStorageUrls(client, ownBuckets);
 
-  const undeclared = findings.filter((finding) => finding.scrub === "undeclared");
+  const undeclared = findings.filter((finding) => finding.rule === undefined);
   if (undeclared.length > 0) {
     throw new Error(
       `Refusing to scrub: ${undeclared.length} column(s) hold a foreign storage URL and no ` +
@@ -255,10 +277,9 @@ export async function scrubStorageUrls(
     );
   }
 
-  for (const finding of findings) {
-    const rule = ruleFor(finding.table, finding.column)!;
-    const changed = await rule.apply(client, ownBuckets);
-    report(`scrubbed ${finding.table}.${finding.column}: ${changed} row(s) ${rule.label}`);
+  for (const { table, column, rule } of findings) {
+    const changed = await rule!.apply(client, ownBuckets);
+    report(`scrubbed ${table}.${column}: ${changed} row(s) ${rule!.label}`);
   }
 
   return findings;
@@ -270,7 +291,7 @@ export async function namedStorageKeys(client: Client, privateDir: string): Prom
 
   for (const { table, column } of KEY_SOURCES) {
     const { rows } = await client.query<{ value: string }>(
-      `SELECT "${column}" AS value FROM "${table}" WHERE "${column}" IS NOT NULL`
+      `SELECT ${quoted(column)} AS value FROM ${quoted(table)} WHERE ${quoted(column)} IS NOT NULL`
     );
     for (const row of rows) {
       const name = toObjectName(row.value, privateDir);
@@ -327,18 +348,10 @@ interface Options {
 }
 
 function parseArgs(argv: string[]): Options {
-  const valueOf = (flag: string): string | undefined => {
-    const at = argv.indexOf(flag);
-    if (at === -1) return undefined;
-    const value = argv[at + 1];
-    if (!value || value.startsWith("--")) throw new Error(`${flag} needs a value`);
-    return value;
-  };
-
   return {
-    against: valueOf("--against") ?? requireDatabaseUrl(),
+    against: flagValue(argv, "--against", "a database URL") ?? requireDatabaseUrl(),
     scrub: argv.includes("--scrub"),
-    keys: valueOf("--keys"),
+    keys: flagValue(argv, "--keys", "a path to a copy manifest"),
   };
 }
 
@@ -371,7 +384,10 @@ async function main(options: Options): Promise<number> {
     } else {
       console.error(`\nstorage URLs: ${findings.length} column(s) still hold a foreign reference:`);
       for (const finding of findings) {
-        console.error(`  - ${finding.table}.${finding.column} (${finding.rows} row(s)) ${finding.scrub}: ${finding.sample}`);
+        console.error(
+          `  - ${finding.table}.${finding.column} (${finding.rows} row(s)) ` +
+            `${scrubLabel(finding)}: ${finding.sample}`
+        );
       }
       console.error(options.scrub ? "" : "Run `npm run snapshot:scrub` to apply the recorded rewrites.");
     }

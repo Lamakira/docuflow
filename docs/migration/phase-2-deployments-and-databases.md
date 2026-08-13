@@ -1,7 +1,7 @@
 # Phase 2 deployments and databases
 
 - **Recorded:** 2026-08-13
-- **Status:** **Not published.** Every dashboard observation below is empty. The decisions an agent can settle from the platform's own documentation are settled here — the deployment topology, the driver, where migrations run, what the scrub and the key verifier do — and the acts only a human can perform against the Replit console are listed as an ordered checklist with the cells their results go in.
+- **Status:** **Not published.** Nothing about the *published* environment is observed — geography, publish timestamp, production database, and deployment Secrets are all empty cells. What is recorded is the account and the development workspace, where the app was brought up on 2026-08-13. The decisions an agent can settle from the platform's own documentation are settled here — the deployment topology, the driver, where migrations run, what the scrub and the key verifier do — and the acts only a human can perform against the Replit console are listed as an ordered checklist with the cells their results go in.
 - **Ticket:** [#53](https://github.com/Lamakira/docuflow/issues/53). This document is the record that ticket fills; it is not evidence that the ticket is done.
 - **Sources read:** `docs.replit.com`, 2026-08-13. Provider statements, not dashboard observations, and three of them contradict what earlier records in this repository assert — see [Corrections](#corrections-to-earlier-records).
 
@@ -38,7 +38,8 @@ The consequence is procedural and it is easy to miss: an App created in a North 
 6. Set the Secrets the boot refusal requires — see [Secrets](#secrets-and-the-boot-refusal). `DATABASE_URL` is supplied by the platform; the rest are not.
 7. Publish. Record the UTC timestamp: it is the moment the geography became permanent.
 8. Check `/health`. It returns `{"status":"ok"}` and touches no database, which is what makes it a liveness check and not a readiness one — see [Health](#what-health-does-and-does-not-prove).
-9. Read the production database's host suffix and record the operator. Never record the connection string.
+9. Read the deployment's boot line. If it says `over neon` rather than `over pg`, `.replit`'s `[env]` did not reach the published app: set `DB_DRIVER=pg` there too before anything else is judged.
+10. Read the production database's host suffix and record the operator. Never record the connection string.
 
 ## The publish record
 
@@ -101,7 +102,12 @@ Set in [`.replit`](../../.replit)'s `[env]` block, which the [inventory](phase-2
 2. **It is the instrumented path.** [`docs/OBSERVABILITY.md`](../OBSERVABILITY.md) records that the Neon driver is uninstrumented, so query spans appear under `DB_DRIVER=pg` and not under the default. Leaving the two environments on different drivers would produce different traces from the same code.
 3. **It removes a difference that buys nothing here.** The serverless driver exists for environments that cannot hold a TCP connection. A long-lived Autoscale container can.
 
-Verify at boot rather than by inspection: `[config] production — database DATABASE_URL over pg (…)` is the line, and `logConfigSummary` masks the password in it.
+**Do not assume `[env]` reaches the published app, and check the boot line before believing it did.** `[env]` is documented as workspace configuration; whether a deployment inherits it is not stated anywhere in the `.replit` reference. The failure mode if it does not is the quiet kind, which is why it is called out here rather than left to be discovered: `server/config.ts` treats anything other than `pg` as `neon`, so an unset variable is not a boot refusal but a driver that cannot reach the database, failing at the first query instead of at startup. Read the published deployment's log for `[config] production — database DATABASE_URL over pg (…)` — `logConfigSummary` masks the password in it — and if it says `over neon`, set `DB_DRIVER=pg` in the published environment's own variables as well.
+
+| | |
+| --- | --- |
+| Published boot line reports `over pg` | *(unrecorded)* |
+| `DB_DRIVER` also set in the published environment's variables | *(unrecorded — needed only if `[env]` does not propagate)* |
 
 ### Pooling, and the `-pooler` hostname
 
@@ -136,7 +142,7 @@ ADR-0021 places the gated pre-deploy step here, and the mechanism is that **a fa
 - **Not in `run`.** Autoscale runs `run` in every instance. [`scripts/migrate.ts`](../../scripts/migrate.ts) takes no advisory lock, so two instances starting together would race the journal.
 - **After `npm run build`, not before.** `dist/migrate.mjs` is a build output (#35).
 
-One thing to verify at the first publish and record here: **whether the Build command's environment carries the production `DATABASE_URL`.** If it does not, migrations cannot run in the build on this platform, and the fallback is an operator-run `node dist/migrate.mjs` against the production database before the publish — which is a weaker gate, because nothing enforces it. Do not assume; read the build log.
+One thing to verify at the first publish and record here: **whether the Build command's environment carries the production `DATABASE_URL`.** If it does not, the runner refuses for want of a database and the build fails — which blocks **every** publish, not just one, until the build command is changed back. That is the gate working as designed and it is also, on the first publish, indistinguishable from a broken deployment, so read the build log rather than guessing at a red X. The fallback if the build environment has no database is an operator-run `node dist/migrate.mjs` before the publish, and it is a weaker gate because nothing enforces it.
 
 | | |
 | --- | --- |
@@ -147,6 +153,8 @@ One thing to verify at the first publish and record here: **whether the Build co
 ### Agent-applied schema propagation
 
 Replit documents the behaviour plainly: "At the time of publishing, any changes you've made with Agent to the structure of your development database (adding and deleting columns or tables) are applied to your production database." **No setting to disable it is documented.** That is the honest finding, and it changes what "turn it off" means for this ticket.
+
+Say plainly what that does to the acceptance criterion, because half-meeting it quietly would be worse than missing it: #53 asks that "Agent schema propagation is demonstrably off", and **on this platform it cannot be turned off — only left unused.** What is demonstrable is that nothing travels the path, not that the path is closed. A later Replit release could add the toggle; until then, every claim in this section is about our own conduct rather than about a setting.
 
 The control is therefore procedural, not a toggle, and it has one rule: **the Agent is never asked to change the schema in this project.** Every column and table arrives through [`migrations/`](../../migrations), applied by the runner. The journal stays the single authority ADR-0021 requires, and the propagation path stays empty because nothing puts anything into it.
 
@@ -214,7 +222,7 @@ npm run snapshot:check -- --against "$URL"      # a database other than the conf
 
 Three properties of it are deliberate:
 
-- **The scan is driven by `information_schema`, not a table list.** ADR-0022 asks for "a check across every column that can hold one, not a fix to the one table known today", so every `text`, `varchar`, `json`, and `jsonb` column in the public schema is scanned, including URLs buried inside JSON.
+- **The scan is driven by `information_schema`, not a table list.** ADR-0022 asks for "a check across every column that can hold one, not a fix to the one table known today", so every `text`, `varchar`, `character`, `json`, `jsonb`, and **array** column in the public schema is scanned — URLs buried inside JSON included. Arrays are on that list because `information_schema` reports every array type under the single name `ARRAY`: a `text[]` column is not reported as text, and the first version of this scan walked straight past `crm_project_notes.mentioned_user_ids`.
 - **"Ours" comes from the object-storage roots the environment is already configured with**, not a new variable. A second place to name the bucket is a second place to get it wrong.
 - **A finding in a column no rule covers fails the run with the database untouched.** One rule is recorded, because ADR-0022 settled one: a foreign `desktop_releases.storage_url` becomes `/downloads/{platform}`, the local path `downloadRoutes.ts` already understands, which reports the platform unavailable until this environment has built its own installer ([#60](https://github.com/Lamakira/docuflow/issues/60)). Anything else is a decision for a human, and guessing at it is the failure this check exists to prevent.
 
