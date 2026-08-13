@@ -114,6 +114,28 @@ export class File {
   }
 
   /**
+   * Writes an object directly, which is how the server stores bytes it already
+   * holds. It used to mint a signed URL and PUT to that instead — a round trip
+   * out to storage and back for something already in memory — so this surface
+   * had no stand-in until the storage port removed that detour.
+   *
+   * Existing custom metadata survives a write, matching the real client: `save`
+   * replaces contents, and an ACL policy set afterwards is not erased by a later
+   * overwrite of the same object.
+   */
+  async save(
+    body: string | Buffer,
+    options: { contentType?: string } = {}
+  ): Promise<void> {
+    const previous = this.stored;
+    objects.set(key(this.bucketName, this.name), {
+      data: Buffer.isBuffer(body) ? body : Buffer.from(body),
+      contentType: options.contentType ?? previous?.contentType ?? "application/octet-stream",
+      metadata: previous?.metadata ?? {},
+    });
+  }
+
+  /**
    * Real V4 signing needs a service-account key and produces a URL nothing can
    * predict; this records what was asked for and returns a stable stand-in with
    * the same origin and path, which is the part the server's own code reads back.

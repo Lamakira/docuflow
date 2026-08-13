@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { randomUUID } from "crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import { config } from "./config";
 import {
   ObjectAclPolicy,
@@ -102,17 +102,13 @@ export class ObjectStorageService {
   async getObjectEntityUploadURL(): Promise<string> {
     const privateObjectDir = this.getPrivateObjectDir();
     const objectId = randomUUID();
-    const ref = parseObjectPath(`${privateObjectDir}/uploads/${objectId}`);
-
-    return storagePort.signUrl({ ref, method: "PUT", ttlSec: 900 });
+    return uploadUrlFor(`${privateObjectDir}/uploads/${objectId}`);
   }
 
   async getPublicUploadURL(): Promise<string> {
     const publicDir = this.getPublicObjectSearchPaths()[0];
     const objectId = randomUUID();
-    const ref = parseObjectPath(`${publicDir}/uploads/${objectId}`);
-
-    return storagePort.signUrl({ ref, method: "PUT", ttlSec: 900 });
+    return uploadUrlFor(`${publicDir}/uploads/${objectId}`);
   }
 
   async getObjectEntityFile(objectPath: string): Promise<StoredObjectRef> {
@@ -187,6 +183,79 @@ export class ObjectStorageService {
       requestedPermission: requestedPermission ?? ObjectPermission.READ,
     });
   }
+}
+
+/**
+ * Where a client should PUT one object's bytes.
+ *
+ * On a provider that can sign, that is storage itself and the bytes never touch
+ * this process — ADR-0016's direct transfer. On one that cannot, it is this
+ * server, which relays them. The caller cannot tell the difference: both are a
+ * URL to PUT the file to, which is what keeps the browser uploader identical on
+ * either provider.
+ *
+ * The relay URL carries a grant rather than a path, so a client cannot choose
+ * where its bytes land. See `signUploadGrant`.
+ */
+async function uploadUrlFor(fullObjectPath: string): Promise<string> {
+  const ref = parseObjectPath(fullObjectPath);
+  if (storagePort.supportsSignedUrls) {
+    return storagePort.signUrl({ ref, method: "PUT", ttlSec: UPLOAD_TTL_SEC });
+  }
+  return `/api/objects/upload/${signUploadGrant(ref, UPLOAD_TTL_SEC)}`;
+}
+
+const UPLOAD_TTL_SEC = 900;
+
+/**
+ * A short-lived, tamper-evident permission to write exactly one object.
+ *
+ * This stands in for what a signed URL gave us for free. The destination is
+ * inside the grant and the grant is signed, so the relay endpoint never takes a
+ * path from the request: a client that edits either half gets a rejected
+ * signature rather than a write somewhere it chose. The desktop signing key is
+ * reused because it is already required at boot, already rotatable, and already
+ * the thing this server signs short-lived grants with.
+ */
+export function signUploadGrant(ref: StoredObjectRef, ttlSec: number): string {
+  const payload = JSON.stringify({
+    b: ref.bucketName,
+    o: ref.objectName,
+    exp: Date.now() + ttlSec * 1000,
+  });
+  const body = Buffer.from(payload).toString("base64url");
+  return `${body}.${uploadGrantSignature(body)}`;
+}
+
+/** The ref a grant permits, or null if it is unsigned, altered, or expired. */
+export function verifyUploadGrant(grant: string): StoredObjectRef | null {
+  const [body, signature] = grant.split(".");
+  if (!body || !signature) return null;
+
+  const expected = uploadGrantSignature(body);
+  // Both are hex of the same length, so a length mismatch is already a failure
+  // and `timingSafeEqual` is safe to reach.
+  if (
+    signature.length !== expected.length ||
+    !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+  ) {
+    return null;
+  }
+
+  try {
+    const { b, o, exp } = JSON.parse(Buffer.from(body, "base64url").toString());
+    if (typeof exp !== "number" || Date.now() > exp) return null;
+    if (typeof b !== "string" || typeof o !== "string") return null;
+    return { bucketName: b, objectName: o };
+  } catch {
+    return null;
+  }
+}
+
+function uploadGrantSignature(body: string): string {
+  return createHmac("sha256", config.desktopTokens.current.secret)
+    .update(body)
+    .digest("hex");
 }
 
 export function parseObjectPath(path: string): StoredObjectRef {

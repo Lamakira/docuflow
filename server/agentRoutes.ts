@@ -25,7 +25,7 @@ import { isAuthenticated, getUserId, verifyPassword } from "./auth";
 import { config } from "./config";
 import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
 import { logInfo, logError, logTimeEvent } from "./logger";
-import { parseObjectPath, signObjectURL } from "./objectStorage";
+import { parseObjectPath, storagePort } from "./objectStorage";
 import { isTasksEnabled } from "./migrationFlags";
 
 // ─── Constants ───
@@ -659,28 +659,16 @@ export function registerAgentRoutes(app: Express): void {
           logInfo("agent.screenshots.compress.skipped", { screenshotId: id, reason: "sharp unavailable" });
         }
 
-        // Upload to Object Storage via a signed URL this process PUTs to itself:
-        // the agent sends bytes here, the server compresses and relays them.
+        // The bytes are already here — the agent sent them and this process
+        // compressed them — so they go straight to storage. This used to mint a
+        // signed URL and PUT to it, which was a network round trip out and back
+        // for an object already in memory, and which no provider without signing
+        // can do at all.
         const privateDir = config.objectStorage.privateDir;
         const objectSubPath = `agent-screenshots/${id}.${imageExt}`;
-        const fullObjectPath = `${privateDir}/${objectSubPath}`;
-        const { bucketName, objectName } = parseObjectPath(fullObjectPath);
+        const ref = parseObjectPath(`${privateDir}/${objectSubPath}`);
 
-        const signedPutUrl = await signObjectURL({
-          bucketName,
-          objectName,
-          method: "PUT",
-          ttlSec: 300,
-        });
-
-        const uploadRes = await fetch(signedPutUrl, {
-          method: "PUT",
-          headers: { "Content-Type": imageMime },
-          body: imageBuffer,
-        });
-        if (!uploadRes.ok) {
-          throw new Error(`Object storage upload failed: ${uploadRes.status}`);
-        }
+        await storagePort.writeBytes(ref, imageBuffer, { contentType: imageMime });
 
         // DB storageKey uses /objects/ prefix so getObjectEntityFile() can resolve it
         const storageKey = `/objects/${objectSubPath}`;
