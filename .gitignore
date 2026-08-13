@@ -27,4 +27,5 @@ transcript.txt
 .idea/
 
 # Harness build output (npm run harness serves from source; build writes here)
-desktop-agent/.harness/
+desktop-agent/.harness/.local-dev/
+.local-dev/
