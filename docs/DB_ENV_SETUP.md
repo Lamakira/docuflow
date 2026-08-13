@@ -105,6 +105,8 @@ PGHOST=localhost PGUSER=me PGPASSWORD=x PGDATABASE=mydb npm run db:migrate
 
 ## Checklist avant de retirer DATABASE_URL sur Replit
 
+> ⛔ **Obsolète depuis le 2026-08-13 ([#53](https://github.com/Lamakira/docuflow/issues/53)).** Les variables `PG*` **ne sont pas fournies** sur l'infrastructure Replit actuelle : la documentation les réserve aux apps restées sur l'ancienne infrastructure Neon et renvoie à `DATABASE_URL`. Il n'existe donc pas d'état supporté où une app Replit tourne sur `PG*` sans `DATABASE_URL`, et ce checklist n'a plus de cible. Le mode 2 reste correct et utile ailleurs — conteneur local, CI, harnais de test — c'est uniquement le retrait de `DATABASE_URL` **sur Replit** qui n'a plus lieu d'être. Voir [`migration/phase-2-deployments-and-databases.md`](migration/phase-2-deployments-and-databases.md).
+
 > ⚠️ **Ne pas retirer `DATABASE_URL` de prod tant que ce checklist n'est pas validé.**
 
 - [ ] Les variables `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` sont définies sur Replit

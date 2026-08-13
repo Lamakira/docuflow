@@ -10,6 +10,19 @@ The migration runner is the first command to use that (#35): `node
 dist/migrate.mjs` applies the journal from inside the image, so the gated
 pre-deploy step ADR-0016 requires runs against the same digest the service does.
 
+> **This image is not the deployment artifact.** [ADR-0021](adr/0021-run-the-compute-on-replit-and-supersede-the-render-hosting-decision.md)
+> moved the compute to Replit, which documents no Docker or custom-container
+> deploy path: the published app is built and run from [`.replit`](../.replit)
+> by the platform, not from this Dockerfile. What the image remains is the CI
+> harness — every check below runs against it — and the portability insurance
+> that keeps ADR-0021 cheap to undo, since a host that takes a container can
+> take this one unchanged. Read the rest of this document as "how the image is
+> built, run, and checked", never as "how production is deployed"; that lives in
+> [`docs/migration/phase-2-deployments-and-databases.md`](migration/phase-2-deployments-and-databases.md).
+> The migration runner above is the one piece with a foot in both: the same
+> command runs in the image and, as the Replit deployment's Build command,
+> against the published database.
+
 ## Build
 
 ```bash
