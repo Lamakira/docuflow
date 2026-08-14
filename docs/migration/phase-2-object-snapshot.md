@@ -70,8 +70,8 @@ Everything below needs a real App Storage bucket, and none of it can be closed f
 
 | | |
 | --- | --- |
-| App Storage bucket created | *(unrecorded)* |
-| `PRIVATE_OBJECT_DIR` / `PUBLIC_OBJECT_SEARCH_PATHS` naming it, in the workspace **and** in Deployment secrets | *(unrecorded — currently `/docuflow/.private` and `/docuflow/public`, recorded by the Agent as placeholders)* |
+| App Storage bucket created | **Yes** — 2026-08-13, `replit-objstore-b63748fd-…` |
+| `PRIVATE_OBJECT_DIR` / `PUBLIC_OBJECT_SEARCH_PATHS` naming it, in the workspace **and** in Deployment secrets | **Set** 2026-08-13, in both, and in [`.replit`](../../.replit) so a re-clone carries them. The placeholders they replaced were `/docuflow/.private` and `/docuflow/public` |
 | Upload, download, and delete succeed in the published environment | *(unrecorded)* |
 | Legacy key preservation demonstrated on a seeded object | *(unrecorded)* |
 | No `storage.googleapis.com` URL or GCS credential reachable from this environment | *(unrecorded)* |
