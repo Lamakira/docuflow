@@ -194,6 +194,17 @@ refusal: a foreign URL in a column no scrub rule covers stops the run and leaves
 the database untouched, because rewriting it on a guess is the same mistake as
 missing it.
 
+`object-snapshot` and `storage-list`
+([#59](https://github.com/Lamakira/docuflow/issues/59)) cover the object half of
+the same pair. `object-snapshot` pins the copy manifest ADR-0022 makes the Phase
+2 evidence artifact — keys, sizes, checksums, both timestamps — the refusal of a
+copy dated before the export it is paired with, and the asymmetry of
+reconciliation: a key the destination lacks is a failure, a key it holds and the
+manifest does not is expected. `storage-list` covers the port's `list`, which no
+request path uses and ADR-0023's exit test cannot be written without; it runs
+against the GCS fake, and `ReplitStoragePort.list` is uncovered, like the rest of
+that adapter.
+
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`
