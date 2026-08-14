@@ -1,36 +1,23 @@
-modules = ["web", "postgresql-16", "nodejs-24"]
+# nodejs-24 because `npm run dev` and the deployment build below run this
+# repository's package.json, and its `engines` asks for node >=24 / npm >=11:
+# `package-lock.json` was written by npm 11 and the npm 10 and 9 that earlier
+# lines bundle refuse it (see the Dockerfile's ARG NODE_VERSION). The exact
+# release ships from the Dockerfile; this only has to clear the floor.
+modules = ["nodejs-24", "web", "python-3.11", "postgresql-16"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
-channel = "stable-25_05"
+channel = "stable-24_05"
 packages = ["chromium"]
 
 [deployment]
-# Autoscale carries the HTTP runtime only. ADR-0013's lease-elected scheduler
-# needs a process that never sleeps, and one App holds one deployment type — so
-# the worker is a second Replit project on this same repository, Reserved VM,
-# selecting its role from DOCUFLOW_ROLE rather than from a divergent copy of
-# this file. See docs/migration/phase-2-deployments-and-databases.md (#53).
 deploymentTarget = "autoscale"
-# Migrations run here and nowhere else. A failing Build command fails the build
-# and blocks the publish, which is the gated pre-deploy step ADR-0017 requires
-# and ADR-0021 places in the build. Not at boot — #24 deleted boot-time DDL. Not
-# in `run` — Autoscale runs that in every instance and scripts/migrate.ts takes
-# no advisory lock, so two instances starting together would race the journal.
-# After `npm run build`, because dist/migrate.mjs is one of its outputs (#35).
-build = ["sh", "-c", "npm run build && node dist/migrate.mjs"]
+build = ["npm", "run", "build"]
 run = ["npm", "run", "start"]
 
 [env]
 PORT = "5000"
-# node-postgres rather than the Neon serverless driver, in both environments.
-# The serverless driver reaches Neon over WebSockets, and Replit's databases are
-# its own Postgres (Helium) since 2025-12-04; node-postgres reaches that and a
-# Neon database alike over plain TLS, which is why every script in scripts/
-# already uses it. It is also the instrumented path — the Neon driver emits no
-# query spans (docs/OBSERVABILITY.md).
-DB_DRIVER = "pg"
 
 [workflows]
 runButton = "Project"
@@ -69,24 +56,5 @@ localPort = 5904
 externalPort = 3000
 
 [userenv]
-
-[userenv.shared]
-DB_DRIVER = "pg"
-<<<<<<< HEAD
-=======
-# The App Storage bucket, created 2026-08-13. Not a secret: a bucket name grants
-# nothing, and `server/config.ts` reads which bucket is ours from exactly these
-# two roots — including `scripts/snapshot-rehearsal.ts`, which uses them to tell
-# a production storage URL from one of ours (#59, ADR-0023).
->>>>>>> b20259df54fea11abd15ed5ed5b1bd6b54613143
-PRIVATE_OBJECT_DIR = "/replit-objstore-b63748fd-2e8b-4090-8d94-254080b61ad7/.private"
-PUBLIC_OBJECT_SEARCH_PATHS = "/replit-objstore-b63748fd-2e8b-4090-8d94-254080b61ad7/public"
-
-[postMerge]
-path = "scripts/post-merge.sh"
-timeoutMs = 180000
-
-[objectStorage]
-defaultBucketID = "replit-objstore-b63748fd-2e8b-4090-8d94-254080b61ad7"
 # MCP_API_KEY must be set via Replit Secrets (not hardcoded here).
 # Go to Tools > Secrets in Replit and add MCP_API_KEY there.
