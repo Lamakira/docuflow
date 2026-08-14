@@ -29,6 +29,9 @@
     "objects:reconcile": "tsx --env-file-if-exists=.env scripts/object-snapshot.ts reconcile",
     "snapshot:check": "tsx --env-file-if-exists=.env scripts/snapshot-rehearsal.ts",
     "snapshot:scrub": "tsx --env-file-if-exists=.env scripts/snapshot-rehearsal.ts --scrub",
+    "evidence:export": "tsx --env-file-if-exists=.env scripts/evidence-export.ts export",
+    "evidence:verify": "tsx --env-file-if-exists=.env scripts/evidence-export.ts verify",
+    "evidence:decrypt": "tsx --env-file-if-exists=.env scripts/evidence-export.ts decrypt",
     "publish:windows": "node scripts/publish-windows.js"
   },
   "dependencies": {
