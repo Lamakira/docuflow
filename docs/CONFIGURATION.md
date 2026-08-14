@@ -129,6 +129,12 @@ rotation costs nobody their session:
    what tells you a replica has caught up.
 3. **Retire.** Clear `JWT_PREVIOUS_SECRET` and restart.
 
+Those three steps are the whole of the rotation and are true of any host. Where
+the values live in the parallel environment, what "restart" and "replica" mean
+on an Autoscale deployment that starts instances on demand, and how a rotation
+is attested without recording the secret are in
+[`docs/migration/phase-2-desktop-signing-key.md`](migration/phase-2-desktop-signing-key.md).
+
 Both keys must have different ids; boot refuses a pair that does not, because a
 `kid` naming two secrets is the one question it exists to answer. The boot line
 reports the ids in use, and never the secrets:
