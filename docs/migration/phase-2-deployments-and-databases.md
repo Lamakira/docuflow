@@ -150,9 +150,11 @@ One thing to verify at the first publish and record here: **whether the Build co
 
 | | |
 | --- | --- |
-| Build log shows the migration runner | *(unrecorded)* |
-| Migrations applied to the production database at publish | *(unrecorded)* |
-| `npm run db:migrate:status` against production is clean | *(unrecorded)* |
+| Build log shows the migration runner | *(unread — the evidence below is the database's, not the log's)* |
+| Migrations applied to the production database at publish | **Yes** — 2026-08-13. The production database holds all 36 tables the journal creates, and `schema_migrations` holds **5 rows**, one per migration. Observed in the Database pane |
+| `npm run db:migrate:status` against production is clean | *(unrecorded — the ledger above says the same thing from the other side)* |
+
+**The Build command's environment does carry `DATABASE_URL`.** That was the open question this section posed, and the ledger answers it: nothing else in the publish path applies migrations, so five recorded migrations against a database created at publish means the runner reached it from the build. [#54](https://github.com/Lamakira/docuflow/issues/54) can build its pre-deploy gate on the Build command rather than on an operator step.
 
 ### Agent-applied schema propagation
 
@@ -291,7 +293,7 @@ Covered above under [databases](#one-dialect-two-operators-and-only-one-variable
 
 | Ticket | Needs |
 | --- | --- |
-| [#54](https://github.com/Lamakira/docuflow/issues/54) | Whether the Build command's environment carries `DATABASE_URL`. It decides whether the pre-deploy gate can live in the build at all |
+| [#54](https://github.com/Lamakira/docuflow/issues/54) | **Answered 2026-08-13: it does.** The Build command applied all five migrations to the production database, so the pre-deploy gate can live in the build rather than in an operator step |
 | [#55](https://github.com/Lamakira/docuflow/issues/55) | `DB_DRIVER=pg`, so query spans exist; and the published service name for `OTEL_SERVICE_NAME` |
 | [#56](https://github.com/Lamakira/docuflow/issues/56) | The published project whose Secrets hold `JWT_SECRET` across a restart |
 | [#57](https://github.com/Lamakira/docuflow/issues/57) | The PITR finding. If production is Helium, the nightly exports are the recovery point of record and not only the evidence copy |
