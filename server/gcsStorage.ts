@@ -14,6 +14,8 @@ import { Storage } from "@google-cloud/storage";
 import type { Readable } from "stream";
 import { config } from "./config";
 import type {
+  ListRequest,
+  ListedObject,
   ObjectMetadata,
   SignUrlRequest,
   StoragePort,
@@ -73,6 +75,22 @@ export class GcsStoragePort implements StoragePort {
       contentType: metadata.contentType,
       size: metadata.size === undefined ? undefined : Number(metadata.size),
     };
+  }
+
+  /**
+   * `getFiles` pages internally when handed no `autoPaginate: false`, so this
+   * returns the whole prefix rather than a first page — which is what a
+   * reconciliation has to have, since a short read looks exactly like a copy
+   * that missed objects.
+   */
+  async list(request: ListRequest): Promise<ListedObject[]> {
+    const [files] = await objectStorageClient
+      .bucket(request.bucketName)
+      .getFiles(request.prefix ? { prefix: request.prefix } : {});
+    return files.map((file) => ({
+      objectName: file.name,
+      size: file.metadata?.size === undefined ? undefined : Number(file.metadata.size),
+    }));
   }
 
   async readBytes(ref: StoredObjectRef): Promise<Buffer> {

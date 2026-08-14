@@ -72,6 +72,13 @@ externalPort = 3000
 
 [userenv.shared]
 DB_DRIVER = "pg"
+<<<<<<< HEAD
+=======
+# The App Storage bucket, created 2026-08-13. Not a secret: a bucket name grants
+# nothing, and `server/config.ts` reads which bucket is ours from exactly these
+# two roots — including `scripts/snapshot-rehearsal.ts`, which uses them to tell
+# a production storage URL from one of ours (#59, ADR-0023).
+>>>>>>> b20259df54fea11abd15ed5ed5b1bd6b54613143
 PRIVATE_OBJECT_DIR = "/replit-objstore-b63748fd-2e8b-4090-8d94-254080b61ad7/.private"
 PUBLIC_OBJECT_SEARCH_PATHS = "/replit-objstore-b63748fd-2e8b-4090-8d94-254080b61ad7/public"
 

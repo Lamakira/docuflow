@@ -312,8 +312,20 @@ export function findDanglingKeys(named: string[], destination: Iterable<string>)
   return Array.from(new Set(named)).filter((key) => !held.has(key));
 }
 
-/** The operator's copy manifest: one object name per line, `#` comments allowed. */
+/**
+ * The keys the destination holds, from either shape the operator has: the JSON
+ * copy manifest `scripts/object-snapshot.ts` writes — the ADR-0022 evidence
+ * artifact, so one file answers the copy check and this one — or a plain listing
+ * of one object name per line, with `#` comments allowed, which is what a
+ * bucket's own tooling prints.
+ */
 export function readManifestKeys(text: string): string[] {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{")) {
+    const manifest = JSON.parse(trimmed) as { objects?: { key: string }[] };
+    return (manifest.objects ?? []).map((object) => object.key);
+  }
+
   return text
     .split("\n")
     .map((line) => line.trim())

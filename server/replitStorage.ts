@@ -22,6 +22,8 @@
 import { Client } from "@replit/object-storage";
 import { Readable } from "stream";
 import type {
+  ListRequest,
+  ListedObject,
   ObjectMetadata,
   SignUrlRequest,
   StoragePort,
@@ -76,6 +78,27 @@ export class ReplitStoragePort implements StoragePort {
   async exists(ref: StoredObjectRef): Promise<boolean> {
     const result = await this.clientFor(ref.bucketName).exists(ref.objectName);
     return unwrap(result, `exists(${ref.objectName})`);
+  }
+
+  /**
+   * The listing ADR-0023's exit path is built on. The SDK reports a name and
+   * nothing else — no size — so a reconciliation against this provider compares
+   * which keys are present and cannot compare bytes; ADR-0022's manifest carries
+   * the sizes and checksums, taken at the source, for exactly that reason.
+   *
+   * The `.acl.json` siblings this adapter writes beside each object are its own
+   * bookkeeping rather than workspace content, and they are filtered out here so
+   * that a copy reconciliation does not report every policy file as an object
+   * the database failed to name.
+   */
+  async list(request: ListRequest): Promise<ListedObject[]> {
+    const result = await this.clientFor(request.bucketName).list(
+      request.prefix ? { prefix: request.prefix } : undefined
+    );
+    const objects = unwrap(result, `list(${request.prefix ?? "*"})`);
+    return objects
+      .filter((object) => !object.name.endsWith(ACL_SUFFIX))
+      .map((object) => ({ objectName: object.name }));
   }
 
   /**
