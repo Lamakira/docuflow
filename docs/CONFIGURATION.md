@@ -219,6 +219,25 @@ or `GOOGLE_APPLICATION_CREDENTIALS`, the installer bucket from
 | `GH_REPO` | Repository the installer workflow runs on. Defaults to this project's |
 | `GH_WORKFLOW` | Workflow file to dispatch. Defaults to `desktop-release.yml` |
 
+## The evidence export
+
+`scripts/evidence-export.ts` takes the nightly logical export ADR-0016 sends to
+the standalone AWS account. Nothing the server runs reads these two, and that is
+the point rather than an accident: ADR-0016 confines the evidence credentials to
+the backup job's environment, and a credential this application could read is a
+copy this application could alter.
+
+| Variable | Purpose |
+| --- | --- |
+| `EVIDENCE_EXPORT_KEY` | 64 hex characters — `openssl rand -hex 32` — encrypting each export before it leaves the process. Held outside AWS, so possession of the bucket is not possession of the database. No default, and no fallback: an export encrypted under a key nobody chose is unreadable at the drill and, under a compliance lock, undeletable |
+| `EVIDENCE_S3_BUCKET` | Names the bucket in the printed upload command. Nothing here uploads |
+
+The retention passed as `--retain-days` has no default either. Object Lock in
+compliance mode can be extended and never shortened, so the number is a
+commitment to store and to pay for the whole term.
+[`docs/migration/phase-2-evidence-account.md`](migration/phase-2-evidence-account.md)
+holds the key layout, the restore path, and the drill schedule.
+
 ## Tests
 
 The harness reads two variables of its own, in `tests/test-db-url.ts` rather than
