@@ -48,6 +48,23 @@ export interface SignUrlRequest {
   ttlSec: number;
 }
 
+/** Which objects to enumerate. No prefix means the whole bucket. */
+export interface ListRequest {
+  bucketName: string;
+  prefix?: string;
+}
+
+/**
+ * One object as a listing reports it. The name is what a manifest and a
+ * database row are compared on; the size is what reconciles a copy, and is
+ * absent on a provider that does not report it — the Replit SDK's listing
+ * carries a name and nothing else.
+ */
+export interface ListedObject {
+  objectName: string;
+  size?: number;
+}
+
 /**
  * Raised by an implementation that cannot mint signed URLs, so the caller fails
  * with a named reason rather than a provider stack trace. Callers that must work
@@ -76,6 +93,16 @@ export interface StoragePort {
   readonly supportsSignedUrls: boolean;
 
   exists(ref: StoredObjectRef): Promise<boolean>;
+
+  /**
+   * What the bucket holds, by name. No request path needs this and ADR-0023
+   * cannot do without it: that decision adopts a Replit-provided capability only
+   * where an exit can be demonstrated, and the exit it names is list-then-
+   * download. A port that cannot enumerate makes the exit unwritable, so this
+   * belongs to the seam rather than to whichever script reaches for it — and the
+   * same call reconciles ADR-0022's copy manifest against the destination.
+   */
+  list(request: ListRequest): Promise<ListedObject[]>;
 
   getMetadata(ref: StoredObjectRef): Promise<ObjectMetadata>;
 

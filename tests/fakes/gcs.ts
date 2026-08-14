@@ -62,6 +62,9 @@ export function signedUrlPattern(
 }
 
 export class File {
+  /** Set by `getFiles`, which is the only path the real client populates it on. */
+  metadata: Record<string, unknown> = {};
+
   constructor(
     public readonly bucketName: string,
     public readonly name: string
@@ -159,6 +162,24 @@ class Bucket {
   constructor(public readonly name: string) {}
   file(objectName: string): File {
     return new File(this.name, objectName);
+  }
+
+  /**
+   * The real client returns `[files]` and pages internally; the seeded map is
+   * small enough that one pass is the whole answer. `metadata.size` is a string
+   * on the real client, so it is a string here — the port converts, and a fake
+   * that handed back a number would hide that conversion going missing.
+   */
+  async getFiles(options: { prefix?: string } = {}): Promise<[File[]]> {
+    const prefix = `${this.name}/${options.prefix ?? ""}`;
+    const matched = Array.from(objects.entries())
+      .filter(([path]) => path.startsWith(prefix))
+      .map(([path, stored]) => {
+        const file = new File(this.name, path.slice(this.name.length + 1));
+        file.metadata = { size: String(stored.data.length) };
+        return file;
+      });
+    return [matched];
   }
 }
 
