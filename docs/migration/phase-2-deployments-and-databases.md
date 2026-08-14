@@ -186,7 +186,7 @@ Secrets live in Replit Secrets, per project and per environment, per ADR-0015. `
 | --- | --- | --- |
 | `DATABASE_URL` | Secret | The platform, at publish |
 | `SESSION_SECRET` | Secret | Generated |
-| `JWT_SECRET` | Secret | Generated, written `<key-id>:<secret>` ([#56](https://github.com/Lamakira/docuflow/issues/56)) |
+| `JWT_SECRET` | Secret | Generated, written `<key-id>:<secret>` — provisioning, rotation, and attestation in [`phase-2-desktop-signing-key.md`](phase-2-desktop-signing-key.md) ([#56](https://github.com/Lamakira/docuflow/issues/56)) |
 | `PRIVATE_OBJECT_DIR` | `[env]` or Secret | The App Storage bucket root |
 | `PUBLIC_OBJECT_SEARCH_PATHS` | `[env]` or Secret | The same bucket |
 
