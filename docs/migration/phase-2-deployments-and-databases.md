@@ -1,9 +1,10 @@
 # Phase 2 deployments and databases
 
 - **Recorded:** 2026-08-13
-- **Status:** **Not published.** Nothing about the *published* environment is observed — geography, publish timestamp, production database, and deployment Secrets are all empty cells. What is recorded is the account and the development workspace, where the app was brought up on 2026-08-13. The decisions an agent can settle from the platform's own documentation are settled here — the deployment topology, the driver, where migrations run, what the scrub and the key verifier do — and the acts only a human can perform against the Replit console are listed as an ordered checklist with the cells their results go in.
-- **Ticket:** [#53](https://github.com/Lamakira/docuflow/issues/53). This document is the record that ticket fills; it is not evidence that the ticket is done.
-- **Sources read:** `docs.replit.com`, 2026-08-13. Provider statements, not dashboard observations, and three of them contradict what earlier records in this repository assert — see [Corrections](#corrections-to-earlier-records).
+- **Amended:** 2026-08-18 — the environment is **published**. Geography, URL, boot line, and database operators are filled from the Publishing Overview, the deployment log, and the Database pane. The Agent-schema negative test is **declined**; the control stays procedural. See [The publish record](#the-publish-record).
+- **Status:** **Published** to **Europe (EU)**. `https://docuflow-masdouk1.replit.app` serves `/health`. Production database operator is **Helium**; development is **Neon** — the inverse of what ADR-0021 expected.
+- **Ticket:** [#53](https://github.com/Lamakira/docuflow/issues/53). This document is the record that ticket fills.
+- **Sources read:** `docs.replit.com`, 2026-08-13. Provider statements, not dashboard observations, and three of them contradict what earlier records in this repository assert — see [Corrections](#corrections-to-earlier-records). Dashboard observations below are dated 2026-08-18 unless noted.
 
 ## Authority and scope
 
@@ -21,7 +22,7 @@ Four settings cannot be changed after the act that fixes them. Three of the four
 | --- | --- | --- | --- | --- |
 | 1 | **Plan tier** | Whether a geography can be chosen at all. Free publishes to North America by default | Before the publish, or the publish makes the choice for you | **Pro** — confirmed 2026-08-13 from the account. Replit lists publishing-geography selection on Core, Pro, and Enterprise |
 | 2 | **Workspace geography** | Where *development* compute, the development database, and any Object Storage created before publishing live | At workspace creation — already closed for an existing App | *(unrecorded)* |
-| 3 | **Publishing geography** | Where the published compute, the production database, and published Object Storage live, colocated | At the first publish, permanently | **Selector observed 2026-08-13**, offering North America / South America / Europe (EU) / Asia / Australia and **defaulting to North America ("Closest")**. Must read **Europe (EU)** before publishing; not yet published |
+| 3 | **Publishing geography** | Where the published compute, the production database, and published Object Storage live, colocated | At the first publish, permanently | **Europe (EU)** — closed. Publishing Overview, 2026-08-18 |
 | 4 | **Project separation** | Whether this is the parallel environment ADR-0018 requires or a second deployment of production | At project creation | **Separate** — confirmed 2026-08-13: `docuflow` is the parallel project; production is the App named `Techma documentation platform` |
 
 **Why Europe (EU), given that the market is undecided.** [ADR-0024](../adr/0024-publish-to-the-eu-and-gate-the-residency-decision-on-cutover.md) settles this, and not by claiming the market is European: the repository never argued the EU choice — #11 assumed it, ADR-0015's GDPR machinery corroborates it, and ADR-0007 says "US-market-first" in the other direction. EU is chosen because it is the placement that survives either answer. EU-hosted data serving North American users costs latency that ADR-0016 already fronts with Cloudflare; EU personal data in a US region costs a restricted transfer under the DPF or SCCs, disclosed through ADR-0015's registry, and would block ADR-0018's rehearsal outright.
@@ -53,13 +54,13 @@ The consequence is procedural and it is easy to miss: an App created in a North 
 | Production Replit App, for contrast | `Techma documentation platform` — a different App, recorded so the separation is checkable rather than asserted |
 | Plan tier at publish | **Pro** |
 | Workspace geography | *(unrecorded)* |
-| **Published geography** | *(unrecorded — target: Europe (EU))* |
-| **Publish timestamp (UTC)** | *(unrecorded)* |
-| Deployment type | *(unrecorded — expected Autoscale)* |
-| Published URL | *(unrecorded)* |
-| `/health` after publish | *(unrecorded)* |
-| Development database operator | **Replit-hosted** — confirmed 2026-08-13 by the driver requirement below; host suffix still unread |
-| Production database operator | *(unrecorded — does not exist until the publish)* |
+| **Published geography** | **Europe (EU)** — Publishing Overview, 2026-08-18 |
+| **Publish timestamp (UTC)** | First-publish UTC not on the Overview. Running revision booted **2026-08-14 11:17:46.52** (deployment log). Overview as of 2026-08-18: "published 4 days ago" |
+| Deployment type | **Autoscale** — 2 vCPU / 4 GiB RAM / **3 max** instances |
+| Published URL | `https://docuflow-masdouk1.replit.app` |
+| `/health` after publish | **200** `{"status":"ok",…}` — probed 2026-08-18T11:18:07Z. Liveness only; does not prove the database |
+| Development database operator | **Neon** — host suffix observed in Database Manage, 2026-08-18. Inverts ADR-0021's expected assignment |
+| Production database operator | **Helium** — host suffix observed in Database Manage, 2026-08-18. The boot line's role name is not the operator signal; the host suffix is |
 | Repository and branch the App tracks | this repository, `main` — confirmed 2026-08-13 |
 | App runs in the workspace | **Yes** — 2026-08-13. Node 24, dependencies installed, the journal's five migrations applied by `npm run db:migrate`, the site served by the "Start application" workflow |
 
@@ -110,8 +111,8 @@ Set in [`.replit`](../../.replit)'s `[env]` block, which the [inventory](phase-2
 
 | | |
 | --- | --- |
-| Published boot line reports `over pg` | *(unrecorded)* |
-| `DB_DRIVER` also set in the published environment's variables | *(unrecorded — needed only if `[env]` does not propagate)* |
+| Published boot line reports `over pg` | **Yes** — 2026-08-14 11:17:46.52, `[config] production — database DATABASE_URL over pg`. `[env]` reached the published app; no extra Deployment-secrets copy of `DB_DRIVER` was required |
+| `DB_DRIVER` also set in the published environment's variables | **Not needed** — the boot line settled propagation |
 
 ### Pooling, and the `-pooler` hostname
 
@@ -124,11 +125,11 @@ Set in [`.replit`](../../.replit)'s `[env]` block, which the [inventory](phase-2
 
 | Question | Answer | Recorded from |
 | --- | --- | --- |
-| Development database operator | *(unrecorded)* | Database pane, host suffix |
-| Production database operator | *(unrecorded)* | Database pane, host suffix |
-| Is a `-pooler` host offered? | *(unrecorded — expected only on Neon)* | Database pane |
+| Development database operator | **Neon** | Database Manage, host suffix, 2026-08-18 |
+| Production database operator | **Helium** | Database Manage, host suffix, 2026-08-18 |
+| Is a `-pooler` host offered? | **No on production** — Helium has none. Development is Neon; whether that pane offers `-pooler` is unrecorded | Database pane |
 | Connection limit | *(unrecorded)* | Database pane |
-| Max Autoscale instances | *(unrecorded)* | Publishing tool |
+| Max Autoscale instances | **3** | Publishing Overview, 2026-08-18 |
 | Pool caps needed? | *(follows from the three above)* | — |
 
 ### Migrations run as the Build command
@@ -171,9 +172,9 @@ Two things back that up rather than leaving it to discipline:
 
 | | |
 | --- | --- |
-| A toggle exists in the console | *(unrecorded — none is documented)* |
-| Negative test performed | *(unrecorded)* |
-| Result | *(unrecorded)* |
+| A toggle exists in the console | **None documented, none observed** |
+| Negative test performed | **Declined 2026-08-18.** The operator refused to plant out-of-band DDL in the development database and republish. The demonstration is therefore **not run**, and this acceptance criterion is unmet as a proof |
+| Result | Control remains **procedural**: the Agent is never asked to change schema in this project; every column arrives through `migrations/`. `db:verify` is the check that would catch a miss |
 | `db:verify` against production | *(unrecorded)* |
 
 ## Secrets and the boot refusal
@@ -198,9 +199,9 @@ The refusal is not deployment infrastructure and must not be papered over by any
 | --- | --- |
 | Secrets present in the **development** workspace (names only) | 2026-08-13: `SESSION_SECRET` and `JWT_SECRET` in Replit Secrets, both generated for this environment; `DATABASE_URL` from the platform; `DB_DRIVER=pg` and placeholder bucket roots as configuration |
 | Boot refusal exercised | **Yes**, 2026-08-13 — it demanded `JWT_SECRET` and would not start until one was supplied. That is the acceptance criterion met on the development side, by the refusal firing rather than by anyone testing for it |
-| Secrets present in the published environment (names only) | *(unrecorded — the publish has not happened)* |
+| Secrets present in the published environment (names only) | **Yes, by boot.** A process that prints the `[config] production` line and answers `/health` has passed `server/config.ts` refusal, so every required variable was present. Names not re-read from the Deployment secrets pane |
 | Secrets scoped separately for development and production | **Yes** — observed 2026-08-13: the publishing settings hold a "Deployment secrets" pane distinct from the workspace's development secrets, which is ADR-0015's per-environment scoping and the reason a variable set in the workspace proves nothing about the published app |
-| No value copied from the production project | *(unrecorded)* |
+| No value copied from the production project | *(unrecorded — disjoint-project claim from 2026-08-13 still stands; values not compared)* |
 | Boot refusal observed to still fire | Indirectly, 2026-08-13: the app would not start until every required variable was supplied |
 
 Two things about that development-side state are worth carrying rather than leaving in a chat log. **The bucket roots are placeholders** until an App Storage bucket exists, so uploads fail — and the rehearsal scrub reads those same roots to decide which bucket is "ours", which means a placeholder root would make every storage URL in a restored database look foreign. Fix the roots before rehearsing, not after. And **variables that live in a git-ignored `.env` in the workspace do not travel to the published environment**: the deployment reads Secrets and `.replit`, so every root and every secret has to exist there too, or the boot refusal fires on the published app exactly as designed.
@@ -277,7 +278,9 @@ The inventory records the PITR gate as **Answered — yes, 7 days on Core and 28
 - The **Pro plan page** advertises a "4× database recovery window": "Restore your database to any point in time within the last 28 days, instead of the standard 7 days."
 - The **database reference** attributes point-in-time restore to the **legacy Neon** infrastructure and gives current **Helium** databases a rollback-to-checkpoint feature instead — restore to an Agent checkpoint, which is not a point in time.
 
-Both are provider statements and they do not agree. Which one governs this environment depends on what operator the published production database turns out to run, which is precisely the cell the publish fills. Until then the gate is **Contested**, and ADR-0016's five-minute RPO is unmet on this platform in the same way it was before — with one difference that matters to [#57](https://github.com/Lamakira/docuflow/issues/57): if production is Helium, the nightly logical exports to the AWS evidence account are the recovery point of record again, not merely the immutable evidence copy.
+Both are provider statements and they do not agree. **The cell is now filled: production is Helium.** The database-reference branch therefore governs, PITR is **not** the recovery control on this environment, and [#57](https://github.com/Lamakira/docuflow/issues/57)'s nightly logical exports to the AWS evidence account **are the recovery point of record**, not merely the immutable evidence copy. ADR-0016's five-minute RPO remains unmet.
+
+This assignment is also the inverse of what ADR-0021 expected (production Neon, development Helium). Development is Neon; production is Helium. Recorded from host suffixes in Database Manage on 2026-08-18. Rehearsal still must not load a restored snapshot into the development database — isolation, not the operator names, is the reason.
 
 Nothing here says the earlier answer was carelessly recorded. It cited what the billing page still says. The lesson is narrower and worth keeping: a plan page describes a plan, and a reference page describes an operator, and this platform changed its operator between them.
 
@@ -296,8 +299,8 @@ Covered above under [databases](#one-dialect-two-operators-and-only-one-variable
 | [#54](https://github.com/Lamakira/docuflow/issues/54) | **Answered 2026-08-13: it does.** The Build command applied all five migrations to the production database, so the pre-deploy gate can live in the build rather than in an operator step |
 | [#55](https://github.com/Lamakira/docuflow/issues/55) | `DB_DRIVER=pg`, so query spans exist; and the published service name for `OTEL_SERVICE_NAME` |
 | [#56](https://github.com/Lamakira/docuflow/issues/56) | The published project whose Secrets hold `JWT_SECRET` across a restart |
-| [#57](https://github.com/Lamakira/docuflow/issues/57) | The PITR finding. If production is Helium, the nightly exports are the recovery point of record and not only the evidence copy |
-| [#58](https://github.com/Lamakira/docuflow/issues/58) | The published URL and geography, for the Cloudflare front |
+| [#57](https://github.com/Lamakira/docuflow/issues/57) | **Production is Helium.** Nightly exports are the recovery point of record, not only the evidence copy |
+| [#58](https://github.com/Lamakira/docuflow/issues/58) | Published URL `https://docuflow-masdouk1.replit.app`, geography **Europe (EU)** |
 | [#60](https://github.com/Lamakira/docuflow/issues/60) | The scrub rule: restored installer rows report the platform unavailable until this environment publishes its own |
 | [#61](https://github.com/Lamakira/docuflow/issues/61) | This document, filled, as the deployment and database half of the Phase 2 record |
 | Phase 3 | The worker is a **second Replit project** on this repository, Reserved VM, its role selected by `DOCUFLOW_ROLE=worker` rather than by a divergent `.replit` |

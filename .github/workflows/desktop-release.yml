@@ -1,12 +1,49 @@
 name: Desktop Agent — Release
 
-# Triggered by pushing a version tag: desktop-agent-v0.1.x
-# Can also be triggered manually (dry_run=true by default = build only, no publish).
+# ─────────────────────────────────────────────────────────────────────────────
+# DISARMED FOR THE MIGRATION — ADR-0018, issue #60.
 #
-# Pipeline per platform:
+# DO NOT ADD ANY SECRET TO THIS REPOSITORY TO MAKE THIS WORKFLOW PUBLISH.
+#
+# ADR-0018 builds the migration in an isolated parallel environment and forbids
+# this repository holding production credentials or production URLs. Publishing
+# desktop installers to real users needs exactly those — a signing identity, a
+# public bucket, and the production backend's URL and token — so the two cannot
+# both be true, and for the length of the migration ADR-0018 wins.
+#
+# The investigation for #60 (2026-08-14) found the conflict was prospective and
+# not actual: no secret was configured on this repository or on the old one, no
+# `desktop-agent-v*` tag existed on either, no GitHub Release existed on either,
+# and this workflow had never run. So nothing was removed. What changed is that
+# the automatic path is gone and this header no longer asks anyone to create the
+# credentials that would have made it a violation.
+#
+# HOW THE DISARM WORKS, so that a later edit does not undo it by accident:
+# every publishing step is gated on `github.event_name == 'push'`. With no push
+# trigger those steps are unreachable, and `workflow_dispatch` cannot satisfy
+# that gate however its inputs are set. Restoring the tag trigger re-arms all of
+# them at once. `tests/smoke/desktop-release-workflow.test.ts` fails if either
+# property is lost.
+#
+# WHAT STILL WORKS: a manual run builds the installers for all three platforms
+# and uploads them to GitHub Actions artifacts (7-day retention) for inspection.
+# That is the useful half and it needs no credential at all.
+#
+# HOW DESKTOP RELEASES ACTUALLY HAPPEN TODAY: an operator runs
+# `scripts/publish-release.sh` (or `publish-release.ps1`) from a machine holding
+# its own credentials, which uploads to the installer bucket and registers the
+# release against a backend named by DOCUFLOW_API_URL in that operator's
+# environment. That path never involved this workflow and is untouched here.
+#
+# WHAT RE-ARMING WOULD REQUIRE, whenever the migration reaches that point:
+# a decision recorded as an ADR or an amendment to ADR-0018 naming the credential
+# scope, and then the trigger below. Not the other way round.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Pipeline per platform, for reference — the publish half is unreachable:
 #   1. Build installer artifact
 #   2. Upload to GitHub Actions artifacts (always, 7-day retention, for inspection)
-#   3. On tag push only:
+#   3. On tag push only — DISARMED:
 #      a. Compute SHA-256 + file size
 #      b. Upload artifact to GCS public bucket  (gcs: installers/v{VERSION}/{FILENAME})
 #      c. Register metadata in DocuFlow backend (POST /api/internal/desktop-releases)
@@ -14,31 +51,29 @@ name: Desktop Agent — Release
 # The backend then serves:
 #   GET /api/downloads/desktop/latest?platform=windows  → 302 to GCS URL
 #
-# Required GitHub secrets (Settings → Secrets and variables → Actions):
-#   GCS_RELEASE_SA_KEY         — Service account JSON key (storage.objectCreator on bucket)
-#   INSTALLER_GCS_BUCKET       — GCS bucket name only, e.g.  docuflow-installers
-#   DOCUFLOW_API_URL           — Production backend URL,  e.g.  https://app.docuflow.com
-#   DESKTOP_RELEASE_CI_TOKEN   — Long random token; matches DESKTOP_RELEASE_CI_TOKEN env var on server
+# Secrets those unreachable steps name. None is configured, and none may be
+# added to this repository while ADR-0018 stands:
+#   GCS_RELEASE_SA_KEY, INSTALLER_GCS_BUCKET, DOCUFLOW_API_URL,
+#   DESKTOP_RELEASE_CI_TOKEN
 #
-# GCS bucket must have:
-#   - allUsers: roles/storage.objectViewer  (public read — so the 302 redirect works)
-#   - CORS: allow GET from * (needed for direct browser download progress bars)
+# Four more are named by this file no longer: APPLE_ID,
+# APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID and CSC_NAME reached the macOS
+# *build* step, which carried no gate at all, so removing the tag trigger would
+# have left them consumable by a manual run. They are gone rather than gated,
+# because signing is the production-reaching half and building is the half worth
+# keeping. The DMG a manual run produces is unsigned, as it already was.
 #
-# Usage (release):
-#   git tag desktop-agent-v0.1.7
-#   git push origin desktop-agent-v0.1.7
-#
-# Usage (dry run — build only, no upload):
-#   GitHub → Actions → Desktop Agent — Release → Run workflow  (dry_run = true)
+# Usage (build only — the only thing this can now do):
+#   GitHub → Actions → Desktop Agent — Release → Run workflow
 
 on:
-  push:
-    tags:
-      - 'desktop-agent-v*'
+  # The `push` trigger is deliberately absent (#60). See the header: removing it
+  # is what makes every publishing step below unreachable. Do not restore it
+  # without the recorded decision that header describes.
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run — build only, do not upload or register'
+        description: 'Vestigial — this workflow can no longer publish (#60). Builds either way.'
         required: false
         default: 'true'
         type: boolean
@@ -50,10 +85,15 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-# ── Reusable condition ────────────────────────────────────────────────────────
-# Publish = tag-triggered push OR workflow_dispatch with dry_run explicitly false.
-# Referenced as: ${{ env.SHOULD_PUBLISH == 'true' }} in step `if` clauses
-# (env context is not available in job-level `if`, only step-level)
+# ── The publish gate ──────────────────────────────────────────────────────────
+# Every publishing step below carries, verbatim:
+#
+#   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+#
+# There is no `SHOULD_PUBLISH` variable — an earlier comment here described one
+# and the file never had it. The condition above is the whole mechanism, and
+# with the push trigger removed (#60) it is unsatisfiable: a manual dispatch is
+# `workflow_dispatch`, never `push`, whatever `dry_run` is set to.
 
 jobs:
 
@@ -182,14 +222,20 @@ jobs:
         working-directory: desktop-agent
         run: node scripts/gen-icons.js
 
-      - name: Build macOS DMG (arm64)
+      - name: Build macOS DMG (arm64) — unsigned
         working-directory: desktop-agent
-        env:
-          # Apple signing/notarization — optional. If absent, unsigned DMG is produced.
-          APPLE_ID:                   ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID:              ${{ secrets.APPLE_TEAM_ID }}
-          CSC_NAME:                   ${{ secrets.CSC_NAME }}
+        # Apple signing and notarization are deliberately absent (#60, ADR-0018).
+        #
+        # This step used to receive APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD,
+        # APPLE_TEAM_ID and CSC_NAME, and — unlike every publishing step below —
+        # it carried no `if:`, so a plain manual run consumed them. That made it
+        # the one place where removing the tag trigger did not close the path:
+        # an Apple signing identity is a production credential, and ADR-0018 says
+        # this repository holds none. Nothing was lost by removing them, because
+        # none was ever configured; the DMG was already unsigned and now says so.
+        #
+        # Restoring them needs the recorded decision the header describes, and
+        # a gate — this step has none.
         run: npm run dist:mac
 
       - name: Upload artifact (always — for inspection)
