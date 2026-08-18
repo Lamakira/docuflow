@@ -1452,6 +1452,68 @@ export type ProjectDailyUpdateWithDetails = ProjectDailyUpdate & {
   user?: SafeUser;
 };
 
+// Jobs — durable deferred work claimed by the Worker (ADR-0013, #82).
+// Workspace id is nullable on purpose: Phase 4 fills it. There is no Workspace
+// table to reference yet, and seeding one here would pull Phase 4 forward.
+export const concurrencyClassValues = [
+  "domain-consequence",
+  "derived-processing",
+  "external-delivery",
+] as const;
+export type ConcurrencyClass = (typeof concurrencyClassValues)[number];
+
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    type: varchar("type", { length: 255 }).notNull(),
+    payload: jsonb("payload").$type<unknown>().notNull(),
+    workspaceId: varchar("workspace_id"),
+    concurrencyClass: varchar("concurrency_class", { length: 32 }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    maxAttempts: integer("max_attempts").notNull(),
+    backoffMs: integer("backoff_ms").notNull(),
+    timeoutMs: integer("timeout_ms").notNull(),
+    availableAt: timestamp("available_at").notNull().defaultNow(),
+    claimedAt: timestamp("claimed_at"),
+    claimExpiresAt: timestamp("claim_expires_at"),
+    claimedBy: varchar("claimed_by"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => [
+    index("idx_jobs_claimable")
+      .on(table.availableAt, table.createdAt)
+      .where(sql`${table.completedAt} IS NULL`),
+  ]
+);
+
+export type JobRow = typeof jobs.$inferSelect;
+
+export const deadLetters = pgTable(
+  "dead_letters",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    jobId: varchar("job_id").notNull(),
+    type: varchar("type", { length: 255 }).notNull(),
+    payload: jsonb("payload").$type<unknown>().notNull(),
+    workspaceId: varchar("workspace_id"),
+    concurrencyClass: varchar("concurrency_class", { length: 32 }).notNull(),
+    attempts: integer("attempts").notNull(),
+    maxAttempts: integer("max_attempts").notNull(),
+    backoffMs: integer("backoff_ms").notNull(),
+    timeoutMs: integer("timeout_ms").notNull(),
+    lastError: text("last_error").notNull(),
+    claimedBy: varchar("claimed_by"),
+    enqueuedAt: timestamp("enqueued_at").notNull(),
+    recordedAt: timestamp("recorded_at").notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_dead_letters_job").on(table.jobId)]
+);
+
+export type DeadLetterRow = typeof deadLetters.$inferSelect;
+
 // ─── Daily Update status set (single source of truth for form + admin dashboard) ───
 // Combines project-management statuses with predefined progress statuses.
 export const dailyUpdateStatusOptions = [

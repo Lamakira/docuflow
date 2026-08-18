@@ -100,7 +100,11 @@ describe("migration journal", () => {
 
     const ran = await migrate(scratch, { baselineThrough: "0002_slimy_whirlwind" });
 
-    expect(ran).toEqual(["0003_vector_embeddings", "0004_time_entries_task_id_index"]);
+    expect(ran).toEqual([
+      "0003_vector_embeddings",
+      "0004_time_entries_task_id_index",
+      "0005_jobs",
+    ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
         `SELECT version, baselined FROM schema_migrations ORDER BY version`
@@ -112,6 +116,7 @@ describe("migration journal", () => {
       { version: "0002_slimy_whirlwind", baselined: true },
       { version: "0003_vector_embeddings", baselined: false },
       { version: "0004_time_entries_task_id_index", baselined: false },
+      { version: "0005_jobs", baselined: false },
     ]);
   });
 

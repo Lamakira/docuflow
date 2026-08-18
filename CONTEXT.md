@@ -254,6 +254,24 @@ _Avoid_: Feature flag, plan permission
 The versioned, DocuFlow-owned catalog mapping each plan to its entitlement values and seat limits. Workspaces pin to a registry version until deliberately migrated, so plan changes never silently apply.
 _Avoid_: Stripe product catalog, pricing table
 
+## Deferred work
+
+**Job**:
+A durable unit of deferred work stored in the authoritative database and claimed by the Worker. Enqueueing commits in the same transaction as the domain write that caused it.
+_Avoid_: cron, setInterval, in-process task, queue message
+
+**Outbox Event**:
+An append-only domain event recorded in the same transaction as the write that produced it, later dispatched as one Job per registered consumer.
+_Avoid_: webhook payload, log line, notification, Audit Event
+
+**Dead Letter**:
+A Job that has exhausted its attempts, retained with full provenance for audited replay. It is not retried automatically.
+_Avoid_: failed job, error queue
+
+**Worker**:
+The durable process that claims and runs Jobs. It is not the HTTP runtime and does not serve requests.
+_Avoid_: background thread, sidecar, cron runner
+
 ## Integrations
 
 **Webhook Endpoint**:
