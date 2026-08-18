@@ -43,6 +43,13 @@
       "when": 1787058681903,
       "tag": "0005_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787064148049,
+      "tag": "0006_square_wild_child",
+      "breakpoints": true
     }
   ]
 }

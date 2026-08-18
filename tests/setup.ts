@@ -47,9 +47,14 @@ delete process.env.PLAYWRIGHT_CHROMIUM_PATH;
 // Telemetry is off under NODE_ENV=test by default (#26), but a developer with an
 // OTEL_* variable exported would otherwise instrument their own test run and
 // ship its spans somewhere. The harness decides, not the shell.
+// Telemetry is off under NODE_ENV=test by default (#26), but a developer with an
+// OTEL_* variable exported would otherwise instrument their own test run and
+// ship its spans somewhere. The harness decides, not the shell.
 for (const name of Object.keys(process.env)) {
   if (name.startsWith("OTEL_")) delete process.env[name];
 }
+delete process.env.DOCUFLOW_ROLE;
+delete process.env.DOCUFLOW_HTTP_BACKGROUND_INTERVALS;
 
 installNetworkFake();
 

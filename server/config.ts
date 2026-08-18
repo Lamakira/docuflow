@@ -94,10 +94,20 @@ export interface TelemetryConfig {
   metricExportIntervalMs: number;
 }
 
+export type ProcessRole = "http" | "worker";
+
 export interface AppConfig {
   nodeEnv: string;
   isProduction: boolean;
   port: number;
+  /** `worker` claims Jobs. `http` is the Autoscale app and never claims. */
+  role: ProcessRole;
+  /**
+   * HTTP `setInterval` dispatchers. Default on until the Worker is proven
+   * (#87 turns this off). The Worker process does not read this — it never
+   * starts those intervals.
+   */
+  httpBackgroundIntervals: boolean;
   database: DatabaseConfig;
   sessionSecret: string;
   /** The keys desktop-agent access tokens are issued and verified with. */
@@ -510,6 +520,25 @@ function resolveTelemetry(nodeEnv: string): Resolved<TelemetryConfig> {
   };
 }
 
+function resolveRole(missing: string[]): ProcessRole {
+  const raw = read("DOCUFLOW_ROLE");
+  if (!raw || raw === "http") return "http";
+  if (raw === "worker") return "worker";
+  missing.push(`DOCUFLOW_ROLE is "${raw}" — expected http or worker.`);
+  return "http";
+}
+
+/**
+ * Expand/contract flag (#83, #87): HTTP intervals stay on until the Worker is
+ * proven. Only an explicit off turns them off — unset, empty, and any other
+ * value keep today's behaviour.
+ */
+function resolveHttpBackgroundIntervals(): boolean {
+  const raw = read("DOCUFLOW_HTTP_BACKGROUND_INTERVALS");
+  if (!raw) return true;
+  return raw !== "0" && raw !== "false" && raw !== "off";
+}
+
 function resolveConfig(): AppConfig {
   // Read as a static member expression: the production bundle replaces exactly
   // this text with a literal (see script/bundles.ts), which a dynamic lookup misses.
@@ -520,8 +549,10 @@ function resolveConfig(): AppConfig {
   const sessionSecret = read("SESSION_SECRET");
   const desktopTokens = resolveDesktopTokens();
   const telemetry = resolveTelemetry(nodeEnv);
+  const missing: string[] = [];
+  const role = resolveRole(missing);
 
-  const missing = [
+  missing.push(
     ...database.missing,
     ...objectStorage.missing,
     ...(sessionSecret
@@ -529,7 +560,7 @@ function resolveConfig(): AppConfig {
       : ["SESSION_SECRET — signs session cookies; any long random string"]),
     ...desktopTokens.missing,
     ...telemetry.missing,
-  ];
+  );
 
   if (missing.length > 0) {
     throw new Error(
@@ -543,6 +574,8 @@ function resolveConfig(): AppConfig {
     nodeEnv,
     isProduction: nodeEnv === "production",
     port: Number.parseInt(read("PORT") ?? String(DEFAULT_PORT), 10),
+    role,
+    httpBackgroundIntervals: resolveHttpBackgroundIntervals(),
     database: database.value,
     sessionSecret: sessionSecret!,
     desktopTokens: desktopTokens.value,
@@ -614,13 +647,15 @@ function telemetryDestination(): string {
  */
 export function logConfigSummary(): void {
   console.log(
-    `[config] ${config.nodeEnv} — database ${config.database.source} over ${config.database.driver} ` +
+    `[config] ${config.nodeEnv} — role ${config.role}, ` +
+      `database ${config.database.source} over ${config.database.driver} ` +
       `(${config.database.connectionString.replace(/:([^@/]+)@/, ":<hidden>@")}), ` +
       `object storage via ${storageCredentialMode()}, ` +
       `desktop tokens on key ${desktopTokenKeys()}, ` +
       `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
       `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}, ` +
       `transcript browser ${config.chromiumPath ?? "as Playwright resolves it"}, ` +
-      `telemetry ${telemetryDestination()}`
+      `telemetry ${telemetryDestination()}, ` +
+      `HTTP intervals ${config.httpBackgroundIntervals ? "on" : "off"}`
   );
 }

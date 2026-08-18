@@ -22,6 +22,16 @@ import { detectMigrationFlags } from "./migrationFlags";
   // First line of the boot log: what this process resolved its environment to.
   logConfigSummary();
 
+  if (config.role === "worker") {
+    const { startWorkerLoop } = await import("./worker");
+    const worker = startWorkerLoop();
+    process.on("SIGTERM", worker.stop);
+    process.on("SIGINT", worker.stop);
+    log("worker claiming Jobs");
+    await worker.running;
+    return;
+  }
+
   // Read-only probe: which optional migrations this database has, which decides
   // whether the tasks routes serve or answer 503. It creates nothing — a
   // database short of a migration is a deploy that skipped its pre-deploy step.

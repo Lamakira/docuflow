@@ -15,12 +15,18 @@ export interface SentEmail {
 }
 
 const outbox: SentEmail[] = [];
+let nextFailure: string | null = null;
 
 export class Resend {
   constructor(_apiKey?: string) {}
 
   emails = {
     send: async (payload: { from: string; to: string; subject: string; html?: string }) => {
+      if (nextFailure) {
+        const message = nextFailure;
+        nextFailure = null;
+        return { data: null, error: { message, name: "application_error" } };
+      }
       outbox.push({
         from: payload.from,
         to: payload.to,
@@ -45,4 +51,10 @@ export function emailsTo(address: string): SentEmail[] {
 
 export function resetEmails(): void {
   outbox.length = 0;
+  nextFailure = null;
+}
+
+/** Next `emails.send` reports failure instead of landing in the outbox. */
+export function failNextSend(message = "email rejected"): void {
+  nextFailure = message;
 }

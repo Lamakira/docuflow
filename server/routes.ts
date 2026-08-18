@@ -45,7 +45,8 @@ import {
   getTranscriptStatus,
   retryTranscript,
 } from "./transcripts";
-import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail, sendReminderDueEmail, sendDailyUpdateReminderEmail } from "./email";
+import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail, sendDailyUpdateReminderEmail } from "./email";
+import { deliverPendingDueReminders } from "./dueReminders";
 import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
 import { logTimeEvent, logError, logStaleSession, logInfo } from "./logger";
 import { isTasksEnabled } from "./migrationFlags";
@@ -4526,6 +4527,9 @@ Instructions:
     backgroundJobs.length = 0;
   };
 
+  // Flag default on (#83): HTTP still delivers due reminders (and the other
+  // intervals) until the Worker is proven. #87 turns the flag off.
+  if (config.httpBackgroundIntervals) {
   // ─── Server-side stale session detection (agent-ready) ───
   // Periodically flag running entries with no heartbeat for > STALE_THRESHOLD_MINUTES.
   // TODO [PLACEHOLDER]: Policy — currently flag_only. Change to auto_pause or auto_stop
@@ -4566,68 +4570,7 @@ Instructions:
     if (reminderDispatchRunning) return;
     reminderDispatchRunning = true;
     try {
-      // Reminders that are due and not done, with at least one channel still pending.
-      // Each channel is marked only after it succeeds, so a transient failure on one
-      // channel is retried next run without re-sending the channel that already succeeded.
-      const due = await storage.getPendingDueReminders(new Date());
-      if (due.length === 0) return;
-      const appUrl = config.appUrl;
-
-      for (const reminder of due) {
-        try {
-          const crmProject = await storage.getCrmProject(reminder.crmProjectId);
-          const projectName = crmProject?.project?.name || "your project";
-
-          let inAppDone = reminder.notifiedInApp === 1;
-          let emailDone = reminder.emailSent === 1;
-
-          // In-app notification (reuse existing notifications bell) — once only.
-          if (!inAppDone) {
-            await storage.createNotification({
-              userId: reminder.userId,
-              type: "reminder",
-              crmProjectId: reminder.crmProjectId,
-              message: `Reminder: ${reminder.title} (${projectName})`,
-            });
-            await storage.updateReminder(reminder.id, { notifiedInApp: 1 });
-            inAppDone = true;
-          }
-
-          // Email notification — once only, and only marked sent when delivery succeeds.
-          if (!emailDone) {
-            const user = await storage.getUser(reminder.userId);
-            if (user?.email) {
-              const recipientName = user.firstName || user.email;
-              const emailResult = await sendReminderDueEmail(
-                user.email,
-                recipientName,
-                reminder.title,
-                reminder.note,
-                projectName,
-                appUrl,
-                reminder.crmProjectId,
-              );
-              if (emailResult?.success) {
-                await storage.updateReminder(reminder.id, { emailSent: 1 });
-                emailDone = true;
-              } else {
-                console.error("[ReminderDispatcher] Email failed, will retry", reminder.id, emailResult?.error);
-              }
-            } else {
-              // No email address to send to — nothing to retry.
-              await storage.updateReminder(reminder.id, { emailSent: 1 });
-              emailDone = true;
-            }
-          }
-
-          // Flag overall notified + due status only once both channels are complete.
-          if (inAppDone && emailDone && reminder.notified === 0) {
-            await storage.updateReminder(reminder.id, { notified: 1, status: "due" });
-          }
-        } catch (innerErr) {
-          console.error("[ReminderDispatcher] Failed to dispatch reminder", reminder.id, innerErr);
-        }
-      }
+      await deliverPendingDueReminders(new Date());
     } catch (error) {
       console.error("[ReminderDispatcher] Error checking due reminders:", error);
     } finally {
@@ -4703,6 +4646,7 @@ Instructions:
       dailyReminderRunning = false;
     }
   }, 60 * 1000);
+  }
 
   // Update time entry (description, etc.)
   app.patch("/api/time-tracking/:id", isAuthenticated, async (req: any, res) => {
