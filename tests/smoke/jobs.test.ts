@@ -144,7 +144,8 @@ describe("jobs port", () => {
     await jobs.fail(second!.id, "worker-a", "email rejected");
 
     expect(await jobs.claim("worker-b")).toBeNull();
-    expect(await jobs.deadLetterFor(enqueued.id)).toMatchObject({
+    const letter = await jobs.deadLetterFor(enqueued.id);
+    expect(letter).toMatchObject({
       jobId: enqueued.id,
       type: WORK,
       payload: { reminderId: "r-dead" },
@@ -155,6 +156,7 @@ describe("jobs port", () => {
       lastError: "email rejected",
       claimedBy: "worker-a",
     });
+    expect(letter?.recordedAt).toBeTruthy();
   });
 
   it("dead-letters a Job whose last claim crashed rather than looping it", async () => {

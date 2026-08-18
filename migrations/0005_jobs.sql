@@ -2,7 +2,8 @@
 -- Dead Letter table exhausted Jobs move into. `workspace_id` is nullable with
 -- no foreign key — Phase 4 fills it, and seeding a Workspace here would pull
 -- that phase forward. Replay of a Dead Letter is a later ticket; this migration
--- only stores the provenance.
+-- only stores the provenance. `recorded_at` is when the Dead Letter was kept,
+-- not a "failed job" (CONTEXT.md).
 --
 -- `IF NOT EXISTS` throughout, as on `0003` and `0004`: a database built by
 -- `drizzle-kit push` from current `shared/schema.ts` already has these objects,
@@ -22,7 +23,7 @@ CREATE TABLE IF NOT EXISTS "dead_letters" (
 	"last_error" text NOT NULL,
 	"claimed_by" varchar,
 	"enqueued_at" timestamp NOT NULL,
-	"failed_at" timestamp DEFAULT now() NOT NULL
+	"recorded_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "jobs" (
@@ -45,4 +46,4 @@ CREATE TABLE IF NOT EXISTS "jobs" (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_dead_letters_job" ON "dead_letters" USING btree ("job_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "idx_jobs_claimable" ON "jobs" USING btree ("available_at","created_at");
+CREATE INDEX IF NOT EXISTS "idx_jobs_claimable" ON "jobs" USING btree ("available_at","created_at") WHERE "jobs"."completed_at" IS NULL;

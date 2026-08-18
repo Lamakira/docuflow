@@ -1482,7 +1482,11 @@ export const jobs = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     completedAt: timestamp("completed_at"),
   },
-  (table) => [index("idx_jobs_claimable").on(table.availableAt, table.createdAt)]
+  (table) => [
+    index("idx_jobs_claimable")
+      .on(table.availableAt, table.createdAt)
+      .where(sql`${table.completedAt} IS NULL`),
+  ]
 );
 
 export type JobRow = typeof jobs.$inferSelect;
@@ -1503,7 +1507,7 @@ export const deadLetters = pgTable(
     lastError: text("last_error").notNull(),
     claimedBy: varchar("claimed_by"),
     enqueuedAt: timestamp("enqueued_at").notNull(),
-    failedAt: timestamp("failed_at").notNull().defaultNow(),
+    recordedAt: timestamp("recorded_at").notNull().defaultNow(),
   },
   (table) => [uniqueIndex("idx_dead_letters_job").on(table.jobId)]
 );

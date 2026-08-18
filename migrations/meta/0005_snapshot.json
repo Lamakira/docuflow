@@ -1,5 +1,5 @@
 {
-  "id": "902016d8-fa8b-4d92-b117-8f6d42fe7b99",
+  "id": "6a6ccb38-2d00-406c-92fe-ca8405c4bec3",
   "prevId": "2ed200e9-e33b-4c8d-b7a8-d905e21eea41",
   "version": "7",
   "dialect": "postgresql",
@@ -2249,8 +2249,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "failed_at": {
-          "name": "failed_at",
+        "recorded_at": {
+          "name": "recorded_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
@@ -2958,6 +2958,7 @@
             }
           ],
           "isUnique": false,
+          "where": "\"jobs\".\"completed_at\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

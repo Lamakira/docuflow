@@ -216,7 +216,7 @@ export function createJobsPort(options: CreateJobsPortOptions): JobsPort {
         lastError: row.lastError,
         claimedBy: row.claimedBy,
         enqueuedAt: row.enqueuedAt,
-        recordedAt: row.failedAt,
+        recordedAt: row.recordedAt,
       };
     },
   };
@@ -251,7 +251,7 @@ async function moveToDeadLetter(
     lastError: error,
     claimedBy: row.claimedBy,
     enqueuedAt: row.createdAt,
-    failedAt: at,
+    recordedAt: at,
   });
   await tx.delete(jobs).where(eq(jobs.id, row.id));
 }
