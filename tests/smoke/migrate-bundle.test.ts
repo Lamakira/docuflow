@@ -150,7 +150,7 @@ describe("dist/migrate.mjs", () => {
 
     const first = runMigrate(probe);
     expect(first).toContain("applied 0000_fair_amazoness in");
-    expect(first).toContain("applied 0004_time_entries_task_id_index in");
+    expect(first).toContain(`applied ${loadMigrations().at(-1)!.version} in`);
 
     // The SQL really ran, out of the copied journal rather than a checkout.
     expect(await tableExists(probe, "users")).toBe(true);
