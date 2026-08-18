@@ -22,8 +22,8 @@ export const DAILY_UPDATE_NUDGE_JOB_TYPE: JobTypeDeclaration = {
 export const DAILY_UPDATE_NUDGE_TIMEZONE = "America/Toronto";
 export const DAILY_UPDATE_NUDGE_HOUR = 18;
 
-export function dailyUpdateNudgeOccurrenceKey(userId: string, dayKey: string): string {
-  return `daily-update-nudge:${userId}:${dayKey}`;
+export function dailyUpdateNudgeOccurrenceKey(userId: string, workday: string): string {
+  return `daily-update-nudge:${userId}:${workday}`;
 }
 
 /** Calendar day key ("YYYY-MM-DD") and hour (0–23) in an IANA timezone. */
@@ -42,23 +42,31 @@ export function tzDayKeyAndHour(d: Date, timeZone: string): { dayKey: string; ho
   return { dayKey: `${get("year")}-${get("month")}-${get("day")}`, hour };
 }
 
-function startOfWorkday(dayKey: string, timeZone: string): Date {
-  const [year, month, day] = dayKey.split("-").map(Number);
+function workdayAt(at: Date): { workday: string; hour: number } {
+  const { dayKey, hour } = tzDayKeyAndHour(at, DAILY_UPDATE_NUDGE_TIMEZONE);
+  return { workday: dayKey, hour };
+}
+
+function startOfWorkday(workday: string): Date {
+  const [year, month, day] = workday.split("-").map(Number);
   const noonUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  const { hour } = tzDayKeyAndHour(noonUtc, timeZone);
+  const { hour } = tzDayKeyAndHour(noonUtc, DAILY_UPDATE_NUDGE_TIMEZONE);
   return new Date(noonUtc.getTime() - hour * 60 * 60 * 1000);
 }
 
+function isOnWorkday(when: Date, workday: string): boolean {
+  return workdayAt(when).workday === workday;
+}
+
 export async function membersMissingDailyUpdate(at: Date): Promise<{ id: string }[]> {
-  const { dayKey, hour } = tzDayKeyAndHour(at, DAILY_UPDATE_NUDGE_TIMEZONE);
+  const { workday, hour } = workdayAt(at);
   if (hour < DAILY_UPDATE_NUDGE_HOUR) return [];
 
-  const since = new Date(at.getTime() - 36 * 60 * 60 * 1000);
-  const recent = await storage.getProjectDailyUpdatesForAdmin({ startDate: since });
+  const recent = await storage.getProjectDailyUpdatesForAdmin({
+    startDate: startOfWorkday(workday),
+  });
   const submittedToday = new Set(
-    recent
-      .filter((u) => tzDayKeyAndHour(new Date(u.updateDate), DAILY_UPDATE_NUDGE_TIMEZONE).dayKey === dayKey)
-      .map((u) => u.userId),
+    recent.filter((u) => isOnWorkday(new Date(u.updateDate), workday)).map((u) => u.userId),
   );
 
   return (await storage.getAllUsers()).filter(
@@ -66,16 +74,16 @@ export async function membersMissingDailyUpdate(at: Date): Promise<{ id: string 
   );
 }
 
-export async function nudgeMemberForWorkday(userId: string, dayKey: string): Promise<boolean> {
+export async function nudgeMemberForWorkday(userId: string, workday: string): Promise<boolean> {
   const user = await storage.getUser(userId);
   if (!user || user.role !== "user" || user.isArchived) return false;
 
-  const since = startOfWorkday(dayKey, DAILY_UPDATE_NUDGE_TIMEZONE);
+  const since = startOfWorkday(workday);
   const submitted = await storage.getProjectDailyUpdatesForAdmin({
     userId,
     startDate: since,
   });
-  if (submitted.some((u) => tzDayKeyAndHour(new Date(u.updateDate), DAILY_UPDATE_NUDGE_TIMEZONE).dayKey === dayKey)) {
+  if (submitted.some((u) => isOnWorkday(new Date(u.updateDate), workday))) {
     return false;
   }
 
@@ -95,14 +103,14 @@ export async function nudgeMemberForWorkday(userId: string, dayKey: string): Pro
 }
 
 export async function nudgeMembersMissingDailyUpdate(at: Date): Promise<number> {
-  const { dayKey, hour } = tzDayKeyAndHour(at, DAILY_UPDATE_NUDGE_TIMEZONE);
+  const { workday, hour } = workdayAt(at);
   if (hour < DAILY_UPDATE_NUDGE_HOUR) return 0;
 
   const members = await membersMissingDailyUpdate(at);
   let sent = 0;
   for (const member of members) {
     try {
-      if (await nudgeMemberForWorkday(member.id, dayKey)) sent += 1;
+      if (await nudgeMemberForWorkday(member.id, workday)) sent += 1;
     } catch (innerErr) {
       console.error("[DailyUpdateNudge] Failed for member", member.id, innerErr);
     }
@@ -112,13 +120,13 @@ export async function nudgeMembersMissingDailyUpdate(at: Date): Promise<number> 
 
 export async function enqueueDailyUpdateNudgeJobs(jobs: JobsPort, at: Date): Promise<number> {
   const members = await membersMissingDailyUpdate(at);
-  const { dayKey } = tzDayKeyAndHour(at, DAILY_UPDATE_NUDGE_TIMEZONE);
+  const { workday } = workdayAt(at);
   let created = 0;
   for (const member of members) {
     const enqueued = await jobs.enqueue({
       type: DAILY_UPDATE_NUDGE_JOB,
-      payload: { userId: member.id, dayKey },
-      occurrenceKey: dailyUpdateNudgeOccurrenceKey(member.id, dayKey),
+      payload: { userId: member.id, workday },
+      occurrenceKey: dailyUpdateNudgeOccurrenceKey(member.id, workday),
     });
     if (enqueued.created) created += 1;
   }
@@ -126,14 +134,14 @@ export async function enqueueDailyUpdateNudgeJobs(jobs: JobsPort, at: Date): Pro
 }
 
 export async function handleDailyUpdateNudgeJob(job: Job): Promise<void> {
-  const payload = job.payload as { userId?: unknown; dayKey?: unknown };
+  const payload = job.payload as { userId?: unknown; workday?: unknown };
   const userId = payload.userId;
-  const dayKey = payload.dayKey;
+  const workday = payload.workday;
   if (typeof userId !== "string" || userId.length === 0) {
     throw new Error(`Job "${job.id}" is missing a userId.`);
   }
-  if (typeof dayKey !== "string" || dayKey.length === 0) {
-    throw new Error(`Job "${job.id}" is missing a dayKey.`);
+  if (typeof workday !== "string" || workday.length === 0) {
+    throw new Error(`Job "${job.id}" is missing a workday.`);
   }
-  await nudgeMemberForWorkday(userId, dayKey);
+  await nudgeMemberForWorkday(userId, workday);
 }

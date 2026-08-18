@@ -39,10 +39,11 @@ export async function flagStaleTimeEntry(entryId: string, at: Date): Promise<boo
 export async function flagStaleRunningEntries(at: Date): Promise<number> {
   const threshold = new Date(at.getTime() - STALE_THRESHOLD_MS);
   const stale = await storage.getStaleRunningEntries(threshold);
+  let flagged = 0;
   for (const entry of stale) {
-    logStaleSession(entry.id, entry.userId, entry.lastActivityAt?.toISOString() ?? null);
+    if (await flagStaleTimeEntry(entry.id, at)) flagged += 1;
   }
-  return stale.length;
+  return flagged;
 }
 
 export async function enqueueStaleTimerJobs(jobs: JobsPort, at: Date): Promise<number> {

@@ -78,7 +78,7 @@ describe("Daily Update nudge Job", () => {
 
     expect(await worker.runOne()).toMatchObject({
       type: DAILY_UPDATE_NUDGE_JOB,
-      payload: { userId: user.id, dayKey: WORKDAY },
+      payload: { userId: user.id, workday: WORKDAY },
       occurrenceKey: dailyUpdateNudgeOccurrenceKey(user.id, WORKDAY),
       workspaceId: null,
       claimedBy: "worker-1",
@@ -100,7 +100,7 @@ describe("Daily Update nudge Job", () => {
     await handleDailyUpdateNudgeJob({
       id: "replay",
       type: DAILY_UPDATE_NUDGE_JOB,
-      payload: { userId: user.id, dayKey: WORKDAY },
+      payload: { userId: user.id, workday: WORKDAY },
       workspaceId: null,
       occurrenceKey: dailyUpdateNudgeOccurrenceKey(user.id, WORKDAY),
       concurrencyClass: "external-delivery",

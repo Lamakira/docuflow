@@ -4552,8 +4552,8 @@ Instructions:
   // ─── Daily-update 6 PM nudge ───
   // Once a day, at 6:00 PM (America/Toronto), nudge every active member who
   // hasn't submitted a Daily Update that Workday. The Worker Job (#84) uses
-  // the same function; this in-memory day key is the HTTP fast-path.
-  let lastDailyUpdateNudgeDayKey: string | null = null;
+  // the same function; this in-memory Workday is the HTTP fast-path.
+  let lastNudgedWorkday: string | null = null;
   let dailyUpdateNudgeRunning = false;
 
   startBackgroundJob(async () => {
@@ -4561,12 +4561,12 @@ Instructions:
     dailyUpdateNudgeRunning = true;
     try {
       const now = new Date();
-      const { dayKey, hour } = tzDayKeyAndHour(now, DAILY_UPDATE_NUDGE_TIMEZONE);
+      const { dayKey: workday, hour } = tzDayKeyAndHour(now, DAILY_UPDATE_NUDGE_TIMEZONE);
       if (hour < DAILY_UPDATE_NUDGE_HOUR) return;
-      if (lastDailyUpdateNudgeDayKey === dayKey) return;
+      if (lastNudgedWorkday === workday) return;
       const sent = await nudgeMembersMissingDailyUpdate(now);
-      lastDailyUpdateNudgeDayKey = dayKey;
-      console.log(`[DailyUpdateNudge] Sent ${sent} nudge(s) for ${dayKey}`);
+      lastNudgedWorkday = workday;
+      console.log(`[DailyUpdateNudge] Sent ${sent} nudge(s) for ${workday}`);
     } catch (error) {
       console.error("[DailyUpdateNudge] Error dispatching Daily Update nudges:", error);
     } finally {
