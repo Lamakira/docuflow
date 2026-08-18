@@ -45,10 +45,17 @@ import {
   getTranscriptStatus,
   retryTranscript,
 } from "./transcripts";
-import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail, sendDailyUpdateReminderEmail } from "./email";
+import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail } from "./email";
 import { deliverPendingDueReminders } from "./dueReminders";
+import {
+  DAILY_UPDATE_NUDGE_HOUR,
+  DAILY_UPDATE_NUDGE_TIMEZONE,
+  nudgeMembersMissingDailyUpdate,
+  tzDayKeyAndHour,
+} from "./dailyUpdateNudge";
+import { STALE_CHECK_WINDOW_MS, flagStaleRunningEntries } from "./staleTimer";
 import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
-import { logTimeEvent, logError, logStaleSession, logInfo } from "./logger";
+import { logTimeEvent, logError, logInfo } from "./logger";
 import { isTasksEnabled } from "./migrationFlags";
 import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
 
@@ -60,23 +67,6 @@ function getOpenAIClient(): OpenAI {
   }
   // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
   return new OpenAI({ apiKey });
-}
-
-// Returns the calendar day key ("YYYY-MM-DD") and hour (0-23) for a given
-// instant in the supplied IANA timezone (DST-safe via Intl).
-function tzDayKeyAndHour(d: Date, timeZone: string): { dayKey: string; hour: number } {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-  }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  let hour = parseInt(get("hour"), 10);
-  if (hour === 24) hour = 0; // some environments emit "24" for midnight
-  return { dayKey: `${get("year")}-${get("month")}-${get("day")}`, hour };
 }
 
 // Helper to extract text content from TipTap JSON
@@ -4527,39 +4517,20 @@ Instructions:
     backgroundJobs.length = 0;
   };
 
-  // Flag default on (#83): HTTP still delivers due reminders (and the other
-  // intervals) until the Worker is proven. #87 turns the flag off.
+  // Flag default on (#83, #84): HTTP still delivers due reminders, flags stale
+  // timers, and sends the Daily Update nudge until the Worker is proven.
+  // #87 turns the flag off.
   if (config.httpBackgroundIntervals) {
-  // ─── Server-side stale session detection (agent-ready) ───
-  // Periodically flag running entries with no heartbeat for > STALE_THRESHOLD_MINUTES.
-  // TODO [PLACEHOLDER]: Policy — currently flag_only. Change to auto_pause or auto_stop
-  //   when Desktop Agent requirements are finalized.
-  const STALE_THRESHOLD_MINUTES = 10;
-  const STALE_CHECK_INTERVAL_MS = 2 * 60 * 1000; // check every 2 minutes
-
+  // ─── Server-side stale session detection ───
+  // Flag-only: log running entries with no heartbeat past the threshold; do
+  // not auto-stop. The Worker Job (#84) uses the same policy.
   startBackgroundJob(async () => {
     try {
-      const threshold = new Date(Date.now() - STALE_THRESHOLD_MINUTES * 60 * 1000);
-      const staleEntries = await storage.getStaleRunningEntries(threshold);
-
-      for (const entry of staleEntries) {
-        // flag_only: log the stale entry but don't auto-stop
-        logStaleSession(entry.id, entry.userId, entry.lastActivityAt?.toISOString() ?? null);
-        // TODO [PLACEHOLDER]: Uncomment to auto-stop stale entries:
-        // const now = new Date();
-        // const lastActivity = entry.lastActivityAt || entry.startTime;
-        // const elapsed = Math.floor((now.getTime() - new Date(lastActivity).getTime()) / 1000);
-        // await storage.updateTimeEntry(entry.id, {
-        //   status: "stopped",
-        //   endTime: now,
-        //   duration: (entry.duration || 0) + elapsed,
-        // });
-        // console.log(`[StaleSession] Auto-stopped entry ${entry.id}`);
-      }
+      await flagStaleRunningEntries(new Date());
     } catch (error) {
       console.error("[StaleSession] Error checking stale entries:", error);
     }
-  }, STALE_CHECK_INTERVAL_MS);
+  }, STALE_CHECK_WINDOW_MS);
 
   // ─── Due-reminder dispatcher ───
   // Periodically deliver due reminders via in-app notification + email, exactly once.
@@ -4578,72 +4549,28 @@ Instructions:
     }
   }, REMINDER_CHECK_INTERVAL_MS);
 
-  // ─── Daily-update 6 PM reminder ───
-  // Once a day, at 6:00 PM (America/Toronto), nudge every active employee who
-  // hasn't submitted a daily update that day via in-app notification + email.
-  const DAILY_REMINDER_TIMEZONE = "America/Toronto";
-  const DAILY_REMINDER_HOUR = 18; // 6:00 PM local time
-  let lastDailyReminderDayKey: string | null = null;
-  let dailyReminderRunning = false;
+  // ─── Daily-update 6 PM nudge ───
+  // Once a day, at 6:00 PM (America/Toronto), nudge every active member who
+  // hasn't submitted a Daily Update that Workday. The Worker Job (#84) uses
+  // the same function; this in-memory Workday is the HTTP fast-path.
+  let lastNudgedWorkday: string | null = null;
+  let dailyUpdateNudgeRunning = false;
 
   startBackgroundJob(async () => {
-    if (dailyReminderRunning) return;
-    dailyReminderRunning = true;
+    if (dailyUpdateNudgeRunning) return;
+    dailyUpdateNudgeRunning = true;
     try {
       const now = new Date();
-      const { dayKey, hour } = tzDayKeyAndHour(now, DAILY_REMINDER_TIMEZONE);
-      if (hour < DAILY_REMINDER_HOUR) return; // not 6 PM yet
-      if (lastDailyReminderDayKey === dayKey) return; // already sent today
-
-      // Determine who already submitted an update "today" in the reminder tz.
-      const since = new Date(now.getTime() - 36 * 60 * 60 * 1000);
-      const recentUpdates = await storage.getProjectDailyUpdatesForAdmin({ startDate: since });
-      const submittedToday = new Set(
-        recentUpdates
-          .filter((u) => tzDayKeyAndHour(new Date(u.updateDate), DAILY_REMINDER_TIMEZONE).dayKey === dayKey)
-          .map((u) => u.userId),
-      );
-
-      // Only remind active employees (role "user"); admins consume the dashboard.
-      const employees = (await storage.getAllUsers()).filter(
-        (u) => u.role === "user" && !u.isArchived && !submittedToday.has(u.id),
-      );
-
-      // Idempotency across restarts / multi-tick: skip anyone already reminded
-      // since the start of today (reminder tz). The in-memory guard above is a
-      // fast-path; this DB check is the durable safeguard.
-      const startOfTodayLocal = new Date(now.getTime() - hour * 60 * 60 * 1000 - 60 * 60 * 1000);
-
-      const appUrl = config.appUrl;
-      let sent = 0;
-      for (const emp of employees) {
-        try {
-          const alreadyReminded = await storage.hasRecentNotification(
-            emp.id,
-            "daily_update_reminder",
-            startOfTodayLocal,
-          );
-          if (alreadyReminded) continue;
-          await storage.createNotification({
-            userId: emp.id,
-            type: "daily_update_reminder",
-            message: "Don't forget to submit your daily update before you finish your day.",
-          });
-          if (emp.email) {
-            await sendDailyUpdateReminderEmail(emp.email, emp.firstName || emp.email, appUrl);
-          }
-          sent++;
-        } catch (innerErr) {
-          console.error("[DailyUpdateReminder] Failed for user", emp.id, innerErr);
-        }
-      }
-
-      lastDailyReminderDayKey = dayKey;
-      console.log(`[DailyUpdateReminder] Sent ${sent} reminder(s) for ${dayKey}`);
+      const { dayKey: workday, hour } = tzDayKeyAndHour(now, DAILY_UPDATE_NUDGE_TIMEZONE);
+      if (hour < DAILY_UPDATE_NUDGE_HOUR) return;
+      if (lastNudgedWorkday === workday) return;
+      const sent = await nudgeMembersMissingDailyUpdate(now);
+      lastNudgedWorkday = workday;
+      console.log(`[DailyUpdateNudge] Sent ${sent} nudge(s) for ${workday}`);
     } catch (error) {
-      console.error("[DailyUpdateReminder] Error dispatching daily reminders:", error);
+      console.error("[DailyUpdateNudge] Error dispatching Daily Update nudges:", error);
     } finally {
-      dailyReminderRunning = false;
+      dailyUpdateNudgeRunning = false;
     }
   }, 60 * 1000);
   }
@@ -5018,7 +4945,7 @@ Instructions:
   // "Today" overview so admins/managers can see at a glance who forgot.
   app.get("/api/admin/daily-updates/today-status", isAuthenticated, canViewDailyUpdates, async (_req, res) => {
     try {
-      const tz = "America/Toronto";
+      const tz = DAILY_UPDATE_NUDGE_TIMEZONE;
       const now = new Date();
       const todayKey = tzDayKeyAndHour(now, tz).dayKey;
       const since = new Date(now.getTime() - 36 * 60 * 60 * 1000);

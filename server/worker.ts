@@ -1,7 +1,7 @@
 /**
- * The Worker runtime (#83). Only a process with the worker role claims Jobs.
- * HTTP never claims — it may still run due-reminder delivery on its interval
- * while that flag stays on.
+ * The Worker runtime (#83, #84). Only a process with the worker role claims
+ * Jobs. HTTP never claims — it may still run due-reminder, stale-timer, and
+ * Daily Update nudge work on its interval while that flag stays on.
  */
 
 import type { Job, JobsPort } from "./jobs";
@@ -80,29 +80,53 @@ export function startWorkerLoop(options?: {
       DUE_REMINDER_JOB_TYPE,
       handleDueReminderJob,
     } = await import("./dueReminders");
-    const { createDueReminderScheduler } = await import("./scheduler");
+    const {
+      STALE_TIMER_JOB,
+      STALE_TIMER_JOB_TYPE,
+      handleStaleTimerJob,
+    } = await import("./staleTimer");
+    const {
+      DAILY_UPDATE_NUDGE_JOB,
+      DAILY_UPDATE_NUDGE_JOB_TYPE,
+      handleDailyUpdateNudgeJob,
+    } = await import("./dailyUpdateNudge");
+    const {
+      createDueReminderScheduler,
+      createStaleTimerScheduler,
+      createDailyUpdateNudgeScheduler,
+    } = await import("./scheduler");
 
     const jobs = createJobsPort({
       db,
-      types: { [DUE_REMINDER_JOB]: DUE_REMINDER_JOB_TYPE },
+      types: {
+        [DUE_REMINDER_JOB]: DUE_REMINDER_JOB_TYPE,
+        [STALE_TIMER_JOB]: STALE_TIMER_JOB_TYPE,
+        [DAILY_UPDATE_NUDGE_JOB]: DAILY_UPDATE_NUDGE_JOB_TYPE,
+      },
     });
     const runner = createJobRunner({
       role: "worker",
       jobs,
-      handlers: { [DUE_REMINDER_JOB]: handleDueReminderJob },
+      handlers: {
+        [DUE_REMINDER_JOB]: handleDueReminderJob,
+        [STALE_TIMER_JOB]: handleStaleTimerJob,
+        [DAILY_UPDATE_NUDGE_JOB]: handleDailyUpdateNudgeJob,
+      },
       claimerId,
     });
-    const scheduler = createDueReminderScheduler({
-      role: "worker",
-      jobs,
-      holderId: claimerId,
-    });
+    const schedulers = [
+      createDueReminderScheduler({ role: "worker", jobs, holderId: claimerId }),
+      createStaleTimerScheduler({ role: "worker", jobs, holderId: claimerId }),
+      createDailyUpdateNudgeScheduler({ role: "worker", jobs, holderId: claimerId }),
+    ];
 
     let lastTick = 0;
     while (!stopped) {
       const now = Date.now();
       if (now - lastTick >= tickEveryMs) {
-        await scheduler.tick();
+        for (const scheduler of schedulers) {
+          await scheduler.tick();
+        }
         lastTick = now;
       }
       while (!stopped) {
