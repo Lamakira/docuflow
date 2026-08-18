@@ -1,0 +1,122 @@
+/**
+ * The Worker runtime (#83). Only a process with the worker role claims Jobs.
+ * HTTP never claims — it may still run due-reminder delivery on its interval
+ * while that flag stays on.
+ */
+
+import type { Job, JobsPort } from "./jobs";
+import type { ProcessRole } from "./config";
+
+export type JobHandler = (job: Job) => Promise<void>;
+
+export interface JobRunner {
+  /** Claims and runs one Job. An HTTP-role runner never claims. */
+  runOne(): Promise<Job | null>;
+}
+
+export interface CreateJobRunnerOptions {
+  role: ProcessRole;
+  jobs: JobsPort;
+  handlers: Record<string, JobHandler>;
+  claimerId: string;
+}
+
+export function createJobRunner(options: CreateJobRunnerOptions): JobRunner {
+  const { role, jobs, handlers, claimerId } = options;
+
+  return {
+    async runOne() {
+      if (role !== "worker") return null;
+
+      const job = await jobs.claim(claimerId);
+      if (!job) return null;
+
+      const handler = handlers[job.type];
+      if (!handler) {
+        await jobs.fail(job.id, claimerId, `No handler registered for Job type "${job.type}".`);
+        return job;
+      }
+
+      try {
+        await handler(job);
+        await jobs.complete(job.id, claimerId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await jobs.fail(job.id, claimerId, message);
+      }
+      return job;
+    },
+  };
+}
+
+const TICK_EVERY_MS = 60_000;
+const POLL_MS = 1_000;
+
+export interface WorkerLoop {
+  stop: () => void;
+  running: Promise<void>;
+}
+
+/**
+ * Claim loop for `DOCUFLOW_ROLE=worker`. HTTP never calls this. The process
+ * stays alive on the loop rather than by listening — ticket 86 is the Reserved
+ * VM that hosts it.
+ */
+export function startWorkerLoop(options?: {
+  pollMs?: number;
+  tickEveryMs?: number;
+  claimerId?: string;
+}): WorkerLoop {
+  const pollMs = options?.pollMs ?? POLL_MS;
+  const tickEveryMs = options?.tickEveryMs ?? TICK_EVERY_MS;
+  const claimerId = options?.claimerId ?? `worker-${process.pid}`;
+  let stopped = false;
+
+  const running = (async () => {
+    const { db } = await import("./db");
+    const { createJobsPort } = await import("./jobs");
+    const {
+      DUE_REMINDER_JOB,
+      DUE_REMINDER_JOB_TYPE,
+      handleDueReminderJob,
+    } = await import("./dueReminders");
+    const { createDueReminderScheduler } = await import("./scheduler");
+
+    const jobs = createJobsPort({
+      db,
+      types: { [DUE_REMINDER_JOB]: DUE_REMINDER_JOB_TYPE },
+    });
+    const runner = createJobRunner({
+      role: "worker",
+      jobs,
+      handlers: { [DUE_REMINDER_JOB]: handleDueReminderJob },
+      claimerId,
+    });
+    const scheduler = createDueReminderScheduler({
+      role: "worker",
+      jobs,
+      holderId: claimerId,
+    });
+
+    let lastTick = 0;
+    while (!stopped) {
+      const now = Date.now();
+      if (now - lastTick >= tickEveryMs) {
+        await scheduler.tick();
+        lastTick = now;
+      }
+      while (!stopped) {
+        const ran = await runner.runOne();
+        if (!ran) break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+  })();
+
+  return {
+    stop() {
+      stopped = true;
+    },
+    running,
+  };
+}

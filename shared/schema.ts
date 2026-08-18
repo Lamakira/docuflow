@@ -1481,11 +1481,13 @@ export const jobs = pgTable(
     lastError: text("last_error"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     completedAt: timestamp("completed_at"),
+    occurrenceKey: varchar("occurrence_key", { length: 255 }),
   },
   (table) => [
     index("idx_jobs_claimable")
       .on(table.availableAt, table.createdAt)
       .where(sql`${table.completedAt} IS NULL`),
+    uniqueIndex("idx_jobs_occurrence").on(table.occurrenceKey),
   ]
 );
 
@@ -1513,6 +1515,14 @@ export const deadLetters = pgTable(
 );
 
 export type DeadLetterRow = typeof deadLetters.$inferSelect;
+
+export const schedulerLeases = pgTable("scheduler_leases", {
+  name: varchar("name").primaryKey(),
+  holder: varchar("holder").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+
+export type SchedulerLeaseRow = typeof schedulerLeases.$inferSelect;
 
 // ─── Daily Update status set (single source of truth for form + admin dashboard) ───
 // Combines project-management statuses with predefined progress statuses.

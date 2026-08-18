@@ -45,6 +45,8 @@ const CONFIG_VARS = [
   "OTEL_EXPORTER_OTLP_HEADERS",
   "OTEL_METRIC_EXPORT_INTERVAL_MS",
   "ALLOW_REMOTE_OTLP",
+  "DOCUFLOW_ROLE",
+  "DOCUFLOW_HTTP_BACKGROUND_INTERVALS",
 ] as const;
 
 /** The smallest environment that boots: one of each required variable. */
@@ -624,5 +626,49 @@ describe("config — boot summary", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("config — process role and HTTP intervals", () => {
+  it("is the HTTP process with background intervals on, unless told otherwise", async () => {
+    const { config } = await load(BOOTABLE);
+
+    expect(config.role).toBe("http");
+    expect(config.httpBackgroundIntervals).toBe(true);
+  });
+
+  it("selects the worker role from DOCUFLOW_ROLE", async () => {
+    const { config, logConfigSummary } = await load({
+      ...BOOTABLE,
+      DOCUFLOW_ROLE: "worker",
+    });
+
+    expect(config.role).toBe("worker");
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      logConfigSummary();
+      expect(spy.mock.calls.flat().join("\n")).toContain("role worker");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps HTTP intervals running unless the flag is explicitly off", async () => {
+    const off = await load({
+      ...BOOTABLE,
+      DOCUFLOW_HTTP_BACKGROUND_INTERVALS: "0",
+    });
+    expect(off.config.httpBackgroundIntervals).toBe(false);
+
+    const on = await load({
+      ...BOOTABLE,
+      DOCUFLOW_HTTP_BACKGROUND_INTERVALS: "1",
+    });
+    expect(on.config.httpBackgroundIntervals).toBe(true);
+  });
+
+  it("refuses an unknown process role", async () => {
+    const error = await load({ ...BOOTABLE, DOCUFLOW_ROLE: "autoscale" }).catch((e: Error) => e);
+    expect((error as Error).message).toContain('DOCUFLOW_ROLE is "autoscale"');
   });
 });

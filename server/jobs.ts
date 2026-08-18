@@ -3,8 +3,7 @@
  * caused it, claim it with skip-locked semantics, complete it, or fail it
  * into a retry / Dead Letter. ADR-0013; the test seam is this module (#82).
  *
- * HTTP never claims. Only a Worker does, and that wiring is a later ticket.
- * This file is the queue, not the runtime.
+ * HTTP never claims. Only a Worker does (#83). This file is the queue.
  */
 
 import { and, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
@@ -24,6 +23,7 @@ export interface EnqueueJob {
   type: string;
   payload?: unknown;
   workspaceId?: string | null;
+  occurrenceKey?: string | null;
 }
 
 export interface Job {
@@ -31,10 +31,15 @@ export interface Job {
   type: string;
   payload: unknown;
   workspaceId: string | null;
+  occurrenceKey: string | null;
   concurrencyClass: ConcurrencyClass;
   attempt: number;
   maxAttempts: number;
   claimedBy: string | null;
+}
+
+export interface EnqueuedJob extends Job {
+  created: boolean;
 }
 
 export interface DeadLetter {
@@ -54,10 +59,10 @@ export interface DeadLetter {
 }
 
 /** A Drizzle session that can insert a Job — the caller's transaction, or ours. */
-export type JobsWriter = Pick<Db, "insert">;
+export type JobsWriter = Pick<Db, "insert" | "select">;
 
 export interface JobsPort {
-  enqueue(job: EnqueueJob, tx?: JobsWriter): Promise<Job>;
+  enqueue(job: EnqueueJob, tx?: JobsWriter): Promise<EnqueuedJob>;
   claim(claimerId: string): Promise<Job | null>;
   complete(jobId: string, claimerId: string): Promise<void>;
   fail(jobId: string, claimerId: string, error: string): Promise<void>;
@@ -87,12 +92,14 @@ export function createJobsPort(options: CreateJobsPortOptions): JobsPort {
       }
       const at = clock();
       const writer = tx ?? db;
+      const occurrenceKey = input.occurrenceKey ?? null;
       const [row] = await writer
         .insert(jobs)
         .values({
           type: input.type,
           payload: input.payload ?? {},
           workspaceId: input.workspaceId ?? null,
+          occurrenceKey,
           concurrencyClass: declaration.concurrencyClass,
           attempts: 0,
           maxAttempts: declaration.attempts,
@@ -101,8 +108,18 @@ export function createJobsPort(options: CreateJobsPortOptions): JobsPort {
           availableAt: at,
           createdAt: at,
         })
+        .onConflictDoNothing({ target: jobs.occurrenceKey })
         .returning();
-      return toJob(row);
+      if (row) return { ...toJob(row), created: true };
+
+      if (!occurrenceKey) {
+        throw new Error(`Job type "${input.type}" inserted no row and had no occurrence key to recover.`);
+      }
+      const [existing] = await writer.select().from(jobs).where(eq(jobs.occurrenceKey, occurrenceKey));
+      if (!existing) {
+        throw new Error(`Job occurrence "${occurrenceKey}" conflicted but could not be loaded.`);
+      }
+      return { ...toJob(existing), created: false };
     },
 
     async claim(claimerId) {
@@ -282,6 +299,7 @@ function toJob(row: JobRow): Job {
     type: row.type,
     payload: row.payload,
     workspaceId: row.workspaceId,
+    occurrenceKey: row.occurrenceKey,
     concurrencyClass: row.concurrencyClass as ConcurrencyClass,
     attempt: row.attempts,
     maxAttempts: row.maxAttempts,

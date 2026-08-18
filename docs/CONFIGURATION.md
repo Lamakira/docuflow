@@ -81,6 +81,8 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `OTEL_SERVICE_NAME` | `docuflow-server` |
 | `OTEL_METRIC_EXPORT_INTERVAL_MS` | 60000 |
 | `ALLOW_REMOTE_OTLP` | A non-local `OTEL_EXPORTER_OTLP_ENDPOINT` is refused outright (ADR-0018) |
+| `DOCUFLOW_ROLE` | `http` — this process serves the app and never claims Jobs. `worker` claims and runs them (#83) |
+| `DOCUFLOW_HTTP_BACKGROUND_INTERVALS` | On. HTTP still runs due-reminder (and the other) `setInterval` dispatchers until the Worker is proven. `0`, `false`, or `off` disable them |
 
 `MCP_API_KEY` and `DESKTOP_RELEASE_CI_TOKEN` are read per request rather than at
 boot, so rotating either takes effect without a restart.
