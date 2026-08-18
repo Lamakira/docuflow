@@ -106,7 +106,10 @@ import {
   type InsertProjectDailyUpdate,
   type ProjectDailyUpdateWithDetails,
 } from "@shared/schema";
-import { db } from "./db";
+import { db, type Db } from "./db";
+
+/** A Drizzle session that can write documents — the caller's transaction, or ours. */
+export type DocumentWriter = Pick<Db, "insert" | "select" | "update">;
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export interface IStorage {
@@ -125,8 +128,8 @@ export interface IStorage {
   getDocument(id: string): Promise<Document | undefined>;
   getDocumentAncestors(id: string): Promise<Document[]>;
   getRecentDocuments(userId: string, limit?: number): Promise<Document[]>;
-  createDocument(document: InsertDocument): Promise<Document>;
-  updateDocument(id: string, data: Partial<InsertDocument>): Promise<Document | undefined>;
+  createDocument(document: InsertDocument, writer?: DocumentWriter): Promise<Document>;
+  updateDocument(id: string, data: Partial<InsertDocument>, writer?: DocumentWriter): Promise<Document | undefined>;
   deleteDocument(id: string): Promise<void>;
   duplicateDocument(id: string): Promise<Document | undefined>;
   reorderDocument(id: string, newParentId: string | null, newPosition: number): Promise<void>;
@@ -562,8 +565,8 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
-  async createDocument(document: InsertDocument): Promise<Document> {
-    const existingDocs = await db
+  async createDocument(document: InsertDocument, writer: DocumentWriter = db): Promise<Document> {
+    const existingDocs = await writer
       .select()
       .from(documents)
       .where(
@@ -575,7 +578,7 @@ export class DatabaseStorage implements IStorage {
 
     const maxPosition = existingDocs.reduce((max, doc) => Math.max(max, doc.position), -1);
 
-    const [newDoc] = await db
+    const [newDoc] = await writer
       .insert(documents)
       .values({
         ...document,
@@ -583,7 +586,7 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
 
-    await db
+    await writer
       .update(projects)
       .set({ updatedAt: new Date() })
       .where(eq(projects.id, document.projectId));
@@ -591,15 +594,19 @@ export class DatabaseStorage implements IStorage {
     return newDoc;
   }
 
-  async updateDocument(id: string, data: Partial<InsertDocument>): Promise<Document | undefined> {
-    const [updated] = await db
+  async updateDocument(
+    id: string,
+    data: Partial<InsertDocument>,
+    writer: DocumentWriter = db
+  ): Promise<Document | undefined> {
+    const [updated] = await writer
       .update(documents)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(documents.id, id))
       .returning();
 
     if (updated) {
-      await db
+      await writer
         .update(projects)
         .set({ updatedAt: new Date() })
         .where(eq(projects.id, updated.projectId));

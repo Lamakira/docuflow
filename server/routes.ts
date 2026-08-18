@@ -55,6 +55,11 @@ import {
 } from "./dailyUpdateNudge";
 import { STALE_CHECK_WINDOW_MS, flagStaleRunningEntries } from "./staleTimer";
 import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
+import {
+  createDocumentJobsPort,
+  createDocumentWithDerivedJobs,
+  updateDocumentWithDerivedJobs,
+} from "./documentJobs";
 import { logTimeEvent, logError, logInfo } from "./logger";
 import { isTasksEnabled } from "./migrationFlags";
 import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
@@ -368,7 +373,8 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
 
-      const document = await storage.createDocument({
+      const document = await createDocumentWithDerivedJobs({
+        jobs: createDocumentJobsPort(),
         title: parsed.data.title,
         parentId: parsed.data.parentId || null,
         content: parsed.data.content || null,
@@ -377,37 +383,6 @@ export async function registerRoutes(
         position: 0,
         createdById: userId,
       });
-
-      // Get breadcrumbs from parent if it exists
-      let breadcrumbs: string[] = [];
-      if (parsed.data.parentId) {
-        const ancestors = await storage.getDocumentAncestors(document.id);
-        breadcrumbs = ancestors.map(a => a.title);
-      }
-
-      // Generate embeddings for the new document asynchronously
-      updateDocumentEmbeddings(
-        document.id,
-        req.params.projectId,
-        userId,
-        document.title,
-        document.content,
-        project.name,
-        breadcrumbs
-      ).catch(err => console.error("Error generating embeddings:", err));
-
-      // Sync video transcripts asynchronously
-      if (document.content) {
-        syncDocumentVideoTranscripts(
-          document.id,
-          req.params.projectId,
-          userId,
-          document.content,
-          project.name,
-          document.title,
-          breadcrumbs
-        ).catch(err => console.error("Error syncing video transcripts:", err));
-      }
 
       res.status(201).json(document);
     } catch (error) {
@@ -507,36 +482,12 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
 
-      const updated = await storage.updateDocument(req.params.id, parsed.data);
-      
-      // Update embeddings if title or content changed
-      if (updated && (parsed.data.title !== undefined || parsed.data.content !== undefined)) {
-        const ancestors = await storage.getDocumentAncestors(req.params.id);
-        const breadcrumbs = ancestors.map(a => a.title);
-        
-        updateDocumentEmbeddings(
-          updated.id,
-          updated.projectId,
-          userId,
-          updated.title,
-          updated.content,
-          project.name,
-          breadcrumbs
-        ).catch(err => console.error("Error updating embeddings:", err));
-
-        // Sync video transcripts when content changes
-        if (parsed.data.content !== undefined && updated.content) {
-          syncDocumentVideoTranscripts(
-            updated.id,
-            updated.projectId,
-            userId,
-            updated.content,
-            project.name,
-            updated.title,
-            breadcrumbs
-          ).catch(err => console.error("Error syncing video transcripts:", err));
-        }
-      }
+      const updated = await updateDocumentWithDerivedJobs({
+        jobs: createDocumentJobsPort(),
+        id: req.params.id,
+        ownerId: userId,
+        data: parsed.data,
+      });
       
       res.json(updated);
     } catch (error) {

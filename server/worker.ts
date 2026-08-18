@@ -1,5 +1,5 @@
 /**
- * The Worker runtime (#83, #84). Only a process with the worker role claims
+ * The Worker runtime (#83, #84, #85). Only a process with the worker role claims
  * Jobs. HTTP never claims — it may still run due-reminder, stale-timer, and
  * Daily Update nudge work on its interval while that flag stays on.
  */
@@ -91,6 +91,14 @@ export function startWorkerLoop(options?: {
       handleDailyUpdateNudgeJob,
     } = await import("./dailyUpdateNudge");
     const {
+      DOCUMENT_EMBED_JOB,
+      DOCUMENT_EMBED_JOB_TYPE,
+      DOCUMENT_TRANSCRIPT_JOB,
+      DOCUMENT_TRANSCRIPT_JOB_TYPE,
+      handleDocumentEmbedJob,
+      handleDocumentTranscriptJob,
+    } = await import("./documentJobs");
+    const {
       createDueReminderScheduler,
       createStaleTimerScheduler,
       createDailyUpdateNudgeScheduler,
@@ -102,6 +110,8 @@ export function startWorkerLoop(options?: {
         [DUE_REMINDER_JOB]: DUE_REMINDER_JOB_TYPE,
         [STALE_TIMER_JOB]: STALE_TIMER_JOB_TYPE,
         [DAILY_UPDATE_NUDGE_JOB]: DAILY_UPDATE_NUDGE_JOB_TYPE,
+        [DOCUMENT_EMBED_JOB]: DOCUMENT_EMBED_JOB_TYPE,
+        [DOCUMENT_TRANSCRIPT_JOB]: DOCUMENT_TRANSCRIPT_JOB_TYPE,
       },
     });
     const runner = createJobRunner({
@@ -111,6 +121,8 @@ export function startWorkerLoop(options?: {
         [DUE_REMINDER_JOB]: handleDueReminderJob,
         [STALE_TIMER_JOB]: handleStaleTimerJob,
         [DAILY_UPDATE_NUDGE_JOB]: handleDailyUpdateNudgeJob,
+        [DOCUMENT_EMBED_JOB]: handleDocumentEmbedJob,
+        [DOCUMENT_TRANSCRIPT_JOB]: handleDocumentTranscriptJob,
       },
       claimerId,
     });
