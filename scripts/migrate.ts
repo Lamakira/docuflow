@@ -26,6 +26,9 @@
  * the last migration its schema already contains, once, and every deploy after
  * that is an ordinary `db:migrate`.
  *
+ * The CLI uses `DATABASE_MIGRATE_URL` when set, otherwise `DATABASE_URL` (#97).
+ * The application role cannot bypass RLS; schema changes keep this credential.
+ *
  * Plain `pg` and plain SQL, no Neon-specific features (ADR-0016), and no import
  * of `server/config.ts` — see `scripts/lib/db.ts` for why.
  */
@@ -35,7 +38,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { requireDatabaseUrl } from "../shared/databaseUrl";
+import { requireMigrateDatabaseUrl } from "../shared/databaseUrl";
 import type { Report } from "./lib/db";
 import { isEntryPoint } from "./lib/entrypoint";
 
@@ -311,7 +314,7 @@ export async function migrate(
 
 if (isEntryPoint(import.meta.url)) {
   const options = parseArgs(process.argv.slice(2));
-  migrate(requireDatabaseUrl(), options, (message) => console.log(message)).catch((error) => {
+  migrate(requireMigrateDatabaseUrl(), options, (message) => console.log(message)).catch((error) => {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);
   });

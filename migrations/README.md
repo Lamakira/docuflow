@@ -24,6 +24,7 @@ journal is not part of it and is never applied.
 | 0007 | `0007_dark_sasquatch.sql` | Workspace, Membership, Workspace Role, and Capability tables, then one named Workspace and a Membership per user (#93). `org_settings` is copied onto Workspace Tracking Policy and left in place. |
 | 0008 | `0008_giant_quasar.sql` | Nullable `workspace_id` on Workspace-owned tables, journaled SQL backfill onto the seeded Workspace, and Device Enrollment for existing Devices (#94). Does not apply `NOT NULL`. |
 | 0009 | `0009_flaky_vermin.sql` | `workspace_id` `NOT NULL` on Workspace-owned tables, composite uniques that include it, and composite FKs so relationships cannot cross Workspaces (#96). Leaves `org_settings` and user authority columns in place. |
+| 0010 | `0010_workspace_rls.sql` | Row-level security on Workspace-owned tables and the `docuflow_app` role that cannot bypass it (#97). Migrations keep a separate credential (`DATABASE_MIGRATE_URL`). |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on

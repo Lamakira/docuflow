@@ -71,6 +71,13 @@
       "when": 1787150153414,
       "tag": "0009_flaky_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787154000000,
+      "tag": "0010_workspace_rls",
+      "breakpoints": true
     }
   ]
 }

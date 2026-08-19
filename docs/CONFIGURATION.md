@@ -75,6 +75,7 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `PORT` | 5000 |
 | `NODE_ENV` | `development`. The production build replaces the read with a literal (`script/bundles.ts`), so a deployment sets it rather than a person |
 | `DB_DRIVER` | Neon's serverless driver; `pg` selects node-postgres for a database that driver cannot reach. Permanent configuration and not a migration flag (#25): the database this points at decides it, so there is nothing to remove ([docs/CONTAINER.md](CONTAINER.md)). On Replit the database is Replit's own Postgres, which the serverless driver does not reach, so [`.replit`](../.replit) sets `pg` for both environments (#53) |
+| `DATABASE_MIGRATE_URL` | `db:migrate` uses `DATABASE_URL` (or the `PG*` set). Set this to the table-owner credential when `DATABASE_URL` is the application role that cannot bypass RLS (#97) |
 | `REPL_ID`, `ISSUER_URL` | Replit OIDC login fails. Phase 5 removes both |
 | `OTEL_EXPORTER` | The environment decides: nothing under test, the console in development, nothing in production until a collector is named — see [Telemetry](#telemetry) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | No collector, so nothing is exported over OTLP. Instrumentation still runs |

@@ -6,6 +6,7 @@ import pg from 'pg';
 import ws from "ws";
 import * as schema from "@shared/schema";
 import { config } from "./config";
+import { bindWorkspaceScope } from "./workspaceScope";
 
 const { connectionString, driver } = config.database;
 
@@ -50,9 +51,11 @@ neonConfig.webSocketConstructor = ws;
 function createDb(): { pool: DbPool; db: Db } {
   if (usePg) {
     const pgPool = new pg.Pool({ connectionString });
+    bindWorkspaceScope(pgPool);
     return { pool: pgPool, db: drizzlePg({ client: pgPool, schema }) };
   }
   const neonPool = new NeonPool({ connectionString });
+  bindWorkspaceScope(neonPool);
   return { pool: neonPool, db: drizzleNeon({ client: neonPool, schema }) };
 }
 

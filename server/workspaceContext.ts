@@ -10,6 +10,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { and, eq, isNull, type AnyColumn } from "drizzle-orm";
 import { deviceEnrollments, memberships, workspaces, SEEDED_WORKSPACE_ID } from "@shared/schema";
 import { db } from "./db";
+import { setWorkspaceContextReader } from "./workspaceScope";
 
 export interface WorkspaceContext {
   workspaceId: string;
@@ -39,6 +40,7 @@ export class ArchivedMembershipError extends Error {
 }
 
 const als = new AsyncLocalStorage<WorkspaceContext>();
+setWorkspaceContextReader(() => als.getStore());
 
 export function runWithWorkspaceContext<T>(ctx: WorkspaceContext, fn: () => T): T {
   return als.run(ctx, fn);
