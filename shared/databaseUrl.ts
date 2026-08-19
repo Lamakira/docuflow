@@ -69,6 +69,15 @@ export function requireDatabaseUrl(read: EnvRead = fromProcessEnv): string {
   );
 }
 
+/**
+ * The credential that is allowed to change schema. Distinct from the
+ * application role, which cannot bypass RLS (#97). Unset means migrate uses
+ * the same URL the application uses — today's owner connection.
+ */
+export function requireMigrateDatabaseUrl(read: EnvRead = fromProcessEnv): string {
+  return read("DATABASE_MIGRATE_URL") ?? requireDatabaseUrl(read);
+}
+
 /** A connection string with the password replaced — the only form safe to log. */
 export function maskDatabaseUrl(url: string): string {
   return url.replace(/:([^@/]+)@/, ":<hidden>@");

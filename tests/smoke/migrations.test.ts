@@ -4,6 +4,7 @@ import { describeSchema } from "../../scripts/lib/schemaSnapshot";
 import { loadMigrations, migrate } from "../../scripts/migrate";
 import { urlForDatabase, withClient } from "../helpers/db";
 import { resolveTestDatabaseUrl } from "../test-db-url";
+import { requireMigrateDatabaseUrl } from "../../shared/databaseUrl";
 
 /**
  * The journal is the only way a database gets its schema (#24), which puts two
@@ -27,6 +28,26 @@ import { resolveTestDatabaseUrl } from "../test-db-url";
  */
 
 const TEST_DB_URL = resolveTestDatabaseUrl();
+
+describe("migrate credential", () => {
+  it("uses DATABASE_MIGRATE_URL when set and DATABASE_URL otherwise", () => {
+    expect(
+      requireMigrateDatabaseUrl((name) =>
+        name === "DATABASE_MIGRATE_URL"
+          ? "postgresql://migrate@localhost/docuflow"
+          : name === "DATABASE_URL"
+            ? "postgresql://app@localhost/docuflow"
+            : undefined
+      )
+    ).toBe("postgresql://migrate@localhost/docuflow");
+
+    expect(
+      requireMigrateDatabaseUrl((name) =>
+        name === "DATABASE_URL" ? "postgresql://app@localhost/docuflow" : undefined
+      )
+    ).toBe("postgresql://app@localhost/docuflow");
+  });
+});
 
 /** A throwaway database on the same server, created and dropped per run. */
 const SCRATCH_DB = "docuflow_schema_diff";
@@ -108,6 +129,7 @@ describe("migration journal", () => {
       "0007_dark_sasquatch",
       "0008_giant_quasar",
       "0009_flaky_vermin",
+      "0010_workspace_rls",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -125,6 +147,7 @@ describe("migration journal", () => {
       { version: "0007_dark_sasquatch", baselined: false },
       { version: "0008_giant_quasar", baselined: false },
       { version: "0009_flaky_vermin", baselined: false },
+      { version: "0010_workspace_rls", baselined: false },
     ]);
   });
 
