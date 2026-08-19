@@ -3,7 +3,9 @@ import { relations } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  foreignKey,
   index,
+  unique,
   uniqueIndex,
   integer,
   jsonb,
@@ -12,17 +14,40 @@ import {
   timestamp,
   varchar,
   vector,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 /**
- * Nullable Workspace stamp (#94). Unreferenced until #96 tightens `NOT NULL`.
+ * Immutable Workspace stamp on every Workspace-owned row (#96).
  * The global allowlist (`users`, `sessions`, `desktop_releases`,
  * `scheduler_leases`) never gets this column.
  */
 function workspaceIdColumn() {
-  return varchar("workspace_id");
+  return varchar("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" });
+}
+
+function idInWorkspace(
+  table: { id: AnyPgColumn; workspaceId: AnyPgColumn },
+  name: string
+) {
+  return unique(`idx_${name}_id_workspace`).on(table.id, table.workspaceId);
+}
+
+function workspaceScopedFk(
+  name: string,
+  columns: [AnyPgColumn, AnyPgColumn],
+  parent: { id: AnyPgColumn; workspaceId: AnyPgColumn },
+  onDelete: "cascade" | "restrict" = "cascade"
+) {
+  return foreignKey({
+    name,
+    columns,
+    foreignColumns: [parent.id, parent.workspaceId],
+  }).onDelete(onDelete);
 }
 
 // Session storage table
@@ -80,7 +105,7 @@ export const projects = pgTable("projects", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   workspaceId: workspaceIdColumn(),
-});
+}, (table) => [idInWorkspace(table, "projects")]);
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
   owner: one(users, {
@@ -119,6 +144,9 @@ export const documents = pgTable("documents", {
   index("IDX_document_project").on(table.projectId),
   index("IDX_document_parent").on(table.parentId),
   index("IDX_document_created_by").on(table.createdById),
+  idInWorkspace(table, "documents"),
+  workspaceScopedFk("documents_project_workspace_fk", [table.projectId, table.workspaceId], projects),
+  workspaceScopedFk("documents_parent_workspace_fk", [table.parentId, table.workspaceId], table),
 ]);
 
 export const documentsRelations = relations(documents, ({ one, many }) => ({
@@ -194,6 +222,8 @@ export const documentEmbeddings = pgTable("document_embeddings", {
   index("idx_embeddings_project").on(table.projectId),
   index("idx_embeddings_owner").on(table.ownerId),
   index("idx_embeddings_hash").on(table.contentHash),
+  workspaceScopedFk("document_embeddings_document_workspace_fk", [table.documentId, table.workspaceId], documents),
+  workspaceScopedFk("document_embeddings_project_workspace_fk", [table.projectId, table.workspaceId], projects),
 ]);
 
 export const documentEmbeddingsRelations = relations(documentEmbeddings, ({ one }) => ({
@@ -234,6 +264,8 @@ export const videoTranscripts = pgTable("video_transcripts", {
   index("idx_video_transcripts_video_id").on(table.videoId),
   index("idx_video_transcripts_owner").on(table.ownerId),
   index("idx_video_transcripts_status").on(table.status),
+  workspaceScopedFk("video_transcripts_document_workspace_fk", [table.documentId, table.workspaceId], documents),
+  workspaceScopedFk("video_transcripts_project_workspace_fk", [table.projectId, table.workspaceId], projects),
 ]);
 
 export const videoTranscriptsRelations = relations(videoTranscripts, ({ one }) => ({
@@ -279,6 +311,7 @@ export const audioRecordings = pgTable("audio_recordings", {
   index("idx_audio_recordings_document").on(table.documentId),
   index("idx_audio_recordings_company_document").on(table.companyDocumentId),
   index("idx_audio_recordings_owner").on(table.ownerId),
+  workspaceScopedFk("audio_recordings_document_workspace_fk", [table.documentId, table.workspaceId], documents),
 ]);
 
 export const audioRecordingsRelations = relations(audioRecordings, ({ one }) => ({
@@ -369,6 +402,7 @@ export const crmClients = pgTable("crm_clients", {
 }, (table) => [
   index("idx_crm_clients_owner").on(table.ownerId),
   index("idx_crm_clients_status").on(table.status),
+  idInWorkspace(table, "crm_clients"),
 ]);
 
 export const crmClientsRelations = relations(crmClients, ({ one, many }) => ({
@@ -405,6 +439,7 @@ export const crmContacts = pgTable("crm_contacts", {
   workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_contacts_client").on(table.clientId),
+  workspaceScopedFk("crm_contacts_client_workspace_fk", [table.clientId, table.workspaceId], crmClients),
 ]);
 
 export const crmContactsRelations = relations(crmContacts, ({ one }) => ({
@@ -453,6 +488,8 @@ export const crmProjects = pgTable("crm_projects", {
   index("idx_crm_projects_assignee").on(table.assigneeId),
   index("idx_crm_projects_status").on(table.status),
   index("idx_crm_projects_doc_only").on(table.isDocumentationOnly),
+  idInWorkspace(table, "crm_projects"),
+  workspaceScopedFk("crm_projects_project_workspace_fk", [table.projectId, table.workspaceId], projects),
 ]);
 
 export const crmProjectsRelations = relations(crmProjects, ({ one }) => ({
@@ -502,6 +539,7 @@ export const crmProjectStageHistory = pgTable("crm_project_stage_history", {
 }, (table) => [
   index("idx_crm_stage_history_project").on(table.crmProjectId),
   index("idx_crm_stage_history_changed_at").on(table.changedAt),
+  workspaceScopedFk("crm_stage_history_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
 ]);
 
 export const crmProjectStageHistoryRelations = relations(crmProjectStageHistory, ({ one }) => ({
@@ -538,6 +576,7 @@ export const crmTags = pgTable("crm_tags", {
   workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_tags_name").on(table.name),
+  idInWorkspace(table, "crm_tags"),
 ]);
 
 export const insertCrmTagSchema = createInsertSchema(crmTags).omit({
@@ -560,6 +599,8 @@ export const crmProjectTags = pgTable("crm_project_tags", {
 }, (table) => [
   index("idx_crm_project_tags_project").on(table.crmProjectId),
   index("idx_crm_project_tags_tag").on(table.tagId),
+  workspaceScopedFk("crm_project_tags_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
+  workspaceScopedFk("crm_project_tags_tag_workspace_fk", [table.tagId, table.workspaceId], crmTags),
 ]);
 
 export const crmProjectTagsRelations = relations(crmProjectTags, ({ one }) => ({
@@ -593,6 +634,7 @@ export const companyDocumentFolders = pgTable("company_document_folders", {
   workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_company_document_folders_created_by").on(table.createdById),
+  idInWorkspace(table, "company_document_folders"),
 ]);
 
 export const companyDocumentFoldersRelations = relations(companyDocumentFolders, ({ one, many }) => ({
@@ -636,6 +678,8 @@ export const companyDocuments = pgTable("company_documents", {
 }, (table) => [
   index("idx_company_documents_uploaded_by").on(table.uploadedById),
   index("idx_company_documents_folder").on(table.folderId),
+  idInWorkspace(table, "company_documents"),
+  workspaceScopedFk("company_documents_folder_workspace_fk", [table.folderId, table.workspaceId], companyDocumentFolders),
 ]);
 
 export const companyDocumentsRelations = relations(companyDocuments, ({ one }) => ({
@@ -687,6 +731,8 @@ export const companyDocumentEmbeddings = pgTable("company_document_embeddings", 
   index("idx_company_embeddings_document").on(table.companyDocumentId),
   index("idx_company_embeddings_folder").on(table.folderId),
   index("idx_company_embeddings_hash").on(table.contentHash),
+  workspaceScopedFk("company_embeddings_document_workspace_fk", [table.companyDocumentId, table.workspaceId], companyDocuments),
+  workspaceScopedFk("company_embeddings_folder_workspace_fk", [table.folderId, table.workspaceId], companyDocumentFolders),
 ]);
 
 export const companyDocumentEmbeddingsRelations = relations(companyDocumentEmbeddings, ({ one }) => ({
@@ -712,7 +758,7 @@ export const teams = pgTable("teams", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   workspaceId: workspaceIdColumn(),
-});
+}, (table) => [idInWorkspace(table, "teams")]);
 
 export const teamsRelations = relations(teams, ({ one, many }) => ({
   owner: one(users, {
@@ -749,6 +795,7 @@ export const teamMembers = pgTable("team_members", {
 }, (table) => [
   index("idx_team_members_team").on(table.teamId),
   index("idx_team_members_user").on(table.userId),
+  workspaceScopedFk("team_members_team_workspace_fk", [table.teamId, table.workspaceId], teams),
 ]);
 
 export const teamMembersRelations = relations(teamMembers, ({ one }) => ({
@@ -791,6 +838,7 @@ export const teamInvites = pgTable("team_invites", {
 }, (table) => [
   index("idx_team_invites_team").on(table.teamId),
   index("idx_team_invites_code").on(table.code),
+  workspaceScopedFk("team_invites_team_workspace_fk", [table.teamId, table.workspaceId], teams),
 ]);
 
 export const teamInvitesRelations = relations(teamInvites, ({ one }) => ({
@@ -847,6 +895,8 @@ export const crmProjectNotes = pgTable("crm_project_notes", {
 }, (table) => [
   index("idx_crm_project_notes_project").on(table.crmProjectId),
   index("idx_crm_project_notes_created_by").on(table.createdById),
+  idInWorkspace(table, "crm_project_notes"),
+  workspaceScopedFk("crm_project_notes_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
 ]);
 
 export const crmProjectNotesRelations = relations(crmProjectNotes, ({ one }) => ({
@@ -890,6 +940,8 @@ export const notifications = pgTable("notifications", {
 }, (table) => [
   index("idx_notifications_user").on(table.userId),
   index("idx_notifications_unread").on(table.userId, table.isRead),
+  workspaceScopedFk("notifications_note_workspace_fk", [table.noteId, table.workspaceId], crmProjectNotes),
+  workspaceScopedFk("notifications_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
 ]);
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({
@@ -947,7 +999,7 @@ export type CrmFieldType = typeof crmFieldTypeValues[number];
 export const crmModules = pgTable("crm_modules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 100 }).notNull(),
-  slug: varchar("slug", { length: 100 }).notNull().unique(),
+  slug: varchar("slug", { length: 100 }).notNull(),
   description: text("description"),
   icon: varchar("icon", { length: 50 }),
   isSystem: integer("is_system").notNull().default(0),
@@ -959,6 +1011,8 @@ export const crmModules = pgTable("crm_modules", {
 }, (table) => [
   index("idx_crm_modules_slug").on(table.slug),
   index("idx_crm_modules_enabled").on(table.isEnabled),
+  idInWorkspace(table, "crm_modules"),
+  uniqueIndex("idx_crm_modules_workspace_slug").on(table.workspaceId, table.slug),
 ]);
 
 export const insertCrmModuleSchema = createInsertSchema(crmModules).omit({
@@ -992,6 +1046,8 @@ export const crmModuleFields = pgTable("crm_module_fields", {
 }, (table) => [
   index("idx_crm_module_fields_module").on(table.moduleId),
   index("idx_crm_module_fields_slug").on(table.slug),
+  idInWorkspace(table, "crm_module_fields"),
+  workspaceScopedFk("crm_module_fields_module_workspace_fk", [table.moduleId, table.workspaceId], crmModules),
 ]);
 
 export const crmModuleFieldsRelations = relations(crmModuleFields, ({ one }) => ({
@@ -1028,6 +1084,8 @@ export const crmCustomFieldValues = pgTable("crm_custom_field_values", {
 }, (table) => [
   index("idx_crm_custom_field_values_project").on(table.crmProjectId),
   index("idx_crm_custom_field_values_field").on(table.fieldId),
+  workspaceScopedFk("crm_custom_field_values_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
+  workspaceScopedFk("crm_custom_field_values_field_workspace_fk", [table.fieldId, table.workspaceId], crmModuleFields),
 ]);
 
 export const crmCustomFieldValuesRelations = relations(crmCustomFieldValues, ({ one }) => ({
@@ -1071,6 +1129,8 @@ export const tasks = pgTable("tasks", {
 }, (table) => [
   index("idx_tasks_crm_project").on(table.crmProjectId),
   index("idx_tasks_status").on(table.status),
+  idInWorkspace(table, "tasks"),
+  workspaceScopedFk("tasks_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
 ]);
 
 export const tasksRelations = relations(tasks, ({ one }) => ({
@@ -1100,7 +1160,8 @@ export const projectMembers = pgTable("project_members", {
 }, (table) => [
   index("idx_project_members_project").on(table.crmProjectId),
   index("idx_project_members_user").on(table.userId),
-  uniqueIndex("idx_project_members_unique").on(table.crmProjectId, table.userId),
+  uniqueIndex("idx_project_members_unique").on(table.workspaceId, table.crmProjectId, table.userId),
+  workspaceScopedFk("project_members_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
 ]);
 
 export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
@@ -1143,6 +1204,7 @@ export const reminders = pgTable("reminders", {
   index("idx_reminders_user").on(table.userId),
   index("idx_reminders_project").on(table.crmProjectId),
   index("idx_reminders_due").on(table.dueAt, table.notified),
+  workspaceScopedFk("reminders_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
 ]);
 
 export const remindersRelations = relations(reminders, ({ one }) => ({
@@ -1199,6 +1261,8 @@ export const timeEntries = pgTable("time_entries", {
   // Named as the boot-time DDL named it, which is the name production already
   // carries. Declared here so the journal produces it too — see migration 0004.
   index("idx_time_entries_task_id").on(table.taskId),
+  idInWorkspace(table, "time_entries"),
+  workspaceScopedFk("time_entries_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
 ]);
 
 export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
@@ -1274,6 +1338,8 @@ export const timeEntryScreenshots = pgTable("time_entry_screenshots", {
   index("idx_screenshots_captured").on(table.capturedAt),
   // Partial index — only indexes tombstoned rows; zero cost for live rows
   index("idx_screenshots_deleted").on(table.deletedAt),
+  workspaceScopedFk("screenshots_time_entry_workspace_fk", [table.timeEntryId, table.workspaceId], timeEntries),
+  workspaceScopedFk("screenshots_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
 ]);
 
 export const timeEntryScreenshotsRelations = relations(timeEntryScreenshots, ({ one }) => ({
@@ -1320,34 +1386,6 @@ export const devices = pgTable("devices", {
 
 export type Device = typeof devices.$inferSelect;
 export type InsertDevice = typeof devices.$inferInsert;
-
-/**
- * Authorization connecting one Device to one Workspace through the owner's
- * Membership (#94). A Device has no Workspace authority without an enrollment.
- */
-export const deviceEnrollments = pgTable(
-  "device_enrollments",
-  {
-    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-    deviceId: varchar("device_id")
-      .notNull()
-      .references(() => devices.id, { onDelete: "cascade" }),
-    workspaceId: varchar("workspace_id")
-      .notNull()
-      .references(() => workspaces.id, { onDelete: "cascade" }),
-    membershipId: varchar("membership_id")
-      .notNull()
-      .references(() => memberships.id, { onDelete: "cascade" }),
-    createdAt: timestamp("created_at").defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("idx_device_enrollments_device_workspace").on(table.deviceId, table.workspaceId),
-    index("idx_device_enrollments_workspace").on(table.workspaceId),
-    index("idx_device_enrollments_membership").on(table.membershipId),
-  ]
-);
-
-export type DeviceEnrollment = typeof deviceEnrollments.$inferSelect;
 
 export const devicesRelations = relations(devices, ({ one, many }) => ({
   user: one(users, { fields: [devices.userId], references: [users.id] }),
@@ -1458,8 +1496,8 @@ export const orgSettings = pgTable("org_settings", {
 /**
  * The one Workspace this installation seeds (#93, ADR-0004, ADR-0006). The id is
  * named so migrate is idempotent: a second apply cannot insert another row.
- * Tracking Policy is copied from `org_settings`; that row stays until a later
- * ticket drops it. HTTP does not read these tables yet.
+ * Tracking Policy is copied from `org_settings`; that row stays because HTTP
+ * still reads it. User authority columns stay for the same reason.
  */
 export const SEEDED_WORKSPACE_ID = "seeded";
 export const SEEDED_OWNER_ROLE_ID = "seeded-owner";
@@ -1500,7 +1538,10 @@ export const workspaceRoles = pgTable(
     name: varchar("name", { length: 100 }).notNull(),
     createdAt: timestamp("created_at").defaultNow(),
   },
-  (table) => [uniqueIndex("idx_workspace_roles_workspace_slug").on(table.workspaceId, table.slug)]
+  (table) => [
+    uniqueIndex("idx_workspace_roles_workspace_slug").on(table.workspaceId, table.slug),
+    idInWorkspace(table, "workspace_roles"),
+  ]
 );
 
 export type WorkspaceRole = typeof workspaceRoles.$inferSelect;
@@ -1515,12 +1556,20 @@ export const workspaceRoleCapabilities = pgTable(
     capabilityId: varchar("capability_id")
       .notNull()
       .references(() => capabilities.id, { onDelete: "cascade" }),
-    workspaceId: workspaceIdColumn(),
+    workspaceId: varchar("workspace_id")
+      .notNull()
+      .default(SEEDED_WORKSPACE_ID)
+      .references(() => workspaces.id, { onDelete: "cascade" }),
   },
   (table) => [
     uniqueIndex("idx_workspace_role_capabilities_unique").on(
       table.workspaceRoleId,
       table.capabilityId
+    ),
+    workspaceScopedFk(
+      "workspace_role_capabilities_role_workspace_fk",
+      [table.workspaceRoleId, table.workspaceId],
+      workspaceRoles
     ),
   ]
 );
@@ -1546,10 +1595,45 @@ export const memberships = pgTable(
     uniqueIndex("idx_memberships_workspace_user").on(table.workspaceId, table.userId),
     index("idx_memberships_workspace").on(table.workspaceId),
     index("idx_memberships_user").on(table.userId),
+    idInWorkspace(table, "memberships"),
+    workspaceScopedFk("memberships_role_workspace_fk", [table.workspaceRoleId, table.workspaceId], workspaceRoles, "restrict"),
   ]
 );
 
 export type Membership = typeof memberships.$inferSelect;
+
+/**
+ * Authorization connecting one Device to one Workspace through the owner's
+ * Membership (#94). A Device has no Workspace authority without an enrollment.
+ */
+export const deviceEnrollments = pgTable(
+  "device_enrollments",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    deviceId: varchar("device_id")
+      .notNull()
+      .references(() => devices.id, { onDelete: "cascade" }),
+    workspaceId: varchar("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    membershipId: varchar("membership_id")
+      .notNull()
+      .references(() => memberships.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_device_enrollments_device_workspace").on(table.deviceId, table.workspaceId),
+    index("idx_device_enrollments_workspace").on(table.workspaceId),
+    index("idx_device_enrollments_membership").on(table.membershipId),
+    workspaceScopedFk(
+      "device_enrollments_membership_workspace_fk",
+      [table.membershipId, table.workspaceId],
+      memberships
+    ),
+  ]
+);
+
+export type DeviceEnrollment = typeof deviceEnrollments.$inferSelect;
 
 /**
  * Extra Capabilities on one Membership that its Workspace Role does not grant.
@@ -1566,10 +1650,18 @@ export const membershipCapabilities = pgTable(
     capabilityId: varchar("capability_id")
       .notNull()
       .references(() => capabilities.id, { onDelete: "cascade" }),
-    workspaceId: workspaceIdColumn(),
+    workspaceId: varchar("workspace_id")
+      .notNull()
+      .default(SEEDED_WORKSPACE_ID)
+      .references(() => workspaces.id, { onDelete: "cascade" }),
   },
   (table) => [
     uniqueIndex("idx_membership_capabilities_unique").on(table.membershipId, table.capabilityId),
+    workspaceScopedFk(
+      "membership_capabilities_membership_workspace_fk",
+      [table.membershipId, table.workspaceId],
+      memberships
+    ),
   ]
 );
 
@@ -1684,7 +1776,13 @@ export const projectDailyUpdates = pgTable(
     index("idx_daily_updates_project").on(table.crmProjectId),
     index("idx_daily_updates_user").on(table.userId),
     index("idx_daily_updates_date").on(table.updateDate),
-    uniqueIndex("idx_daily_updates_unique").on(table.crmProjectId, table.userId, table.updateDate),
+    uniqueIndex("idx_daily_updates_unique").on(
+      table.workspaceId,
+      table.crmProjectId,
+      table.userId,
+      table.updateDate
+    ),
+    workspaceScopedFk("daily_updates_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
   ]
 );
 
@@ -1722,8 +1820,7 @@ export type ProjectDailyUpdateWithDetails = ProjectDailyUpdate & {
 };
 
 // Jobs — durable deferred work claimed by the Worker (ADR-0013, #82).
-// `workspace_id` stays nullable and unreferenced until #96. #94 backfills
-// existing rows and new Jobs take the Workspace of their cause.
+// `workspace_id` is NOT NULL (#96); new Jobs take the Workspace of their cause.
 export const concurrencyClassValues = [
   "domain-consequence",
   "derived-processing",
@@ -1737,7 +1834,7 @@ export const jobs = pgTable(
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
     type: varchar("type", { length: 255 }).notNull(),
     payload: jsonb("payload").$type<unknown>().notNull(),
-    workspaceId: varchar("workspace_id"),
+    workspaceId: workspaceIdColumn(),
     concurrencyClass: varchar("concurrency_class", { length: 32 }).notNull(),
     attempts: integer("attempts").notNull().default(0),
     maxAttempts: integer("max_attempts").notNull(),
@@ -1756,7 +1853,7 @@ export const jobs = pgTable(
     index("idx_jobs_claimable")
       .on(table.availableAt, table.createdAt)
       .where(sql`${table.completedAt} IS NULL`),
-    uniqueIndex("idx_jobs_occurrence").on(table.occurrenceKey),
+    uniqueIndex("idx_jobs_occurrence").on(table.workspaceId, table.occurrenceKey),
   ]
 );
 
@@ -1769,7 +1866,7 @@ export const deadLetters = pgTable(
     jobId: varchar("job_id").notNull(),
     type: varchar("type", { length: 255 }).notNull(),
     payload: jsonb("payload").$type<unknown>().notNull(),
-    workspaceId: varchar("workspace_id"),
+    workspaceId: workspaceIdColumn(),
     concurrencyClass: varchar("concurrency_class", { length: 32 }).notNull(),
     attempts: integer("attempts").notNull(),
     maxAttempts: integer("max_attempts").notNull(),

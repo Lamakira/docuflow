@@ -8,7 +8,8 @@ import { urlForDatabase, withClient } from "../helpers/db";
  * Phase 4 ticket #94: nullable `workspace_id` on Workspace-owned tables, a
  * journaled SQL backfill from aggregate roots outward, Device Enrollment for
  * existing Devices, and a verifier that reports remaining nulls without
- * applying `NOT NULL`.
+ * applying `NOT NULL`. This suite stops at `0008` so #96's tighten is a
+ * later journal entry, not a rewrite of this one.
  *
  * HTTP is not this suite. The journal is the seam: plant legacy rows before
  * the seed, let migrate run, ask the database what it left behind. The Project
@@ -122,7 +123,7 @@ describe("workspace_id backfill", () => {
       );
     });
 
-    await migrate(scratch);
+    await migrate(scratch, { applyThrough: "0008_giant_quasar" });
   }, 120_000);
 
   afterAll(async () => {
@@ -208,7 +209,7 @@ describe("workspace_id backfill", () => {
   });
 
   it("is a no-op on a second migrate", async () => {
-    expect(await migrate(scratch)).toEqual([]);
+    expect(await migrate(scratch, { applyThrough: "0008_giant_quasar" })).toEqual([]);
     const report = await withClient(scratch, remainingWorkspaceIdNulls);
     expect(report.filter((row) => row.remainingNulls > 0)).toEqual([]);
   });

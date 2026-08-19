@@ -22,7 +22,7 @@
 
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { crmModuleFields, crmModules, orgSettings } from "../shared/schema";
+import { crmModuleFields, crmModules, orgSettings, SEEDED_WORKSPACE_ID } from "../shared/schema";
 import { openDb, type Report, type ScriptDb } from "./lib/db";
 import { isEntryPoint } from "./lib/entrypoint";
 
@@ -64,7 +64,7 @@ export async function seedCrmDefaults(
   ];
 
   for (const mod of defaultModules) {
-    await db.insert(crmModules).values(mod);
+    await db.insert(crmModules).values({ ...mod, workspaceId: SEEDED_WORKSPACE_ID });
   }
 
   const projectsModule = defaultModules[0];
@@ -122,6 +122,7 @@ export async function seedCrmDefaults(
     await db.insert(crmModuleFields).values({
       id: randomUUID(),
       ...field,
+      workspaceId: SEEDED_WORKSPACE_ID,
     });
   }
 
@@ -140,7 +141,7 @@ export async function seedOrgSettings(
 ): Promise<{ seeded: boolean }> {
   const inserted = await db
     .insert(orgSettings)
-    .values({ id: ORG_SETTINGS_ROW_ID })
+    .values({ id: ORG_SETTINGS_ROW_ID, workspaceId: SEEDED_WORKSPACE_ID })
     .onConflictDoNothing()
     .returning({ id: orgSettings.id });
 

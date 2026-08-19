@@ -43,7 +43,7 @@ interface BackfillResult {
 /** The next `limit` orphans by id, so successive calls walk the table forward. */
 async function orphanBatch(db: ScriptDb, afterId: string, limit: number) {
   return db
-    .select({ id: projects.id, name: projects.name })
+    .select({ id: projects.id, name: projects.name, workspaceId: projects.workspaceId })
     .from(projects)
     .leftJoin(crmProjects, eq(projects.id, crmProjects.projectId))
     .where(and(isNull(crmProjects.id), gt(projects.id, afterId)))
@@ -99,6 +99,7 @@ export async function backfillCrmLinks(
           actualFinishDate: null,
           comments: MIGRATION_MARKER,
           documentationEnabled: 1,
+          workspaceId: project.workspaceId,
         });
         linkedCount++;
         report(`linked ${project.name} (${project.id})`);
