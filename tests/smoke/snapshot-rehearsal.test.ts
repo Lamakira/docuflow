@@ -14,6 +14,7 @@ import {
 import { openDb } from "../../scripts/lib/db";
 import { resetDb, withClient } from "../helpers/db";
 import { resolveTestDatabaseUrl } from "../test-db-url";
+import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 
 /**
  * The two checks ADR-0022 requires of a restored snapshot, and ADR-0023 leaves
@@ -128,18 +129,20 @@ describe("scanning a restored database", () => {
     const projectId = randomUUID();
     const crmProjectId = randomUUID();
     await withClient(url, async (client) => {
-      await client.query(`INSERT INTO projects (id, name, owner_id) VALUES ($1, 'P', $2)`, [
+      await client.query(`INSERT INTO projects (id, name, owner_id, workspace_id) VALUES ($1, 'P', $2, $3)`, [
         projectId,
         id,
+        SEEDED_WORKSPACE_ID,
       ]);
-      await client.query(`INSERT INTO crm_projects (id, project_id) VALUES ($1, $2)`, [
+      await client.query(`INSERT INTO crm_projects (id, project_id, workspace_id) VALUES ($1, $2, $3)`, [
         crmProjectId,
         projectId,
+        SEEDED_WORKSPACE_ID,
       ]);
       await client.query(
-        `INSERT INTO crm_project_notes (id, crm_project_id, content, created_by_id, mentioned_user_ids)
-         VALUES ($1, $2, 'note', $3, ARRAY[$4]::text[])`,
-        [randomUUID(), crmProjectId, id, FOREIGN]
+        `INSERT INTO crm_project_notes (id, crm_project_id, content, created_by_id, mentioned_user_ids, workspace_id)
+         VALUES ($1, $2, 'note', $3, ARRAY[$4]::text[], $5)`,
+        [randomUUID(), crmProjectId, id, FOREIGN, SEEDED_WORKSPACE_ID]
       );
     });
 
@@ -154,9 +157,9 @@ describe("scanning a restored database", () => {
     const id = await insertUser();
     await withClient(url, (client) =>
       client.query(
-        `INSERT INTO company_documents (id, name, content, uploaded_by_id)
-         VALUES ($1, 'Terms', $2::jsonb, $3)`,
-        [randomUUID(), JSON.stringify({ href: FOREIGN }), id]
+        `INSERT INTO company_documents (id, name, content, uploaded_by_id, workspace_id)
+         VALUES ($1, 'Terms', $2::jsonb, $3, $4)`,
+        [randomUUID(), JSON.stringify({ href: FOREIGN }), id, SEEDED_WORKSPACE_ID]
       )
     );
 
@@ -249,9 +252,9 @@ describe("the keys the restored database names", () => {
     const id = await insertUser();
     await withClient(url, (client) =>
       client.query(
-        `INSERT INTO company_documents (id, name, storage_path, uploaded_by_id)
-         VALUES ($1, 'Terms', '/objects/uploads/doc-1', $2)`,
-        [randomUUID(), id]
+        `INSERT INTO company_documents (id, name, storage_path, uploaded_by_id, workspace_id)
+         VALUES ($1, 'Terms', '/objects/uploads/doc-1', $2, $3)`,
+        [randomUUID(), id, SEEDED_WORKSPACE_ID]
       )
     );
 

@@ -35,7 +35,7 @@ export interface Job {
   id: string;
   type: string;
   payload: unknown;
-  workspaceId: string | null;
+  workspaceId: string;
   occurrenceKey: string | null;
   concurrencyClass: ConcurrencyClass;
   attempt: number;
@@ -51,7 +51,7 @@ export interface DeadLetter {
   jobId: string;
   type: string;
   payload: unknown;
-  workspaceId: string | null;
+  workspaceId: string;
   concurrencyClass: ConcurrencyClass;
   attempts: number;
   maxAttempts: number;
@@ -98,12 +98,13 @@ export function createJobsPort(options: CreateJobsPortOptions): JobsPort {
       const at = clock();
       const writer = tx ?? db;
       const occurrenceKey = input.occurrenceKey ?? null;
+      const workspaceId = workspaceOfCause(input.workspaceId);
       const [row] = await writer
         .insert(jobs)
         .values({
           type: input.type,
           payload: input.payload ?? {},
-          workspaceId: input.workspaceId ?? null,
+          workspaceId,
           occurrenceKey,
           concurrencyClass: declaration.concurrencyClass,
           attempts: 0,
@@ -113,14 +114,17 @@ export function createJobsPort(options: CreateJobsPortOptions): JobsPort {
           availableAt: at,
           createdAt: at,
         })
-        .onConflictDoNothing({ target: jobs.occurrenceKey })
+        .onConflictDoNothing({ target: [jobs.workspaceId, jobs.occurrenceKey] })
         .returning();
       if (row) return { ...toJob(row), created: true };
 
       if (!occurrenceKey) {
         throw new Error(`Job type "${input.type}" inserted no row and had no occurrence key to recover.`);
       }
-      const [existing] = await writer.select().from(jobs).where(eq(jobs.occurrenceKey, occurrenceKey));
+      const [existing] = await writer
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.occurrenceKey, occurrenceKey), eq(jobs.workspaceId, workspaceId)));
       if (!existing) {
         throw new Error(`Job occurrence "${occurrenceKey}" conflicted but could not be loaded.`);
       }

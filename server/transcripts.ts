@@ -5,6 +5,7 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { generateEmbeddings, chunkText } from "./embeddings";
 import crypto from "crypto";
 import { extractLoomTranscript, extractFathomTranscript } from "./browser-transcript";
+import { stampWorkspace, requireWorkspaceContext } from "./workspaceContext";
 
 export interface VideoInfo {
   url: string;
@@ -206,6 +207,7 @@ async function createTranscriptEmbeddings(
     )
   );
   
+  const { workspaceId } = requireWorkspaceContext();
   const fullBreadcrumbs = [...breadcrumbs, documentTitle];
   
   for (let i = 0; i < chunks.length; i++) {
@@ -215,7 +217,7 @@ async function createTranscriptEmbeddings(
     
     await db.execute(sql`
       INSERT INTO document_embeddings (
-        document_id, project_id, owner_id, chunk_index, chunk_text, content_hash, embedding, metadata
+        document_id, project_id, owner_id, chunk_index, chunk_text, content_hash, embedding, metadata, workspace_id
       ) VALUES (
         ${documentId}, ${projectId}, ${ownerId}, ${i}, ${chunks[i]}, ${hash}, 
         ${embeddingString}::vector,
@@ -226,7 +228,8 @@ async function createTranscriptEmbeddings(
           transcriptId,
           isVideoTranscript: true,
           videoProvider
-        })}::jsonb
+        })}::jsonb,
+        ${workspaceId}
       )
     `);
   }
@@ -291,7 +294,7 @@ export async function syncDocumentVideoTranscripts(
   for (const video of videosInContent) {
     if (!existingVideoIds.has(video.videoId)) {
       try {
-        const [inserted] = await db.insert(videoTranscripts).values({
+        const [inserted] = await db.insert(videoTranscripts).values(stampWorkspace({
           videoUrl: video.url,
           videoId: video.videoId,
           provider: video.provider,
@@ -299,7 +302,7 @@ export async function syncDocumentVideoTranscripts(
           projectId,
           ownerId,
           status: "pending",
-        }).returning();
+        })).returning();
         
         const processing = processTranscript(inserted.id, video.provider, video.videoId, documentId, projectId, ownerId, projectName, documentTitle, breadcrumbs);
         if (options.awaitProcessing) {

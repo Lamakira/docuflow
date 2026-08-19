@@ -8,7 +8,7 @@ import { resetDb } from "../helpers/db";
  *
  * Spec #81 puts this seam here on purpose — not HTTP, not Worker internals —
  * so the queue can be shown to work before any dispatcher moves onto it.
- * The port still accepts a null Workspace; domain writers stamp the cause (#94).
+ * The port stamps the Workspace of the cause; missing cause uses the seeded Workspace.
  */
 
 const WORK = "test.work";
@@ -34,7 +34,7 @@ describe("jobs port", () => {
     now = new Date("2026-08-18T12:00:00.000Z");
   });
 
-  it("enqueues a Job with no Workspace and lets one caller claim it", async () => {
+  it("enqueues a Job onto the seeded Workspace when the cause has none", async () => {
     const jobs = await openPort();
 
     const enqueued = await jobs.enqueue({ type: WORK, payload: { reminderId: "r1" } });
@@ -42,7 +42,7 @@ describe("jobs port", () => {
     expect(enqueued).toMatchObject({
       type: WORK,
       payload: { reminderId: "r1" },
-      workspaceId: null,
+      workspaceId: SEEDED_WORKSPACE_ID,
       attempt: 0,
     });
 
@@ -51,7 +51,7 @@ describe("jobs port", () => {
       id: enqueued.id,
       type: WORK,
       payload: { reminderId: "r1" },
-      workspaceId: null,
+      workspaceId: SEEDED_WORKSPACE_ID,
       attempt: 1,
       claimedBy: "worker-a",
     });
@@ -136,7 +136,7 @@ describe("jobs port", () => {
     const enqueued = await jobs.enqueue({
       type: WORK,
       payload: { reminderId: "r-dead" },
-      workspaceId: null,
+      workspaceId: SEEDED_WORKSPACE_ID,
     });
 
     const first = await jobs.claim("worker-a");
@@ -150,7 +150,7 @@ describe("jobs port", () => {
       jobId: enqueued.id,
       type: WORK,
       payload: { reminderId: "r-dead" },
-      workspaceId: null,
+      workspaceId: SEEDED_WORKSPACE_ID,
       concurrencyClass: "derived-processing",
       attempts: 2,
       maxAttempts: 2,

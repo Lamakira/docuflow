@@ -4,8 +4,7 @@
  *   npm run db:verify:workspace-backfill
  *
  * #94 backfills Workspace-owned rows in the journal and leaves the column
- * nullable. This verifier reports what is still null. It does not apply
- * `NOT NULL` — that is #96.
+ * nullable. #96 then sets `NOT NULL`. This verifier reports what is still null.
  *
  * Discovery is the catalog: every public table that has a `workspace_id`
  * column is reported, including tables whose column is already `NOT NULL`

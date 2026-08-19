@@ -174,7 +174,7 @@ describe("WorkspaceContext", () => {
     expect(res.status).toBe(404);
   });
 
-  it("runs a Worker Job inside the Job's Workspace and fails closed when the Job has none", async () => {
+  it("runs a Worker Job inside the Job's Workspace", async () => {
     const { db } = await import("../../server/db");
     const { createJobsPort } = await import("../../server/jobs");
     const { createJobRunner } = await import("../../server/worker");
@@ -211,15 +211,5 @@ describe("WorkspaceContext", () => {
       claimedBy: "worker-1",
     });
     expect(seen).toBe(SEEDED_WORKSPACE_ID);
-
-    seen = undefined;
-    const bare = await jobs.enqueue({ type: WORK });
-    expect(bare.workspaceId).toBeNull();
-    expect(await worker.runOne()).toMatchObject({ id: bare.id, claimedBy: "worker-1" });
-    expect(seen).toBeUndefined();
-    expect(await jobs.deadLetterFor(bare.id)).toMatchObject({
-      jobId: bare.id,
-      lastError: "WorkspaceContext is required",
-    });
   });
 });

@@ -104,7 +104,7 @@ describe("Daily Update nudge Job", () => {
         id: "replay",
         type: DAILY_UPDATE_NUDGE_JOB,
         payload: { userId: user.id, workday: WORKDAY },
-        workspaceId: null,
+        workspaceId: SEEDED_WORKSPACE_ID,
         occurrenceKey: dailyUpdateNudgeOccurrenceKey(user.id, WORKDAY),
         concurrencyClass: "external-delivery",
         attempt: 2,

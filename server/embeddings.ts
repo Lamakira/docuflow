@@ -5,6 +5,7 @@ import { documentEmbeddings, documents, projects, companyDocumentEmbeddings, com
 import { eq, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
+import { requireWorkspaceContext } from "./workspaceContext";
 
 const CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 100;
@@ -186,13 +187,15 @@ export async function updateDocumentEmbeddings(
     const embeddingArray = embeddings[i];
     const embeddingString = `[${embeddingArray.join(",")}]`;
     
+    const { workspaceId } = requireWorkspaceContext();
     await db.execute(sql`
       INSERT INTO document_embeddings (
-        document_id, project_id, owner_id, chunk_index, chunk_text, content_hash, embedding, metadata
+        document_id, project_id, owner_id, chunk_index, chunk_text, content_hash, embedding, metadata, workspace_id
       ) VALUES (
         ${documentId}, ${projectId}, ${ownerId}, ${i}, ${chunks[i]}, ${hash}, 
         ${embeddingString}::vector,
-        ${JSON.stringify({ title, projectName, breadcrumbs })}::jsonb
+        ${JSON.stringify({ title, projectName, breadcrumbs })}::jsonb,
+        ${workspaceId}
       )
     `);
   }
@@ -380,13 +383,15 @@ export async function updateCompanyDocumentEmbeddings(
     const embeddingArray = embeddings[i];
     const embeddingString = `[${embeddingArray.join(",")}]`;
     
+    const { workspaceId } = requireWorkspaceContext();
     await db.execute(sql`
       INSERT INTO company_document_embeddings (
-        company_document_id, folder_id, chunk_index, chunk_text, content_hash, embedding, metadata
+        company_document_id, folder_id, chunk_index, chunk_text, content_hash, embedding, metadata, workspace_id
       ) VALUES (
         ${companyDocumentId}, ${folderId}, ${i}, ${chunks[i]}, ${hash}, 
         ${embeddingString}::vector,
-        ${JSON.stringify({ title, folderName, mimeType })}::jsonb
+        ${JSON.stringify({ title, folderName, mimeType })}::jsonb,
+        ${workspaceId}
       )
     `);
   }

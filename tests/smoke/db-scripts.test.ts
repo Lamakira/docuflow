@@ -4,7 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { backfillCrmLinks } from "../../scripts/backfill-crm-links";
 import { openDb } from "../../scripts/lib/db";
 import { seedDefaults } from "../../scripts/seed-defaults";
-import { crmModuleFields, crmModules, orgSettings, projects, users } from "../../shared/schema";
+import { crmModuleFields, crmModules, orgSettings, projects, users, SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
 import { resolveTestDatabaseUrl } from "../test-db-url";
 
@@ -141,7 +141,7 @@ describe("db:backfill:crm-links", () => {
       .returning({ id: users.id });
     const [project] = await db
       .insert(projects)
-      .values({ name, ownerId: owner.id })
+      .values({ name, ownerId: owner.id, workspaceId: SEEDED_WORKSPACE_ID })
       .returning({ id: projects.id });
     return project.id;
   }
@@ -201,7 +201,7 @@ describe("db:backfill:crm-links", () => {
       .returning({ id: users.id });
     await db
       .insert(projects)
-      .values(owners.map((owner, at) => ({ name: `Legacy ${at}`, ownerId: owner.id })));
+      .values(owners.map((owner, at) => ({ name: `Legacy ${at}`, ownerId: owner.id, workspaceId: SEEDED_WORKSPACE_ID })));
 
     const result = await backfillCrmLinks(db);
 
