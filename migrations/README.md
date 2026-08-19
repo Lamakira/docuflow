@@ -25,6 +25,7 @@ journal is not part of it and is never applied.
 | 0008 | `0008_giant_quasar.sql` | Nullable `workspace_id` on Workspace-owned tables, journaled SQL backfill onto the seeded Workspace, and Device Enrollment for existing Devices (#94). Does not apply `NOT NULL`. |
 | 0009 | `0009_flaky_vermin.sql` | `workspace_id` `NOT NULL` on Workspace-owned tables, composite uniques that include it, and composite FKs so relationships cannot cross Workspaces (#96). Leaves `org_settings` and user authority columns in place. |
 | 0010 | `0010_workspace_rls.sql` | Row-level security on Workspace-owned tables and the `docuflow_app` role that cannot bypass it (#97). Migrations keep a separate credential (`DATABASE_MIGRATE_URL`). |
+| 0011 | `0011_drop_teams.sql` | Drops `teams`, `team_members`, and `team_invites` after snapshotting identities into `docs/migration/` (#98). Does not convert Teams into Project Assignments. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on

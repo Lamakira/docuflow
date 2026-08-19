@@ -15,9 +15,6 @@ import {
   crmCustomFieldValues,
   companyDocuments,
   companyDocumentFolders,
-  teams,
-  teamMembers,
-  teamInvites,
   notifications,
   audioRecordings,
   tasks,
@@ -68,15 +65,6 @@ import {
   type CompanyDocumentFolder,
   type InsertCompanyDocumentFolder,
   type CompanyDocumentFolderWithCreator,
-  type Team,
-  type InsertTeam,
-  type TeamMember,
-  type InsertTeamMember,
-  type TeamMemberWithUser,
-  type TeamInvite,
-  type InsertTeamInvite,
-  type TeamInviteWithTeam,
-  type TeamWithDetails,
   type Notification,
   type InsertNotification,
   type NotificationWithDetails,
@@ -210,27 +198,6 @@ export interface IStorage {
   deleteCompanyDocument(id: string): Promise<CompanyDocument | undefined>;
   searchCompanyDocuments(query: string): Promise<CompanyDocumentWithUploader[]>;
   searchCompanyDocumentFolders(query: string): Promise<CompanyDocumentFolderWithCreator[]>;
-  
-  // Teams
-  getTeams(userId: string): Promise<TeamWithDetails[]>;
-  getTeam(id: string): Promise<TeamWithDetails | undefined>;
-  createTeam(team: InsertTeam & { ownerId: string }): Promise<Team>;
-  updateTeam(id: string, data: Partial<InsertTeam>): Promise<Team | undefined>;
-  deleteTeam(id: string): Promise<void>;
-  
-  // Team Members
-  getTeamMembers(teamId: string): Promise<TeamMemberWithUser[]>;
-  addTeamMember(teamId: string, userId: string, role?: string): Promise<TeamMember>;
-  updateTeamMemberRole(teamId: string, userId: string, role: string): Promise<TeamMember | undefined>;
-  removeTeamMember(teamId: string, userId: string): Promise<void>;
-  isTeamMember(teamId: string, userId: string): Promise<boolean>;
-  
-  // Team Invites
-  getTeamInvites(teamId: string): Promise<TeamInviteWithTeam[]>;
-  getTeamInviteByCode(code: string): Promise<TeamInviteWithTeam | undefined>;
-  createTeamInvite(invite: InsertTeamInvite): Promise<TeamInvite>;
-  useTeamInvite(code: string, userId: string): Promise<{ success: boolean; team?: Team; error?: string }>;
-  deactivateTeamInvite(id: string): Promise<void>;
   
   // CRM Project Notes
   getCrmProjectNotes(crmProjectId: string): Promise<CrmProjectNoteWithCreator[]>;
@@ -1674,222 +1641,6 @@ export class DatabaseStorage implements IStorage {
       ...folder,
       createdBy: creatorMap.get(folder.createdById),
     }));
-  }
-
-  // Teams
-  async getTeams(userId: string): Promise<TeamWithDetails[]> {
-    // Get teams where user is owner or member
-    const ownedTeams = await db.select().from(teams).where(eq(teams.ownerId, userId));
-    
-    const memberTeamIds = await db
-      .select({ teamId: teamMembers.teamId })
-      .from(teamMembers)
-      .where(eq(teamMembers.userId, userId));
-    
-    const memberTeams = memberTeamIds.length > 0
-      ? await db.select().from(teams).where(or(...memberTeamIds.map(m => eq(teams.id, m.teamId))))
-      : [];
-    
-    // Combine and deduplicate
-    const allTeamsMap = new Map<string, Team>();
-    [...ownedTeams, ...memberTeams].forEach(t => allTeamsMap.set(t.id, t));
-    const allTeams = Array.from(allTeamsMap.values());
-    
-    // Get owners and member counts
-    const ownerIds = [...new Set(allTeams.map(t => t.ownerId))];
-    const ownersData = ownerIds.length > 0
-      ? await db.select().from(users).where(or(...ownerIds.map(id => eq(users.id, id))))
-      : [];
-    const ownerMap = new Map(ownersData.map(u => [u.id, u]));
-    
-    // Get member counts
-    const memberCounts = await Promise.all(
-      allTeams.map(async (t) => {
-        const [result] = await db.select({ count: count() }).from(teamMembers).where(eq(teamMembers.teamId, t.id));
-        return { teamId: t.id, count: result?.count || 0 };
-      })
-    );
-    const countMap = new Map(memberCounts.map(c => [c.teamId, c.count]));
-    
-    return allTeams.map(t => ({
-      ...t,
-      owner: ownerMap.get(t.ownerId),
-      memberCount: countMap.get(t.id) || 0,
-    }));
-  }
-
-  async getTeam(id: string): Promise<TeamWithDetails | undefined> {
-    const [team] = await db.select().from(teams).where(eq(teams.id, id));
-    if (!team) return undefined;
-    
-    const [owner] = await db.select().from(users).where(eq(users.id, team.ownerId));
-    const members = await this.getTeamMembers(id);
-    
-    return {
-      ...team,
-      owner,
-      members,
-      memberCount: members.length,
-    };
-  }
-
-  async createTeam(team: InsertTeam & { ownerId: string }): Promise<Team> {
-    const [newTeam] = await db.insert(teams).values(stampWorkspace({
-      ...team,
-      id: randomUUID(),
-    })).returning();
-    
-    // Add owner as a member with 'owner' role
-    await this.addTeamMember(newTeam.id, team.ownerId, "owner");
-    
-    return newTeam;
-  }
-
-  async updateTeam(id: string, data: Partial<InsertTeam>): Promise<Team | undefined> {
-    const [updated] = await db
-      .update(teams)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(teams.id, id))
-      .returning();
-    return updated;
-  }
-
-  async deleteTeam(id: string): Promise<void> {
-    await db.delete(teams).where(eq(teams.id, id));
-  }
-
-  // Team Members
-  async getTeamMembers(teamId: string): Promise<TeamMemberWithUser[]> {
-    const members = await db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId));
-    
-    if (members.length === 0) return [];
-    
-    const userIds = members.map(m => m.userId);
-    const usersData = await db.select().from(users).where(or(...userIds.map(id => eq(users.id, id))));
-    const userMap = new Map(usersData.map(u => [u.id, u]));
-    
-    return members.map(m => ({
-      ...m,
-      user: userMap.get(m.userId),
-    }));
-  }
-
-  async addTeamMember(teamId: string, userId: string, role: string = "member"): Promise<TeamMember> {
-    const [member] = await db.insert(teamMembers).values(stampWorkspace({
-      id: randomUUID(),
-      teamId,
-      userId,
-      role,
-    })).returning();
-    return member;
-  }
-
-  async updateTeamMemberRole(teamId: string, userId: string, role: string): Promise<TeamMember | undefined> {
-    const [updated] = await db
-      .update(teamMembers)
-      .set({ role })
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
-      .returning();
-    return updated;
-  }
-
-  async removeTeamMember(teamId: string, userId: string): Promise<void> {
-    await db.delete(teamMembers).where(
-      and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId))
-    );
-  }
-
-  async isTeamMember(teamId: string, userId: string): Promise<boolean> {
-    const [member] = await db
-      .select()
-      .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)));
-    return !!member;
-  }
-
-  // Team Invites
-  async getTeamInvites(teamId: string): Promise<TeamInviteWithTeam[]> {
-    const invites = await db
-      .select()
-      .from(teamInvites)
-      .where(eq(teamInvites.teamId, teamId))
-      .orderBy(desc(teamInvites.createdAt));
-    
-    if (invites.length === 0) return [];
-    
-    const [team] = await db.select().from(teams).where(eq(teams.id, teamId));
-    const creatorIds = [...new Set(invites.map(i => i.createdById))];
-    const creatorsData = await db.select().from(users).where(or(...creatorIds.map(id => eq(users.id, id))));
-    const creatorMap = new Map(creatorsData.map(u => [u.id, u]));
-    
-    return invites.map(i => ({
-      ...i,
-      team,
-      createdBy: creatorMap.get(i.createdById),
-    }));
-  }
-
-  async getTeamInviteByCode(code: string): Promise<TeamInviteWithTeam | undefined> {
-    const [invite] = await db.select().from(teamInvites).where(eq(teamInvites.code, code));
-    if (!invite) return undefined;
-    
-    const [team] = await db.select().from(teams).where(eq(teams.id, invite.teamId));
-    const [createdBy] = await db.select().from(users).where(eq(users.id, invite.createdById));
-    
-    return {
-      ...invite,
-      team,
-      createdBy,
-    };
-  }
-
-  async createTeamInvite(invite: InsertTeamInvite): Promise<TeamInvite> {
-    const [newInvite] = await db.insert(teamInvites).values(stampWorkspace({
-      ...invite,
-      id: randomUUID(),
-    })).returning();
-    return newInvite;
-  }
-
-  async useTeamInvite(code: string, userId: string): Promise<{ success: boolean; team?: Team; error?: string }> {
-    const invite = await this.getTeamInviteByCode(code);
-    
-    if (!invite) {
-      return { success: false, error: "Invitation not found" };
-    }
-    
-    if (invite.isActive !== "true") {
-      return { success: false, error: "This invitation is no longer active" };
-    }
-    
-    if (invite.expiresAt && new Date(invite.expiresAt) < new Date()) {
-      return { success: false, error: "This invitation has expired" };
-    }
-    
-    if (invite.maxUses && invite.useCount >= invite.maxUses) {
-      return { success: false, error: "This invitation has reached its maximum uses" };
-    }
-    
-    // Check if already a member
-    const isMember = await this.isTeamMember(invite.teamId, userId);
-    if (isMember) {
-      return { success: false, error: "You are already a member of this team" };
-    }
-    
-    // Add as member
-    await this.addTeamMember(invite.teamId, userId, "member");
-    
-    // Increment use count
-    await db
-      .update(teamInvites)
-      .set({ useCount: invite.useCount + 1 })
-      .where(eq(teamInvites.id, invite.id));
-    
-    return { success: true, team: invite.team };
-  }
-
-  async deactivateTeamInvite(id: string): Promise<void> {
-    await db.update(teamInvites).set({ isActive: "false" }).where(eq(teamInvites.id, id));
   }
 
   // CRM Project Notes
