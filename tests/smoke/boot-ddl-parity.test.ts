@@ -26,6 +26,8 @@ import { resolveTestDatabaseUrl } from "../test-db-url";
  * The SQL below is `git show fb400a3:server/index.ts`. It is frozen: if the
  * journal changes these tables, this file does not follow — the new shape is
  * compared against what boot really produced, which is the whole point.
+ * #94 added `workspace_id` after boot; that stamp is stripped from the
+ * journal side before compare so this suite still checks the boot-owned shape.
  */
 
 /** Verbatim `ensureTasksMigration()`, deleted from `server/index.ts` by #24. */
@@ -123,6 +125,18 @@ function indexDefinitions(rows: { table_name: string; index_name: string; defini
     .sort();
 }
 
+/** #94's Workspace stamp is later than boot; drop it so the boot shape still compares. */
+function withoutWorkspaceStamp<T extends { columns: { column_name: string }[]; indexes: { definition: string }[]; constraints: { definition: string }[] }>(
+  snapshot: T
+): T {
+  return {
+    ...snapshot,
+    columns: snapshot.columns.filter((row) => row.column_name !== "workspace_id"),
+    indexes: snapshot.indexes.filter((row) => !row.definition.includes("workspace_id")),
+    constraints: snapshot.constraints.filter((row) => !row.definition.includes("workspace_id")),
+  };
+}
+
 describe("the journal reproduces what boot-time DDL produced", () => {
   beforeAll(async () => {
     await withClient(urlForDatabase("postgres"), async (client) => {
@@ -155,24 +169,36 @@ describe("the journal reproduces what boot-time DDL produced", () => {
 
   it("declares the same columns boot did", async () => {
     const compared = [...BOOT_OWNED_TABLES, BOOT_OWNED_COLUMN.table];
-    const fromJournal = onlyTables(await withClient(TEST_DB_URL, describeSchema), compared);
-    const fromBoot = onlyTables(await withClient(urlForDatabase(SCRATCH_DB), describeSchema), compared);
+    const fromJournal = withoutWorkspaceStamp(
+      onlyTables(await withClient(TEST_DB_URL, describeSchema), compared)
+    );
+    const fromBoot = withoutWorkspaceStamp(
+      onlyTables(await withClient(urlForDatabase(SCRATCH_DB), describeSchema), compared)
+    );
 
     expect(fromJournal.columns).toEqual(fromBoot.columns);
   });
 
   it("enforces the same constraints boot did", async () => {
     const compared = [...BOOT_OWNED_TABLES, BOOT_OWNED_COLUMN.table];
-    const fromJournal = onlyTables(await withClient(TEST_DB_URL, describeSchema), compared);
-    const fromBoot = onlyTables(await withClient(urlForDatabase(SCRATCH_DB), describeSchema), compared);
+    const fromJournal = withoutWorkspaceStamp(
+      onlyTables(await withClient(TEST_DB_URL, describeSchema), compared)
+    );
+    const fromBoot = withoutWorkspaceStamp(
+      onlyTables(await withClient(urlForDatabase(SCRATCH_DB), describeSchema), compared)
+    );
 
     expect(definitions(fromJournal.constraints)).toEqual(definitions(fromBoot.constraints));
   });
 
   it("carries the same indexes boot did", async () => {
     const compared = [...BOOT_OWNED_TABLES, BOOT_OWNED_COLUMN.table];
-    const fromJournal = onlyTables(await withClient(TEST_DB_URL, describeSchema), compared);
-    const fromBoot = onlyTables(await withClient(urlForDatabase(SCRATCH_DB), describeSchema), compared);
+    const fromJournal = withoutWorkspaceStamp(
+      onlyTables(await withClient(TEST_DB_URL, describeSchema), compared)
+    );
+    const fromBoot = withoutWorkspaceStamp(
+      onlyTables(await withClient(urlForDatabase(SCRATCH_DB), describeSchema), compared)
+    );
 
     expect(indexDefinitions(fromJournal.indexes)).toEqual(indexDefinitions(fromBoot.indexes));
   });

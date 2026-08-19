@@ -57,6 +57,13 @@
       "when": 1787133653313,
       "tag": "0007_dark_sasquatch",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787137705219,
+      "tag": "0008_giant_quasar",
+      "breakpoints": true
     }
   ]
 }

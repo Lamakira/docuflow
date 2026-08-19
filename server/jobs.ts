@@ -7,7 +7,7 @@
  */
 
 import { and, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
-import { deadLetters, jobs, concurrencyClassValues, type ConcurrencyClass, type JobRow } from "@shared/schema";
+import { deadLetters, jobs, concurrencyClassValues, SEEDED_WORKSPACE_ID, type ConcurrencyClass, type JobRow } from "@shared/schema";
 import type { Db } from "./db";
 
 export type { ConcurrencyClass };
@@ -24,6 +24,11 @@ export interface EnqueueJob {
   payload?: unknown;
   workspaceId?: string | null;
   occurrenceKey?: string | null;
+}
+
+/** Workspace of the domain row that caused this Job; the seeded Workspace when the cause has none yet. */
+export function workspaceOfCause(workspaceId?: string | null): string {
+  return workspaceId ?? SEEDED_WORKSPACE_ID;
 }
 
 export interface Job {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
 import { sentEmails } from "../fakes/resend";
 
@@ -80,7 +81,7 @@ describe("Daily Update nudge Job", () => {
       type: DAILY_UPDATE_NUDGE_JOB,
       payload: { userId: user.id, workday: WORKDAY },
       occurrenceKey: dailyUpdateNudgeOccurrenceKey(user.id, WORKDAY),
-      workspaceId: null,
+      workspaceId: SEEDED_WORKSPACE_ID,
       claimedBy: "worker-1",
     });
 
