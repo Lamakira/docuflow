@@ -21,6 +21,7 @@ journal is not part of it and is never applied.
 | 0004 | `0004_time_entries_task_id_index.sql` | `idx_time_entries_task_id` — created by boot on every start, by no migration until now. |
 | 0005 | `0005_jobs.sql` | `jobs` and `dead_letters` — the Postgres jobs port (#82). Workspace id is nullable; no Workspace is seeded. `IF NOT EXISTS`, so a database already pushed from `shared/schema.ts` is a no-op. |
 | 0006 | `0006_square_wild_child.sql` | `jobs.occurrence_key` (unique) and `scheduler_leases` — due-reminder Jobs on the Worker (#83). |
+| 0007 | `0007_dark_sasquatch.sql` | Workspace, Membership, Workspace Role, and Capability tables, then one named Workspace and a Membership per user (#93). `org_settings` is copied onto Workspace Tracking Policy and left in place. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
@@ -126,9 +127,9 @@ npm run db:migrate -- --baseline 0002_slimy_whirlwind
 ```
 
 That writes `0000`–`0002` into `schema_migrations` without running them, then
-applies `0003`, `0004`, `0005`, and `0006` — later ones written with
-`IF NOT EXISTS` precisely because what they add may already be there. Every
-deploy after that is an ordinary `npm run db:migrate`.
+applies `0003` onwards — later ones written with `IF NOT EXISTS` precisely
+because what they add may already be there. Every deploy after that is an
+ordinary `npm run db:migrate`.
 
 Check the schema really does contain everything through the version being
 baselined before running it: `npm run db:verify -- --against "$URL"` is that
@@ -151,7 +152,9 @@ Two rules, from ADR-0017:
 - **Schema migrations stay pure DDL and fast.** A migration that moves data
   holds a lock for as long as the data takes. Data movement is a script in
   `scripts/` with a checkpoint and a verifier — `backfill-crm-links.ts` is the
-  worked example.
+  worked example. **Exception:** `0007` seeds the Workspace and Memberships in
+  the journal (Spec #92) because the Worker that would have claimed that Job is
+  deferred (#86).
 - **Expand and contract.** Add the new shape, move the reads and writes, drop
   the old one in a later deploy. Rollback is redeploying the previous image,
   never a down migration, so no migration may make the previous image unable to
