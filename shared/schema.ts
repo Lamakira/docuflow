@@ -1462,6 +1462,9 @@ export const orgSettings = pgTable("org_settings", {
  * ticket drops it. HTTP does not read these tables yet.
  */
 export const SEEDED_WORKSPACE_ID = "seeded";
+export const SEEDED_OWNER_ROLE_ID = "seeded-owner";
+export const SEEDED_ADMINISTRATOR_ROLE_ID = "seeded-administrator";
+export const SEEDED_MEMBER_ROLE_ID = "seeded-member";
 
 export const workspaceRoleSlugValues = ["owner", "administrator", "member"] as const;
 export type WorkspaceRoleSlug = (typeof workspaceRoleSlugValues)[number];

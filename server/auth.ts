@@ -8,6 +8,12 @@ import passport from "passport";
 import memoize from "memoizee";
 import { storage } from "./storage";
 import { config, mcpApiKey } from "./config";
+import {
+  ArchivedMembershipError,
+  NoActiveMembershipError,
+  contextFromUser,
+  runWithWorkspaceContext,
+} from "./workspaceContext";
 
 const SALT_ROUNDS = 12;
 
@@ -188,14 +194,14 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     const adminUser = await storage.getMainAdmin();
     if (adminUser) {
       (req.session as any).userId = adminUser.id;
-      return next();
+      return enterWorkspace(req, res, next);
     }
   }
 
   if (req.session && (req.session as any).userId) {
-    return next();
+    return enterWorkspace(req, res, next);
   }
-  
+
   const user = req.user as any;
   if (req.isAuthenticated?.() && user?.claims?.sub) {
     const now = Math.floor(Date.now() / 1000);
@@ -215,11 +221,31 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
         return res.status(401).json({ message: "Unauthorized" });
       }
     }
-    return next();
+    return enterWorkspace(req, res, next);
   }
-  
+
   return res.status(401).json({ message: "Unauthorized" });
 };
+
+/**
+ * Bind the rest of this request to the User's active Membership. Archived
+ * Memberships and Users with none cannot enter the Workspace.
+ */
+async function enterWorkspace(req: any, res: any, next: (err?: unknown) => void) {
+  const userId = getUserId(req);
+  if (!userId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  try {
+    const ctx = await contextFromUser(userId);
+    runWithWorkspaceContext(ctx, () => next());
+  } catch (error) {
+    if (error instanceof ArchivedMembershipError || error instanceof NoActiveMembershipError) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    next(error);
+  }
+}
 
 export function getUserId(req: any): string | undefined {
   // Check email/password session first

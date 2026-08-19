@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
+import { inSeededWorkspace } from "../helpers/workspace";
 import { embeddingCalls } from "../fakes/openai";
 
 /**
@@ -15,15 +16,18 @@ import { embeddingCalls } from "../fakes/openai";
 
 async function seedProject() {
   const { storage } = await import("../../server/storage");
+  const { inSeededWorkspace } = await import("../helpers/workspace");
   const user = await storage.createUser({
     email: "ada@test.invalid",
     password: "not-a-real-hash",
     firstName: "Ada",
   });
-  const { project } = await storage.createCrmProjectWithBase({
-    name: "Atlas",
-    ownerId: user.id,
-  });
+  const { project } = await inSeededWorkspace(() =>
+    storage.createCrmProjectWithBase({
+      name: "Atlas",
+      ownerId: user.id,
+    })
+  );
   return { storage, user, project };
 }
 
@@ -62,13 +66,15 @@ describe("document derived Jobs", () => {
       db,
       types: { [DOCUMENT_EMBED_JOB]: DOCUMENT_EMBED_JOB_TYPE },
     });
-    const document = await createDocumentWithDerivedJobs({
-      jobs,
-      title: "Deployment",
-      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Ship on Friday" }] }] },
-      projectId: project.id,
-      createdById: user.id,
-    });
+    const document = await inSeededWorkspace(() =>
+      createDocumentWithDerivedJobs({
+        jobs,
+        title: "Deployment",
+        content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Ship on Friday" }] }] },
+        projectId: project.id,
+        createdById: user.id,
+      })
+    );
 
     expect(embeddingCalls()).toEqual([]);
     expect(await jobs.claim("worker-1")).toMatchObject({
@@ -96,20 +102,22 @@ describe("document derived Jobs", () => {
 
     await expect(
       db.transaction(async (tx) => {
-        await createDocumentWithDerivedJobs({
-          jobs,
-          title: "Never committed",
-          content: { type: "doc", content: [] },
-          projectId: project.id,
-          createdById: user.id,
-          tx,
-        });
+        await inSeededWorkspace(() =>
+          createDocumentWithDerivedJobs({
+            jobs,
+            title: "Never committed",
+            content: { type: "doc", content: [] },
+            projectId: project.id,
+            createdById: user.id,
+            tx,
+          })
+        );
         tx.rollback();
       })
     ).rejects.toThrow();
 
     expect(await jobs.claim("worker-1")).toBeNull();
-    expect(await storage.getDocuments(project.id)).toEqual([]);
+    expect(await inSeededWorkspace(() => storage.getDocuments(project.id))).toEqual([]);
   });
 
   it("runs the embed Job through the OpenAI fake and does not call it at save", async () => {
@@ -127,20 +135,22 @@ describe("document derived Jobs", () => {
       db,
       types: { [DOCUMENT_EMBED_JOB]: DOCUMENT_EMBED_JOB_TYPE },
     });
-    const document = await createDocumentWithDerivedJobs({
-      jobs,
-      title: "Deployment",
-      content: {
-        type: "doc",
-        content: [{ type: "paragraph", content: [{ type: "text", text: "Ship on Friday" }] }],
-      },
-      projectId: project.id,
-      createdById: user.id,
-    });
+    const document = await inSeededWorkspace(() =>
+      createDocumentWithDerivedJobs({
+        jobs,
+        title: "Deployment",
+        content: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Ship on Friday" }] }],
+        },
+        projectId: project.id,
+        createdById: user.id,
+      })
+    );
     expect(embeddingCalls()).toEqual([]);
 
     const claimed = await jobs.claim("worker-1");
-    await handleDocumentEmbedJob(claimed!);
+    await inSeededWorkspace(() => handleDocumentEmbedJob(claimed!));
     await jobs.complete(claimed!.id, "worker-1");
 
     expect(embeddingCalls()).toEqual([[expect.stringContaining("Ship on Friday")]]);
@@ -182,13 +192,15 @@ describe("document derived Jobs", () => {
         [DOCUMENT_TRANSCRIPT_JOB]: DOCUMENT_TRANSCRIPT_JOB_TYPE,
       },
     });
-    const document = await createDocumentWithDerivedJobs({
-      jobs,
-      title: "Kickoff",
-      content: LOOM_CONTENT,
-      projectId: project.id,
-      createdById: user.id,
-    });
+    const document = await inSeededWorkspace(() =>
+      createDocumentWithDerivedJobs({
+        jobs,
+        title: "Kickoff",
+        content: LOOM_CONTENT,
+        projectId: project.id,
+        createdById: user.id,
+      })
+    );
 
     const claimed = [];
     for (let i = 0; i < 2; i++) claimed.push(await jobs.claim("worker-1"));
@@ -198,10 +210,10 @@ describe("document derived Jobs", () => {
       payload: { documentId: document.id, ownerId: user.id },
     });
 
-    await handleDocumentTranscriptJob(transcriptJob!);
+    await inSeededWorkspace(() => handleDocumentTranscriptJob(transcriptJob!));
     await jobs.complete(transcriptJob!.id, "worker-1");
 
-    const status = await getTranscriptStatus(document.id);
+    const status = await inSeededWorkspace(() => getTranscriptStatus(document.id));
     expect(status).toMatchObject({
       total: 1,
       completed: 1,
@@ -227,12 +239,14 @@ describe("document derived Jobs", () => {
       updateDocumentWithDerivedJobs,
     } = await import("../../server/documentJobs");
 
-    const existing = await storage.createDocument({
-      title: "Draft",
-      content: { type: "doc", content: [] },
-      projectId: project.id,
-      createdById: user.id,
-    });
+    const existing = await inSeededWorkspace(() =>
+      storage.createDocument({
+        title: "Draft",
+        content: { type: "doc", content: [] },
+        projectId: project.id,
+        createdById: user.id,
+      })
+    );
     const jobs = createJobsPort({
       db,
       types: {
@@ -241,18 +255,20 @@ describe("document derived Jobs", () => {
       },
     });
 
-    const updated = await updateDocumentWithDerivedJobs({
-      jobs,
-      id: existing.id,
-      ownerId: user.id,
-      data: {
-        title: "Shipped",
-        content: {
-          type: "doc",
-          content: [{ type: "paragraph", content: [{ type: "text", text: "Done" }] }],
+    const updated = await inSeededWorkspace(() =>
+      updateDocumentWithDerivedJobs({
+        jobs,
+        id: existing.id,
+        ownerId: user.id,
+        data: {
+          title: "Shipped",
+          content: {
+            type: "doc",
+            content: [{ type: "paragraph", content: [{ type: "text", text: "Done" }] }],
+          },
         },
-      },
-    });
+      })
+    );
 
     expect(updated?.title).toBe("Shipped");
     expect(embeddingCalls()).toEqual([]);

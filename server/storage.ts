@@ -106,8 +106,16 @@ import {
   type InsertProjectDailyUpdate,
   type ProjectDailyUpdateWithDetails,
   SEEDED_WORKSPACE_ID,
+  SEEDED_MEMBER_ROLE_ID,
+  memberships,
+  deviceEnrollments,
 } from "@shared/schema";
 import { db, type Db } from "./db";
+import {
+  currentWorkspaceContext,
+  inWorkspace,
+  stampWorkspace,
+} from "./workspaceContext";
 
 /** A Drizzle session that can write documents — the caller's transaction, or ours. */
 export type DocumentWriter = Pick<Db, "insert" | "select" | "update">;
@@ -433,6 +441,7 @@ export class DatabaseStorage implements IStorage {
       .insert(users)
       .values(userData)
       .returning();
+    await this.ensureSeededMembership(user);
     return user;
   }
 
@@ -457,6 +466,7 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(users.email, userData.email))
           .returning();
+        await this.ensureSeededMembership(updated);
         return updated;
       }
     }
@@ -483,19 +493,40 @@ export class DatabaseStorage implements IStorage {
         },
       })
       .returning();
+    await this.ensureSeededMembership(user);
     return user;
   }
 
+  /**
+   * New Users join the seeded Workspace. Identity is global; the Membership is
+   * the Active Workspace for this phase. Not taken from request input.
+   */
+  private async ensureSeededMembership(user: User): Promise<void> {
+    await db
+      .insert(memberships)
+      .values({
+        workspaceId: SEEDED_WORKSPACE_ID,
+        userId: user.id,
+        workspaceRoleId: SEEDED_MEMBER_ROLE_ID,
+        archivedAt: user.isArchived ? new Date() : null,
+      })
+      .onConflictDoNothing();
+  }
+
   async getProjects(userId?: string): Promise<Project[]> {
-    // Return all projects for company-wide visibility
+    // Return all projects for company-wide visibility inside the Active Workspace.
     return db
       .select()
       .from(projects)
+      .where(inWorkspace(projects))
       .orderBy(desc(projects.updatedAt));
   }
 
   async getProject(id: string): Promise<Project | undefined> {
-    const [project] = await db.select().from(projects).where(eq(projects.id, id));
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(and(eq(projects.id, id), inWorkspace(projects)));
     return project;
   }
 
@@ -505,7 +536,7 @@ export class DatabaseStorage implements IStorage {
   ): Promise<Project> {
     const [newProject] = await writer
       .insert(projects)
-      .values({ ...project, workspaceId: SEEDED_WORKSPACE_ID })
+      .values(stampWorkspace(project))
       .returning();
     return newProject;
   }
@@ -514,26 +545,31 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(projects)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(projects.id, id))
+      .where(and(eq(projects.id, id), inWorkspace(projects)))
       .returning();
     return updated;
   }
 
   async deleteProject(id: string): Promise<void> {
-    await db.delete(documents).where(eq(documents.projectId, id));
-    await db.delete(projects).where(eq(projects.id, id));
+    await db
+      .delete(documents)
+      .where(and(eq(documents.projectId, id), inWorkspace(documents)));
+    await db.delete(projects).where(and(eq(projects.id, id), inWorkspace(projects)));
   }
 
   async getDocuments(projectId: string): Promise<Document[]> {
     return db
       .select()
       .from(documents)
-      .where(eq(documents.projectId, projectId))
+      .where(and(eq(documents.projectId, projectId), inWorkspace(documents)))
       .orderBy(documents.position);
   }
 
   async getDocument(id: string): Promise<Document | undefined> {
-    const [doc] = await db.select().from(documents).where(eq(documents.id, id));
+    const [doc] = await db
+      .select()
+      .from(documents)
+      .where(and(eq(documents.id, id), inWorkspace(documents)));
     return doc;
   }
 
@@ -546,7 +582,10 @@ export class DatabaseStorage implements IStorage {
       if (visited.has(currentId)) break;
       visited.add(currentId);
 
-      const [doc] = await db.select().from(documents).where(eq(documents.id, currentId));
+      const [doc] = await db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.id, currentId), inWorkspace(documents)));
       if (!doc) break;
 
       if (doc.parentId && doc.id !== id) {
@@ -568,7 +607,10 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(documents)
       .where(
-        or(...projectIds.map((pid) => eq(documents.projectId, pid)))
+        and(
+          or(...projectIds.map((pid) => eq(documents.projectId, pid))),
+          inWorkspace(documents)
+        )
       )
       .orderBy(desc(documents.updatedAt))
       .limit(limit);
@@ -581,7 +623,8 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(documents.projectId, document.projectId),
-          document.parentId ? eq(documents.parentId, document.parentId) : isNull(documents.parentId)
+          document.parentId ? eq(documents.parentId, document.parentId) : isNull(documents.parentId),
+          inWorkspace(documents)
         )
       );
 
@@ -589,16 +632,16 @@ export class DatabaseStorage implements IStorage {
 
     const [newDoc] = await writer
       .insert(documents)
-      .values({
+      .values(stampWorkspace({
         ...document,
         position: maxPosition + 1,
-      })
+      }))
       .returning();
 
     await writer
       .update(projects)
       .set({ updatedAt: new Date() })
-      .where(eq(projects.id, document.projectId));
+      .where(and(eq(projects.id, document.projectId), inWorkspace(projects)));
 
     return newDoc;
   }
@@ -611,7 +654,7 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await writer
       .update(documents)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(documents.id, id))
+      .where(and(eq(documents.id, id), inWorkspace(documents)))
       .returning();
 
     if (updated) {
@@ -629,13 +672,13 @@ export class DatabaseStorage implements IStorage {
       const children = await db
         .select()
         .from(documents)
-        .where(eq(documents.parentId, docId));
+        .where(and(eq(documents.parentId, docId), inWorkspace(documents)));
 
       for (const child of children) {
         await deleteRecursive(child.id);
       }
 
-      await db.delete(documents).where(eq(documents.id, docId));
+      await db.delete(documents).where(and(eq(documents.id, docId), inWorkspace(documents)));
     };
 
     await deleteRecursive(id);
@@ -702,7 +745,7 @@ export class DatabaseStorage implements IStorage {
         const newId = randomUUID();
         const [newDoc] = await tx
           .insert(documents)
-          .values({
+          .values(stampWorkspace({
             id: newId,
             title,
             content: doc.content,
@@ -710,7 +753,7 @@ export class DatabaseStorage implements IStorage {
             projectId: doc.projectId,
             parentId: newParentId,
             position: isRoot ? newPosition : doc.position,
-          })
+          }))
           .returning();
 
         const children = await tx
@@ -861,16 +904,20 @@ export class DatabaseStorage implements IStorage {
     return db
       .select()
       .from(crmClients)
+      .where(inWorkspace(crmClients))
       .orderBy(asc(crmClients.name));
   }
 
   async getCrmClient(id: string): Promise<CrmClient | undefined> {
-    const [client] = await db.select().from(crmClients).where(eq(crmClients.id, id));
+    const [client] = await db
+      .select()
+      .from(crmClients)
+      .where(and(eq(crmClients.id, id), inWorkspace(crmClients)));
     return client;
   }
 
   async createCrmClient(client: InsertCrmClient & { ownerId: string }): Promise<CrmClient> {
-    const [newClient] = await db.insert(crmClients).values(client).returning();
+    const [newClient] = await db.insert(crmClients).values(stampWorkspace(client)).returning();
     return newClient;
   }
 
@@ -878,13 +925,13 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(crmClients)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(crmClients.id, id))
+      .where(and(eq(crmClients.id, id), inWorkspace(crmClients)))
       .returning();
     return updated;
   }
 
   async deleteCrmClient(id: string): Promise<void> {
-    await db.delete(crmClients).where(eq(crmClients.id, id));
+    await db.delete(crmClients).where(and(eq(crmClients.id, id), inWorkspace(crmClients)));
   }
 
   // CRM Contacts
@@ -892,17 +939,20 @@ export class DatabaseStorage implements IStorage {
     return db
       .select()
       .from(crmContacts)
-      .where(eq(crmContacts.clientId, clientId))
+      .where(and(eq(crmContacts.clientId, clientId), inWorkspace(crmContacts)))
       .orderBy(desc(crmContacts.isPrimary), asc(crmContacts.name));
   }
 
   async getCrmContact(id: string): Promise<CrmContact | undefined> {
-    const [contact] = await db.select().from(crmContacts).where(eq(crmContacts.id, id));
+    const [contact] = await db
+      .select()
+      .from(crmContacts)
+      .where(and(eq(crmContacts.id, id), inWorkspace(crmContacts)));
     return contact;
   }
 
   async createCrmContact(contact: InsertCrmContact): Promise<CrmContact> {
-    const [newContact] = await db.insert(crmContacts).values(contact).returning();
+    const [newContact] = await db.insert(crmContacts).values(stampWorkspace(contact)).returning();
     return newContact;
   }
 
@@ -910,13 +960,13 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(crmContacts)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(crmContacts.id, id))
+      .where(and(eq(crmContacts.id, id), inWorkspace(crmContacts)))
       .returning();
     return updated;
   }
 
   async deleteCrmContact(id: string): Promise<void> {
-    await db.delete(crmContacts).where(eq(crmContacts.id, id));
+    await db.delete(crmContacts).where(and(eq(crmContacts.id, id), inWorkspace(crmContacts)));
   }
 
   // CRM Projects - Company-wide visibility
@@ -940,7 +990,8 @@ export class DatabaseStorage implements IStorage {
 
     // Build conditions - always exclude documentation-only projects from CRM view
     const conditions: any[] = [
-      eq(crmProjects.isDocumentationOnly, 0)
+      eq(crmProjects.isDocumentationOnly, 0),
+      inWorkspace(crmProjects),
     ];
 
     if (options?.status) {
@@ -1109,7 +1160,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCrmProject(id: string): Promise<CrmProjectWithDetails | undefined> {
-    const [crmProject] = await db.select().from(crmProjects).where(eq(crmProjects.id, id));
+    const [crmProject] = await db.select().from(crmProjects).where(and(eq(crmProjects.id, id), inWorkspace(crmProjects)));
     if (!crmProject) return undefined;
 
     const project = await this.getProject(crmProject.projectId);
@@ -1137,12 +1188,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCrmProjectByProjectId(projectId: string): Promise<CrmProject | undefined> {
-    const [crmProject] = await db.select().from(crmProjects).where(eq(crmProjects.projectId, projectId));
+    const [crmProject] = await db
+      .select()
+      .from(crmProjects)
+      .where(and(eq(crmProjects.projectId, projectId), inWorkspace(crmProjects)));
     return crmProject;
   }
 
   async createCrmProject(crmProject: InsertCrmProject): Promise<CrmProject> {
-    const [newCrmProject] = await db.insert(crmProjects).values(crmProject).returning();
+    const [newCrmProject] = await db.insert(crmProjects).values(stampWorkspace(crmProject)).returning();
     return newCrmProject;
   }
 
@@ -1157,7 +1211,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCrmProject(id: string): Promise<void> {
     // First get the CRM project to find the linked project ID
-    const [crmProject] = await db.select().from(crmProjects).where(eq(crmProjects.id, id));
+    const [crmProject] = await db.select().from(crmProjects).where(and(eq(crmProjects.id, id), inWorkspace(crmProjects)));
     
     if (crmProject && crmProject.projectId) {
       // Delete the CRM project first (FK constraint)
@@ -1412,6 +1466,12 @@ export class DatabaseStorage implements IStorage {
       .set({ isArchived, updatedAt: new Date() })
       .where(eq(users.id, userId))
       .returning();
+    if (updated) {
+      await db
+        .update(memberships)
+        .set({ archivedAt: isArchived ? new Date() : null, updatedAt: new Date() })
+        .where(eq(memberships.userId, userId));
+    }
     return updated;
   }
 
@@ -1495,7 +1555,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCompanyDocumentFolder(folder: InsertCompanyDocumentFolder): Promise<CompanyDocumentFolder> {
-    const [newFolder] = await db.insert(companyDocumentFolders).values(folder).returning();
+    const [newFolder] = await db.insert(companyDocumentFolders).values(stampWorkspace(folder)).returning();
     return newFolder;
   }
 
@@ -1547,7 +1607,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCompanyDocument(doc: InsertCompanyDocument): Promise<CompanyDocument> {
-    const [newDoc] = await db.insert(companyDocuments).values(doc).returning();
+    const [newDoc] = await db.insert(companyDocuments).values(stampWorkspace(doc)).returning();
     return newDoc;
   }
 
@@ -1674,10 +1734,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTeam(team: InsertTeam & { ownerId: string }): Promise<Team> {
-    const [newTeam] = await db.insert(teams).values({
+    const [newTeam] = await db.insert(teams).values(stampWorkspace({
       ...team,
       id: randomUUID(),
-    }).returning();
+    })).returning();
     
     // Add owner as a member with 'owner' role
     await this.addTeamMember(newTeam.id, team.ownerId, "owner");
@@ -1715,12 +1775,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async addTeamMember(teamId: string, userId: string, role: string = "member"): Promise<TeamMember> {
-    const [member] = await db.insert(teamMembers).values({
+    const [member] = await db.insert(teamMembers).values(stampWorkspace({
       id: randomUUID(),
       teamId,
       userId,
       role,
-    }).returning();
+    })).returning();
     return member;
   }
 
@@ -1784,10 +1844,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTeamInvite(invite: InsertTeamInvite): Promise<TeamInvite> {
-    const [newInvite] = await db.insert(teamInvites).values({
+    const [newInvite] = await db.insert(teamInvites).values(stampWorkspace({
       ...invite,
       id: randomUUID(),
-    }).returning();
+    })).returning();
     return newInvite;
   }
 
@@ -1869,10 +1929,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCrmProjectNote(note: InsertCrmProjectNote): Promise<CrmProjectNote> {
-    const [newNote] = await db.insert(crmProjectNotes).values({
+    const [newNote] = await db.insert(crmProjectNotes).values(stampWorkspace({
       ...note,
       id: randomUUID(),
-    }).returning();
+    })).returning();
     return newNote;
   }
 
@@ -1925,7 +1985,7 @@ export class DatabaseStorage implements IStorage {
   async createCrmProjectStageHistory(history: InsertCrmProjectStageHistory): Promise<CrmProjectStageHistory> {
     const [created] = await db
       .insert(crmProjectStageHistory)
-      .values(history)
+      .values(stampWorkspace(history))
       .returning();
     return created;
   }
@@ -1934,7 +1994,7 @@ export class DatabaseStorage implements IStorage {
     const notifs = await db
       .select()
       .from(notifications)
-      .where(eq(notifications.userId, userId))
+      .where(and(eq(notifications.userId, userId), inWorkspace(notifications)))
       .orderBy(desc(notifications.createdAt))
       .limit(50);
 
@@ -1969,10 +2029,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createNotification(notification: InsertNotification): Promise<Notification> {
-    const [newNotif] = await db.insert(notifications).values({
+    const [newNotif] = await db.insert(notifications).values(stampWorkspace({
       ...notification,
       id: randomUUID(),
-    }).returning();
+    })).returning();
     return newNotif;
   }
 
@@ -2004,10 +2064,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAudioRecording(recording: InsertAudioRecording): Promise<AudioRecording> {
-    const [newRecording] = await db.insert(audioRecordings).values({
+    const [newRecording] = await db.insert(audioRecordings).values(stampWorkspace({
       ...recording,
       id: randomUUID(),
-    }).returning();
+    })).returning();
     return newRecording;
   }
 
@@ -2031,10 +2091,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCrmTag(tag: InsertCrmTag): Promise<CrmTag> {
-    const [newTag] = await db.insert(crmTags).values({
+    const [newTag] = await db.insert(crmTags).values(stampWorkspace({
       ...tag,
       id: randomUUID(),
-    }).returning();
+    })).returning();
     return newTag;
   }
 
@@ -2063,11 +2123,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async addTagToProject(crmProjectId: string, tagId: string): Promise<CrmProjectTag> {
-    const [projectTag] = await db.insert(crmProjectTags).values({
+    const [projectTag] = await db.insert(crmProjectTags).values(stampWorkspace({
       id: randomUUID(),
       crmProjectId,
       tagId,
-    }).returning();
+    })).returning();
     return projectTag;
   }
 
@@ -2100,10 +2160,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCrmModule(module: InsertCrmModule): Promise<CrmModule> {
-    const [newMod] = await db.insert(crmModules).values({
+    const [newMod] = await db.insert(crmModules).values(stampWorkspace({
       ...module,
       id: randomUUID(),
-    }).returning();
+    })).returning();
     return newMod;
   }
 
@@ -2131,10 +2191,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCrmModuleField(field: InsertCrmModuleField): Promise<CrmModuleField> {
-    const [newField] = await db.insert(crmModuleFields).values({
+    const [newField] = await db.insert(crmModuleFields).values(stampWorkspace({
       ...field,
       options: field.options as string[] | null | undefined,
-    }).returning();
+    })).returning();
     return newField;
   }
 
@@ -2170,12 +2230,12 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return updated;
     } else {
-      const [newVal] = await db.insert(crmCustomFieldValues).values({
+      const [newVal] = await db.insert(crmCustomFieldValues).values(stampWorkspace({
         id: randomUUID(),
         crmProjectId,
         fieldId,
         value,
-      }).returning();
+      })).returning();
       return newVal;
     }
   }
@@ -2226,7 +2286,7 @@ export class DatabaseStorage implements IStorage {
     endDateGte?: Date;
     status?: string;
   }): Promise<TimeEntryWithDetails[]> {
-    const conditions = [];
+    const conditions = [inWorkspace(timeEntries)];
 
     if (options.userId) {
       conditions.push(eq(timeEntries.userId, options.userId));
@@ -2257,7 +2317,7 @@ export class DatabaseStorage implements IStorage {
     const enrichedEntries: TimeEntryWithDetails[] = [];
     for (const entry of entries) {
       const [user] = await db.select().from(users).where(eq(users.id, entry.userId));
-      const [crmProject] = await db.select().from(crmProjects).where(eq(crmProjects.id, entry.crmProjectId));
+      const [crmProject] = await db.select().from(crmProjects).where(and(eq(crmProjects.id, entry.crmProjectId), inWorkspace(crmProjects)));
       
       let projectDetails = undefined;
       let clientDetails = undefined;
@@ -2289,11 +2349,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTimeEntry(id: string): Promise<TimeEntryWithDetails | undefined> {
-    const [entry] = await db.select().from(timeEntries).where(eq(timeEntries.id, id));
+    const [entry] = await db.select().from(timeEntries).where(and(eq(timeEntries.id, id), inWorkspace(timeEntries)));
     if (!entry) return undefined;
     
     const [user] = await db.select().from(users).where(eq(users.id, entry.userId));
-    const [crmProject] = await db.select().from(crmProjects).where(eq(crmProjects.id, entry.crmProjectId));
+    const [crmProject] = await db.select().from(crmProjects).where(and(eq(crmProjects.id, entry.crmProjectId), inWorkspace(crmProjects)));
     
     let projectDetails = undefined;
     let clientDetails = undefined;
@@ -2352,14 +2412,15 @@ export class DatabaseStorage implements IStorage {
       .from(timeEntries)
       .where(and(
         eq(timeEntries.status, "running"),
-        lt(timeEntries.lastActivityAt, staleThreshold)
+        lt(timeEntries.lastActivityAt, staleThreshold),
+        inWorkspace(timeEntries)
       ));
   }
 
   async createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry> {
     // Safety net: if task_id column doesn't exist yet (migration 002 pending),
     // strip it and retry rather than crashing a timer start.
-    const values: any = { id: randomUUID(), ...entry };
+    const values: any = stampWorkspace({ id: randomUUID(), ...entry });
     const run = () => db.insert(timeEntries).values(values).returning();
     const [newEntry] = await run().catch(async (err: any) => {
       if (err?.code === "42703" && "taskId" in values) {
@@ -2386,7 +2447,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteTimeEntry(id: string): Promise<void> {
-    await db.delete(timeEntries).where(eq(timeEntries.id, id));
+    await db.delete(timeEntries).where(and(eq(timeEntries.id, id), inWorkspace(timeEntries)));
   }
 
   async getTimeStats(options: {
@@ -2524,7 +2585,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot> {
-    const [result] = await db.insert(timeEntryScreenshots).values(screenshot).returning();
+    const [result] = await db.insert(timeEntryScreenshots).values(stampWorkspace(screenshot)).returning();
     return result;
   }
 
@@ -2619,7 +2680,7 @@ export class DatabaseStorage implements IStorage {
   // ═══════════════════════════════════════
 
   async getTasks(options: { crmProjectId: string; includeArchived?: boolean }): Promise<Task[]> {
-    const conditions = [eq(tasks.crmProjectId, options.crmProjectId)];
+    const conditions = [eq(tasks.crmProjectId, options.crmProjectId), inWorkspace(tasks)];
     if (!options.includeArchived) {
       conditions.push(sql`${tasks.status} != 'archived'`);
     }
@@ -2627,12 +2688,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTask(id: string): Promise<Task | undefined> {
-    const [task] = await db.select().from(tasks).where(eq(tasks.id, id));
+    const [task] = await db.select().from(tasks).where(and(eq(tasks.id, id), inWorkspace(tasks)));
     return task;
   }
 
   async createTask(data: InsertTask): Promise<Task> {
-    const [task] = await db.insert(tasks).values(data).returning();
+    const [task] = await db.insert(tasks).values(stampWorkspace(data)).returning();
     return task;
   }
 
@@ -2640,13 +2701,13 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(tasks)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(tasks.id, id))
+      .where(and(eq(tasks.id, id), inWorkspace(tasks)))
       .returning();
     return updated;
   }
 
   async deleteTask(id: string): Promise<void> {
-    await db.delete(tasks).where(eq(tasks.id, id));
+    await db.delete(tasks).where(and(eq(tasks.id, id), inWorkspace(tasks)));
   }
 
   // ═══════════════════════════════════════
@@ -2682,7 +2743,7 @@ export class DatabaseStorage implements IStorage {
     if (existing) return existing;
     const inserted = await db
       .insert(projectMembers)
-      .values({ crmProjectId, userId })
+      .values(stampWorkspace({ crmProjectId, userId }))
       .onConflictDoNothing()
       .returning();
     if (inserted.length > 0) return inserted[0];
@@ -2705,7 +2766,7 @@ export class DatabaseStorage implements IStorage {
   // ─── Project Daily Updates ───
 
   async createProjectDailyUpdate(data: InsertProjectDailyUpdate): Promise<ProjectDailyUpdate> {
-    const [update] = await db.insert(projectDailyUpdates).values(data).returning();
+    const [update] = await db.insert(projectDailyUpdates).values(stampWorkspace(data)).returning();
     return update;
   }
 
@@ -2771,7 +2832,7 @@ export class DatabaseStorage implements IStorage {
 // ═══════════════════════════════════════
 
   async createReminder(data: InsertReminder): Promise<Reminder> {
-    const [reminder] = await db.insert(reminders).values(data).returning();
+    const [reminder] = await db.insert(reminders).values(stampWorkspace(data)).returning();
     return reminder;
   }
 
@@ -2784,7 +2845,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getReminder(id: string): Promise<Reminder | undefined> {
-    const [reminder] = await db.select().from(reminders).where(eq(reminders.id, id));
+    const [reminder] = await db.select().from(reminders).where(and(eq(reminders.id, id), inWorkspace(reminders)));
     return reminder;
   }
 
@@ -2792,12 +2853,16 @@ export class DatabaseStorage implements IStorage {
     id: string,
     data: Partial<Pick<Reminder, "title" | "note" | "dueAt" | "status" | "taskId" | "notified" | "notifiedInApp" | "emailSent">>,
   ): Promise<Reminder | undefined> {
-    const [updated] = await db.update(reminders).set(data).where(eq(reminders.id, id)).returning();
+    const [updated] = await db
+      .update(reminders)
+      .set(data)
+      .where(and(eq(reminders.id, id), inWorkspace(reminders)))
+      .returning();
     return updated;
   }
 
   async deleteReminder(id: string): Promise<void> {
-    await db.delete(reminders).where(eq(reminders.id, id));
+    await db.delete(reminders).where(and(eq(reminders.id, id), inWorkspace(reminders)));
   }
 
   // Due, not-done reminders that still have at least one channel pending delivery.
@@ -2812,6 +2877,7 @@ export class DatabaseStorage implements IStorage {
           lte(reminders.dueAt, now),
           ne(reminders.status, "done"),
           or(eq(reminders.notifiedInApp, 0), eq(reminders.emailSent, 0)),
+          inWorkspace(reminders),
         ),
       )
       .orderBy(asc(reminders.dueAt));
@@ -2822,7 +2888,7 @@ export class DatabaseStorage implements IStorage {
   // ═══════════════════════════════════════
 
   async createAgentPairingCode(data: { userId: string; code: string; expiresAt: Date }): Promise<AgentPairingCode> {
-    const [result] = await db.insert(agentPairingCodes).values(data).returning();
+    const [result] = await db.insert(agentPairingCodes).values(stampWorkspace(data)).returning();
     return result;
   }
 
@@ -2843,6 +2909,14 @@ export class DatabaseStorage implements IStorage {
 
   async createDevice(data: InsertDevice): Promise<Device> {
     const [result] = await db.insert(devices).values(data).returning();
+    const ctx = currentWorkspaceContext();
+    if (ctx?.membershipId) {
+      await db.insert(deviceEnrollments).values({
+        deviceId: result.id,
+        workspaceId: ctx.workspaceId,
+        membershipId: ctx.membershipId,
+      });
+    }
     return result;
   }
 
@@ -2905,7 +2979,7 @@ export class DatabaseStorage implements IStorage {
     const merged: ScreenshotPolicy = { ...current, ...policy };
     await db
       .insert(orgSettings)
-      .values({ id: "default", screenshotPolicy: merged, updatedAt: new Date() })
+      .values(stampWorkspace({ id: "default", screenshotPolicy: merged, updatedAt: new Date() }))
       .onConflictDoUpdate({
         target: orgSettings.id,
         set: { screenshotPolicy: merged, updatedAt: new Date() },
@@ -2920,7 +2994,7 @@ export class DatabaseStorage implements IStorage {
   async upsertAllowedTimezones(timezones: string[]): Promise<void> {
     await db
       .insert(orgSettings)
-      .values({ id: "default", allowedTimezones: timezones, updatedAt: new Date() })
+      .values(stampWorkspace({ id: "default", allowedTimezones: timezones, updatedAt: new Date() }))
       .onConflictDoUpdate({
         target: orgSettings.id,
         set: { allowedTimezones: timezones, updatedAt: new Date() },
@@ -2946,13 +3020,13 @@ export class DatabaseStorage implements IStorage {
     }
     const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
     if (!row) {
-      await db.insert(orgSettings).values({
+      await db.insert(orgSettings).values(stampWorkspace({
         id: "default",
         screenshotPolicy: DEFAULT_SCREENSHOT_POLICY,
         allowedTimezones: [...DEFAULT_ALLOWED_TIMEZONES],
         helpCenterScreenshots: merged,
         updatedAt: new Date(),
-      });
+      }));
     } else {
       await db
         .update(orgSettings)
@@ -2970,7 +3044,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async markAgentBatchProcessed(batchId: string, deviceId: string, eventCount: number): Promise<void> {
-    await db.insert(agentProcessedBatches).values({ batchId, deviceId, eventCount });
+    await db.insert(agentProcessedBatches).values(stampWorkspace({ batchId, deviceId, eventCount }));
   }
 
   async createAgentActivityEvents(events: Array<{
@@ -2983,7 +3057,7 @@ export class DatabaseStorage implements IStorage {
     data?: Record<string, unknown>;
   }>): Promise<void> {
     if (events.length === 0) return;
-    await db.insert(agentActivityEvents).values(events);
+    await db.insert(agentActivityEvents).values(events.map((event) => stampWorkspace(event)));
   }
 
   // ─── Admin Analytics ───

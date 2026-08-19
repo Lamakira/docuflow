@@ -8,6 +8,7 @@ import type { Job, JobTypeDeclaration, JobsPort } from "./jobs";
 import { workspaceOfCause } from "./jobs";
 import { logStaleSession } from "./logger";
 import { storage } from "./storage";
+import { forEachWorkspace } from "./workspaceContext";
 
 export const STALE_TIMER_JOB = "stale-timer.flag";
 
@@ -38,13 +39,16 @@ export async function flagStaleTimeEntry(entryId: string, at: Date): Promise<boo
 }
 
 export async function flagStaleRunningEntries(at: Date): Promise<number> {
-  const threshold = new Date(at.getTime() - STALE_THRESHOLD_MS);
-  const stale = await storage.getStaleRunningEntries(threshold);
-  let flagged = 0;
-  for (const entry of stale) {
-    if (await flagStaleTimeEntry(entry.id, at)) flagged += 1;
-  }
-  return flagged;
+  const counts = await forEachWorkspace(async () => {
+    const threshold = new Date(at.getTime() - STALE_THRESHOLD_MS);
+    const stale = await storage.getStaleRunningEntries(threshold);
+    let flagged = 0;
+    for (const entry of stale) {
+      if (await flagStaleTimeEntry(entry.id, at)) flagged += 1;
+    }
+    return flagged;
+  });
+  return counts.reduce((sum, n) => sum + n, 0);
 }
 
 export async function enqueueStaleTimerJobs(jobs: JobsPort, at: Date): Promise<number> {

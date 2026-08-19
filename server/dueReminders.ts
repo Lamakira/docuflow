@@ -8,6 +8,7 @@ import { storage } from "./storage";
 import { config } from "./config";
 import { sendReminderDueEmail } from "./email";
 import type { Job, JobTypeDeclaration } from "./jobs";
+import { forEachWorkspace } from "./workspaceContext";
 
 export const DUE_REMINDER_JOB = "due-reminder.deliver";
 
@@ -74,14 +75,16 @@ export async function deliverDueReminder(reminderId: string): Promise<void> {
 }
 
 export async function deliverPendingDueReminders(now: Date): Promise<void> {
-  const due = await storage.getPendingDueReminders(now);
-  for (const reminder of due) {
-    try {
-      await deliverDueReminder(reminder.id);
-    } catch (innerErr) {
-      console.error("[ReminderDispatcher] Failed to dispatch reminder", reminder.id, innerErr);
+  await forEachWorkspace(async () => {
+    const due = await storage.getPendingDueReminders(now);
+    for (const reminder of due) {
+      try {
+        await deliverDueReminder(reminder.id);
+      } catch (innerErr) {
+        console.error("[ReminderDispatcher] Failed to dispatch reminder", reminder.id, innerErr);
+      }
     }
-  }
+  });
 }
 
 export async function handleDueReminderJob(job: Job): Promise<void> {

@@ -204,10 +204,9 @@ describe("users and admin management (characterization)", () => {
     expect(archived.status).toBe(200);
     expect(archived.body).toMatchObject({ id: member.id, isArchived: true });
 
-    // Quirk: archival is a directory flag only — the session and every endpoint
-    // keep working for the archived user.
+    // Archived Memberships cannot authenticate into the Workspace (#95).
     const stillWorking = await member.agent.get("/api/projects");
-    expect(stillWorking.status).toBe(200);
+    expect(stillWorking.status).toBe(401);
 
     const restored = await admin.agent
       .patch(`/api/admin/users/${member.id}/archive`)

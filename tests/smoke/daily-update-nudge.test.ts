@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
+import { inSeededWorkspace } from "../helpers/workspace";
 import { sentEmails } from "../fakes/resend";
 
 /**
@@ -85,7 +86,7 @@ describe("Daily Update nudge Job", () => {
       claimedBy: "worker-1",
     });
 
-    const first = await storage.getUserNotifications(user.id);
+    const first = await inSeededWorkspace(() => storage.getUserNotifications(user.id));
     expect(first).toHaveLength(1);
     expect(first[0]).toMatchObject({
       type: "daily_update_reminder",
@@ -98,19 +99,21 @@ describe("Daily Update nudge Job", () => {
       }),
     ]);
 
-    await handleDailyUpdateNudgeJob({
-      id: "replay",
-      type: DAILY_UPDATE_NUDGE_JOB,
-      payload: { userId: user.id, workday: WORKDAY },
-      workspaceId: null,
-      occurrenceKey: dailyUpdateNudgeOccurrenceKey(user.id, WORKDAY),
-      concurrencyClass: "external-delivery",
-      attempt: 2,
-      maxAttempts: 5,
-      claimedBy: "worker-1",
-    });
+    await inSeededWorkspace(() =>
+      handleDailyUpdateNudgeJob({
+        id: "replay",
+        type: DAILY_UPDATE_NUDGE_JOB,
+        payload: { userId: user.id, workday: WORKDAY },
+        workspaceId: null,
+        occurrenceKey: dailyUpdateNudgeOccurrenceKey(user.id, WORKDAY),
+        concurrencyClass: "external-delivery",
+        attempt: 2,
+        maxAttempts: 5,
+        claimedBy: "worker-1",
+      })
+    );
 
-    expect(await storage.getUserNotifications(user.id)).toHaveLength(1);
+    expect(await inSeededWorkspace(() => storage.getUserNotifications(user.id))).toHaveLength(1);
     expect(sentEmails()).toHaveLength(1);
     expect(await worker.runOne()).toBeNull();
   });

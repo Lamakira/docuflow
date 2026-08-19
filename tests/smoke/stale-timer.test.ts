@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
+import { inSeededWorkspace } from "../helpers/workspace";
 
 /**
  * Stale-timer detection as a Job (#84, spec #81).
@@ -16,24 +17,27 @@ const NOW = new Date("2026-08-18T16:00:00.000Z");
 
 async function seedRunningEntry(lastActivityAt: Date) {
   const { storage } = await import("../../server/storage");
+  const { inSeededWorkspace } = await import("../helpers/workspace");
   const user = await storage.createUser({
     email: "timer@test.invalid",
     password: "not-a-real-hash",
     firstName: "Tim",
   });
-  const { crmProject } = await storage.createCrmProjectWithBase({
-    name: "Atlas",
-    ownerId: user.id,
+  return inSeededWorkspace(async () => {
+    const { crmProject } = await storage.createCrmProjectWithBase({
+      name: "Atlas",
+      ownerId: user.id,
+    });
+    const entry = await storage.createTimeEntry({
+      userId: user.id,
+      crmProjectId: crmProject.id,
+      description: "Still running",
+      startTime: lastActivityAt,
+      status: "running",
+      lastActivityAt,
+    });
+    return { storage, user, entry };
   });
-  const entry = await storage.createTimeEntry({
-    userId: user.id,
-    crmProjectId: crmProject.id,
-    description: "Still running",
-    startTime: lastActivityAt,
-    status: "running",
-    lastActivityAt,
-  });
-  return { storage, user, entry };
 }
 
 describe("stale-timer Job", () => {
@@ -96,7 +100,7 @@ describe("stale-timer Job", () => {
       claimedBy: "worker-1",
     });
 
-    const afterFirst = await storage.getTimeEntry(entry.id);
+    const afterFirst = await inSeededWorkspace(() => storage.getTimeEntry(entry.id));
     expect(afterFirst).toMatchObject({
       status: "running",
       endTime: null,
@@ -114,7 +118,7 @@ describe("stale-timer Job", () => {
       occurrenceKey: staleTimerOccurrenceKey(entry.id, at),
     });
 
-    const afterSecond = await storage.getTimeEntry(entry.id);
+    const afterSecond = await inSeededWorkspace(() => storage.getTimeEntry(entry.id));
     expect(afterSecond).toMatchObject({ status: "running", endTime: null });
     expect(warnings.filter((line) => line.includes("time-tracking.stale-session"))).toHaveLength(2);
 
