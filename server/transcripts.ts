@@ -261,7 +261,8 @@ export async function syncDocumentVideoTranscripts(
   content: any,
   projectName: string,
   documentTitle: string,
-  breadcrumbs: string[] = []
+  breadcrumbs: string[] = [],
+  options: { awaitProcessing?: boolean } = {}
 ): Promise<{ added: number; removed: number; errors: string[] }> {
   const videosInContent = extractVideosFromContent(content);
   const videoIdsInContent = new Set(videosInContent.map(v => v.videoId));
@@ -300,8 +301,12 @@ export async function syncDocumentVideoTranscripts(
           status: "pending",
         }).returning();
         
-        processTranscript(inserted.id, video.provider, video.videoId, documentId, projectId, ownerId, projectName, documentTitle, breadcrumbs)
-          .catch(err => console.error("Background transcript processing failed:", err));
+        const processing = processTranscript(inserted.id, video.provider, video.videoId, documentId, projectId, ownerId, projectName, documentTitle, breadcrumbs);
+        if (options.awaitProcessing) {
+          await processing;
+        } else {
+          processing.catch(err => console.error("Background transcript processing failed:", err));
+        }
         
         result.added++;
       } catch (error: any) {

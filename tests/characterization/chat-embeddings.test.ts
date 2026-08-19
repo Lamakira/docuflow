@@ -14,9 +14,8 @@ import { pdfSaying } from "../helpers/pdf";
  * real while nothing leaves the process.
  *
  * Quirks frozen here:
- *  - Document embeddings are generated without being awaited, so a page is
- *    searchable only once the background write lands; `POST /api/embeddings/rebuild`
- *    is the synchronous path.
+ *  - Document embeddings are not generated on the save request;
+ *    `POST /api/embeddings/rebuild` is the synchronous path.
  *  - Chat always answers 200 with `{ message, model, relevantDocs, usedFallback }`
  *    and the model name hard-coded to "gpt-4.1-nano".
  *  - With no embeddings to match, chat falls back to pasting whole documents
@@ -199,24 +198,6 @@ describe("chat and embeddings (characterization)", () => {
     expect(systemPrompt).toContain("# Relevant Project Documentation");
     // The closest chunk is the deployment page, and it is attributed to its project.
     expect(systemPrompt).toContain("Atlas / Deployment");
-  });
-
-  it("embeds a page in the background when it is created", async () => {
-    const app = await makeApp();
-    const user = await registerUser(app);
-    const { project } = await createCrmProject(user.agent);
-
-    await createDocument(user.agent, project.id, {
-      title: "Background",
-      content: tiptap("Indexed without being awaited"),
-    });
-
-    // The route answers before the embedding write finishes; the call itself is
-    // what the contract guarantees, not that it has landed by the time we look.
-    const { waitFor } = await import("../helpers/wait");
-    await waitFor(async () => embeddingCalls().length > 0, {
-      label: "background embedding generation",
-    });
   });
 
   it("shows every user's chat the whole workspace", async () => {
