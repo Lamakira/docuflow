@@ -1361,6 +1361,174 @@ export const orgSettings = pgTable("org_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+/**
+ * The one Workspace this installation seeds (#93, ADR-0004, ADR-0006). The id is
+ * named so migrate is idempotent: a second apply cannot insert another row.
+ * Tracking Policy is copied from `org_settings`; that row stays until a later
+ * ticket drops it. HTTP does not read these tables yet.
+ */
+export const SEEDED_WORKSPACE_ID = "seeded";
+
+export const workspaceRoleSlugValues = ["owner", "administrator", "member"] as const;
+export type WorkspaceRoleSlug = (typeof workspaceRoleSlugValues)[number];
+
+export const VIEW_DAILY_UPDATES_CAPABILITY_ID = "view_daily_updates";
+
+export const workspaces = pgTable("workspaces", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 255 }).notNull(),
+  screenshotPolicy: jsonb("screenshot_policy").$type<ScreenshotPolicy>(),
+  allowedTimezones: jsonb("allowed_timezones").$type<string[]>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type Workspace = typeof workspaces.$inferSelect;
+
+export const capabilities = pgTable("capabilities", {
+  id: varchar("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+});
+
+export type Capability = typeof capabilities.$inferSelect;
+
+export const workspaceRoles = pgTable(
+  "workspace_roles",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    workspaceId: varchar("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    slug: varchar("slug", { length: 50 }).notNull(),
+    name: varchar("name", { length: 100 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [uniqueIndex("idx_workspace_roles_workspace_slug").on(table.workspaceId, table.slug)]
+);
+
+export type WorkspaceRole = typeof workspaceRoles.$inferSelect;
+
+export const workspaceRoleCapabilities = pgTable(
+  "workspace_role_capabilities",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    workspaceRoleId: varchar("workspace_role_id")
+      .notNull()
+      .references(() => workspaceRoles.id, { onDelete: "cascade" }),
+    capabilityId: varchar("capability_id")
+      .notNull()
+      .references(() => capabilities.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("idx_workspace_role_capabilities_unique").on(
+      table.workspaceRoleId,
+      table.capabilityId
+    ),
+  ]
+);
+
+export const memberships = pgTable(
+  "memberships",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    workspaceId: varchar("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    workspaceRoleId: varchar("workspace_role_id")
+      .notNull()
+      .references(() => workspaceRoles.id, { onDelete: "restrict" }),
+    archivedAt: timestamp("archived_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_memberships_workspace_user").on(table.workspaceId, table.userId),
+    index("idx_memberships_workspace").on(table.workspaceId),
+    index("idx_memberships_user").on(table.userId),
+  ]
+);
+
+export type Membership = typeof memberships.$inferSelect;
+
+/**
+ * Extra Capabilities on one Membership that its Workspace Role does not grant.
+ * Seed copies per-user flags such as `canViewDailyUpdates` here so they are not
+ * leftover authority on `users`. Custom Workspace Roles stay out of scope.
+ */
+export const membershipCapabilities = pgTable(
+  "membership_capabilities",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    membershipId: varchar("membership_id")
+      .notNull()
+      .references(() => memberships.id, { onDelete: "cascade" }),
+    capabilityId: varchar("capability_id")
+      .notNull()
+      .references(() => capabilities.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("idx_membership_capabilities_unique").on(table.membershipId, table.capabilityId),
+  ]
+);
+
+export const workspacesRelations = relations(workspaces, ({ many }) => ({
+  roles: many(workspaceRoles),
+  memberships: many(memberships),
+}));
+
+export const workspaceRolesRelations = relations(workspaceRoles, ({ one, many }) => ({
+  workspace: one(workspaces, {
+    fields: [workspaceRoles.workspaceId],
+    references: [workspaces.id],
+  }),
+  memberships: many(memberships),
+  capabilities: many(workspaceRoleCapabilities),
+}));
+
+export const membershipsRelations = relations(memberships, ({ one, many }) => ({
+  workspace: one(workspaces, {
+    fields: [memberships.workspaceId],
+    references: [workspaces.id],
+  }),
+  user: one(users, {
+    fields: [memberships.userId],
+    references: [users.id],
+  }),
+  workspaceRole: one(workspaceRoles, {
+    fields: [memberships.workspaceRoleId],
+    references: [workspaceRoles.id],
+  }),
+  extraCapabilities: many(membershipCapabilities),
+}));
+
+export const membershipCapabilitiesRelations = relations(membershipCapabilities, ({ one }) => ({
+  membership: one(memberships, {
+    fields: [membershipCapabilities.membershipId],
+    references: [memberships.id],
+  }),
+  capability: one(capabilities, {
+    fields: [membershipCapabilities.capabilityId],
+    references: [capabilities.id],
+  }),
+}));
+
+export const workspaceRoleCapabilitiesRelations = relations(
+  workspaceRoleCapabilities,
+  ({ one }) => ({
+    workspaceRole: one(workspaceRoles, {
+      fields: [workspaceRoleCapabilities.workspaceRoleId],
+      references: [workspaceRoles.id],
+    }),
+    capability: one(capabilities, {
+      fields: [workspaceRoleCapabilities.capabilityId],
+      references: [capabilities.id],
+    }),
+  })
+);
+
 // Desktop installer release registry.
 // CI writes one row per build artifact. The backend serves stable download
 // URLs that redirect to the storage URL, insulating users from GCS paths.
@@ -1453,8 +1621,8 @@ export type ProjectDailyUpdateWithDetails = ProjectDailyUpdate & {
 };
 
 // Jobs — durable deferred work claimed by the Worker (ADR-0013, #82).
-// Workspace id is nullable on purpose: Phase 4 fills it. There is no Workspace
-// table to reference yet, and seeding one here would pull Phase 4 forward.
+// Workspace id stays nullable and unreferenced: #94 backfills it. Seeding the
+// Workspace (#93) does not stamp Jobs.
 export const concurrencyClassValues = [
   "domain-consequence",
   "derived-processing",

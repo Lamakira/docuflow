@@ -16,6 +16,10 @@
  * read what is recorded and create nothing that is not already there, so either
  * is safe to point at a database you are only asking about.
  *
+ * `applyThrough` is a function option (not a CLI flag): apply up to a named
+ * version and leave later entries pending. The workspace-seed suite uses it so
+ * fixture users exist before the mapping SQL runs.
+ *
  * `--baseline` exists for the databases that predate this journal. Production
  * was built with `drizzle-kit push` and has no migration record at all, so a
  * first run here would try to `CREATE TABLE` over live tables. Baseline it at
@@ -164,19 +168,24 @@ async function applyMigration(client: pg.Client, migration: Migration): Promise<
   }
 }
 
+function indexOfVersion(migrations: Migration[], version: string): number {
+  const at = migrations.findIndex((migration) => migration.version === version);
+  if (at === -1) {
+    throw new Error(
+      `No migration named "${version}". The journal holds:\n` +
+        migrations.map((migration) => `  ${migration.version}`).join("\n")
+    );
+  }
+  return at;
+}
+
 /** The migrations `--baseline <version>` covers that are not already recorded. */
 function migrationsToBaseline(
   migrations: Migration[],
   applied: Map<string, AppliedMigration>,
   through: string
 ): Migration[] {
-  const last = migrations.findIndex((migration) => migration.version === through);
-  if (last === -1) {
-    throw new Error(
-      `No migration named "${through}". The journal holds:\n` +
-        migrations.map((migration) => `  ${migration.version}`).join("\n")
-    );
-  }
+  const last = indexOfVersion(migrations, through);
   return migrations.slice(0, last + 1).filter((migration) => !applied.has(migration.version));
 }
 
@@ -202,6 +211,8 @@ interface Options {
   dryRun: boolean;
   /** Migrations up to and including this version are recorded, not run. */
   baselineThrough?: string;
+  /** Apply up to and including this version; leave later entries pending. */
+  applyThrough?: string;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -259,7 +270,13 @@ export async function migrate(
       }
     }
 
-    const pending = migrations.filter((migration) => !applied.has(migration.version));
+    const applyThroughAt = options.applyThrough
+      ? indexOfVersion(migrations, options.applyThrough)
+      : migrations.length - 1;
+
+    const pending = migrations.filter(
+      (migration, at) => !applied.has(migration.version) && at <= applyThroughAt
+    );
 
     if (options.status) {
       for (const migration of migrations) {

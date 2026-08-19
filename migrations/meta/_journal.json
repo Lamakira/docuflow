@@ -50,6 +50,13 @@
       "when": 1787064148049,
       "tag": "0006_square_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787133653313,
+      "tag": "0007_dark_sasquatch",
+      "breakpoints": true
     }
   ]
 }
