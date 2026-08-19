@@ -117,7 +117,42 @@ describe("migration journal", () => {
     // migration record at all. Baselining through 0002 records the history it
     // already has without running it, and leaves everything after it to apply
     // normally — as no-ops here, since `push` already built what they add.
+    //
+    // #98 dropped Teams from current schema, so push no longer creates those
+    // tables. 0008/0009 still ALTER them. Restore the 0000 shape so the
+    // apply path can reach 0011, which drops them.
     const scratch = urlForDatabase(SCRATCH_DB);
+    await withClient(scratch, (client) =>
+      client.query(`
+        CREATE TABLE IF NOT EXISTS "teams" (
+          "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+          "name" varchar(255) NOT NULL,
+          "description" text,
+          "owner_id" varchar NOT NULL,
+          "created_at" timestamp DEFAULT now(),
+          "updated_at" timestamp DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS "team_members" (
+          "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+          "team_id" varchar NOT NULL,
+          "user_id" varchar NOT NULL,
+          "role" varchar(20) DEFAULT 'member' NOT NULL,
+          "joined_at" timestamp DEFAULT now()
+        );
+        CREATE TABLE IF NOT EXISTS "team_invites" (
+          "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+          "team_id" varchar NOT NULL,
+          "code" varchar(64) NOT NULL,
+          "created_by_id" varchar NOT NULL,
+          "expires_at" timestamp,
+          "max_uses" integer,
+          "use_count" integer DEFAULT 0 NOT NULL,
+          "is_active" varchar(5) DEFAULT 'true' NOT NULL,
+          "created_at" timestamp DEFAULT now(),
+          CONSTRAINT "team_invites_code_unique" UNIQUE("code")
+        );
+      `)
+    );
 
     const ran = await migrate(scratch, { baselineThrough: "0002_slimy_whirlwind" });
 
@@ -130,6 +165,7 @@ describe("migration journal", () => {
       "0008_giant_quasar",
       "0009_flaky_vermin",
       "0010_workspace_rls",
+      "0011_drop_teams",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -148,6 +184,7 @@ describe("migration journal", () => {
       { version: "0008_giant_quasar", baselined: false },
       { version: "0009_flaky_vermin", baselined: false },
       { version: "0010_workspace_rls", baselined: false },
+      { version: "0011_drop_teams", baselined: false },
     ]);
   });
 

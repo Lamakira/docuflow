@@ -236,6 +236,6 @@ implementation and each suite's header lists what the document gets wrong):
 | `chat-embeddings`                | retrieval-augmented chat and the embedding pipeline                 |
 | `admin-analytics`                | analytics dashboards and the CSV export                             |
 | `desktop-downloads`              | public installer endpoints and CI release registration              |
-| `teams`                          | teams and invite links (still mounted, no longer used by the SPA)    |
+| `teams`                          | former Teams and invite routes fail closed (#98)                     |
 | `transcripts`                    | transcript status and sync on the no-video paths                    |
 | `rate-limits`                    | the global limiter, the screenshot budget, and where the auth limiter is actually mounted |
