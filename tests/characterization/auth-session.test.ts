@@ -153,14 +153,16 @@ describe("auth and session (characterization)", () => {
     const deleted = await admin.agent.delete(`/api/admin/users/${victim.id}`);
     expect(deleted.status).toBe(200);
 
-    // Quirk: the session cookie is still valid, so `isAuthenticated` lets the
-    // request through; only the user lookup fails, and it fails silently.
+    // Identity is global: the session cookie is still valid, so /api/auth/user
+    // looks the user up and answers null. Workspace routes fail closed.
     const me = await victim.agent.get("/api/auth/user");
     expect(me.status).toBe(200);
     expect(me.body).toBeNull();
 
+    // The session cookie is still valid, but there is no Membership left to
+    // enter a Workspace with (#95).
     const stillAuthorized = await victim.agent.get("/api/projects");
-    expect(stillAuthorized.status).toBe(200);
+    expect(stillAuthorized.status).toBe(401);
   });
 
   it("guards protected routes but leaves the health check open", async () => {

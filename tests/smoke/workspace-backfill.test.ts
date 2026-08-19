@@ -220,6 +220,7 @@ describe("Project write stamps workspace_id", () => {
     await resetDb();
 
     const { storage } = await import("../../server/storage");
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
     const { db } = await import("../../server/db");
     const { projects } = await import("../../shared/schema");
     const { eq } = await import("drizzle-orm");
@@ -230,13 +231,17 @@ describe("Project write stamps workspace_id", () => {
       firstName: "Ada",
     });
 
-    const kept = await storage.createProject({ name: "Kept", ownerId: user.id });
+    const kept = await runWithWorkspaceContext({ workspaceId: SEEDED_WORKSPACE_ID }, () =>
+      storage.createProject({ name: "Kept", ownerId: user.id })
+    );
     expect(kept.workspaceId).toBe(SEEDED_WORKSPACE_ID);
 
     let rolledBackId = "";
     await expect(
       db.transaction(async (tx) => {
-        const project = await storage.createProject({ name: "Rolled back", ownerId: user.id }, tx);
+        const project = await runWithWorkspaceContext({ workspaceId: SEEDED_WORKSPACE_ID }, () =>
+          storage.createProject({ name: "Rolled back", ownerId: user.id }, tx)
+        );
         rolledBackId = project.id;
         expect(project.workspaceId).toBe(SEEDED_WORKSPACE_ID);
         tx.rollback();
@@ -246,7 +251,11 @@ describe("Project write stamps workspace_id", () => {
     expect(
       await db.select({ id: projects.id }).from(projects).where(eq(projects.id, rolledBackId))
     ).toEqual([]);
-    expect(await storage.getProject(kept.id)).toMatchObject({
+    expect(
+      await runWithWorkspaceContext({ workspaceId: SEEDED_WORKSPACE_ID }, () =>
+        storage.getProject(kept.id)
+      )
+    ).toMatchObject({
       id: kept.id,
       workspaceId: SEEDED_WORKSPACE_ID,
     });

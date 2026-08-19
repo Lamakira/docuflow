@@ -10,6 +10,7 @@ import { sendDailyUpdateReminderEmail } from "./email";
 import type { Job, JobTypeDeclaration, JobsPort } from "./jobs";
 import { workspaceOfCause } from "./jobs";
 import { storage } from "./storage";
+import { activeMemberUserIds, forEachWorkspace, requireWorkspaceContext } from "./workspaceContext";
 
 export const DAILY_UPDATE_NUDGE_JOB = "daily-update-nudge.deliver";
 
@@ -70,8 +71,13 @@ export async function membersMissingDailyUpdate(at: Date): Promise<{ id: string 
     recent.filter((u) => isOnWorkday(new Date(u.updateDate), workday)).map((u) => u.userId),
   );
 
+  const members = await activeMemberUserIds();
   return (await storage.getAllUsers()).filter(
-    (u) => u.role === "user" && !u.isArchived && !submittedToday.has(u.id),
+    (u) =>
+      u.role === "user" &&
+      !u.isArchived &&
+      members.has(u.id) &&
+      !submittedToday.has(u.id),
   );
 }
 
@@ -107,16 +113,19 @@ export async function nudgeMembersMissingDailyUpdate(at: Date): Promise<number> 
   const { workday, hour } = workdayAt(at);
   if (hour < DAILY_UPDATE_NUDGE_HOUR) return 0;
 
-  const members = await membersMissingDailyUpdate(at);
-  let sent = 0;
-  for (const member of members) {
-    try {
-      if (await nudgeMemberForWorkday(member.id, workday)) sent += 1;
-    } catch (innerErr) {
-      console.error("[DailyUpdateNudge] Failed for member", member.id, innerErr);
+  const counts = await forEachWorkspace(async () => {
+    const members = await membersMissingDailyUpdate(at);
+    let sent = 0;
+    for (const member of members) {
+      try {
+        if (await nudgeMemberForWorkday(member.id, workday)) sent += 1;
+      } catch (innerErr) {
+        console.error("[DailyUpdateNudge] Failed for member", member.id, innerErr);
+      }
     }
-  }
-  return sent;
+    return sent;
+  });
+  return counts.reduce((sum, n) => sum + n, 0);
 }
 
 export async function enqueueDailyUpdateNudgeJobs(jobs: JobsPort, at: Date): Promise<number> {
@@ -128,7 +137,7 @@ export async function enqueueDailyUpdateNudgeJobs(jobs: JobsPort, at: Date): Pro
       type: DAILY_UPDATE_NUDGE_JOB,
       payload: { userId: member.id, workday },
       occurrenceKey: dailyUpdateNudgeOccurrenceKey(member.id, workday),
-      workspaceId: workspaceOfCause(),
+      workspaceId: workspaceOfCause(requireWorkspaceContext().workspaceId),
     });
     if (enqueued.created) created += 1;
   }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
+import { inSeededWorkspace } from "../helpers/workspace";
 import { sentEmails } from "../fakes/resend";
 
 /**
@@ -13,23 +14,26 @@ import { sentEmails } from "../fakes/resend";
 
 async function seedDueReminder() {
   const { storage } = await import("../../server/storage");
+  const { inSeededWorkspace } = await import("../helpers/workspace");
   const user = await storage.createUser({
     email: "ada@test.invalid",
     password: "not-a-real-hash",
     firstName: "Ada",
   });
-  const { crmProject } = await storage.createCrmProjectWithBase({
-    name: "Atlas",
-    ownerId: user.id,
+  return inSeededWorkspace(async () => {
+    const { crmProject } = await storage.createCrmProjectWithBase({
+      name: "Atlas",
+      ownerId: user.id,
+    });
+    const reminder = await storage.createReminder({
+      userId: user.id,
+      crmProjectId: crmProject.id,
+      title: "Call the client",
+      note: "About the invoice",
+      dueAt: new Date("2026-08-18T11:00:00.000Z"),
+    });
+    return { storage, user, crmProject, reminder };
   });
-  const reminder = await storage.createReminder({
-    userId: user.id,
-    crmProjectId: crmProject.id,
-    title: "Call the client",
-    note: "About the invoice",
-    dueAt: new Date("2026-08-18T11:00:00.000Z"),
-  });
-  return { storage, user, crmProject, reminder };
 }
 
 describe("due-reminder Job", () => {
@@ -56,6 +60,7 @@ describe("due-reminder Job", () => {
     await jobs.enqueue({
       type: DUE_REMINDER_JOB,
       payload: { reminderId: reminder.id },
+      workspaceId: SEEDED_WORKSPACE_ID,
     });
 
     const worker = createJobRunner({
@@ -69,7 +74,7 @@ describe("due-reminder Job", () => {
       claimedBy: "worker-1",
     });
 
-    const first = await storage.getUserNotifications(user.id);
+    const first = await inSeededWorkspace(() => storage.getUserNotifications(user.id));
     expect(first).toHaveLength(1);
     expect(first[0]).toMatchObject({
       type: "reminder",
@@ -82,7 +87,7 @@ describe("due-reminder Job", () => {
         subject: "DocuFlow Reminder - Call the client",
       }),
     ]);
-    expect(await storage.getReminder(reminder.id)).toMatchObject({
+    expect(await inSeededWorkspace(() => storage.getReminder(reminder.id))).toMatchObject({
       notifiedInApp: 1,
       emailSent: 1,
       notified: 1,
@@ -90,9 +95,9 @@ describe("due-reminder Job", () => {
     });
     expect(await jobs.claim("worker-2")).toBeNull();
 
-    await deliverDueReminder(reminder.id);
+    await inSeededWorkspace(() => deliverDueReminder(reminder.id));
 
-    expect(await storage.getUserNotifications(user.id)).toHaveLength(1);
+    expect(await inSeededWorkspace(() => storage.getUserNotifications(user.id))).toHaveLength(1);
     expect(sentEmails()).toHaveLength(1);
   });
 
@@ -102,21 +107,21 @@ describe("due-reminder Job", () => {
     const { deliverDueReminder } = await import("../../server/dueReminders");
 
     failNextSend("email rejected");
-    await expect(deliverDueReminder(reminder.id)).rejects.toThrow(/email rejected/);
+    await expect(inSeededWorkspace(() => deliverDueReminder(reminder.id))).rejects.toThrow(/email rejected/);
 
-    expect(await storage.getUserNotifications(user.id)).toHaveLength(1);
+    expect(await inSeededWorkspace(() => storage.getUserNotifications(user.id))).toHaveLength(1);
     expect(sentEmails()).toHaveLength(0);
-    expect(await storage.getReminder(reminder.id)).toMatchObject({
+    expect(await inSeededWorkspace(() => storage.getReminder(reminder.id))).toMatchObject({
       notifiedInApp: 1,
       emailSent: 0,
       notified: 0,
     });
 
-    await deliverDueReminder(reminder.id);
+    await inSeededWorkspace(() => deliverDueReminder(reminder.id));
 
-    expect(await storage.getUserNotifications(user.id)).toHaveLength(1);
+    expect(await inSeededWorkspace(() => storage.getUserNotifications(user.id))).toHaveLength(1);
     expect(sentEmails()).toHaveLength(1);
-    expect(await storage.getReminder(reminder.id)).toMatchObject({
+    expect(await inSeededWorkspace(() => storage.getReminder(reminder.id))).toMatchObject({
       notifiedInApp: 1,
       emailSent: 1,
       notified: 1,
@@ -137,7 +142,11 @@ describe("due-reminder Job", () => {
       db,
       types: { [DUE_REMINDER_JOB]: DUE_REMINDER_JOB_TYPE },
     });
-    await jobs.enqueue({ type: DUE_REMINDER_JOB, payload: { reminderId: reminder.id } });
+    await jobs.enqueue({
+      type: DUE_REMINDER_JOB,
+      payload: { reminderId: reminder.id },
+      workspaceId: SEEDED_WORKSPACE_ID,
+    });
 
     const http = createJobRunner({
       role: "http",

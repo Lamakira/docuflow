@@ -6,6 +6,7 @@
 
 import type { Job, JobsPort } from "./jobs";
 import type { ProcessRole } from "./config";
+import { MissingWorkspaceContextError, runWithWorkspaceContext } from "./workspaceContext";
 
 export type JobHandler = (job: Job) => Promise<void>;
 
@@ -37,8 +38,13 @@ export function createJobRunner(options: CreateJobRunnerOptions): JobRunner {
         return job;
       }
 
+      if (!job.workspaceId) {
+        await jobs.fail(job.id, claimerId, new MissingWorkspaceContextError().message);
+        return job;
+      }
+
       try {
-        await handler(job);
+        await runWithWorkspaceContext({ workspaceId: job.workspaceId }, () => handler(job));
         await jobs.complete(job.id, claimerId);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

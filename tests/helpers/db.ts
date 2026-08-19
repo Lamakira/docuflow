@@ -20,6 +20,34 @@ export async function resetDb(): Promise<void> {
   if (rows.length === 0) return;
   const tables = rows.map((r: { tablename: string }) => `"${r.tablename}"`).join(", ");
   await pool.query(`TRUNCATE TABLE ${tables} RESTART IDENTITY CASCADE`);
+  await restoreSeededWorkspaceCatalog();
+}
+
+/**
+ * Truncate drops the journaled seed. Put the catalog back so new Users can
+ * receive a Membership in the seeded Workspace without re-running migrate.
+ */
+async function restoreSeededWorkspaceCatalog(): Promise<void> {
+  const { pool } = await import("../../server/db");
+  await pool.query(`
+    INSERT INTO capabilities (id, name)
+    VALUES ('view_daily_updates', 'View daily updates')
+    ON CONFLICT (id) DO NOTHING;
+    INSERT INTO workspaces (id, name)
+    VALUES ('seeded', 'DocuFlow')
+    ON CONFLICT (id) DO NOTHING;
+    INSERT INTO workspace_roles (id, workspace_id, slug, name)
+    VALUES
+      ('seeded-owner', 'seeded', 'owner', 'Owner'),
+      ('seeded-administrator', 'seeded', 'administrator', 'Administrator'),
+      ('seeded-member', 'seeded', 'member', 'Member')
+    ON CONFLICT (id) DO NOTHING;
+    INSERT INTO workspace_role_capabilities (workspace_role_id, capability_id, workspace_id)
+    SELECT id, 'view_daily_updates', 'seeded'
+      FROM workspace_roles
+     WHERE workspace_id = 'seeded' AND slug IN ('owner', 'administrator')
+    ON CONFLICT (workspace_role_id, capability_id) DO NOTHING;
+  `);
 }
 
 /**

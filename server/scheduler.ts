@@ -17,6 +17,7 @@ import type { JobsPort } from "./jobs";
 import { workspaceOfCause } from "./jobs";
 import type { ProcessRole } from "./config";
 import { storage } from "./storage";
+import { forEachWorkspace } from "./workspaceContext";
 
 const DUE_REMINDERS_LEASE = "due-reminders";
 const STALE_TIMER_LEASE = "stale-timer";
@@ -65,17 +66,19 @@ export function createDueReminderScheduler(
   options: CreateDueReminderSchedulerOptions
 ): DueReminderScheduler {
   return createLeaseElectedTick(options, DUE_REMINDERS_LEASE, async (at) => {
-    const due = await storage.getPendingDueReminders(at);
     let created = 0;
-    for (const reminder of due) {
-      const enqueued = await options.jobs.enqueue({
-        type: DUE_REMINDER_JOB,
-        payload: { reminderId: reminder.id },
-        occurrenceKey: dueReminderOccurrenceKey(reminder.id),
-        workspaceId: workspaceOfCause(reminder.workspaceId),
-      });
-      if (enqueued.created) created += 1;
-    }
+    await forEachWorkspace(async () => {
+      const due = await storage.getPendingDueReminders(at);
+      for (const reminder of due) {
+        const enqueued = await options.jobs.enqueue({
+          type: DUE_REMINDER_JOB,
+          payload: { reminderId: reminder.id },
+          occurrenceKey: dueReminderOccurrenceKey(reminder.id),
+          workspaceId: workspaceOfCause(reminder.workspaceId),
+        });
+        if (enqueued.created) created += 1;
+      }
+    });
     return created;
   });
 }
@@ -84,7 +87,9 @@ export function createStaleTimerScheduler(
   options: CreateSchedulerOptions
 ): StaleTimerScheduler {
   return createLeaseElectedTick(options, STALE_TIMER_LEASE, (at) =>
-    enqueueStaleTimerJobs(options.jobs, at)
+    forEachWorkspace(() => enqueueStaleTimerJobs(options.jobs, at)).then((counts) =>
+      counts.reduce((sum, n) => sum + n, 0)
+    )
   );
 }
 
@@ -92,7 +97,9 @@ export function createDailyUpdateNudgeScheduler(
   options: CreateSchedulerOptions
 ): DailyUpdateNudgeScheduler {
   return createLeaseElectedTick(options, DAILY_UPDATE_NUDGE_LEASE, (at) =>
-    enqueueDailyUpdateNudgeJobs(options.jobs, at)
+    forEachWorkspace(() => enqueueDailyUpdateNudgeJobs(options.jobs, at)).then((counts) =>
+      counts.reduce((sum, n) => sum + n, 0)
+    )
   );
 }
 

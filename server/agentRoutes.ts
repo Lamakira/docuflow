@@ -27,6 +27,13 @@ import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
 import { logInfo, logError, logTimeEvent } from "./logger";
 import { parseObjectPath, storagePort } from "./objectStorage";
 import { isTasksEnabled } from "./migrationFlags";
+import {
+  ArchivedMembershipError,
+  NoActiveMembershipError,
+  contextFromDevice,
+  contextFromUser,
+  runWithWorkspaceContext,
+} from "./workspaceContext";
 
 // ─── Constants ───
 
@@ -126,7 +133,16 @@ async function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: 
 
   req.agentDeviceId = claims.deviceId;
   req.agentUserId = claims.userId;
-  next();
+  try {
+    const ctx = await contextFromDevice(claims.deviceId, claims.userId);
+    runWithWorkspaceContext(ctx, () => next());
+  } catch (error) {
+    if (error instanceof ArchivedMembershipError || error instanceof NoActiveMembershipError) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    throw error;
+  }
 }
 
 // ─── Validation schemas ───
@@ -264,14 +280,17 @@ export function registerAgentRoutes(app: Express): void {
       const deviceToken = generateToken(DEVICE_TOKEN_LENGTH);
       const deviceTokenHash = hashToken(deviceToken);
 
-      const device = await storage.createDevice({
-        userId: user.id,
-        name: body.deviceMeta.deviceName,
-        os: body.deviceMeta.os ?? null,
-        clientVersion: body.deviceMeta.clientVersion ?? null,
-        deviceTokenHash,
-        lastSeenAt: new Date(),
-      });
+      const ctx = await contextFromUser(user.id);
+      const device = await runWithWorkspaceContext(ctx, () =>
+        storage.createDevice({
+          userId: user.id,
+          name: body.deviceMeta.deviceName,
+          os: body.deviceMeta.os ?? null,
+          clientVersion: body.deviceMeta.clientVersion ?? null,
+          deviceTokenHash,
+          lastSeenAt: new Date(),
+        })
+      );
 
       const { accessToken, expiresAt } = issueAccessToken(device.id, user.id);
 
@@ -289,6 +308,9 @@ export function registerAgentRoutes(app: Express): void {
         },
       });
     } catch (error) {
+      if (error instanceof ArchivedMembershipError || error instanceof NoActiveMembershipError) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid request", errors: error.errors });
       }
