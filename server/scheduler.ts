@@ -14,6 +14,7 @@ import {
 import { enqueueDailyUpdateNudgeJobs } from "./dailyUpdateNudge";
 import { enqueueStaleTimerJobs } from "./staleTimer";
 import type { JobsPort } from "./jobs";
+import { workspaceOfCause } from "./jobs";
 import type { ProcessRole } from "./config";
 import { storage } from "./storage";
 
@@ -71,6 +72,7 @@ export function createDueReminderScheduler(
         type: DUE_REMINDER_JOB,
         payload: { reminderId: reminder.id },
         occurrenceKey: dueReminderOccurrenceKey(reminder.id),
+        workspaceId: workspaceOfCause(reminder.workspaceId),
       });
       if (enqueued.created) created += 1;
     }

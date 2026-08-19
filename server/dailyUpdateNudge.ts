@@ -8,6 +8,7 @@
 import { config } from "./config";
 import { sendDailyUpdateReminderEmail } from "./email";
 import type { Job, JobTypeDeclaration, JobsPort } from "./jobs";
+import { workspaceOfCause } from "./jobs";
 import { storage } from "./storage";
 
 export const DAILY_UPDATE_NUDGE_JOB = "daily-update-nudge.deliver";
@@ -127,6 +128,7 @@ export async function enqueueDailyUpdateNudgeJobs(jobs: JobsPort, at: Date): Pro
       type: DAILY_UPDATE_NUDGE_JOB,
       payload: { userId: member.id, workday },
       occurrenceKey: dailyUpdateNudgeOccurrenceKey(member.id, workday),
+      workspaceId: workspaceOfCause(),
     });
     if (enqueued.created) created += 1;
   }

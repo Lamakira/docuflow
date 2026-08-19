@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
 import { sentEmails } from "../fakes/resend";
 
@@ -196,7 +197,7 @@ describe("due-reminder Job", () => {
       type: DUE_REMINDER_JOB,
       payload: { reminderId: reminder.id },
       occurrenceKey: dueReminderOccurrenceKey(reminder.id),
-      workspaceId: null,
+      workspaceId: SEEDED_WORKSPACE_ID,
     });
     expect(await jobs.claim("worker-2")).toBeNull();
   });

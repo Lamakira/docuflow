@@ -16,6 +16,15 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+/**
+ * Nullable Workspace stamp (#94). Unreferenced until #96 tightens `NOT NULL`.
+ * The global allowlist (`users`, `sessions`, `desktop_releases`,
+ * `scheduler_leases`) never gets this column.
+ */
+function workspaceIdColumn() {
+  return varchar("workspace_id");
+}
+
 // Session storage table
 export const sessions = pgTable(
   "sessions",
@@ -70,6 +79,7 @@ export const projects = pgTable("projects", {
   ownerId: varchar("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 });
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -82,6 +92,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
 
 export const insertProjectSchema = createInsertSchema(projects).omit({
   id: true,
+  workspaceId: true,
   ownerId: true,
   createdAt: true,
   updatedAt: true,
@@ -103,6 +114,7 @@ export const documents = pgTable("documents", {
   createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("IDX_document_project").on(table.projectId),
   index("IDX_document_parent").on(table.parentId),
@@ -130,6 +142,7 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
 
 export const insertDocumentSchema = createInsertSchema(documents).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -175,6 +188,7 @@ export const documentEmbeddings = pgTable("document_embeddings", {
   }>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_embeddings_document").on(table.documentId),
   index("idx_embeddings_project").on(table.projectId),
@@ -214,6 +228,7 @@ export const videoTranscripts = pgTable("video_transcripts", {
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_video_transcripts_document").on(table.documentId),
   index("idx_video_transcripts_video_id").on(table.videoId),
@@ -238,6 +253,7 @@ export const videoTranscriptsRelations = relations(videoTranscripts, ({ one }) =
 
 export const insertVideoTranscriptSchema = createInsertSchema(videoTranscripts).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -258,6 +274,7 @@ export const audioRecordings = pgTable("audio_recordings", {
   duration: integer("duration"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_audio_recordings_document").on(table.documentId),
   index("idx_audio_recordings_company_document").on(table.companyDocumentId),
@@ -277,6 +294,7 @@ export const audioRecordingsRelations = relations(audioRecordings, ({ one }) => 
 
 export const insertAudioRecordingSchema = createInsertSchema(audioRecordings).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -347,6 +365,7 @@ export const crmClients = pgTable("crm_clients", {
   ownerId: varchar("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_clients_owner").on(table.ownerId),
   index("idx_crm_clients_status").on(table.status),
@@ -363,6 +382,7 @@ export const crmClientsRelations = relations(crmClients, ({ one, many }) => ({
 
 export const insertCrmClientSchema = createInsertSchema(crmClients).omit({
   id: true,
+  workspaceId: true,
   ownerId: true,
   createdAt: true,
   updatedAt: true,
@@ -382,6 +402,7 @@ export const crmContacts = pgTable("crm_contacts", {
   isPrimary: integer("is_primary").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_contacts_client").on(table.clientId),
 ]);
@@ -395,6 +416,7 @@ export const crmContactsRelations = relations(crmContacts, ({ one }) => ({
 
 export const insertCrmContactSchema = createInsertSchema(crmContacts).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -424,6 +446,7 @@ export const crmProjects = pgTable("crm_projects", {
   totalReviewMs: bigint("total_review_ms", { mode: "number" }).default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_projects_project").on(table.projectId),
   index("idx_crm_projects_client").on(table.clientId),
@@ -449,6 +472,7 @@ export const crmProjectsRelations = relations(crmProjects, ({ one }) => ({
 
 export const insertCrmProjectSchema = createInsertSchema(crmProjects).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -474,6 +498,7 @@ export const crmProjectStageHistory = pgTable("crm_project_stage_history", {
   toStatus: varchar("to_status", { length: 50 }).notNull(),
   changedById: varchar("changed_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   changedAt: timestamp("changed_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_stage_history_project").on(table.crmProjectId),
   index("idx_crm_stage_history_changed_at").on(table.changedAt),
@@ -492,6 +517,7 @@ export const crmProjectStageHistoryRelations = relations(crmProjectStageHistory,
 
 export const insertCrmProjectStageHistorySchema = createInsertSchema(crmProjectStageHistory).omit({
   id: true,
+  workspaceId: true,
   changedAt: true,
 });
 
@@ -509,12 +535,14 @@ export const crmTags = pgTable("crm_tags", {
   color: varchar("color", { length: 20 }).notNull().default("#6366f1"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_tags_name").on(table.name),
 ]);
 
 export const insertCrmTagSchema = createInsertSchema(crmTags).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -528,6 +556,7 @@ export const crmProjectTags = pgTable("crm_project_tags", {
   crmProjectId: varchar("crm_project_id").notNull().references(() => crmProjects.id, { onDelete: "cascade" }),
   tagId: varchar("tag_id").notNull().references(() => crmTags.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_project_tags_project").on(table.crmProjectId),
   index("idx_crm_project_tags_tag").on(table.tagId),
@@ -546,6 +575,7 @@ export const crmProjectTagsRelations = relations(crmProjectTags, ({ one }) => ({
 
 export const insertCrmProjectTagSchema = createInsertSchema(crmProjectTags).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
 });
 
@@ -560,6 +590,7 @@ export const companyDocumentFolders = pgTable("company_document_folders", {
   createdById: varchar("created_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_company_document_folders_created_by").on(table.createdById),
 ]);
@@ -574,6 +605,7 @@ export const companyDocumentFoldersRelations = relations(companyDocumentFolders,
 
 export const insertCompanyDocumentFolderSchema = createInsertSchema(companyDocumentFolders).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -600,6 +632,7 @@ export const companyDocuments = pgTable("company_documents", {
   uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_company_documents_uploaded_by").on(table.uploadedById),
   index("idx_company_documents_folder").on(table.folderId),
@@ -618,6 +651,7 @@ export const companyDocumentsRelations = relations(companyDocuments, ({ one }) =
 
 export const insertCompanyDocumentSchema = createInsertSchema(companyDocuments).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -648,6 +682,7 @@ export const companyDocumentEmbeddings = pgTable("company_document_embeddings", 
   }>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_company_embeddings_document").on(table.companyDocumentId),
   index("idx_company_embeddings_folder").on(table.folderId),
@@ -676,6 +711,7 @@ export const teams = pgTable("teams", {
   ownerId: varchar("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 });
 
 export const teamsRelations = relations(teams, ({ one, many }) => ({
@@ -689,6 +725,7 @@ export const teamsRelations = relations(teams, ({ one, many }) => ({
 
 export const insertTeamSchema = createInsertSchema(teams).omit({
   id: true,
+  workspaceId: true,
   ownerId: true,
   createdAt: true,
   updatedAt: true,
@@ -708,6 +745,7 @@ export const teamMembers = pgTable("team_members", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   role: varchar("role", { length: 20 }).notNull().default("member"),
   joinedAt: timestamp("joined_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_team_members_team").on(table.teamId),
   index("idx_team_members_user").on(table.userId),
@@ -726,6 +764,7 @@ export const teamMembersRelations = relations(teamMembers, ({ one }) => ({
 
 export const insertTeamMemberSchema = createInsertSchema(teamMembers).omit({
   id: true,
+  workspaceId: true,
   joinedAt: true,
 });
 
@@ -748,6 +787,7 @@ export const teamInvites = pgTable("team_invites", {
   useCount: integer("use_count").notNull().default(0),
   isActive: varchar("is_active", { length: 5 }).notNull().default("true"),
   createdAt: timestamp("created_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_team_invites_team").on(table.teamId),
   index("idx_team_invites_code").on(table.code),
@@ -766,6 +806,7 @@ export const teamInvitesRelations = relations(teamInvites, ({ one }) => ({
 
 export const insertTeamInviteSchema = createInsertSchema(teamInvites).omit({
   id: true,
+  workspaceId: true,
   useCount: true,
   createdAt: true,
 });
@@ -802,6 +843,7 @@ export const crmProjectNotes = pgTable("crm_project_notes", {
   attachments: text("attachments"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_project_notes_project").on(table.crmProjectId),
   index("idx_crm_project_notes_created_by").on(table.createdById),
@@ -820,6 +862,7 @@ export const crmProjectNotesRelations = relations(crmProjectNotes, ({ one }) => 
 
 export const insertCrmProjectNoteSchema = createInsertSchema(crmProjectNotes).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -843,6 +886,7 @@ export const notifications = pgTable("notifications", {
   message: text("message"),
   isRead: integer("is_read").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_notifications_user").on(table.userId),
   index("idx_notifications_unread").on(table.userId, table.isRead),
@@ -869,6 +913,7 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
 
 export const insertNotificationSchema = createInsertSchema(notifications).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
 });
 
@@ -910,6 +955,7 @@ export const crmModules = pgTable("crm_modules", {
   displayOrder: integer("display_order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_modules_slug").on(table.slug),
   index("idx_crm_modules_enabled").on(table.isEnabled),
@@ -917,6 +963,7 @@ export const crmModules = pgTable("crm_modules", {
 
 export const insertCrmModuleSchema = createInsertSchema(crmModules).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -941,6 +988,7 @@ export const crmModuleFields = pgTable("crm_module_fields", {
   displayOrder: integer("display_order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_module_fields_module").on(table.moduleId),
   index("idx_crm_module_fields_slug").on(table.slug),
@@ -955,6 +1003,7 @@ export const crmModuleFieldsRelations = relations(crmModuleFields, ({ one }) => 
 
 export const insertCrmModuleFieldSchema = createInsertSchema(crmModuleFields).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -975,6 +1024,7 @@ export const crmCustomFieldValues = pgTable("crm_custom_field_values", {
   value: text("value"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_crm_custom_field_values_project").on(table.crmProjectId),
   index("idx_crm_custom_field_values_field").on(table.fieldId),
@@ -993,6 +1043,7 @@ export const crmCustomFieldValuesRelations = relations(crmCustomFieldValues, ({ 
 
 export const insertCrmCustomFieldValueSchema = createInsertSchema(crmCustomFieldValues).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -1016,6 +1067,7 @@ export const tasks = pgTable("tasks", {
   status: varchar("status", { length: 20 }).notNull().default("open"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_tasks_crm_project").on(table.crmProjectId),
   index("idx_tasks_status").on(table.status),
@@ -1030,6 +1082,7 @@ export const tasksRelations = relations(tasks, ({ one }) => ({
 
 export const insertTaskSchema = createInsertSchema(tasks).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -1043,6 +1096,7 @@ export const projectMembers = pgTable("project_members", {
   crmProjectId: varchar("crm_project_id").notNull().references(() => crmProjects.id, { onDelete: "cascade" }),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_project_members_project").on(table.crmProjectId),
   index("idx_project_members_user").on(table.userId),
@@ -1062,6 +1116,7 @@ export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
 
 export const insertProjectMemberSchema = createInsertSchema(projectMembers).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
 });
 
@@ -1083,6 +1138,7 @@ export const reminders = pgTable("reminders", {
   notifiedInApp: integer("notified_in_app").notNull().default(0),
   emailSent: integer("email_sent").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_reminders_user").on(table.userId),
   index("idx_reminders_project").on(table.crmProjectId),
@@ -1106,6 +1162,7 @@ export const remindersRelations = relations(reminders, ({ one }) => ({
 
 export const insertReminderSchema = createInsertSchema(reminders).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   notified: true,
   notifiedInApp: true,
@@ -1133,6 +1190,7 @@ export const timeEntries = pgTable("time_entries", {
   clientCommandId: varchar("client_command_id", { length: 64 }).unique(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_time_entries_user").on(table.userId),
   index("idx_time_entries_crm_project").on(table.crmProjectId),
@@ -1160,6 +1218,7 @@ export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
 
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -1207,6 +1266,7 @@ export const timeEntryScreenshots = pgTable("time_entry_screenshots", {
   deletedBy: varchar("deleted_by").references(() => users.id, { onDelete: "set null" }),
   /** Optional free-text reason recorded at deletion time. */
   deleteReason: varchar("delete_reason", { length: 500 }),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_screenshots_time_entry").on(table.timeEntryId),
   index("idx_screenshots_user").on(table.userId),
@@ -1233,6 +1293,7 @@ export const timeEntryScreenshotsRelations = relations(timeEntryScreenshots, ({ 
 
 export const insertTimeEntryScreenshotSchema = createInsertSchema(timeEntryScreenshots).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
 });
 
@@ -1257,12 +1318,41 @@ export const devices = pgTable("devices", {
   index("idx_devices_token_hash").on(table.deviceTokenHash),
 ]);
 
-export const devicesRelations = relations(devices, ({ one }) => ({
-  user: one(users, { fields: [devices.userId], references: [users.id] }),
-}));
-
 export type Device = typeof devices.$inferSelect;
 export type InsertDevice = typeof devices.$inferInsert;
+
+/**
+ * Authorization connecting one Device to one Workspace through the owner's
+ * Membership (#94). A Device has no Workspace authority without an enrollment.
+ */
+export const deviceEnrollments = pgTable(
+  "device_enrollments",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    deviceId: varchar("device_id")
+      .notNull()
+      .references(() => devices.id, { onDelete: "cascade" }),
+    workspaceId: varchar("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    membershipId: varchar("membership_id")
+      .notNull()
+      .references(() => memberships.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_device_enrollments_device_workspace").on(table.deviceId, table.workspaceId),
+    index("idx_device_enrollments_workspace").on(table.workspaceId),
+    index("idx_device_enrollments_membership").on(table.membershipId),
+  ]
+);
+
+export type DeviceEnrollment = typeof deviceEnrollments.$inferSelect;
+
+export const devicesRelations = relations(devices, ({ one, many }) => ({
+  user: one(users, { fields: [devices.userId], references: [users.id] }),
+  enrollments: many(deviceEnrollments),
+}));
 
 // ─── Desktop Agent: Pairing Codes ───
 
@@ -1273,6 +1363,7 @@ export const agentPairingCodes = pgTable("agent_pairing_codes", {
   expiresAt: timestamp("expires_at").notNull(),
   usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_pairing_code").on(table.code),
 ]);
@@ -1286,6 +1377,7 @@ export const agentProcessedBatches = pgTable("agent_processed_batches", {
   deviceId: varchar("device_id").notNull().references(() => devices.id, { onDelete: "cascade" }),
   eventCount: integer("event_count").notNull().default(0),
   processedAt: timestamp("processed_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_processed_batches_device").on(table.deviceId),
   index("idx_processed_batches_time").on(table.processedAt),
@@ -1303,6 +1395,7 @@ export const agentActivityEvents = pgTable("agent_activity_events", {
   timestamp: timestamp("timestamp").notNull(),
   data: jsonb("data"),
   createdAt: timestamp("created_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_agent_events_device").on(table.deviceId),
   index("idx_agent_events_user_time").on(table.userId, table.timestamp),
@@ -1359,6 +1452,7 @@ export const orgSettings = pgTable("org_settings", {
   /** Help Center images: slot id → `/public-objects/…` path after admin upload. */
   helpCenterScreenshots: jsonb("help_center_screenshots").$type<HelpCenterScreenshotsMap>(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
 });
 
 /**
@@ -1418,6 +1512,7 @@ export const workspaceRoleCapabilities = pgTable(
     capabilityId: varchar("capability_id")
       .notNull()
       .references(() => capabilities.id, { onDelete: "cascade" }),
+    workspaceId: workspaceIdColumn(),
   },
   (table) => [
     uniqueIndex("idx_workspace_role_capabilities_unique").on(
@@ -1468,6 +1563,7 @@ export const membershipCapabilities = pgTable(
     capabilityId: varchar("capability_id")
       .notNull()
       .references(() => capabilities.id, { onDelete: "cascade" }),
+    workspaceId: workspaceIdColumn(),
   },
   (table) => [
     uniqueIndex("idx_membership_capabilities_unique").on(table.membershipId, table.capabilityId),
@@ -1579,6 +1675,7 @@ export const projectDailyUpdates = pgTable(
     needsClientSubmission: boolean("needs_client_submission").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
+    workspaceId: workspaceIdColumn(),
   },
   (table) => [
     index("idx_daily_updates_project").on(table.crmProjectId),
@@ -1603,6 +1700,7 @@ export const insertProjectDailyUpdateSchema = createInsertSchema(projectDailyUpd
   updateDate: z.coerce.date().optional(),
 }).omit({
   id: true,
+  workspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -1621,8 +1719,8 @@ export type ProjectDailyUpdateWithDetails = ProjectDailyUpdate & {
 };
 
 // Jobs — durable deferred work claimed by the Worker (ADR-0013, #82).
-// Workspace id stays nullable and unreferenced: #94 backfills it. Seeding the
-// Workspace (#93) does not stamp Jobs.
+// `workspace_id` stays nullable and unreferenced until #96. #94 backfills
+// existing rows and new Jobs take the Workspace of their cause.
 export const concurrencyClassValues = [
   "domain-consequence",
   "derived-processing",

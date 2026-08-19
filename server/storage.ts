@@ -105,11 +105,14 @@ import {
   type ProjectDailyUpdate,
   type InsertProjectDailyUpdate,
   type ProjectDailyUpdateWithDetails,
+  SEEDED_WORKSPACE_ID,
 } from "@shared/schema";
 import { db, type Db } from "./db";
 
 /** A Drizzle session that can write documents — the caller's transaction, or ours. */
 export type DocumentWriter = Pick<Db, "insert" | "select" | "update">;
+/** A Drizzle session that can insert a Project — the caller's transaction, or ours. */
+export type ProjectWriter = Pick<Db, "insert">;
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export interface IStorage {
@@ -120,7 +123,7 @@ export interface IStorage {
   
   getProjects(userId: string): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
-  createProject(project: InsertProject & { ownerId: string }): Promise<Project>;
+  createProject(project: InsertProject & { ownerId: string }, writer?: ProjectWriter): Promise<Project>;
   updateProject(id: string, data: Partial<InsertProject>): Promise<Project | undefined>;
   deleteProject(id: string): Promise<void>;
   
@@ -496,8 +499,14 @@ export class DatabaseStorage implements IStorage {
     return project;
   }
 
-  async createProject(project: InsertProject & { ownerId: string }): Promise<Project> {
-    const [newProject] = await db.insert(projects).values(project).returning();
+  async createProject(
+    project: InsertProject & { ownerId: string },
+    writer: ProjectWriter = db
+  ): Promise<Project> {
+    const [newProject] = await writer
+      .insert(projects)
+      .values({ ...project, workspaceId: SEEDED_WORKSPACE_ID })
+      .returning();
     return newProject;
   }
 

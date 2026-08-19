@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
 import { embeddingCalls } from "../fakes/openai";
 
@@ -73,7 +74,7 @@ describe("document derived Jobs", () => {
     expect(await jobs.claim("worker-1")).toMatchObject({
       type: DOCUMENT_EMBED_JOB,
       payload: { documentId: document.id, ownerId: user.id },
-      workspaceId: null,
+      workspaceId: SEEDED_WORKSPACE_ID,
       claimedBy: "worker-1",
     });
   });

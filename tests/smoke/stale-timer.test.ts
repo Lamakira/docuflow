@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
 
 /**
@@ -91,7 +92,7 @@ describe("stale-timer Job", () => {
       type: STALE_TIMER_JOB,
       payload: { entryId: entry.id },
       occurrenceKey: staleTimerOccurrenceKey(entry.id, at),
-      workspaceId: null,
+      workspaceId: SEEDED_WORKSPACE_ID,
       claimedBy: "worker-1",
     });
 

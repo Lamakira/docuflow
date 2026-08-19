@@ -22,6 +22,7 @@ journal is not part of it and is never applied.
 | 0005 | `0005_jobs.sql` | `jobs` and `dead_letters` — the Postgres jobs port (#82). Workspace id is nullable; no Workspace is seeded. `IF NOT EXISTS`, so a database already pushed from `shared/schema.ts` is a no-op. |
 | 0006 | `0006_square_wild_child.sql` | `jobs.occurrence_key` (unique) and `scheduler_leases` — due-reminder Jobs on the Worker (#83). |
 | 0007 | `0007_dark_sasquatch.sql` | Workspace, Membership, Workspace Role, and Capability tables, then one named Workspace and a Membership per user (#93). `org_settings` is copied onto Workspace Tracking Policy and left in place. |
+| 0008 | `0008_giant_quasar.sql` | Nullable `workspace_id` on Workspace-owned tables, journaled SQL backfill onto the seeded Workspace, and Device Enrollment for existing Devices (#94). Does not apply `NOT NULL`. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
@@ -50,6 +51,7 @@ npm run db:migrate                   # apply everything pending
 npm run db:migrate:status            # list applied and pending, change nothing
 npm run db:migrate -- --dry-run      # print what would run, change nothing
 npm run db:verify                    # does a real database match the journal?
+npm run db:verify:workspace-backfill # remaining null workspace_id per table (#94)
 npm run db:generate                  # write a new migration from shared/schema.ts
 ```
 
@@ -152,9 +154,9 @@ Two rules, from ADR-0017:
 - **Schema migrations stay pure DDL and fast.** A migration that moves data
   holds a lock for as long as the data takes. Data movement is a script in
   `scripts/` with a checkpoint and a verifier — `backfill-crm-links.ts` is the
-  worked example. **Exception:** `0007` seeds the Workspace and Memberships in
-  the journal (Spec #92) because the Worker that would have claimed that Job is
-  deferred (#86).
+  worked example. **Exception:** `0007` seeds the Workspace and Memberships, and
+  `0008` backfills `workspace_id`, in the journal (Spec #92) because the Worker
+  that would have claimed that Job is deferred (#86).
 - **Expand and contract.** Add the new shape, move the reads and writes, drop
   the old one in a later deploy. Rollback is redeploying the previous image,
   never a down migration, so no migration may make the previous image unable to
@@ -168,6 +170,7 @@ Three things check this journal, and they check different things:
 - `tests/smoke/boot-ddl-parity.test.ts` holds the DDL `server/index.ts` ran on
   every boot before #24 deleted it, and checks the journal still produces the
   same tables, columns, constraints, and indexes that DDL did. `0004` exists
-  because it did not.
+  because it did not. `#94` added `workspace_id` after boot; that stamp is
+  stripped from both sides so the comparison stays the boot-owned shape.
 - `npm run db:verify` compares the journal to a database that really exists,
   which is the only one of the three that can see DDL applied out of band.

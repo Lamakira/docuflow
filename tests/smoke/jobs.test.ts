@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
 
 /**
@@ -7,7 +8,7 @@ import { resetDb } from "../helpers/db";
  *
  * Spec #81 puts this seam here on purpose — not HTTP, not Worker internals —
  * so the queue can be shown to work before any dispatcher moves onto it.
- * Workspace id is nullable and unused; nothing here seeds a Workspace.
+ * The port still accepts a null Workspace; domain writers stamp the cause (#94).
  */
 
 const WORK = "test.work";
@@ -157,6 +158,25 @@ describe("jobs port", () => {
       claimedBy: "worker-a",
     });
     expect(letter?.recordedAt).toBeTruthy();
+  });
+
+  it("copies the Workspace of a Job's cause onto its Dead Letter", async () => {
+    const jobs = await openPort({ [WORK]: { ...WORK_TYPE, attempts: 1 } });
+    const enqueued = await jobs.enqueue({
+      type: WORK,
+      payload: { x: 1 },
+      workspaceId: SEEDED_WORKSPACE_ID,
+    });
+    expect(enqueued.workspaceId).toBe(SEEDED_WORKSPACE_ID);
+
+    await jobs.claim("worker-a");
+    now = new Date(now.getTime() + WORK_TYPE.timeoutMs + 1);
+
+    expect(await jobs.claim("worker-b")).toBeNull();
+    expect(await jobs.deadLetterFor(enqueued.id)).toMatchObject({
+      jobId: enqueued.id,
+      workspaceId: SEEDED_WORKSPACE_ID,
+    });
   });
 
   it("dead-letters a Job whose last claim crashed rather than looping it", async () => {

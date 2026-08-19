@@ -5,6 +5,7 @@
  */
 
 import type { Job, JobTypeDeclaration, JobsPort } from "./jobs";
+import { workspaceOfCause } from "./jobs";
 import { logStaleSession } from "./logger";
 import { storage } from "./storage";
 
@@ -54,6 +55,7 @@ export async function enqueueStaleTimerJobs(jobs: JobsPort, at: Date): Promise<n
       type: STALE_TIMER_JOB,
       payload: { entryId: entry.id, checkedAt: at.toISOString() },
       occurrenceKey: staleTimerOccurrenceKey(entry.id, at),
+      workspaceId: workspaceOfCause(entry.workspaceId),
     });
     if (enqueued.created) created += 1;
   }

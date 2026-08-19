@@ -6,7 +6,7 @@
 
 import type { Document, InsertDocument } from "@shared/schema";
 import { db } from "./db";
-import { createJobsPort, type Job, type JobTypeDeclaration, type JobsPort, type JobsWriter } from "./jobs";
+import { createJobsPort, workspaceOfCause, type Job, type JobTypeDeclaration, type JobsPort, type JobsWriter } from "./jobs";
 import { storage, type DocumentWriter } from "./storage";
 import { updateDocumentEmbeddings } from "./embeddings";
 import { extractVideosFromContent, syncDocumentVideoTranscripts } from "./transcripts";
@@ -49,7 +49,11 @@ export async function createDocumentWithDerivedJobs(
   const { jobs, tx, ...values } = input;
   const persist = async (writer: DocumentWriter & JobsWriter) => {
     const document = await storage.createDocument(values, writer);
-    const target = { id: document.id, ownerId: document.createdById };
+    const target = {
+      id: document.id,
+      ownerId: document.createdById,
+      workspaceId: document.workspaceId,
+    };
     await enqueueDocumentEmbedJob(jobs, target, writer);
     if (extractVideosFromContent(document.content).length > 0) {
       await enqueueDocumentTranscriptJob(jobs, target, writer);
@@ -75,7 +79,7 @@ export async function updateDocumentWithDerivedJobs(
   const persist = async (writer: DocumentWriter & JobsWriter) => {
     const updated = await storage.updateDocument(id, data, writer);
     if (!updated) return undefined;
-    const target = { id: updated.id, ownerId };
+    const target = { id: updated.id, ownerId, workspaceId: updated.workspaceId };
     if (data.title !== undefined || data.content !== undefined) {
       await enqueueDocumentEmbedJob(jobs, target, writer);
     }
@@ -90,13 +94,14 @@ export async function updateDocumentWithDerivedJobs(
 
 export async function enqueueDocumentEmbedJob(
   jobs: JobsPort,
-  document: { id: string; ownerId: string | null },
+  document: { id: string; ownerId: string | null; workspaceId?: string | null },
   tx?: JobsWriter
 ): Promise<void> {
   await jobs.enqueue(
     {
       type: DOCUMENT_EMBED_JOB,
       payload: { documentId: document.id, ownerId: document.ownerId },
+      workspaceId: workspaceOfCause(document.workspaceId),
     },
     tx
   );
@@ -104,13 +109,14 @@ export async function enqueueDocumentEmbedJob(
 
 export async function enqueueDocumentTranscriptJob(
   jobs: JobsPort,
-  document: { id: string; ownerId: string | null },
+  document: { id: string; ownerId: string | null; workspaceId?: string | null },
   tx?: JobsWriter
 ): Promise<void> {
   await jobs.enqueue(
     {
       type: DOCUMENT_TRANSCRIPT_JOB,
       payload: { documentId: document.id, ownerId: document.ownerId },
+      workspaceId: workspaceOfCause(document.workspaceId),
     },
     tx
   );
