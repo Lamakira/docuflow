@@ -370,6 +370,14 @@ export type ProjectStatus = typeof projectStatusValues[number];
 export const opportunityTerminalStages = ["won", "lost"] as const;
 export type OpportunityTerminalStage = typeof opportunityTerminalStages[number];
 
+/**
+ * Document Access for Workspace Documents and Files. Defaults to everyone in
+ * the Workspace. Role/member folder restriction is a later ticket.
+ */
+export const documentAccessValues = ["workspace"] as const;
+export type DocumentAccess = (typeof documentAccessValues)[number];
+export const DOCUMENT_ACCESS_WORKSPACE: DocumentAccess = "workspace";
+
 // CRM Project Type enum values
 export const crmProjectTypeValues = [
   "one_time",
@@ -707,6 +715,7 @@ export const companyDocumentFoldersRelations = relations(companyDocumentFolders,
     references: [users.id],
   }),
   documents: many(companyDocuments),
+  files: many(files),
 }));
 
 export const insertCompanyDocumentFolderSchema = createInsertSchema(companyDocumentFolders).omit({
@@ -736,6 +745,7 @@ export const companyDocuments = pgTable("company_documents", {
   storagePath: varchar("storage_path", { length: 1000 }),
   folderId: varchar("folder_id").references(() => companyDocumentFolders.id, { onDelete: "cascade" }),
   uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  access: varchar("access", { length: 50 }).notNull().default(DOCUMENT_ACCESS_WORKSPACE),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   workspaceId: workspaceIdColumn(),
@@ -760,6 +770,7 @@ export const companyDocumentsRelations = relations(companyDocuments, ({ one }) =
 export const insertCompanyDocumentSchema = createInsertSchema(companyDocuments).omit({
   id: true,
   workspaceId: true,
+  access: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -769,6 +780,56 @@ export type InsertCompanyDocument = z.infer<typeof insertCompanyDocumentSchema>;
 
 // Company document with uploader info
 export type CompanyDocumentWithUploader = CompanyDocument & {
+  uploadedBy?: SafeUser;
+  folder?: CompanyDocumentFolder;
+};
+
+// Files — uploaded binaries. Native pages stay on company_documents / documents.
+// Combined HTTP still reads company_documents; legacy ids and object keys copy here.
+export const files = pgTable("files", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 500 }).notNull(),
+  description: text("description"),
+  fileName: varchar("file_name", { length: 500 }),
+  fileSize: integer("file_size"),
+  mimeType: varchar("mime_type", { length: 100 }),
+  storagePath: varchar("storage_path", { length: 1000 }).notNull(),
+  folderId: varchar("folder_id").references(() => companyDocumentFolders.id, { onDelete: "cascade" }),
+  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  access: varchar("access", { length: 50 }).notNull().default(DOCUMENT_ACCESS_WORKSPACE),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
+}, (table) => [
+  index("idx_files_uploaded_by").on(table.uploadedById),
+  index("idx_files_folder").on(table.folderId),
+  idInWorkspace(table, "files"),
+  workspaceScopedFk("files_folder_workspace_fk", [table.folderId, table.workspaceId], companyDocumentFolders),
+]);
+
+export const filesRelations = relations(files, ({ one }) => ({
+  uploadedBy: one(users, {
+    fields: [files.uploadedById],
+    references: [users.id],
+  }),
+  folder: one(companyDocumentFolders, {
+    fields: [files.folderId],
+    references: [companyDocumentFolders.id],
+  }),
+}));
+
+export const insertFileSchema = createInsertSchema(files).omit({
+  id: true,
+  workspaceId: true,
+  access: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type KnowledgeFile = typeof files.$inferSelect;
+export type InsertKnowledgeFile = z.infer<typeof insertFileSchema>;
+
+export type KnowledgeFileWithUploader = KnowledgeFile & {
   uploadedBy?: SafeUser;
   folder?: CompanyDocumentFolder;
 };

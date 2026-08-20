@@ -22,6 +22,7 @@ import {
   opportunities,
   companyDocuments,
   companyDocumentFolders,
+  files,
   notifications,
   audioRecordings,
   tasks,
@@ -70,6 +71,8 @@ import {
   type InsertOpportunity,
   type CompanyDocument,
   type InsertCompanyDocument,
+  type KnowledgeFile,
+  type InsertKnowledgeFile,
   type CompanyDocumentWithUploader,
   type CompanyDocumentFolder,
   type InsertCompanyDocumentFolder,
@@ -102,6 +105,7 @@ import {
   type ProjectDailyUpdate,
   type InsertProjectDailyUpdate,
   type ProjectDailyUpdateWithDetails,
+  DOCUMENT_ACCESS_WORKSPACE,
   SEEDED_WORKSPACE_ID,
   SEEDED_MEMBER_ROLE_ID,
   memberships,
@@ -122,6 +126,7 @@ import {
   projectHasOpportunity,
   projectStatusFromCombined,
 } from "@shared/projectLifecycle";
+import { isUploadedFile } from "@shared/documentFile";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
@@ -1415,6 +1420,7 @@ export class DatabaseStorage implements IStorage {
 
   async createCompanyDocument(doc: InsertCompanyDocument): Promise<CompanyDocument> {
     const [newDoc] = await db.insert(companyDocuments).values(stampWorkspace(doc)).returning();
+    await this.syncFileForCompanyDocument(newDoc);
     return newDoc;
   }
 
@@ -1424,11 +1430,17 @@ export class DatabaseStorage implements IStorage {
       .set({ ...data, updatedAt: new Date() })
       .where(eq(companyDocuments.id, id))
       .returning();
+    if (updated) {
+      await this.syncFileForCompanyDocument(updated);
+    }
     return updated;
   }
 
   async deleteCompanyDocument(id: string): Promise<CompanyDocument | undefined> {
     const [deleted] = await db.delete(companyDocuments).where(eq(companyDocuments.id, id)).returning();
+    if (deleted) {
+      await this.deleteFile(id);
+    }
     return deleted;
   }
 
@@ -1481,6 +1493,78 @@ export class DatabaseStorage implements IStorage {
       ...folder,
       createdBy: creatorMap.get(folder.createdById),
     }));
+  }
+
+  async getFile(id: string): Promise<KnowledgeFile | undefined> {
+    const [row] = await db
+      .select()
+      .from(files)
+      .where(and(eq(files.id, id), inWorkspace(files)));
+    return row;
+  }
+
+  async getFiles(folderId?: string): Promise<KnowledgeFile[]> {
+    return db
+      .select()
+      .from(files)
+      .where(
+        and(
+          inWorkspace(files),
+          folderId ? eq(files.folderId, folderId) : isNull(files.folderId)
+        )
+      )
+      .orderBy(desc(files.createdAt));
+  }
+
+  async createFile(file: InsertKnowledgeFile & { id?: string }): Promise<KnowledgeFile> {
+    const [row] = await db
+      .insert(files)
+      .values(stampWorkspace({ ...file, access: DOCUMENT_ACCESS_WORKSPACE }))
+      .returning();
+    return row;
+  }
+
+  async updateFile(
+    id: string,
+    data: Partial<InsertKnowledgeFile>
+  ): Promise<KnowledgeFile | undefined> {
+    const [updated] = await db
+      .update(files)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(files.id, id), inWorkspace(files)))
+      .returning();
+    return updated;
+  }
+
+  async deleteFile(id: string): Promise<KnowledgeFile | undefined> {
+    const [deleted] = await db
+      .delete(files)
+      .where(and(eq(files.id, id), inWorkspace(files)))
+      .returning();
+    return deleted;
+  }
+
+  private async syncFileForCompanyDocument(doc: CompanyDocument): Promise<void> {
+    if (!isUploadedFile(doc) || !doc.storagePath) {
+      await this.deleteFile(doc.id);
+      return;
+    }
+    const existing = await this.getFile(doc.id);
+    const fields: InsertKnowledgeFile = {
+      name: doc.name,
+      description: doc.description,
+      fileName: doc.fileName,
+      fileSize: doc.fileSize,
+      mimeType: doc.mimeType,
+      storagePath: doc.storagePath,
+      folderId: doc.folderId,
+      uploadedById: doc.uploadedById,
+    };
+    if (existing) {
+      await this.updateFile(doc.id, fields);
+      return;
+    }
+    await this.createFile({ ...fields, id: doc.id });
   }
 
   // CRM Project Notes
