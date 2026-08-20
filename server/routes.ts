@@ -62,6 +62,10 @@ import {
   createDocumentWithDerivedJobs,
   updateDocumentWithDerivedJobs,
 } from "./documentJobs";
+import {
+  createActivityJobsPort,
+  ingestActivityScreenshot,
+} from "./modules/activity/evidenceJobs";
 import { logTimeEvent, logError, logInfo } from "./logger";
 import { isTasksEnabled } from "./migrationFlags";
 import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
@@ -4338,12 +4342,15 @@ Instructions:
         return res.status(400).json({ message: "Invalid storageKey" });
       }
 
-      const screenshot = await storage.createTimeEntryScreenshot({
-        timeEntryId,
-        userId,
-        crmProjectId,
-        storageKey: normalizedPath,
-        capturedAt: capturedAt ? new Date(capturedAt) : new Date(),
+      const screenshot = await ingestActivityScreenshot({
+        jobs: createActivityJobsPort(),
+        screenshot: {
+          timeEntryId,
+          userId,
+          crmProjectId,
+          storageKey: normalizedPath,
+          capturedAt: capturedAt ? new Date(capturedAt) : new Date(),
+        },
       });
 
       res.json(screenshot);

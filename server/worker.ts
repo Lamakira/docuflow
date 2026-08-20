@@ -105,6 +105,11 @@ export function startWorkerLoop(options?: {
       handleDocumentTranscriptJob,
     } = await import("./documentJobs");
     const {
+      ACTIVITY_ATTRIBUTE_JOB,
+      ACTIVITY_ATTRIBUTE_JOB_TYPE,
+      handleAttributeEvidenceJob,
+    } = await import("./modules/activity/evidenceJobs");
+    const {
       createDueReminderScheduler,
       createStaleTimerScheduler,
       createDailyUpdateNudgeScheduler,
@@ -118,6 +123,7 @@ export function startWorkerLoop(options?: {
         [DAILY_UPDATE_NUDGE_JOB]: DAILY_UPDATE_NUDGE_JOB_TYPE,
         [DOCUMENT_EMBED_JOB]: DOCUMENT_EMBED_JOB_TYPE,
         [DOCUMENT_TRANSCRIPT_JOB]: DOCUMENT_TRANSCRIPT_JOB_TYPE,
+        [ACTIVITY_ATTRIBUTE_JOB]: ACTIVITY_ATTRIBUTE_JOB_TYPE,
       },
     });
     const runner = createJobRunner({
@@ -129,6 +135,7 @@ export function startWorkerLoop(options?: {
         [DAILY_UPDATE_NUDGE_JOB]: handleDailyUpdateNudgeJob,
         [DOCUMENT_EMBED_JOB]: handleDocumentEmbedJob,
         [DOCUMENT_TRANSCRIPT_JOB]: handleDocumentTranscriptJob,
+        [ACTIVITY_ATTRIBUTE_JOB]: handleAttributeEvidenceJob,
       },
       claimerId,
     });
