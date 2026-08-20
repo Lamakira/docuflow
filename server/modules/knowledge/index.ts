@@ -7,6 +7,7 @@ export const KNOWLEDGE_TABLES = [
   "company_documents",
   "company_document_folders",
   "files",
+  "object_upload_slots",
   "audio_recordings",
   "video_transcripts",
 ] as const;

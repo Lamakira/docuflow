@@ -131,21 +131,7 @@ export class ObjectStorageService {
   }
 
   async getObjectEntityFile(objectPath: string): Promise<StoredObjectRef> {
-    if (!objectPath.startsWith("/objects/")) {
-      throw new ObjectNotFoundError();
-    }
-
-    const parts = objectPath.slice(1).split("/");
-    if (parts.length < 2) {
-      throw new ObjectNotFoundError();
-    }
-
-    const entityId = parts.slice(1).join("/");
-    let entityDir = this.getPrivateObjectDir();
-    if (!entityDir.endsWith("/")) {
-      entityDir = `${entityDir}/`;
-    }
-    const ref = parseObjectPath(`${entityDir}${entityId}`);
+    const ref = objectRefFromEntityPath(objectPath);
     if (!(await storagePort.exists(ref))) {
       throw new ObjectNotFoundError();
     }
@@ -290,6 +276,27 @@ export function parseObjectPath(path: string): StoredObjectRef {
     bucketName: pathParts[1],
     objectName: pathParts.slice(2).join("/"),
   };
+}
+
+/**
+ * Database-row object path (`/objects/…`) to a storage ref. Does not check
+ * that the object exists — purge and finalize verification each do that
+ * themselves.
+ */
+export function objectRefFromEntityPath(objectPath: string): StoredObjectRef {
+  if (!objectPath.startsWith("/objects/")) {
+    throw new ObjectNotFoundError();
+  }
+  const parts = objectPath.slice(1).split("/");
+  if (parts.length < 2) {
+    throw new ObjectNotFoundError();
+  }
+  const entityId = parts.slice(1).join("/");
+  let entityDir = config.objectStorage.privateDir;
+  if (!entityDir.endsWith("/")) {
+    entityDir = `${entityDir}/`;
+  }
+  return parseObjectPath(`${entityDir}${entityId}`);
 }
 
 /**

@@ -138,6 +138,12 @@ export class File {
     });
   }
 
+  /** Idempotent: a missing object is a successful delete, matching purge. */
+  async delete(): Promise<[Record<string, never>]> {
+    objects.delete(key(this.bucketName, this.name));
+    return [{}];
+  }
+
   /**
    * Real V4 signing needs a service-account key and produces a URL nothing can
    * predict; this records what was asked for and returns a stable stand-in with
@@ -206,6 +212,11 @@ export function putObject(
     contentType: options.contentType ?? "application/octet-stream",
     metadata: options.metadata ?? {},
   });
+}
+
+/** Whether the fake bucket currently holds this `bucket/object` path. */
+export function objectExists(path: string): boolean {
+  return objects.has(path);
 }
 
 /** The custom metadata currently attached to an object (undefined when absent). */

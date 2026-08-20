@@ -130,6 +130,18 @@ export class ReplitStoragePort implements StoragePort {
     unwrap(result, `writeBytes(${ref.objectName})`);
   }
 
+  async delete(ref: StoredObjectRef): Promise<void> {
+    const client = this.clientFor(ref.bucketName);
+    const result = await client.delete(ref.objectName);
+    if (!result.ok && !/not found/i.test(result.error.message)) {
+      unwrap(result, `delete(${ref.objectName})`);
+    }
+    const acl = await client.delete(`${ref.objectName}${ACL_SUFFIX}`);
+    if (!acl.ok && !/not found/i.test(acl.error.message)) {
+      unwrap(acl, `delete(${ref.objectName}${ACL_SUFFIX})`);
+    }
+  }
+
   async getAclPolicy(ref: StoredObjectRef): Promise<ObjectAclPolicy | null> {
     const aclRef = { ...ref, objectName: `${ref.objectName}${ACL_SUFFIX}` };
     const client = this.clientFor(aclRef.bucketName);
