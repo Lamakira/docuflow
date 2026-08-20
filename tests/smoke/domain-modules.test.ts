@@ -1,0 +1,143 @@
+import { describe, expect, it } from "vitest";
+
+/**
+ * Phase 6 ticket #113: ADR-0008 module layout. Each named module owns a
+ * persistence interface. `routes.ts` / `storage.ts` are thin adapters.
+ * HTTP characterization is not this suite — this file is the layout seam.
+ *
+ * Catalog import is dynamic: `tests/README.md` keeps server modules off the
+ * test file's top-level graph so `server/config.ts` cannot resolve too early.
+ */
+
+const MODULE_IDS = [
+  "identity",
+  "workspace",
+  "clients-sales",
+  "projects",
+  "time",
+  "activity",
+  "knowledge",
+  "billing",
+  "notifications",
+  "intelligence",
+] as const;
+
+const SHELLS = [
+  "identity",
+  "workspace",
+  "billing",
+  "notifications",
+  "intelligence",
+] as const;
+
+/** Tables later tickets carve into Clients & Sales, Projects, Time, Activity, Knowledge. */
+const OPERATIONAL_TABLES = [
+  "crm_clients",
+  "crm_contacts",
+  "crm_projects",
+  "projects",
+  "tasks",
+  "project_members",
+  "time_entries",
+  "time_entry_screenshots",
+  "documents",
+  "company_documents",
+] as const;
+
+async function loadCatalog() {
+  return import("../../server/modules");
+}
+
+describe("domain module layout", () => {
+  it("names every ADR-0008 module including Intelligence", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    expect(DOMAIN_MODULES.map((mod) => mod.id)).toEqual([...MODULE_IDS]);
+  });
+
+  it("gives each module a persistence interface", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    for (const mod of DOMAIN_MODULES) {
+      expect(mod.persistence, `${mod.id} must export a persistence interface`).toBeDefined();
+    }
+  });
+
+  it("assigns each table to at most one module", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    const owner = new Map<string, string>();
+    for (const mod of DOMAIN_MODULES) {
+      for (const table of mod.tables) {
+        const previous = owner.get(table);
+        expect(previous, `${table} owned by both ${previous} and ${mod.id}`).toBeUndefined();
+        owner.set(table, mod.id);
+      }
+    }
+  });
+
+  it("does not let Identity, Workspace, Billing, Notifications, or Intelligence own another module's operational tables", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    const byId = new Map(DOMAIN_MODULES.map((mod) => [mod.id, mod.tables]));
+    expect(byId.get("billing")).toEqual([]);
+
+    for (const id of SHELLS) {
+      const tables = byId.get(id) ?? [];
+      for (const table of OPERATIONAL_TABLES) {
+        expect(tables, `${id} must not own ${table}`).not.toContain(table);
+      }
+    }
+  });
+
+  it("leaves jobs infrastructure outside domain modules", async () => {
+    const { DOMAIN_MODULES, INFRASTRUCTURE_TABLES } = await loadCatalog();
+    const owned = new Set(DOMAIN_MODULES.flatMap((mod) => [...mod.tables]));
+    for (const table of INFRASTRUCTURE_TABLES) {
+      expect(owned, `${table} is the jobs/runtime port, not a domain module`).not.toContain(table);
+    }
+  });
+
+  it("puts sales, delivery, time, evidence, and knowledge tables on their modules", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    const byId = new Map(DOMAIN_MODULES.map((mod) => [mod.id, mod.tables]));
+    expect(byId.get("clients-sales")).toEqual(
+      expect.arrayContaining(["crm_clients", "crm_contacts", "crm_projects"])
+    );
+    expect(byId.get("projects")).toEqual(
+      expect.arrayContaining(["projects", "tasks", "project_members"])
+    );
+    expect(byId.get("time")).toEqual(expect.arrayContaining(["time_entries"]));
+    expect(byId.get("activity")).toEqual(
+      expect.arrayContaining(["time_entry_screenshots", "agent_activity_events"])
+    );
+    expect(byId.get("knowledge")).toEqual(
+      expect.arrayContaining(["documents", "company_documents", "audio_recordings"])
+    );
+    expect(byId.get("notifications")).toEqual(["notifications"]);
+    expect(byId.get("intelligence")).toEqual(
+      expect.arrayContaining(["document_embeddings", "company_document_embeddings"])
+    );
+  });
+
+  it("exposes each module's persistence through the storage adapter", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    const { storage } = await import("../../server/storage");
+    const probes: Record<(typeof MODULE_IDS)[number], string | undefined> = {
+      identity: "getUser",
+      workspace: "getHelpCenterScreenshots",
+      "clients-sales": "getCrmClients",
+      projects: "getProjects",
+      time: "getTimeEntries",
+      activity: "getTimeEntryScreenshots",
+      knowledge: "getDocument",
+      billing: undefined,
+      notifications: "getUserNotifications",
+      intelligence: "search",
+    };
+
+    for (const mod of DOMAIN_MODULES) {
+      const method = probes[mod.id as (typeof MODULE_IDS)[number]];
+      if (!method) continue;
+      expect(typeof (storage as Record<string, unknown>)[method], `storage.${method} (${mod.id})`).toBe(
+        "function"
+      );
+    }
+  });
+});
