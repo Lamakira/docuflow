@@ -378,6 +378,25 @@ export const documentAccessValues = ["workspace"] as const;
 export type DocumentAccess = (typeof documentAccessValues)[number];
 export const DOCUMENT_ACCESS_WORKSPACE: DocumentAccess = "workspace";
 
+/**
+ * Fail-closed File scan (#116, ADR-0012). Existing Files are `available`.
+ * Agent screenshots are Activity Evidence and do not use this machine.
+ */
+export const fileScanStatusValues = [
+  "pending",
+  "uploaded",
+  "scanning",
+  "available",
+  "quarantined",
+  "rejected",
+] as const;
+export type FileScanStatus = (typeof fileScanStatusValues)[number];
+export const FILE_SCAN_AVAILABLE: FileScanStatus = "available";
+
+/** Index Artifact source. Derived; never a source of truth (CONTEXT.md). */
+export const indexArtifactSourceKinds = ["document", "file"] as const;
+export type IndexArtifactSourceKind = (typeof indexArtifactSourceKinds)[number];
+
 // CRM Project Type enum values
 export const crmProjectTypeValues = [
   "one_time",
@@ -797,6 +816,8 @@ export const files = pgTable("files", {
   folderId: varchar("folder_id").references(() => companyDocumentFolders.id, { onDelete: "cascade" }),
   uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   access: varchar("access", { length: 50 }).notNull().default(DOCUMENT_ACCESS_WORKSPACE),
+  scanStatus: varchar("scan_status", { length: 20 }).notNull().default(FILE_SCAN_AVAILABLE),
+  hold: boolean("hold").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   workspaceId: workspaceIdColumn(),
@@ -822,6 +843,8 @@ export const insertFileSchema = createInsertSchema(files).omit({
   id: true,
   workspaceId: true,
   access: true,
+  scanStatus: true,
+  hold: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -833,6 +856,51 @@ export type KnowledgeFileWithUploader = KnowledgeFile & {
   uploadedBy?: SafeUser;
   folder?: CompanyDocumentFolder;
 };
+
+/**
+ * Authorized two-phase signed-PUT slot (#116, ADR-0012). The minted object
+ * path is the key the File will keep — no re-key on finalize.
+ */
+export const objectUploadSlots = pgTable("object_upload_slots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  objectPath: varchar("object_path", { length: 1000 }).notNull(),
+  createdById: varchar("created_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at").notNull(),
+  finalizedAt: timestamp("finalized_at"),
+  fileId: varchar("file_id").references(() => files.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
+}, (table) => [
+  index("idx_object_upload_slots_path").on(table.objectPath),
+  idInWorkspace(table, "object_upload_slots"),
+  workspaceScopedFk("object_upload_slots_file_workspace_fk", [table.fileId, table.workspaceId], files),
+]);
+
+export type ObjectUploadSlot = typeof objectUploadSlots.$inferSelect;
+export type InsertObjectUploadSlot = typeof objectUploadSlots.$inferInsert;
+
+/**
+ * Rebuildable retrieval derivative owned by Intelligence (#116). Never a
+ * source of truth and never wider than the source Document Access.
+ */
+export const indexArtifacts = pgTable("index_artifacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sourceKind: varchar("source_kind", { length: 20 }).notNull(),
+  sourceId: varchar("source_id").notNull(),
+  sourceRevision: varchar("source_revision", { length: 64 }).notNull(),
+  chunkIndex: integer("chunk_index").notNull().default(0),
+  chunkText: text("chunk_text").notNull(),
+  access: varchar("access", { length: 50 }).notNull().default(DOCUMENT_ACCESS_WORKSPACE),
+  provenance: jsonb("provenance").$type<{ generator: string; rebuiltAt: string }>().notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
+}, (table) => [
+  index("idx_index_artifacts_source").on(table.sourceKind, table.sourceId),
+  idInWorkspace(table, "index_artifacts"),
+]);
+
+export type IndexArtifactRow = typeof indexArtifacts.$inferSelect;
+export type InsertIndexArtifact = typeof indexArtifacts.$inferInsert;
 
 // Company Document embeddings table for vector search (uses pgvector)
 export const companyDocumentEmbeddings = pgTable("company_document_embeddings", {

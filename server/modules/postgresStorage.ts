@@ -73,6 +73,7 @@ import {
   type InsertCompanyDocument,
   type KnowledgeFile,
   type InsertKnowledgeFile,
+  type FileScanStatus,
   type CompanyDocumentWithUploader,
   type CompanyDocumentFolder,
   type InsertCompanyDocumentFolder,
@@ -127,6 +128,11 @@ import {
   projectStatusFromCombined,
 } from "@shared/projectLifecycle";
 import { isUploadedFile } from "@shared/documentFile";
+import {
+  deleteIndexArtifacts,
+  listIndexArtifacts,
+  rebuildIndexArtifacts,
+} from "./intelligence/indexArtifacts";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
@@ -1418,7 +1424,7 @@ export class DatabaseStorage implements IStorage {
     return { ...doc, uploadedBy: uploader, folder };
   }
 
-  async createCompanyDocument(doc: InsertCompanyDocument): Promise<CompanyDocument> {
+  async createCompanyDocument(doc: InsertCompanyDocument & { id?: string }): Promise<CompanyDocument> {
     const [newDoc] = await db.insert(companyDocuments).values(stampWorkspace(doc)).returning();
     await this.syncFileForCompanyDocument(newDoc);
     return newDoc;
@@ -1516,7 +1522,9 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(files.createdAt));
   }
 
-  async createFile(file: InsertKnowledgeFile & { id?: string }): Promise<KnowledgeFile> {
+  async createFile(
+    file: InsertKnowledgeFile & { id?: string; scanStatus?: FileScanStatus; hold?: boolean }
+  ): Promise<KnowledgeFile> {
     const [row] = await db
       .insert(files)
       .values(stampWorkspace({ ...file, access: DOCUMENT_ACCESS_WORKSPACE }))
@@ -1542,6 +1550,18 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(files.id, id), inWorkspace(files)))
       .returning();
     return deleted;
+  }
+
+  rebuildIndexArtifacts() {
+    return rebuildIndexArtifacts();
+  }
+
+  listIndexArtifacts(source: { kind: "document" | "file"; id: string }) {
+    return listIndexArtifacts(source);
+  }
+
+  deleteIndexArtifacts(source: { kind: "document" | "file"; id: string }) {
+    return deleteIndexArtifacts(source);
   }
 
   private async syncFileForCompanyDocument(doc: CompanyDocument): Promise<void> {

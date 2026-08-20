@@ -194,6 +194,12 @@ refusal: a foreign URL in a column no scrub rule covers stops the run and leaves
 the database untouched, because rewriting it on a guess is the same mistake as
 missing it.
 
+`knowledge-object-storage` ([#116](https://github.com/Lamakira/docuflow/issues/116))
+covers the ADR-0012 Knowledge port and Index Artifact rebuild. HTTP is not this
+suite — the journal plus the port (two-phase slots, scan, purge, hold) and
+rebuild on disposable Postgres plus the GCS fake are the seam. Characterization
+stays on `company-documents`, `objects-uploads`, and `chat-embeddings`.
+
 `object-snapshot` and `storage-list`
 ([#59](https://github.com/Lamakira/docuflow/issues/59)) cover the object half of
 the same pair. `object-snapshot` pins the copy manifest ADR-0022 makes the Phase

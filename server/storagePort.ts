@@ -104,6 +104,13 @@ export interface StoragePort {
    */
   list(request: ListRequest): Promise<ListedObject[]>;
 
+  /**
+   * Remove one object. Missing objects are a successful delete: purge is
+   * idempotent, and a row whose bytes were already gone must still be able to
+   * finish the cascade.
+   */
+  delete(ref: StoredObjectRef): Promise<void>;
+
   getMetadata(ref: StoredObjectRef): Promise<ObjectMetadata>;
 
   /**

@@ -10,6 +10,7 @@ import type {
   CompanyDocumentFolderWithCreator,
   KnowledgeFile,
   InsertKnowledgeFile,
+  FileScanStatus,
   AudioRecording,
   InsertAudioRecording,
 } from "@shared/schema";
@@ -42,7 +43,7 @@ export interface KnowledgePersistence {
 
   getCompanyDocuments(folderId?: string): Promise<CompanyDocumentWithUploader[]>;
   getCompanyDocument(id: string): Promise<CompanyDocumentWithUploader | undefined>;
-  createCompanyDocument(doc: InsertCompanyDocument): Promise<CompanyDocument>;
+  createCompanyDocument(doc: InsertCompanyDocument & { id?: string }): Promise<CompanyDocument>;
   updateCompanyDocument(
     id: string,
     data: Partial<InsertCompanyDocument>
@@ -53,7 +54,9 @@ export interface KnowledgePersistence {
 
   getFile(id: string): Promise<KnowledgeFile | undefined>;
   getFiles(folderId?: string): Promise<KnowledgeFile[]>;
-  createFile(file: InsertKnowledgeFile & { id?: string }): Promise<KnowledgeFile>;
+  createFile(
+    file: InsertKnowledgeFile & { id?: string; scanStatus?: FileScanStatus; hold?: boolean }
+  ): Promise<KnowledgeFile>;
   updateFile(
     id: string,
     data: Partial<InsertKnowledgeFile>

@@ -123,16 +123,24 @@ describe("domain module layout", () => {
     );
   });
 
-  it("leaves Billing and Intelligence persistence empty until their later tickets", async () => {
+  it("leaves Billing persistence empty until Phase 8", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
-    const byId = new Map(DOMAIN_MODULES.map((mod) => [mod.id, mod]));
-    for (const id of ["billing", "intelligence"] as const) {
-      const persistence = byId.get(id)?.persistence;
-      expect(typeof persistence, `${id} is a shell, not a string label`).toBe("object");
-      expect(Object.keys(persistence as object), `${id} must not own another module's APIs`).toEqual(
-        []
-      );
-    }
+    const billing = DOMAIN_MODULES.find((mod) => mod.id === "billing");
+    const persistence = billing?.persistence;
+    expect(typeof persistence, "billing is a shell, not a string label").toBe("object");
+    expect(Object.keys(persistence as object), "billing must not own another module's APIs").toEqual(
+      []
+    );
+  });
+
+  it("gives Intelligence the Index Artifact APIs", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    const intelligence = DOMAIN_MODULES.find((mod) => mod.id === "intelligence");
+    expect(Object.keys(intelligence?.persistence as object).sort()).toEqual([
+      "deleteIndexArtifacts",
+      "listIndexArtifacts",
+      "rebuildIndexArtifacts",
+    ]);
   });
 
   it("leaves org_settings unowned because Activity and Time both persist policy there", async () => {

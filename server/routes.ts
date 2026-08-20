@@ -55,6 +55,8 @@ import {
 } from "./dailyUpdateNudge";
 import { STALE_CHECK_WINDOW_MS, flagStaleRunningEntries } from "./staleTimer";
 import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
+import { createKnowledgeObjectStorage } from "./modules/knowledge/objectStorage";
+import { rebuildIndexArtifacts } from "./modules/intelligence/indexArtifacts";
 import {
   createDocumentJobsPort,
   createDocumentWithDerivedJobs,
@@ -70,8 +72,13 @@ function getOpenAIClient(): OpenAI {
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY environment variable is not set");
   }
-  // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
   return new OpenAI({ apiKey });
+}
+
+/** Fail-closed: stream/download only when the File is `available`. */
+async function knowledgeFileIsReadable(id: string): Promise<boolean> {
+  const file = await storage.getFile(id);
+  return file?.scanStatus === "available";
 }
 
 // Helper to extract text content from TipTap JSON
@@ -915,6 +922,8 @@ export async function registerRoutes(
       for (const error of companyResults.errors) {
         console.error("Error rebuilding company document embeddings:", error);
       }
+
+      await rebuildIndexArtifacts();
 
       res.json({
         message: "Embeddings rebuild complete",
@@ -2321,9 +2330,9 @@ Instructions:
   // Get upload URL for company document
   app.post("/api/company-documents/upload-url", isAuthenticated, async (req: any, res) => {
     try {
-      const objectStorageService = new ObjectStorageService();
-      const { uploadURL, objectPath } = await objectStorageService.getObjectEntityUpload();
-      res.json({ uploadURL, objectPath });
+      const port = createKnowledgeObjectStorage();
+      const slot = await port.createUploadSlot(getUserId(req)!);
+      res.json({ uploadURL: slot.uploadURL, objectPath: slot.objectPath });
     } catch (error) {
       console.error("Error getting upload URL:", error);
       res.status(500).json({ message: "Failed to get upload URL" });
@@ -2365,7 +2374,9 @@ Instructions:
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
       
-      // If it's an uploaded file, set ACL policy
+      // If it's an uploaded file, set ACL policy and land it through the
+      // Knowledge object-storage port (two-phase finalize + scan).
+      let fileId: string | undefined;
       if (parsed.data.storagePath) {
         const objectStorageService = new ObjectStorageService();
         await objectStorageService.trySetObjectEntityAclPolicy(
@@ -2375,9 +2386,24 @@ Instructions:
             visibility: "private",
           }
         );
+        const port = createKnowledgeObjectStorage();
+        const objectPath = objectStorageService.normalizeObjectEntityPath(parsed.data.storagePath);
+        const file = await port.finalizeUpload({
+          objectPath,
+          name: parsed.data.name,
+          fileName: parsed.data.fileName || parsed.data.name,
+          mimeType: parsed.data.mimeType || "application/octet-stream",
+          fileSize: parsed.data.fileSize,
+          uploadedById: userId,
+          folderId: parsed.data.folderId,
+          description: parsed.data.description,
+        });
+        await port.scan(file.id);
+        fileId = file.id;
       }
       
       const document = await storage.createCompanyDocument({
+        ...(fileId ? { id: fileId } : {}),
         name: parsed.data.name,
         description: parsed.data.description || null,
         content: parsed.data.content || null,
@@ -2490,6 +2516,10 @@ Instructions:
       if (!document.storagePath || !document.fileName || !document.mimeType) {
         return res.status(400).json({ message: "This document is not a streamable file" });
       }
+
+      if (!(await knowledgeFileIsReadable(document.id))) {
+        return res.status(404).json({ message: "File not found in storage" });
+      }
       
       const objectStorageService = new ObjectStorageService();
       
@@ -2525,6 +2555,10 @@ Instructions:
       
       if (!document.storagePath || !document.fileName || !document.mimeType) {
         return res.status(400).json({ message: "This document is not a file" });
+      }
+
+      if (!(await knowledgeFileIsReadable(document.id))) {
+        return res.status(404).json({ message: "File not found in storage" });
       }
       
       // Check if it's a Word document
@@ -2578,6 +2612,10 @@ Instructions:
       if (!document.storagePath || !document.fileName || !document.mimeType) {
         return res.status(400).json({ message: "This document is not a downloadable file" });
       }
+
+      if (!(await knowledgeFileIsReadable(document.id))) {
+        return res.status(404).json({ message: "File not found in storage" });
+      }
       
       const objectStorageService = new ObjectStorageService();
       
@@ -2619,16 +2657,16 @@ Instructions:
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
-      
+
       // Delete embeddings first
       try {
         await deleteCompanyDocumentEmbeddings(req.params.id);
       } catch (embeddingError) {
         console.error("Failed to delete company document embeddings:", embeddingError);
       }
-      
-      // Note: File remains in object storage but database record is deleted
-      // Object storage files can be cleaned up separately if needed
+
+      // Combined HTTP still deletes the row here. Object purge (bytes, Index
+      // Artifacts, hold) is the Knowledge port — Trash-then-purge is later.
       await storage.deleteCompanyDocument(req.params.id);
       res.status(204).send();
     } catch (error) {

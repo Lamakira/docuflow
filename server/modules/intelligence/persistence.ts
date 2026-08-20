@@ -1,9 +1,28 @@
 /**
- * Intelligence is a shell in Phase 6. Index-artifact APIs land in #116.
- * This module must not own another module's tables or operational lookup.
- * Chatbot corpus LIKE search lives on Knowledge.
+ * Intelligence owns Index Artifacts (#116). Chatbot corpus LIKE search lives
+ * on Knowledge. Embedding tables remain the retrieval projection.
  */
-export interface IntelligencePersistence {}
 
-type EmptyShell<T> = [keyof T] extends [never] ? true : never;
-export const intelligenceIsShell: EmptyShell<IntelligencePersistence> = true;
+import {
+  deleteIndexArtifacts,
+  listIndexArtifacts,
+  rebuildIndexArtifacts,
+  type IndexArtifact,
+} from "./indexArtifacts";
+
+export type { IndexArtifact };
+
+export interface IntelligencePersistence {
+  rebuildIndexArtifacts(): Promise<{ documents: number; files: number }>;
+  listIndexArtifacts(source: {
+    kind: "document" | "file";
+    id: string;
+  }): Promise<IndexArtifact[]>;
+  deleteIndexArtifacts(source: { kind: "document" | "file"; id: string }): Promise<void>;
+}
+
+export const intelligencePersistence: IntelligencePersistence = {
+  rebuildIndexArtifacts,
+  listIndexArtifacts,
+  deleteIndexArtifacts,
+};

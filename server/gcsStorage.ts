@@ -112,6 +112,10 @@ export class GcsStoragePort implements StoragePort {
     });
   }
 
+  async delete(ref: StoredObjectRef): Promise<void> {
+    await this.file(ref).delete({ ignoreNotFound: true });
+  }
+
   async getAclPolicy(ref: StoredObjectRef): Promise<ObjectAclPolicy | null> {
     const [metadata] = await this.file(ref).getMetadata();
     const aclPolicy = metadata?.metadata?.[ACL_POLICY_METADATA_KEY];
