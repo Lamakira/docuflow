@@ -88,9 +88,10 @@ export async function getTimeEntryScreenshots(options: {
 
 export async function updateTimeEntryScreenshot(
   id: string,
-  data: { storageKey: string; contentHash?: string }
+  data: { storageKey: string; contentHash?: string },
+  writer: Pick<Db, "update"> = db
 ): Promise<TimeEntryScreenshot | undefined> {
-  const [result] = await db
+  const [result] = await writer
     .update(timeEntryScreenshots)
     .set({ storageKey: data.storageKey, ...(data.contentHash ? { contentHash: data.contentHash } : {}) })
     .where(and(eq(timeEntryScreenshots.id, id), inWorkspace(timeEntryScreenshots)))

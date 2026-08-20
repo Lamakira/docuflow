@@ -28,6 +28,7 @@ import { logInfo, logError, logTimeEvent } from "./logger";
 import { parseObjectPath, storagePort } from "./objectStorage";
 import { isTasksEnabled } from "./migrationFlags";
 import {
+  commitActivityScreenshot,
   createActivityJobsPort,
   ingestActivityEvents,
   ingestActivityScreenshot,
@@ -514,7 +515,7 @@ export function registerAgentRoutes(app: Express): void {
       const activeEntry = await storage.getActiveTimeEntry(req.agentUserId!);
       const timeEntryId = activeEntry?.id ?? null;
 
-      // Store events and enqueue attribution through the jobs port
+      // Store events. Attribution Jobs enqueue when a real handler exists.
       await ingestActivityEvents({
         jobs: createActivityJobsPort(),
         batchId: body.batchId,
@@ -703,7 +704,12 @@ export function registerAgentRoutes(app: Express): void {
         // DB storageKey uses /objects/ prefix so getObjectEntityFile() can resolve it
         const storageKey = `/objects/${objectSubPath}`;
         const contentHash = createHash("sha256").update(rawBuffer).digest("hex");
-        await storage.updateTimeEntryScreenshot(id, { storageKey, contentHash });
+        await commitActivityScreenshot({
+          jobs: createActivityJobsPort(),
+          id,
+          storageKey,
+          contentHash,
+        });
 
         logInfo("agent.screenshots.upload", {
           screenshotId: id,

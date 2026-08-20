@@ -19,6 +19,7 @@ export {
 export {
   ACTIVITY_ATTRIBUTE_JOB,
   ACTIVITY_ATTRIBUTE_JOB_TYPE,
+  commitActivityScreenshot,
   createActivityJobsPort,
   handleAttributeEvidenceJob,
   ingestActivityEvents,
