@@ -1,4 +1,6 @@
-export type { KnowledgePersistence } from "./persistence";
+import type { KnowledgePersistence } from "./persistence";
+
+export type { KnowledgePersistence };
 
 export const KNOWLEDGE_TABLES = [
   "documents",
@@ -12,5 +14,5 @@ export const knowledgeModule = {
   id: "knowledge",
   name: "Knowledge",
   tables: KNOWLEDGE_TABLES,
-  persistence: "KnowledgePersistence",
+  persistence: {} as KnowledgePersistence,
 } as const;

@@ -54,10 +54,14 @@ describe("domain module layout", () => {
     expect(DOMAIN_MODULES.map((mod) => mod.id)).toEqual([...MODULE_IDS]);
   });
 
-  it("gives each module a persistence interface", async () => {
+  it("gives each module a persistence interface, not a string label", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
     for (const mod of DOMAIN_MODULES) {
       expect(mod.persistence, `${mod.id} must export a persistence interface`).toBeDefined();
+      expect(
+        typeof mod.persistence,
+        `${mod.id} persistence must be the interface, not a string label`
+      ).toBe("object");
     }
   });
 
@@ -116,28 +120,21 @@ describe("domain module layout", () => {
     );
   });
 
-  it("exposes each module's persistence through the storage adapter", async () => {
+  it("leaves Billing and Intelligence persistence empty until their later tickets", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
-    const { storage } = await import("../../server/storage");
-    const probes: Record<(typeof MODULE_IDS)[number], string | undefined> = {
-      identity: "getUser",
-      workspace: "getHelpCenterScreenshots",
-      "clients-sales": "getCrmClients",
-      projects: "getProjects",
-      time: "getTimeEntries",
-      activity: "getTimeEntryScreenshots",
-      knowledge: "getDocument",
-      billing: undefined,
-      notifications: "getUserNotifications",
-      intelligence: "search",
-    };
-
-    for (const mod of DOMAIN_MODULES) {
-      const method = probes[mod.id as (typeof MODULE_IDS)[number]];
-      if (!method) continue;
-      expect(typeof (storage as Record<string, unknown>)[method], `storage.${method} (${mod.id})`).toBe(
-        "function"
+    const byId = new Map(DOMAIN_MODULES.map((mod) => [mod.id, mod]));
+    for (const id of ["billing", "intelligence"] as const) {
+      const persistence = byId.get(id)?.persistence;
+      expect(typeof persistence, `${id} is a shell, not a string label`).toBe("object");
+      expect(Object.keys(persistence as object), `${id} must not own another module's APIs`).toEqual(
+        []
       );
     }
+  });
+
+  it("leaves org_settings unowned because Activity and Time both persist policy there", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    const owned = new Set(DOMAIN_MODULES.flatMap((mod) => [...mod.tables]));
+    expect(owned.has("org_settings")).toBe(false);
   });
 });

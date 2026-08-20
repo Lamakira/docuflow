@@ -55,6 +55,13 @@ export interface KnowledgePersistence {
     id: string,
     data: Partial<InsertAudioRecording>
   ): Promise<AudioRecording | undefined>;
+
+  /** Project+document LIKE lookup for the chatbot corpus, not Intelligence index artifacts. */
+  search(
+    userId: string,
+    query: string
+  ): Promise<Array<{ type: string; id: string; title: string; projectName?: string }>>;
+  getAllUserDocuments(userId: string): Promise<Array<Document & { projectName: string }>>;
 }
 
 export type { DocumentWriter };

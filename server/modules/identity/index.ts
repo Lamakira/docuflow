@@ -1,4 +1,6 @@
-export type { IdentityPersistence } from "./persistence";
+import type { IdentityPersistence } from "./persistence";
+
+export type { IdentityPersistence };
 
 export const IDENTITY_TABLES = [
   "users",
@@ -13,5 +15,5 @@ export const identityModule = {
   id: "identity",
   name: "Identity & Access",
   tables: IDENTITY_TABLES,
-  persistence: "IdentityPersistence",
+  persistence: {} as IdentityPersistence,
 } as const;

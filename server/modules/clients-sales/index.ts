@@ -1,4 +1,6 @@
-export type { ClientsSalesPersistence } from "./persistence";
+import type { ClientsSalesPersistence } from "./persistence";
+
+export type { ClientsSalesPersistence };
 
 export const CLIENTS_SALES_TABLES = [
   "crm_clients",
@@ -17,5 +19,5 @@ export const clientsSalesModule = {
   id: "clients-sales",
   name: "Clients & Sales",
   tables: CLIENTS_SALES_TABLES,
-  persistence: "ClientsSalesPersistence",
+  persistence: {} as ClientsSalesPersistence,
 } as const;

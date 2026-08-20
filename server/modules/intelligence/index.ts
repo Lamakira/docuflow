@@ -1,4 +1,6 @@
-export type { IntelligencePersistence } from "./persistence";
+import type { IntelligencePersistence } from "./persistence";
+
+export type { IntelligencePersistence };
 
 export const INTELLIGENCE_TABLES = [
   "document_embeddings",
@@ -9,5 +11,5 @@ export const intelligenceModule = {
   id: "intelligence",
   name: "Intelligence",
   tables: INTELLIGENCE_TABLES,
-  persistence: "IntelligencePersistence",
+  persistence: {} as IntelligencePersistence,
 } as const;

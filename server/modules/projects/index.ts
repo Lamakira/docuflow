@@ -1,4 +1,6 @@
-export type { ProjectsPersistence } from "./persistence";
+import type { ProjectsPersistence } from "./persistence";
+
+export type { ProjectsPersistence };
 
 export const PROJECTS_TABLES = [
   "projects",
@@ -12,5 +14,5 @@ export const projectsModule = {
   id: "projects",
   name: "Projects",
   tables: PROJECTS_TABLES,
-  persistence: "ProjectsPersistence",
+  persistence: {} as ProjectsPersistence,
 } as const;

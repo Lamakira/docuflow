@@ -1,4 +1,6 @@
-export type { ActivityPersistence } from "./persistence";
+import type { ActivityPersistence } from "./persistence";
+
+export type { ActivityPersistence };
 
 export const ACTIVITY_TABLES = [
   "time_entry_screenshots",
@@ -10,5 +12,5 @@ export const activityModule = {
   id: "activity",
   name: "Activity",
   tables: ACTIVITY_TABLES,
-  persistence: "ActivityPersistence",
+  persistence: {} as ActivityPersistence,
 } as const;
