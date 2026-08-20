@@ -19,6 +19,7 @@ import {
   crmModules,
   crmModuleFields,
   crmCustomFieldValues,
+  opportunities,
   companyDocuments,
   companyDocumentFolders,
   notifications,
@@ -65,6 +66,8 @@ import {
   type CrmModuleWithFields,
   type CrmCustomFieldValue,
   type InsertCrmCustomFieldValue,
+  type Opportunity,
+  type InsertOpportunity,
   type CompanyDocument,
   type InsertCompanyDocument,
   type CompanyDocumentWithUploader,
@@ -113,6 +116,12 @@ import {
 
 import type { DocumentWriter, ProjectWriter } from "./writers";
 import type { IStorage } from "./index";
+import {
+  isOpportunityTerminal,
+  opportunityStageFromCombined,
+  projectHasOpportunity,
+  projectStatusFromCombined,
+} from "@shared/projectLifecycle";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
@@ -890,13 +899,111 @@ export class DatabaseStorage implements IStorage {
     return newCrmProject;
   }
 
-  async updateCrmProject(id: string, data: Partial<InsertCrmProject>): Promise<CrmProject | undefined> {
+  async getOpportunity(id: string): Promise<Opportunity | undefined> {
+    const [row] = await db
+      .select()
+      .from(opportunities)
+      .where(and(eq(opportunities.id, id), inWorkspace(opportunities)));
+    return row;
+  }
+
+  async getOpportunityByCrmProjectId(crmProjectId: string): Promise<Opportunity | undefined> {
+    const [row] = await db
+      .select()
+      .from(opportunities)
+      .where(and(eq(opportunities.crmProjectId, crmProjectId), inWorkspace(opportunities)));
+    return row;
+  }
+
+  async createOpportunity(opportunity: InsertOpportunity): Promise<Opportunity> {
+    const [row] = await db.insert(opportunities).values(stampWorkspace(opportunity)).returning();
+    return row;
+  }
+
+  async updateOpportunity(
+    id: string,
+    data: Partial<InsertOpportunity>
+  ): Promise<Opportunity | undefined> {
     const [updated] = await db
-      .update(crmProjects)
+      .update(opportunities)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(crmProjects.id, id))
+      .where(and(eq(opportunities.id, id), inWorkspace(opportunities)))
       .returning();
     return updated;
+  }
+
+  async createClientProjectFromOpportunity(
+    opportunityId: string,
+    projectData: InsertProject & { ownerId: string }
+  ): Promise<{ project: Project; crmProject: CrmProject; opportunity: Opportunity }> {
+    const opportunity = await this.getOpportunity(opportunityId);
+    if (!opportunity) {
+      throw new Error("Opportunity not found");
+    }
+    if (opportunity.stage !== "won") {
+      throw new Error("Only a won Opportunity can create a Client Project");
+    }
+    if (opportunity.crmProjectId) {
+      const crmProject = await this.getCrmProject(opportunity.crmProjectId);
+      if (!crmProject) {
+        throw new Error("Linked Project not found");
+      }
+      const project = await this.getProject(crmProject.projectId);
+      if (!project) {
+        throw new Error("Linked Project not found");
+      }
+      return { project, crmProject, opportunity };
+    }
+
+    const project = await this.createProject(projectData);
+    const crmProject = await this.createCrmProject({
+      projectId: project.id,
+      clientId: opportunity.clientId,
+      status: "won",
+      projectStatus: "planned",
+    });
+    await this.addProjectMember(crmProject.id, projectData.ownerId);
+    const linked = await this.updateOpportunity(opportunity.id, { crmProjectId: crmProject.id });
+    if (!linked) {
+      throw new Error("Opportunity not found");
+    }
+    return { project, crmProject, opportunity: linked };
+  }
+
+  async updateCrmProject(id: string, data: Partial<InsertCrmProject>): Promise<CrmProject | undefined> {
+    const patch = { ...data };
+    if (data.status !== undefined) {
+      patch.projectStatus = projectStatusFromCombined(data.status);
+    }
+    const [updated] = await db
+      .update(crmProjects)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(crmProjects.id, id))
+      .returning();
+    if (updated) {
+      await this.syncOpportunityForProject(updated);
+    }
+    return updated;
+  }
+
+  private async syncOpportunityForProject(project: CrmProject): Promise<void> {
+    const existing = await this.getOpportunityByCrmProjectId(project.id);
+    if (!projectHasOpportunity(project)) {
+      if (existing) {
+        await db.delete(opportunities).where(eq(opportunities.id, existing.id));
+      }
+      return;
+    }
+    const stage = opportunityStageFromCombined(project.status);
+    if (existing) {
+      await this.updateOpportunity(existing.id, { stage, clientId: project.clientId });
+      return;
+    }
+    await this.createOpportunity({
+      crmProjectId: project.id,
+      clientId: project.clientId,
+      stage,
+    });
   }
 
   async deleteCrmProject(id: string): Promise<void> {
@@ -919,11 +1026,13 @@ export class DatabaseStorage implements IStorage {
     crmData?: Partial<InsertCrmProject>
   ): Promise<{ project: Project; crmProject: CrmProject }> {
     const project = await this.createProject(projectData);
+    const status = crmData?.status || "lead";
     
     const crmProject = await this.createCrmProject({
       projectId: project.id,
       clientId: crmData?.clientId || null,
-      status: crmData?.status || "lead",
+      status,
+      projectStatus: projectStatusFromCombined(status),
       assigneeId: crmData?.assigneeId || null,
       startDate: crmData?.startDate || null,
       dueDate: crmData?.dueDate || null,
@@ -937,6 +1046,14 @@ export class DatabaseStorage implements IStorage {
 
     // Auto-add the creator as a project member
     await this.addProjectMember(crmProject.id, projectData.ownerId);
+
+    if (projectHasOpportunity(crmProject)) {
+      await this.createOpportunity({
+        crmProjectId: crmProject.id,
+        clientId: crmProject.clientId,
+        stage: opportunityStageFromCombined(status),
+      });
+    }
 
     return { project, crmProject };
   }
@@ -1732,6 +1849,12 @@ export class DatabaseStorage implements IStorage {
         .update(crmProjects)
         .set({ status: newLabel, updatedAt: new Date() })
         .where(eq(crmProjects.status, oldLabel));
+      if (!isOpportunityTerminal(oldLabel) && !isOpportunityTerminal(newLabel)) {
+        await db
+          .update(opportunities)
+          .set({ stage: newLabel, updatedAt: new Date() })
+          .where(eq(opportunities.stage, oldLabel));
+      }
     } else if (column === "projectType") {
       await db
         .update(crmProjects)

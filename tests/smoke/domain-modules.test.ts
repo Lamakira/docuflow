@@ -34,6 +34,7 @@ const SHELLS = [
 const OPERATIONAL_TABLES = [
   "crm_clients",
   "crm_contacts",
+  "opportunities",
   "crm_projects",
   "projects",
   "tasks",
@@ -102,10 +103,11 @@ describe("domain module layout", () => {
     const { DOMAIN_MODULES } = await loadCatalog();
     const byId = new Map(DOMAIN_MODULES.map((mod) => [mod.id, mod.tables]));
     expect(byId.get("clients-sales")).toEqual(
-      expect.arrayContaining(["crm_clients", "crm_contacts", "crm_projects"])
+      expect.arrayContaining(["crm_clients", "crm_contacts", "opportunities"])
     );
+    expect(byId.get("clients-sales")).not.toContain("crm_projects");
     expect(byId.get("projects")).toEqual(
-      expect.arrayContaining(["projects", "tasks", "project_members"])
+      expect.arrayContaining(["projects", "crm_projects", "tasks", "project_members"])
     );
     expect(byId.get("time")).toEqual(expect.arrayContaining(["time_entries"]));
     expect(byId.get("activity")).toEqual(

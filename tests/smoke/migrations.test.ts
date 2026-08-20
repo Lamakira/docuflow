@@ -120,7 +120,7 @@ describe("migration journal", () => {
     //
     // #98 dropped Teams from current schema, so push no longer creates those
     // tables. 0008/0009 still ALTER them. Restore the 0000 shape so the
-    // apply path can reach 0011, which drops them.
+    // apply path can reach 0011, which drops them, then 0012.
     const scratch = urlForDatabase(SCRATCH_DB);
     await withClient(scratch, (client) =>
       client.query(`
@@ -166,6 +166,7 @@ describe("migration journal", () => {
       "0009_flaky_vermin",
       "0010_workspace_rls",
       "0011_drop_teams",
+      "0012_colossal_nuke",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -185,6 +186,7 @@ describe("migration journal", () => {
       { version: "0009_flaky_vermin", baselined: false },
       { version: "0010_workspace_rls", baselined: false },
       { version: "0011_drop_teams", baselined: false },
+      { version: "0012_colossal_nuke", baselined: false },
     ]);
   });
 

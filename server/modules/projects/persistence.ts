@@ -2,6 +2,9 @@ import type { ProjectWriter } from "../writers";
 import type {
   Project,
   InsertProject,
+  CrmProject,
+  InsertCrmProject,
+  CrmProjectWithDetails,
   Task,
   InsertTask,
   ProjectMember,
@@ -23,6 +26,27 @@ export interface ProjectsPersistence {
   ): Promise<Project>;
   updateProject(id: string, data: Partial<InsertProject>): Promise<Project | undefined>;
   deleteProject(id: string): Promise<void>;
+
+  getCrmProjects(
+    userId: string,
+    options?: {
+      page?: number;
+      pageSize?: number;
+      status?: string;
+      search?: string;
+    }
+  ): Promise<{ data: CrmProjectWithDetails[]; total: number; page: number; pageSize: number }>;
+  getCrmProject(id: string): Promise<CrmProjectWithDetails | undefined>;
+  getCrmProjectByProjectId(projectId: string): Promise<CrmProject | undefined>;
+  createCrmProject(crmProject: InsertCrmProject): Promise<CrmProject>;
+  createCrmProjectWithBase(
+    projectData: InsertProject & { ownerId: string },
+    crmData?: Partial<InsertCrmProject>
+  ): Promise<{ project: Project; crmProject: CrmProject }>;
+  updateCrmProject(id: string, data: Partial<InsertCrmProject>): Promise<CrmProject | undefined>;
+  deleteCrmProject(id: string): Promise<void>;
+  toggleDocumentation(crmProjectId: string, enabled: boolean): Promise<CrmProject | undefined>;
+  getDocumentationEnabledProjects(userId?: string): Promise<Project[]>;
 
   getTasks(options: { crmProjectId: string; includeArchived?: boolean }): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;
