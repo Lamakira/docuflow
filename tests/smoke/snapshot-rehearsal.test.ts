@@ -257,10 +257,18 @@ describe("the keys the restored database names", () => {
         [randomUUID(), id, SEEDED_WORKSPACE_ID]
       )
     );
+    await withClient(url, (client) =>
+      client.query(
+        `INSERT INTO files (id, name, storage_path, uploaded_by_id, workspace_id)
+         VALUES ($1, 'Invoice', '/objects/uploads/file-1', $2, $3)`,
+        [randomUUID(), id, SEEDED_WORKSPACE_ID]
+      )
+    );
 
     const keys = await withClient(url, (client) => namedStorageKeys(client, OWN_PRIVATE_DIR));
 
     expect(keys).toContain(".private/uploads/doc-1");
+    expect(keys).toContain(".private/uploads/file-1");
   });
 
   it("counts a key the destination lacks as dangling", () => {

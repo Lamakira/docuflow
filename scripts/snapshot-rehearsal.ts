@@ -148,6 +148,7 @@ export function toObjectName(value: string, privateDir: string): string {
 const KEY_SOURCES: ColumnRef[] = [
   { table: "time_entry_screenshots", column: "storage_key" },
   { table: "company_documents", column: "storage_path" },
+  { table: "files", column: "storage_path" },
 ];
 
 /**

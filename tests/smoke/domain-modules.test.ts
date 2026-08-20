@@ -43,6 +43,7 @@ const OPERATIONAL_TABLES = [
   "time_entry_screenshots",
   "documents",
   "company_documents",
+  "files",
 ] as const;
 
 async function loadCatalog() {
@@ -114,7 +115,7 @@ describe("domain module layout", () => {
       expect.arrayContaining(["time_entry_screenshots", "agent_activity_events"])
     );
     expect(byId.get("knowledge")).toEqual(
-      expect.arrayContaining(["documents", "company_documents", "audio_recordings"])
+      expect.arrayContaining(["documents", "company_documents", "files", "audio_recordings"])
     );
     expect(byId.get("notifications")).toEqual(["notifications"]);
     expect(byId.get("intelligence")).toEqual(
