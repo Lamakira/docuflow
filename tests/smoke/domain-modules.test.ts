@@ -143,6 +143,27 @@ describe("domain module layout", () => {
     ]);
   });
 
+  it("gives Activity Tracking Policy and Activity Evidence APIs, not Time", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    const activity = DOMAIN_MODULES.find((mod) => mod.id === "activity");
+    const time = DOMAIN_MODULES.find((mod) => mod.id === "time");
+    const activityKeys = Object.keys(activity?.persistence as object);
+    expect(activityKeys).toEqual(
+      expect.arrayContaining([
+        "getScreenshotPolicy",
+        "upsertScreenshotPolicy",
+        "createTimeEntryScreenshot",
+        "getTimeEntryScreenshotById",
+        "getTimeEntryScreenshots",
+        "createAgentActivityEvents",
+      ])
+    );
+    const timeKeys = Object.keys(time?.persistence as object);
+    expect(timeKeys).not.toContain("getScreenshotPolicy");
+    expect(timeKeys).not.toContain("upsertScreenshotPolicy");
+    expect(timeKeys).not.toContain("createTimeEntryScreenshot");
+  });
+
   it("leaves org_settings unowned because Activity and Time both persist policy there", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
     const owned = new Set(DOMAIN_MODULES.flatMap((mod) => [...mod.tables]));

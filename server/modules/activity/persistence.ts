@@ -4,6 +4,18 @@ import type {
   ScreenshotPolicy,
   EvidenceQualityReport,
 } from "@shared/schema";
+import {
+  createAgentActivityEvents,
+  createTimeEntryScreenshot,
+  deleteTimeEntryScreenshot,
+  getTimeEntryScreenshotById,
+  getTimeEntryScreenshots,
+  isAgentBatchProcessed,
+  markAgentBatchProcessed,
+  softDeleteTimeEntryScreenshot,
+  updateTimeEntryScreenshot,
+} from "./evidence";
+import { getScreenshotPolicy, upsertScreenshotPolicy } from "./policy";
 
 export interface ActivityPersistence {
   createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot>;
@@ -167,3 +179,18 @@ export interface ActivityPersistence {
     }>;
   }>;
 }
+
+export const activityPersistence = {
+  createTimeEntryScreenshot,
+  getTimeEntryScreenshotById,
+  getTimeEntryScreenshots,
+  updateTimeEntryScreenshot,
+  deleteTimeEntryScreenshot,
+  softDeleteTimeEntryScreenshot,
+  getScreenshotPolicy,
+  upsertScreenshotPolicy,
+  isAgentBatchProcessed,
+  markAgentBatchProcessed,
+  createAgentActivityEvents,
+};
+

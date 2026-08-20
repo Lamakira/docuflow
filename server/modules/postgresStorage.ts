@@ -93,7 +93,6 @@ import {
   type AgentPairingCode,
   devices,
   agentPairingCodes,
-  agentProcessedBatches,
   agentActivityEvents,
   orgSettings,
   type ScreenshotPolicy,
@@ -133,6 +132,18 @@ import {
   listIndexArtifacts,
   rebuildIndexArtifacts,
 } from "./intelligence/indexArtifacts";
+import {
+  createAgentActivityEvents,
+  createTimeEntryScreenshot,
+  deleteTimeEntryScreenshot,
+  getTimeEntryScreenshotById,
+  getTimeEntryScreenshots,
+  isAgentBatchProcessed,
+  markAgentBatchProcessed,
+  softDeleteTimeEntryScreenshot,
+  updateTimeEntryScreenshot,
+} from "./activity/evidence";
+import { getScreenshotPolicy, upsertScreenshotPolicy } from "./activity/policy";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
@@ -2286,16 +2297,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot> {
-    const [result] = await db.insert(timeEntryScreenshots).values(stampWorkspace(screenshot)).returning();
-    return result;
+    return createTimeEntryScreenshot(screenshot);
   }
 
   async getTimeEntryScreenshotById(id: string): Promise<TimeEntryScreenshot | undefined> {
-    const [screenshot] = await db
-      .select()
-      .from(timeEntryScreenshots)
-      .where(eq(timeEntryScreenshots.id, id));
-    return screenshot;
+    return getTimeEntryScreenshotById(id);
   }
 
   async getTimeEntryScreenshots(options: {
@@ -2307,49 +2313,15 @@ export class DatabaseStorage implements IStorage {
     limit?: number;
     offset?: number;
   }): Promise<{ data: TimeEntryScreenshot[]; total: number }> {
-    const conditions = [];
-    if (options.timeEntryId) conditions.push(eq(timeEntryScreenshots.timeEntryId, options.timeEntryId));
-    if (options.userId) conditions.push(eq(timeEntryScreenshots.userId, options.userId));
-    if (options.crmProjectId) conditions.push(eq(timeEntryScreenshots.crmProjectId, options.crmProjectId));
-    if (options.startDate) conditions.push(gt(timeEntryScreenshots.capturedAt, options.startDate));
-    if (options.endDate) conditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
-    // Exclude pending uploads (upload not yet received from agent)
-    conditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
-    // Exclude soft-deleted tombstones — they are invisible to all user-facing views
-    conditions.push(isNull(timeEntryScreenshots.deletedAt));
-
-    const where = and(...conditions);
-    const limit = options.limit ?? 50;
-    const offset = options.offset ?? 0;
-
-    const [data, countResult] = await Promise.all([
-      db
-        .select()
-        .from(timeEntryScreenshots)
-        .where(where)
-        .orderBy(desc(timeEntryScreenshots.capturedAt))
-        .limit(limit)
-        .offset(offset),
-      db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(timeEntryScreenshots)
-        .where(where),
-    ]);
-
-    return { data, total: countResult[0]?.count ?? 0 };
+    return getTimeEntryScreenshots(options);
   }
 
   async updateTimeEntryScreenshot(id: string, data: { storageKey: string; contentHash?: string }): Promise<TimeEntryScreenshot | undefined> {
-    const [result] = await db
-      .update(timeEntryScreenshots)
-      .set({ storageKey: data.storageKey, ...(data.contentHash ? { contentHash: data.contentHash } : {}) })
-      .where(eq(timeEntryScreenshots.id, id))
-      .returning();
-    return result;
+    return updateTimeEntryScreenshot(id, data);
   }
 
   async deleteTimeEntryScreenshot(id: string): Promise<void> {
-    await db.delete(timeEntryScreenshots).where(eq(timeEntryScreenshots.id, id));
+    return deleteTimeEntryScreenshot(id);
   }
 
   async softDeleteTimeEntryScreenshot(
@@ -2357,23 +2329,7 @@ export class DatabaseStorage implements IStorage {
     deletedBy: string,
     reason?: string,
   ): Promise<TimeEntryScreenshot | undefined> {
-    // Refuse to re-tombstone an already-deleted row
-    const [existing] = await db
-      .select({ deletedAt: timeEntryScreenshots.deletedAt })
-      .from(timeEntryScreenshots)
-      .where(eq(timeEntryScreenshots.id, id));
-    if (!existing || existing.deletedAt !== null) return undefined;
-
-    const [updated] = await db
-      .update(timeEntryScreenshots)
-      .set({
-        deletedAt: new Date(),
-        deletedBy,
-        deleteReason: reason ?? null,
-      })
-      .where(eq(timeEntryScreenshots.id, id))
-      .returning();
-    return updated;
+    return softDeleteTimeEntryScreenshot(id, deletedBy, reason);
   }
 
   // ═══════════════════════════════════════
@@ -2671,20 +2627,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getScreenshotPolicy(): Promise<ScreenshotPolicy> {
-    const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
-    return { ...DEFAULT_SCREENSHOT_POLICY, ...(row?.screenshotPolicy ?? {}) };
+    return getScreenshotPolicy();
   }
 
   async upsertScreenshotPolicy(policy: Partial<ScreenshotPolicy>): Promise<void> {
-    const current = await this.getScreenshotPolicy();
-    const merged: ScreenshotPolicy = { ...current, ...policy };
-    await db
-      .insert(orgSettings)
-      .values(stampWorkspace({ id: "default", screenshotPolicy: merged, updatedAt: new Date() }))
-      .onConflictDoUpdate({
-        target: orgSettings.id,
-        set: { screenshotPolicy: merged, updatedAt: new Date() },
-      });
+    return upsertScreenshotPolicy(policy);
   }
 
   async getAllowedTimezones(): Promise<string[]> {
@@ -2737,15 +2684,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async isAgentBatchProcessed(batchId: string): Promise<boolean> {
-    const [result] = await db
-      .select()
-      .from(agentProcessedBatches)
-      .where(eq(agentProcessedBatches.batchId, batchId));
-    return !!result;
+    return isAgentBatchProcessed(batchId);
   }
 
   async markAgentBatchProcessed(batchId: string, deviceId: string, eventCount: number): Promise<void> {
-    await db.insert(agentProcessedBatches).values(stampWorkspace({ batchId, deviceId, eventCount }));
+    return markAgentBatchProcessed(batchId, deviceId, eventCount);
   }
 
   async createAgentActivityEvents(events: Array<{
@@ -2757,8 +2700,7 @@ export class DatabaseStorage implements IStorage {
     timestamp: Date;
     data?: Record<string, unknown>;
   }>): Promise<void> {
-    if (events.length === 0) return;
-    await db.insert(agentActivityEvents).values(events.map((event) => stampWorkspace(event)));
+    return createAgentActivityEvents(events);
   }
 
   // ─── Admin Analytics ───

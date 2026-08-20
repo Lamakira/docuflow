@@ -28,6 +28,11 @@ import { logInfo, logError, logTimeEvent } from "./logger";
 import { parseObjectPath, storagePort } from "./objectStorage";
 import { isTasksEnabled } from "./migrationFlags";
 import {
+  createActivityJobsPort,
+  ingestActivityEvents,
+  ingestActivityScreenshot,
+} from "./modules/activity/evidenceJobs";
+import {
   ArchivedMembershipError,
   NoActiveMembershipError,
   contextFromDevice,
@@ -509,9 +514,12 @@ export function registerAgentRoutes(app: Express): void {
       const activeEntry = await storage.getActiveTimeEntry(req.agentUserId!);
       const timeEntryId = activeEntry?.id ?? null;
 
-      // Store events
-      await storage.createAgentActivityEvents(
-        body.events.map((event) => ({
+      // Store events and enqueue attribution through the jobs port
+      await ingestActivityEvents({
+        jobs: createActivityJobsPort(),
+        batchId: body.batchId,
+        deviceId: body.deviceId,
+        events: body.events.map((event) => ({
           deviceId: body.deviceId,
           userId: req.agentUserId!,
           timeEntryId,
@@ -519,11 +527,8 @@ export function registerAgentRoutes(app: Express): void {
           eventType: event.type,
           timestamp: new Date(event.timestamp),
           data: event.data,
-        }))
-      );
-
-      // Mark batch as processed
-      await storage.markAgentBatchProcessed(body.batchId, body.deviceId, body.events.length);
+        })),
+      });
 
       // Update device lastSeenAt
       await storage.updateDeviceLastSeen(body.deviceId);
@@ -577,16 +582,19 @@ export function registerAgentRoutes(app: Express): void {
       }
 
       // Create a screenshot record with pending status
-      const screenshot = await storage.createTimeEntryScreenshot({
-        timeEntryId: body.timeEntryId,
-        userId: req.agentUserId!,
-        crmProjectId: timeEntry.crmProjectId,
-        storageKey: `pending-${Date.now()}`, // Replaced on upload
-        capturedAt: new Date(body.capturedAt),
-        keyboardActivityPercent: body.keyboardActivityPercent ?? null,
-        mouseActivityPercent: body.mouseActivityPercent ?? null,
-        keyboardCount: body.keyboardCount ?? null,
-        mouseCount: body.mouseCount ?? null,
+      const screenshot = await ingestActivityScreenshot({
+        jobs: createActivityJobsPort(),
+        screenshot: {
+          timeEntryId: body.timeEntryId,
+          userId: req.agentUserId!,
+          crmProjectId: timeEntry.crmProjectId,
+          storageKey: `pending-${Date.now()}`, // Replaced on upload
+          capturedAt: new Date(body.capturedAt),
+          keyboardActivityPercent: body.keyboardActivityPercent ?? null,
+          mouseActivityPercent: body.mouseActivityPercent ?? null,
+          keyboardCount: body.keyboardCount ?? null,
+          mouseCount: body.mouseCount ?? null,
+        },
       });
 
       // Upload URL points to our server endpoint (server-side relay to GCS)
