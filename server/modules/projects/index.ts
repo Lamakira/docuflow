@@ -4,6 +4,7 @@ export type { ProjectsPersistence };
 
 export const PROJECTS_TABLES = [
   "projects",
+  "crm_projects",
   "tasks",
   "project_members",
   "reminders",

@@ -354,6 +354,22 @@ export const crmProjectStatusValues = [
 
 export type CrmProjectStatus = typeof crmProjectStatusValues[number];
 
+/** Delivery state of a Project. Pipeline stage lives on Opportunity, not here. */
+export const projectStatusValues = [
+  "planned",
+  "active",
+  "on_hold",
+  "in_review",
+  "completed",
+  "archived",
+] as const;
+
+export type ProjectStatus = typeof projectStatusValues[number];
+
+/** Fixed terminal Opportunity Stages. Open stages are workspace-configurable. */
+export const opportunityTerminalStages = ["won", "lost"] as const;
+export type OpportunityTerminalStage = typeof opportunityTerminalStages[number];
+
 // CRM Project Type enum values
 export const crmProjectTypeValues = [
   "one_time",
@@ -412,6 +428,7 @@ export const crmClientsRelations = relations(crmClients, ({ one, many }) => ({
   }),
   contacts: many(crmContacts),
   crmProjects: many(crmProjects),
+  opportunities: many(opportunities),
 }));
 
 export const insertCrmClientSchema = createInsertSchema(crmClients).omit({
@@ -477,6 +494,8 @@ export const crmProjects = pgTable("crm_projects", {
   actualMinutes: integer("actual_minutes").default(0),
   documentationEnabled: integer("documentation_enabled").default(0),
   isDocumentationOnly: integer("is_documentation_only").default(0),
+  // Combined HTTP lifecycle (lead/won_in_progress/…). Project Status is projectStatus.
+  projectStatus: varchar("project_status", { length: 50 }).notNull().default("planned"),
   reviewStartedAt: timestamp("review_started_at"),
   totalReviewMs: bigint("total_review_ms", { mode: "number" }).default(0),
   createdAt: timestamp("created_at").defaultNow(),
@@ -487,6 +506,7 @@ export const crmProjects = pgTable("crm_projects", {
   index("idx_crm_projects_client").on(table.clientId),
   index("idx_crm_projects_assignee").on(table.assigneeId),
   index("idx_crm_projects_status").on(table.status),
+  index("idx_crm_projects_project_status").on(table.projectStatus),
   index("idx_crm_projects_doc_only").on(table.isDocumentationOnly),
   idInWorkspace(table, "crm_projects"),
   workspaceScopedFk("crm_projects_project_workspace_fk", [table.projectId, table.workspaceId], projects),
@@ -505,6 +525,10 @@ export const crmProjectsRelations = relations(crmProjects, ({ one }) => ({
     fields: [crmProjects.assigneeId],
     references: [users.id],
   }),
+  opportunity: one(opportunities, {
+    fields: [crmProjects.id],
+    references: [opportunities.crmProjectId],
+  }),
 }));
 
 export const insertCrmProjectSchema = createInsertSchema(crmProjects).omit({
@@ -516,6 +540,46 @@ export const insertCrmProjectSchema = createInsertSchema(crmProjects).omit({
 
 export type CrmProject = typeof crmProjects.$inferSelect;
 export type InsertCrmProject = z.infer<typeof insertCrmProjectSchema>;
+
+// Opportunity — sales pipeline record. A won Opportunity may link a Client Project.
+// Internal and documented-only Projects have no Opportunity. Legacy ids stay on Project.
+export const opportunities = pgTable("opportunities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  crmProjectId: varchar("crm_project_id").references(() => crmProjects.id, { onDelete: "cascade" }),
+  clientId: varchar("client_id").references(() => crmClients.id, { onDelete: "set null" }),
+  stage: varchar("stage", { length: 50 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
+}, (table) => [
+  index("idx_opportunities_project").on(table.crmProjectId),
+  index("idx_opportunities_client").on(table.clientId),
+  index("idx_opportunities_stage").on(table.stage),
+  uniqueIndex("idx_opportunities_crm_project").on(table.crmProjectId),
+  idInWorkspace(table, "opportunities"),
+  workspaceScopedFk("opportunities_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
+]);
+
+export const opportunitiesRelations = relations(opportunities, ({ one }) => ({
+  crmProject: one(crmProjects, {
+    fields: [opportunities.crmProjectId],
+    references: [crmProjects.id],
+  }),
+  client: one(crmClients, {
+    fields: [opportunities.clientId],
+    references: [crmClients.id],
+  }),
+}));
+
+export const insertOpportunitySchema = createInsertSchema(opportunities).omit({
+  id: true,
+  workspaceId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type Opportunity = typeof opportunities.$inferSelect;
+export type InsertOpportunity = z.infer<typeof insertOpportunitySchema>;
 
 // Extended CRM Project type with joined data for API responses
 export type CrmProjectWithDetails = CrmProject & {

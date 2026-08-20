@@ -7,7 +7,8 @@ import type {
   InsertCrmContact,
   CrmProject,
   InsertCrmProject,
-  CrmProjectWithDetails,
+  Opportunity,
+  InsertOpportunity,
   CrmProjectNote,
   InsertCrmProjectNote,
   CrmProjectNoteWithCreator,
@@ -38,26 +39,14 @@ export interface ClientsSalesPersistence {
   updateCrmContact(id: string, data: Partial<InsertCrmContact>): Promise<CrmContact | undefined>;
   deleteCrmContact(id: string): Promise<void>;
 
-  getCrmProjects(
-    userId: string,
-    options?: {
-      page?: number;
-      pageSize?: number;
-      status?: string;
-      search?: string;
-    }
-  ): Promise<{ data: CrmProjectWithDetails[]; total: number; page: number; pageSize: number }>;
-  getCrmProject(id: string): Promise<CrmProjectWithDetails | undefined>;
-  getCrmProjectByProjectId(projectId: string): Promise<CrmProject | undefined>;
-  createCrmProject(crmProject: InsertCrmProject): Promise<CrmProject>;
-  createCrmProjectWithBase(
-    projectData: InsertProject & { ownerId: string },
-    crmData?: Partial<InsertCrmProject>
-  ): Promise<{ project: Project; crmProject: CrmProject }>;
-  updateCrmProject(id: string, data: Partial<InsertCrmProject>): Promise<CrmProject | undefined>;
-  deleteCrmProject(id: string): Promise<void>;
-  toggleDocumentation(crmProjectId: string, enabled: boolean): Promise<CrmProject | undefined>;
-  getDocumentationEnabledProjects(userId?: string): Promise<Project[]>;
+  getOpportunity(id: string): Promise<Opportunity | undefined>;
+  getOpportunityByCrmProjectId(crmProjectId: string): Promise<Opportunity | undefined>;
+  createOpportunity(opportunity: InsertOpportunity): Promise<Opportunity>;
+  updateOpportunity(id: string, data: Partial<InsertOpportunity>): Promise<Opportunity | undefined>;
+  createClientProjectFromOpportunity(
+    opportunityId: string,
+    projectData: InsertProject & { ownerId: string }
+  ): Promise<{ project: Project; crmProject: CrmProject; opportunity: Opportunity }>;
 
   getCrmProjectNotes(crmProjectId: string): Promise<CrmProjectNoteWithCreator[]>;
   getCrmProjectLatestNote(crmProjectId: string): Promise<CrmProjectNoteWithCreator | undefined>;

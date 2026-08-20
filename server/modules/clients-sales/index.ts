@@ -5,7 +5,7 @@ export type { ClientsSalesPersistence };
 export const CLIENTS_SALES_TABLES = [
   "crm_clients",
   "crm_contacts",
-  "crm_projects",
+  "opportunities",
   "crm_project_notes",
   "crm_project_stage_history",
   "crm_tags",
