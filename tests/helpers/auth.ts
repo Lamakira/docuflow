@@ -94,6 +94,28 @@ export async function grantDailyUpdatesAccess(userId: string): Promise<void> {
   await updateUserRow(userId, "can_view_daily_updates = 1");
 }
 
+const SEEDED_ROLE_IDS = {
+  owner: "seeded-owner",
+  administrator: "seeded-administrator",
+  member: "seeded-member",
+} as const;
+
+/**
+ * Assign a built-in Workspace Role on the seeded Membership.
+ *
+ * Service Account BFF routes authorize on Workspace Role, not `users.role`.
+ */
+export async function setWorkspaceRole(
+  userId: string,
+  slug: keyof typeof SEEDED_ROLE_IDS
+): Promise<void> {
+  const { pool } = await import("../../server/db");
+  await pool.query(`UPDATE memberships SET workspace_role_id = $1 WHERE user_id = $2`, [
+    SEEDED_ROLE_IDS[slug],
+    userId,
+  ]);
+}
+
 async function updateUserRow(userId: string, assignment: string): Promise<void> {
   const { pool } = await import("../../server/db");
   await pool.query(`UPDATE users SET ${assignment} WHERE id = $1`, [userId]);

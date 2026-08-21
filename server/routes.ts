@@ -15,6 +15,7 @@ import {
 import { ObjectPermission } from "./objectAcl";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
+import { registerServiceAccountRoutes } from "./modules/identity/http";
 import mammoth from "mammoth";
 import { 
   insertProjectSchema, 
@@ -128,6 +129,9 @@ export async function registerRoutes(
 
   // Desktop installer download + CI publish endpoints
   registerDownloadRoutes(app);
+
+  // Service Accounts (Identity & Access). Session BFF; not /api/v1.
+  registerServiceAccountRoutes(app);
 
   // Auth user endpoint - returns current user info or null if not authenticated
   app.get("/api/auth/user", async (req: Request, res) => {
