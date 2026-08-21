@@ -15,7 +15,8 @@ import { loginDevice, type AgentDevice } from "../helpers/agent";
  *  - §4.2 documents the heartbeat reply as `{ ok, serverTime }`. It also carries
  *    `timerSync` (the server's authoritative timer state) and `screenshotPolicy`
  *    (the org capture settings), which is how policy reaches the agent at all —
- *    the document describes no policy delivery.
+ *    the document describes no policy delivery. #128 added `clockAnchor`,
+ *    `trackingPolicyVersion`, `minProtocolVersion`, and `directives` additively.
  *  - §4.2/§5 present `activeApp` and `activeWindow` as the heartbeat's payload.
  *    Both are accepted, validated, and then discarded; only `active_window`
  *    *events* are stored.
@@ -328,10 +329,14 @@ describe("desktop agent ingestion (characterization)", () => {
     });
     expect(withWindow.status).toBe(200);
     expect(Object.keys(withWindow.body).sort()).toEqual([
+      "clockAnchor",
+      "directives",
+      "minProtocolVersion",
       "ok",
       "screenshotPolicy",
       "serverTime",
       "timerSync",
+      "trackingPolicyVersion",
     ]);
   });
 

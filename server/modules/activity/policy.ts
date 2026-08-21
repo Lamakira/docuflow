@@ -13,6 +13,9 @@ import {
 import { db } from "../../db";
 import { requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 
+/** Handshake-facing revision of Tracking Policy. v1 is the current capture rules. */
+export const TRACKING_POLICY_VERSION = 1;
+
 export async function getScreenshotPolicy(): Promise<ScreenshotPolicy> {
   requireWorkspaceContext();
   const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
