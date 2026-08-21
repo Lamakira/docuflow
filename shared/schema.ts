@@ -1634,6 +1634,18 @@ export const workspaceRoleSlugValues = ["owner", "administrator", "member"] as c
 export type WorkspaceRoleSlug = (typeof workspaceRoleSlugValues)[number];
 
 export const VIEW_DAILY_UPDATES_CAPABILITY_ID = "view_daily_updates";
+export const CLIENTS_READ_CAPABILITY_ID = "clients_read";
+export const CLIENTS_WRITE_CAPABILITY_ID = "clients_write";
+export const PROJECTS_READ_CAPABILITY_ID = "projects_read";
+export const TIME_ENTRIES_READ_CAPABILITY_ID = "time_entries_read";
+
+/** Platform Capability catalog rows the public `/api/v1` catalogue grants against. */
+export const PUBLIC_API_CAPABILITIES = [
+  { id: CLIENTS_READ_CAPABILITY_ID, name: "Read Clients" },
+  { id: CLIENTS_WRITE_CAPABILITY_ID, name: "Create Clients" },
+  { id: PROJECTS_READ_CAPABILITY_ID, name: "Read Projects" },
+  { id: TIME_ENTRIES_READ_CAPABILITY_ID, name: "Read Time Entries" },
+] as const;
 
 export const workspaces = pgTable("workspaces", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

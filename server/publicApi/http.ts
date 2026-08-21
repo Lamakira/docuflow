@@ -3,6 +3,7 @@ import { Router } from "express";
 import { logError } from "../logger";
 import { principalContextFromApiKey } from "../modules/identity";
 import { runWithWorkspaceContext } from "../workspaceContext";
+import { registerPublicApiV1Catalogue } from "./catalogue";
 import { honorIdempotencyKey } from "./idempotency";
 import { sendProblem, INTERNAL, NOT_FOUND, UNAUTHORIZED } from "./problem";
 import { enforcePublicApiRateLimit } from "./rateLimit";
@@ -48,8 +49,8 @@ const requireServiceAccount: RequestHandler = async (
 };
 
 /**
- * Public `/api/v1` kernel (#126, ADR-0011). Service Account API keys only.
- * Session cookies and Device tokens are not valid here.
+ * Public `/api/v1` (#126 kernel, #127 catalogue). Service Account API keys
+ * only. Session cookies and Device tokens are not valid here.
  */
 export function registerPublicApiV1(app: Express): void {
   const router = Router();
@@ -59,6 +60,7 @@ export function registerPublicApiV1(app: Express): void {
   router.get("/", (_req, res) => {
     res.json({ version: "v1" });
   });
+  registerPublicApiV1Catalogue(router);
   router.use((req: PublicApiRequest, res) => {
     sendProblem(res, NOT_FOUND, req.publicApiRequestId ?? requestIdOf(req));
   });

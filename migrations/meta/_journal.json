@@ -127,6 +127,13 @@
       "when": 1787313601172,
       "tag": "0017_busy_warhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787318000000,
+      "tag": "0018_public_api_capabilities",
+      "breakpoints": true
     }
   ]
 }
