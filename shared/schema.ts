@@ -1821,6 +1821,59 @@ export const membershipsRelations = relations(memberships, ({ one, many }) => ({
   extraCapabilities: many(membershipCapabilities),
 }));
 
+/**
+ * Non-human identity for an external integration (#131, ADR-0008, ADR-0011).
+ * Acts in exactly one Workspace through explicitly granted Capabilities.
+ * Not a Membership and not a Billable Seat. The API key is stored hashed.
+ */
+export const serviceAccounts = pgTable(
+  "service_accounts",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    name: varchar("name", { length: 255 }).notNull(),
+    /** SHA-256 of the API key. Plaintext is shown once and never stored. */
+    keyHash: varchar("key_hash", { length: 64 }).notNull(),
+    revokedAt: timestamp("revoked_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    workspaceId: workspaceIdColumn(),
+  },
+  (table) => [
+    uniqueIndex("idx_service_accounts_key_hash").on(table.keyHash),
+    index("idx_service_accounts_workspace").on(table.workspaceId),
+    idInWorkspace(table, "service_accounts"),
+  ]
+);
+
+export type ServiceAccount = typeof serviceAccounts.$inferSelect;
+
+export const serviceAccountCapabilities = pgTable(
+  "service_account_capabilities",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    serviceAccountId: varchar("service_account_id")
+      .notNull()
+      .references(() => serviceAccounts.id, { onDelete: "cascade" }),
+    capabilityId: varchar("capability_id")
+      .notNull()
+      .references(() => capabilities.id, { onDelete: "cascade" }),
+    workspaceId: varchar("workspace_id")
+      .notNull()
+      .default(SEEDED_WORKSPACE_ID)
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("idx_service_account_capabilities_unique").on(
+      table.serviceAccountId,
+      table.capabilityId
+    ),
+    workspaceScopedFk(
+      "service_account_capabilities_account_workspace_fk",
+      [table.serviceAccountId, table.workspaceId],
+      serviceAccounts
+    ),
+  ]
+);
+
 export const membershipCapabilitiesRelations = relations(membershipCapabilities, ({ one }) => ({
   membership: one(memberships, {
     fields: [membershipCapabilities.membershipId],

@@ -134,6 +134,21 @@ describe("domain module layout", () => {
     );
   });
 
+  it("gives Identity Service Account tables and PrincipalContext APIs", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    const identity = DOMAIN_MODULES.find((mod) => mod.id === "identity");
+    expect(identity?.tables).toEqual(
+      expect.arrayContaining(["service_accounts", "service_account_capabilities"])
+    );
+    expect(Object.keys(identity?.persistence as object).sort()).toEqual([
+      "createServiceAccount",
+      "listServiceAccounts",
+      "principalContextFromApiKey",
+      "revokeServiceAccount",
+      "rotateServiceAccountSecret",
+    ]);
+  });
+
   it("gives Intelligence the Index Artifact APIs", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
     const intelligence = DOMAIN_MODULES.find((mod) => mod.id === "intelligence");
