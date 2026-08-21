@@ -58,3 +58,116 @@ describe("public /api/v1 (characterization)", () => {
     expect(asKey.headers["content-type"]).toMatch(/application\/json/);
   });
 });
+
+describe("public /api/v1 catalogue (characterization)", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it("lists Clients as a cursor page and 403s without the Capability", async () => {
+    const { CLIENTS_READ_CAPABILITY_ID } = await import("../../shared/schema");
+    const app = await makeApp();
+    const admin = await registerUser(app);
+    await setWorkspaceRole(admin.id, "owner");
+    const granted = await admin.agent.post("/api/service-accounts").send({
+      name: "CRM",
+      capabilityIds: [CLIENTS_READ_CAPABILITY_ID],
+    });
+    const denied = await admin.agent.post("/api/service-accounts").send({ name: "No caps" });
+
+    const asGranted = await newAgent(app)
+      .get("/api/v1/clients")
+      .set("Authorization", `Bearer ${granted.body.plaintextKey}`);
+    expect(asGranted.status).toBe(200);
+    expect(asGranted.body).toEqual({ data: [], nextCursor: null });
+    expect(asGranted.body).not.toHaveProperty("page");
+    expect(asGranted.body).not.toHaveProperty("total");
+
+    const asDenied = await newAgent(app)
+      .get("/api/v1/clients")
+      .set("Authorization", `Bearer ${denied.body.plaintextKey}`);
+    expect(asDenied.status).toBe(403);
+    expect(asDenied.headers["content-type"]).toMatch(/application\/problem\+json/);
+    expect(asDenied.body).not.toHaveProperty("message");
+    expect(asDenied.body).toMatchObject({
+      type: "urn:docuflow:problem:forbidden",
+      status: 403,
+    });
+  });
+
+  it("creates a Client through /api/v1 and lists Projects and Time Entries as cursor pages", async () => {
+    const {
+      CLIENTS_READ_CAPABILITY_ID,
+      CLIENTS_WRITE_CAPABILITY_ID,
+      PROJECTS_READ_CAPABILITY_ID,
+      TIME_ENTRIES_READ_CAPABILITY_ID,
+    } = await import("../../shared/schema");
+    const { createCrmProject, createTask, startTimer } = await import("../helpers/fixtures");
+    const app = await makeApp();
+    const admin = await registerUser(app);
+    await setWorkspaceRole(admin.id, "owner");
+    const created = await admin.agent.post("/api/service-accounts").send({
+      name: "CRM",
+      capabilityIds: [
+        CLIENTS_READ_CAPABILITY_ID,
+        CLIENTS_WRITE_CAPABILITY_ID,
+        PROJECTS_READ_CAPABILITY_ID,
+        TIME_ENTRIES_READ_CAPABILITY_ID,
+      ],
+    });
+    const agent = newAgent(app).set("Authorization", `Bearer ${created.body.plaintextKey}`);
+
+    const first = await agent.post("/api/v1/clients").set("Idempotency-Key", "acme").send({ name: "Acme" });
+    const replay = await agent.post("/api/v1/clients").set("Idempotency-Key", "acme").send({ name: "Acme" });
+    expect(first.status).toBe(201);
+    expect(first.body).not.toHaveProperty("ownerId");
+    expect(replay.body).toEqual(first.body);
+
+    await createCrmProject(admin.agent, { name: "Website" });
+    const { crmProject } = await createCrmProject(admin.agent, { name: "App" });
+    const task = await createTask(admin.agent, crmProject.id);
+    await startTimer(admin.agent, crmProject.id, task.id);
+
+    const projects = await agent.get("/api/v1/projects");
+    expect(projects.status).toBe(200);
+    expect(projects.body).toEqual({
+      data: expect.any(Array),
+      nextCursor: null,
+    });
+    expect(projects.body.data.length).toBe(2);
+    expect(projects.body).not.toHaveProperty("page");
+
+    const entries = await agent.get("/api/v1/time-entries");
+    expect(entries.status).toBe(200);
+    expect(entries.body).toEqual({
+      data: expect.any(Array),
+      nextCursor: null,
+    });
+    expect(entries.body.data).toHaveLength(1);
+    expect(entries.body.data[0]).toMatchObject({ projectId: crmProject.id, status: "running" });
+    expect(entries.body.data[0]).not.toHaveProperty("crmProjectId");
+  });
+
+  it("does not reach Opportunities, Documents, Files, or Activity Evidence", async () => {
+    const app = await makeApp();
+    const admin = await registerUser(app);
+    await setWorkspaceRole(admin.id, "owner");
+    const created = await admin.agent.post("/api/service-accounts").send({ name: "CRM" });
+    const agent = newAgent(app).set("Authorization", `Bearer ${created.body.plaintextKey}`);
+
+    for (const path of [
+      "/api/v1/opportunities",
+      "/api/v1/documents",
+      "/api/v1/files",
+      "/api/v1/activity",
+      "/api/v1/search",
+      "/api/v1/ai",
+    ]) {
+      const res = await agent.get(path);
+      expect(res.status, path).toBe(404);
+      expect(res.body).not.toHaveProperty("message");
+      expect(res.body).toMatchObject({ type: "urn:docuflow:problem:not-found", status: 404 });
+    }
+  });
+});
+

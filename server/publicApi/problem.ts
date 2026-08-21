@@ -6,10 +6,22 @@ export type Problem = {
   status: number;
 };
 
+export const BAD_REQUEST: Problem = {
+  type: "urn:docuflow:problem:bad-request",
+  title: "Bad Request",
+  status: 400,
+};
+
 export const UNAUTHORIZED: Problem = {
   type: "urn:docuflow:problem:unauthorized",
   title: "Unauthorized",
   status: 401,
+};
+
+export const FORBIDDEN: Problem = {
+  type: "urn:docuflow:problem:forbidden",
+  title: "Forbidden",
+  status: 403,
 };
 
 export const NOT_FOUND: Problem = {

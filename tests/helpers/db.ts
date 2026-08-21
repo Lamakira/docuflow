@@ -33,7 +33,12 @@ async function restoreSeededWorkspaceCatalog(): Promise<void> {
   const { pool } = await import("../../server/db");
   await pool.query(`
     INSERT INTO capabilities (id, name)
-    VALUES ('view_daily_updates', 'View daily updates')
+    VALUES
+      ('view_daily_updates', 'View daily updates'),
+      ('clients_read', 'Read Clients'),
+      ('clients_write', 'Create Clients'),
+      ('projects_read', 'Read Projects'),
+      ('time_entries_read', 'Read Time Entries')
     ON CONFLICT (id) DO NOTHING;
     INSERT INTO workspaces (id, name)
     VALUES ('seeded', 'DocuFlow')

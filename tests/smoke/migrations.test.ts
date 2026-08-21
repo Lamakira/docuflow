@@ -172,6 +172,7 @@ describe("migration journal", () => {
       "0015_loving_colonel_america",
       "0016_service_accounts",
       "0017_busy_warhawk",
+      "0018_public_api_capabilities",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -197,6 +198,7 @@ describe("migration journal", () => {
       { version: "0015_loving_colonel_america", baselined: false },
       { version: "0016_service_accounts", baselined: false },
       { version: "0017_busy_warhawk", baselined: false },
+      { version: "0018_public_api_capabilities", baselined: false },
     ]);
   });
 

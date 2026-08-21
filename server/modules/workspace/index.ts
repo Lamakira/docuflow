@@ -1,6 +1,7 @@
 import type { WorkspacePersistence } from "./persistence";
 
 export type { WorkspacePersistence };
+export { workspaceOwnerUserId } from "./owner";
 
 /**
  * `org_settings` is a shared clump: Activity (`getScreenshotPolicy`) and Time
