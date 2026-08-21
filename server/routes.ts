@@ -66,6 +66,7 @@ import {
   createActivityJobsPort,
   ingestActivityScreenshot,
 } from "./modules/activity/evidenceJobs";
+import { applyTimerCommand, nextTimerSequence } from "./modules/time/commands";
 import { logTimeEvent, logError, logInfo } from "./logger";
 import { isTasksEnabled } from "./migrationFlags";
 import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
@@ -3944,33 +3945,24 @@ Instructions:
         }
       }
       
-      // Auto-stop any existing active entry before starting a new one
-      const activeEntry = await storage.getActiveTimeEntry(userId);
-      if (activeEntry) {
-        const now = new Date();
-        let finalDuration = activeEntry.duration || 0;
-        if (activeEntry.status === "running" && activeEntry.lastActivityAt) {
-          const elapsedSeconds = Math.floor((now.getTime() - new Date(activeEntry.lastActivityAt).getTime()) / 1000);
-          finalDuration += elapsedSeconds;
-        }
-        await storage.updateTimeEntry(activeEntry.id, {
-          status: "stopped",
-          endTime: now,
-          duration: finalDuration,
-        });
-      }
-      
-      const entry = await storage.createTimeEntry({
+      const now = new Date();
+      const result = await applyTimerCommand({
         userId,
-        crmProjectId,
-        taskId: taskId || null,
-        description: description || null,
-        startTime: new Date(),
-        status: "running",
-        lastActivityAt: new Date(),
-        duration: 0,
-        idleTime: 0,
+        origin: `web:${req.sessionID ?? userId}`,
+        sequence: nextTimerSequence(),
+        kind: "start",
+        claimedEffectiveAt: now,
+        receivedAt: now,
+        payload: {
+          crmProjectId,
+          taskId: taskId || null,
+          description: description || null,
+        },
       });
+      const entry = result.timeEntry;
+      if (!entry) {
+        return res.status(500).json({ message: "Failed to start time tracking" });
+      }
 
       logTimeEvent("start", entry.id, userId, { crmProjectId, taskId: taskId || null });
       res.json(entry);
@@ -3997,18 +3989,22 @@ Instructions:
       if (entry.status !== "running") {
         return res.status(400).json({ message: "Entry is not running" });
       }
-      
-      // Calculate elapsed time since last activity
+
       const now = new Date();
-      const lastActivity = entry.lastActivityAt || entry.startTime;
-      const elapsedSeconds = Math.floor((now.getTime() - new Date(lastActivity).getTime()) / 1000);
-      
-      const updated = await storage.updateTimeEntry(entry.id, {
-        status: "paused",
-        duration: (entry.duration || 0) + elapsedSeconds,
-        lastActivityAt: now,
+      const result = await applyTimerCommand({
+        userId,
+        origin: `web:${req.sessionID ?? userId}`,
+        sequence: nextTimerSequence(),
+        kind: "pause",
+        claimedEffectiveAt: now,
+        receivedAt: now,
+        payload: { timeEntryId: entry.id },
       });
-      
+      const updated = result.timeEntry;
+      if (!updated) {
+        return res.status(500).json({ message: "Failed to pause time tracking" });
+      }
+
       logTimeEvent("pause", entry.id, userId);
       res.json(updated);
     } catch (error) {
@@ -4035,22 +4031,22 @@ Instructions:
       if (entry.status !== "paused") {
         return res.status(400).json({ message: "Entry is not paused" });
       }
-      
+
       const now = new Date();
-      let idleTimeToAdd = 0;
-      
-      // If not discarding idle time, track it
-      if (!discardIdleTime && entry.lastActivityAt) {
-        const pauseDuration = Math.floor((now.getTime() - new Date(entry.lastActivityAt).getTime()) / 1000);
-        idleTimeToAdd = pauseDuration;
-      }
-      
-      const updated = await storage.updateTimeEntry(entry.id, {
-        status: "running",
-        idleTime: (entry.idleTime || 0) + idleTimeToAdd,
-        lastActivityAt: now,
+      const result = await applyTimerCommand({
+        userId,
+        origin: `web:${req.sessionID ?? userId}`,
+        sequence: nextTimerSequence(),
+        kind: "resume",
+        claimedEffectiveAt: now,
+        receivedAt: now,
+        payload: { timeEntryId: entry.id, discardIdleTime: !!discardIdleTime },
       });
-      
+      const updated = result.timeEntry;
+      if (!updated) {
+        return res.status(500).json({ message: "Failed to resume time tracking" });
+      }
+
       logTimeEvent("resume", entry.id, userId, { discardIdleTime: !!discardIdleTime });
       res.json(updated);
     } catch (error) {
@@ -4076,23 +4072,23 @@ Instructions:
       if (entry.status === "stopped") {
         return res.status(400).json({ message: "Entry is already stopped" });
       }
-      
-      const now = new Date();
-      let finalDuration = entry.duration || 0;
-      
-      // If was running, add the remaining time
-      if (entry.status === "running" && entry.lastActivityAt) {
-        const elapsedSeconds = Math.floor((now.getTime() - new Date(entry.lastActivityAt).getTime()) / 1000);
-        finalDuration += elapsedSeconds;
-      }
-      
-      const updated = await storage.updateTimeEntry(entry.id, {
-        status: "stopped",
-        endTime: now,
-        duration: finalDuration,
-      });
 
-      logTimeEvent("stop", entry.id, userId, { finalDuration });
+      const now = new Date();
+      const result = await applyTimerCommand({
+        userId,
+        origin: `web:${req.sessionID ?? userId}`,
+        sequence: nextTimerSequence(),
+        kind: "stop",
+        claimedEffectiveAt: now,
+        receivedAt: now,
+        payload: { timeEntryId: entry.id },
+      });
+      const updated = result.timeEntry;
+      if (!updated) {
+        return res.status(500).json({ message: "Failed to stop time tracking" });
+      }
+
+      logTimeEvent("stop", entry.id, userId, { finalDuration: updated.duration });
       res.json(updated);
     } catch (error) {
       logError("time-tracking.stop.failed", error, { entryId: req.params.id });
@@ -4228,11 +4224,24 @@ Instructions:
       }
       
       const { description } = req.body;
-      
-      const updated = await storage.updateTimeEntry(entry.id, {
-        description: description !== undefined ? description : entry.description,
+      const now = new Date();
+      const result = await applyTimerCommand({
+        userId,
+        origin: `web:${req.sessionID ?? userId}`,
+        sequence: nextTimerSequence(),
+        kind: "adjust",
+        claimedEffectiveAt: now,
+        receivedAt: now,
+        payload: {
+          timeEntryId: entry.id,
+          description: description !== undefined ? description : entry.description,
+        },
       });
-      
+      const updated = result.timeEntry;
+      if (!updated) {
+        return res.status(500).json({ message: "Failed to update time entry" });
+      }
+
       res.json(updated);
     } catch (error) {
       console.error("Error updating time entry:", error);

@@ -1,4 +1,6 @@
-import type { TimeEntry, InsertTimeEntry, TimeEntryWithDetails } from "@shared/schema";
+import type { TimeEntry, InsertTimeEntry, TimeEntryWithDetails, TimerCommand } from "@shared/schema";
+import { applyTimerCommand, listTimerCommands, type ApplyTimerCommandInput, type ApplyTimerCommandResult } from "./commands";
+import { getAllowedTimezones, upsertAllowedTimezones } from "./schedule";
 
 export interface TimePersistence {
   getTimeEntries(options: {
@@ -42,6 +44,8 @@ export interface TimePersistence {
 
   getAllowedTimezones(): Promise<string[]>;
   upsertAllowedTimezones(timezones: string[]): Promise<void>;
+  applyTimerCommand(input: ApplyTimerCommandInput): Promise<ApplyTimerCommandResult>;
+  listTimerCommands(userId: string): Promise<TimerCommand[]>;
 
   getAdminOverview(opts: { startDate: Date; endDate: Date }): Promise<{
     totalTrackedSeconds: number;
@@ -76,3 +80,10 @@ export interface TimePersistence {
     dailyTrend: Array<{ date: string; totalSeconds: number }>;
   }>;
 }
+
+export const timePersistence = {
+  getAllowedTimezones,
+  upsertAllowedTimezones,
+  applyTimerCommand,
+  listTimerCommands,
+};

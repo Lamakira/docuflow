@@ -1317,6 +1317,11 @@ export const timeEntries = pgTable("time_entries", {
   lastActivityAt: timestamp("last_activity_at"),
   // Idempotency key for desktop agent offline-first timer commands
   clientCommandId: varchar("client_command_id", { length: 64 }).unique(),
+  // `legacy` stamps rows that predate Timer Commands. New work is `command`.
+  provenance: varchar("provenance", { length: 20 }).notNull().default("legacy"),
+  timerCommandId: varchar("timer_command_id").references((): AnyPgColumn => timerCommands.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   workspaceId: workspaceIdColumn(),
@@ -1328,6 +1333,9 @@ export const timeEntries = pgTable("time_entries", {
   // Named as the boot-time DDL named it, which is the name production already
   // carries. Declared here so the journal produces it too — see migration 0004.
   index("idx_time_entries_task_id").on(table.taskId),
+  uniqueIndex("idx_time_entries_one_active_timer_per_user")
+    .on(table.userId)
+    .where(sql`${table.status} IN ('running', 'paused')`),
   idInWorkspace(table, "time_entries"),
   workspaceScopedFk("time_entries_project_workspace_fk", [table.crmProjectId, table.workspaceId], crmProjects),
 ]);
@@ -1356,6 +1364,57 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
 
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
+export type TimeEntryProvenance = "legacy" | "command";
+
+export const timerCommandKinds = ["start", "stop", "pause", "resume", "adjust"] as const;
+export type TimerCommandKind = (typeof timerCommandKinds)[number];
+
+export interface TimerCommandPayload {
+  crmProjectId?: string;
+  taskId?: string | null;
+  description?: string | null;
+  timeEntryId?: string;
+  clientCommandId?: string;
+  discardIdleTime?: boolean;
+}
+
+export const timerCommands = pgTable(
+  "timer_commands",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    origin: varchar("origin", { length: 128 }).notNull(),
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
+    kind: varchar("kind", { length: 20 }).notNull(),
+    claimedEffectiveAt: timestamp("claimed_effective_at").notNull(),
+    receivedAt: timestamp("received_at").notNull(),
+    clamped: boolean("clamped").notNull().default(false),
+    timeEntryId: varchar("time_entry_id"),
+    payload: jsonb("payload").$type<TimerCommandPayload>().notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+    workspaceId: workspaceIdColumn(),
+  },
+  (table) => [
+    uniqueIndex("idx_timer_commands_origin_sequence").on(
+      table.workspaceId,
+      table.origin,
+      table.sequence
+    ),
+    index("idx_timer_commands_user").on(table.userId, table.claimedEffectiveAt),
+    idInWorkspace(table, "timer_commands"),
+  ]
+);
+
+export const insertTimerCommandSchema = createInsertSchema(timerCommands).omit({
+  id: true,
+  workspaceId: true,
+  createdAt: true,
+});
+
+export type TimerCommand = typeof timerCommands.$inferSelect;
+export type InsertTimerCommand = z.infer<typeof insertTimerCommandSchema>;
 
 // Time entry with user and project info for display
 export type TimeEntryWithDetails = TimeEntry & {

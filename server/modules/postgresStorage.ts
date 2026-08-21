@@ -144,6 +144,8 @@ import {
   updateTimeEntryScreenshot,
 } from "./activity/evidence";
 import { getScreenshotPolicy, upsertScreenshotPolicy } from "./activity/policy";
+import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
+import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
@@ -2097,7 +2099,7 @@ export class DatabaseStorage implements IStorage {
     const [entry] = await db
       .select()
       .from(timeEntries)
-      .where(eq(timeEntries.clientCommandId, clientCommandId))
+      .where(and(eq(timeEntries.clientCommandId, clientCommandId), inWorkspace(timeEntries)))
       .limit(1);
     return entry;
   }
@@ -2635,18 +2637,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllowedTimezones(): Promise<string[]> {
-    const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
-    return row?.allowedTimezones ?? DEFAULT_ALLOWED_TIMEZONES;
+    return getAllowedTimezones();
   }
 
   async upsertAllowedTimezones(timezones: string[]): Promise<void> {
-    await db
-      .insert(orgSettings)
-      .values(stampWorkspace({ id: "default", allowedTimezones: timezones, updatedAt: new Date() }))
-      .onConflictDoUpdate({
-        target: orgSettings.id,
-        set: { allowedTimezones: timezones, updatedAt: new Date() },
-      });
+    return upsertAllowedTimezones(timezones);
+  }
+
+  async applyTimerCommand(
+    input: Parameters<typeof applyTimerCommand>[0]
+  ): ReturnType<typeof applyTimerCommand> {
+    return applyTimerCommand(input);
+  }
+
+  async listTimerCommands(userId: string): ReturnType<typeof listTimerCommands> {
+    return listTimerCommands(userId);
   }
 
   async getHelpCenterScreenshots(): Promise<HelpCenterScreenshotsMap> {
