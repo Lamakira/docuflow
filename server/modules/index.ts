@@ -31,6 +31,7 @@ export const INFRASTRUCTURE_TABLES = [
   "dead_letters",
   "scheduler_leases",
   "schema_migrations",
+  "public_api_idempotency_keys",
 ] as const;
 
 export const DOMAIN_MODULES = [

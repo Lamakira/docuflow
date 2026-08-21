@@ -2069,6 +2069,43 @@ export const schedulerLeases = pgTable("scheduler_leases", {
 
 export type SchedulerLeaseRow = typeof schedulerLeases.$inferSelect;
 
+/**
+ * Stored-response replay for mutating `/api/v1` requests (#126, ADR-0011).
+ * Optional `Idempotency-Key` is scoped to one Service Account in one Workspace.
+ */
+export const publicApiIdempotencyKeys = pgTable(
+  "public_api_idempotency_keys",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    serviceAccountId: varchar("service_account_id")
+      .notNull()
+      .references(() => serviceAccounts.id, { onDelete: "cascade" }),
+    idempotencyKey: varchar("idempotency_key", { length: 255 }).notNull(),
+    method: varchar("method", { length: 16 }).notNull(),
+    path: varchar("path", { length: 512 }).notNull(),
+    status: integer("status").notNull(),
+    body: jsonb("body").$type<unknown>().notNull(),
+    contentType: varchar("content_type", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    workspaceId: workspaceIdColumn(),
+  },
+  (table) => [
+    uniqueIndex("idx_public_api_idempotency_key").on(
+      table.workspaceId,
+      table.serviceAccountId,
+      table.idempotencyKey
+    ),
+    idInWorkspace(table, "public_api_idempotency_keys"),
+    workspaceScopedFk(
+      "public_api_idempotency_keys_account_workspace_fk",
+      [table.serviceAccountId, table.workspaceId],
+      serviceAccounts
+    ),
+  ]
+);
+
+export type PublicApiIdempotencyKey = typeof publicApiIdempotencyKeys.$inferSelect;
+
 // ─── Daily Update status set (single source of truth for form + admin dashboard) ───
 // Combines project-management statuses with predefined progress statuses.
 export const dailyUpdateStatusOptions = [
