@@ -16,6 +16,7 @@ import { ObjectPermission } from "./objectAcl";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
+import { registerPublicApiV1 } from "./publicApi/http";
 import mammoth from "mammoth";
 import { 
   insertProjectSchema, 
@@ -132,6 +133,9 @@ export async function registerRoutes(
 
   // Service Accounts (Identity & Access). Session BFF; not /api/v1.
   registerServiceAccountRoutes(app);
+
+  // Public `/api/v1` kernel. Service Account keys only (ADR-0011).
+  registerPublicApiV1(app);
 
   // Auth user endpoint - returns current user info or null if not authenticated
   app.get("/api/auth/user", async (req: Request, res) => {

@@ -20,6 +20,8 @@ export async function resetDb(): Promise<void> {
   if (rows.length === 0) return;
   const tables = rows.map((r: { tablename: string }) => `"${r.tablename}"`).join(", ");
   await pool.query(`TRUNCATE TABLE ${tables} RESTART IDENTITY CASCADE`);
+  const { resetPublicApiRateBuckets } = await import("../../server/publicApi/rateLimit");
+  resetPublicApiRateBuckets();
   await restoreSeededWorkspaceCatalog();
 }
 

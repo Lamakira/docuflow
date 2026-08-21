@@ -58,6 +58,10 @@ export async function createApp(): Promise<{
     standardHeaders: "draft-7",
     legacyHeaders: false,
     message: { message: "Too many requests, please try again later" },
+    skip: (req) => {
+      const path = req.originalUrl.split("?")[0];
+      return path === "/api/v1" || path.startsWith("/api/v1/");
+    },
     // TODO [PLACEHOLDER]: Tune these values after observing real traffic patterns.
     // Consider per-user rate limiting (keyed on session userId) for Desktop Agent.
   });
