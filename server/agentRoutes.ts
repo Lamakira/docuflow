@@ -33,6 +33,7 @@ import {
   ingestActivityEvents,
   ingestActivityScreenshot,
 } from "./modules/activity/evidenceJobs";
+import { applyTimerCommand, nextTimerSequence } from "./modules/time/commands";
 import {
   ArchivedMembershipError,
   NoActiveMembershipError,
@@ -779,6 +780,10 @@ export function registerAgentRoutes(app: Express): void {
     return true;
   }
 
+  function agentTimerOrigin(req: AgentAuthRequest): string {
+    return `desktop:${req.agentDeviceId ?? req.agentUserId}`;
+  }
+
   /** Agent: get active time entry (enriched with project and task names) */
   app.get("/api/agent/timer/active", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     try {
@@ -1016,6 +1021,8 @@ export function registerAgentRoutes(app: Express): void {
       }
 
       // Idempotency: if we've already processed this command, return the existing entry
+      const origin = agentTimerOrigin(req);
+      const sequence = nextTimerSequence(clientCommandId);
       if (clientCommandId) {
         const existing = await storage.getTimeEntryByClientCommandId(clientCommandId);
         if (existing) {
@@ -1024,34 +1031,29 @@ export function registerAgentRoutes(app: Express): void {
         }
       }
 
-      // Auto-stop any existing active entry
-      const activeEntry = await storage.getActiveTimeEntry(userId);
-      if (activeEntry) {
-        const now = new Date();
-        let finalDuration = activeEntry.duration || 0;
-        if (activeEntry.status === "running" && activeEntry.lastActivityAt) {
-          const elapsedSeconds = Math.floor((now.getTime() - new Date(activeEntry.lastActivityAt).getTime()) / 1000);
-          finalDuration += elapsedSeconds;
-        }
-        await storage.updateTimeEntry(activeEntry.id, {
-          status: "stopped",
-          endTime: now,
-          duration: finalDuration,
-        });
-      }
-
-      const entry = await storage.createTimeEntry({
+      const now = new Date();
+      const result = await applyTimerCommand({
         userId,
-        crmProjectId,
-        taskId: taskId || null,
-        description: description || null,
-        startTime: new Date(),
-        status: "running",
-        lastActivityAt: new Date(),
-        duration: 0,
-        idleTime: 0,
-        ...(clientCommandId ? { clientCommandId } : {}),
+        origin,
+        sequence,
+        kind: "start",
+        claimedEffectiveAt: now,
+        receivedAt: now,
+        payload: {
+          crmProjectId,
+          taskId: taskId || null,
+          description: description || null,
+          clientCommandId: clientCommandId || undefined,
+        },
       });
+      if (result.duplicate && result.timeEntry) {
+        logInfo("agent.timer.start.idempotent", { userId, clientCommandId, entryId: result.timeEntry.id });
+        return res.json({ ...result.timeEntry, taskAccumulatedToday: 0 });
+      }
+      const entry = result.timeEntry;
+      if (!entry) {
+        return res.status(500).json({ message: "Failed to start timer" });
+      }
 
       logTimeEvent("start", entry.id, userId, { crmProjectId, taskId: taskId || null, deviceId, clientType: "desktop" });
       logInfo("agent.timer.start", { userId, deviceId, entryId: entry.id, crmProjectId });
@@ -1084,14 +1086,17 @@ export function registerAgentRoutes(app: Express): void {
       if (entry.status !== "running") return res.status(400).json({ message: "Entry is not running" });
 
       const now = new Date();
-      const lastActivity = entry.lastActivityAt || entry.startTime;
-      const elapsedSeconds = Math.floor((now.getTime() - new Date(lastActivity).getTime()) / 1000);
-
-      const updated = await storage.updateTimeEntry(entry.id, {
-        status: "paused",
-        duration: (entry.duration || 0) + elapsedSeconds,
-        lastActivityAt: now,
+      const result = await applyTimerCommand({
+        userId,
+        origin: agentTimerOrigin(req),
+        sequence: nextTimerSequence(),
+        kind: "pause",
+        claimedEffectiveAt: now,
+        receivedAt: now,
+        payload: { timeEntryId: entry.id },
       });
+      const updated = result.timeEntry;
+      if (!updated) return res.status(500).json({ message: "Failed to pause timer" });
 
       logTimeEvent("pause", entry.id, userId);
       logInfo("agent.timer.pause", { userId, deviceId: req.agentDeviceId, entryId: entry.id });
@@ -1115,10 +1120,17 @@ export function registerAgentRoutes(app: Express): void {
       if (entry.status !== "paused") return res.status(400).json({ message: "Entry is not paused" });
 
       const now = new Date();
-      const updated = await storage.updateTimeEntry(entry.id, {
-        status: "running",
-        lastActivityAt: now,
+      const result = await applyTimerCommand({
+        userId,
+        origin: agentTimerOrigin(req),
+        sequence: nextTimerSequence(),
+        kind: "resume",
+        claimedEffectiveAt: now,
+        receivedAt: now,
+        payload: { timeEntryId: entry.id, discardIdleTime: true },
       });
+      const updated = result.timeEntry;
+      if (!updated) return res.status(500).json({ message: "Failed to resume timer" });
 
       logTimeEvent("resume", entry.id, userId);
       logInfo("agent.timer.resume", { userId, deviceId: req.agentDeviceId, entryId: entry.id });
@@ -1142,20 +1154,20 @@ export function registerAgentRoutes(app: Express): void {
       if (entry.status === "stopped") return res.status(400).json({ message: "Entry is already stopped" });
 
       const now = new Date();
-      let finalDuration = entry.duration || 0;
-      if (entry.status === "running" && entry.lastActivityAt) {
-        const elapsedSeconds = Math.floor((now.getTime() - new Date(entry.lastActivityAt).getTime()) / 1000);
-        finalDuration += elapsedSeconds;
-      }
-
-      const updated = await storage.updateTimeEntry(entry.id, {
-        status: "stopped",
-        endTime: now,
-        duration: finalDuration,
+      const result = await applyTimerCommand({
+        userId,
+        origin: agentTimerOrigin(req),
+        sequence: nextTimerSequence(),
+        kind: "stop",
+        claimedEffectiveAt: now,
+        receivedAt: now,
+        payload: { timeEntryId: entry.id },
       });
+      const updated = result.timeEntry;
+      if (!updated) return res.status(500).json({ message: "Failed to stop timer" });
 
-      logTimeEvent("stop", entry.id, userId, { finalDuration });
-      logInfo("agent.timer.stop", { userId, deviceId: req.agentDeviceId, entryId: entry.id, finalDuration });
+      logTimeEvent("stop", entry.id, userId, { finalDuration: updated.duration });
+      logInfo("agent.timer.stop", { userId, deviceId: req.agentDeviceId, entryId: entry.id, finalDuration: updated.duration });
       res.json(updated);
     } catch (error) {
       logError("agent.timer.stop.failed", error);

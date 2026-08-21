@@ -40,6 +40,7 @@ const OPERATIONAL_TABLES = [
   "tasks",
   "project_members",
   "time_entries",
+  "timer_commands",
   "time_entry_screenshots",
   "documents",
   "company_documents",
@@ -110,7 +111,7 @@ describe("domain module layout", () => {
     expect(byId.get("projects")).toEqual(
       expect.arrayContaining(["projects", "crm_projects", "tasks", "project_members"])
     );
-    expect(byId.get("time")).toEqual(expect.arrayContaining(["time_entries"]));
+    expect(byId.get("time")).toEqual(expect.arrayContaining(["time_entries", "timer_commands"]));
     expect(byId.get("activity")).toEqual(
       expect.arrayContaining(["time_entry_screenshots", "agent_activity_events"])
     );
@@ -162,6 +163,14 @@ describe("domain module layout", () => {
     expect(timeKeys).not.toContain("getScreenshotPolicy");
     expect(timeKeys).not.toContain("upsertScreenshotPolicy");
     expect(timeKeys).not.toContain("createTimeEntryScreenshot");
+    expect(timeKeys).toEqual(
+      expect.arrayContaining([
+        "getAllowedTimezones",
+        "upsertAllowedTimezones",
+        "applyTimerCommand",
+        "listTimerCommands",
+      ])
+    );
   });
 
   it("leaves org_settings unowned because Activity and Time both persist policy there", async () => {
