@@ -1638,6 +1638,7 @@ export const CLIENTS_READ_CAPABILITY_ID = "clients_read";
 export const CLIENTS_WRITE_CAPABILITY_ID = "clients_write";
 export const PROJECTS_READ_CAPABILITY_ID = "projects_read";
 export const TIME_ENTRIES_READ_CAPABILITY_ID = "time_entries_read";
+export const WEBHOOK_ENDPOINTS_MANAGE_CAPABILITY_ID = "webhook_endpoints_manage";
 
 /** Platform Capability catalog rows the public `/api/v1` catalogue grants against. */
 export const PUBLIC_API_CAPABILITIES = [
@@ -1645,7 +1646,18 @@ export const PUBLIC_API_CAPABILITIES = [
   { id: CLIENTS_WRITE_CAPABILITY_ID, name: "Create Clients" },
   { id: PROJECTS_READ_CAPABILITY_ID, name: "Read Projects" },
   { id: TIME_ENTRIES_READ_CAPABILITY_ID, name: "Read Time Entries" },
+  { id: WEBHOOK_ENDPOINTS_MANAGE_CAPABILITY_ID, name: "Manage Webhook Endpoints" },
 ] as const;
+
+/** Public Outbox Event types a Webhook Endpoint may subscribe to (ADR-0011). */
+export const WEBHOOK_EVENT_TYPES = [
+  "client.created",
+  "client.updated",
+  "project.created",
+  "project.updated",
+  "time_entry.stopped",
+] as const;
+export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
 export const workspaces = pgTable("workspaces", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1885,6 +1897,30 @@ export const serviceAccountCapabilities = pgTable(
     ),
   ]
 );
+
+/**
+ * Workspace-owned delivery target (#129, ADR-0008, ADR-0011). HMAC key
+ * material is stored so the deliverer (#130) can sign; it is never listed.
+ * An Endpoint confers no read of domain records.
+ */
+export const webhookEndpoints = pgTable(
+  "webhook_endpoints",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    url: text("url").notNull(),
+    hmacSecret: varchar("hmac_secret", { length: 128 }).notNull(),
+    eventTypes: jsonb("event_types").$type<WebhookEventType[]>().notNull(),
+    disabledAt: timestamp("disabled_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    workspaceId: workspaceIdColumn(),
+  },
+  (table) => [
+    index("idx_webhook_endpoints_workspace").on(table.workspaceId),
+    idInWorkspace(table, "webhook_endpoints"),
+  ]
+);
+
+export type WebhookEndpoint = typeof webhookEndpoints.$inferSelect;
 
 export const membershipCapabilitiesRelations = relations(membershipCapabilities, ({ one }) => ({
   membership: one(memberships, {

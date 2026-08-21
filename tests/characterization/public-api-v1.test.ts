@@ -171,3 +171,129 @@ describe("public /api/v1 catalogue (characterization)", () => {
   });
 });
 
+describe("public /api/v1 webhook endpoints (characterization)", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it("lets a Service Account with capability create, list, get, disable, and rotate", async () => {
+    const { WEBHOOK_ENDPOINTS_MANAGE_CAPABILITY_ID } = await import("../../shared/schema");
+    const app = await makeApp();
+    const admin = await registerUser(app);
+    await setWorkspaceRole(admin.id, "owner");
+    const created = await admin.agent.post("/api/service-accounts").send({
+      name: "Hooks",
+      capabilityIds: [WEBHOOK_ENDPOINTS_MANAGE_CAPABILITY_ID],
+    });
+    const agent = newAgent(app).set("Authorization", `Bearer ${created.body.plaintextKey}`);
+
+    const endpoint = await agent.post("/api/v1/webhook-endpoints").send({
+      url: "https://hooks.example.test/crm",
+      eventTypes: ["client.created", "client.updated"],
+    });
+    expect(endpoint.status).toBe(201);
+    expect(endpoint.body).toMatchObject({
+      url: "https://hooks.example.test/crm",
+      eventTypes: ["client.created", "client.updated"],
+      disabledAt: null,
+    });
+    expect(typeof endpoint.body.plaintextSecret).toBe("string");
+    expect(endpoint.body).not.toHaveProperty("hmacSecret");
+    expect(endpoint.body.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+
+    const listed = await agent.get("/api/v1/webhook-endpoints");
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual({
+      data: [expect.objectContaining({ id: endpoint.body.id })],
+      nextCursor: null,
+    });
+    expect(listed.body.data[0]).not.toHaveProperty("plaintextSecret");
+    expect(listed.body).not.toHaveProperty("page");
+
+    const got = await agent.get(`/api/v1/webhook-endpoints/${endpoint.body.id}`);
+    expect(got.status).toBe(200);
+    expect(got.body.id).toBe(endpoint.body.id);
+    expect(got.body).not.toHaveProperty("plaintextSecret");
+
+    const disabled = await agent.post(`/api/v1/webhook-endpoints/${endpoint.body.id}/disable`);
+    expect(disabled.status).toBe(200);
+    expect(disabled.body).toEqual({ ok: true });
+
+    const rotated = await agent.post(`/api/v1/webhook-endpoints/${endpoint.body.id}/rotate`);
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.plaintextSecret).not.toBe(endpoint.body.plaintextSecret);
+  });
+
+  it("returns 403 without the Capability and does not grant domain reads", async () => {
+    const { WEBHOOK_ENDPOINTS_MANAGE_CAPABILITY_ID } = await import("../../shared/schema");
+    const app = await makeApp();
+    const admin = await registerUser(app);
+    await setWorkspaceRole(admin.id, "owner");
+    const denied = await admin.agent.post("/api/service-accounts").send({ name: "No caps" });
+    const granted = await admin.agent.post("/api/service-accounts").send({
+      name: "Hooks only",
+      capabilityIds: [WEBHOOK_ENDPOINTS_MANAGE_CAPABILITY_ID],
+    });
+
+    const asDenied = await newAgent(app)
+      .get("/api/v1/webhook-endpoints")
+      .set("Authorization", `Bearer ${denied.body.plaintextKey}`);
+    expect(asDenied.status).toBe(403);
+    expect(asDenied.headers["content-type"]).toMatch(/application\/problem\+json/);
+    expect(asDenied.body).not.toHaveProperty("message");
+    expect(asDenied.body).toMatchObject({
+      type: "urn:docuflow:problem:forbidden",
+      status: 403,
+    });
+
+    const hooksOnly = newAgent(app).set("Authorization", `Bearer ${granted.body.plaintextKey}`);
+    const clients = await hooksOnly.get("/api/v1/clients");
+    expect(clients.status).toBe(403);
+    const projects = await hooksOnly.get("/api/v1/projects");
+    expect(projects.status).toBe(403);
+  });
+
+  it("rejects an event type outside the allowlist and fails closed on another Workspace's id", async () => {
+    const { WEBHOOK_ENDPOINTS_MANAGE_CAPABILITY_ID, workspaces, workspaceRoles } = await import(
+      "../../shared/schema"
+    );
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
+    const { createWebhookEndpoint } = await import("../../server/modules/workspace");
+    const app = await makeApp();
+    const admin = await registerUser(app);
+    await setWorkspaceRole(admin.id, "owner");
+    const created = await admin.agent.post("/api/service-accounts").send({
+      name: "Hooks",
+      capabilityIds: [WEBHOOK_ENDPOINTS_MANAGE_CAPABILITY_ID],
+    });
+    const agent = newAgent(app).set("Authorization", `Bearer ${created.body.plaintextKey}`);
+
+    const rejected = await agent.post("/api/v1/webhook-endpoints").send({
+      url: "https://hooks.example.test/crm",
+      eventTypes: ["invoice.paid"],
+    });
+    expect(rejected.status).toBe(400);
+    expect(rejected.headers["content-type"]).toMatch(/application\/problem\+json/);
+    expect(rejected.body).toMatchObject({ type: "urn:docuflow:problem:bad-request", status: 400 });
+
+    const { db } = await import("../../server/db");
+    await db.insert(workspaces).values({ id: "other", name: "Other" });
+    await db.insert(workspaceRoles).values({
+      id: "other-member",
+      workspaceId: "other",
+      slug: "member",
+      name: "Member",
+    });
+    const theirs = await runWithWorkspaceContext({ workspaceId: "other" }, () =>
+      createWebhookEndpoint({
+        url: "https://other.example.test/hooks",
+        eventTypes: ["client.created"],
+      })
+    );
+
+    const leaked = await agent.get(`/api/v1/webhook-endpoints/${theirs.id}`);
+    expect(leaked.status).toBe(404);
+    expect(leaked.body).toMatchObject({ type: "urn:docuflow:problem:not-found", status: 404 });
+  });
+});
+

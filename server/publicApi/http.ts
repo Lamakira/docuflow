@@ -4,6 +4,7 @@ import { logError } from "../logger";
 import { principalContextFromApiKey } from "../modules/identity";
 import { runWithWorkspaceContext } from "../workspaceContext";
 import { registerPublicApiV1Catalogue } from "./catalogue";
+import { registerPublicApiV1WebhookEndpoints } from "./webhookEndpoints";
 import { honorIdempotencyKey } from "./idempotency";
 import { sendProblem, INTERNAL, NOT_FOUND, UNAUTHORIZED } from "./problem";
 import { enforcePublicApiRateLimit } from "./rateLimit";
@@ -61,6 +62,7 @@ export function registerPublicApiV1(app: Express): void {
     res.json({ version: "v1" });
   });
   registerPublicApiV1Catalogue(router);
+  registerPublicApiV1WebhookEndpoints(router);
   router.use((req: PublicApiRequest, res) => {
     sendProblem(res, NOT_FOUND, req.publicApiRequestId ?? requestIdOf(req));
   });

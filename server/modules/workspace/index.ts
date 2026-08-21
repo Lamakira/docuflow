@@ -1,7 +1,32 @@
 import type { WorkspacePersistence } from "./persistence";
+import {
+  createWebhookEndpoint,
+  disableWebhookEndpoint,
+  enableWebhookEndpoint,
+  getWebhookEndpoint,
+  listWebhookEndpoints,
+  rotateWebhookEndpointSecret,
+  type WebhookEndpointPersistence,
+} from "./webhookEndpoints";
 
 export type { WorkspacePersistence };
+export type {
+  CreatedWebhookEndpoint,
+  WebhookEndpointPersistence,
+  WebhookEndpointView,
+} from "./webhookEndpoints";
 export { workspaceOwnerUserId } from "./owner";
+export {
+  canManageWebhookEndpoints,
+  createWebhookEndpoint,
+  disableWebhookEndpoint,
+  enableWebhookEndpoint,
+  getWebhookEndpoint,
+  listWebhookEndpoints,
+  rotateWebhookEndpointSecret,
+  UnknownWebhookEventTypeError,
+  WebhookEndpointNotFoundError,
+} from "./webhookEndpoints";
 
 /**
  * `org_settings` is a shared clump: Activity (`getScreenshotPolicy`) and Time
@@ -15,11 +40,21 @@ export const WORKSPACE_TABLES = [
   "workspace_role_capabilities",
   "memberships",
   "membership_capabilities",
+  "webhook_endpoints",
 ] as const;
+
+export const webhookEndpointPersistence: WebhookEndpointPersistence = {
+  createWebhookEndpoint,
+  listWebhookEndpoints,
+  getWebhookEndpoint,
+  disableWebhookEndpoint,
+  enableWebhookEndpoint,
+  rotateWebhookEndpointSecret,
+};
 
 export const workspaceModule = {
   id: "workspace",
   name: "Workspace",
   tables: WORKSPACE_TABLES,
-  persistence: {} as WorkspacePersistence,
+  persistence: webhookEndpointPersistence,
 } as const;
