@@ -3,6 +3,7 @@ import { activityPersistence, type ActivityPersistence } from "./persistence";
 export type { ActivityPersistence };
 export { activityPersistence };
 export {
+  TRACKING_POLICY_VERSION,
   getScreenshotPolicy,
   upsertScreenshotPolicy,
 } from "./policy";

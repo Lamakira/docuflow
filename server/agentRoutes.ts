@@ -23,6 +23,7 @@ let sharpLib: ((input: Buffer) => any) | null = null;
 import { storage } from "./storage";
 import { isAuthenticated, getUserId, verifyPassword } from "./auth";
 import { config } from "./config";
+import { agentProtocolHandshake, allowAgentProtocol } from "./agentProtocol";
 import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
 import { logInfo, logError, logTimeEvent } from "./logger";
 import { parseObjectPath, storagePort } from "./objectStorage";
@@ -142,6 +143,7 @@ async function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: 
   req.agentUserId = claims.userId;
   try {
     const ctx = await contextFromDevice(claims.deviceId, claims.userId);
+    if (!allowAgentProtocol(req, res)) return;
     runWithWorkspaceContext(ctx, () => next());
   } catch (error) {
     if (error instanceof ArchivedMembershipError || error instanceof NoActiveMembershipError) {
@@ -300,6 +302,7 @@ export function registerAgentRoutes(app: Express): void {
       );
 
       const { accessToken, expiresAt } = issueAccessToken(device.id, user.id);
+      const now = new Date();
 
       logInfo("agent.auth.login.success", { userId: user.id, deviceId: device.id });
       res.json({
@@ -313,6 +316,7 @@ export function registerAgentRoutes(app: Express): void {
           firstName: user.firstName,
           lastName: user.lastName,
         },
+        ...agentProtocolHandshake(now),
       });
     } catch (error) {
       if (error instanceof ArchivedMembershipError || error instanceof NoActiveMembershipError) {
@@ -491,7 +495,14 @@ export function registerAgentRoutes(app: Express): void {
         timerSyncStatus: timerSync?.status ?? "none",
       });
 
-      res.json({ ok: true, serverTime: new Date().toISOString(), timerSync, screenshotPolicy });
+      const now = new Date();
+      res.json({
+        ok: true,
+        serverTime: now.toISOString(),
+        timerSync,
+        screenshotPolicy,
+        ...agentProtocolHandshake(now),
+      });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid request", errors: error.errors });
