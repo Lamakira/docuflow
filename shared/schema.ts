@@ -1922,6 +1922,62 @@ export const webhookEndpoints = pgTable(
 
 export type WebhookEndpoint = typeof webhookEndpoints.$inferSelect;
 
+/**
+ * Append-only domain event log (#130, ADR-0013). Domain writes stamp one row in
+ * the same transaction; a Worker dispatcher fans each out as Jobs. Payload is
+ * PII-minimized: event type, ids, occurred-at — never domain fields.
+ */
+export const outboxEvents = pgTable(
+  "outbox_events",
+  {
+    id: varchar("id").primaryKey(),
+    type: varchar("type", { length: 64 }).notNull(),
+    version: integer("version").notNull().default(1),
+    occurredAt: timestamp("occurred_at").notNull(),
+    workspaceId: workspaceIdColumn(),
+    principalKind: varchar("principal_kind", { length: 32 }),
+    principalId: varchar("principal_id"),
+    aggregateType: varchar("aggregate_type", { length: 32 }).notNull(),
+    aggregateId: varchar("aggregate_id").notNull(),
+    payload: jsonb("payload").$type<Record<string, string>>().notNull(),
+    dispatchedAt: timestamp("dispatched_at"),
+  },
+  (table) => [
+    index("idx_outbox_events_undispatched")
+      .on(table.occurredAt, table.id)
+      .where(sql`${table.dispatchedAt} IS NULL`),
+    index("idx_outbox_events_workspace").on(table.workspaceId),
+    idInWorkspace(table, "outbox_events"),
+  ]
+);
+
+export type OutboxEvent = typeof outboxEvents.$inferSelect;
+
+/**
+ * Append-only Audit Event (#130, CONTEXT.md). Replay of webhook delivery is an
+ * audited operator command; the row is evidence, never a domain event.
+ */
+export const auditEvents = pgTable(
+  "audit_events",
+  {
+    id: varchar("id").primaryKey(),
+    type: varchar("type", { length: 64 }).notNull(),
+    occurredAt: timestamp("occurred_at").notNull(),
+    workspaceId: workspaceIdColumn(),
+    principalKind: varchar("principal_kind", { length: 32 }),
+    principalId: varchar("principal_id"),
+    resourceType: varchar("resource_type", { length: 64 }).notNull(),
+    resourceId: varchar("resource_id").notNull(),
+    payload: jsonb("payload").$type<Record<string, string>>().notNull(),
+  },
+  (table) => [
+    index("idx_audit_events_workspace").on(table.workspaceId, table.occurredAt),
+    idInWorkspace(table, "audit_events"),
+  ]
+);
+
+export type AuditEvent = typeof auditEvents.$inferSelect;
+
 export const membershipCapabilitiesRelations = relations(membershipCapabilities, ({ one }) => ({
   membership: one(memberships, {
     fields: [membershipCapabilities.membershipId],

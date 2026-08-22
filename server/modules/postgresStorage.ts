@@ -112,6 +112,7 @@ import {
   deviceEnrollments,
 } from "@shared/schema";
 import { db } from "../db";
+import { appendAllowlistedOutboxEvent, type OutboxWriter } from "../outbox";
 import {
   currentWorkspaceContext,
   inWorkspace,
@@ -639,18 +640,47 @@ export class DatabaseStorage implements IStorage {
     return client;
   }
 
-  async createCrmClient(client: InsertCrmClient & { ownerId: string }): Promise<CrmClient> {
-    const [newClient] = await db.insert(crmClients).values(stampWorkspace(client)).returning();
-    return newClient;
+  async createCrmClient(
+    client: InsertCrmClient & { ownerId: string },
+    writer?: OutboxWriter
+  ): Promise<CrmClient> {
+    const persist = async (tx: OutboxWriter) => {
+      const [newClient] = await tx.insert(crmClients).values(stampWorkspace(client)).returning();
+      await appendAllowlistedOutboxEvent(tx, {
+        type: "client.created",
+        aggregateType: "client",
+        aggregateId: newClient.id,
+        payload: { clientId: newClient.id },
+      });
+      return newClient;
+    };
+    if (writer) return persist(writer);
+    return db.transaction(persist);
   }
 
-  async updateCrmClient(id: string, data: Partial<InsertCrmClient>): Promise<CrmClient | undefined> {
-    const [updated] = await db
-      .update(crmClients)
-      .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(crmClients.id, id), inWorkspace(crmClients)))
-      .returning();
-    return updated;
+  async updateCrmClient(
+    id: string,
+    data: Partial<InsertCrmClient>,
+    writer?: OutboxWriter
+  ): Promise<CrmClient | undefined> {
+    const persist = async (tx: OutboxWriter) => {
+      const [updated] = await tx
+        .update(crmClients)
+        .set({ ...data, updatedAt: new Date() })
+        .where(and(eq(crmClients.id, id), inWorkspace(crmClients)))
+        .returning();
+      if (updated) {
+        await appendAllowlistedOutboxEvent(tx, {
+          type: "client.updated",
+          aggregateType: "client",
+          aggregateId: updated.id,
+          payload: { clientId: updated.id },
+        });
+      }
+      return updated;
+    };
+    if (writer) return persist(writer);
+    return db.transaction(persist);
   }
 
   async deleteCrmClient(id: string): Promise<void> {
@@ -918,9 +948,25 @@ export class DatabaseStorage implements IStorage {
     return crmProject;
   }
 
-  async createCrmProject(crmProject: InsertCrmProject): Promise<CrmProject> {
-    const [newCrmProject] = await db.insert(crmProjects).values(stampWorkspace(crmProject)).returning();
-    return newCrmProject;
+  async createCrmProject(
+    crmProject: InsertCrmProject,
+    writer?: OutboxWriter
+  ): Promise<CrmProject> {
+    const persist = async (tx: OutboxWriter) => {
+      const [newCrmProject] = await tx
+        .insert(crmProjects)
+        .values(stampWorkspace(crmProject))
+        .returning();
+      await appendAllowlistedOutboxEvent(tx, {
+        type: "project.created",
+        aggregateType: "project",
+        aggregateId: newCrmProject.id,
+        payload: { projectId: newCrmProject.id },
+      });
+      return newCrmProject;
+    };
+    if (writer) return persist(writer);
+    return db.transaction(persist);
   }
 
   async getOpportunity(id: string): Promise<Opportunity | undefined> {
@@ -994,16 +1040,32 @@ export class DatabaseStorage implements IStorage {
     return { project, crmProject, opportunity: linked };
   }
 
-  async updateCrmProject(id: string, data: Partial<InsertCrmProject>): Promise<CrmProject | undefined> {
-    const patch = { ...data };
-    if (data.status !== undefined) {
-      patch.projectStatus = projectStatusFromCombined(data.status);
-    }
-    const [updated] = await db
-      .update(crmProjects)
-      .set({ ...patch, updatedAt: new Date() })
-      .where(eq(crmProjects.id, id))
-      .returning();
+  async updateCrmProject(
+    id: string,
+    data: Partial<InsertCrmProject>,
+    writer?: OutboxWriter
+  ): Promise<CrmProject | undefined> {
+    const persist = async (tx: OutboxWriter) => {
+      const patch = { ...data };
+      if (data.status !== undefined) {
+        patch.projectStatus = projectStatusFromCombined(data.status);
+      }
+      const [updated] = await tx
+        .update(crmProjects)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(crmProjects.id, id))
+        .returning();
+      if (updated) {
+        await appendAllowlistedOutboxEvent(tx, {
+          type: "project.updated",
+          aggregateType: "project",
+          aggregateId: updated.id,
+          payload: { projectId: updated.id },
+        });
+      }
+      return updated;
+    };
+    const updated = writer ? await persist(writer) : await db.transaction(persist);
     if (updated) {
       await this.syncOpportunityForProject(updated);
     }

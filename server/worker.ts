@@ -110,11 +110,19 @@ export function startWorkerLoop(options?: {
       handleAttributeEvidenceJob,
     } = await import("./modules/activity/evidenceJobs");
     const {
+      WEBHOOK_DELIVER_JOB,
+      WEBHOOK_DELIVER_JOB_TYPE,
+      handleWebhookDeliverJob,
+      createFetchWebhookSink,
+    } = await import("./webhookDelivery");
+    const { dispatchOutbox } = await import("./outbox");
+    const {
       createDueReminderScheduler,
       createStaleTimerScheduler,
       createDailyUpdateNudgeScheduler,
     } = await import("./scheduler");
 
+    const webhookSink = createFetchWebhookSink();
     const jobs = createJobsPort({
       db,
       types: {
@@ -124,6 +132,7 @@ export function startWorkerLoop(options?: {
         [DOCUMENT_EMBED_JOB]: DOCUMENT_EMBED_JOB_TYPE,
         [DOCUMENT_TRANSCRIPT_JOB]: DOCUMENT_TRANSCRIPT_JOB_TYPE,
         [ACTIVITY_ATTRIBUTE_JOB]: ACTIVITY_ATTRIBUTE_JOB_TYPE,
+        [WEBHOOK_DELIVER_JOB]: WEBHOOK_DELIVER_JOB_TYPE,
       },
     });
     const runner = createJobRunner({
@@ -136,6 +145,7 @@ export function startWorkerLoop(options?: {
         [DOCUMENT_EMBED_JOB]: handleDocumentEmbedJob,
         [DOCUMENT_TRANSCRIPT_JOB]: handleDocumentTranscriptJob,
         [ACTIVITY_ATTRIBUTE_JOB]: handleAttributeEvidenceJob,
+        [WEBHOOK_DELIVER_JOB]: (job) => handleWebhookDeliverJob(job, webhookSink),
       },
       claimerId,
     });
@@ -154,6 +164,7 @@ export function startWorkerLoop(options?: {
         }
         lastTick = now;
       }
+      await dispatchOutbox(jobs);
       while (!stopped) {
         const ran = await runner.runOne();
         if (!ran) break;

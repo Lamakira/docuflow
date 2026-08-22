@@ -16,6 +16,8 @@ export interface WorkspaceContext {
   workspaceId: string;
   membershipId?: string;
   userId?: string;
+  principalKind?: string;
+  principalId?: string;
 }
 
 export class MissingWorkspaceContextError extends Error {
@@ -54,6 +56,20 @@ export function requireWorkspaceContext(): WorkspaceContext {
   const ctx = als.getStore();
   if (!ctx) throw new MissingWorkspaceContextError();
   return ctx;
+}
+
+/** Acting principal for Outbox Events and Audit Events (ADR-0013). */
+export function principalProvenance(ctx = requireWorkspaceContext()): {
+  principalKind: string | null;
+  principalId: string | null;
+} {
+  if (ctx.principalKind && ctx.principalId) {
+    return { principalKind: ctx.principalKind, principalId: ctx.principalId };
+  }
+  if (ctx.userId) {
+    return { principalKind: "user", principalId: ctx.userId };
+  }
+  return { principalKind: null, principalId: null };
 }
 
 export function inWorkspace(table: { workspaceId: AnyColumn }) {
