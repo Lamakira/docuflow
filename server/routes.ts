@@ -16,6 +16,7 @@ import { ObjectPermission } from "./objectAcl";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
+import { registerWebhookEndpointRoutes } from "./modules/workspace/http";
 import { registerPublicApiV1 } from "./publicApi/http";
 import mammoth from "mammoth";
 import { 
@@ -133,6 +134,9 @@ export async function registerRoutes(
 
   // Service Accounts (Identity & Access). Session BFF; not /api/v1.
   registerServiceAccountRoutes(app);
+
+  // Webhook Endpoints (Workspace). Session BFF; not /api/v1.
+  registerWebhookEndpointRoutes(app);
 
   // Public `/api/v1` kernel. Service Account keys only (ADR-0011).
   registerPublicApiV1(app);

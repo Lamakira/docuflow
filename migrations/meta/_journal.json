@@ -134,6 +134,13 @@
       "when": 1787318000000,
       "tag": "0018_public_api_capabilities",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787329489288,
+      "tag": "0019_skinny_firebird",
+      "breakpoints": true
     }
   ]
 }

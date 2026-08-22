@@ -149,6 +149,20 @@ describe("domain module layout", () => {
     ]);
   });
 
+  it("gives Workspace Webhook Endpoint tables and APIs", async () => {
+    const { DOMAIN_MODULES } = await loadCatalog();
+    const workspace = DOMAIN_MODULES.find((mod) => mod.id === "workspace");
+    expect(workspace?.tables).toEqual(expect.arrayContaining(["webhook_endpoints"]));
+    expect(Object.keys(workspace?.persistence as object).sort()).toEqual([
+      "createWebhookEndpoint",
+      "disableWebhookEndpoint",
+      "enableWebhookEndpoint",
+      "getWebhookEndpoint",
+      "listWebhookEndpoints",
+      "rotateWebhookEndpointSecret",
+    ]);
+  });
+
   it("gives Intelligence the Index Artifact APIs", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
     const intelligence = DOMAIN_MODULES.find((mod) => mod.id === "intelligence");

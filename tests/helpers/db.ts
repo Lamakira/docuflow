@@ -38,7 +38,8 @@ async function restoreSeededWorkspaceCatalog(): Promise<void> {
       ('clients_read', 'Read Clients'),
       ('clients_write', 'Create Clients'),
       ('projects_read', 'Read Projects'),
-      ('time_entries_read', 'Read Time Entries')
+      ('time_entries_read', 'Read Time Entries'),
+      ('webhook_endpoints_manage', 'Manage Webhook Endpoints')
     ON CONFLICT (id) DO NOTHING;
     INSERT INTO workspaces (id, name)
     VALUES ('seeded', 'DocuFlow')
