@@ -174,6 +174,7 @@ describe("migration journal", () => {
       "0017_busy_warhawk",
       "0018_public_api_capabilities",
       "0019_skinny_firebird",
+      "0020_tricky_masked_marvel",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -201,6 +202,7 @@ describe("migration journal", () => {
       { version: "0017_busy_warhawk", baselined: false },
       { version: "0018_public_api_capabilities", baselined: false },
       { version: "0019_skinny_firebird", baselined: false },
+      { version: "0020_tricky_masked_marvel", baselined: false },
     ]);
   });
 

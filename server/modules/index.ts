@@ -32,6 +32,8 @@ export const INFRASTRUCTURE_TABLES = [
   "scheduler_leases",
   "schema_migrations",
   "public_api_idempotency_keys",
+  "outbox_events",
+  "audit_events",
 ] as const;
 
 export const DOMAIN_MODULES = [

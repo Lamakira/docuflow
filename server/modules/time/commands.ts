@@ -17,6 +17,7 @@ import {
   type TimerCommandPayload,
 } from "@shared/schema";
 import { db, type Db } from "../../db";
+import { appendAllowlistedOutboxEvent } from "../../outbox";
 import { inWorkspace, requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 
 export type TimeWriter = Pick<Db, "insert" | "select" | "update" | "delete">;
@@ -332,6 +333,15 @@ async function stopEntry(writer: TimeWriter, entry: TimeEntry, at: Date): Promis
     .update(timeEntries)
     .set({ status: "stopped", endTime, duration: Math.max(0, duration), updatedAt: endTime })
     .where(timeEntryWhere(entry.id));
+  if (entry.status !== "stopped") {
+    await appendAllowlistedOutboxEvent(writer, {
+      type: "time_entry.stopped",
+      aggregateType: "time_entry",
+      aggregateId: entry.id,
+      payload: { timeEntryId: entry.id },
+      occurredAt: endTime,
+    });
+  }
 }
 
 /**
@@ -375,6 +385,7 @@ async function rematerializeUser(writer: TimeWriter, userId: string): Promise<vo
   for (const row of desired) {
     const current = existing.find((entry) => entry.id === row.id);
     if (current) {
+      const wasStopped = current.status === "stopped";
       await writer
         .update(timeEntries)
         .set({
@@ -391,8 +402,26 @@ async function rematerializeUser(writer: TimeWriter, userId: string): Promise<vo
           updatedAt: closeAt,
         })
         .where(timeEntryWhere(row.id));
+      if (!wasStopped && row.status === "stopped") {
+        await appendAllowlistedOutboxEvent(writer, {
+          type: "time_entry.stopped",
+          aggregateType: "time_entry",
+          aggregateId: row.id,
+          payload: { timeEntryId: row.id },
+          occurredAt: row.endTime ?? closeAt,
+        });
+      }
     } else {
       await writer.insert(timeEntries).values(stampWorkspace(row));
+      if (row.status === "stopped") {
+        await appendAllowlistedOutboxEvent(writer, {
+          type: "time_entry.stopped",
+          aggregateType: "time_entry",
+          aggregateId: row.id,
+          payload: { timeEntryId: row.id },
+          occurredAt: row.endTime ?? closeAt,
+        });
+      }
     }
     if (row.timerCommandId) {
       await writer

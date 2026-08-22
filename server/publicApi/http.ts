@@ -42,7 +42,14 @@ const requireServiceAccount: RequestHandler = async (
         return;
       }
       req.principalContext = ctx;
-      runWithWorkspaceContext({ workspaceId: ctx.workspaceId }, () => next());
+      runWithWorkspaceContext(
+        {
+          workspaceId: ctx.workspaceId,
+          principalKind: ctx.principal.kind,
+          principalId: ctx.principal.serviceAccountId,
+        },
+        () => next()
+      );
     } catch (error) {
       next(error);
     }
