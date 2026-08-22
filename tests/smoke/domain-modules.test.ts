@@ -83,7 +83,7 @@ describe("domain module layout", () => {
   it("does not let Identity, Workspace, Billing, Notifications, or Intelligence own another module's operational tables", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
     const byId = new Map(DOMAIN_MODULES.map((mod) => [mod.id, mod.tables]));
-    expect(byId.get("billing")).toEqual([]);
+    expect(byId.get("billing")).toEqual(["workspace_billing", "workspace_entitlement_overrides"]);
 
     for (const id of SHELLS) {
       const tables = byId.get(id) ?? [];
@@ -124,14 +124,15 @@ describe("domain module layout", () => {
     );
   });
 
-  it("leaves Billing persistence empty until Phase 8", async () => {
+  it("gives Billing the Plan Registry pin and Entitlement APIs", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
     const billing = DOMAIN_MODULES.find((mod) => mod.id === "billing");
-    const persistence = billing?.persistence;
-    expect(typeof persistence, "billing is a shell, not a string label").toBe("object");
-    expect(Object.keys(persistence as object), "billing must not own another module's APIs").toEqual(
-      []
-    );
+    expect(billing?.tables).toEqual(["workspace_billing", "workspace_entitlement_overrides"]);
+    expect(Object.keys(billing?.persistence as object).sort()).toEqual([
+      "effectiveEntitlements",
+      "getBillingProjection",
+      "setEntitlementOverride",
+    ]);
   });
 
   it("gives Identity Service Account tables and PrincipalContext APIs", async () => {

@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { PUBLIC_API_RATE_LIMITS } from "../modules/billing";
+import { effectiveEntitlements, type Entitlements } from "../modules/billing";
 import { sendProblem, RATE_LIMITED } from "./problem";
 import { requestIdOf } from "./trace";
 import type { PublicApiRequest } from "./types";
@@ -30,16 +30,21 @@ function bucketOf(store: Map<string, Bucket>, key: string, now: number): Bucket 
 }
 
 /** Interval-refill token bucket: `limit` tokens per 60s per key. */
-function allow(serviceAccountId: string, workspaceId: string, now = Date.now()): boolean {
+function allow(
+  serviceAccountId: string,
+  workspaceId: string,
+  entitlements: Entitlements,
+  now = Date.now()
+): boolean {
   const sa = bucketOf(serviceAccountBuckets, serviceAccountId, now);
   const ws = bucketOf(workspaceBuckets, workspaceId, now);
   const saOk =
-    now - sa.windowStart >= WINDOW_MS || sa.count < PUBLIC_API_RATE_LIMITS.serviceAccountRequestsPerMinute;
+    now - sa.windowStart >= WINDOW_MS || sa.count < entitlements.serviceAccountRequestsPerMinute;
   const wsOk =
-    now - ws.windowStart >= WINDOW_MS || ws.count < PUBLIC_API_RATE_LIMITS.workspaceRequestsPerMinute;
+    now - ws.windowStart >= WINDOW_MS || ws.count < entitlements.workspaceRequestsPerMinute;
   if (!saOk || !wsOk) return false;
-  take(sa, PUBLIC_API_RATE_LIMITS.serviceAccountRequestsPerMinute, now);
-  take(ws, PUBLIC_API_RATE_LIMITS.workspaceRequestsPerMinute, now);
+  take(sa, entitlements.serviceAccountRequestsPerMinute, now);
+  take(ws, entitlements.workspaceRequestsPerMinute, now);
   return true;
 }
 
@@ -50,17 +55,22 @@ export function resetPublicApiRateBuckets(): void {
 
 /**
  * Token bucket per Service Account plus a per-Workspace aggregate. Limits
- * come from the Billing-shell default until the Plan Registry exists.
+ * come from effective Entitlements (#139).
  */
-export const enforcePublicApiRateLimit: RequestHandler = (req: PublicApiRequest, res, next) => {
+export const enforcePublicApiRateLimit: RequestHandler = async (req: PublicApiRequest, res, next) => {
   const ctx = req.principalContext;
   if (!ctx) {
     next();
     return;
   }
-  if (!allow(ctx.principal.serviceAccountId, ctx.workspaceId)) {
-    sendProblem(res, RATE_LIMITED, req.publicApiRequestId ?? requestIdOf(req));
-    return;
+  try {
+    const entitlements = await effectiveEntitlements();
+    if (!allow(ctx.principal.serviceAccountId, ctx.workspaceId, entitlements)) {
+      sendProblem(res, RATE_LIMITED, req.publicApiRequestId ?? requestIdOf(req));
+      return;
+    }
+    next();
+  } catch (error) {
+    next(error);
   }
-  next();
 };
