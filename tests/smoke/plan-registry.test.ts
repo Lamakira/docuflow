@@ -143,6 +143,9 @@ describe("seeded Workspace pin", () => {
       authorizationVersion: 1,
       stripeCustomerId: null,
       stripeSubscriptionId: null,
+      trialEndsAt: null,
+      periodEndsAt: null,
+      cancelAtPeriodEnd: false,
     });
 
     await expect(inSeededWorkspace(() => effectiveEntitlements())).resolves.toEqual({
