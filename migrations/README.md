@@ -29,6 +29,7 @@ journal is not part of it and is never applied.
 | 0012 | `0012_colossal_nuke.sql` | Splits Opportunity from Project (#114). Adds `opportunities` and `crm_projects.project_status`, backfills sales rows, leaves Internal and documented-only Projects without an Opportunity, and keeps legacy Project ids. Combined `status` stays for HTTP. |
 | 0013 | `0013_old_butterfly.sql` | Splits Document from File (#115). Adds `files` and `company_documents.access`, copies uploaded binaries onto File rows with the same ids and object keys, defaults Document Access to everyone in the Workspace, and drops embeddings for the Index Artifact rebuild. Combined `company_documents` stays for HTTP. |
 | 0014 | `0014_cooing_goblin_queen.sql` | Knowledge object-storage port and Index Artifacts (#116). Adds two-phase upload slots, File scan status and hold, and derived `index_artifacts`. Existing Files stay available on their current object keys. |
+| 0020 | `0020_useful_impossible_man.sql` | Plan Registry billing pin, Entitlement overrides, and Audit Events (#139). Pins the seeded Workspace to Plan `legacy` at registry version 1, Active, with no Stripe objects. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
@@ -166,7 +167,9 @@ Two rules, from ADR-0017:
   from Project in the journal (Spec #112 / #114) because the smoke seam is the
   journal, the same exception class as #92. `0013` splits Document from File
   the same way (Spec #112 / #115). `0014` lands the Knowledge object-storage
-  port and Index Artifact tables the same way (Spec #112 / #116).
+  port and Index Artifact tables the same way (Spec #112 / #116). `0020` pins the
+  seeded Workspace to Plan `legacy` in the journal (#139) so Entitlements exist
+  without a Stripe object.
 - **Expand and contract.** Add the new shape, move the reads and writes, drop
   the old one in a later deploy. Rollback is redeploying the previous image,
   never a down migration, so no migration may make the previous image unable to

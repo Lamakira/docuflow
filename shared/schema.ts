@@ -1922,6 +1922,40 @@ export const webhookEndpoints = pgTable(
 
 export type WebhookEndpoint = typeof webhookEndpoints.$inferSelect;
 
+/**
+ * Workspace billing projection (#139, ADR-0008, ADR-0010). Plan, registry
+ * version, and billing state pin Entitlements. Stripe ids stay null on the
+ * seeded Workspace. Billing owns this table.
+ */
+export const workspaceBilling = pgTable("workspace_billing", {
+  workspaceId: varchar("workspace_id")
+    .primaryKey()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  planKey: varchar("plan_key", { length: 32 }).notNull(),
+  registryVersion: integer("registry_version").notNull(),
+  billingState: varchar("billing_state", { length: 32 }).notNull(),
+  purchasedSeatCapacity: integer("purchased_seat_capacity").notNull(),
+  authorizationVersion: integer("authorization_version").notNull().default(1),
+  stripeCustomerId: varchar("stripe_customer_id"),
+  stripeSubscriptionId: varchar("stripe_subscription_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type WorkspaceBilling = typeof workspaceBilling.$inferSelect;
+
+export const workspaceEntitlementOverrides = pgTable("workspace_entitlement_overrides", {
+  workspaceId: varchar("workspace_id")
+    .primaryKey()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  seatCapacity: integer("seat_capacity"),
+  serviceAccountRequestsPerMinute: integer("service_account_requests_per_minute"),
+  workspaceRequestsPerMinute: integer("workspace_requests_per_minute"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type WorkspaceEntitlementOverride = typeof workspaceEntitlementOverrides.$inferSelect;
+
 export const membershipCapabilitiesRelations = relations(membershipCapabilities, ({ one }) => ({
   membership: one(memberships, {
     fields: [membershipCapabilities.membershipId],
@@ -2153,6 +2187,31 @@ export const publicApiIdempotencyKeys = pgTable(
 );
 
 export type PublicApiIdempotencyKey = typeof publicApiIdempotencyKeys.$inferSelect;
+
+/**
+ * Append-only Audit Event (#139). Evidence of a security-relevant action,
+ * never an Outbox Event. Not updated or deleted in place.
+ */
+export const auditEvents = pgTable(
+  "audit_events",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    workspaceId: workspaceIdColumn(),
+    actorKind: varchar("actor_kind", { length: 32 }).notNull(),
+    actorId: varchar("actor_id"),
+    action: varchar("action", { length: 100 }).notNull(),
+    resourceType: varchar("resource_type", { length: 100 }).notNull(),
+    resourceId: varchar("resource_id"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_audit_events_workspace_created").on(table.workspaceId, table.createdAt),
+    idInWorkspace(table, "audit_events"),
+  ]
+);
+
+export type AuditEvent = typeof auditEvents.$inferSelect;
 
 // ─── Daily Update status set (single source of truth for form + admin dashboard) ───
 // Combines project-management statuses with predefined progress statuses.

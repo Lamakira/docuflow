@@ -55,6 +55,12 @@ async function restoreSeededWorkspaceCatalog(): Promise<void> {
       FROM workspace_roles
      WHERE workspace_id = 'seeded' AND slug IN ('owner', 'administrator')
     ON CONFLICT (workspace_role_id, capability_id) DO NOTHING;
+    INSERT INTO workspace_billing (
+      workspace_id, plan_key, registry_version, billing_state,
+      purchased_seat_capacity, authorization_version
+    )
+    VALUES ('seeded', 'legacy', 1, 'Active', 500, 1)
+    ON CONFLICT (workspace_id) DO NOTHING;
   `);
 }
 

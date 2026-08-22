@@ -1,5 +1,6 @@
 /**
- * Billing is a shell in Phase 6. The data model is Phase 8.
- * This module must not own another module's tables.
+ * Billing's slice of `IStorage` stays empty: Entitlement APIs live on the
+ * billing module, not on `postgresStorage` (#139). This module must not own
+ * another module's tables.
  */
 export interface BillingPersistence {}
