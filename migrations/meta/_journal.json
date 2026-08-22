@@ -148,6 +148,13 @@
       "when": 1787389563365,
       "tag": "0020_useful_impossible_man",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787407224045,
+      "tag": "0021_tiny_scrambler",
+      "breakpoints": true
     }
   ]
 }

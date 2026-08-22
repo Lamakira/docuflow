@@ -35,6 +35,7 @@ import {
   ingestActivityScreenshot,
 } from "./modules/activity/evidenceJobs";
 import { applyTimerCommand, nextTimerSequence } from "./modules/time/commands";
+import { gateSessionWrite } from "./modules/billing/sessionWriteGate";
 import {
   ArchivedMembershipError,
   NoActiveMembershipError,
@@ -144,7 +145,7 @@ async function isAgentAuthenticated(req: AgentAuthRequest, res: Response, next: 
   try {
     const ctx = await contextFromDevice(claims.deviceId, claims.userId);
     if (!allowAgentProtocol(req, res)) return;
-    runWithWorkspaceContext(ctx, () => next());
+    return runWithWorkspaceContext(ctx, () => gateSessionWrite(req, res, next));
   } catch (error) {
     if (error instanceof ArchivedMembershipError || error instanceof NoActiveMembershipError) {
       res.status(401).json({ message: "Unauthorized" });

@@ -41,6 +41,9 @@ export type BillingProjection = {
   authorizationVersion: number;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
+  trialEndsAt: Date | null;
+  periodEndsAt: Date | null;
+  cancelAtPeriodEnd: boolean;
 };
 
 export type AuditActor = {
@@ -118,8 +121,19 @@ async function loadPin() {
   return row;
 }
 
-export async function getBillingProjection(): Promise<BillingProjection> {
-  const row = await loadPin();
+export function billingProjectionOf(row: {
+  workspaceId: string;
+  planKey: string;
+  registryVersion: number;
+  billingState: string;
+  purchasedSeatCapacity: number;
+  authorizationVersion: number;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  trialEndsAt: Date | null;
+  periodEndsAt: Date | null;
+  cancelAtPeriodEnd: boolean;
+}): BillingProjection {
   return {
     workspaceId: row.workspaceId,
     planKey: asPlanKey(row.planKey),
@@ -129,7 +143,14 @@ export async function getBillingProjection(): Promise<BillingProjection> {
     authorizationVersion: row.authorizationVersion,
     stripeCustomerId: row.stripeCustomerId ?? null,
     stripeSubscriptionId: row.stripeSubscriptionId ?? null,
+    trialEndsAt: row.trialEndsAt ?? null,
+    periodEndsAt: row.periodEndsAt ?? null,
+    cancelAtPeriodEnd: row.cancelAtPeriodEnd,
   };
+}
+
+export async function getBillingProjection(): Promise<BillingProjection> {
+  return billingProjectionOf(await loadPin());
 }
 
 export async function effectiveEntitlements(): Promise<Entitlements> {

@@ -1,5 +1,13 @@
 import type { BillingPersistence } from "./persistence";
 import {
+  applyPeriodEnd,
+  cancelAtPeriodEnd,
+  exhaustDunning,
+  expireTrial,
+  markPastDue,
+  startTrial,
+} from "./stateMachine";
+import {
   effectiveEntitlements,
   getBillingProjection,
   setEntitlementOverride,
@@ -34,6 +42,22 @@ export {
   getBillingProjection,
   setEntitlementOverride,
 } from "./entitlements";
+export {
+  InvalidBillingTransitionError,
+  applyPeriodEnd,
+  cancelAtPeriodEnd,
+  exhaustDunning,
+  expireTrial,
+  markPastDue,
+  startTrial,
+} from "./stateMachine";
+export {
+  ReadOnlyWorkspaceError,
+  SeatExhaustedError,
+  assertOperationalWrite,
+  assertWriteClass,
+} from "./writeClassification";
+export type { WriteClass } from "./writeClassification";
 
 export const BILLING_TABLES = ["workspace_billing", "workspace_entitlement_overrides"] as const;
 
@@ -44,12 +68,24 @@ export interface BillingEntitlementsPersistence {
     values: EntitlementOverrideValues,
     actor: AuditActor
   ): Promise<Entitlements>;
+  startTrial: typeof startTrial;
+  expireTrial: typeof expireTrial;
+  markPastDue: typeof markPastDue;
+  exhaustDunning: typeof exhaustDunning;
+  cancelAtPeriodEnd: typeof cancelAtPeriodEnd;
+  applyPeriodEnd: typeof applyPeriodEnd;
 }
 
 export const billingPersistence: BillingEntitlementsPersistence = {
   getBillingProjection,
   effectiveEntitlements,
   setEntitlementOverride,
+  startTrial,
+  expireTrial,
+  markPastDue,
+  exhaustDunning,
+  cancelAtPeriodEnd,
+  applyPeriodEnd,
 };
 
 export const billingModule = {
