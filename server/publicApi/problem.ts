@@ -42,6 +42,18 @@ export const RATE_LIMITED: Problem = {
   status: 429,
 };
 
+export const READ_ONLY_WORKSPACE: Problem = {
+  type: "urn:docuflow:problem:read-only-workspace",
+  title: "Read-only Workspace",
+  status: 403,
+};
+
+export const SEAT_EXHAUSTED: Problem = {
+  type: "urn:docuflow:problem:seat-exhausted",
+  title: "Billable Seat capacity is exhausted",
+  status: 409,
+};
+
 export const INTERNAL: Problem = {
   type: "urn:docuflow:problem:internal",
   title: "Internal Server Error",

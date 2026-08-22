@@ -8,6 +8,7 @@ import { registerPublicApiV1WebhookEndpoints } from "./webhookEndpoints";
 import { honorIdempotencyKey } from "./idempotency";
 import { sendProblem, INTERNAL, NOT_FOUND, UNAUTHORIZED } from "./problem";
 import { enforcePublicApiRateLimit } from "./rateLimit";
+import { enforceOperationalWrite } from "./writeClass";
 import { requestIdOf, runWithRequestTrace } from "./trace";
 import type { PublicApiRequest } from "./types";
 
@@ -56,6 +57,7 @@ const requireServiceAccount: RequestHandler = async (
 export function registerPublicApiV1(app: Express): void {
   const router = Router();
   router.use(requireServiceAccount);
+  router.use(enforceOperationalWrite);
   router.use(enforcePublicApiRateLimit);
   router.use(honorIdempotencyKey);
   router.get("/", (_req, res) => {

@@ -1938,6 +1938,9 @@ export const workspaceBilling = pgTable("workspace_billing", {
   authorizationVersion: integer("authorization_version").notNull().default(1),
   stripeCustomerId: varchar("stripe_customer_id"),
   stripeSubscriptionId: varchar("stripe_subscription_id"),
+  trialEndsAt: timestamp("trial_ends_at"),
+  periodEndsAt: timestamp("period_ends_at"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

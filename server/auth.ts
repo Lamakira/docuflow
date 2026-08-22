@@ -8,6 +8,7 @@ import passport from "passport";
 import memoize from "memoizee";
 import { storage } from "./storage";
 import { config, mcpApiKey } from "./config";
+import { gateSessionWrite } from "./modules/billing/sessionWriteGate";
 import {
   ArchivedMembershipError,
   NoActiveMembershipError,
@@ -238,7 +239,7 @@ async function enterWorkspace(req: any, res: any, next: (err?: unknown) => void)
   }
   try {
     const ctx = await contextFromUser(userId);
-    runWithWorkspaceContext(ctx, () => next());
+    return runWithWorkspaceContext(ctx, () => gateSessionWrite(req, res, next));
   } catch (error) {
     if (error instanceof ArchivedMembershipError || error instanceof NoActiveMembershipError) {
       return res.status(401).json({ message: "Unauthorized" });
