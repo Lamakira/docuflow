@@ -124,19 +124,22 @@ describe("domain module layout", () => {
     );
   });
 
-  it("gives Billing the Plan Registry pin, Entitlements, and billing state machine", async () => {
+  it("gives Billing the Plan Registry pin, Entitlements, state machine, and Billable Seats", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
     const billing = DOMAIN_MODULES.find((mod) => mod.id === "billing");
     expect(billing?.tables).toEqual(["workspace_billing", "workspace_entitlement_overrides"]);
     expect(Object.keys(billing?.persistence as object).sort()).toEqual([
       "applyPeriodEnd",
+      "assertSeatAvailable",
       "cancelAtPeriodEnd",
+      "countConsumedSeats",
       "effectiveEntitlements",
       "exhaustDunning",
       "expireTrial",
       "getBillingProjection",
       "markPastDue",
       "setEntitlementOverride",
+      "setPurchasedSeatCapacity",
       "startTrial",
     ]);
   });
