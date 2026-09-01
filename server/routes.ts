@@ -18,6 +18,7 @@ import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
 import { registerWebhookEndpointRoutes } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
+import { SeatExhaustedError } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
 import mammoth from "mammoth";
 import { 
@@ -208,6 +209,9 @@ export async function registerRoutes(
       const { password: _, ...safeUser } = user;
       res.status(201).json(safeUser);
     } catch (error) {
+      if (error instanceof SeatExhaustedError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
       console.error("Error registering user:", error);
       res.status(500).json({ message: "Failed to register user" });
     }
@@ -2950,6 +2954,9 @@ Instructions:
         emailError: emailResult.error
       });
     } catch (error) {
+      if (error instanceof SeatExhaustedError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
       console.error("Error creating user:", error);
       res.status(500).json({ message: "Failed to create user" });
     }
@@ -2968,6 +2975,9 @@ Instructions:
       const updated = await storage.archiveUser(req.params.id, isArchived);
       res.json(updated);
     } catch (error) {
+      if (error instanceof SeatExhaustedError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
       console.error("Error archiving user:", error);
       res.status(500).json({ message: "Failed to archive user" });
     }

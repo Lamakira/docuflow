@@ -15,6 +15,11 @@ import {
   type BillingProjection,
 } from "./entitlements";
 import type { EntitlementOverrideValues, Entitlements } from "./planRegistry";
+import {
+  assertSeatAvailable,
+  countConsumedSeats,
+  setPurchasedSeatCapacity,
+} from "./seats";
 
 export type { BillingPersistence };
 export type {
@@ -58,6 +63,12 @@ export {
   assertWriteClass,
 } from "./writeClassification";
 export type { WriteClass } from "./writeClassification";
+export {
+  SeatCapacityFloorError,
+  assertSeatAvailable,
+  countConsumedSeats,
+  setPurchasedSeatCapacity,
+} from "./seats";
 
 export const BILLING_TABLES = ["workspace_billing", "workspace_entitlement_overrides"] as const;
 
@@ -68,6 +79,9 @@ export interface BillingEntitlementsPersistence {
     values: EntitlementOverrideValues,
     actor: AuditActor
   ): Promise<Entitlements>;
+  countConsumedSeats: typeof countConsumedSeats;
+  assertSeatAvailable: typeof assertSeatAvailable;
+  setPurchasedSeatCapacity: typeof setPurchasedSeatCapacity;
   startTrial: typeof startTrial;
   expireTrial: typeof expireTrial;
   markPastDue: typeof markPastDue;
@@ -80,6 +94,9 @@ export const billingPersistence: BillingEntitlementsPersistence = {
   getBillingProjection,
   effectiveEntitlements,
   setEntitlementOverride,
+  countConsumedSeats,
+  assertSeatAvailable,
+  setPurchasedSeatCapacity,
   startTrial,
   expireTrial,
   markPastDue,

@@ -115,6 +115,7 @@ import { db } from "../db";
 import {
   currentWorkspaceContext,
   inWorkspace,
+  runWithWorkspaceContext,
   stampWorkspace,
 } from "../workspaceContext";
 
@@ -146,6 +147,7 @@ import {
 import { getScreenshotPolicy, upsertScreenshotPolicy } from "./activity/policy";
 import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
+import { assertSeatAvailable } from "./billing/seats";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
@@ -160,12 +162,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(userData: InsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .returning();
-    await this.ensureSeededMembership(user);
-    return user;
+    return db.transaction(async (tx) => {
+      const [user] = await tx.insert(users).values(userData).returning();
+      await this.ensureSeededMembership(user, tx);
+      return user;
+    });
   }
 
   async upsertUser(userData: { id: string; email?: string | null; firstName?: string | null; lastName?: string | null; profileImageUrl?: string | null }): Promise<User> {
@@ -223,17 +224,30 @@ export class DatabaseStorage implements IStorage {
   /**
    * New Users join the seeded Workspace. Identity is global; the Membership is
    * the Active Workspace for this phase. Not taken from request input.
+   * Adding a Membership fails closed when Billable Seat capacity is exhausted.
    */
-  private async ensureSeededMembership(user: User): Promise<void> {
-    await db
-      .insert(memberships)
-      .values({
-        workspaceId: SEEDED_WORKSPACE_ID,
-        userId: user.id,
-        workspaceRoleId: SEEDED_MEMBER_ROLE_ID,
-        archivedAt: user.isArchived ? new Date() : null,
-      })
-      .onConflictDoNothing();
+  private async ensureSeededMembership(
+    user: User,
+    writer: Pick<typeof db, "insert" | "select"> = db
+  ): Promise<void> {
+    await runWithWorkspaceContext({ workspaceId: SEEDED_WORKSPACE_ID }, async () => {
+      const [existing] = await writer
+        .select({ id: memberships.id })
+        .from(memberships)
+        .where(and(eq(memberships.workspaceId, SEEDED_WORKSPACE_ID), eq(memberships.userId, user.id)))
+        .limit(1);
+      if (existing) return;
+      if (!user.isArchived) await assertSeatAvailable(writer);
+      await writer
+        .insert(memberships)
+        .values({
+          workspaceId: SEEDED_WORKSPACE_ID,
+          userId: user.id,
+          workspaceRoleId: SEEDED_MEMBER_ROLE_ID,
+          archivedAt: user.isArchived ? new Date() : null,
+        })
+        .onConflictDoNothing();
+    });
   }
 
   async getProjects(userId?: string): Promise<Project[]> {
@@ -1292,6 +1306,36 @@ export class DatabaseStorage implements IStorage {
   }
 
   async archiveUser(userId: string, isArchived: boolean): Promise<SafeUser | undefined> {
+    if (!isArchived) {
+      return db.transaction(async (tx) => {
+        const restored = await runWithWorkspaceContext(
+          { workspaceId: SEEDED_WORKSPACE_ID },
+          async () => {
+            const [membership] = await tx
+              .select({ archivedAt: memberships.archivedAt })
+              .from(memberships)
+              .where(
+                and(eq(memberships.workspaceId, SEEDED_WORKSPACE_ID), eq(memberships.userId, userId))
+              )
+              .limit(1);
+            if (membership?.archivedAt) await assertSeatAvailable(tx);
+            const [updated] = await tx
+              .update(users)
+              .set({ isArchived: false, updatedAt: new Date() })
+              .where(eq(users.id, userId))
+              .returning();
+            if (updated) {
+              await tx
+                .update(memberships)
+                .set({ archivedAt: null, updatedAt: new Date() })
+                .where(eq(memberships.userId, userId));
+            }
+            return updated;
+          }
+        );
+        return restored;
+      });
+    }
     const [updated] = await db
       .update(users)
       .set({ isArchived, updatedAt: new Date() })
@@ -1300,7 +1344,7 @@ export class DatabaseStorage implements IStorage {
     if (updated) {
       await db
         .update(memberships)
-        .set({ archivedAt: isArchived ? new Date() : null, updatedAt: new Date() })
+        .set({ archivedAt: new Date(), updatedAt: new Date() })
         .where(eq(memberships.userId, userId));
     }
     return updated;
