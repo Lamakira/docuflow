@@ -14,6 +14,7 @@ export default defineConfig({
       openai: fake("openai.ts"),
       resend: fake("resend.ts"),
       playwright: fake("playwright.ts"),
+      stripe: fake("stripe.ts"),
     },
   },
   test: {
