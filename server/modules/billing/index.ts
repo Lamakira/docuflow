@@ -22,6 +22,21 @@ import {
   countConsumedSeats,
   setPurchasedSeatCapacity,
 } from "./seats";
+import {
+  BILLING_DRIFT_JOB,
+  BILLING_DRIFT_JOB_TYPE,
+  BILLING_PROJECT_JOB,
+  BILLING_PROJECT_JOB_TYPE,
+  UnknownBillingWebhookError,
+  createBillingJobsPort,
+  handleBillingDriftJob,
+  handleProjectBillingJob,
+  ingestBillingWebhook,
+  projectWebhookOccurrenceKey,
+  driftOccurrenceKey,
+  enqueueBillingDriftJobs,
+  type IngestBillingWebhookResult,
+} from "./projectionJobs";
 
 export type { BillingPersistence };
 export type {
@@ -86,11 +101,31 @@ export {
   BillingWebhookSignatureError,
 } from "./billingProvider";
 export { billingProviderFromAppConfig, createBillingProvider } from "./createBillingProvider";
+export {
+  BILLING_DRIFT_JOB,
+  BILLING_DRIFT_JOB_TYPE,
+  BILLING_PROJECT_JOB,
+  BILLING_PROJECT_JOB_TYPE,
+  UnknownBillingWebhookError,
+  createBillingJobsPort,
+  handleBillingDriftJob,
+  handleProjectBillingJob,
+  ingestBillingWebhook,
+  projectWebhookOccurrenceKey,
+  driftOccurrenceKey,
+  enqueueBillingDriftJobs,
+  type IngestBillingWebhookResult,
+} from "./projectionJobs";
+export { applyProviderSubscription, billingStateFromCollection } from "./projection";
 
 /** Process-wide BillingProvider. Missing Stripe credentials fail closed on money movement. */
 export const billingProvider = billingProviderFromAppConfig(config.billing);
 
-export const BILLING_TABLES = ["workspace_billing", "workspace_entitlement_overrides"] as const;
+export const BILLING_TABLES = [
+  "workspace_billing",
+  "workspace_entitlement_overrides",
+  "billing_webhook_inbox",
+] as const;
 
 export interface BillingEntitlementsPersistence {
   getBillingProjection(): Promise<BillingProjection>;
@@ -108,6 +143,7 @@ export interface BillingEntitlementsPersistence {
   exhaustDunning: typeof exhaustDunning;
   cancelAtPeriodEnd: typeof cancelAtPeriodEnd;
   applyPeriodEnd: typeof applyPeriodEnd;
+  ingestBillingWebhook: typeof ingestBillingWebhook;
 }
 
 export const billingPersistence: BillingEntitlementsPersistence = {
@@ -123,6 +159,7 @@ export const billingPersistence: BillingEntitlementsPersistence = {
   exhaustDunning,
   cancelAtPeriodEnd,
   applyPeriodEnd,
+  ingestBillingWebhook,
 };
 
 export const billingModule = {

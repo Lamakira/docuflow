@@ -110,9 +110,19 @@ export function startWorkerLoop(options?: {
       handleAttributeEvidenceJob,
     } = await import("./modules/activity/evidenceJobs");
     const {
+      BILLING_DRIFT_JOB,
+      BILLING_DRIFT_JOB_TYPE,
+      BILLING_PROJECT_JOB,
+      BILLING_PROJECT_JOB_TYPE,
+      billingProvider,
+      handleBillingDriftJob,
+      handleProjectBillingJob,
+    } = await import("./modules/billing");
+    const {
       createDueReminderScheduler,
       createStaleTimerScheduler,
       createDailyUpdateNudgeScheduler,
+      createBillingDriftScheduler,
     } = await import("./scheduler");
 
     const jobs = createJobsPort({
@@ -124,6 +134,8 @@ export function startWorkerLoop(options?: {
         [DOCUMENT_EMBED_JOB]: DOCUMENT_EMBED_JOB_TYPE,
         [DOCUMENT_TRANSCRIPT_JOB]: DOCUMENT_TRANSCRIPT_JOB_TYPE,
         [ACTIVITY_ATTRIBUTE_JOB]: ACTIVITY_ATTRIBUTE_JOB_TYPE,
+        [BILLING_PROJECT_JOB]: BILLING_PROJECT_JOB_TYPE,
+        [BILLING_DRIFT_JOB]: BILLING_DRIFT_JOB_TYPE,
       },
     });
     const runner = createJobRunner({
@@ -136,6 +148,8 @@ export function startWorkerLoop(options?: {
         [DOCUMENT_EMBED_JOB]: handleDocumentEmbedJob,
         [DOCUMENT_TRANSCRIPT_JOB]: handleDocumentTranscriptJob,
         [ACTIVITY_ATTRIBUTE_JOB]: handleAttributeEvidenceJob,
+        [BILLING_PROJECT_JOB]: (job) => handleProjectBillingJob(job, billingProvider),
+        [BILLING_DRIFT_JOB]: (job) => handleBillingDriftJob(job, billingProvider),
       },
       claimerId,
     });
@@ -143,6 +157,7 @@ export function startWorkerLoop(options?: {
       createDueReminderScheduler({ role: "worker", jobs, holderId: claimerId }),
       createStaleTimerScheduler({ role: "worker", jobs, holderId: claimerId }),
       createDailyUpdateNudgeScheduler({ role: "worker", jobs, holderId: claimerId }),
+      createBillingDriftScheduler({ role: "worker", jobs, holderId: claimerId }),
     ];
 
     let lastTick = 0;

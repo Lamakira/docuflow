@@ -83,7 +83,11 @@ describe("domain module layout", () => {
   it("does not let Identity, Workspace, Billing, Notifications, or Intelligence own another module's operational tables", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
     const byId = new Map(DOMAIN_MODULES.map((mod) => [mod.id, mod.tables]));
-    expect(byId.get("billing")).toEqual(["workspace_billing", "workspace_entitlement_overrides"]);
+    expect(byId.get("billing")).toEqual([
+      "workspace_billing",
+      "workspace_entitlement_overrides",
+      "billing_webhook_inbox",
+    ]);
 
     for (const id of SHELLS) {
       const tables = byId.get(id) ?? [];
@@ -127,7 +131,11 @@ describe("domain module layout", () => {
   it("gives Billing the Plan Registry pin, Entitlements, state machine, and Billable Seats", async () => {
     const { DOMAIN_MODULES } = await loadCatalog();
     const billing = DOMAIN_MODULES.find((mod) => mod.id === "billing");
-    expect(billing?.tables).toEqual(["workspace_billing", "workspace_entitlement_overrides"]);
+    expect(billing?.tables).toEqual([
+      "workspace_billing",
+      "workspace_entitlement_overrides",
+      "billing_webhook_inbox",
+    ]);
     expect(Object.keys(billing?.persistence as object).sort()).toEqual([
       "applyPeriodEnd",
       "assertSeatAvailable",
@@ -137,6 +145,7 @@ describe("domain module layout", () => {
       "exhaustDunning",
       "expireTrial",
       "getBillingProjection",
+      "ingestBillingWebhook",
       "markPastDue",
       "setEntitlementOverride",
       "setPurchasedSeatCapacity",

@@ -155,6 +155,13 @@
       "when": 1787407224045,
       "tag": "0021_tiny_scrambler",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1788343079621,
+      "tag": "0022_mysterious_robin_chapel",
+      "breakpoints": true
     }
   ]
 }
