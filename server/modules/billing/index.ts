@@ -1,4 +1,6 @@
 import type { BillingPersistence } from "./persistence";
+import { config } from "../../config";
+import { billingProviderFromAppConfig } from "./createBillingProvider";
 import {
   applyPeriodEnd,
   cancelAtPeriodEnd,
@@ -69,6 +71,24 @@ export {
   countConsumedSeats,
   setPurchasedSeatCapacity,
 } from "./seats";
+export type {
+  BillingProvider,
+  BillingProviderConfig,
+  CheckoutRequest,
+  CollectionState,
+  HostedBillingSession,
+  ProviderSubscription,
+  WebhookEvent,
+} from "./billingProvider";
+export {
+  BillingProviderClosedError,
+  BillingProviderError,
+  BillingWebhookSignatureError,
+} from "./billingProvider";
+export { billingProviderFromAppConfig, createBillingProvider } from "./createBillingProvider";
+
+/** Process-wide BillingProvider. Missing Stripe credentials fail closed on money movement. */
+export const billingProvider = billingProviderFromAppConfig(config.billing);
 
 export const BILLING_TABLES = ["workspace_billing", "workspace_entitlement_overrides"] as const;
 

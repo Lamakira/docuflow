@@ -63,6 +63,7 @@ module knows it is under test:
 | `openai`                | `tests/fakes/openai.ts` | Deterministic bag-of-words embeddings, canned chat and Whisper replies, call log. |
 | `resend`                | `tests/fakes/resend.ts` | Always-succeeding delivery into an inspectable outbox.                        |
 | `playwright`            | `tests/fakes/playwright.ts` | `launch()` throws by default. The transcript-browser suite opts into a response/page fake to verify Loom's listener timing and fallback suppression without opening a browser or reaching a provider. |
+| `stripe`                | `tests/fakes/stripe.ts`  | Checkout Sessions, Subscription retrieve, and webhook `constructEvent` in memory. CI never reaches api.stripe.com. The BillingProvider port fake is `tests/fakes/billingProvider.ts`. |
 
 One provider boundary is crossed with a raw `fetch` rather than an SDK: the signed
 storage URL itself, which the server PUTs to when it relays a desktop-agent
@@ -72,7 +73,7 @@ in-memory bucket `tests/fakes/gcs.ts` serves from) and makes every **other** `fe
 throw, so a suite cannot quietly reach a real service. Postgres and supertest do
 not use `fetch`, so nothing legitimate is blocked.
 
-All four fakes are module-level singletons; `tests/setup.ts` resets them in a
+All five vendor fakes are module-level singletons; `tests/setup.ts` resets them in a
 global `beforeEach` alongside the database.
 
 ## Safety (ADR-0018)

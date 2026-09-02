@@ -63,6 +63,14 @@ export interface EmailConfig {
   fromAddress: string;
 }
 
+export interface BillingConfig {
+  /** Absent means Checkout and other money movement fail closed. */
+  secretKey?: string;
+  webhookSecret?: string;
+  /** Stripe Price id for Plan `pro`. Other Plans have no Stripe objects. */
+  pricePro?: string;
+}
+
 export interface DesktopTokenConfig {
   /** Signs every access token this process issues. */
   current: SigningKey;
@@ -114,6 +122,7 @@ export interface AppConfig {
   desktopTokens: DesktopTokenConfig;
   objectStorage: ObjectStorageConfig;
   email: EmailConfig;
+  billing: BillingConfig;
   /** Absolute base URL this deployment is reached at, used in outbound email links. */
   appUrl: string;
   openaiApiKey?: string;
@@ -539,6 +548,20 @@ function resolveHttpBackgroundIntervals(): boolean {
   return raw !== "0" && raw !== "false" && raw !== "off";
 }
 
+function resolveBilling(missing: string[]): BillingConfig {
+  const secretKey = read("STRIPE_SECRET_KEY");
+  if (secretKey && !secretKey.startsWith("sk_test_")) {
+    missing.push(
+      "STRIPE_SECRET_KEY must be a test-mode key (sk_test_…) — this environment never holds a live Stripe account (ADR-0018)"
+    );
+  }
+  return {
+    secretKey,
+    webhookSecret: read("STRIPE_WEBHOOK_SECRET"),
+    pricePro: read("STRIPE_PRICE_PRO"),
+  };
+}
+
 function resolveConfig(): AppConfig {
   // Read as a static member expression: the production bundle replaces exactly
   // this text with a literal (see script/bundles.ts), which a dynamic lookup misses.
@@ -551,6 +574,7 @@ function resolveConfig(): AppConfig {
   const telemetry = resolveTelemetry(nodeEnv);
   const missing: string[] = [];
   const role = resolveRole(missing);
+  const billing = resolveBilling(missing);
 
   missing.push(
     ...database.missing,
@@ -584,6 +608,7 @@ function resolveConfig(): AppConfig {
       apiKey: read("RESEND_API_KEY"),
       fromAddress: read("RESEND_FROM_EMAIL") ?? DEFAULT_FROM_ADDRESS,
     },
+    billing,
     appUrl: resolveAppUrl(),
     openaiApiKey: read("OPENAI_API_KEY"),
     fathomApiKey: read("FATHOM_API_KEY"),
@@ -653,6 +678,7 @@ export function logConfigSummary(): void {
       `object storage via ${storageCredentialMode()}, ` +
       `desktop tokens on key ${desktopTokenKeys()}, ` +
       `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
+      `Stripe ${config.billing.secretKey ? "enabled" : "unconfigured"}, ` +
       `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}, ` +
       `transcript browser ${config.chromiumPath ?? "as Playwright resolves it"}, ` +
       `telemetry ${telemetryDestination()}, ` +

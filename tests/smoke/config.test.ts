@@ -47,6 +47,9 @@ const CONFIG_VARS = [
   "ALLOW_REMOTE_OTLP",
   "DOCUFLOW_ROLE",
   "DOCUFLOW_HTTP_BACKGROUND_INTERVALS",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "STRIPE_PRICE_PRO",
 ] as const;
 
 /** The smallest environment that boots: one of each required variable. */
@@ -670,5 +673,63 @@ describe("config — process role and HTTP intervals", () => {
   it("refuses an unknown process role", async () => {
     const error = await load({ ...BOOTABLE, DOCUFLOW_ROLE: "autoscale" }).catch((e: Error) => e);
     expect((error as Error).message).toContain('DOCUFLOW_ROLE is "autoscale"');
+  });
+});
+
+describe("config — Stripe billing", () => {
+  it("boots without Stripe credentials and leaves billing unconfigured", async () => {
+    const { config, logConfigSummary } = await load(BOOTABLE);
+
+    expect(config.billing).toEqual({
+      secretKey: undefined,
+      webhookSecret: undefined,
+      pricePro: undefined,
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      logConfigSummary();
+      expect(spy.mock.calls.flat().join("\n")).toContain("Stripe unconfigured");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("enables Stripe from optional test-mode credentials without putting Price ids on the boot line", async () => {
+    const { config, logConfigSummary } = await load({
+      ...BOOTABLE,
+      STRIPE_SECRET_KEY: "sk_test_not-a-real-key",
+      STRIPE_WEBHOOK_SECRET: "whsec_not-a-real-secret",
+      STRIPE_PRICE_PRO: "price_pro_test",
+    });
+
+    expect(config.billing).toEqual({
+      secretKey: "sk_test_not-a-real-key",
+      webhookSecret: "whsec_not-a-real-secret",
+      pricePro: "price_pro_test",
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      logConfigSummary();
+      const line = spy.mock.calls.flat().join("\n");
+      expect(line).toContain("Stripe enabled");
+      expect(line).not.toContain("sk_test_not-a-real-key");
+      expect(line).not.toContain("whsec_not-a-real-secret");
+      expect(line).not.toContain("price_pro_test");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("refuses a live Stripe secret key at boot", async () => {
+    const error = await load({
+      ...BOOTABLE,
+      STRIPE_SECRET_KEY: "sk_live_not-allowed",
+    }).catch((e: Error) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("STRIPE_SECRET_KEY");
+    expect((error as Error).message).toContain("sk_test_");
   });
 });

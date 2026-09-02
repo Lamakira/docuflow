@@ -4,6 +4,7 @@ import { resolveTestDatabaseUrl } from "./test-db-url";
 import { resetGcs } from "./fakes/gcs";
 import { resetOpenAi } from "./fakes/openai";
 import { resetEmails } from "./fakes/resend";
+import { resetStripe } from "./fakes/stripe";
 import { installNetworkFake } from "./fakes/network";
 
 // Environment must be fixed BEFORE any server module loads — `server/config.ts`
@@ -40,6 +41,11 @@ process.env.RESEND_FROM_EMAIL = "DocuFlow <noreply@docuflow.test>";
 // token may be inherited from a developer's shell; each suite sets what it needs.
 delete process.env.MCP_API_KEY;
 delete process.env.DESKTOP_RELEASE_CI_TOKEN;
+// Live Stripe credentials must not reach the harness (ADR-0018). Missing
+// credentials are the default: Entitlement reads still succeed, Checkout fails closed.
+delete process.env.STRIPE_SECRET_KEY;
+delete process.env.STRIPE_WEBHOOK_SECRET;
+delete process.env.STRIPE_PRICE_PRO;
 // Likewise the browser the transcript scraper would launch (#37): a developer
 // with PLAYWRIGHT_CHROMIUM_PATH exported would otherwise run these suites with
 // launch options no other machine produces.
@@ -64,6 +70,7 @@ beforeEach(() => {
   resetGcs();
   resetOpenAi();
   resetEmails();
+  resetStripe();
 });
 
 afterAll(async () => {
