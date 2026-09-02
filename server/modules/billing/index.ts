@@ -82,9 +82,12 @@ export {
 export type { WriteClass } from "./writeClassification";
 export {
   SeatCapacityFloorError,
+  SeatChangeUnavailableError,
   assertSeatAvailable,
   countConsumedSeats,
   setPurchasedSeatCapacity,
+  changeSeats,
+  applyPendingSeatDecrease,
 } from "./seats";
 export type {
   BillingProvider,
@@ -92,7 +95,11 @@ export type {
   CheckoutRequest,
   CollectionState,
   HostedBillingSession,
+  ProviderCheckoutSession,
   ProviderSubscription,
+  SeatQuantityUpdate,
+  SeatProration,
+  PaymentMethodUpdateRequest,
   WebhookEvent,
 } from "./billingProvider";
 export {
@@ -117,6 +124,16 @@ export {
   type IngestBillingWebhookResult,
 } from "./projectionJobs";
 export { applyProviderSubscription, billingStateFromCollection } from "./projection";
+export {
+  SeededWorkspaceCheckoutError,
+  InvalidCheckoutError,
+  PaymentMethodUpdateUnavailableError,
+  canManageBilling,
+  getSubscriptionStatus,
+  startCheckout,
+  startPaymentMethodUpdate,
+} from "./checkout";
+export type { StartCheckoutInput, StartPaymentMethodUpdateInput, SubscriptionStatus } from "./checkout";
 
 /** Process-wide BillingProvider. Missing Stripe credentials fail closed on money movement. */
 export const billingProvider = billingProviderFromAppConfig(config.billing);

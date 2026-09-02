@@ -24,6 +24,7 @@ export type FakeSubscription = {
   cancel_at_period_end: boolean;
   items: {
     data: Array<{
+      id?: string;
       quantity: number;
       current_period_end: number;
       price: { id: string };
@@ -31,7 +32,20 @@ export type FakeSubscription = {
   };
 };
 
+export type SubscriptionUpdateParams = {
+  items?: Array<{ id?: string; quantity?: number }>;
+  proration_behavior?: string;
+};
+
+export type BillingPortalCreateParams = {
+  customer?: string;
+  return_url?: string;
+  flow_data?: { type?: string };
+};
+
 const checkoutSessionCreates: CheckoutCreateParams[] = [];
+const billingPortalCreates: BillingPortalCreateParams[] = [];
+const subscriptionUpdates: Array<{ id: string } & SubscriptionUpdateParams> = [];
 let retrievedSubscription: FakeSubscription | null = null;
 
 export default class Stripe {
@@ -44,6 +58,15 @@ export default class Stripe {
         return {
           id: "cs_test_fake",
           url: "https://checkout.stripe.test/c/cs_test_fake",
+        };
+      },
+      retrieve: async (id: string) => {
+        const created = checkoutSessionCreates[0];
+        return {
+          id,
+          client_reference_id: created?.client_reference_id ?? "seeded",
+          customer: created?.customer ?? "cus_test_fake",
+          subscription: "sub_test_fake",
         };
       },
     },
@@ -60,6 +83,7 @@ export default class Stripe {
         items: {
           data: [
             {
+              id: "si_test_fake",
               quantity: 1,
               current_period_end: 0,
               price: { id: "price_pro_test" },
@@ -67,6 +91,22 @@ export default class Stripe {
           ],
         },
       };
+    },
+    update: async (id: string, params: SubscriptionUpdateParams) => {
+      subscriptionUpdates.push({ id, ...params });
+      return { id };
+    },
+  };
+
+  billingPortal = {
+    sessions: {
+      create: async (params: BillingPortalCreateParams) => {
+        billingPortalCreates.push(params);
+        return {
+          id: "bps_test_fake",
+          url: "https://billing.stripe.test/p/bps_test_fake",
+        };
+      },
     },
   };
 
@@ -88,11 +128,21 @@ export function checkoutCreates(): CheckoutCreateParams[] {
   return checkoutSessionCreates;
 }
 
+export function subscriptionUpdateCalls(): Array<{ id: string } & SubscriptionUpdateParams> {
+  return subscriptionUpdates;
+}
+
+export function billingPortalCreatesLog(): BillingPortalCreateParams[] {
+  return billingPortalCreates;
+}
+
 export function setRetrievedSubscription(subscription: FakeSubscription | null): void {
   retrievedSubscription = subscription;
 }
 
 export function resetStripe(): void {
   checkoutSessionCreates.length = 0;
+  subscriptionUpdates.length = 0;
+  billingPortalCreates.length = 0;
   retrievedSubscription = null;
 }

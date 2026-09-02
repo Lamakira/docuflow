@@ -5,7 +5,7 @@
  */
 
 import { eq } from "drizzle-orm";
-import { auditEvents, billingWebhookInbox } from "@shared/schema";
+import { auditEvents, billingWebhookInbox, workspaceBilling } from "@shared/schema";
 import { db } from "../../db";
 import { config } from "../../config";
 import {
@@ -19,6 +19,7 @@ import {
 import { logWarn } from "../../logger";
 import {
   forEachWorkspace,
+  inWorkspace,
   requireWorkspaceContext,
   stampWorkspace,
 } from "../../workspaceContext";
@@ -31,6 +32,7 @@ import {
 import { billingProviderFromAppConfig } from "./createBillingProvider";
 import { BillingPinMissingError, getBillingProjection } from "./entitlements";
 import { applyProviderSubscription, pinAgreesWithSubscription } from "./projection";
+import { applyPendingSeatDecrease } from "./seats";
 
 export const BILLING_PROJECT_JOB = "billing.project-webhook";
 export const BILLING_DRIFT_JOB = "billing.reconcile-drift";
@@ -53,6 +55,7 @@ const PROJECTABLE_WEBHOOK_TYPES = new Set([
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",
+  "checkout.session.completed",
 ]);
 
 export class UnknownBillingWebhookError extends Error {
@@ -118,6 +121,33 @@ async function workspaceIdForSubscription(objectId: string): Promise<string | nu
   return matches.find((id): id is string => id != null) ?? null;
 }
 
+async function workspaceIdForPendingCheckout(sessionId: string): Promise<string | null> {
+  const matches = await forEachWorkspace(async () => {
+    try {
+      const [row] = await db
+        .select({
+          workspaceId: workspaceBilling.workspaceId,
+          pendingCheckoutSessionId: workspaceBilling.pendingCheckoutSessionId,
+        })
+        .from(workspaceBilling)
+        .where(inWorkspace(workspaceBilling))
+        .limit(1);
+      return row?.pendingCheckoutSessionId === sessionId ? row.workspaceId : null;
+    } catch (error) {
+      if (error instanceof BillingPinMissingError) return null;
+      throw error;
+    }
+  });
+  return matches.find((id): id is string => id != null) ?? null;
+}
+
+async function workspaceIdForWebhook(event: WebhookEvent): Promise<string | null> {
+  if (event.type === "checkout.session.completed") {
+    return workspaceIdForPendingCheckout(event.objectId);
+  }
+  return workspaceIdForSubscription(event.objectId);
+}
+
 /**
  * Verify, inbox-insert, enqueue. Does not re-fetch or apply Entitlements.
  */
@@ -143,7 +173,7 @@ export async function ingestBillingWebhook(input: {
     throw new UnknownBillingWebhookError();
   }
 
-  const workspaceId = await workspaceIdForSubscription(event.objectId);
+  const workspaceId = await workspaceIdForWebhook(event);
 
   return db.transaction(async (tx) => {
     const [inserted] = await tx
@@ -203,6 +233,14 @@ export async function handleProjectBillingJob(
   }
   if (inbox.processedAt) return;
 
+  if (inbox.type === "checkout.session.completed") {
+    const session = await provider.fetchCheckoutSession(objectId);
+    const subscription = await provider.fetchSubscription(session.providerSubscriptionId);
+    await applyProjectionAndSyncSeats(subscription, provider);
+    await markInboxProcessed(providerEventId);
+    return;
+  }
+
   const pin = await getBillingProjection();
   if (!pin.stripeSubscriptionId) {
     await markInboxProcessed(providerEventId);
@@ -215,8 +253,21 @@ export async function handleProjectBillingJob(
   }
 
   const subscription = await provider.fetchSubscription(objectId);
-  await applyProviderSubscription(subscription, { kind: "system" });
+  await applyProjectionAndSyncSeats(subscription, provider);
   await markInboxProcessed(providerEventId);
+}
+
+async function applyProjectionAndSyncSeats(
+  subscription: Parameters<typeof applyProviderSubscription>[0],
+  provider: BillingProvider
+): Promise<void> {
+  const result = await applyProviderSubscription(subscription, { kind: "system" });
+  if (result.syncSeatQuantity == null || !result.projection.stripeSubscriptionId) return;
+  await provider.updateSeatQuantity({
+    providerSubscriptionId: result.projection.stripeSubscriptionId,
+    seatQuantity: result.syncSeatQuantity,
+    proration: "none",
+  });
 }
 
 async function markInboxProcessed(providerEventId: string): Promise<void> {
@@ -230,6 +281,17 @@ export async function handleBillingDriftJob(
   job: Job,
   provider: BillingProvider = billingProviderFromAppConfig(config.billing)
 ): Promise<void> {
+  const [row] = await db.select().from(workspaceBilling).where(inWorkspace(workspaceBilling)).limit(1);
+  if (!row?.stripeSubscriptionId) return;
+
+  if (
+    row.pendingSeatQuantity != null &&
+    row.periodEndsAt &&
+    Date.now() >= row.periodEndsAt.getTime()
+  ) {
+    await applyPendingSeatDecrease({ kind: "system" }, provider);
+  }
+
   const pin = await getBillingProjection();
   if (!pin.stripeSubscriptionId) return;
 

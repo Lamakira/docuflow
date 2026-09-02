@@ -16,6 +16,7 @@ import {
   type BillingProjection,
 } from "./entitlements";
 import type { BillingState, PlanKey } from "./planRegistry";
+import { countConsumedSeats, resolveProjectedSeatCapacity } from "./seats";
 
 export const BILLING_ENTITLEMENTS_CHANGED = "billing.entitlements_changed";
 
@@ -88,7 +89,7 @@ export function pinAgreesWithSubscription(
 export async function applyProviderSubscription(
   subscription: ProviderSubscription,
   actor: AuditActor
-): Promise<{ projection: BillingProjection; mutated: boolean }> {
+): Promise<{ projection: BillingProjection; mutated: boolean; syncSeatQuantity: number | null }> {
   const { workspaceId } = requireWorkspaceContext();
 
   return db.transaction(async (tx) => {
@@ -101,8 +102,32 @@ export async function applyProviderSubscription(
     if (!pin) throw new BillingPinMissingError();
 
     const next = projectedPinFromSubscription(subscription, pin.trialEndsAt);
-    if (pinAgreesWithSubscription(pin, subscription)) {
-      return { projection: billingProjectionOf(pin), mutated: false };
+    const seats = resolveProjectedSeatCapacity(pin, subscription, await countConsumedSeats(tx));
+    next.purchasedSeatCapacity = seats.purchasedSeatCapacity;
+
+    const pinUnchanged =
+      pin.planKey === next.planKey &&
+      pin.billingState === next.billingState &&
+      pin.purchasedSeatCapacity === next.purchasedSeatCapacity &&
+      (pin.stripeCustomerId ?? null) === next.stripeCustomerId &&
+      (pin.stripeSubscriptionId ?? null) === next.stripeSubscriptionId &&
+      pin.cancelAtPeriodEnd === next.cancelAtPeriodEnd &&
+      sameInstant(pin.periodEndsAt ?? null, next.periodEndsAt) &&
+      sameInstant(pin.trialEndsAt ?? null, next.trialEndsAt) &&
+      (pin.pendingSeatQuantity ?? null) === (seats.pendingSeatQuantity ?? null);
+
+    if (pinUnchanged) {
+      if (pin.pendingCheckoutSessionId) {
+        await tx
+          .update(workspaceBilling)
+          .set({ pendingCheckoutSessionId: null, updatedAt: new Date() })
+          .where(inWorkspace(workspaceBilling));
+      }
+      return {
+        projection: billingProjectionOf(pin),
+        mutated: false,
+        syncSeatQuantity: null,
+      };
     }
 
     const entitlementsChanged =
@@ -117,6 +142,8 @@ export async function applyProviderSubscription(
       .update(workspaceBilling)
       .set({
         ...next,
+        pendingSeatQuantity: seats.pendingSeatQuantity,
+        pendingCheckoutSessionId: null,
         authorizationVersion,
         updatedAt: new Date(),
       })
@@ -186,6 +213,10 @@ export async function applyProviderSubscription(
       );
     }
 
-    return { projection: billingProjectionOf(updated), mutated: true };
+    return {
+      projection: billingProjectionOf(updated),
+      mutated: true,
+      syncSeatQuantity: seats.tellProvider ? seats.purchasedSeatCapacity : null,
+    };
   });
 }

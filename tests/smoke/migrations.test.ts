@@ -177,6 +177,8 @@ describe("migration journal", () => {
       "0020_useful_impossible_man",
       "0021_tiny_scrambler",
       "0022_mysterious_robin_chapel",
+      "0023_steep_marvel_zombies",
+      "0024_spotty_gideon",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -207,6 +209,8 @@ describe("migration journal", () => {
       { version: "0020_useful_impossible_man", baselined: false },
       { version: "0021_tiny_scrambler", baselined: false },
       { version: "0022_mysterious_robin_chapel", baselined: false },
+      { version: "0023_steep_marvel_zombies", baselined: false },
+      { version: "0024_spotty_gideon", baselined: false },
     ]);
   });
 
