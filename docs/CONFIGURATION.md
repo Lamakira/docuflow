@@ -86,6 +86,21 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `DOCUFLOW_ROLE` | `http` — this process serves the app and never claims Jobs. `worker` claims and runs them (#83) |
 | `DOCUFLOW_HTTP_BACKGROUND_INTERVALS` | On. HTTP still runs due-reminder (and the other) `setInterval` dispatchers until the Worker is proven. `0`, `false`, or `off` disable them |
 
+## Clerk credentials (#107)
+
+Named for Phase 5. [`server/config.ts`](../server/config.ts) does not read them
+yet, so login is still email/password and Replit OIDC. Values are never
+committed. Use the DocuFlow-owned Hobby application, never Replit Auth.
+
+| Variable | Role |
+| --- | --- |
+| `CLERK_PUBLISHABLE_KEY` | Frontend Clerk load. Development instance keys start `pk_test_` |
+| `CLERK_SECRET_KEY` | Backend API. Development instance keys start `sk_test_` |
+
+Users cannot be copied from a Development instance to a Production instance.
+Import ([#108](https://github.com/Lamakira/docuflow/issues/108)) must target the
+instance this environment will keep.
+
 `MCP_API_KEY` and `DESKTOP_RELEASE_CI_TOKEN` are read per request rather than at
 boot, so rotating either takes effect without a restart.
 
