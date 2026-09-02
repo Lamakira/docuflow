@@ -40,6 +40,13 @@ export type HostedBillingSession = {
   providerSessionId: string;
 };
 
+export type ProviderCheckoutSession = {
+  workspaceId: string;
+  providerSessionId: string;
+  providerSubscriptionId: string;
+  providerCustomerId: string;
+};
+
 /** Provider collection outcome — not the DocuFlow billing state machine. */
 export type CollectionState = "Current" | "PastDue" | "Canceled";
 
@@ -59,6 +66,19 @@ export type WebhookEvent = {
   objectId: string;
 };
 
+export type SeatProration = "create_prorations" | "none";
+
+export type SeatQuantityUpdate = {
+  providerSubscriptionId: string;
+  seatQuantity: number;
+  proration: SeatProration;
+};
+
+export type PaymentMethodUpdateRequest = {
+  providerCustomerId: string;
+  returnUrl: string;
+};
+
 export class BillingWebhookSignatureError extends Error {
   constructor() {
     super("invalid signature");
@@ -68,7 +88,10 @@ export class BillingWebhookSignatureError extends Error {
 
 export interface BillingProvider {
   createCheckout(request: CheckoutRequest): Promise<HostedBillingSession>;
+  fetchCheckoutSession(providerSessionId: string): Promise<ProviderCheckoutSession>;
   fetchSubscription(providerSubscriptionId: string): Promise<ProviderSubscription>;
+  updateSeatQuantity(update: SeatQuantityUpdate): Promise<void>;
+  createPaymentMethodUpdate(request: PaymentMethodUpdateRequest): Promise<HostedBillingSession>;
   verifyWebhook(payload: string, signature: string): Promise<WebhookEvent>;
 }
 
@@ -77,7 +100,19 @@ export class UnconfiguredBillingProvider implements BillingProvider {
     this.closed();
   }
 
+  async fetchCheckoutSession(): Promise<ProviderCheckoutSession> {
+    this.closed();
+  }
+
   async fetchSubscription(): Promise<ProviderSubscription> {
+    this.closed();
+  }
+
+  async updateSeatQuantity(): Promise<void> {
+    this.closed();
+  }
+
+  async createPaymentMethodUpdate(): Promise<HostedBillingSession> {
     this.closed();
   }
 

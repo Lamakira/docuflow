@@ -14,7 +14,10 @@ import {
   type CheckoutRequest,
   type CollectionState,
   type HostedBillingSession,
+  type PaymentMethodUpdateRequest,
+  type ProviderCheckoutSession,
   type ProviderSubscription,
+  type SeatQuantityUpdate,
   type WebhookEvent,
 } from "./billingProvider";
 import type { PlanKey } from "./planRegistry";
@@ -60,6 +63,28 @@ export class StripeBillingProvider implements BillingProvider {
     return { url: session.url, providerSessionId: session.id };
   }
 
+  async fetchCheckoutSession(providerSessionId: string): Promise<ProviderCheckoutSession> {
+    const session = await this.stripe.checkout.sessions.retrieve(providerSessionId);
+    const workspaceId = session.client_reference_id;
+    const providerSubscriptionId = idOf(session.subscription as string | { id: string } | null);
+    const providerCustomerId = idOf(session.customer as string | { id: string } | null);
+    if (!workspaceId) {
+      throw new BillingProviderError(`Checkout Session ${providerSessionId} has no Workspace`);
+    }
+    if (!providerSubscriptionId) {
+      throw new BillingProviderError(`Checkout Session ${providerSessionId} has no Subscription`);
+    }
+    if (!providerCustomerId) {
+      throw new BillingProviderError(`Checkout Session ${providerSessionId} has no customer`);
+    }
+    return {
+      workspaceId,
+      providerSessionId,
+      providerSubscriptionId,
+      providerCustomerId,
+    };
+  }
+
   async fetchSubscription(providerSubscriptionId: string): Promise<ProviderSubscription> {
     const subscription = await this.stripe.subscriptions.retrieve(providerSubscriptionId);
     const item = subscription.items.data[0];
@@ -98,6 +123,35 @@ export class StripeBillingProvider implements BillingProvider {
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       collectionState,
     };
+  }
+
+  async updateSeatQuantity(update: SeatQuantityUpdate): Promise<void> {
+    const subscription = await this.stripe.subscriptions.retrieve(update.providerSubscriptionId);
+    const item = subscription.items.data[0];
+    const itemId = item && "id" in item && typeof item.id === "string" ? item.id : undefined;
+    if (!itemId) {
+      throw new BillingProviderError(
+        `Subscription ${update.providerSubscriptionId} has no items`
+      );
+    }
+    await this.stripe.subscriptions.update(update.providerSubscriptionId, {
+      items: [{ id: itemId, quantity: update.seatQuantity }],
+      proration_behavior: update.proration,
+    });
+  }
+
+  async createPaymentMethodUpdate(
+    request: PaymentMethodUpdateRequest
+  ): Promise<HostedBillingSession> {
+    const session = await this.stripe.billingPortal.sessions.create({
+      customer: request.providerCustomerId,
+      return_url: request.returnUrl,
+      flow_data: { type: "payment_method_update" },
+    });
+    if (!session.url) {
+      throw new BillingProviderError("Payment-method session has no hosted URL");
+    }
+    return { url: session.url, providerSessionId: session.id };
   }
 
   async verifyWebhook(payload: string, signature: string): Promise<WebhookEvent> {

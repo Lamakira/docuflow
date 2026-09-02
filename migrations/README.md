@@ -32,6 +32,8 @@ journal is not part of it and is never applied.
 | 0020 | `0020_useful_impossible_man.sql` | Plan Registry billing pin, Entitlement overrides, and Audit Events (#139). Pins the seeded Workspace to Plan `legacy` at registry version 1, Active, with no Stripe objects. |
 | 0021 | `0021_tiny_scrambler.sql` | Billing state machine columns on `workspace_billing` (#140): trial end, period end, and cancel-at-period-end. |
 | 0022 | `0022_mysterious_robin_chapel.sql` | Stripe webhook inbox, Outbox Events, and a unique Subscription lookup (#143). |
+| 0023 | `0023_steep_marvel_zombies.sql` | Pending seat-decrease quantity on `workspace_billing` (#144). |
+| 0024 | `0024_spotty_gideon.sql` | Pending Checkout Session id on `workspace_billing` (#144). |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
@@ -171,8 +173,8 @@ Two rules, from ADR-0017:
   the same way (Spec #112 / #115). `0014` lands the Knowledge object-storage
   port and Index Artifact tables the same way (Spec #112 / #116). `0020` pins the
   seeded Workspace to Plan `legacy` in the journal (#139) so Entitlements exist
-  without a Stripe object. `0022` lands the webhook inbox and Outbox Event log
-  the same way (#143).
+  without a Stripe object.   `0023` and `0024` add pending seat-decrease quantity and pending Checkout
+  Session id on `workspace_billing` (#144).
 - **Expand and contract.** Add the new shape, move the reads and writes, drop
   the old one in a later deploy. Rollback is redeploying the previous image,
   never a down migration, so no migration may make the previous image unable to

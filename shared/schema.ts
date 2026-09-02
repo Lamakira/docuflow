@@ -1941,10 +1941,13 @@ export const workspaceBilling = pgTable("workspace_billing", {
   trialEndsAt: timestamp("trial_ends_at"),
   periodEndsAt: timestamp("period_ends_at"),
   cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+  pendingSeatQuantity: integer("pending_seat_quantity"),
+  pendingCheckoutSessionId: varchar("pending_checkout_session_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   uniqueIndex("idx_workspace_billing_stripe_subscription").on(table.stripeSubscriptionId),
+  uniqueIndex("idx_workspace_billing_pending_checkout").on(table.pendingCheckoutSessionId),
 ]);
 
 export type WorkspaceBilling = typeof workspaceBilling.$inferSelect;

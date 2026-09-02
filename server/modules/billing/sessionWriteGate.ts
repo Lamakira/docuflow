@@ -3,8 +3,14 @@ import { ReadOnlyWorkspaceError, SeatExhaustedError, assertOperationalWrite } fr
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+const BILLING_RECOVERY_PATHS = new Set([
+  "/api/billing/cancel-at-period-end",
+  "/api/billing/checkout",
+  "/api/billing/payment-method",
+]);
+
 export function isBillingRecoveryPath(path: string): boolean {
-  return path === "/api/billing" || path.startsWith("/api/billing/");
+  return BILLING_RECOVERY_PATHS.has(path);
 }
 
 /**
