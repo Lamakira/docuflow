@@ -19,6 +19,7 @@ import {
 
 export class FakeBillingProvider implements BillingProvider {
   readonly checkouts: CheckoutRequest[] = [];
+  readonly fetches: string[] = [];
   readonly subscriptions = new Map<string, ProviderSubscription>();
 
   async createCheckout(request: CheckoutRequest): Promise<HostedBillingSession> {
@@ -31,6 +32,7 @@ export class FakeBillingProvider implements BillingProvider {
   }
 
   async fetchSubscription(providerSubscriptionId: string): Promise<ProviderSubscription> {
+    this.fetches.push(providerSubscriptionId);
     const subscription = this.subscriptions.get(providerSubscriptionId);
     if (!subscription) {
       throw new Error(`No Subscription ${providerSubscriptionId}`);

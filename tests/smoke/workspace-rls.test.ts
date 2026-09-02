@@ -19,6 +19,7 @@ const GLOBAL_ALLOWLIST = [
   "sessions",
   "desktop_releases",
   "scheduler_leases",
+  "billing_webhook_inbox",
 ] as const;
 
 const NOT_WORKSPACE_OWNED = [

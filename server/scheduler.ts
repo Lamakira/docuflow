@@ -13,6 +13,7 @@ import {
 } from "./dueReminders";
 import { enqueueDailyUpdateNudgeJobs } from "./dailyUpdateNudge";
 import { enqueueStaleTimerJobs } from "./staleTimer";
+import { enqueueBillingDriftJobs } from "./modules/billing/projectionJobs";
 import type { JobsPort } from "./jobs";
 import { workspaceOfCause } from "./jobs";
 import type { ProcessRole } from "./config";
@@ -22,6 +23,7 @@ import { forEachWorkspace } from "./workspaceContext";
 const DUE_REMINDERS_LEASE = "due-reminders";
 const STALE_TIMER_LEASE = "stale-timer";
 const DAILY_UPDATE_NUDGE_LEASE = "daily-update-nudge";
+const BILLING_DRIFT_LEASE = "billing-drift";
 const DEFAULT_LEASE_MS = 90_000;
 
 export interface SchedulerTick {
@@ -41,6 +43,7 @@ export type DueReminderScheduler = SchedulerTick;
 export type CreateDueReminderSchedulerOptions = CreateSchedulerOptions;
 export type StaleTimerScheduler = SchedulerTick;
 export type DailyUpdateNudgeScheduler = SchedulerTick;
+export type BillingDriftScheduler = SchedulerTick;
 
 function createLeaseElectedTick(
   options: CreateSchedulerOptions,
@@ -100,6 +103,14 @@ export function createDailyUpdateNudgeScheduler(
     forEachWorkspace(() => enqueueDailyUpdateNudgeJobs(options.jobs, at)).then((counts) =>
       counts.reduce((sum, n) => sum + n, 0)
     )
+  );
+}
+
+export function createBillingDriftScheduler(
+  options: CreateSchedulerOptions
+): BillingDriftScheduler {
+  return createLeaseElectedTick(options, BILLING_DRIFT_LEASE, (at) =>
+    enqueueBillingDriftJobs(options.jobs, at)
   );
 }
 

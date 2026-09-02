@@ -22,7 +22,7 @@ import { z } from "zod";
 /**
  * Immutable Workspace stamp on every Workspace-owned row (#96).
  * The global allowlist (`users`, `sessions`, `desktop_releases`,
- * `scheduler_leases`) never gets this column.
+ * `scheduler_leases`, `billing_webhook_inbox`) never gets this column.
  */
 function workspaceIdColumn() {
   return varchar("workspace_id")
@@ -1943,7 +1943,9 @@ export const workspaceBilling = pgTable("workspace_billing", {
   cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("idx_workspace_billing_stripe_subscription").on(table.stripeSubscriptionId),
+]);
 
 export type WorkspaceBilling = typeof workspaceBilling.$inferSelect;
 
@@ -1958,6 +1960,50 @@ export const workspaceEntitlementOverrides = pgTable("workspace_entitlement_over
 });
 
 export type WorkspaceEntitlementOverride = typeof workspaceEntitlementOverrides.$inferSelect;
+
+/**
+ * Signature-verified Stripe webhook inbox (#143, ADR-0010). Dedupes on the
+ * provider event id so at-least-once delivery is not a second mutation.
+ * Platform-scoped: ingest resolves the Workspace from the Subscription id so
+ * the Job can carry WorkspaceContext. Unmatched events are accepted and not
+ * enqueued.
+ */
+export const billingWebhookInbox = pgTable("billing_webhook_inbox", {
+  providerEventId: varchar("provider_event_id").primaryKey(),
+  type: varchar("type", { length: 100 }).notNull(),
+  objectId: varchar("object_id").notNull(),
+  receivedAt: timestamp("received_at").notNull().defaultNow(),
+  processedAt: timestamp("processed_at"),
+});
+
+export type BillingWebhookInbox = typeof billingWebhookInbox.$inferSelect;
+
+/**
+ * Append-only Outbox Event log (#143, ADR-0013). Consequences of a domain
+ * write, later dispatched as one Job per consumer. Not an Audit Event.
+ */
+export const outboxEvents = pgTable(
+  "outbox_events",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    workspaceId: workspaceIdColumn(),
+    type: varchar("type", { length: 100 }).notNull(),
+    version: integer("version").notNull().default(1),
+    occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+    actorKind: varchar("actor_kind", { length: 32 }).notNull(),
+    actorId: varchar("actor_id"),
+    aggregateType: varchar("aggregate_type", { length: 100 }).notNull(),
+    aggregateId: varchar("aggregate_id").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_outbox_events_workspace_occurred").on(table.workspaceId, table.occurredAt),
+    idInWorkspace(table, "outbox_events"),
+  ]
+);
+
+export type OutboxEvent = typeof outboxEvents.$inferSelect;
 
 export const membershipCapabilitiesRelations = relations(membershipCapabilities, ({ one }) => ({
   membership: one(memberships, {
