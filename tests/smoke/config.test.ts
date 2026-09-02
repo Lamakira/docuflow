@@ -50,6 +50,8 @@ const CONFIG_VARS = [
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "STRIPE_PRICE_PRO",
+  "CLERK_SECRET_KEY",
+  "CLERK_PUBLISHABLE_KEY",
 ] as const;
 
 /** The smallest environment that boots: one of each required variable. */
@@ -730,6 +732,60 @@ describe("config — Stripe billing", () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain("STRIPE_SECRET_KEY");
+    expect((error as Error).message).toContain("sk_test_");
+  });
+});
+
+describe("config — Clerk identity", () => {
+  it("boots without Clerk credentials and leaves identity unconfigured", async () => {
+    const { config, logConfigSummary } = await load(BOOTABLE);
+
+    expect(config.identity).toEqual({
+      secretKey: undefined,
+      publishableKey: undefined,
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      logConfigSummary();
+      expect(spy.mock.calls.flat().join("\n")).toContain("Clerk unconfigured");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("enables Clerk from optional test-mode credentials without putting secrets on the boot line", async () => {
+    const { config, logConfigSummary } = await load({
+      ...BOOTABLE,
+      CLERK_SECRET_KEY: "sk_test_not-a-real-key",
+      CLERK_PUBLISHABLE_KEY: "pk_test_not-a-real-key",
+    });
+
+    expect(config.identity).toEqual({
+      secretKey: "sk_test_not-a-real-key",
+      publishableKey: "pk_test_not-a-real-key",
+    });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      logConfigSummary();
+      const line = spy.mock.calls.flat().join("\n");
+      expect(line).toContain("Clerk enabled");
+      expect(line).not.toContain("sk_test_not-a-real-key");
+      expect(line).not.toContain("pk_test_not-a-real-key");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("refuses a live Clerk secret key at boot", async () => {
+    const error = await load({
+      ...BOOTABLE,
+      CLERK_SECRET_KEY: "sk_live_not-allowed",
+    }).catch((e: Error) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("CLERK_SECRET_KEY");
     expect((error as Error).message).toContain("sk_test_");
   });
 });

@@ -71,6 +71,12 @@ export interface BillingConfig {
   pricePro?: string;
 }
 
+export interface IdentityConfig {
+  /** Absent means IdentityProvider operations fail closed. Login is still email/password and OIDC. */
+  secretKey?: string;
+  publishableKey?: string;
+}
+
 export interface DesktopTokenConfig {
   /** Signs every access token this process issues. */
   current: SigningKey;
@@ -123,6 +129,7 @@ export interface AppConfig {
   objectStorage: ObjectStorageConfig;
   email: EmailConfig;
   billing: BillingConfig;
+  identity: IdentityConfig;
   /** Absolute base URL this deployment is reached at, used in outbound email links. */
   appUrl: string;
   openaiApiKey?: string;
@@ -562,6 +569,22 @@ function resolveBilling(missing: string[]): BillingConfig {
   };
 }
 
+function resolveIdentity(missing: string[]): IdentityConfig {
+  const secretKey = read("CLERK_SECRET_KEY");
+  if (secretKey && !secretKey.startsWith("sk_test_")) {
+    missing.push(
+      "CLERK_SECRET_KEY must be a test-mode key (sk_test_…) — this environment never holds a live Clerk instance (ADR-0018)"
+    );
+  }
+  const publishableKey = read("CLERK_PUBLISHABLE_KEY");
+  if (publishableKey && !publishableKey.startsWith("pk_test_")) {
+    missing.push(
+      "CLERK_PUBLISHABLE_KEY must be a test-mode key (pk_test_…) — this environment never holds a live Clerk instance (ADR-0018)"
+    );
+  }
+  return { secretKey, publishableKey };
+}
+
 function resolveConfig(): AppConfig {
   // Read as a static member expression: the production bundle replaces exactly
   // this text with a literal (see script/bundles.ts), which a dynamic lookup misses.
@@ -575,6 +598,7 @@ function resolveConfig(): AppConfig {
   const missing: string[] = [];
   const role = resolveRole(missing);
   const billing = resolveBilling(missing);
+  const identity = resolveIdentity(missing);
 
   missing.push(
     ...database.missing,
@@ -609,6 +633,7 @@ function resolveConfig(): AppConfig {
       fromAddress: read("RESEND_FROM_EMAIL") ?? DEFAULT_FROM_ADDRESS,
     },
     billing,
+    identity,
     appUrl: resolveAppUrl(),
     openaiApiKey: read("OPENAI_API_KEY"),
     fathomApiKey: read("FATHOM_API_KEY"),
@@ -679,6 +704,7 @@ export function logConfigSummary(): void {
       `desktop tokens on key ${desktopTokenKeys()}, ` +
       `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
       `Stripe ${config.billing.secretKey ? "enabled" : "unconfigured"}, ` +
+      `Clerk ${config.identity.secretKey ? "enabled" : "unconfigured"}, ` +
       `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}, ` +
       `transcript browser ${config.chromiumPath ?? "as Playwright resolves it"}, ` +
       `telemetry ${telemetryDestination()}, ` +

@@ -1,4 +1,6 @@
 import type { IdentityPersistence } from "./persistence";
+import { config } from "../../config";
+import { identityProviderFromAppConfig } from "./createIdentityProvider";
 import {
   createServiceAccount,
   listServiceAccounts,
@@ -25,6 +27,25 @@ export {
   ServiceAccountNotFoundError,
   UnknownCapabilityError,
 } from "./serviceAccounts";
+export type {
+  IdentityProvider,
+  IdentityProviderConfig,
+  IdentitySession,
+  PasswordImportRequest,
+  ProviderIdentity,
+} from "./identityProvider";
+export {
+  IdentityProviderClosedError,
+  IdentityProviderError,
+  IdentityProviderImportError,
+  IdentitySessionError,
+  isUsablePasswordHash,
+  UnconfiguredIdentityProvider,
+} from "./identityProvider";
+export { identityProviderFromAppConfig, createIdentityProvider } from "./createIdentityProvider";
+
+/** Process-wide IdentityProvider. Missing Clerk credentials fail closed. HTTP still authenticates as today. */
+export const identityProvider = identityProviderFromAppConfig(config.identity);
 
 export const IDENTITY_TABLES = [
   "users",
