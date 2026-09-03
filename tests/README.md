@@ -106,7 +106,7 @@ a database you care about, and never at anything production-related.
   those create the row through `storage` and sign it in through the
   IdentityProvider, because there is no registration endpoint left to post to;
   the agent they return carries `Authorization: Bearer <provider session>` on
-  every request, and `tests/setup.ts` keeps the flag that reads it on.
+  every request. The dual-auth flag that used to gate that read is gone (#111).
 - Get every request from `newAgent`/`registerUser` rather than `supertest`
   directly, authenticated or not. They attach a unique `X-Forwarded-For`, which
   keeps unrelated suites from spending each other's rate-limit budget;
@@ -230,25 +230,28 @@ run creates no second Clerk User. `users.password`, Membership, and Devices are
 asserted untouched, and characterization of `/api/auth/*` stays where it is.
 
 `identity-dual-auth` ([#109](https://github.com/Lamakira/docuflow/issues/109))
-covers the window that follows the import: while `DOCUFLOW_IDENTITY_DUAL_AUTH` is
-on, a session the real import linked reaches that User's Membership. Unlike the
-rest of the identity suites it does boot HTTP, because the flag has no meaning
-below the request. What earns it is the refusals: with the flag off, a valid
-provider session is 401 — the rollback ADR-0017 asks for; a subject nobody is
-linked to is 401 even though the provider vouches for it; and the desktop agent's
-own `Authorization: Bearer` is never read as a provider session, so Devices stay
-on the token path this phase does not touch. Invites are here too: only Users
-with no usable hash are sent one, a second run sends nothing, an answered invite
-becomes a subject-id link instead of a second mail, and the verifier re-reads
-rather than tallies. The drain's legacy half is gone since #110, so what the
-suite once froze as "email/password still works" now asserts the 410.
+covers how a provider session resolves after the import: a session the real
+import linked reaches that User's Membership. What earns it is the refusals: a
+subject nobody is linked to is 401 even though the provider vouches for it; and
+the desktop agent's own `Authorization: Bearer` is never read as a provider
+session, so Devices stay on the token path this phase does not touch. Invites are
+here too: only Users with no usable hash are sent one, a second run sends
+nothing, an answered invite becomes a subject-id link instead of a second mail,
+and the verifier re-reads rather than tallies. The drain's legacy half is gone
+since #110 and the flag since #111, so what the suite once froze as
+"email/password still works" now asserts the unmounted `404`.
 
 `web-auth-cutover` ([#110](https://github.com/Lamakira/docuflow/issues/110))
-covers the cutover itself: password sign-in and registration answer 410 to every
-payload and mint nothing, a provider session enters the Workspace and stamps
-`last_login_at`, `GET /api/auth/config` serves the publishable key and never the
-secret, and the flag off refuses the provider session — which on this image is
-the whole of web auth, so the rollback is that flip plus an image redeploy.
+covers the cutover itself: password sign-in and registration mint nothing (the
+410 stubs #110 left are unmounted as of #111), a provider session enters the
+Workspace and stamps `last_login_at`, and `GET /api/auth/config` serves the
+publishable key and never the secret.
+
+`identity-clerk-only` ([#111](https://github.com/Lamakira/docuflow/issues/111))
+covers the leftovers coming out: a Clerk session works with the dual-auth flag
+unset, Replit OIDC routes answer 410 without reading `REPL_ID`, `X-API-Key` no
+longer impersonates the Owner, and Device Enrollment still grows through
+`POST /api/agent/auth/login`.
 
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
@@ -258,7 +261,7 @@ implementation and each suite's header lists what the document gets wrong):
 
 | Suite                            | Covers                                                              |
 | -------------------------------- | ------------------------------------------------------------------- |
-| `auth-session`                   | register/login/logout, session persistence, `isAuthenticated` variants, MCP key |
+| `auth-session`                   | register/login/logout, session persistence, `isAuthenticated` variants |
 | `users-admin`                    | user directory, admin CRUD, generated passwords, account emails, SuperAdmin guards |
 | `projects-documents`             | projects, retired endpoints, the TipTap page tree, search            |
 | `crm-clients-contacts`           | clients and their contact people                                    |

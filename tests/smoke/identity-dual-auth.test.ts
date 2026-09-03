@@ -1,18 +1,17 @@
-import { beforeEach, afterEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 /**
  * Phase 5 ticket #109: the dual-auth drain (ADR-0007, ADR-0017).
  *
  * Two seams. The first is `server/modules/identity/dualAuth.ts` — a provider
  * session token resolved to the `users.id` the import linked it to, proven
- * against the port fake. The second is HTTP: with the flag on, a legacy session
- * and a provider session must reach the same Membership, and with it off the
- * provider session must not be a way in at all.
+ * against the port fake. The second is HTTP: a provider session must reach the
+ * same Membership, and the bearer paths that already carry a token of their
+ * own must not be read as one.
  *
- * #110 has since retired the drain's legacy half, so the flag now gates the only
- * way a browser signs in; the cutover itself is proven in
- * `web-auth-cutover.test.ts`. What stays true here is everything about how a
- * provider session resolves, and that the flag is still the rollback surface.
+ * #110 retired the drain's legacy half and #111 removed the flag, so this
+ * suite no longer has a rollback surface to flip. What stays true is how a
+ * provider session resolves.
  *
  * Live Clerk is never reached. `vitest.config.ts` aliases `@clerk/backend` to
  * `tests/fakes/clerk.ts`, and the credentials named below are that fake's.
@@ -29,17 +28,8 @@ import { resetDb } from "../helpers/db";
 import { newAgent, registerUser, uniqueEmail } from "../helpers/auth";
 import { FakeIdentityProvider } from "../fakes/identityProvider";
 
-const DRAIN = "DOCUFLOW_IDENTITY_DUAL_AUTH";
-
-/** Replit OIDC accounts carry this placeholder rather than a bcrypt hash. */
-const OIDC_PLACEHOLDER = "REPLIT_OIDC_USER";
-
 beforeEach(async () => {
   await resetDb();
-});
-
-afterEach(() => {
-  delete process.env[DRAIN];
 });
 
 describe("dual-auth session resolution (#109)", () => {
@@ -178,7 +168,6 @@ describe("dual-auth drain over HTTP (#109)", () => {
     // Not the token the helper already holds: this one comes back through
     // `importUsersIntoIdentityProvider`, so the #108 link is what is proven.
     const token = await importAndIssueSession(user.id);
-    process.env[DRAIN] = "on";
 
     const mapped = await newAgent(app)
       .get("/api/auth/user")
@@ -196,42 +185,21 @@ describe("dual-auth drain over HTTP (#109)", () => {
     expect(Array.isArray(projects.body)).toBe(true);
   });
 
-  it("no longer has a legacy half: email/password is retired even with the flag on", async () => {
+  it("no longer has a legacy half: email/password is retired", async () => {
     const app = await makeApp();
     const email = uniqueEmail("drain-password");
     const user = await registerUser(app, { email });
-    process.env[DRAIN] = "on";
 
     // #109 froze this as a 200: during the drain the User's own password still
-    // worked. #110 cut that away, so the window the flag opens now has one side.
+    // worked. #110 answered 410; #111 deleted the stubs.
     const login = await newAgent(app).post("/api/auth/login").send({ email, password: user.password });
 
-    expect(login.status).toBe(410);
-  });
-
-  it("refuses a provider session once the flag is off, which is half the rollback", async () => {
-    const app = await makeApp();
-    const user = await registerUser(app, { email: uniqueEmail("rollback") });
-    const token = await importAndIssueSession(user.id);
-    delete process.env[DRAIN];
-
-    const mapped = await newAgent(app)
-      .get("/api/projects")
-      .set("Authorization", `Bearer ${token}`);
-    // #109 asserted the User's legacy session still worked here. Since #110 it
-    // does not exist, so flipping the flag back is only the first half: the
-    // other half is redeploying the image that still has password sign-in.
-    const legacy = await user.agent.get("/api/projects");
-
-    expect(mapped.status).toBe(401);
-    expect(mapped.body).toEqual({ message: "Unauthorized" });
-    expect(legacy.status).toBe(401);
+    expect(login.status).toBe(404);
   });
 
   it("refuses a provider session for a subject no User is linked to", async () => {
     const app = await makeApp();
     const { issueClerkSession } = await import("../fakes/clerk");
-    process.env[DRAIN] = "on";
 
     const res = await newAgent(app)
       .get("/api/projects")
@@ -243,7 +211,6 @@ describe("dual-auth drain over HTTP (#109)", () => {
 
   it("does not read the desktop agent's bearer token as a provider session", async () => {
     const app = await makeApp();
-    process.env[DRAIN] = "on";
 
     const res = await newAgent(app)
       .get("/api/agent/timer/active")

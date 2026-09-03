@@ -14,11 +14,9 @@ import { loginDevice, PNG_1X1, type AgentDevice } from "../helpers/agent";
  *
  * Quirks frozen here:
  *  - The strict 20-per-15-minutes auth limiter is mounted on `/api/login` and
- *    `/api/register` — the Replit OIDC paths — not on `/api/auth/login` and
- *    `/api/auth/register`, which is where the SPA used to post credentials.
- *    Since #110 those two answer 410 and hold no credential to guess, so the
- *    misplacement no longer leaves a real check on the loose global limit; it is
- *    still frozen here because #111 is what removes both paths.
+ *    `/api/register`. `GET /api/login` is a retired OIDC stub (410); `POST
+ *    /api/register` is unmounted (404 until the limiter's 429). It is not on
+ *    `/api/auth/login` and `/api/auth/register`, which #111 unmounted.
  *  - The global limit is 120 requests per minute per IP across `/api/`, and it
  *    counts every request, authenticated or not.
  *  - Limits are keyed on the client IP behind one trusted proxy hop, so an
@@ -73,7 +71,7 @@ describe("rate limiting (characterization)", () => {
         .post("/api/auth/login")
         .set("X-Forwarded-For", ip)
         .send({ email: "nobody@example.com", password: "wrong-password" });
-      expect(res.status, `attempt ${i + 1}`).toBe(410);
+      expect(res.status, `attempt ${i + 1}`).toBe(404);
     }
 
     // The limiter that was meant to stop this guards the OIDC path instead.

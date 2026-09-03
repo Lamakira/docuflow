@@ -125,6 +125,6 @@ the table above is gone with it: the flag now gates the only way a browser signs
 in, so turning it off no longer leaves email/password behind, and rollback is
 that flip plus redeploying the pre-#110 image.
 
-The flag and `dualAuthSession` are removed with Replit OIDC and `MCP_API_KEY` in
-[#111](https://github.com/Lamakira/docuflow/issues/111); that ticket is this
-flag's removal gate.
+The flag and `dualAuthSession` were removed with Replit OIDC and `MCP_API_KEY` in
+[#111](https://github.com/Lamakira/docuflow/issues/111); see
+[`phase-5-clerk-only.md`](phase-5-clerk-only.md).

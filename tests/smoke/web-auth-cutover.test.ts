@@ -9,6 +9,11 @@ import { beforeEach, describe, expect, it } from "vitest";
  * Workspace through the browser. Authorization is untouched — the Membership
  * still decides what that User may do.
  *
+ * #111 then deleted the 410 stubs this ticket left on `/api/auth/login` and
+ * `/api/auth/register`, and removed the drain flag. What stays true here is the
+ * cutover itself: password posts mint nothing, a provider session enters, and
+ * `GET /api/auth/config` serves the publishable key.
+ *
  * Live Clerk is never reached. `vitest.config.ts` aliases `@clerk/backend` to
  * `tests/fakes/clerk.ts`, and the credentials below are that fake's.
  */
@@ -20,16 +25,12 @@ import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { newAgent, registerUser, uniqueEmail } from "../helpers/auth";
 
-// `tests/setup.ts` turns this on before every test, because since the cutover it
-// is what web sign-in rides on. Named here because one case turns it off.
-const DRAIN = "DOCUFLOW_IDENTITY_DUAL_AUTH";
-
 beforeEach(async () => {
   await resetDb();
 });
 
 describe("password sign-in is retired (#110)", () => {
-  it("answers 410 to a login with the User's real password and establishes no session", async () => {
+  it("answers 404 to a login with the User's real password and establishes no session", async () => {
     const app = await makeApp();
     const user = await registerUser(app, { email: uniqueEmail("retired-login") });
     const agent = newAgent(app);
@@ -39,8 +40,7 @@ describe("password sign-in is retired (#110)", () => {
       password: user.password,
     });
 
-    expect(login.status).toBe(410);
-    expect(login.body.message).toMatch(/Clerk/);
+    expect(login.status).toBe(404);
     // Nothing was minted: the same cookie jar is still nobody.
     await expect(agent.get("/api/auth/user").then((res) => res.body)).resolves.toBeNull();
     const denied = await agent.get("/api/projects");
@@ -48,7 +48,7 @@ describe("password sign-in is retired (#110)", () => {
     expect(denied.body).toEqual({ message: "Unauthorized" });
   });
 
-  it("answers 410 to registration and creates no User", async () => {
+  it("answers 404 to registration and creates no User", async () => {
     const app = await makeApp();
     const { storage } = await import("../../server/storage");
     const email = uniqueEmail("retired-register");
@@ -57,20 +57,8 @@ describe("password sign-in is retired (#110)", () => {
       .post("/api/auth/register")
       .send({ email, password: "password123", firstName: "Ada" });
 
-    expect(res.status).toBe(410);
-    expect(res.body.message).toMatch(/Clerk/);
+    expect(res.status).toBe(404);
     await expect(storage.getUserByEmail(email)).resolves.toBeUndefined();
-  });
-
-  it("retires the endpoints whatever the body says, rather than validating it first", async () => {
-    const app = await makeApp();
-
-    // A payload today's schema would reject with 400 gets the same answer: the
-    // route no longer looks at credentials at all.
-    for (const path of ["/api/auth/login", "/api/auth/register"]) {
-      const res = await newAgent(app).post(path).send({ email: "not-an-email" });
-      expect(res.status, path).toBe(410);
-    }
   });
 });
 
@@ -111,17 +99,6 @@ describe("web sign-in through Clerk (#110)", () => {
     await agent.get("/api/projects");
     expect((await storage.getUser(user.id))?.lastLoginAt).toEqual(stamped);
   });
-
-  it("refuses a provider session once the flag is off, which is the rollback surface", async () => {
-    const app = await makeApp();
-    const user = await registerUser(app, { email: uniqueEmail("clerk-rollback") });
-    delete process.env[DRAIN];
-
-    const res = await user.agent.get("/api/projects");
-
-    expect(res.status).toBe(401);
-    expect(res.body).toEqual({ message: "Unauthorized" });
-  });
 });
 
 describe("GET /api/auth/config (#110)", () => {
@@ -146,28 +123,11 @@ describe("GET /api/auth/config (#110)", () => {
     expect(JSON.stringify(res.body)).not.toContain("sk_test_");
   });
 
-  it("reports sign-in unavailable when the flag that reads provider sessions is off", async () => {
-    const app = await makeApp();
-    delete process.env[DRAIN];
-
-    const res = await newAgent(app).get("/api/auth/config");
-
-    // The key is still public, but a session minted against it would not be
-    // read, so the SPA is told not to offer a sign-in box that cannot work.
-    expect(res.body).toEqual({ publishableKey: "pk_test_web-auth-cutover", enabled: false });
-  });
-
   it("answers the same question the boot line does", async () => {
     const app = await makeApp();
     const { webSignInAvailable } = await import("../../server/config");
 
-    // One predicate behind both, so a deployment cannot be told at boot that
-    // sign-in works while the page it serves says it does not.
-    for (const flag of ["on", undefined]) {
-      if (flag) process.env[DRAIN] = flag;
-      else delete process.env[DRAIN];
-      const res = await newAgent(app).get("/api/auth/config");
-      expect(res.body.enabled, `flag ${flag ?? "unset"}`).toBe(webSignInAvailable());
-    }
+    const res = await newAgent(app).get("/api/auth/config");
+    expect(res.body.enabled).toBe(webSignInAvailable());
   });
 });

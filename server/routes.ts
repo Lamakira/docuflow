@@ -16,7 +16,7 @@ import { ObjectPermission } from "./objectAcl";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
-import { webAuthConfigRoute, webPasswordAuthRetired } from "./modules/identity";
+import { webAuthConfigRoute } from "./modules/identity";
 import { registerWebhookEndpointRoutes } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
 import { SeatExhaustedError } from "./modules/billing";
@@ -173,15 +173,9 @@ export async function registerRoutes(
   // key, read at runtime because one image serves every environment (ADR-0018).
   app.get("/api/auth/config", webAuthConfigRoute);
 
-  // Web sign-in and registration moved to Clerk (#110, ADR-0007). Both routes
-  // stay mounted so a browser on the previous SPA build is told what happened
-  // rather than getting a 404; #111 removes them with the rest of the legacy
-  // paths. New Users are created by an Administrator through
-  // `POST /api/admin/users` and reach Clerk through `npm run identity:import:users`.
-  app.post("/api/auth/register", webPasswordAuthRetired);
-  app.post("/api/auth/login", webPasswordAuthRetired);
-
-  // Logout endpoint
+  // Logout destroys a cookie session this image no longer mints. It stays so a
+  // leftover POST from an older SPA is not an error; ending a Clerk session is
+  // the provider's job, and the SPA calls that.
   app.post("/api/auth/logout", (req: Request, res) => {
     req.session.destroy((err) => {
       if (err) {

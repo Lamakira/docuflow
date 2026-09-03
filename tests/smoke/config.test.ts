@@ -37,8 +37,6 @@ const CONFIG_VARS = [
   "OPENAI_API_KEY",
   "FATHOM_API_KEY",
   "PLAYWRIGHT_CHROMIUM_PATH",
-  "REPL_ID",
-  "ISSUER_URL",
   "OTEL_EXPORTER",
   "OTEL_SERVICE_NAME",
   "OTEL_EXPORTER_OTLP_ENDPOINT",
@@ -52,7 +50,6 @@ const CONFIG_VARS = [
   "STRIPE_PRICE_PRO",
   "CLERK_SECRET_KEY",
   "CLERK_PUBLISHABLE_KEY",
-  "DOCUFLOW_IDENTITY_DUAL_AUTH",
 ] as const;
 
 /** The smallest environment that boots: one of each required variable. */
@@ -84,6 +81,10 @@ afterEach(() => {
   for (const [name, value] of Object.entries(saved)) {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
+  }
+  // Retired in #111: no longer read, but a case may still name them.
+  for (const leftover of ["REPL_ID", "ISSUER_URL", "MCP_API_KEY", "DOCUFLOW_IDENTITY_DUAL_AUTH"]) {
+    delete process.env[leftover];
   }
   // Leave the registry holding the harness's own configuration, not a case's.
   vi.resetModules();
@@ -791,49 +792,36 @@ describe("config — Clerk identity", () => {
   });
 });
 
-describe("config — dual-auth drain flag (#109)", () => {
-  it("leaves the drain off when the flag is unset, and says so on the boot line", async () => {
-    const { identityDualAuthEnabled, logConfigSummary } = await load(BOOTABLE);
+describe("config — web sign-in (#110, #111)", () => {
+  it("does not read REPL_ID, ISSUER_URL, MCP_API_KEY, or the dual-auth flag", async () => {
+    const mod = await load({
+      ...BOOTABLE,
+      REPL_ID: "would-have-been-oidc",
+      ISSUER_URL: "https://example.invalid/oidc",
+      MCP_API_KEY: "would-have-impersonated",
+      DOCUFLOW_IDENTITY_DUAL_AUTH: "off",
+    });
 
-    expect(identityDualAuthEnabled()).toBe(false);
-
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    try {
-      logConfigSummary();
-      expect(spy.mock.calls.flat().join("\n")).toContain("dual-auth off");
-    } finally {
-      spy.mockRestore();
-    }
+    expect(mod).not.toHaveProperty("identityDualAuthEnabled");
+    expect(mod).not.toHaveProperty("mcpApiKey");
+    expect(mod.config).not.toHaveProperty("replitAuth");
   });
 
-  it("names which of the two things is keeping web sign-in shut (#110)", async () => {
-    // Both failures boot healthily and then turn every User away, so the boot
-    // line has to say which one this is rather than that something is wrong.
-    const noKey = await load({ ...BOOTABLE, DOCUFLOW_IDENTITY_DUAL_AUTH: "on" });
-    const noFlag = () =>
-      load({
-        ...BOOTABLE,
-        CLERK_SECRET_KEY: "sk_test_not-a-real-key",
-        CLERK_PUBLISHABLE_KEY: "pk_test_not-a-real-key",
-      });
+  it("names which Clerk key is keeping web sign-in shut", async () => {
+    const noKey = await load(BOOTABLE);
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       noKey.logConfigSummary();
-      expect(spy.mock.calls.flat().join("\n")).toContain("web sign-in LOCKED — no CLERK_SECRET_KEY");
-
-      spy.mockClear();
-      (await noFlag()).logConfigSummary();
-      expect(spy.mock.calls.flat().join("\n")).toContain(
-        "web sign-in LOCKED — set DOCUFLOW_IDENTITY_DUAL_AUTH"
-      );
+      const locked = spy.mock.calls.flat().join("\n");
+      expect(locked).toContain("web sign-in LOCKED — no CLERK_SECRET_KEY");
+      expect(locked).not.toContain("dual-auth");
 
       spy.mockClear();
       const working = await load({
         ...BOOTABLE,
         CLERK_SECRET_KEY: "sk_test_not-a-real-key",
         CLERK_PUBLISHABLE_KEY: "pk_test_not-a-real-key",
-        DOCUFLOW_IDENTITY_DUAL_AUTH: "on",
       });
       working.logConfigSummary();
       expect(spy.mock.calls.flat().join("\n")).toContain("web sign-in Clerk");
@@ -842,35 +830,20 @@ describe("config — dual-auth drain flag (#109)", () => {
     }
   });
 
-  it("turns the drain on for each accepted spelling and off for everything else", async () => {
-    const { identityDualAuthEnabled } = await load(BOOTABLE);
-
-    for (const raw of ["1", "true", "on", "ON", " true "]) {
-      process.env.DOCUFLOW_IDENTITY_DUAL_AUTH = raw;
-      expect(identityDualAuthEnabled()).toBe(true);
-    }
-    for (const raw of ["0", "false", "off", "", "yes"]) {
-      process.env.DOCUFLOW_IDENTITY_DUAL_AUTH = raw;
-      expect(identityDualAuthEnabled()).toBe(false);
-    }
-  });
-
-  it("is read per call, so flipping it back rolls the drain back without a restart", async () => {
-    const { identityDualAuthEnabled, logConfigSummary } = await load({
+  it("treats Clerk keys as enough for web sign-in, with no drain flag", async () => {
+    const { webSignInAvailable, logConfigSummary } = await load({
       ...BOOTABLE,
-      DOCUFLOW_IDENTITY_DUAL_AUTH: "on",
+      CLERK_SECRET_KEY: "sk_test_not-a-real-key",
+      CLERK_PUBLISHABLE_KEY: "pk_test_not-a-real-key",
     });
 
-    expect(identityDualAuthEnabled()).toBe(true);
+    expect(webSignInAvailable()).toBe(true);
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       logConfigSummary();
-      expect(spy.mock.calls.flat().join("\n")).toContain("dual-auth on");
+      expect(spy.mock.calls.flat().join("\n")).not.toContain("dual-auth");
     } finally {
       spy.mockRestore();
     }
-
-    delete process.env.DOCUFLOW_IDENTITY_DUAL_AUTH;
-    expect(identityDualAuthEnabled()).toBe(false);
   });
 });

@@ -82,5 +82,3 @@ PUBLIC_OBJECT_SEARCH_PATHS = "/replit-objstore-b63748fd-2e8b-4090-8d94-254080b61
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 180000
-# MCP_API_KEY must be set via Replit Secrets (not hardcoded here).
-# Go to Tools > Secrets in Replit and add MCP_API_KEY there.
