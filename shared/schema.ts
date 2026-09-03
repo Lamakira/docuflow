@@ -80,6 +80,10 @@ export const users = pgTable("users", {
   lastGeneratedPassword: varchar("last_generated_password", { length: 255 }),
   lastLoginAt: timestamp("last_login_at"),
   isArchived: boolean("is_archived").notNull().default(false),
+  // Subject id this User is linked to at the IdentityProvider (#108, ADR-0007).
+  // Vendor-neutral on purpose: Clerk stays behind the port. NULL means not yet
+  // imported. `password` stays authoritative for the current login path.
+  identityProviderSubjectId: varchar("identity_provider_subject_id").unique(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -87,13 +91,27 @@ export const users = pgTable("users", {
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   role: true,
+  identityProviderSubjectId: true,
   createdAt: true,
   updatedAt: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
-export type SafeUser = Omit<User, "password">;
+/**
+ * The User shape HTTP returns: no bcrypt hash, and no IdentityProvider subject id
+ * (#108) — that link is a server-side identity concern, not something a client
+ * needs or should learn.
+ */
+export type SafeUser = Omit<User, "password" | "identityProviderSubjectId">;
+
+/** Drop the two columns `SafeUser` excludes. */
+export function toSafeUser<T extends Partial<Pick<User, "password" | "identityProviderSubjectId">>>(
+  user: T
+): Omit<T, "password" | "identityProviderSubjectId"> {
+  const { password: _password, identityProviderSubjectId: _subjectId, ...safe } = user;
+  return safe;
+}
 
 // Projects table - folders containing documents
 export const projects = pgTable("projects", {

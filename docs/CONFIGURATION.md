@@ -89,8 +89,9 @@ is. Most gate one feature, which reports its own failure while it is missing:
 
 ## Clerk credentials (#107)
 
-Named for Phase 5. [`server/config.ts`](../server/config.ts) does not read them
-yet, so login is still email/password and Replit OIDC. Values are never
+Named for Phase 5. [`server/config.ts`](../server/config.ts) reads them into the
+`IdentityProvider` port (#106); web login is still email/password and Replit OIDC,
+and without these the port fails closed rather than degrading. Values are never
 committed. Use the DocuFlow-owned Hobby application, never Replit Auth.
 
 | Variable | Role |
@@ -101,6 +102,37 @@ committed. Use the DocuFlow-owned Hobby application, never Replit Auth.
 Users cannot be copied from a Development instance to a Production instance.
 Import ([#108](https://github.com/Lamakira/docuflow/issues/108)) must target the
 instance this environment will keep.
+
+### Importing existing Users (#108)
+
+```bash
+npm run identity:import:users -- --dry-run   # classify only; reaches no provider
+npm run identity:import:users                # import, then write the links back
+```
+
+The import sends each User's stored bcrypt hash through the port, so imported
+accounts keep the password they already have — nobody is reset. The subject id
+comes back onto `users.identity_provider_subject_id`; `users.password` stays and
+still serves the current login path, and Membership, Workspace Context, and
+Device Enrollment are untouched.
+
+Re-running is safe. A User already carrying a subject id is skipped before the
+port is reached, so a second run creates no second Clerk User and a partial run
+resumes where it stopped.
+
+Users with no usable bcrypt hash — Replit OIDC accounts carry the
+`REPLIT_OIDC_USER` placeholder, not a hash — are **not** imported as password
+Users and no password is invented for them. Both commands print those addresses;
+they need a Clerk password-set invite instead.
+
+A run that reports failures exits non-zero and names each address with the
+provider's reason. Absent credentials stop the run outright rather than marking
+every User failed. The run ends with the verifier ADR-0017 asks for — a re-read
+of the database, and a non-zero exit if any importable User is still unlinked.
+
+Record the `--dry-run` classification in
+[`docs/migration/phase-5-user-import.md`](migration/phase-5-user-import.md)
+before importing.
 
 `MCP_API_KEY` and `DESKTOP_RELEASE_CI_TOKEN` are read per request rather than at
 boot, so rotating either takes effect without a restart.

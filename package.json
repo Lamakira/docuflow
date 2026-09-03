@@ -23,6 +23,7 @@
     "db:verify:workspace-backfill": "tsx --env-file-if-exists=.env scripts/verify-workspace-backfill.ts",
     "db:seed": "tsx --env-file-if-exists=.env scripts/seed-defaults.ts",
     "db:backfill:crm-links": "tsx --env-file-if-exists=.env scripts/backfill-crm-links.ts",
+    "identity:import:users": "tsx --env-file-if-exists=.env scripts/identity-import-users.ts",
     "db:env:check": "tsx --env-file-if-exists=.env scripts/db-env-check.ts",
     "db:print:url:masked": "tsx --env-file-if-exists=.env scripts/db-print-url-masked.ts",
     "objects:manifest": "tsx scripts/object-snapshot.ts manifest",

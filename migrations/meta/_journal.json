@@ -176,6 +176,13 @@
       "when": 1788353391582,
       "tag": "0024_spotty_gideon",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788430485274,
+      "tag": "0025_thankful_silver_sable",
+      "breakpoints": true
     }
   ]
 }

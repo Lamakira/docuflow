@@ -213,6 +213,16 @@ request path uses and ADR-0023's exit test cannot be written without; it runs
 against the GCS fake, and `ReplitStoragePort.list` is uncovered, like the rest of
 that adapter.
 
+`identity-user-import` ([#108](https://github.com/Lamakira/docuflow/issues/108))
+covers importing existing Users into the IdentityProvider by bcrypt hash. The
+seam is the use case over the port plus the
+`users.identity_provider_subject_id` link it writes back — the port fake answers,
+so no run reaches Clerk. The cases that earn the suite are the two refusals: a
+User with no usable hash is listed for a password-set invite rather than given an
+invented password, and a linked User short-circuits before the port, so a second
+run creates no second Clerk User. `users.password`, Membership, and Devices are
+asserted untouched, and characterization of `/api/auth/*` stays where it is.
+
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`
