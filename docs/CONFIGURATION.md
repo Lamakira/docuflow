@@ -65,20 +65,18 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `GCS_PROJECT_ID` | The project is taken from the key file's `project_id` |
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Email sends fail and report why; the request that triggered them still succeeds |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO` | Checkout and other money movement fail closed. Entitlement reads for Workspaces with no Stripe objects still succeed. A named secret must be test-mode (`sk_test_`); live keys are refused at boot. Live Stripe is optional test-mode operator config, not required to boot |
-| `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | IdentityProvider operations fail closed, and since [#110](https://github.com/Lamakira/docuflow/issues/110) that means nobody can sign in to the web; Replit OIDC and `MCP_API_KEY` are unchanged until #111. Boot still succeeds, so an environment can be brought up and then given its keys. A named secret must be test-mode (`sk_test_` / `pk_test_`); live keys are refused at boot |
+| `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | IdentityProvider operations fail closed, and since [#110](https://github.com/Lamakira/docuflow/issues/110) that means nobody can sign in to the web. Boot still succeeds, so an environment can be brought up and then given its keys. A named secret must be test-mode (`sk_test_` / `pk_test_`); live keys are refused at boot |
 | `OPENAI_API_KEY` | Embeddings, chat, and transcription fail when used |
 | `FATHOM_API_KEY` | Fathom transcripts fall back to the browser scraper |
 | `PLAYWRIGHT_CHROMIUM_PATH` | That scraper launches the browser Playwright installed — `npx playwright install chromium` on a developer machine, the copy the image installs into its own `PLAYWRIGHT_BROWSERS_PATH`. Name one only for a host carrying its own; a path with nothing runnable at it fails the scrape in this variable's name, never the boot. Permanent configuration and not a migration flag (#37): the host it runs on decides it, so there is nothing to remove ([docs/CONTAINER.md](CONTAINER.md)) |
 | `JWT_PREVIOUS_SECRET` | Only the current signing key is accepted, which is the steady state. Set it during a rotation — see below |
-| `MCP_API_KEY` | The MCP admin-impersonation header is refused. Phase 5 removes it |
 | `DESKTOP_RELEASE_CI_TOKEN` | Release registration is refused |
 | `APP_URL` | Links in outbound email fall back to the Replit domain variables, then `http://localhost:5000` |
-| `REPLIT_DOMAINS`, `REPLIT_DEV_DOMAIN` | Set by the Replit runtime, never by hand. The first entry stands in for `APP_URL` while that is unset. They leave with the OIDC login in Phase 5 |
+| `REPLIT_DOMAINS`, `REPLIT_DEV_DOMAIN` | Set by the Replit runtime, never by hand. The first entry stands in for `APP_URL` while that is unset |
 | `PORT` | 5000 |
 | `NODE_ENV` | `development`. The production build replaces the read with a literal (`script/bundles.ts`), so a deployment sets it rather than a person |
 | `DB_DRIVER` | Neon's serverless driver; `pg` selects node-postgres for a database that driver cannot reach. Permanent configuration and not a migration flag (#25): the database this points at decides it, so there is nothing to remove ([docs/CONTAINER.md](CONTAINER.md)). On Replit the database is Replit's own Postgres, which the serverless driver does not reach, so [`.replit`](../.replit) sets `pg` for both environments (#53) |
 | `DATABASE_MIGRATE_URL` | `db:migrate` uses `DATABASE_URL` (or the `PG*` set). Set this to the table-owner credential when `DATABASE_URL` is the application role that cannot bypass RLS (#97) |
-| `REPL_ID`, `ISSUER_URL` | Replit OIDC login fails. Phase 5 removes both |
 | `OTEL_EXPORTER` | The environment decides: nothing under test, the console in development, nothing in production until a collector is named — see [Telemetry](#telemetry) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | No collector, so nothing is exported over OTLP. Instrumentation still runs |
 | `OTEL_SERVICE_NAME` | `docuflow-server` |
@@ -86,7 +84,6 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `ALLOW_REMOTE_OTLP` | A non-local `OTEL_EXPORTER_OTLP_ENDPOINT` is refused outright (ADR-0018) |
 | `DOCUFLOW_ROLE` | `http` — this process serves the app and never claims Jobs. `worker` claims and runs them (#83) |
 | `DOCUFLOW_HTTP_BACKGROUND_INTERVALS` | On. HTTP still runs due-reminder (and the other) `setInterval` dispatchers until the Worker is proven. `0`, `false`, or `off` disable them |
-| `DOCUFLOW_IDENTITY_DUAL_AUTH` | Off, and a Clerk session is not read. **This image needs it on**: [#110](https://github.com/Lamakira/docuflow/issues/110) retired password sign-in, so with the flag off nobody can sign in to the web at all. `1`, `true`, or `on` — see [The dual-auth drain](#the-dual-auth-drain-109) |
 
 ## Clerk credentials (#107)
 
@@ -105,8 +102,8 @@ The publishable key is served to the browser at runtime by `GET /api/auth/config
 rather than baked into the bundle: one image is built and deployed to every
 environment (ADR-0018), so a build-time constant would pin every deployment to
 the build machine's instance. That endpoint answers
-`{ "publishableKey": …, "enabled": … }`, where `enabled` is false when the key is
-absent **or** `DOCUFLOW_IDENTITY_DUAL_AUTH` is off — the sign-in page reads it and
+`{ "publishableKey": …, "enabled": … }`, where `enabled` is false when either
+key is absent — the sign-in page reads it and
 says so rather than offering a box that cannot work. The secret key is never
 served.
 
@@ -145,30 +142,17 @@ Record the `--dry-run` classification in
 [`docs/migration/phase-5-user-import.md`](migration/phase-5-user-import.md)
 before importing.
 
-### The dual-auth drain (#109)
+### The dual-auth drain (#109), removed (#111)
 
-| | |
-| --- | --- |
-| Variable | `DOCUFLOW_IDENTITY_DUAL_AUTH` |
-| Default | off — no provider session is read. On this image that means nobody signs in on the web |
-| Owner | @Lamakira |
-| Removal gate | [#111](https://github.com/Lamakira/docuflow/issues/111), which removes Replit OIDC and `MCP_API_KEY` and leaves Clerk as the only web session. The variable and `dualAuthSession` go with it |
+The drain window and `DOCUFLOW_IDENTITY_DUAL_AUTH` were removed in
+[#111](https://github.com/Lamakira/docuflow/issues/111). Clerk is the only web
+session; see
+[`docs/migration/phase-5-clerk-only.md`](migration/phase-5-clerk-only.md).
 
-Temporary, DocuFlow-owned, and read per request rather than at boot, so an
-operator opens and closes the window against a running process. While it is on, an
-IdentityProvider session presented as `Authorization: Bearer <token>` is resolved
-to the `users.id` the import (#108) linked its subject to, and builds
+An IdentityProvider session presented as `Authorization: Bearer <token>` is
+resolved to the `users.id` the import (#108) linked its subject to, and builds
 `WorkspaceContext` from that User's Membership. Authentication is what moved;
 authorization did not, and Clerk cannot grant Workspace authority.
-
-The window opened by [#109](https://github.com/Lamakira/docuflow/issues/109) had
-a second side — the legacy session a User already held. [#110](https://github.com/Lamakira/docuflow/issues/110)
-removed it, so this flag now gates the only way a browser signs in. **Turning it
-off on this image locks every User out of the web.** Rolling the cutover back is
-that flip *plus* redeploying the previous image, which is what puts
-`POST /api/auth/login` back; the flip alone is not a rollback any more. Nothing is
-written when the flag moves in either direction, so there is still no down
-migration.
 
 Three `Authorization: Bearer` surfaces are never read as provider sessions —
 `/api/agent/*`, where the header is a Device access token, `/api/v1/*`, where it
@@ -182,7 +166,7 @@ guarded by the session, not a Device token, so a provider session is read on the
 like anywhere else. Without that a signed-in User could not revoke their own
 Device from the browser.
 
-The drain fails closed. An unverifiable token, absent Clerk credentials, and a
+The path fails closed. An unverifiable token, absent Clerk credentials, and a
 subject no User is linked to all answer `Unauthorized` rather than falling back
 to another identity.
 
@@ -214,8 +198,8 @@ marking every address failed.
 Record the window and the invite list in
 [`docs/migration/phase-5-dual-auth.md`](migration/phase-5-dual-auth.md).
 
-`MCP_API_KEY` and `DESKTOP_RELEASE_CI_TOKEN` are read per request rather than at
-boot, so rotating either takes effect without a restart.
+`DESKTOP_RELEASE_CI_TOKEN` is read per request rather than at
+boot, so rotating it takes effect without a restart.
 
 ## Desktop access-token signing keys
 

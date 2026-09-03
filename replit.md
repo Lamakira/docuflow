@@ -81,10 +81,9 @@ Ces identifiants sont valides sur la branche `refactor/project_assignment` et l'
 - Middleware stack: JSON parsing, URL encoding, request logging with timestamps
 
 **Authentication & Session Management**
-- **Replit Auth** via OpenID Connect (OIDC) integration
-- **Passport.js** with openid-client strategy for OAuth flows
-- Session storage using **connect-pg-simple** with PostgreSQL backend
-- JWT tokens managed through OIDC token endpoint
+- **Clerk** via `Authorization: Bearer` IdentityProvider session (#111)
+- Session storage using **connect-pg-simple** with PostgreSQL backend (legacy cookie logout only)
+- Desktop agent: device token + 1-hour HMAC-SHA256 JWT
 - Session TTL: 7 days with httpOnly, secure cookies
 
 **API Design Pattern**
@@ -241,7 +240,7 @@ Ces identifiants sont valides sur la branche `refactor/project_assignment` et l'
 
 The MCP (Model Context Protocol) server enables Claude Desktop to interact with DocuFlow directly. It communicates via STDIO transport and calls the DocuFlow REST API using API key authentication.
 
-**Authentication**: Uses `X-API-Key` header with the `MCP_API_KEY` environment variable. The API key authenticates as the main admin user.
+**Authentication**: Used to send `X-API-Key` matching `MCP_API_KEY`, which impersonated the Owner. [#111](https://github.com/Lamakira/docuflow/issues/111) removed that bypass; this companion still sends the header and the API ignores it.
 
 **Build**: `npx tsc --project mcp-server/tsconfig.json` outputs to `mcp-server/build/index.js`
 
@@ -258,7 +257,7 @@ The MCP (Model Context Protocol) server enables Claude Desktop to interact with 
 
 **Environment Variables** (set in Claude Desktop config):
 - `DOCUFLOW_API_URL`: The published app URL (e.g. https://your-app.replit.app)
-- `DOCUFLOW_API_KEY`: The MCP_API_KEY value from the app's environment
+- `DOCUFLOW_API_KEY`: unused since #111 removed `MCP_API_KEY` impersonation
 
 ### Time Tracking Architecture
 

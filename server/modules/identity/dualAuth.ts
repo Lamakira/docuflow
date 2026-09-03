@@ -1,12 +1,11 @@
 /**
- * The dual-auth drain (#109, ADR-0007, ADR-0017).
+ * IdentityProvider session resolution (#109 as the drain, #111 as the only web
+ * path; ADR-0007, ADR-0017).
  *
- * For the length of the drain window a User has two ways into the same
- * Workspace: the legacy session (email/password or Replit OIDC) they already
- * hold, and a session the IdentityProvider issued against the subject id the
- * import (#108) linked them to. Both resolve to one `users.id`, so
- * `WorkspaceContext` is built from the Membership exactly as before —
- * authentication moved, authorization did not.
+ * An `Authorization: Bearer` session the IdentityProvider issued is resolved to
+ * the `users.id` the import (#108) linked its subject to. `WorkspaceContext` is
+ * built from the Membership exactly as before — authentication moved,
+ * authorization did not.
  *
  * Fails closed: an unverifiable token, a provider with no credentials, and a
  * subject nobody is linked to all resolve to nobody, which the caller answers
@@ -73,8 +72,8 @@ export async function userIdFromIdentitySession(deps: {
     ({ providerSubjectId } = await provider.verifySessionToken(token));
   } catch (error) {
     // Every port failure — an invalid token, absent credentials, a provider that
-    // cannot be reached — is the same answer during a drain: this request has no
-    // Clerk-mapped identity, and the legacy session is still there for the User.
+    // cannot be reached — is the same answer: this request has no Clerk-mapped
+    // identity.
     if (error instanceof IdentityProviderError) return undefined;
     throw error;
   }

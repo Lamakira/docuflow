@@ -38,10 +38,11 @@ delete process.env.GCS_SERVICE_ACCOUNT_KEY;
 // from address is fixed here because it is what the suites see in the outbox.
 process.env.RESEND_API_KEY = "test-resend-key";
 process.env.RESEND_FROM_EMAIL = "DocuFlow <noreply@docuflow.test>";
-// Neither the MCP admin bypass in `isAuthenticated` nor the desktop-release CI
-// token may be inherited from a developer's shell; each suite sets what it needs.
-delete process.env.MCP_API_KEY;
+// The desktop-release CI token may not be inherited from a developer's shell;
+// each suite sets what it needs. Dual-auth and MCP_API_KEY are gone (#111).
 delete process.env.DESKTOP_RELEASE_CI_TOKEN;
+delete process.env.DOCUFLOW_IDENTITY_DUAL_AUTH;
+delete process.env.MCP_API_KEY;
 // Live Stripe credentials must not reach the harness (ADR-0018). Missing
 // credentials are the default: Entitlement reads still succeed, Checkout fails closed.
 delete process.env.STRIPE_SECRET_KEY;
@@ -72,16 +73,6 @@ delete process.env.DOCUFLOW_HTTP_BACKGROUND_INTERVALS;
 installNetworkFake();
 
 beforeEach(() => {
-  // The flag that reads IdentityProvider sessions (#109) is what web sign-in
-  // rides on after the #110 cutover, so the harness runs with it on and a case
-  // that wants the rollback surface turns it off for itself. Restored per test
-  // rather than set once, so that case cannot leak into the next one.
-  //
-  // This is why nothing runs in the flag's own default any more: with the flag
-  // off there is no way to sign a User in at all, which is the cutover, not an
-  // accident. `tests/smoke/config.test.ts` builds its own environment and is
-  // where the default-off behaviour is still proven.
-  process.env.DOCUFLOW_IDENTITY_DUAL_AUTH = "on";
   // Provider fakes are module-level singletons shared by every suite; clear them
   // alongside the database so one test's uploads or emails cannot leak into the next.
   resetGcs();

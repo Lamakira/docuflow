@@ -275,7 +275,7 @@ export function startTelemetry(): void {
         ignoreIncomingRequestHook: (request) => isUninterestingRequest(request.url),
       }),
       // Route and handler spans only. Every request passes through helmet, two
-      // rate limiters, the body parsers, the session, and passport; a span each
+      // rate limiters, the body parsers, and the session; a span each
       // would treble the size of a trace to say what the middleware stack in
       // server/app.ts already says in order.
       new ExpressInstrumentation({ ignoreLayersType: [ExpressLayerType.MIDDLEWARE] }),

@@ -261,7 +261,7 @@ describe("Service Account web BFF", () => {
     expect(asPlatformAdmin.body).toEqual({ message: "Access denied" });
   });
 
-  it("leaves session auth, Device auth, and MCP_API_KEY unchanged: a Service Account key is not valid on /api/*", async () => {
+  it("leaves session auth and Device auth unchanged: a Service Account key is not valid on /api/*", async () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await setWorkspaceRole(admin.id, "owner");
@@ -273,7 +273,7 @@ describe("Service Account web BFF", () => {
       .get("/api/projects")
       .set("x-api-key", created.body.plaintextKey);
     // Session cookie on this agent still authenticates; the Service Account key
-    // must not impersonate the Owner the way MCP_API_KEY does.
+    // must not impersonate anyone on `/api/*`.
     expect(withKey.status).toBe(200);
 
     const anonymous = await newAgent(app)

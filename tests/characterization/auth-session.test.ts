@@ -4,15 +4,14 @@ import { resetDb } from "../helpers/db";
 import { login, newAgent, promoteToAdmin, registerUser, uniqueEmail } from "../helpers/auth";
 
 /**
- * Characterization: web auth and the session contract, as of the Clerk cutover
- * (#110). Password sign-in is retired and an IdentityProvider session is what a
- * browser presents; what is frozen here is what the server does with it.
+ * Characterization: web auth and the session contract, as of Clerk-only web
+ * auth (#111). Password sign-in is gone and an IdentityProvider session is what
+ * a browser presents; what is frozen here is what the server does with it.
  *
  * Quirks frozen here:
- *  - `POST /api/auth/login` and `POST /api/auth/register` answer 410 to every
- *    payload, valid or malformed, and no longer distinguish a known address from
- *    an unknown one. They stay mounted so an older SPA build is told what
- *    happened; #111 removes them.
+ *  - `POST /api/auth/login` and `POST /api/auth/register` are unmounted (#111)
+ *    and answer Express's 404. They no longer distinguish a known address from
+ *    an unknown one.
  *  - `GET /api/auth/user` answers 200 with a JSON `null` body when nobody is
  *    signed in, and does the same when the session names a deleted user — the
  *    SPA treats "no user" and "unknown user" identically.
@@ -22,8 +21,11 @@ import { login, newAgent, promoteToAdmin, registerUser, uniqueEmail } from "../h
  *    sign-in never created. It answers 200 and the provider session it could not
  *    reach still works — ending that one is Clerk's job, and the SPA calls it.
  *  - The strict brute-force limiter is still mounted on `/api/login` and
- *    `/api/register` — the Replit OIDC paths — not on the `/api/auth/*`
- *    endpoints, which no longer have credentials to brute-force.
+ *    `/api/register` — the retired Replit OIDC paths, which now answer 410 —
+ *    not on the `/api/auth/*` endpoints, which no longer have credentials to
+ *    brute-force.
+ *  - `X-API-Key` is ignored. It used to impersonate the Owner when it matched
+ *    `MCP_API_KEY`; that header is gone.
  *  - Any error inside `GET /api/auth/user` is swallowed into a `null` body.
  *  - There is no self-service password change. The only route that sets
  *    `users.password` after creation is the admin-only
@@ -35,7 +37,7 @@ describe("auth and session (characterization)", () => {
     await resetDb();
   });
 
-  it("answers 410 to password sign-in and registration whatever the payload is", async () => {
+  it("answers 404 to password sign-in and registration whatever the payload is", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const anonymous = newAgent(app);
@@ -51,10 +53,7 @@ describe("auth and session (characterization)", () => {
     for (const payload of payloads) {
       for (const path of ["/api/auth/login", "/api/auth/register"]) {
         const res = await anonymous.post(path).send(payload);
-        // Quirk: the schemas that answered 400 for a malformed body are gone
-        // with the credential check, so every shape gets one answer.
-        expect(res.status, `${path} ${JSON.stringify(payload)}`).toBe(410);
-        expect(res.body.message).toContain("Clerk");
+        expect(res.status, `${path} ${JSON.stringify(payload)}`).toBe(404);
       }
     }
 
@@ -165,12 +164,12 @@ describe("auth and session (characterization)", () => {
     expect(adminOnly.body).toEqual({ message: "Unauthorized" });
   });
 
-  describe("MCP API key bypass", () => {
+  describe("MCP API key bypass is gone", () => {
     afterEach(() => {
       delete process.env.MCP_API_KEY;
     });
 
-    it("authenticates as the main admin when the key matches", async () => {
+    it("does not impersonate the Owner when a leftover key matches", async () => {
       const app = await makeApp();
       const admin = await registerUser(app);
       await promoteToAdmin(admin.id);
@@ -180,32 +179,13 @@ describe("auth and session (characterization)", () => {
         .get("/api/auth/user")
         .set("x-api-key", "test-mcp-key");
       expect(authorized.status).toBe(200);
-      // Quirk: `/api/auth/user` has no `isAuthenticated` guard, so the key does
-      // nothing here — the endpoint still reports nobody signed in.
       expect(authorized.body).toBeNull();
 
       const guarded = await newAgent(app)
         .get("/api/admin/users")
         .set("x-api-key", "test-mcp-key");
-      expect(guarded.status).toBe(200);
-      expect(Array.isArray(guarded.body)).toBe(true);
-
-      const wrongKey = await newAgent(app)
-        .get("/api/admin/users")
-        .set("x-api-key", "wrong-key");
-      expect(wrongKey.status).toBe(401);
-    });
-
-    it("falls through to 401 when no admin account exists", async () => {
-      const app = await makeApp();
-      await registerUser(app); // plain user — `getMainAdmin` finds nothing
-      process.env.MCP_API_KEY = "test-mcp-key";
-
-      const res = await newAgent(app)
-        .get("/api/projects")
-        .set("x-api-key", "test-mcp-key");
-      expect(res.status).toBe(401);
-      expect(res.body).toEqual({ message: "Unauthorized" });
+      expect(guarded.status).toBe(401);
+      expect(guarded.body).toEqual({ message: "Unauthorized" });
     });
   });
 });

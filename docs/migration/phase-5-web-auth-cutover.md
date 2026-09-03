@@ -117,6 +117,6 @@ Against the harness's disposable Postgres, with the Clerk SDK aliased to
 
 ## Exit
 
-`dualAuthSession`, the flag, Replit OIDC, and `MCP_API_KEY` are removed together
-in [#111](https://github.com/Lamakira/docuflow/issues/111), which leaves the
-provider session as the unconditional web path.
+`dualAuthSession`, the flag, Replit OIDC, and `MCP_API_KEY` were removed together
+in [#111](https://github.com/Lamakira/docuflow/issues/111) — see
+[`phase-5-clerk-only.md`](phase-5-clerk-only.md).

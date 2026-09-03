@@ -10,9 +10,8 @@ export type WebAuthConfig = {
   publishableKey: string | null;
   /**
    * Whether a session minted against that key would be read. False means this
-   * deployment cannot sign anyone in — a missing key at either end, or the flag
-   * that reads provider sessions turned off — and the sign-in page says so
-   * rather than offering a box that cannot work.
+   * deployment cannot sign anyone in — a missing key at either end — and the
+   * sign-in page says so rather than offering a box that cannot work.
    */
   enabled: boolean;
 };

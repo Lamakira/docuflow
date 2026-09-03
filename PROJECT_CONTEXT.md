@@ -33,10 +33,8 @@ A companion **MCP server** exposes the app's API to Claude Desktop.
 - Sessions stored in Postgres via `connect-pg-simple` (7-day TTL, httpOnly secure cookies)
 
 **Auth**
-- Email/password (passport-local style with bcrypt) — the primary mechanism
-- Replit Auth (OIDC via openid-client / Passport) — also supported
-- MCP API key auth: `X-API-Key` header (`MCP_API_KEY` env var) authenticates as the main admin
-- Desktop agent: device token (SHA-256 hash stored) + short-lived (1h) HMAC-SHA256 JWT
+- Clerk (IdentityProvider port): the browser presents `Authorization: Bearer <provider session>`
+- Desktop agent: email/password at `POST /api/agent/auth/login`, then device token (SHA-256 hash stored) + short-lived (1h) HMAC-SHA256 JWT
 
 **Storage & external services**
 - Google Cloud Storage with a Google service account (`GCS_SERVICE_ACCOUNT_KEY`, or Application Default Credentials), V4 signed URLs for direct client transfer, and a custom ACL layer (`server/objectAcl.ts`)
@@ -104,7 +102,7 @@ A companion **MCP server** exposes the app's API to Claude Desktop.
 - All company documents are automatically extracted and embedded into `company_document_embeddings` for AI search.
 
 ### 3.7 MCP Server (`mcp-server/index.ts`)
-- Single-file MCP server, STDIO transport, for Claude Desktop. Calls the DocuFlow REST API with `X-API-Key` (authenticates as the main admin).
+- Single-file MCP server, STDIO transport, for Claude Desktop. It still sends `X-API-Key`; since #111 the API ignores that header and no longer impersonates the Owner.
 - **22 tools**: list_projects, get_project, list_documents, get_document, create_document, update_document, delete_document, list_recent_documents, search, list_clients, get_client, create_client, list_crm_projects, get_crm_project, list_time_entries, get_time_tracking_stats, start_time_tracking, stop_time_tracking, get_active_time_entry, ask_ai, list_users, get_notifications.
 - Build: `npx tsc --project mcp-server/tsconfig.json` → `mcp-server/build/index.js`. Config env vars: `DOCUFLOW_API_URL`, `DOCUFLOW_API_KEY`.
 
@@ -159,7 +157,7 @@ All tables use UUID string PKs (`gen_random_uuid()`), Drizzle ORM definitions in
 
 All app routes require session auth (`isAuthenticated`) unless noted. Files: `server/routes.ts` (~5,000 lines, main API), `server/agentRoutes.ts` (desktop agent), `server/downloadRoutes.ts` (installers), `server/auth.ts` (auth setup).
 
-- **Auth**: `POST /api/auth/register`, `/login`, `/logout`, `GET /api/auth/user`. Replit OIDC also mounted. MCP requests use `X-API-Key`.
+- **Auth**: `GET /api/auth/config`, `GET /api/auth/user`, `POST /api/auth/logout`. Clerk session via `Authorization: Bearer`. `GET /api/login|callback|logout` answer 410.
 - **Documentation**: `GET/POST/PATCH/DELETE /api/projects...`, `/api/projects/:projectId/documents` (+ `/reorder`), `/api/documents/:id` (+ `/ancestors`, `/duplicate`, `/sync-transcripts`, `/transcripts`), `GET /api/documents/recent`, `GET /api/search`, `GET /api/projects/documentable`. (Direct project create/delete deprecated → managed via CRM.)
 - **CRM**: `/api/crm/clients` (+ `/:clientId/contacts`), `/api/crm/contacts/:id`, `/api/crm/projects` (+ `:id`, `/all-kanban`, `/by-project/:projectId`, `/clone`, `/members`, `/members/me`, `/notes`, `/reminders`, `/stage-history`, `/tags`, `/documentation`), `/api/crm/tags`, `/api/tasks`, `/api/reminders/:id`.
 - **Daily updates**: `GET/POST /api/daily-updates`, `PATCH/DELETE /api/daily-updates/:id`; admin: `GET /api/admin/daily-updates` (+ `/kpis`, `/today-status`).
@@ -199,7 +197,7 @@ All app routes require session auth (`isAuthenticated`) unless noted. Files: `se
 ## 7. Roles & Permissions
 
 - `role`: `user` or `admin`. Admins access `/api/admin/*`, user management, org settings, analytics, screencasts, module/field configuration.
-- `isMainAdmin` (0/1): the main admin cannot be edited, deleted, password-reset, or role-changed by other admins. The MCP API key authenticates as this user.
+- `isMainAdmin` (0/1): the main admin cannot be edited, deleted, password-reset, or role-changed by other admins.
 - `canViewDailyUpdates` (0/1): grants non-admins access to the daily updates admin view.
 - `isArchived`: soft-deactivated users (archive endpoint instead of hard delete).
 - Device security: raw device tokens are never stored (SHA-256 hash only); JWTs are HMAC-SHA256, 1-hour expiry with refresh; heartbeat enforces revocation; screenshots use presigned GCS uploads and admin-only soft delete with audit fields.

@@ -1,19 +1,18 @@
 /**
- * Web authentication after the Clerk cutover (#110, ADR-0007, ADR-0017).
+ * Web authentication after Clerk is the only path (#111, ADR-0007, ADR-0017).
  *
- * The drain (#109) gave a User two ways into the same Workspace. This is the
- * ticket that takes the first one away: DocuFlow no longer verifies a password
- * or mints a session of its own for the browser, so the IdentityProvider session
- * resolved by `dualAuthSession` is the only credential the web presents.
- * Authorization is untouched — the Membership still decides what that User may
+ * DocuFlow no longer verifies a password, mints a session of its own, or
+ * impersonates the Owner through `X-API-Key`. The browser presents an
+ * IdentityProvider session; `identitySession` resolves it to a `users.id`, and
+ * authorization is untouched — the Membership still decides what that User may
  * do, and Clerk cannot grant Workspace authority.
  *
- * `POST /api/auth/login` and `POST /api/auth/register` stay mounted rather than
- * being deleted, so a browser still running the previous SPA build is told what
- * happened instead of getting a 404. They are removed with the rest of the
- * legacy paths in #111.
+ * `GET /api/login`, `/api/callback`, and `/api/logout` stay mounted rather than
+ * being deleted, so a leftover Replit OIDC bookmark is told what happened
+ * instead of getting the SPA shell. `POST /api/auth/login` and
+ * `/api/auth/register` are gone with the rest of the password web path.
  *
- * Two password surfaces deliberately survive this ticket: the desktop agent's
+ * Two password surfaces deliberately survive: the desktop agent's
  * `POST /api/agent/auth/login`, which #105 leaves on its own token path, and the
  * admin reset that writes `users.password`. Neither is a web session.
  */
@@ -23,7 +22,7 @@ import type { WebAuthConfig } from "@shared/webAuth";
 import { config, webSignInAvailable } from "../../config";
 
 export const WEB_PASSWORD_AUTH_RETIRED =
-  "Password sign-in has moved to Clerk. Sign in from the DocuFlow sign-in page.";
+  "This sign-in path has moved to Clerk. Sign in from the DocuFlow sign-in page.";
 
 /**
  * Answered before the body is read. Validating first would let a caller tell a

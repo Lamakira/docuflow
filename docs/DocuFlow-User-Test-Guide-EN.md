@@ -38,7 +38,7 @@ Tasks are always tied to a **CRM project** (`crmProjectId`).
 
 - **Logged out**: routes `/`, `/auth`, fallback → `Landing` or `AuthPage` (`App.tsx`).
 - **Landing** (`Landing.tsx`): hero, **Sign In** (header), **Get Started**, **Start for Free** → `/auth`.
-- **Auth** (`AuthPage.tsx`): card **Sign In**, **Email** / **Password**, **Sign In**, **Continue with Replit** (`/api/login`), **Back to home**.
+- **Auth** (`AuthPage.tsx`): Clerk **Sign In** (no email/password form, no Replit button), **Back to home**.
 - **Self-service signup**: **no signup form** in `AuthPage.tsx`. Server exposes `POST /api/auth/register` (`server/routes.ts`), not wired to this auth UI.
 - **After login**: redirect to `/` → **Home** = **ChatBotInline** only (`Home.tsx`).
 - **Main navigation** (`AppSidebar.tsx`): **Company Documents**, **Project Management**, **Documentation**, **Time Tracking**, and if admin **Administration**. Footer: sidebar toggle, notifications, chat, **Time Tracker** (clock), theme, user menu, **LogOut**.

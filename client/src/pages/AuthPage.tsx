@@ -10,9 +10,6 @@ import { useWebAuthConfig } from "@/lib/webAuthConfig";
  * password field, because it no longer verifies passwords for the web. What is
  * still DocuFlow's is everything after the session — the Membership decides what
  * this User may do, and Clerk cannot grant Workspace authority.
- *
- * Replit OIDC stays until #111 removes it, so the button below still works for
- * anyone whose account has not been moved yet.
  */
 export default function AuthPage() {
   const [, setLocation] = useLocation();
@@ -57,15 +54,6 @@ export default function AuthPage() {
         )}
 
         <div className="mt-6 space-y-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={() => (window.location.href = "/api/login")}
-            data-testid="button-replit-auth"
-          >
-            Continue with Replit
-          </Button>
           <Button
             variant="ghost"
             onClick={() => setLocation("/")}
