@@ -806,6 +806,42 @@ describe("config — dual-auth drain flag (#109)", () => {
     }
   });
 
+  it("names which of the two things is keeping web sign-in shut (#110)", async () => {
+    // Both failures boot healthily and then turn every User away, so the boot
+    // line has to say which one this is rather than that something is wrong.
+    const noKey = await load({ ...BOOTABLE, DOCUFLOW_IDENTITY_DUAL_AUTH: "on" });
+    const noFlag = () =>
+      load({
+        ...BOOTABLE,
+        CLERK_SECRET_KEY: "sk_test_not-a-real-key",
+        CLERK_PUBLISHABLE_KEY: "pk_test_not-a-real-key",
+      });
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      noKey.logConfigSummary();
+      expect(spy.mock.calls.flat().join("\n")).toContain("web sign-in LOCKED — no CLERK_SECRET_KEY");
+
+      spy.mockClear();
+      (await noFlag()).logConfigSummary();
+      expect(spy.mock.calls.flat().join("\n")).toContain(
+        "web sign-in LOCKED — set DOCUFLOW_IDENTITY_DUAL_AUTH"
+      );
+
+      spy.mockClear();
+      const working = await load({
+        ...BOOTABLE,
+        CLERK_SECRET_KEY: "sk_test_not-a-real-key",
+        CLERK_PUBLISHABLE_KEY: "pk_test_not-a-real-key",
+        DOCUFLOW_IDENTITY_DUAL_AUTH: "on",
+      });
+      working.logConfigSummary();
+      expect(spy.mock.calls.flat().join("\n")).toContain("web sign-in Clerk");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("turns the drain on for each accepted spelling and off for everything else", async () => {
     const { identityDualAuthEnabled } = await load(BOOTABLE);
 

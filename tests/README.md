@@ -101,6 +101,12 @@ a database you care about, and never at anything production-related.
   mints tokens with the harness's fixed `JWT_SECRET` — a `<key-id>:<secret>` pair,
   both halves of which a minted token needs — for the middleware branches (an
   expired token, a token for a deleted device) no live login can produce.
+- Get an authenticated agent from `registerUser` (or `signIn`/`login` for a
+  second browser on an existing User). Since [#110](https://github.com/Lamakira/docuflow/issues/110)
+  those create the row through `storage` and sign it in through the
+  IdentityProvider, because there is no registration endpoint left to post to;
+  the agent they return carries `Authorization: Bearer <provider session>` on
+  every request, and `tests/setup.ts` keeps the flag that reads it on.
 - Get every request from `newAgent`/`registerUser` rather than `supertest`
   directly, authenticated or not. They attach a unique `X-Forwarded-For`, which
   keeps unrelated suites from spending each other's rate-limit budget;
@@ -224,21 +230,25 @@ run creates no second Clerk User. `users.password`, Membership, and Devices are
 asserted untouched, and characterization of `/api/auth/*` stays where it is.
 
 `identity-dual-auth` ([#109](https://github.com/Lamakira/docuflow/issues/109))
-covers the drain window that follows the import: while
-`DOCUFLOW_IDENTITY_DUAL_AUTH` is on, a legacy session and a provider-mapped one
-reach the same Membership, and the suite asserts both answer `/api/auth/user`
-identically and both pass a Workspace-scoped read. Unlike the rest of the
-identity suites it does boot HTTP, because the flag has no meaning below the
-request. What earns it is the refusals: with the flag off, a valid provider
-session is 401 and the legacy session is untouched — the rollback ADR-0017 asks
-for; a subject nobody is linked to is 401 even though the provider vouches for
-it; and the desktop agent's own `Authorization: Bearer` is never read as a
-provider session, so Devices stay on the token path this phase does not touch.
-Invites are here too: only Users with no usable hash are sent one, a second run
-sends nothing, an answered invite becomes a subject-id link instead of a second
-mail, and the verifier re-reads rather than tallies. The suite names
-test-mode Clerk credentials so the process provider is the adapter over
-`tests/fakes/clerk.ts` rather than the closed one; no run reaches Clerk.
+covers the window that follows the import: while `DOCUFLOW_IDENTITY_DUAL_AUTH` is
+on, a session the real import linked reaches that User's Membership. Unlike the
+rest of the identity suites it does boot HTTP, because the flag has no meaning
+below the request. What earns it is the refusals: with the flag off, a valid
+provider session is 401 — the rollback ADR-0017 asks for; a subject nobody is
+linked to is 401 even though the provider vouches for it; and the desktop agent's
+own `Authorization: Bearer` is never read as a provider session, so Devices stay
+on the token path this phase does not touch. Invites are here too: only Users
+with no usable hash are sent one, a second run sends nothing, an answered invite
+becomes a subject-id link instead of a second mail, and the verifier re-reads
+rather than tallies. The drain's legacy half is gone since #110, so what the
+suite once froze as "email/password still works" now asserts the 410.
+
+`web-auth-cutover` ([#110](https://github.com/Lamakira/docuflow/issues/110))
+covers the cutover itself: password sign-in and registration answer 410 to every
+payload and mint nothing, a provider session enters the Workspace and stamps
+`last_login_at`, `GET /api/auth/config` serves the publishable key and never the
+secret, and the flag off refuses the provider session — which on this image is
+the whole of web auth, so the rollback is that flip plus an image redeploy.
 
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1

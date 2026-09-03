@@ -281,15 +281,16 @@ describe("User import against the database", () => {
     await resetDb();
   });
 
-  it("links the registered User, leaves the password, and no-ops on a second run", async () => {
-    const { makeApp } = await import("../helpers/app");
-    const { registerUser } = await import("../helpers/auth");
+  it("links an unlinked User, leaves the password, and no-ops on a second run", async () => {
+    const { createUnlinkedUser } = await import("../helpers/auth");
     const { storage } = await import("../../server/storage");
     const { importUsersIntoIdentityProvider } = await import(
       "../../server/modules/identity/userImport"
     );
-    const app = await makeApp();
-    const user = await registerUser(app);
+    // Unlinked on purpose: this is the state the import exists to change, and
+    // it is what every User was in before Phase 5 (#110 made a signed-in User a
+    // linked one, so the ordinary fixture arrives already imported).
+    const user = await createUnlinkedUser();
     const before = await storage.getUserWithPassword(user.id);
     const provider = new FakeIdentityProvider();
 
@@ -316,12 +317,6 @@ describe("User import against the database", () => {
       failed: 0,
     });
     expect(provider.imports).toHaveLength(1);
-
-    // Web login is unchanged by the import.
-    const { login } = await import("../helpers/auth");
-    const agent = await login(app, user.email, user.password);
-    const me = await agent.get("/api/auth/user");
-    expect(me.status).toBe(200);
   });
 
   it("keeps the provider subject id off every User the API returns", async () => {
@@ -339,6 +334,10 @@ describe("User import against the database", () => {
       persistence: storage,
       provider: new FakeIdentityProvider(),
     });
+    // Signing in linked them already (#110), so this is the subject id the API
+    // must not leak — read from the row rather than assumed from a fixture.
+    const subjectId = (await storage.getUserWithPassword(member.id))?.identityProviderSubjectId;
+    expect(subjectId).toEqual(expect.any(String));
 
     // Every shape the admin surfaces hand back: the directory, the detail view,
     // and the two writes that return the row they just updated.
@@ -354,11 +353,8 @@ describe("User import against the database", () => {
       expect(response.status).toBe(200);
       // The link is a server-side identity concern; no client learns it.
       expect(JSON.stringify(response.body)).not.toContain("identityProviderSubjectId");
-      expect(JSON.stringify(response.body)).not.toContain("user_fake_");
+      expect(JSON.stringify(response.body)).not.toContain(subjectId);
     }
-    // The rows really were linked — the assertions above are not vacuous.
-    const linked = await storage.getUserWithPassword(member.id);
-    expect(linked?.identityProviderSubjectId).toMatch(/^user_fake_/);
   });
 
   it("lists an OIDC-only User for a password-set invite and leaves it unlinked", async () => {
@@ -384,7 +380,7 @@ describe("User import against the database", () => {
 
   it("leaves Membership and Devices untouched", async () => {
     const { makeApp } = await import("../helpers/app");
-    const { registerUser } = await import("../helpers/auth");
+    const { createUnlinkedUser } = await import("../helpers/auth");
     const { loginDevice } = await import("../helpers/agent");
     const { storage } = await import("../../server/storage");
     const { pool } = await import("../../server/db");
@@ -392,7 +388,8 @@ describe("User import against the database", () => {
       "../../server/modules/identity/userImport"
     );
     const app = await makeApp();
-    const user = await registerUser(app);
+    // Unlinked, so the import below has something to do rather than no-opping.
+    const user = await createUnlinkedUser();
     const device = await loginDevice(app, user);
     const membershipsBefore = await pool.query(
       `SELECT id, user_id, workspace_id, workspace_role_id, archived_at FROM memberships ORDER BY id`

@@ -4,42 +4,74 @@ import { resetDb } from "../helpers/db";
 import { login, newAgent, promoteToAdmin, registerUser, uniqueEmail } from "../helpers/auth";
 
 /**
- * Characterization: legacy web auth and session contract.
+ * Characterization: web auth and the session contract, as of the Clerk cutover
+ * (#110). Password sign-in is retired and an IdentityProvider session is what a
+ * browser presents; what is frozen here is what the server does with it.
  *
  * Quirks frozen here:
+ *  - `POST /api/auth/login` and `POST /api/auth/register` answer 410 to every
+ *    payload, valid or malformed, and no longer distinguish a known address from
+ *    an unknown one. They stay mounted so an older SPA build is told what
+ *    happened; #111 removes them.
  *  - `GET /api/auth/user` answers 200 with a JSON `null` body when nobody is
- *    logged in, and does the same when the session points at a deleted user —
- *    the SPA treats "no user" and "unknown user" identically.
- *  - Registration and login return the whole user row minus `password`, which
- *    still carries `lastGeneratedPassword` (an admin-only field) and every
- *    internal flag.
- *  - The strict brute-force limiter is mounted on `/api/login` and
- *    `/api/register`, not on the `/api/auth/*` endpoints the SPA actually posts
- *    to, so real logins are only covered by the loose global limit.
+ *    signed in, and does the same when the session names a deleted user — the
+ *    SPA treats "no user" and "unknown user" identically.
+ *  - It returns the whole user row minus `password`, which still carries
+ *    `lastGeneratedPassword` (an admin-only field) and every internal flag.
+ *  - `POST /api/auth/logout` destroys the legacy cookie session, which a Clerk
+ *    sign-in never created. It answers 200 and the provider session it could not
+ *    reach still works — ending that one is Clerk's job, and the SPA calls it.
+ *  - The strict brute-force limiter is still mounted on `/api/login` and
+ *    `/api/register` — the Replit OIDC paths — not on the `/api/auth/*`
+ *    endpoints, which no longer have credentials to brute-force.
  *  - Any error inside `GET /api/auth/user` is swallowed into a `null` body.
- *  - There is no self-service password change. The only route that sets a
- *    password after registration is the admin-only
- *    `POST /api/admin/users/:id/reset-password` (frozen in `users-admin`), so a
- *    user who knows their own password cannot rotate it. The absence is part of
- *    the contract a later phase has to decide about deliberately.
+ *  - There is no self-service password change. The only route that sets
+ *    `users.password` after creation is the admin-only
+ *    `POST /api/admin/users/:id/reset-password` (frozen in `users-admin`), and
+ *    that password now only opens the desktop agent, not the web.
  */
 describe("auth and session (characterization)", () => {
   beforeEach(async () => {
     await resetDb();
   });
 
-  it("registers a user and returns the full row minus the password hash", async () => {
+  it("answers 410 to password sign-in and registration whatever the payload is", async () => {
     const app = await makeApp();
-    const agent = newAgent(app);
-    const email = uniqueEmail("register");
+    const user = await registerUser(app);
+    const anonymous = newAgent(app);
 
-    const res = await agent
-      .post("/api/auth/register")
-      .send({ email, password: "password123", firstName: "Ada", lastName: "Lovelace" });
+    const payloads = [
+      { email: user.email, password: user.password },
+      { email: uniqueEmail("nobody"), password: "password123" },
+      { email: user.email, password: "not-the-password" },
+      { email: "not-an-email" },
+      {},
+    ];
 
-    expect(res.status).toBe(201);
+    for (const payload of payloads) {
+      for (const path of ["/api/auth/login", "/api/auth/register"]) {
+        const res = await anonymous.post(path).send(payload);
+        // Quirk: the schemas that answered 400 for a malformed body are gone
+        // with the credential check, so every shape gets one answer.
+        expect(res.status, `${path} ${JSON.stringify(payload)}`).toBe(410);
+        expect(res.body.message).toContain("Clerk");
+      }
+    }
+
+    // And none of them minted anything on the way past.
+    expect((await anonymous.get("/api/auth/user")).body).toBeNull();
+  });
+
+  it("returns the full row minus the password hash for the signed-in user", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app, { firstName: "Ada", lastName: "Lovelace" });
+
+    const res = await user.agent.get("/api/auth/user");
+
+    expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      email,
+      id: user.id,
+      email: user.email,
       firstName: "Ada",
       lastName: "Lovelace",
       role: "user",
@@ -48,84 +80,31 @@ describe("auth and session (characterization)", () => {
       hoursPerDay: 8,
       isArchived: false,
       profileImageUrl: null,
-      lastLoginAt: null,
     });
     expect(res.body).not.toHaveProperty("password");
     // Quirk: the admin-only "last generated password" column ships to every
     // caller because the route strips `password` and nothing else.
     expect(res.body).toHaveProperty("lastGeneratedPassword", null);
-    expect(typeof res.body.id).toBe("string");
   });
 
-  it("validates the registration payload one message at a time", async () => {
-    const app = await makeApp();
-    const agent = newAgent(app);
-
-    const badEmail = await agent
-      .post("/api/auth/register")
-      .send({ email: "not-an-email", password: "password123" });
-    expect(badEmail.status).toBe(400);
-    expect(badEmail.body).toEqual({ message: "Invalid email address" });
-
-    const shortPassword = await agent
-      .post("/api/auth/register")
-      .send({ email: uniqueEmail("short"), password: "short" });
-    expect(shortPassword.status).toBe(400);
-    // Quirk: only the first Zod issue is reported, so a request that is wrong in
-    // two ways still gets a single message.
-    expect(shortPassword.body).toEqual({ message: "Password must be at least 8 characters" });
-  });
-
-  it("keeps the session across requests and records the last login", async () => {
+  it("keeps the provider session across requests and records the last login", async () => {
     const app = await makeApp();
     const user = await registerUser(app, { firstName: "Grace" });
 
-    const beforeLogin = await user.agent.get("/api/auth/user");
-    expect(beforeLogin.status).toBe(200);
-    expect(beforeLogin.body.lastLoginAt).toBeNull();
+    // Clerk owns the sign-in, so the first request of a session is what stamps
+    // `lastLoginAt` — the retired login route was its only other writer.
+    const me = await user.agent.get("/api/auth/user");
+    expect(me.status).toBe(200);
+    expect(typeof me.body.lastLoginAt).toBe("string");
 
-    const fresh = await login(app, user.email, user.password);
-    const afterLogin = await fresh.get("/api/auth/user");
-    expect(afterLogin.status).toBe(200);
-    expect(afterLogin.body.id).toBe(user.id);
-    expect(typeof afterLogin.body.lastLoginAt).toBe("string");
-
-    // The registration session survives the second login on a separate cookie jar.
-    const stillValid = await user.agent.get("/api/projects");
-    expect(stillValid.status).toBe(200);
+    // A second browser on the same User is a second provider session, and the
+    // first one is untouched by it.
+    const second = await login(app, user.email);
+    expect((await second.get("/api/auth/user")).body.id).toBe(user.id);
+    expect((await user.agent.get("/api/projects")).status).toBe(200);
   });
 
-  it("rejects unknown emails and wrong passwords with one message", async () => {
-    const app = await makeApp();
-    const user = await registerUser(app);
-    const agent = newAgent(app);
-
-    const unknown = await agent
-      .post("/api/auth/login")
-      .send({ email: uniqueEmail("nobody"), password: "password123" });
-    expect(unknown.status).toBe(401);
-    expect(unknown.body).toEqual({ message: "Invalid email or password" });
-
-    const wrongPassword = await agent
-      .post("/api/auth/login")
-      .send({ email: user.email, password: "not-the-password" });
-    expect(wrongPassword.status).toBe(401);
-    expect(wrongPassword.body).toEqual({ message: "Invalid email or password" });
-
-    const missingPassword = await agent.post("/api/auth/login").send({ email: user.email });
-    expect(missingPassword.status).toBe(400);
-    // Quirk: the schema's custom "Password is required" text only covers an empty
-    // string. Omitting the field entirely surfaces Zod's default wording instead.
-    expect(missingPassword.body).toEqual({ message: "Required" });
-
-    const emptyPassword = await agent
-      .post("/api/auth/login")
-      .send({ email: user.email, password: "" });
-    expect(emptyPassword.status).toBe(400);
-    expect(emptyPassword.body).toEqual({ message: "Password is required" });
-  });
-
-  it("logs out, and logging out again still succeeds", async () => {
+  it("logs out of a session it never had, and the provider session survives", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
 
@@ -134,17 +113,18 @@ describe("auth and session (characterization)", () => {
     expect(first.body).toEqual({ message: "Logged out successfully" });
 
     // Quirk: destroying an already-destroyed session is not an error — the route
-    // answers 200 for a caller that was never logged in.
+    // answers 200 for a caller that was never signed in.
     const second = await user.agent.post("/api/auth/logout");
     expect(second.status).toBe(200);
-    expect(second.body).toEqual({ message: "Logged out successfully" });
 
+    // And the quirk that matters after #110: this route only ever reached the
+    // cookie session. The provider session is still a way in, which is why the
+    // SPA signs out through Clerk rather than through here.
     const after = await user.agent.get("/api/projects");
-    expect(after.status).toBe(401);
-    expect(after.body).toEqual({ message: "Unauthorized" });
+    expect(after.status).toBe(200);
   });
 
-  it("answers null when the session points at a user that no longer exists", async () => {
+  it("answers null when the session names a user that no longer exists", async () => {
     const app = await makeApp();
     const admin = await registerUser(app);
     await promoteToAdmin(admin.id);
@@ -153,14 +133,12 @@ describe("auth and session (characterization)", () => {
     const deleted = await admin.agent.delete(`/api/admin/users/${victim.id}`);
     expect(deleted.status).toBe(200);
 
-    // Identity is global: the session cookie is still valid, so /api/auth/user
-    // looks the user up and answers null. Workspace routes fail closed.
+    // The provider would still vouch for the subject, but the link it resolves
+    // through is a DocuFlow row and that row is gone.
     const me = await victim.agent.get("/api/auth/user");
     expect(me.status).toBe(200);
     expect(me.body).toBeNull();
 
-    // The session cookie is still valid, but there is no Membership left to
-    // enter a Workspace with (#95).
     const stillAuthorized = await victim.agent.get("/api/projects");
     expect(stillAuthorized.status).toBe(401);
   });
@@ -203,7 +181,7 @@ describe("auth and session (characterization)", () => {
         .set("x-api-key", "test-mcp-key");
       expect(authorized.status).toBe(200);
       // Quirk: `/api/auth/user` has no `isAuthenticated` guard, so the key does
-      // nothing here — the endpoint still reports nobody logged in.
+      // nothing here — the endpoint still reports nobody signed in.
       expect(authorized.body).toBeNull();
 
       const guarded = await newAgent(app)

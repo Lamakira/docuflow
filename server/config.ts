@@ -662,20 +662,51 @@ export function desktopReleaseCiToken(): string | undefined {
 }
 
 /**
- * The Phase 5 dual-auth drain (#109, ADR-0007, ADR-0017): while this is on, a
- * Clerk-mapped session enters the Workspace alongside the legacy session for the
- * same User. Off — the default — is today's behaviour, email/password and OIDC
- * only, which is what makes rollback a flag flip rather than a down migration.
+ * Whether a Clerk-mapped session is read (#109, #110, ADR-0007, ADR-0017).
+ *
+ * #109 opened this as a drain: on, a Clerk session entered the Workspace
+ * alongside the legacy session for the same User; off was the pre-Phase-5
+ * behaviour. #110 retired password sign-in, so on this image the flag gates the
+ * only way a browser signs in — **off means nobody can**, and rolling the
+ * cutover back is turning it off *and* redeploying the previous image.
  *
  * Temporary, DocuFlow-owned, and read per call rather than resolved at boot for
- * the same reason `mcpApiKey()` is: an operator turns the drain on and back off
- * against a running process, and the suites flip it between cases.
+ * the same reason `mcpApiKey()` is: an operator flips it against a running
+ * process, and the suites flip it between cases.
  * Owner: @Lamakira. Removal gate: #111, which takes Replit OIDC and
  * `MCP_API_KEY` out and leaves Clerk as the only web session.
  */
 export function identityDualAuthEnabled(): boolean {
   const raw = read("DOCUFLOW_IDENTITY_DUAL_AUTH")?.toLowerCase();
   return raw === "1" || raw === "true" || raw === "on";
+}
+
+/**
+ * What web sign-in needs, and the one place that decides it (#110): the browser
+ * cannot mint a session without the publishable key, the server cannot verify
+ * one without the secret, and neither matters while the flag that reads provider
+ * sessions is off.
+ *
+ * `GET /api/auth/config` and the boot line below both read this rather than
+ * re-deriving it, so the page and the log cannot disagree about whether anyone
+ * can get in.
+ */
+export function webSignInAvailable(): boolean {
+  const { secretKey, publishableKey } = config.identity;
+  return Boolean(secretKey) && Boolean(publishableKey) && identityDualAuthEnabled();
+}
+
+/**
+ * Printed at boot because since #110 every way of getting this wrong is silent:
+ * a deployment missing either key, or one that forgot the flag, boots healthily
+ * and then turns every User away. Diagnosed, not just flagged, so the line says
+ * which of the three it is.
+ */
+function webSignInState(): string {
+  if (webSignInAvailable()) return "Clerk";
+  if (!config.identity.secretKey) return "LOCKED — no CLERK_SECRET_KEY";
+  if (!config.identity.publishableKey) return "LOCKED — no CLERK_PUBLISHABLE_KEY";
+  return "LOCKED — set DOCUFLOW_IDENTITY_DUAL_AUTH";
 }
 
 /** One of the two, always: boot refuses an environment that supplies neither. */
@@ -723,6 +754,7 @@ export function logConfigSummary(): void {
       `Stripe ${config.billing.secretKey ? "enabled" : "unconfigured"}, ` +
       `Clerk ${config.identity.secretKey ? "enabled" : "unconfigured"}, ` +
       `dual-auth ${identityDualAuthEnabled() ? "on" : "off"}, ` +
+      `web sign-in ${webSignInState()}, ` +
       `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}, ` +
       `transcript browser ${config.chromiumPath ?? "as Playwright resolves it"}, ` +
       `telemetry ${telemetryDestination()}, ` +

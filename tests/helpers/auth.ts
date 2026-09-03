@@ -6,8 +6,13 @@ export type Agent = ReturnType<typeof request.agent>;
 export interface TestUser {
   id: string;
   email: string;
+  /**
+   * The password on `users.password`. Since #110 the web never checks it — it is
+   * here for the surfaces that still do, which is the desktop agent's
+   * `POST /api/agent/auth/login`.
+   */
   password: string;
-  /** Cookie-persisting supertest agent already carrying this user's session. */
+  /** Agent already carrying this user's IdentityProvider session token. */
   agent: Agent;
 }
 
@@ -15,7 +20,7 @@ const DEFAULT_PASSWORD = "password123";
 
 let sequence = 0;
 
-/** Unique per call, so a suite can register many users without collisions. */
+/** Unique per call, so a suite can create many users without collisions. */
 export function uniqueEmail(prefix = "user"): string {
   sequence += 1;
   return `${prefix}-${sequence}@example.com`;
@@ -39,28 +44,65 @@ export function newAgent(app: Express): Agent {
 }
 
 /**
- * Register through the real endpoint and keep the resulting session. Registration
- * logs the user in, so the returned agent is authenticated immediately.
+ * bcrypt at the app's own cost, computed once per distinct password.
+ *
+ * Twelve rounds is deliberately slow, and the harness hashes the same handful of
+ * passwords hundreds of times; caching keeps the real cost factor on the stored
+ * hash — which is what the import reads and the agent login verifies — without
+ * paying it per user.
+ */
+const hashes = new Map<string, Promise<string>>();
+
+function passwordHash(password: string): Promise<string> {
+  let hash = hashes.get(password);
+  if (!hash) {
+    hash = import("../../server/auth").then(({ hashPassword }) => hashPassword(password));
+    hashes.set(password, hash);
+  }
+  return hash;
+}
+
+/**
+ * A User who signs in the way the web signs in after #110: the row is created
+ * directly, imported into the IdentityProvider by bcrypt hash the way #108 does
+ * it, and the returned agent carries a provider session token on every request.
+ *
+ * Created through storage rather than over HTTP because there is no longer a
+ * registration endpoint to post to — `POST /api/auth/register` is retired, and
+ * `tests/smoke/web-auth-cutover.test.ts` is where that is proven.
  */
 export async function registerUser(
   app: Express,
   overrides: { email?: string; password?: string; firstName?: string; lastName?: string } = {}
 ): Promise<TestUser> {
+  const user = await createUnlinkedUser(overrides);
+  return { ...user, agent: await signIn(app, user.id) };
+}
+
+/**
+ * A User row with a real bcrypt hash and no IdentityProvider link — the state
+ * every User was in before the #108 import ran, and the one the import suites
+ * are about.
+ *
+ * No agent comes back, because linking is what makes signing in possible. A
+ * suite that wants one anyway passes the id to `signIn`, which links first.
+ */
+export async function createUnlinkedUser(
+  overrides: { email?: string; password?: string; firstName?: string; lastName?: string } = {}
+): Promise<Omit<TestUser, "agent">> {
   const email = overrides.email ?? uniqueEmail();
   const password = overrides.password ?? DEFAULT_PASSWORD;
-  const agent = newAgent(app);
+  const { storage } = await import("../../server/storage");
 
-  const res = await agent.post("/api/auth/register").send({
+  const user = await storage.createUser({
     email,
-    password,
-    firstName: overrides.firstName,
-    lastName: overrides.lastName,
+    password: await passwordHash(password),
+    firstName: overrides.firstName ?? null,
+    lastName: overrides.lastName ?? null,
+    profileImageUrl: null,
   });
-  if (res.status !== 201) {
-    throw new Error(`registerUser failed: ${res.status} ${JSON.stringify(res.body)}`);
-  }
 
-  return { id: res.body.id, email, password, agent };
+  return { id: user.id, email, password };
 }
 
 /**
@@ -121,12 +163,41 @@ async function updateUserRow(userId: string, assignment: string): Promise<void> 
   await pool.query(`UPDATE users SET ${assignment} WHERE id = $1`, [userId]);
 }
 
-/** Log an existing user in on a fresh agent (new cookie jar). */
-export async function login(app: Express, email: string, password = DEFAULT_PASSWORD): Promise<Agent> {
-  const agent = newAgent(app);
-  const res = await agent.post("/api/auth/login").send({ email, password });
-  if (res.status !== 200) {
-    throw new Error(`login failed: ${res.status} ${JSON.stringify(res.body)}`);
+/**
+ * Sign an existing User in on a fresh agent — a second browser, in other words.
+ *
+ * Links the User to the IdentityProvider if the suite has not already, then
+ * mints a session token for the subject that came back. The provider is reached
+ * through the port; `vitest.config.ts` aliases the Clerk SDK to
+ * `tests/fakes/clerk.ts`, so no run leaves the process.
+ */
+export async function signIn(app: Express, userId: string): Promise<Agent> {
+  const { storage } = await import("../../server/storage");
+  const { identityProvider } = await import("../../server/modules/identity");
+  const { issueClerkSession } = await import("../fakes/clerk");
+
+  const user = await storage.getUserWithPassword(userId);
+  if (!user) throw new Error(`signIn: no User ${userId}`);
+
+  let subjectId = user.identityProviderSubjectId;
+  if (!subjectId) {
+    const identity = await identityProvider.importPasswordUser({
+      email: user.email,
+      passwordHash: user.password,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    });
+    subjectId = identity.providerSubjectId;
+    await storage.linkUserToIdentityProvider(user.id, subjectId);
   }
-  return agent;
+
+  return newAgent(app).set("Authorization", `Bearer ${issueClerkSession(subjectId)}`);
+}
+
+/** Sign an existing User in by address, for suites that only kept the email. */
+export async function login(app: Express, email: string): Promise<Agent> {
+  const { storage } = await import("../../server/storage");
+  const user = await storage.getUserByEmail(email);
+  if (!user) throw new Error(`login: no User with email ${email}`);
+  return signIn(app, user.id);
 }
