@@ -15,6 +15,7 @@ export default defineConfig({
       resend: fake("resend.ts"),
       playwright: fake("playwright.ts"),
       stripe: fake("stripe.ts"),
+      "@clerk/backend": fake("clerk.ts"),
     },
   },
   test: {

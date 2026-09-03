@@ -5,6 +5,7 @@ import { resetGcs } from "./fakes/gcs";
 import { resetOpenAi } from "./fakes/openai";
 import { resetEmails } from "./fakes/resend";
 import { resetStripe } from "./fakes/stripe";
+import { resetClerk } from "./fakes/clerk";
 import { installNetworkFake } from "./fakes/network";
 
 // Environment must be fixed BEFORE any server module loads — `server/config.ts`
@@ -46,6 +47,11 @@ delete process.env.DESKTOP_RELEASE_CI_TOKEN;
 delete process.env.STRIPE_SECRET_KEY;
 delete process.env.STRIPE_WEBHOOK_SECRET;
 delete process.env.STRIPE_PRICE_PRO;
+// Live Clerk credentials must not reach the harness (ADR-0018). Missing
+// credentials are the default: IdentityProvider fails closed; HTTP still
+// authenticates as today.
+delete process.env.CLERK_SECRET_KEY;
+delete process.env.CLERK_PUBLISHABLE_KEY;
 // Likewise the browser the transcript scraper would launch (#37): a developer
 // with PLAYWRIGHT_CHROMIUM_PATH exported would otherwise run these suites with
 // launch options no other machine produces.
@@ -71,6 +77,7 @@ beforeEach(() => {
   resetOpenAi();
   resetEmails();
   resetStripe();
+  resetClerk();
 });
 
 afterAll(async () => {
