@@ -86,6 +86,7 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `ALLOW_REMOTE_OTLP` | A non-local `OTEL_EXPORTER_OTLP_ENDPOINT` is refused outright (ADR-0018) |
 | `DOCUFLOW_ROLE` | `http` — this process serves the app and never claims Jobs. `worker` claims and runs them (#83) |
 | `DOCUFLOW_HTTP_BACKGROUND_INTERVALS` | On. HTTP still runs due-reminder (and the other) `setInterval` dispatchers until the Worker is proven. `0`, `false`, or `off` disable them |
+| `DOCUFLOW_IDENTITY_DUAL_AUTH` | Off, which is the pre-Phase-5 behaviour: web auth is email/password and Replit OIDC only, and a Clerk session is not a way in. `1`, `true`, or `on` open the drain window — see [The dual-auth drain](#the-dual-auth-drain-109) |
 
 ## Clerk credentials (#107)
 
@@ -133,6 +134,67 @@ of the database, and a non-zero exit if any importable User is still unlinked.
 Record the `--dry-run` classification in
 [`docs/migration/phase-5-user-import.md`](migration/phase-5-user-import.md)
 before importing.
+
+### The dual-auth drain (#109)
+
+| | |
+| --- | --- |
+| Variable | `DOCUFLOW_IDENTITY_DUAL_AUTH` |
+| Default | off — legacy auth only, exactly as before Phase 5 |
+| Owner | @Lamakira |
+| Removal gate | [#111](https://github.com/Lamakira/docuflow/issues/111), which removes Replit OIDC and `MCP_API_KEY` and leaves Clerk as the only web session. The variable and `dualAuthSession` go with it |
+
+Temporary, DocuFlow-owned, and read per request rather than at boot, so an
+operator opens and closes the window against a running process. While it is on, a
+User has two ways into the same Workspace:
+
+- the legacy session they already hold — email/password or Replit OIDC — unchanged;
+- an IdentityProvider session presented as `Authorization: Bearer <token>`,
+  resolved to the `users.id` the import (#108) linked its subject to.
+
+Both build `WorkspaceContext` from the same Membership. Authentication is what
+moved; authorization did not, and Clerk cannot grant Workspace authority.
+
+Rollback is turning the flag off, not a down migration: the Bearer path stops
+being read and every legacy session keeps working. Nothing is written when the
+flag flips either way.
+
+Three `Authorization: Bearer` surfaces are never read as provider sessions —
+`/api/agent/*`, where the header is a Device access token, `/api/v1/*`, where it
+is a Service Account secret, and `/api/internal/*`, where it is
+`DESKTOP_RELEASE_CI_TOKEN`. Enrolled Devices do not re-pair for this phase.
+
+The drain fails closed. An unverifiable token, absent Clerk credentials, and a
+subject no User is linked to all answer `Unauthorized` rather than falling back
+to another identity.
+
+### Password-set invites (#109)
+
+```bash
+npm run identity:invite:password-set -- --dry-run   # list only; reaches no provider
+npm run identity:invite:password-set                # send the invites
+```
+
+The list is the leftover the import names: Users with no usable bcrypt hash, who
+have no password to carry over. A User who has one is never invited — they keep
+the password they have and are not made to reset it. A password-set invite is a
+Clerk invitation to set a credential; it is **not** a Workspace Invitation and
+grants no Membership.
+
+Re-running is safe, and it is also how the invite is finished. An address with an
+invite still outstanding is returned rather than mailed a second time; an address
+the provider now holds a User for has answered its invite, so the run writes the
+subject id back to `users.identity_provider_subject_id` — the same link the
+import writes — instead of inviting again. Run it again after invites have had
+time to be answered.
+
+The run ends with the verifier ADR-0017 asks for — a re-read of the database and
+of the provider's outstanding invitations, and a non-zero exit if any OIDC-only
+User is still owed one. Absent credentials stop the run outright rather than
+marking every address failed.
+
+Record the window and the invite list in
+[`docs/migration/phase-5-dual-auth.md`](migration/phase-5-dual-auth.md).
 
 `MCP_API_KEY` and `DESKTOP_RELEASE_CI_TOKEN` are read per request rather than at
 boot, so rotating either takes effect without a restart.

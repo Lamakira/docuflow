@@ -52,6 +52,7 @@ const CONFIG_VARS = [
   "STRIPE_PRICE_PRO",
   "CLERK_SECRET_KEY",
   "CLERK_PUBLISHABLE_KEY",
+  "DOCUFLOW_IDENTITY_DUAL_AUTH",
 ] as const;
 
 /** The smallest environment that boots: one of each required variable. */
@@ -787,5 +788,53 @@ describe("config — Clerk identity", () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain("CLERK_SECRET_KEY");
     expect((error as Error).message).toContain("sk_test_");
+  });
+});
+
+describe("config — dual-auth drain flag (#109)", () => {
+  it("leaves the drain off when the flag is unset, and says so on the boot line", async () => {
+    const { identityDualAuthEnabled, logConfigSummary } = await load(BOOTABLE);
+
+    expect(identityDualAuthEnabled()).toBe(false);
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      logConfigSummary();
+      expect(spy.mock.calls.flat().join("\n")).toContain("dual-auth off");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("turns the drain on for each accepted spelling and off for everything else", async () => {
+    const { identityDualAuthEnabled } = await load(BOOTABLE);
+
+    for (const raw of ["1", "true", "on", "ON", " true "]) {
+      process.env.DOCUFLOW_IDENTITY_DUAL_AUTH = raw;
+      expect(identityDualAuthEnabled()).toBe(true);
+    }
+    for (const raw of ["0", "false", "off", "", "yes"]) {
+      process.env.DOCUFLOW_IDENTITY_DUAL_AUTH = raw;
+      expect(identityDualAuthEnabled()).toBe(false);
+    }
+  });
+
+  it("is read per call, so flipping it back rolls the drain back without a restart", async () => {
+    const { identityDualAuthEnabled, logConfigSummary } = await load({
+      ...BOOTABLE,
+      DOCUFLOW_IDENTITY_DUAL_AUTH: "on",
+    });
+
+    expect(identityDualAuthEnabled()).toBe(true);
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      logConfigSummary();
+      expect(spy.mock.calls.flat().join("\n")).toContain("dual-auth on");
+    } finally {
+      spy.mockRestore();
+    }
+
+    delete process.env.DOCUFLOW_IDENTITY_DUAL_AUTH;
+    expect(identityDualAuthEnabled()).toBe(false);
   });
 });

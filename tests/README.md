@@ -223,6 +223,23 @@ invented password, and a linked User short-circuits before the port, so a second
 run creates no second Clerk User. `users.password`, Membership, and Devices are
 asserted untouched, and characterization of `/api/auth/*` stays where it is.
 
+`identity-dual-auth` ([#109](https://github.com/Lamakira/docuflow/issues/109))
+covers the drain window that follows the import: while
+`DOCUFLOW_IDENTITY_DUAL_AUTH` is on, a legacy session and a provider-mapped one
+reach the same Membership, and the suite asserts both answer `/api/auth/user`
+identically and both pass a Workspace-scoped read. Unlike the rest of the
+identity suites it does boot HTTP, because the flag has no meaning below the
+request. What earns it is the refusals: with the flag off, a valid provider
+session is 401 and the legacy session is untouched — the rollback ADR-0017 asks
+for; a subject nobody is linked to is 401 even though the provider vouches for
+it; and the desktop agent's own `Authorization: Bearer` is never read as a
+provider session, so Devices stay on the token path this phase does not touch.
+Invites are here too: only Users with no usable hash are sent one, a second run
+sends nothing, an answered invite becomes a subject-id link instead of a second
+mail, and the verifier re-reads rather than tallies. The suite names
+test-mode Clerk credentials so the process provider is the adapter over
+`tests/fakes/clerk.ts` rather than the closed one; no run reaches Clerk.
+
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`

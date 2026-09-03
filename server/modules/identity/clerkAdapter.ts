@@ -15,12 +15,19 @@ import {
   type IdentityProviderConfig,
   type IdentitySession,
   type PasswordImportRequest,
+  type PasswordSetInvite,
+  type PasswordSetInviteRequest,
   type ProviderIdentity,
 } from "./identityProvider";
 
 type ClerkUser = {
   id: string;
   emailAddresses?: Array<{ emailAddress: string }>;
+};
+
+type ClerkInvitation = {
+  id: string;
+  emailAddress: string;
 };
 
 function emailOf(user: ClerkUser, fallback?: string): string {
@@ -101,8 +108,49 @@ export class ClerkIdentityProvider implements IdentityProvider {
     }
   }
 
+  /**
+   * Idempotent the same way the import is: an outstanding invitation for this
+   * address is returned rather than a second one being sent, so re-running the
+   * drain does not mail the same person twice.
+   */
+  async sendPasswordSetInvite(request: PasswordSetInviteRequest): Promise<PasswordSetInvite> {
+    const outstanding = await this.findPendingInvitation(request.email);
+    if (outstanding) {
+      return { email: request.email, inviteId: outstanding.id, alreadyPending: true };
+    }
+    try {
+      const created = await this.clerk.invitations.createInvitation({
+        emailAddress: request.email,
+      });
+      return { email: request.email, inviteId: created.id, alreadyPending: false };
+    } catch (error) {
+      throw new IdentityProviderError(
+        error instanceof Error ? error.message : "Clerk password-set invite failed"
+      );
+    }
+  }
+
+  async pendingPasswordSetInvites(): Promise<string[]> {
+    return (await this.listPendingInvitations()).map((invitation) => invitation.emailAddress);
+  }
+
+  async findIdentityByEmail(email: string): Promise<ProviderIdentity | undefined> {
+    const user = await this.findByEmail(email);
+    return user ? toIdentity(user, email) : undefined;
+  }
+
   private async findByEmail(email: string): Promise<ClerkUser | null> {
     const list = await this.clerk.users.getUserList({ emailAddress: [email] });
     return list.data[0] ?? null;
+  }
+
+  private async findPendingInvitation(email: string): Promise<ClerkInvitation | null> {
+    const pending = await this.listPendingInvitations();
+    return pending.find((invitation) => invitation.emailAddress === email) ?? null;
+  }
+
+  private async listPendingInvitations(): Promise<ClerkInvitation[]> {
+    const list = await this.clerk.invitations.getInvitationList({ status: "pending" });
+    return list.data ?? [];
   }
 }

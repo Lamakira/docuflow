@@ -53,10 +53,35 @@ export type IdentitySession = {
   email: string;
 };
 
+export type PasswordSetInviteRequest = {
+  email: string;
+};
+
+export type PasswordSetInvite = {
+  email: string;
+  inviteId: string;
+  /** True when the provider already held an outstanding invite, so nothing new was sent. */
+  alreadyPending: boolean;
+};
+
 export interface IdentityProvider {
   importPasswordUser(request: PasswordImportRequest): Promise<ProviderIdentity>;
   authenticate(email: string, password: string): Promise<ProviderIdentity>;
   verifySessionToken(token: string): Promise<IdentitySession>;
+  /**
+   * Invite an address to set a password at the provider (#109). This is what an
+   * OIDC-only User gets in place of an import — it is not a Workspace
+   * Invitation, and it grants no Membership.
+   */
+  sendPasswordSetInvite(request: PasswordSetInviteRequest): Promise<PasswordSetInvite>;
+  /** Addresses with an outstanding invite, for the drain's verifier. */
+  pendingPasswordSetInvites(): Promise<string[]>;
+  /**
+   * The identity this provider already holds for an address, if any. An invitee
+   * who has set their password has one, which is how the drain tells an accepted
+   * invite from an unanswered one.
+   */
+  findIdentityByEmail(email: string): Promise<ProviderIdentity | undefined>;
 }
 
 /** bcrypt as stored on `users.password`. The OIDC placeholder is not usable. */
@@ -76,6 +101,18 @@ export class UnconfiguredIdentityProvider implements IdentityProvider {
   }
 
   async verifySessionToken(): Promise<IdentitySession> {
+    this.closed();
+  }
+
+  async sendPasswordSetInvite(): Promise<PasswordSetInvite> {
+    this.closed();
+  }
+
+  async pendingPasswordSetInvites(): Promise<string[]> {
+    this.closed();
+  }
+
+  async findIdentityByEmail(): Promise<ProviderIdentity | undefined> {
     this.closed();
   }
 
