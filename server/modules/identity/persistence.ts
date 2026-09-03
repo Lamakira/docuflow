@@ -6,8 +6,9 @@ import type {
   InsertDevice,
   AgentPairingCode,
 } from "@shared/schema";
+import type { UserImportPersistence } from "./userImport";
 
-export interface IdentityPersistence {
+export interface IdentityPersistence extends UserImportPersistence {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(userData: InsertUser): Promise<User>;

@@ -30,7 +30,8 @@ import {
   insertReminderSchema,
   createProjectDailyUpdateApiSchema,
   crmProjectStatusValues,
-  crmProjectTypeValues
+  crmProjectTypeValues,
+  toSafeUser
 } from "@shared/schema";
 import OpenAI from "openai";
 import {
@@ -160,8 +161,7 @@ export async function registerRoutes(
       }
       
       // Return user without password
-      const { password, ...safeUser } = user;
-      res.json(safeUser);
+      res.json(toSafeUser(user));
     } catch (error) {
       console.error("Error fetching auth user:", error);
       res.json(null);
@@ -206,8 +206,7 @@ export async function registerRoutes(
       (req.session as any).userId = user.id;
 
       // Return user without password
-      const { password: _, ...safeUser } = user;
-      res.status(201).json(safeUser);
+      res.status(201).json(toSafeUser(user));
     } catch (error) {
       if (error instanceof SeatExhaustedError) {
         return res.status(error.statusCode).json({ message: error.message });
@@ -257,8 +256,7 @@ export async function registerRoutes(
         });
       });
 
-      const { password: _, ...safeUser } = user;
-      res.json(safeUser);
+      res.json(toSafeUser(user));
     } catch (error: any) {
       console.error("Error logging in:", error?.message || error, error?.stack);
       res.status(500).json({ message: "Failed to login" });
@@ -2857,8 +2855,7 @@ Instructions:
       }
       
       // Return user without the hashed password but with the last generated password
-      const { password, ...userWithoutHash } = user;
-      res.json(userWithoutHash);
+      res.json(toSafeUser(user));
     } catch (error) {
       console.error("Error fetching user details:", error);
       res.status(500).json({ message: "Failed to fetch user details" });

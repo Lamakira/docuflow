@@ -43,6 +43,20 @@ export {
   UnconfiguredIdentityProvider,
 } from "./identityProvider";
 export { identityProviderFromAppConfig, createIdentityProvider } from "./createIdentityProvider";
+export type {
+  ImportableUser,
+  ImportAction,
+  ImportPlanEntry,
+  UserImportOutcome,
+  UserImportPersistence,
+  UserImportReport,
+  UserImportStatus,
+} from "./userImport";
+export {
+  classifyUserForImport,
+  importUsersIntoIdentityProvider,
+  planUserImport,
+} from "./userImport";
 
 /** Process-wide IdentityProvider. Missing Clerk credentials fail closed. HTTP still authenticates as today. */
 export const identityProvider = identityProviderFromAppConfig(config.identity);

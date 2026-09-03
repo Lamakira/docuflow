@@ -110,6 +110,7 @@ import {
   SEEDED_MEMBER_ROLE_ID,
   memberships,
   deviceEnrollments,
+  toSafeUser,
 } from "@shared/schema";
 import { db } from "../db";
 import {
@@ -148,6 +149,7 @@ import { getScreenshotPolicy, upsertScreenshotPolicy } from "./activity/policy";
 import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import { assertSeatAvailable } from "./billing/seats";
+import type { ImportableUser } from "./identity/userImport";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
@@ -219,6 +221,33 @@ export class DatabaseStorage implements IStorage {
       .returning();
     await this.ensureSeededMembership(user);
     return user;
+  }
+
+  /**
+   * The `users` columns the IdentityProvider import reads (#108, ADR-0007), in a
+   * stable order so a partial run resumes where it stopped. Archived Users are
+   * included: authorization is DocuFlow's, so whether an account may act is a
+   * Membership question, not a reason to leave its identity unimported.
+   */
+  async listUsersForIdentityImport(): Promise<ImportableUser[]> {
+    return db
+      .select({
+        id: users.id,
+        email: users.email,
+        password: users.password,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        identityProviderSubjectId: users.identityProviderSubjectId,
+      })
+      .from(users)
+      .orderBy(asc(users.createdAt), asc(users.id));
+  }
+
+  async linkUserToIdentityProvider(userId: string, providerSubjectId: string): Promise<void> {
+    await db
+      .update(users)
+      .set({ identityProviderSubjectId: providerSubjectId, updatedAt: new Date() })
+      .where(eq(users.id, userId));
   }
 
   /**
@@ -1278,9 +1307,9 @@ export class DatabaseStorage implements IStorage {
 
   async getMainAdmin(): Promise<SafeUser | undefined> {
     const [admin] = await db.select().from(users).where(eq(users.isMainAdmin, 1)).limit(1);
-    if (admin) return admin;
+    if (admin) return toSafeUser(admin);
     const [anyAdmin] = await db.select().from(users).where(eq(users.role, "admin")).limit(1);
-    return anyAdmin;
+    return anyAdmin && toSafeUser(anyAdmin);
   }
 
   async getAllUsers(opts: { includeArchived?: boolean } = {}): Promise<SafeUser[]> {
@@ -1330,7 +1359,7 @@ export class DatabaseStorage implements IStorage {
                 .set({ archivedAt: null, updatedAt: new Date() })
                 .where(eq(memberships.userId, userId));
             }
-            return updated;
+            return updated && toSafeUser(updated);
           }
         );
         return restored;
@@ -1347,7 +1376,7 @@ export class DatabaseStorage implements IStorage {
         .set({ archivedAt: new Date(), updatedAt: new Date() })
         .where(eq(memberships.userId, userId));
     }
-    return updated;
+    return updated && toSafeUser(updated);
   }
 
   async updateUserRole(userId: string, role: string): Promise<SafeUser | undefined> {
@@ -1356,7 +1385,7 @@ export class DatabaseStorage implements IStorage {
       .set({ role, updatedAt: new Date() })
       .where(eq(users.id, userId))
       .returning();
-    return updated;
+    return updated && toSafeUser(updated);
   }
 
   async updateUser(userId: string, data: { firstName?: string; lastName?: string; email?: string; hoursPerDay?: number; canViewDailyUpdates?: number }): Promise<SafeUser | undefined> {
@@ -1365,7 +1394,7 @@ export class DatabaseStorage implements IStorage {
       .set({ ...data, updatedAt: new Date() })
       .where(eq(users.id, userId))
       .returning();
-    return updated;
+    return updated && toSafeUser(updated);
   }
 
   async updateUserPassword(userId: string, hashedPassword: string, plainPassword?: string): Promise<SafeUser | undefined> {
@@ -1378,7 +1407,7 @@ export class DatabaseStorage implements IStorage {
       .set(updateData)
       .where(eq(users.id, userId))
       .returning();
-    return updated;
+    return updated && toSafeUser(updated);
   }
 
   async updateUserLastLogin(userId: string): Promise<void> {
@@ -2090,7 +2119,7 @@ export class DatabaseStorage implements IStorage {
         }
       }
       
-      const { password, ...safeUser } = user || {};
+      const safeUser = toSafeUser(user || {});
       
       enrichedEntries.push({
         ...entry,
@@ -2126,7 +2155,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    const { password, ...safeUser } = user || {};
+    const safeUser = toSafeUser(user || {});
     
     return {
       ...entry,

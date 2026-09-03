@@ -34,6 +34,7 @@ journal is not part of it and is never applied.
 | 0022 | `0022_mysterious_robin_chapel.sql` | Stripe webhook inbox, Outbox Events, and a unique Subscription lookup (#143). |
 | 0023 | `0023_steep_marvel_zombies.sql` | Pending seat-decrease quantity on `workspace_billing` (#144). |
 | 0024 | `0024_spotty_gideon.sql` | Pending Checkout Session id on `workspace_billing` (#144). |
+| 0025 | `0025_thankful_silver_sable.sql` | IdentityProvider subject id on `users` (#108). Nullable and unique; the link a Clerk import writes back. `users.password` stays. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
@@ -174,7 +175,12 @@ Two rules, from ADR-0017:
   port and Index Artifact tables the same way (Spec #112 / #116). `0020` pins the
   seeded Workspace to Plan `legacy` in the journal (#139) so Entitlements exist
   without a Stripe object.   `0023` and `0024` add pending seat-decrease quantity and pending Checkout
-  Session id on `workspace_billing` (#144).
+  Session id on `workspace_billing` (#144). `0025` is the rule kept rather than
+  excepted: it adds `users.identity_provider_subject_id` as pure DDL, and the
+  import that fills it is `scripts/identity-import-users.ts` (#108), with
+  `--dry-run` as its checkpoint and a post-run re-read as its verifier. The
+  classification it records is
+  [`docs/migration/phase-5-user-import.md`](../docs/migration/phase-5-user-import.md).
 - **Expand and contract.** Add the new shape, move the reads and writes, drop
   the old one in a later deploy. Rollback is redeploying the previous image,
   never a down migration, so no migration may make the previous image unable to
