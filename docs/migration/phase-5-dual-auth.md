@@ -27,6 +27,11 @@ the header is a Device access token, `/api/v1/*`, where it is a Service Account
 secret, and `/api/internal/*`, where it is `DESKTOP_RELEASE_CI_TOKEN`. Enrolled
 Devices do not re-pair for this phase.
 
+The web's own Device management is the exception inside that first prefix:
+`GET /api/agent/devices`, `POST /api/agent/device/revoke`, and
+`POST /api/agent/devices/revoke-machine` are session-guarded routes that happen
+to live under it, and are read like any other `/api/` route.
+
 Fails closed: an unverifiable token, absent Clerk credentials, and a subject no
 User is linked to all answer `Unauthorized` rather than falling back to another
 identity.
@@ -113,8 +118,13 @@ address with an invite already outstanding is returned rather than mailed again.
 
 ## Exit
 
-The window closes when [#110](https://github.com/Lamakira/docuflow/issues/110)
-cuts web auth over to Clerk. The flag and `dualAuthSession` are removed with
-Replit OIDC and `MCP_API_KEY` in
+The window closed when [#110](https://github.com/Lamakira/docuflow/issues/110)
+cut web auth over to Clerk — see
+[`phase-5-web-auth-cutover.md`](phase-5-web-auth-cutover.md). The legacy half of
+the table above is gone with it: the flag now gates the only way a browser signs
+in, so turning it off no longer leaves email/password behind, and rollback is
+that flip plus redeploying the pre-#110 image.
+
+The flag and `dualAuthSession` are removed with Replit OIDC and `MCP_API_KEY` in
 [#111](https://github.com/Lamakira/docuflow/issues/111); that ticket is this
 flag's removal gate.

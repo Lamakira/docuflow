@@ -70,6 +70,7 @@
     "unpdf": "^1.8.0"
   },
   "devDependencies": {
+    "@clerk/clerk-react": "^5.61.9",
     "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",

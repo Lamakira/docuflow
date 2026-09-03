@@ -58,20 +58,6 @@ export function getSession() {
   });
 }
 
-export function regenerateSession(req: any): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const oldSession = req.session;
-    req.session.regenerate((err: any) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      Object.assign(req.session, oldSession);
-      resolve();
-    });
-  });
-}
-
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
 }
@@ -200,11 +186,16 @@ export async function setupAuth(app: Express) {
 }
 
 /**
- * The dual-auth drain (#109). While the flag is on, an `Authorization: Bearer`
- * IdentityProvider session token is resolved to the `users.id` it is linked to
- * and left on the request, alongside — never instead of — whatever legacy
- * session is present. Flag off, this is a single boolean and a `next()`, so the
- * rollback is a flag flip.
+ * The IdentityProvider session (#109 as the drain, #110 as the web's only way
+ * in). While the flag is on, an `Authorization: Bearer` provider session token
+ * is resolved to the `users.id` it is linked to and left on the request,
+ * alongside — never instead of — whatever legacy session is present. Flag off,
+ * this is a single boolean and a `next()`, so the rollback is a flag flip.
+ *
+ * Since #110 retired password sign-in, flag-off also means no browser can sign
+ * in at all: the rollback of the cutover is that flip plus redeploying the
+ * previous image, which is what puts `/api/auth/login` back. #111 removes the
+ * flag and leaves this path unconditional.
  *
  * The Device and Service Account bearer paths are skipped: their header already
  * carries a token of their own, and this phase does not touch them.
@@ -212,22 +203,41 @@ export async function setupAuth(app: Express) {
 export const dualAuthSession: RequestHandler = async (req, res, next) => {
   if (!identityDualAuthEnabled()) return next();
   if (!isDrainablePath(req.path)) return next();
-  // A legacy session already answers `getUserId`, and the drain is behind it, so
+  // A legacy session already answers `getUserId`, and this is behind it, so
   // resolving the token would spend a provider round trip on nothing.
   if (getUserId(req)) return next();
   const token = bearerToken(req.headers.authorization);
   if (!token) return next();
   try {
-    (req as any).identitySessionUserId = await userIdFromIdentitySession({
+    const userId = await userIdFromIdentitySession({
       provider: identityProvider,
       persistence: storage,
       token,
     });
+    (req as any).identitySessionUserId = userId;
+    if (userId) await recordProviderSessionLogin(userId);
     next();
   } catch (error) {
     next(error);
   }
 };
+
+/**
+ * Keep `users.last_login_at` moving now that the retired login route is no
+ * longer writing it (#110). Clerk owns the sign-in, so the first request of a
+ * session is the closest thing to a login moment this side can see; the write
+ * itself is conditional on an hour having passed, so most calls touch no row.
+ *
+ * A failed stamp is logged and swallowed: an admin list column going stale is
+ * not a reason to refuse an otherwise valid session.
+ */
+async function recordProviderSessionLogin(userId: string): Promise<void> {
+  try {
+    await storage.touchUserLastLogin(userId);
+  } catch (error) {
+    console.error("Failed to record IdentityProvider session login:", error);
+  }
+}
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const apiKey = req.headers["x-api-key"] as string | undefined;

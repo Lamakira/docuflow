@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FakeIdentityProvider } from "../fakes/identityProvider";
 
 /**
@@ -98,13 +98,30 @@ describe("IdentityProvider without live credentials", () => {
   });
 
   it("fails closed on the process IdentityProvider when credentials are absent", async () => {
-    const { IdentityProviderClosedError, identityProvider } = await import(
-      "../../server/modules/identity"
-    );
+    // The harness names test-mode credentials so every suite can sign a User in
+    // (#110), so the closed process provider has to be built here: drop the keys
+    // and reload, which is the boot an environment with no Clerk gets.
+    const saved = {
+      secretKey: process.env.CLERK_SECRET_KEY,
+      publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+    };
+    delete process.env.CLERK_SECRET_KEY;
+    delete process.env.CLERK_PUBLISHABLE_KEY;
+    vi.resetModules();
+    try {
+      const { IdentityProviderClosedError, identityProvider } = await import(
+        "../../server/modules/identity"
+      );
 
-    await expect(identityProvider.authenticate("ada@example.com", PASSWORD)).rejects.toBeInstanceOf(
-      IdentityProviderClosedError
-    );
+      await expect(
+        identityProvider.authenticate("ada@example.com", PASSWORD)
+      ).rejects.toBeInstanceOf(IdentityProviderClosedError);
+    } finally {
+      process.env.CLERK_SECRET_KEY = saved.secretKey;
+      process.env.CLERK_PUBLISHABLE_KEY = saved.publishableKey;
+      // Leave the registry holding the harness's own configuration, not this case's.
+      vi.resetModules();
+    }
   });
 
   it("fails closed on a password-set invite rather than reporting one sent", async () => {

@@ -15,11 +15,14 @@ describe("desktop agent auth (characterization smoke)", () => {
     await resetDb();
   });
 
+  /**
+   * The desktop agent still signs in with the email and password on `users`
+   * (#105 leaves Devices on their own token path), so this suite needs a User
+   * with a real hash — the web's own registration route is retired (#110).
+   */
   async function registerUser(app: Express): Promise<void> {
-    await request(app).post("/api/auth/register").send({
-      email: "agent@example.com",
-      password: "password123",
-    });
+    const { registerUser: create } = await import("../helpers/auth");
+    await create(app, { email: "agent@example.com", password: "password123" });
   }
 
   it("ping reports email-password auth", async () => {

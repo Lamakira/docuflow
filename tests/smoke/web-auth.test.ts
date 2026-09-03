@@ -1,91 +1,69 @@
-import request from "supertest";
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
+import { login, newAgent, registerUser, uniqueEmail } from "../helpers/auth";
 
 /**
- * Characterization smoke tests: freeze the CURRENT behavior of the legacy web
- * auth contract, quirks included. These assert what the server does today,
- * not what it should do.
+ * Characterization smoke tests: freeze the CURRENT behavior of the web auth
+ * contract, quirks included. These assert what the server does today, not what
+ * it should do.
+ *
+ * Since #110 that contract is Clerk's: the browser presents an IdentityProvider
+ * session and DocuFlow resolves it to the linked User. The cutover itself — the
+ * retired password routes, the rollback surface, `/api/auth/config` — is proven
+ * in `web-auth-cutover.test.ts`.
  */
 describe("web auth (characterization smoke)", () => {
   beforeEach(async () => {
     await resetDb();
   });
 
-  it("registers a user, serves the session user, logs out", async () => {
+  it("serves the session user and answers null once nobody is signed in", async () => {
     const app = await makeApp();
-    const agent = request.agent(app);
+    const user = await registerUser(app, { email: uniqueEmail("smoke"), firstName: "Smoke" });
 
-    const reg = await agent.post("/api/auth/register").send({
-      email: "smoke@example.com",
-      password: "password123",
-      firstName: "Smoke",
-    });
-    expect(reg.status).toBe(201);
-    expect(reg.body).toMatchObject({ email: "smoke@example.com", firstName: "Smoke" });
-    // safeUser: password is stripped from the response
-    expect(reg.body).not.toHaveProperty("password");
-    expect(typeof reg.body.id).toBe("string");
-
-    const me = await agent.get("/api/auth/user");
+    const me = await user.agent.get("/api/auth/user");
     expect(me.status).toBe(200);
-    expect(me.body).toMatchObject({ id: reg.body.id, email: "smoke@example.com" });
+    expect(me.body).toMatchObject({ id: user.id, email: user.email, firstName: "Smoke" });
+    // safeUser: password is stripped from the response
+    expect(me.body).not.toHaveProperty("password");
 
-    const out = await agent.post("/api/auth/logout");
-    expect(out.status).toBe(200);
-    expect(out.body).toEqual({ message: "Logged out successfully" });
-
-    // Quirk: unauthenticated /api/auth/user is 200 with a JSON null body, not 401.
-    const after = await agent.get("/api/auth/user");
-    expect(after.status).toBe(200);
-    expect(after.body).toBeNull();
+    // Quirk: an unauthenticated /api/auth/user is 200 with a JSON null body, not 401.
+    const anonymous = await newAgent(app).get("/api/auth/user");
+    expect(anonymous.status).toBe(200);
+    expect(anonymous.body).toBeNull();
   });
 
-  it("logs in with valid credentials and rejects a bad password", async () => {
+  it("lets the same User sign in twice, and refuses a session nobody is linked to", async () => {
     const app = await makeApp();
-    await request(app).post("/api/auth/register").send({
-      email: "smoke2@example.com",
-      password: "password123",
-    });
+    const user = await registerUser(app, { email: uniqueEmail("smoke2") });
+    const { issueClerkSession } = await import("../fakes/clerk");
 
-    const agent = request.agent(app);
-    const login = await agent.post("/api/auth/login").send({
-      email: "smoke2@example.com",
-      password: "password123",
-    });
-    expect(login.status).toBe(200);
-    expect(login.body).toMatchObject({ email: "smoke2@example.com" });
-    expect(login.body).not.toHaveProperty("password");
-
-    const authed = await agent.get("/api/auth/user");
+    const second = await login(app, user.email);
+    const authed = await second.get("/api/auth/user");
     expect(authed.status).toBe(200);
-    expect(authed.body).toMatchObject({ email: "smoke2@example.com" });
+    expect(authed.body).toMatchObject({ id: user.id, email: user.email });
 
-    const bad = await request(app).post("/api/auth/login").send({
-      email: "smoke2@example.com",
-      password: "wrong-password",
-    });
-    expect(bad.status).toBe(401);
-    expect(bad.body).toEqual({ message: "Invalid email or password" });
+    // Fails closed: the provider vouches for the subject, but no User is linked
+    // to it, so it is nobody here.
+    const stranger = await newAgent(app)
+      .get("/api/auth/user")
+      .set("Authorization", `Bearer ${issueClerkSession("user_never_linked")}`);
+    expect(stranger.body).toBeNull();
   });
 
-  it("duplicate registration is rejected; protected route without session is 401", async () => {
+  it("protected routes without a session are 401", async () => {
     const app = await makeApp();
-    await request(app).post("/api/auth/register").send({
-      email: "smoke3@example.com",
-      password: "password123",
-    });
 
-    const dup = await request(app).post("/api/auth/register").send({
-      email: "smoke3@example.com",
-      password: "password456",
-    });
-    expect(dup.status).toBe(400);
-    expect(dup.body).toEqual({ message: "Email already registered" });
-
-    const denied = await request(app).get("/api/projects");
+    const denied = await newAgent(app).get("/api/projects");
     expect(denied.status).toBe(401);
     expect(denied.body).toEqual({ message: "Unauthorized" });
+
+    // A bearer credential the provider will not verify is not a way in either.
+    const garbage = await newAgent(app)
+      .get("/api/projects")
+      .set("Authorization", "Bearer not-a-session");
+    expect(garbage.status).toBe(401);
+    expect(garbage.body).toEqual({ message: "Unauthorized" });
   });
 });

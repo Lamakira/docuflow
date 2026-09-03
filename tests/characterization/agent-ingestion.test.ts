@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { registerAdmin, registerUser, type TestUser } from "../helpers/auth";
+import { newAgent, registerAdmin, registerUser, type TestUser } from "../helpers/auth";
 import { createCrmProject, createTask, startTimer } from "../helpers/fixtures";
 import { loginDevice, type AgentDevice } from "../helpers/agent";
 
@@ -297,12 +297,22 @@ describe("desktop agent ingestion (characterization)", () => {
     const app = await makeApp();
     const { device } = await trackingUser(app);
 
-    const anonymous = await registerUser(app).then((u) =>
+    // No credential at all: the header itself is what is missing.
+    const noHeader = await newAgent(app)
+      .post("/api/agent/heartbeat")
+      .send({ deviceId: device.deviceId });
+    expect(noHeader.status).toBe(401);
+    expect(noHeader.body).toEqual({ message: "Missing or invalid Authorization header" });
+
+    const webSession = await registerUser(app).then((u) =>
       u.agent.post("/api/agent/heartbeat").send({ deviceId: device.deviceId })
     );
-    // A web session is not agent credentials.
-    expect(anonymous.status).toBe(401);
-    expect(anonymous.body).toEqual({ message: "Missing or invalid Authorization header" });
+    // A web session is not agent credentials. Since #110 that session is itself
+    // an `Authorization: Bearer`, so the middleware rejects the token it cannot
+    // verify rather than reporting a missing header — a different sentence for
+    // the same refusal.
+    expect(webSession.status).toBe(401);
+    expect(webSession.body).toEqual({ message: "Invalid access token" });
 
     for (const body of [
       {},

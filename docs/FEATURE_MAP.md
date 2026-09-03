@@ -105,7 +105,7 @@
 
 | | |
 |---|---|
-| **Auth** | Email + password (web) · Email + password (desktop, same credentials) |
+| **Auth** | Clerk (web, since #110) · Email + password (desktop, on the same `users.password` an admin reset writes) |
 | **Profile** | Bottom-left sidebar avatar |
 | **Admin** | `/admin` — user management, roles |
 

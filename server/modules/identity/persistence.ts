@@ -40,7 +40,7 @@ export interface IdentityPersistence extends UserImportPersistence, DualAuthPers
     hashedPassword: string,
     plainPassword?: string
   ): Promise<SafeUser | undefined>;
-  updateUserLastLogin(userId: string): Promise<void>;
+  touchUserLastLogin(userId: string): Promise<void>;
   getAdminUserDetails(userId: string): Promise<User | undefined>;
   deleteUser(userId: string): Promise<void>;
   getUserWithPassword(userId: string): Promise<User | undefined>;

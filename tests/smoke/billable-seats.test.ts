@@ -196,7 +196,7 @@ describe("distinct seat exhaustion error", () => {
 
   it("is distinct from capability denial and from Read-only Workspace", async () => {
     const { makeApp } = await import("../helpers/app");
-    const { newAgent, registerUser, setWorkspaceRole, uniqueEmail } = await import(
+    const { newAgent, promoteToAdmin, registerUser, setWorkspaceRole, uniqueEmail } = await import(
       "../helpers/auth"
     );
     const {
@@ -224,10 +224,13 @@ describe("distinct seat exhaustion error", () => {
       setEntitlementOverride({ seatCapacity: 1 }, { kind: "system" })
     );
 
-    const exhausted = await newAgent(app).post("/api/auth/register").send({
+    // Through the admin route, which is where a User is created now that #110
+    // retired self-service registration. Same gate, same `SeatExhaustedError`.
+    await promoteToAdmin(owner.id);
+    const exhausted = await owner.agent.post("/api/admin/users").send({
       email: uniqueEmail("blocked"),
-      password: "password123",
       firstName: "Blocked",
+      lastName: "Member",
     });
     expect(exhausted.status).toBe(409);
     expect(exhausted.body).toEqual({ message: "Billable Seat capacity is exhausted" });

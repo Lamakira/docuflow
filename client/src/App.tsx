@@ -1,10 +1,12 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { useAuth } from "@/hooks/useAuth";
+import { IdentityProviderSession } from "@/components/IdentityProviderSession";
+import { LoadingScreen } from "@/components/LoadingScreen";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { TimeTracker } from "@/components/TimeTracker";
@@ -76,14 +78,7 @@ function Router() {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-pulse flex flex-col items-center gap-4">
-          <div className="w-12 h-12 rounded-lg bg-primary/20"></div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!isAuthenticated) {
@@ -100,6 +95,11 @@ function Router() {
     <AuthenticatedLayout>
       <Switch>
         <Route path="/" component={Home} />
+        {/* Where Clerk leaves a User standing after sign-in (#110); without this
+            the sign-in page falls through to NotFound the moment it succeeds. */}
+        <Route path="/auth">
+          <Redirect to="/" />
+        </Route>
         <Route path="/crm" component={CrmPage} />
         <Route path="/crm/project/new" component={ProjectCreatePage} />
         <Route path="/crm/project/:id" component={CrmProjectPage} />
@@ -137,7 +137,11 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="system" storageKey="docuflow-theme">
         <TooltipProvider>
-          <Router />
+          {/* Clerk owns the web session since #110; everything below reaches the
+              API with the token it issues. */}
+          <IdentityProviderSession>
+            <Router />
+          </IdentityProviderSession>
           <Toaster />
         </TooltipProvider>
       </ThemeProvider>

@@ -1426,11 +1426,26 @@ export class DatabaseStorage implements IStorage {
     return updated && toSafeUser(updated);
   }
 
-  async updateUserLastLogin(userId: string): Promise<void> {
+  /**
+   * Stamp the last login for a User who arrived on an IdentityProvider session
+   * (#110). Clerk owns the sign-in, so there is no login moment on this side to
+   * hook; the first request of a session is the closest thing, and this runs on
+   * every one of them.
+   *
+   * Conditional in SQL rather than throttled in memory: an hour's resolution is
+   * all the admin list shows, one statement is cheaper than a read plus a write,
+   * and every replica agrees without sharing state. Most calls match no row.
+   */
+  async touchUserLastLogin(userId: string): Promise<void> {
     await db
       .update(users)
       .set({ lastLoginAt: new Date() })
-      .where(eq(users.id, userId));
+      .where(
+        and(
+          eq(users.id, userId),
+          or(isNull(users.lastLoginAt), lt(users.lastLoginAt, new Date(Date.now() - 3600_000)))
+        )
+      );
   }
 
   async getAdminUserDetails(userId: string): Promise<User | undefined> {

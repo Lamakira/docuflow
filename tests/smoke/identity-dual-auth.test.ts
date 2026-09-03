@@ -9,6 +9,11 @@ import { beforeEach, afterEach, describe, expect, it } from "vitest";
  * and a provider session must reach the same Membership, and with it off the
  * provider session must not be a way in at all.
  *
+ * #110 has since retired the drain's legacy half, so the flag now gates the only
+ * way a browser signs in; the cutover itself is proven in
+ * `web-auth-cutover.test.ts`. What stays true here is everything about how a
+ * provider session resolves, and that the flag is still the rollback surface.
+ *
  * Live Clerk is never reached. `vitest.config.ts` aliases `@clerk/backend` to
  * `tests/fakes/clerk.ts`, and the credentials named below are that fake's.
  */
@@ -103,6 +108,33 @@ describe("dual-auth session resolution (#109)", () => {
     // Not a prefix match on the string: a route that merely starts with the
     // same letters is still drained.
     expect(isDrainablePath("/api/agents")).toBe(true);
+
+    // The three exceptions inside `/api/agent`: the web's own Device management,
+    // guarded by `isAuthenticated` and reached from the browser. Skipping these
+    // is what would leave a signed-in User unable to revoke their own Device.
+    expect(isDrainablePath("/api/agent/devices")).toBe(true);
+    expect(isDrainablePath("/api/agent/device/revoke")).toBe(true);
+    expect(isDrainablePath("/api/agent/devices/revoke-machine")).toBe(true);
+    // Exact matches only — a Device-token route under the same text is not one.
+    expect(isDrainablePath("/api/agent/devices/anything-else")).toBe(false);
+  });
+
+  it("names every session-guarded route under the agent prefix", async () => {
+    const { WEB_SESSION_AGENT_PATHS } = await import(
+      "../../server/modules/identity/dualAuth"
+    );
+    const { readFileSync } = await import("node:fs");
+
+    // Derived from the source rather than restated: a fourth `isAuthenticated`
+    // route added under `/api/agent/` would otherwise be unreachable from the
+    // browser, and nothing but a bug report would say so.
+    const source = readFileSync("server/agentRoutes.ts", "utf8");
+    const sessionGuarded = [
+      ...source.matchAll(/app\.\w+\("(\/api\/agent\/[^"]+)",\s*isAuthenticated\b/g),
+    ].map((match) => match[1]);
+
+    expect(sessionGuarded.length).toBeGreaterThan(0);
+    expect([...WEB_SESSION_AGENT_PATHS].sort()).toEqual(sessionGuarded.sort());
   });
 
   it("reads only a well-formed bearer credential", async () => {
@@ -140,47 +172,44 @@ async function importAndIssueSession(userId: string): Promise<string> {
 }
 
 describe("dual-auth drain over HTTP (#109)", () => {
-  it("lets a legacy session and a provider session into the Workspace as the same User", async () => {
+  it("lets a session the real import linked into the Workspace as that User", async () => {
     const app = await makeApp();
     const user = await registerUser(app, { email: uniqueEmail("drain") });
+    // Not the token the helper already holds: this one comes back through
+    // `importUsersIntoIdentityProvider`, so the #108 link is what is proven.
     const token = await importAndIssueSession(user.id);
     process.env[DRAIN] = "on";
 
-    const legacy = await user.agent.get("/api/auth/user");
     const mapped = await newAgent(app)
       .get("/api/auth/user")
       .set("Authorization", `Bearer ${token}`);
 
-    expect(legacy.status).toBe(200);
     expect(mapped.status).toBe(200);
     expect(mapped.body.id).toBe(user.id);
-    expect(mapped.body).toEqual(legacy.body);
 
-    // And the same Membership behind them: a Workspace-scoped read succeeds on
-    // both, which it cannot without a WorkspaceContext.
-    for (const res of [
-      await user.agent.get("/api/projects"),
-      await newAgent(app).get("/api/projects").set("Authorization", `Bearer ${token}`),
-    ]) {
-      expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-    }
+    // And the Membership behind it: a Workspace-scoped read succeeds, which it
+    // cannot without a WorkspaceContext.
+    const projects = await newAgent(app)
+      .get("/api/projects")
+      .set("Authorization", `Bearer ${token}`);
+    expect(projects.status).toBe(200);
+    expect(Array.isArray(projects.body)).toBe(true);
   });
 
-  it("keeps email/password login working while the drain runs", async () => {
+  it("no longer has a legacy half: email/password is retired even with the flag on", async () => {
     const app = await makeApp();
     const email = uniqueEmail("drain-password");
     const user = await registerUser(app, { email });
-    await importAndIssueSession(user.id);
     process.env[DRAIN] = "on";
 
+    // #109 froze this as a 200: during the drain the User's own password still
+    // worked. #110 cut that away, so the window the flag opens now has one side.
     const login = await newAgent(app).post("/api/auth/login").send({ email, password: user.password });
 
-    expect(login.status).toBe(200);
-    expect(login.body).toMatchObject({ id: user.id, email });
+    expect(login.status).toBe(410);
   });
 
-  it("refuses a provider session once the flag is off, and the legacy session still works", async () => {
+  it("refuses a provider session once the flag is off, which is half the rollback", async () => {
     const app = await makeApp();
     const user = await registerUser(app, { email: uniqueEmail("rollback") });
     const token = await importAndIssueSession(user.id);
@@ -189,11 +218,14 @@ describe("dual-auth drain over HTTP (#109)", () => {
     const mapped = await newAgent(app)
       .get("/api/projects")
       .set("Authorization", `Bearer ${token}`);
+    // #109 asserted the User's legacy session still worked here. Since #110 it
+    // does not exist, so flipping the flag back is only the first half: the
+    // other half is redeploying the image that still has password sign-in.
     const legacy = await user.agent.get("/api/projects");
 
     expect(mapped.status).toBe(401);
     expect(mapped.body).toEqual({ message: "Unauthorized" });
-    expect(legacy.status).toBe(200);
+    expect(legacy.status).toBe(401);
   });
 
   it("refuses a provider session for a subject no User is linked to", async () => {

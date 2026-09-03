@@ -60,13 +60,25 @@ export {
   planUserImport,
 } from "./userImport";
 export type { DualAuthPersistence } from "./dualAuth";
-export { bearerToken, isDrainablePath, userIdFromIdentitySession } from "./dualAuth";
+export {
+  bearerToken,
+  isDrainablePath,
+  userIdFromIdentitySession,
+  WEB_SESSION_AGENT_PATHS,
+} from "./dualAuth";
 export type {
   PasswordSetInviteOutcome,
   PasswordSetInviteReport,
   PasswordSetInviteStatus,
 } from "./passwordSetInvites";
 export { planPasswordSetInvites, sendPasswordSetInvites } from "./passwordSetInvites";
+export type { WebAuthConfig } from "@shared/webAuth";
+export {
+  WEB_PASSWORD_AUTH_RETIRED,
+  webAuthConfig,
+  webAuthConfigRoute,
+  webPasswordAuthRetired,
+} from "./webAuth";
 
 /** Process-wide IdentityProvider. Missing Clerk credentials fail closed. HTTP still authenticates as today. */
 export const identityProvider = identityProviderFromAppConfig(config.identity);

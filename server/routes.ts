@@ -3,7 +3,7 @@ import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { randomBytes } from "crypto";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, getUserId, hashPassword, verifyPassword, regenerateSession } from "./auth";
+import { setupAuth, isAuthenticated, getUserId, hashPassword } from "./auth";
 import { config } from "./config";
 import { z } from "zod";
 import {
@@ -16,6 +16,7 @@ import { ObjectPermission } from "./objectAcl";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
+import { webAuthConfigRoute, webPasswordAuthRetired } from "./modules/identity";
 import { registerWebhookEndpointRoutes } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
 import { SeatExhaustedError } from "./modules/billing";
@@ -168,100 +169,17 @@ export async function registerRoutes(
     }
   });
 
-  // Register endpoint
-  const registerSchema = z.object({
-    email: z.string().email("Invalid email address"),
-    password: z.string().min(8, "Password must be at least 8 characters"),
-    firstName: z.string().optional(),
-    lastName: z.string().optional(),
-  });
+  // What the SPA needs before it can offer a sign-in box: Clerk's publishable
+  // key, read at runtime because one image serves every environment (ADR-0018).
+  app.get("/api/auth/config", webAuthConfigRoute);
 
-  app.post("/api/auth/register", async (req: Request, res) => {
-    try {
-      const parsed = registerSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.errors[0].message });
-      }
-
-      const { email, password, firstName, lastName } = parsed.data;
-
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already registered" });
-      }
-
-      // Hash password and create user
-      const hashedPassword = await hashPassword(password);
-      const user = await storage.createUser({
-        email,
-        password: hashedPassword,
-        firstName: firstName || null,
-        lastName: lastName || null,
-        profileImageUrl: null,
-      });
-
-      // Regenerate session to prevent fixation attacks, then set userId
-      await regenerateSession(req);
-      (req.session as any).userId = user.id;
-
-      // Return user without password
-      res.status(201).json(toSafeUser(user));
-    } catch (error) {
-      if (error instanceof SeatExhaustedError) {
-        return res.status(error.statusCode).json({ message: error.message });
-      }
-      console.error("Error registering user:", error);
-      res.status(500).json({ message: "Failed to register user" });
-    }
-  });
-
-  // Login endpoint
-  const loginSchema = z.object({
-    email: z.string().email("Invalid email address"),
-    password: z.string().min(1, "Password is required"),
-  });
-
-  app.post("/api/auth/login", async (req: Request, res) => {
-    try {
-      const parsed = loginSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.errors[0].message });
-      }
-
-      const { email, password } = parsed.data;
-
-      const user = await storage.getUserByEmail(email);
-      if (!user) {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-
-      const isValid = await verifyPassword(password, user.password);
-      if (!isValid) {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-
-      await storage.updateUserLastLogin(user.id);
-
-      try {
-        await regenerateSession(req);
-      } catch (e) {
-      }
-      (req.session as any).userId = user.id;
-
-      await new Promise<void>((resolve, reject) => {
-        req.session.save((err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-
-      res.json(toSafeUser(user));
-    } catch (error: any) {
-      console.error("Error logging in:", error?.message || error, error?.stack);
-      res.status(500).json({ message: "Failed to login" });
-    }
-  });
+  // Web sign-in and registration moved to Clerk (#110, ADR-0007). Both routes
+  // stay mounted so a browser on the previous SPA build is told what happened
+  // rather than getting a 404; #111 removes them with the rest of the legacy
+  // paths. New Users are created by an Administrator through
+  // `POST /api/admin/users` and reach Clerk through `npm run identity:import:users`.
+  app.post("/api/auth/register", webPasswordAuthRetired);
+  app.post("/api/auth/login", webPasswordAuthRetired);
 
   // Logout endpoint
   app.post("/api/auth/logout", (req: Request, res) => {

@@ -65,7 +65,7 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `GCS_PROJECT_ID` | The project is taken from the key file's `project_id` |
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Email sends fail and report why; the request that triggered them still succeeds |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO` | Checkout and other money movement fail closed. Entitlement reads for Workspaces with no Stripe objects still succeed. A named secret must be test-mode (`sk_test_`); live keys are refused at boot. Live Stripe is optional test-mode operator config, not required to boot |
-| `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | IdentityProvider operations fail closed. Web login, register, OIDC, and `MCP_API_KEY` are unchanged. A named secret must be test-mode (`sk_test_` / `pk_test_`); live keys are refused at boot. Live Clerk is optional test-mode operator config, not required to boot |
+| `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | IdentityProvider operations fail closed, and since [#110](https://github.com/Lamakira/docuflow/issues/110) that means nobody can sign in to the web; Replit OIDC and `MCP_API_KEY` are unchanged until #111. Boot still succeeds, so an environment can be brought up and then given its keys. A named secret must be test-mode (`sk_test_` / `pk_test_`); live keys are refused at boot |
 | `OPENAI_API_KEY` | Embeddings, chat, and transcription fail when used |
 | `FATHOM_API_KEY` | Fathom transcripts fall back to the browser scraper |
 | `PLAYWRIGHT_CHROMIUM_PATH` | That scraper launches the browser Playwright installed — `npx playwright install chromium` on a developer machine, the copy the image installs into its own `PLAYWRIGHT_BROWSERS_PATH`. Name one only for a host carrying its own; a path with nothing runnable at it fails the scrape in this variable's name, never the boot. Permanent configuration and not a migration flag (#37): the host it runs on decides it, so there is nothing to remove ([docs/CONTAINER.md](CONTAINER.md)) |
@@ -86,19 +86,29 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `ALLOW_REMOTE_OTLP` | A non-local `OTEL_EXPORTER_OTLP_ENDPOINT` is refused outright (ADR-0018) |
 | `DOCUFLOW_ROLE` | `http` — this process serves the app and never claims Jobs. `worker` claims and runs them (#83) |
 | `DOCUFLOW_HTTP_BACKGROUND_INTERVALS` | On. HTTP still runs due-reminder (and the other) `setInterval` dispatchers until the Worker is proven. `0`, `false`, or `off` disable them |
-| `DOCUFLOW_IDENTITY_DUAL_AUTH` | Off, which is the pre-Phase-5 behaviour: web auth is email/password and Replit OIDC only, and a Clerk session is not a way in. `1`, `true`, or `on` open the drain window — see [The dual-auth drain](#the-dual-auth-drain-109) |
+| `DOCUFLOW_IDENTITY_DUAL_AUTH` | Off, and a Clerk session is not read. **This image needs it on**: [#110](https://github.com/Lamakira/docuflow/issues/110) retired password sign-in, so with the flag off nobody can sign in to the web at all. `1`, `true`, or `on` — see [The dual-auth drain](#the-dual-auth-drain-109) |
 
 ## Clerk credentials (#107)
 
 Named for Phase 5. [`server/config.ts`](../server/config.ts) reads them into the
-`IdentityProvider` port (#106); web login is still email/password and Replit OIDC,
-and without these the port fails closed rather than degrading. Values are never
-committed. Use the DocuFlow-owned Hobby application, never Replit Auth.
+`IdentityProvider` port (#106). Since [#110](https://github.com/Lamakira/docuflow/issues/110)
+these are what web sign-in runs on; without them the port fails closed rather
+than degrading, and nobody can sign in. Values are never committed. Use the
+DocuFlow-owned Hobby application, never Replit Auth.
 
 | Variable | Role |
 | --- | --- |
 | `CLERK_PUBLISHABLE_KEY` | Frontend Clerk load. Development instance keys start `pk_test_` |
 | `CLERK_SECRET_KEY` | Backend API. Development instance keys start `sk_test_` |
+
+The publishable key is served to the browser at runtime by `GET /api/auth/config`
+rather than baked into the bundle: one image is built and deployed to every
+environment (ADR-0018), so a build-time constant would pin every deployment to
+the build machine's instance. That endpoint answers
+`{ "publishableKey": …, "enabled": … }`, where `enabled` is false when the key is
+absent **or** `DOCUFLOW_IDENTITY_DUAL_AUTH` is off — the sign-in page reads it and
+says so rather than offering a box that cannot work. The secret key is never
+served.
 
 Users cannot be copied from a Development instance to a Production instance.
 Import ([#108](https://github.com/Lamakira/docuflow/issues/108)) must target the
@@ -140,29 +150,37 @@ before importing.
 | | |
 | --- | --- |
 | Variable | `DOCUFLOW_IDENTITY_DUAL_AUTH` |
-| Default | off — legacy auth only, exactly as before Phase 5 |
+| Default | off — no provider session is read. On this image that means nobody signs in on the web |
 | Owner | @Lamakira |
 | Removal gate | [#111](https://github.com/Lamakira/docuflow/issues/111), which removes Replit OIDC and `MCP_API_KEY` and leaves Clerk as the only web session. The variable and `dualAuthSession` go with it |
 
 Temporary, DocuFlow-owned, and read per request rather than at boot, so an
-operator opens and closes the window against a running process. While it is on, a
-User has two ways into the same Workspace:
+operator opens and closes the window against a running process. While it is on, an
+IdentityProvider session presented as `Authorization: Bearer <token>` is resolved
+to the `users.id` the import (#108) linked its subject to, and builds
+`WorkspaceContext` from that User's Membership. Authentication is what moved;
+authorization did not, and Clerk cannot grant Workspace authority.
 
-- the legacy session they already hold — email/password or Replit OIDC — unchanged;
-- an IdentityProvider session presented as `Authorization: Bearer <token>`,
-  resolved to the `users.id` the import (#108) linked its subject to.
-
-Both build `WorkspaceContext` from the same Membership. Authentication is what
-moved; authorization did not, and Clerk cannot grant Workspace authority.
-
-Rollback is turning the flag off, not a down migration: the Bearer path stops
-being read and every legacy session keeps working. Nothing is written when the
-flag flips either way.
+The window opened by [#109](https://github.com/Lamakira/docuflow/issues/109) had
+a second side — the legacy session a User already held. [#110](https://github.com/Lamakira/docuflow/issues/110)
+removed it, so this flag now gates the only way a browser signs in. **Turning it
+off on this image locks every User out of the web.** Rolling the cutover back is
+that flip *plus* redeploying the previous image, which is what puts
+`POST /api/auth/login` back; the flip alone is not a rollback any more. Nothing is
+written when the flag moves in either direction, so there is still no down
+migration.
 
 Three `Authorization: Bearer` surfaces are never read as provider sessions —
 `/api/agent/*`, where the header is a Device access token, `/api/v1/*`, where it
 is a Service Account secret, and `/api/internal/*`, where it is
 `DESKTOP_RELEASE_CI_TOKEN`. Enrolled Devices do not re-pair for this phase.
+
+Three routes under `/api/agent/` are the exception, because they are the web's
+own Device management rather than the Device's: `GET /api/agent/devices`,
+`POST /api/agent/device/revoke`, and `POST /api/agent/devices/revoke-machine` are
+guarded by the session, not a Device token, so a provider session is read on them
+like anywhere else. Without that a signed-in User could not revoke their own
+Device from the browser.
 
 The drain fails closed. An unverifiable token, absent Clerk credentials, and a
 subject no User is linked to all answer `Unauthorized` rather than falling back

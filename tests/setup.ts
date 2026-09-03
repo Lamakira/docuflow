@@ -47,14 +47,12 @@ delete process.env.DESKTOP_RELEASE_CI_TOKEN;
 delete process.env.STRIPE_SECRET_KEY;
 delete process.env.STRIPE_WEBHOOK_SECRET;
 delete process.env.STRIPE_PRICE_PRO;
-// Live Clerk credentials must not reach the harness (ADR-0018). Missing
-// credentials are the default: IdentityProvider fails closed; HTTP still
-// authenticates as today.
-delete process.env.CLERK_SECRET_KEY;
-delete process.env.CLERK_PUBLISHABLE_KEY;
-// The dual-auth drain (#109) is off unless a suite turns it on, so a developer
-// with the flag exported cannot silently run every suite mid-drain.
-delete process.env.DOCUFLOW_IDENTITY_DUAL_AUTH;
+// Test-mode Clerk credentials, consumed by the aliased fake and never sent
+// anywhere (ADR-0018) — assigned rather than deleted since #110, because web
+// sign-in is now the IdentityProvider and `tests/helpers/auth.ts` signs every
+// User in through it. A developer's real keys are overwritten, not inherited.
+process.env.CLERK_SECRET_KEY = "sk_test_harness-identity-provider";
+process.env.CLERK_PUBLISHABLE_KEY = "pk_test_harness-identity-provider";
 // Likewise the browser the transcript scraper would launch (#37): a developer
 // with PLAYWRIGHT_CHROMIUM_PATH exported would otherwise run these suites with
 // launch options no other machine produces.
@@ -74,6 +72,16 @@ delete process.env.DOCUFLOW_HTTP_BACKGROUND_INTERVALS;
 installNetworkFake();
 
 beforeEach(() => {
+  // The flag that reads IdentityProvider sessions (#109) is what web sign-in
+  // rides on after the #110 cutover, so the harness runs with it on and a case
+  // that wants the rollback surface turns it off for itself. Restored per test
+  // rather than set once, so that case cannot leak into the next one.
+  //
+  // This is why nothing runs in the flag's own default any more: with the flag
+  // off there is no way to sign a User in at all, which is the cutover, not an
+  // accident. `tests/smoke/config.test.ts` builds its own environment and is
+  // where the default-off behaviour is still proven.
+  process.env.DOCUFLOW_IDENTITY_DUAL_AUTH = "on";
   // Provider fakes are module-level singletons shared by every suite; clear them
   // alongside the database so one test's uploads or emails cannot leak into the next.
   resetGcs();
