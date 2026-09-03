@@ -661,6 +661,23 @@ export function desktopReleaseCiToken(): string | undefined {
   return read("DESKTOP_RELEASE_CI_TOKEN");
 }
 
+/**
+ * The Phase 5 dual-auth drain (#109, ADR-0007, ADR-0017): while this is on, a
+ * Clerk-mapped session enters the Workspace alongside the legacy session for the
+ * same User. Off — the default — is today's behaviour, email/password and OIDC
+ * only, which is what makes rollback a flag flip rather than a down migration.
+ *
+ * Temporary, DocuFlow-owned, and read per call rather than resolved at boot for
+ * the same reason `mcpApiKey()` is: an operator turns the drain on and back off
+ * against a running process, and the suites flip it between cases.
+ * Owner: @Lamakira. Removal gate: #111, which takes Replit OIDC and
+ * `MCP_API_KEY` out and leaves Clerk as the only web session.
+ */
+export function identityDualAuthEnabled(): boolean {
+  const raw = read("DOCUFLOW_IDENTITY_DUAL_AUTH")?.toLowerCase();
+  return raw === "1" || raw === "true" || raw === "on";
+}
+
 /** One of the two, always: boot refuses an environment that supplies neither. */
 function storageCredentialMode(): string {
   return config.objectStorage.serviceAccount
@@ -705,6 +722,7 @@ export function logConfigSummary(): void {
       `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
       `Stripe ${config.billing.secretKey ? "enabled" : "unconfigured"}, ` +
       `Clerk ${config.identity.secretKey ? "enabled" : "unconfigured"}, ` +
+      `dual-auth ${identityDualAuthEnabled() ? "on" : "off"}, ` +
       `OpenAI ${config.openaiApiKey ? "enabled" : "unconfigured"}, ` +
       `transcript browser ${config.chromiumPath ?? "as Playwright resolves it"}, ` +
       `telemetry ${telemetryDestination()}, ` +

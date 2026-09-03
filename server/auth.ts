@@ -7,8 +7,14 @@ import { Strategy, type VerifyFunction } from "openid-client/passport";
 import passport from "passport";
 import memoize from "memoizee";
 import { storage } from "./storage";
-import { config, mcpApiKey } from "./config";
+import { config, identityDualAuthEnabled, mcpApiKey } from "./config";
 import { gateSessionWrite } from "./modules/billing/sessionWriteGate";
+import {
+  bearerToken,
+  identityProvider,
+  isDrainablePath,
+  userIdFromIdentitySession,
+} from "./modules/identity";
 import {
   ArchivedMembershipError,
   NoActiveMembershipError,
@@ -103,6 +109,11 @@ export async function setupAuth(app: Express) {
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
+  // Part of the session layer, so every route sees an IdentityProvider session
+  // the same way it sees a legacy one — `/api/auth/user` included, which reads
+  // `getUserId` without going through `isAuthenticated`.
+  app.use(dualAuthSession);
+
   const registeredStrategies = new Set<string>();
 
   const ensureStrategy = async (domain: string) => {
@@ -188,6 +199,36 @@ export async function setupAuth(app: Express) {
   });
 }
 
+/**
+ * The dual-auth drain (#109). While the flag is on, an `Authorization: Bearer`
+ * IdentityProvider session token is resolved to the `users.id` it is linked to
+ * and left on the request, alongside — never instead of — whatever legacy
+ * session is present. Flag off, this is a single boolean and a `next()`, so the
+ * rollback is a flag flip.
+ *
+ * The Device and Service Account bearer paths are skipped: their header already
+ * carries a token of their own, and this phase does not touch them.
+ */
+export const dualAuthSession: RequestHandler = async (req, res, next) => {
+  if (!identityDualAuthEnabled()) return next();
+  if (!isDrainablePath(req.path)) return next();
+  // A legacy session already answers `getUserId`, and the drain is behind it, so
+  // resolving the token would spend a provider round trip on nothing.
+  if (getUserId(req)) return next();
+  const token = bearerToken(req.headers.authorization);
+  if (!token) return next();
+  try {
+    (req as any).identitySessionUserId = await userIdFromIdentitySession({
+      provider: identityProvider,
+      persistence: storage,
+      token,
+    });
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   const apiKey = req.headers["x-api-key"] as string | undefined;
   const expectedKey = mcpApiKey();
@@ -225,6 +266,12 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     return enterWorkspace(req, res, next);
   }
 
+  // Last, so the drain adds a way in and reorders nothing: a User who still has
+  // a legacy session enters through it exactly as they did before the flag.
+  if ((req as any).identitySessionUserId) {
+    return enterWorkspace(req, res, next);
+  }
+
   return res.status(401).json({ message: "Unauthorized" });
 };
 
@@ -256,6 +303,10 @@ export function getUserId(req: any): string | undefined {
   // Check Replit OIDC auth
   if (req.user?.claims?.sub) {
     return req.user.claims.sub;
+  }
+  // Check the IdentityProvider session the dual-auth drain resolved (#109)
+  if (req.identitySessionUserId) {
+    return req.identitySessionUserId;
   }
   return undefined;
 }

@@ -243,6 +243,22 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(users.createdAt), asc(users.id));
   }
 
+  /**
+   * The User a provider session belongs to, during the dual-auth drain (#109).
+   * Only the link is selected: the caller wants an id to build a
+   * WorkspaceContext from, not a row.
+   */
+  async getUserByIdentityProviderSubjectId(
+    providerSubjectId: string
+  ): Promise<{ id: string } | undefined> {
+    const [user] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.identityProviderSubjectId, providerSubjectId))
+      .limit(1);
+    return user;
+  }
+
   async linkUserToIdentityProvider(userId: string, providerSubjectId: string): Promise<void> {
     await db
       .update(users)

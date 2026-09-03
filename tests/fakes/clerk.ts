@@ -17,6 +17,11 @@ export type CreateUserParams = {
   lastName?: string;
 };
 
+export type CreateInvitationParams = {
+  emailAddress: string;
+  redirectUrl?: string;
+};
+
 type StoredUser = {
   id: string;
   email: string;
@@ -24,8 +29,16 @@ type StoredUser = {
   emailAddresses: Array<{ emailAddress: string }>;
 };
 
+type StoredInvitation = {
+  id: string;
+  emailAddress: string;
+  status: string;
+};
+
 const users: StoredUser[] = [];
 const createUserCalls: CreateUserParams[] = [];
+const invitations: StoredInvitation[] = [];
+const createInvitationCalls: CreateInvitationParams[] = [];
 const sessions = new Map<string, { sub: string }>();
 
 export function createClerkClient(_options: { secretKey?: string; publishableKey?: string }) {
@@ -63,6 +76,30 @@ export function createClerkClient(_options: { secretKey?: string; publishableKey
         return { verified: true as const };
       },
     },
+    invitations: {
+      createInvitation: async (params: CreateInvitationParams) => {
+        createInvitationCalls.push(params);
+        if (!params.emailAddress) throw new Error("emailAddress is required");
+        // Clerk refuses a second pending invitation for the same address; the
+        // adapter is expected to look before it sends, and this proves it does.
+        if (invitations.some((entry) => entry.emailAddress === params.emailAddress)) {
+          throw new Error(`duplicate invitation for ${params.emailAddress}`);
+        }
+        const stored: StoredInvitation = {
+          id: `inv_test_${invitations.length + 1}`,
+          emailAddress: params.emailAddress,
+          status: "pending",
+        };
+        invitations.push(stored);
+        return stored;
+      },
+      getInvitationList: async (params: { status?: string } = {}) => {
+        const data = params.status
+          ? invitations.filter((entry) => entry.status === params.status)
+          : [...invitations];
+        return { data, totalCount: data.length };
+      },
+    },
   };
 }
 
@@ -83,8 +120,14 @@ export function clerkCreateUserCalls(): CreateUserParams[] {
   return createUserCalls;
 }
 
+export function clerkCreateInvitationCalls(): CreateInvitationParams[] {
+  return createInvitationCalls;
+}
+
 export function resetClerk(): void {
   users.length = 0;
   createUserCalls.length = 0;
+  invitations.length = 0;
+  createInvitationCalls.length = 0;
   sessions.clear();
 }

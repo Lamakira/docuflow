@@ -52,6 +52,9 @@ delete process.env.STRIPE_PRICE_PRO;
 // authenticates as today.
 delete process.env.CLERK_SECRET_KEY;
 delete process.env.CLERK_PUBLISHABLE_KEY;
+// The dual-auth drain (#109) is off unless a suite turns it on, so a developer
+// with the flag exported cannot silently run every suite mid-drain.
+delete process.env.DOCUFLOW_IDENTITY_DUAL_AUTH;
 // Likewise the browser the transcript scraper would launch (#37): a developer
 // with PLAYWRIGHT_CHROMIUM_PATH exported would otherwise run these suites with
 // launch options no other machine produces.

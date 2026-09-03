@@ -67,6 +67,21 @@ describe("IdentityProvider fake", () => {
       email: "ada@example.com",
     });
   });
+
+  it("invites an address to set a password, and a second invite is the first one", async () => {
+    const provider = new FakeIdentityProvider();
+
+    const first = await provider.sendPasswordSetInvite({ email: "oidc@example.com" });
+    const second = await provider.sendPasswordSetInvite({ email: "oidc@example.com" });
+
+    expect(first).toEqual({
+      email: "oidc@example.com",
+      inviteId: "inv_fake_1",
+      alreadyPending: false,
+    });
+    expect(second).toEqual({ ...first, alreadyPending: true });
+    await expect(provider.pendingPasswordSetInvites()).resolves.toEqual(["oidc@example.com"]);
+  });
 });
 
 describe("IdentityProvider without live credentials", () => {
@@ -88,6 +103,21 @@ describe("IdentityProvider without live credentials", () => {
     );
 
     await expect(identityProvider.authenticate("ada@example.com", PASSWORD)).rejects.toBeInstanceOf(
+      IdentityProviderClosedError
+    );
+  });
+
+  it("fails closed on a password-set invite rather than reporting one sent", async () => {
+    const { IdentityProviderClosedError, createIdentityProvider } = await import(
+      "../../server/modules/identity"
+    );
+
+    const provider = createIdentityProvider({ secretKey: undefined });
+
+    await expect(
+      provider.sendPasswordSetInvite({ email: "oidc@example.com" })
+    ).rejects.toBeInstanceOf(IdentityProviderClosedError);
+    await expect(provider.pendingPasswordSetInvites()).rejects.toBeInstanceOf(
       IdentityProviderClosedError
     );
   });
@@ -145,6 +175,21 @@ describe("Clerk adapter", () => {
       providerSubjectId: "user_test_1",
       email: "ada@example.com",
     });
+  });
+
+  it("sends one password-set invitation per address and reports the outstanding one on a re-run", async () => {
+    const { createIdentityProvider } = await import("../../server/modules/identity");
+    const { clerkCreateInvitationCalls, resetClerk } = await import("../fakes/clerk");
+    resetClerk();
+
+    const provider = createIdentityProvider({ secretKey: "sk_test_fake" });
+    const first = await provider.sendPasswordSetInvite({ email: "oidc@example.com" });
+    const second = await provider.sendPasswordSetInvite({ email: "oidc@example.com" });
+
+    expect(first.alreadyPending).toBe(false);
+    expect(second).toEqual({ ...first, alreadyPending: true });
+    expect(clerkCreateInvitationCalls()).toEqual([{ emailAddress: "oidc@example.com" }]);
+    await expect(provider.pendingPasswordSetInvites()).resolves.toEqual(["oidc@example.com"]);
   });
 });
 

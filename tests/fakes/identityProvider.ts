@@ -17,6 +17,8 @@ import {
   type IdentityProvider,
   type IdentitySession,
   type PasswordImportRequest,
+  type PasswordSetInvite,
+  type PasswordSetInviteRequest,
   type ProviderIdentity,
 } from "../../server/modules/identity/identityProvider";
 
@@ -24,9 +26,12 @@ type Stored = ProviderIdentity & { passwordHash: string };
 
 export class FakeIdentityProvider implements IdentityProvider {
   readonly imports: PasswordImportRequest[] = [];
+  readonly invites: PasswordSetInviteRequest[] = [];
   private readonly byEmail = new Map<string, Stored>();
   private readonly sessions = new Map<string, IdentitySession>();
+  private readonly pendingInvites = new Map<string, PasswordSetInvite>();
   private seq = 0;
+  private inviteSeq = 0;
 
   async importPasswordUser(request: PasswordImportRequest): Promise<ProviderIdentity> {
     this.imports.push(request);
@@ -75,5 +80,44 @@ export class FakeIdentityProvider implements IdentityProvider {
     const session = this.sessions.get(token);
     if (!session) throw new IdentitySessionError();
     return session;
+  }
+
+  async sendPasswordSetInvite(request: PasswordSetInviteRequest): Promise<PasswordSetInvite> {
+    this.invites.push(request);
+    const outstanding = this.pendingInvites.get(request.email);
+    if (outstanding) return { ...outstanding, alreadyPending: true };
+    this.inviteSeq += 1;
+    const invite: PasswordSetInvite = {
+      email: request.email,
+      inviteId: `inv_fake_${this.inviteSeq}`,
+      alreadyPending: false,
+    };
+    this.pendingInvites.set(request.email, invite);
+    return invite;
+  }
+
+  async pendingPasswordSetInvites(): Promise<string[]> {
+    return [...this.pendingInvites.keys()];
+  }
+
+  async findIdentityByEmail(email: string): Promise<ProviderIdentity | undefined> {
+    const stored = this.byEmail.get(email);
+    return stored ? { providerSubjectId: stored.providerSubjectId, email: stored.email } : undefined;
+  }
+
+  /**
+   * Test helper — not on the port. Stands in for an invitee answering their
+   * invite: the provider now holds the address, and the invitation is spent.
+   */
+  acceptPasswordSetInvite(email: string, passwordHash = "$2b$04$" + "x".repeat(53)): string {
+    this.pendingInvites.delete(email);
+    this.seq += 1;
+    const stored: Stored = {
+      providerSubjectId: `user_fake_${this.seq}`,
+      email,
+      passwordHash,
+    };
+    this.byEmail.set(email, stored);
+    return stored.providerSubjectId;
   }
 }
