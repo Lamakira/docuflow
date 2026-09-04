@@ -22,12 +22,10 @@ describe("Billable Seat count", () => {
 
     await storage.createUser({
       email: "ada@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Ada",
     });
     await storage.createUser({
       email: "bob@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Bob",
     });
 
@@ -40,12 +38,10 @@ describe("Billable Seat count", () => {
 
     const ada = await storage.createUser({
       email: "ada@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Ada",
     });
     await storage.createUser({
       email: "bob@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Bob",
     });
 
@@ -90,7 +86,6 @@ describe("fail-closed Membership add", () => {
 
     await storage.createUser({
       email: "ada@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Ada",
     });
     await expect(inSeededWorkspace(() => countConsumedSeats())).resolves.toBe(1);
@@ -101,7 +96,6 @@ describe("fail-closed Membership add", () => {
     await expect(
       storage.createUser({
         email: "bob@test.invalid",
-        password: "not-a-real-hash",
         firstName: "Bob",
       })
     ).rejects.toBeInstanceOf(SeatExhaustedError);
@@ -122,7 +116,6 @@ describe("fail-closed Membership add", () => {
     for (let i = 0; i < 3; i += 1) {
       await storage.createUser({
         email: `member-${i}@test.invalid`,
-        password: "not-a-real-hash",
         firstName: `M${i}`,
       });
     }
@@ -148,12 +141,10 @@ describe("purchased seat capacity floor", () => {
 
     await storage.createUser({
       email: "ada@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Ada",
     });
     await storage.createUser({
       email: "bob@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Bob",
     });
     await expect(inSeededWorkspace(() => countConsumedSeats())).resolves.toBe(2);

@@ -5,9 +5,8 @@
  *   npm run identity:invite:password-set -- --dry-run   # list only, no provider call
  *   npm run identity:invite:password-set                # send the invites
  *
- * The list is the leftover the import (#108) names: Users with no usable bcrypt
- * hash, who therefore have no password to carry over. A User who has one is
- * never invited — they keep the password they have and are not made to reset it.
+ * The list is the leftover the import (#108) names: unlinked Users, who have no
+ * digest to carry over (#161). A User who is already linked is never invited.
  * This is not a Workspace Invitation and grants no Membership.
  *
  * Re-running is safe: the port returns an outstanding invite rather than sending

@@ -160,7 +160,7 @@ export async function registerRoutes(
         return res.json(null);
       }
       
-      // Return user without password
+      // Return user without the IdentityProvider subject
       res.json(toSafeUser(user));
     } catch (error) {
       console.error("Error fetching auth user:", error);
@@ -2765,7 +2765,7 @@ Instructions:
         return res.status(403).json({ message: "Cannot view SuperAdmin details" });
       }
       
-      // Return user without the hash, IdentityProvider subject, or last generated password
+      // Return user without the IdentityProvider subject
       res.json(toSafeUser(user));
     } catch (error) {
       console.error("Error fetching user details:", error);

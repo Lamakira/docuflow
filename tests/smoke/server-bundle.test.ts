@@ -31,10 +31,10 @@ import { installedByImage, packageOf } from "../helpers/runtimeTree";
  * reason it does.
  *
  * **This does not prove the modules load**, only that they are declared. A
- * package can be present and still fail to initialise — `sharp` needs libvips,
- * `bcrypt` a matching prebuilt binary. `.github/workflows/ci.yml` imports every
- * `dependencies` entry inside the built image, which is where that half is
- * answered, on the runtime tree rather than on this checkout's.
+ * package can be present and still fail to initialise — `sharp` needs libvips.
+ * `.github/workflows/ci.yml` imports every `dependencies` entry inside the built
+ * image, which is where that half is answered, on the runtime tree rather than
+ * on this checkout's.
  */
 
 /**

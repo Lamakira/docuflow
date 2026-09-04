@@ -1,11 +1,10 @@
 /**
  * Password-set invites for OIDC-only Users (#109, ADR-0007, ADR-0017).
  *
- * The leftover the import (#108) names: a User with no usable bcrypt hash has no
- * password to carry over, so instead of an import they are invited to set one at
- * the provider. A User who has a hash is never invited — they keep the password
- * they already have and are not made to reset it. This is not a Workspace
- * Invitation and grants no Membership.
+ * The leftover the import (#108) names: an unlinked User has no digest to
+ * carry over (#161), so instead of an import they are invited to set a password
+ * at the provider. A User who is already linked is never invited. This is not
+ * a Workspace Invitation and grants no Membership.
  *
  * The run also closes the loop the invite opens. An invitee who has answered
  * theirs is a User at the provider but still unlinked here, so the subject id is

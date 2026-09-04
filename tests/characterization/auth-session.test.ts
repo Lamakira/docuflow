@@ -15,8 +15,8 @@ import { login, newAgent, promoteToAdmin, registerUser, uniqueEmail } from "../h
  *  - `GET /api/auth/user` answers 200 with a JSON `null` body when nobody is
  *    signed in, and does the same when the session names a deleted user — the
  *    SPA treats "no user" and "unknown user" identically.
- *  - It returns the whole user row minus `password`, `identityProviderSubjectId`,
- *    and `lastGeneratedPassword` (#160), plus every remaining internal flag.
+ *  - It returns the whole user row minus `identityProviderSubjectId` (#108),
+ *    plus every remaining internal flag. Credentials are not on the row (#161).
  *  - `POST /api/auth/logout` destroys the legacy cookie session, which a Clerk
  *    sign-in never created. It answers 200 and the provider session it could not
  *    reach still works — ending that one is Clerk's job, and the SPA calls it.
@@ -27,10 +27,8 @@ import { login, newAgent, promoteToAdmin, registerUser, uniqueEmail } from "../h
  *  - `X-API-Key` is ignored. It used to impersonate the Owner when it matched
  *    `MCP_API_KEY`; that header is gone.
  *  - Any error inside `GET /api/auth/user` is swallowed into a `null` body.
- *  - There is no self-service password change. The only route that sets
- *    `users.password` after creation is the admin-only
- *    `POST /api/admin/users/:id/reset-password` (frozen in `users-admin`), and
- *    that password now only opens the desktop agent, not the web.
+ *  - There is no self-service password change. Admin reset sends an
+ *    IdentityProvider password-set invite (#160) and does not write a digest.
  */
 describe("auth and session (characterization)", () => {
   beforeEach(async () => {
@@ -43,7 +41,7 @@ describe("auth and session (characterization)", () => {
     const anonymous = newAgent(app);
 
     const payloads = [
-      { email: user.email, password: user.password },
+      { email: user.email, password: "password123" },
       { email: uniqueEmail("nobody"), password: "password123" },
       { email: user.email, password: "not-the-password" },
       { email: "not-an-email" },

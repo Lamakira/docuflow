@@ -12,8 +12,8 @@
  * instead of getting the SPA shell. `POST /api/auth/login` and
  * `/api/auth/register` are gone with the rest of the password web path.
  *
- * One password surface deliberately survives until a later ticket: the admin
- * reset that writes `users.password`. The desktop agent's
+ * Credentials live at the IdentityProvider. Admin reset sends a password-set
+ * invite (#160) and does not write a digest. The desktop agent's
  * `POST /api/agent/auth/login` is 410 (#159); Devices pair from a signed-in
  * web session. Neither leftover is a web session.
  */

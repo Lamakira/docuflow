@@ -14,7 +14,6 @@ async function seedTrackedWork() {
   const { storage } = await import("../../server/storage");
   const user = await storage.createUser({
     email: "ada@test.invalid",
-    password: "not-a-real-hash",
     firstName: "Ada",
   });
   return inSeededWorkspace(async () => {

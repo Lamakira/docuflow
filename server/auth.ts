@@ -1,4 +1,3 @@
-import bcrypt from "bcrypt";
 import session from "express-session";
 import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
@@ -18,8 +17,6 @@ import {
   contextFromUser,
   runWithWorkspaceContext,
 } from "./workspaceContext";
-
-const SALT_ROUNDS = 12;
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -42,14 +39,6 @@ export function getSession() {
       sameSite: "lax" as const,
     },
   });
-}
-
-export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, SALT_ROUNDS);
-}
-
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash);
 }
 
 export async function setupAuth(app: Express) {

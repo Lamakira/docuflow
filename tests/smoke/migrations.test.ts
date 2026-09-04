@@ -121,6 +121,10 @@ describe("migration journal", () => {
     // #98 dropped Teams from current schema, so push no longer creates those
     // tables. 0008/0009 still ALTER them. Restore the 0000 shape so the
     // apply path can reach 0011, which drops them, then 0012 and 0013.
+    //
+    // #161 dropped `users.password` and `users.last_generated_password`, so
+    // push no longer creates them. 0026 still ALTERs `password`. Restore the
+    // columns so the apply path can reach 0027, which drops them.
     const scratch = urlForDatabase(SCRATCH_DB);
     await withClient(scratch, (client) =>
       client.query(`
@@ -151,6 +155,8 @@ describe("migration journal", () => {
           "created_at" timestamp DEFAULT now(),
           CONSTRAINT "team_invites_code_unique" UNIQUE("code")
         );
+        ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "password" varchar(255);
+        ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "last_generated_password" varchar(255);
       `)
     );
 
@@ -181,6 +187,7 @@ describe("migration journal", () => {
       "0024_spotty_gideon",
       "0025_thankful_silver_sable",
       "0026_young_morg",
+      "0027_confused_captain_stacy",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -215,6 +222,7 @@ describe("migration journal", () => {
       { version: "0024_spotty_gideon", baselined: false },
       { version: "0025_thankful_silver_sable", baselined: false },
       { version: "0026_young_morg", baselined: false },
+      { version: "0027_confused_captain_stacy", baselined: false },
     ]);
   });
 

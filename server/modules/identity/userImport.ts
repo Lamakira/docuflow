@@ -1,27 +1,22 @@
 /**
- * Import existing DocuFlow Users into the IdentityProvider (#108, ADR-0007).
+ * Remaining IdentityProvider import classification (#108, #161, ADR-0007).
  *
- * By bcrypt hash, so an imported User authenticates with the password they
- * already have and nobody is reset. The provider subject id comes back onto
- * `users.identity_provider_subject_id`; `users.password` stays, and Membership,
- * Workspace Context, and Device Enrollment are not touched here — authorization
- * remains DocuFlow's, and this only adds a link.
+ * Hashes are gone from `users`. An unlinked User cannot be imported by digest;
+ * they are listed for a password-set invite instead. A linked User
+ * short-circuits. Membership, Workspace Context, and Device Enrollment are
+ * not touched — authorization remains DocuFlow's.
  *
- * Idempotent twice over: a linked User short-circuits before the port, and the
- * port itself resolves an already-present email to its existing subject.
+ * Importing a bcrypt digest into the provider still exists on
+ * `IdentityProvider.importPasswordUser` for rehearsal of the #108 cutover; this
+ * module no longer reads a hash off the User row.
  */
 
-import {
-  IdentityProviderClosedError,
-  isUsablePasswordHash,
-  type IdentityProvider,
-} from "./identityProvider";
+import { type IdentityProvider } from "./identityProvider";
 
 /** The `users` columns an import reads. Never the whole row. */
 export type ImportableUser = {
   id: string;
   email: string;
-  password: string | null;
   firstName: string | null;
   lastName: string | null;
   identityProviderSubjectId: string | null;
@@ -32,7 +27,7 @@ export interface UserImportPersistence {
   linkUserToIdentityProvider(userId: string, providerSubjectId: string): Promise<void>;
 }
 
-export type ImportAction = "import" | "already-linked" | "password-set-invite";
+export type ImportAction = "already-linked" | "password-set-invite";
 
 export type ImportPlanEntry = {
   userId: string;
@@ -40,7 +35,7 @@ export type ImportPlanEntry = {
   action: ImportAction;
 };
 
-export type UserImportStatus = "linked" | "already-linked" | "password-set-invite" | "failed";
+export type UserImportStatus = "already-linked" | "password-set-invite";
 
 export type UserImportOutcome = {
   userId: string;
@@ -53,22 +48,17 @@ export type UserImportOutcome = {
 export type UserImportReport = {
   outcomes: UserImportOutcome[];
   /**
-   * Emails with no usable password hash — OIDC-only Users, and anything else the
-   * hash check rejects. They get a Clerk password-set invite; a password is never
+   * Unlinked Users — they get a Clerk password-set invite; a password is never
    * invented for them here.
    */
   passwordSetInvites: string[];
   counts: {
-    linked: number;
     alreadyLinked: number;
     passwordSetInvite: number;
-    failed: number;
   };
   /**
-   * The verifier ADR-0017 asks every data-movement script to carry, re-read from
-   * the database rather than tallied in the loop: Users that still want importing
-   * once the run is over. Zero is done. Password-set invites are not counted —
-   * they are an expected leftover, not an unfinished one.
+   * Users that still want importing by hash. Always zero since #161: there is
+   * no digest on the row to import.
    */
   remainingToImport: number;
 };
@@ -76,8 +66,7 @@ export type UserImportReport = {
 /** What an import would do to this User, decided without reaching the provider. */
 export function classifyUserForImport(user: ImportableUser): ImportAction {
   if (user.identityProviderSubjectId) return "already-linked";
-  if (!isUsablePasswordHash(user.password)) return "password-set-invite";
-  return "import";
+  return "password-set-invite";
 }
 
 /** The classification for every User, for a dry run and for the report header. */
@@ -96,13 +85,12 @@ export async function importUsersIntoIdentityProvider(deps: {
   persistence: UserImportPersistence;
   provider: IdentityProvider;
 }): Promise<UserImportReport> {
-  const { persistence, provider } = deps;
+  const { persistence } = deps;
+  void deps.provider;
   const users = await persistence.listUsersForIdentityImport();
   const outcomes: UserImportOutcome[] = [];
   const passwordSetInvites: string[] = [];
 
-  // Sequential on purpose: the provider is rate-limited, and a partial run has to
-  // be resumable by re-running rather than by reasoning about interleaved writes.
   for (const user of users) {
     const action = classifyUserForImport(user);
 
@@ -116,50 +104,17 @@ export async function importUsersIntoIdentityProvider(deps: {
       continue;
     }
 
-    if (action === "password-set-invite") {
-      passwordSetInvites.push(user.email);
-      outcomes.push({ userId: user.id, email: user.email, status: "password-set-invite" });
-      continue;
-    }
-
-    try {
-      const identity = await provider.importPasswordUser({
-        email: user.email,
-        passwordHash: user.password as string,
-        firstName: user.firstName,
-        lastName: user.lastName,
-      });
-      await persistence.linkUserToIdentityProvider(user.id, identity.providerSubjectId);
-      outcomes.push({
-        userId: user.id,
-        email: user.email,
-        status: "linked",
-        providerSubjectId: identity.providerSubjectId,
-      });
-    } catch (error) {
-      // Missing credentials fail every User identically, so surface it once and
-      // stop rather than writing a report that says the whole directory failed.
-      if (error instanceof IdentityProviderClosedError) throw error;
-      outcomes.push({
-        userId: user.id,
-        email: user.email,
-        status: "failed",
-        detail: error instanceof Error ? error.message : String(error),
-      });
-    }
+    passwordSetInvites.push(user.email);
+    outcomes.push({ userId: user.id, email: user.email, status: "password-set-invite" });
   }
-
-  const remaining = await planUserImport(persistence);
 
   return {
     outcomes,
     passwordSetInvites,
-    remainingToImport: remaining.filter((entry) => entry.action === "import").length,
+    remainingToImport: 0,
     counts: {
-      linked: outcomes.filter((outcome) => outcome.status === "linked").length,
       alreadyLinked: outcomes.filter((outcome) => outcome.status === "already-linked").length,
       passwordSetInvite: passwordSetInvites.length,
-      failed: outcomes.filter((outcome) => outcome.status === "failed").length,
     },
   };
 }

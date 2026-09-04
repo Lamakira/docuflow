@@ -19,7 +19,6 @@ async function seedProject() {
   const { inSeededWorkspace } = await import("../helpers/workspace");
   const user = await storage.createUser({
     email: "ada@test.invalid",
-    password: "not-a-real-hash",
     firstName: "Ada",
   });
   const { project } = await inSeededWorkspace(() =>

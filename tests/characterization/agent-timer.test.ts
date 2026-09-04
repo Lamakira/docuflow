@@ -50,7 +50,7 @@ describe("desktop agent timer (characterization)", () => {
 
     const retired = await newAgent(app).post("/api/agent/auth/login").send({
       email: user.email,
-      password: user.password,
+      password: "password123",
       deviceMeta: { deviceName: "Test Workstation" },
     });
     expect(retired.status).toBe(410);

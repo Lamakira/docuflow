@@ -20,7 +20,6 @@ async function seedRunningEntry(lastActivityAt: Date) {
   const { inSeededWorkspace } = await import("../helpers/workspace");
   const user = await storage.createUser({
     email: "timer@test.invalid",
-    password: "not-a-real-hash",
     firstName: "Tim",
   });
   return inSeededWorkspace(async () => {

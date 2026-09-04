@@ -37,7 +37,7 @@ describe("password sign-in is retired (#110)", () => {
 
     const login = await agent.post("/api/auth/login").send({
       email: user.email,
-      password: user.password,
+      password: "password123",
     });
 
     expect(login.status).toBe(404);

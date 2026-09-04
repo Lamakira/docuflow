@@ -43,7 +43,6 @@ describe("WorkspaceContext", () => {
 
     const user = await storage.createUser({
       email: "ada@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Ada",
     });
 
@@ -59,7 +58,6 @@ describe("WorkspaceContext", () => {
 
     const user = await storage.createUser({
       email: "ada@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Ada",
     });
 
@@ -86,12 +84,10 @@ describe("WorkspaceContext", () => {
 
     const ada = await storage.createUser({
       email: "ada@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Ada",
     });
     const other = await storage.createUser({
       email: "other@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Other",
     });
     await db.delete(memberships).where(eq(memberships.userId, other.id));
@@ -163,7 +159,6 @@ describe("WorkspaceContext", () => {
     await plantOtherWorkspace();
     const stranger = await storage.createUser({
       email: "other@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Other",
     });
     const theirs = await runWithWorkspaceContext({ workspaceId: OTHER_WORKSPACE_ID }, () =>

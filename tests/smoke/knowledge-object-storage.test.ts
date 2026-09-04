@@ -37,7 +37,6 @@ async function seedUser() {
   const { storage } = await import("../../server/storage");
   return storage.createUser({
     email: "ada@test.invalid",
-    password: "not-a-real-hash",
     firstName: "Ada",
   });
 }
