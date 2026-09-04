@@ -127,7 +127,7 @@ export async function registerRoutes(
    * Registered first, before all other routes and the static catch-all.
    */
   app.get("/api/ping", (_req, res) => {
-    res.json({ ok: true, server: "DocuFlow", agentAuth: "email-password-v1" });
+    res.json({ ok: true, server: "DocuFlow", agentAuth: "pairing-v1" });
   });
 
   // Desktop Agent routes (pairing, auth, ingestion)

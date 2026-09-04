@@ -9,8 +9,9 @@ import { bearer, decodeJwtPayload, expirePairingCode, loginDevice, mintAccessTok
  * Characterization: the desktop agent v1 handshake — how a device gets a token,
  * keeps it, and loses it.
  *
- * Pairing from a signed-in web session is restored (#158). Email/password login
- * stays up until #159. Divergences from `docs/agent-protocol.md` that remain:
+ * Pairing from a signed-in web session is the only enrollment path (#159).
+ * `POST /api/agent/auth/login` is 410. Divergences from `docs/agent-protocol.md`
+ * that remain:
  *
  *  - §3 says the device token lives 90 days. Nothing expires it — a device token
  *    is valid until the device is revoked.
@@ -22,11 +23,12 @@ import { bearer, decodeJwtPayload, expirePairingCode, loginDevice, mintAccessTok
  *    owner can revoke; an admin gets the same 404 a stranger does.
  *  - The document never mentions `GET /api/agent/ping`,
  *    `POST /api/agent/auth/login`, `GET /api/agent/devices`, or
- *    `POST /api/agent/devices/revoke-machine`, which are the real entry points.
+ *    `POST /api/agent/devices/revoke-machine`. Ping and login are still the
+ *    real entry points; login answers 410.
  *
  * Behavior quirks frozen here:
- *  - Every login (and every pairing complete) creates another device row; nothing
- *    reuses a machine's device.
+ *  - Every pairing complete creates another device row; nothing reuses a
+ *    machine's device.
  *  - The devices listing hands the browser each device's `deviceTokenHash`.
  *  - Revocation is reported as 403 by the bearer middleware but 401 by refresh.
  *  - `revoke-machine` matches on name *and* os, so the same laptop reporting a
@@ -37,12 +39,12 @@ describe("desktop agent auth and devices (characterization)", () => {
     await resetDb();
   });
 
-  it("advertises the auth scheme before anyone logs in", async () => {
+  it("advertises pairing before anyone enrolls", async () => {
     const app = await makeApp();
 
     const ping = await newAgent(app).get("/api/agent/ping");
     expect(ping.status).toBe(200);
-    expect(ping.body).toEqual({ ok: true, server: "DocuFlow", agentAuth: "email-password-v1" });
+    expect(ping.body).toEqual({ ok: true, server: "DocuFlow", agentAuth: "pairing-v1" });
   });
 
   it("lets a signed-in User mint a pairing code that enrolls a Device", async () => {
@@ -133,38 +135,31 @@ describe("desktop agent auth and devices (characterization)", () => {
     expect(devices.body.data[0].id).toBe(first.body.deviceId);
   });
 
-  it("stores the device token hashed and mints a one-hour access token", async () => {
+  it("answers 410 on password login and enrolls nothing, whatever is posted", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
 
-    const login = await newAgent(app).post("/api/agent/auth/login").send({
+    const withCredentials = await newAgent(app).post("/api/agent/auth/login").send({
       email: user.email,
       password: user.password,
       deviceMeta: { deviceName: "Workstation", os: "linux-6.0", clientVersion: "0.1.0" },
     });
-    expect(login.status).toBe(200);
-    expect(login.body.deviceToken).toMatch(/^[0-9a-f]{96}$/);
+    expect(withCredentials.status).toBe(410);
+    expect(withCredentials.body).toEqual({
+      message:
+        "This sign-in path has moved to pairing. Pair a Device from a signed-in DocuFlow web session.",
+    });
 
-    const claims = decodeJwtPayload(login.body.accessToken);
-    expect(claims).toMatchObject({ sub: login.body.deviceId, uid: user.id });
-    expect(claims.exp - claims.iat).toBe(3600);
-    // Quirk: `expiresAt` keeps millisecond precision while `exp` is floored to
-    // whole seconds, so the two disagree by up to 999ms — the body is the later.
-    expect(Math.floor(new Date(login.body.expiresAt).getTime() / 1000)).toBe(claims.exp);
+    const empty = await newAgent(app).post("/api/agent/auth/login").send({});
+    expect(empty.status).toBe(410);
+    expect(empty.body).toEqual(withCredentials.body);
+
+    const garbage = await newAgent(app).post("/api/agent/auth/login").send({ nope: true });
+    expect(garbage.status).toBe(410);
+    expect(garbage.body).toEqual(withCredentials.body);
 
     const devices = await user.agent.get("/api/agent/devices");
-    expect(devices.status).toBe(200);
-    expect(devices.body.data).toHaveLength(1);
-    expect(devices.body.data[0]).toMatchObject({
-      id: login.body.deviceId,
-      userId: user.id,
-      name: "Workstation",
-      os: "linux-6.0",
-      clientVersion: "0.1.0",
-      revokedAt: null,
-      // The raw token is returned once and never stored; the row keeps its SHA-256.
-      deviceTokenHash: sha256Hex(login.body.deviceToken),
-    });
+    expect(devices.body.data).toEqual([]);
   });
 
   it("exchanges the raw device token for a new access token and touches lastSeenAt", async () => {
@@ -312,7 +307,7 @@ describe("desktop agent auth and devices (characterization)", () => {
       .send({ deviceId: device.deviceId });
     expect(again.status).toBe(200);
 
-    // Logging in again is the documented recovery, and it makes a fresh device.
+    // Pairing again is the documented recovery, and it makes a fresh device.
     const replacement = await loginDevice(app, user);
     expect(replacement.deviceId).not.toBe(device.deviceId);
     expect((await replacement.request.get("/api/agent/capabilities")).status).toBe(200);

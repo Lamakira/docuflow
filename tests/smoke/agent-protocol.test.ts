@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { bearer, loginDevice, PNG_1X1 } from "../helpers/agent";
 import { makeApp } from "../helpers/app";
-import { registerUser } from "../helpers/auth";
+import { newAgent, registerUser } from "../helpers/auth";
 import { resetDb } from "../helpers/db";
 import { createCrmProject, createTask } from "../helpers/fixtures";
 
@@ -20,13 +20,13 @@ describe("desktop agent protocol v1", () => {
     await resetDb();
   });
 
-  it("returns handshake fields on login and heartbeat without changing existing payloads", async () => {
+  it("returns handshake fields on pairing complete and heartbeat without changing existing payloads", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
 
-    const login = await user.agent.post("/api/agent/auth/login").send({
-      email: user.email,
-      password: user.password,
+    const start = await user.agent.post("/api/agent/pairing/start").send({});
+    const login = await newAgent(app).post("/api/agent/pairing/complete").send({
+      pairingCode: start.body.pairingCode,
       deviceMeta: { deviceName: "Protocol Workstation", os: "linux" },
     });
     expect(login.status).toBe(200);

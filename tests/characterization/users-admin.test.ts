@@ -4,15 +4,11 @@ import { resetDb } from "../helpers/db";
 import {
   login,
   makeMainAdmin,
-  newAgent,
   registerAdmin,
   registerUser,
   uniqueEmail,
 } from "../helpers/auth";
 import { emailsTo, sentEmails } from "../fakes/resend";
-
-/** Enough for `POST /api/agent/auth/login`; the device itself is not the subject here. */
-const DEVICE_META = { deviceName: "Reset Check", os: "linux", clientVersion: "0.1.0" };
 
 /**
  * Characterization: user directory, admin user management, and the account
@@ -112,13 +108,6 @@ describe("users and admin management (characterization)", () => {
     const created = await login(app, email);
     const asCreated = await created.get("/api/admin/users");
     expect(asCreated.status).toBe(200);
-
-    // And the generated password really is the one on the row — provable on the
-    // desktop agent, the surface that still verifies it (#110).
-    const onDevice = await newAgent(app)
-      .post("/api/agent/auth/login")
-      .send({ email, password: res.body.generatedPassword, deviceMeta: DEVICE_META });
-    expect(onDevice.status).toBe(200);
 
     const duplicate = await admin.agent
       .post("/api/admin/users")
@@ -260,19 +249,6 @@ describe("users and admin management (characterization)", () => {
     const mail = emailsTo(member.email);
     expect(mail).toHaveLength(1);
     expect(mail[0].subject).toBe("DocuFlow - Your Password Has Been Updated");
-
-    // Proven on the desktop agent's login, which is the surface that still reads
-    // `users.password` — #110 retired the web's. The reset therefore no longer
-    // changes how that User signs in on the web at all; Clerk owns that password.
-    const withNew = await newAgent(app)
-      .post("/api/agent/auth/login")
-      .send({ email: member.email, password: res.body.newPassword, deviceMeta: DEVICE_META });
-    expect(withNew.status).toBe(200);
-
-    const withOld = await newAgent(app)
-      .post("/api/agent/auth/login")
-      .send({ email: member.email, password: member.password, deviceMeta: DEVICE_META });
-    expect(withOld.status).toBe(401);
 
     const missing = await admin.agent.post(
       "/api/admin/users/00000000-0000-0000-0000-000000000000/reset-password"
