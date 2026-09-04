@@ -174,6 +174,27 @@ const agentLoginSchema = z.object({
   deviceMeta: deviceMetaSchema,
 });
 
+type DeviceMeta = z.infer<typeof deviceMetaSchema>;
+
+/** Mint a Device + Device Enrollment the way agent login and pairing complete both do. */
+async function enrollDeviceForUser(userId: string, deviceMeta: DeviceMeta) {
+  const deviceToken = generateToken(DEVICE_TOKEN_LENGTH);
+  const deviceTokenHash = hashToken(deviceToken);
+  const ctx = await contextFromUser(userId);
+  const device = await runWithWorkspaceContext(ctx, () =>
+    storage.createDevice({
+      userId,
+      name: deviceMeta.deviceName,
+      os: deviceMeta.os ?? null,
+      clientVersion: deviceMeta.clientVersion ?? null,
+      deviceTokenHash,
+      lastSeenAt: new Date(),
+    })
+  );
+  const { accessToken, expiresAt } = issueAccessToken(device.id, userId);
+  return { device, deviceToken, accessToken, expiresAt };
+}
+
 const refreshSchema = z.object({
   deviceId: z.string().uuid(),
   deviceToken: z.string().min(1),
@@ -241,21 +262,79 @@ export function registerAgentRoutes(app: Express): void {
   // PAIRING
   // ═══════════════════════════════════════
 
-  /**
-   * DEPRECATED (S4): pairing code flow has been removed.
-   * Desktop agents now authenticate via POST /api/agent/auth/login (email + password).
-   * These endpoints return 410 Gone to surface clear errors to old agent versions.
-   */
-  app.post("/api/agent/pairing/start", (_req, res) => {
-    res.status(410).json({
-      message: "Pairing codes have been removed. Use the desktop app and sign in with your DocuFlow email and password.",
-    });
+  /** Web: mint a pairing code from a Clerk-mapped session (#158). */
+  app.post("/api/agent/pairing/start", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      const code = generatePairingCode();
+      const expiresAt = new Date(Date.now() + PAIRING_CODE_TTL_MS);
+
+      await storage.createAgentPairingCode({ userId, code, expiresAt });
+
+      logInfo("agent.pairing.start", { userId });
+      res.json({ pairingCode: code, expiresAt: expiresAt.toISOString() });
+    } catch (error) {
+      logError("agent.pairing.start.failed", error);
+      res.status(500).json({ message: "Failed to generate pairing code" });
+    }
   });
 
-  app.post("/api/agent/pairing/complete", (_req, res) => {
-    res.status(410).json({
-      message: "Pairing codes have been removed. Use the desktop app and sign in with your DocuFlow email and password.",
-    });
+  /** Agent: consume a pairing code and enroll a Device the same way login does. */
+  app.post("/api/agent/pairing/complete", async (req, res) => {
+    try {
+      const body = pairingCompleteSchema.parse(req.body);
+
+      const pairingRecord = await storage.getAgentPairingCode(body.pairingCode);
+      if (!pairingRecord) {
+        return res.status(400).json({ message: "Invalid pairing code" });
+      }
+      if (pairingRecord.usedAt) {
+        return res.status(400).json({ message: "Pairing code already used" });
+      }
+      if (new Date() > new Date(pairingRecord.expiresAt)) {
+        return res.status(400).json({ message: "Pairing code expired" });
+      }
+
+      const user = await storage.getUser(pairingRecord.userId);
+      if (!user) {
+        return res.status(400).json({ message: "Invalid pairing code" });
+      }
+
+      const claimed = await storage.markPairingCodeUsed(pairingRecord.id);
+      if (!claimed) {
+        return res.status(400).json({ message: "Pairing code already used" });
+      }
+
+      const { device, deviceToken, accessToken, expiresAt } = await enrollDeviceForUser(
+        pairingRecord.userId,
+        body.deviceMeta
+      );
+
+      const now = new Date();
+      logInfo("agent.pairing.complete", { deviceId: device.id, userId: pairingRecord.userId });
+      res.json({
+        deviceId: device.id,
+        deviceToken,
+        accessToken,
+        expiresAt: expiresAt.toISOString(),
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        },
+        ...agentProtocolHandshake(now),
+      });
+    } catch (error) {
+      if (error instanceof ArchivedMembershipError || error instanceof NoActiveMembershipError) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid request", errors: error.errors });
+      }
+      logError("agent.pairing.complete.failed", error);
+      res.status(500).json({ message: "Failed to complete pairing" });
+    }
   });
 
   // ═══════════════════════════════════════
@@ -264,8 +343,8 @@ export function registerAgentRoutes(app: Express): void {
 
   /**
    * Agent: login with DocuFlow email + password.
-   * Creates (or registers) a device for this machine and returns credentials.
-   * Replaces the pairing code flow as of S4.
+   * Creates a Device for this machine and returns credentials.
+   * Stays up through #158; retired by #159.
    */
   app.post("/api/agent/auth/login", async (req, res) => {
     try {
@@ -286,23 +365,10 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(401).json({ message: "Invalid email or password" });
       }
 
-      // Create a new device for this login
-      const deviceToken = generateToken(DEVICE_TOKEN_LENGTH);
-      const deviceTokenHash = hashToken(deviceToken);
-
-      const ctx = await contextFromUser(user.id);
-      const device = await runWithWorkspaceContext(ctx, () =>
-        storage.createDevice({
-          userId: user.id,
-          name: body.deviceMeta.deviceName,
-          os: body.deviceMeta.os ?? null,
-          clientVersion: body.deviceMeta.clientVersion ?? null,
-          deviceTokenHash,
-          lastSeenAt: new Date(),
-        })
+      const { device, deviceToken, accessToken, expiresAt } = await enrollDeviceForUser(
+        user.id,
+        body.deviceMeta
       );
-
-      const { accessToken, expiresAt } = issueAccessToken(device.id, user.id);
       const now = new Date();
 
       logInfo("agent.auth.login.success", { userId: user.id, deviceId: device.id });

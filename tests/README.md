@@ -272,7 +272,7 @@ implementation and each suite's header lists what the document gets wrong):
 | `tasks-members-reminders`        | tasks, project membership, per-user reminders                       |
 | `time-tracking`                  | start/pause/resume/stop/activity, visibility, stats                 |
 | `agent-timer`                    | the desktop agent's device login and its half of the shared tracker  |
-| `agent-auth`                     | device login, refresh, revocation, and the retired pairing endpoints |
+| `agent-auth`                     | device login, refresh, revocation, and pairing from a signed-in web session |
 | `agent-ingestion`                | heartbeats, timer sync, policy delivery, activity event batches      |
 | `agent-screenshots`              | the agent's presign / upload / confirm flow and the tombstone it hits |
 | `agent-workspace`                | the agent's project and task pickers, capabilities, and day totals   |

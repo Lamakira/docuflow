@@ -51,7 +51,8 @@ export interface IdentityPersistence extends UserImportPersistence, DualAuthPers
     expiresAt: Date;
   }): Promise<AgentPairingCode>;
   getAgentPairingCode(code: string): Promise<AgentPairingCode | undefined>;
-  markPairingCodeUsed(id: string): Promise<void>;
+  /** Returns true only when this call was the one that stamped `usedAt`. */
+  markPairingCodeUsed(id: string): Promise<boolean>;
 
   createDevice(data: InsertDevice): Promise<Device>;
   getDevice(id: string): Promise<Device | undefined>;

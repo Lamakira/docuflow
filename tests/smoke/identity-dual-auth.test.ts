@@ -99,12 +99,14 @@ describe("dual-auth session resolution (#109)", () => {
     // same letters is still drained.
     expect(isDrainablePath("/api/agents")).toBe(true);
 
-    // The three exceptions inside `/api/agent`: the web's own Device management,
+    // The exceptions inside `/api/agent`: the web's own Device management,
     // guarded by `isAuthenticated` and reached from the browser. Skipping these
-    // is what would leave a signed-in User unable to revoke their own Device.
+    // is what would leave a signed-in User unable to revoke their own Device
+    // or mint a pairing code.
     expect(isDrainablePath("/api/agent/devices")).toBe(true);
     expect(isDrainablePath("/api/agent/device/revoke")).toBe(true);
     expect(isDrainablePath("/api/agent/devices/revoke-machine")).toBe(true);
+    expect(isDrainablePath("/api/agent/pairing/start")).toBe(true);
     // Exact matches only — a Device-token route under the same text is not one.
     expect(isDrainablePath("/api/agent/devices/anything-else")).toBe(false);
   });
