@@ -113,6 +113,27 @@ export function sha256Hex(value: string): string {
 }
 
 /**
+ * Stamp a minted pairing code expired.
+ *
+ * `POST /api/agent/pairing/start` always writes a future `expiresAt`, so the
+ * expired-complete branch is one no live start can produce inside a test run —
+ * the same reason `mintAccessToken` exists for an already-expired JWT.
+ */
+export async function expirePairingCode(code: string): Promise<void> {
+  const { pool } = await import("../../server/db");
+  const { inSeededWorkspace } = await import("./workspace");
+  const result = await inSeededWorkspace(() =>
+    pool.query(
+      `UPDATE agent_pairing_codes SET expires_at = NOW() - INTERVAL '1 second' WHERE code = $1`,
+      [code]
+    )
+  );
+  if (!result.rowCount) {
+    throw new Error(`expirePairingCode: no row for ${code}`);
+  }
+}
+
+/**
  * A real 1×1 PNG.
  *
  * The upload route checks the PNG magic bytes and then hands the buffer to

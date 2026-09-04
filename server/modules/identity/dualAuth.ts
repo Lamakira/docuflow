@@ -23,11 +23,11 @@ import { IdentityProviderError, type IdentityProvider } from "./identityProvider
 export const PATHS_NOT_DRAINED = ["/api/agent", "/api/v1", "/api/internal"] as const;
 
 /**
- * The exceptions inside `/api/agent`: three routes under that prefix are the
+ * The exceptions inside `/api/agent`: routes under that prefix that are the
  * web's own Device management BFF, guarded by `isAuthenticated` and reached from
  * the browser, not by a Device. They are read like any other `/api/` route —
  * since #110 retired password sign-in, this is the only way a signed-in User can
- * list or revoke their own Devices.
+ * list or revoke their own Devices, or mint a pairing code (#158).
  *
  * Matched exactly rather than by prefix, so a Device-token route that merely
  * starts with the same text is not pulled in with them.
@@ -36,6 +36,7 @@ export const WEB_SESSION_AGENT_PATHS = [
   "/api/agent/devices",
   "/api/agent/device/revoke",
   "/api/agent/devices/revoke-machine",
+  "/api/agent/pairing/start",
 ] as const;
 
 export function isDrainablePath(path: string): boolean {

@@ -2663,11 +2663,13 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async markPairingCodeUsed(id: string): Promise<void> {
-    await db
+  async markPairingCodeUsed(id: string): Promise<boolean> {
+    const [result] = await db
       .update(agentPairingCodes)
       .set({ usedAt: new Date() })
-      .where(eq(agentPairingCodes.id, id));
+      .where(and(eq(agentPairingCodes.id, id), isNull(agentPairingCodes.usedAt)))
+      .returning({ id: agentPairingCodes.id });
+    return Boolean(result);
   }
 
   async createDevice(data: InsertDevice): Promise<Device> {

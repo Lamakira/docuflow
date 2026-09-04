@@ -77,10 +77,52 @@ describe("desktop agent auth (characterization smoke)", () => {
     expect(refresh.body).toEqual({ message: "Invalid device credentials" });
   });
 
-  it("retired pairing endpoints return 410 Gone", async () => {
+  it("pairs a Device from a signed-in web session and refuses a used or expired code", async () => {
     const app = await makeApp();
-    const res = await request(app).post("/api/agent/pairing/start").send({});
-    expect(res.status).toBe(410);
-    expect(res.body.message).toMatch(/Pairing codes have been removed/);
+    const { registerUser: create } = await import("../helpers/auth");
+    const user = await create(app, { email: "agent@example.com", password: "password123" });
+
+    const anonymous = await request(app).post("/api/agent/pairing/start").send({});
+    expect(anonymous.status).toBe(401);
+
+    const start = await user.agent.post("/api/agent/pairing/start").send({});
+    expect(start.status).toBe(200);
+    expect(typeof start.body.pairingCode).toBe("string");
+    expect(new Date(start.body.expiresAt).getTime()).toBeGreaterThan(Date.now());
+
+    const complete = await request(app).post("/api/agent/pairing/complete").send({
+      pairingCode: start.body.pairingCode,
+      deviceMeta: { deviceName: "Smoke Pair", os: "linux" },
+    });
+    expect(complete.status).toBe(200);
+    expect(typeof complete.body.deviceId).toBe("string");
+    expect(typeof complete.body.deviceToken).toBe("string");
+    expect(typeof complete.body.accessToken).toBe("string");
+    expect(new Date(complete.body.expiresAt).getTime()).toBeGreaterThan(Date.now());
+
+    const reused = await request(app).post("/api/agent/pairing/complete").send({
+      pairingCode: start.body.pairingCode,
+      deviceMeta: { deviceName: "Smoke Pair Again" },
+    });
+    expect(reused.status).toBe(400);
+
+    const unknown = await request(app).post("/api/agent/pairing/complete").send({
+      pairingCode: "ZZZZZZ",
+      deviceMeta: { deviceName: "Nobody" },
+    });
+    expect(unknown.status).toBe(400);
+
+    const { expirePairingCode } = await import("../helpers/agent");
+    const expiring = await user.agent.post("/api/agent/pairing/start").send({});
+    await expirePairingCode(expiring.body.pairingCode);
+    const expired = await request(app).post("/api/agent/pairing/complete").send({
+      pairingCode: expiring.body.pairingCode,
+      deviceMeta: { deviceName: "Late" },
+    });
+    expect(expired.status).toBe(400);
+
+    const listed = await user.agent.get("/api/agent/devices");
+    expect(listed.body.data).toHaveLength(1);
+    expect(listed.body.data[0].id).toBe(complete.body.deviceId);
   });
 });
