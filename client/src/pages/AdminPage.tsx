@@ -21,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, Copy, CheckCircle, Eye, EyeOff, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore, BarChart2, Camera, Monitor, ClipboardList } from "lucide-react";
+import { Shield, Users, Mail, ArrowLeft, Plus, Trash2, Key, Pencil, Check, X, CheckCircle, Eye, Calendar, User as UserIcon, ChevronLeft, ChevronRight, Settings2, Layers, GripVertical, Archive, ArchiveRestore, BarChart2, Camera, Monitor, ClipboardList } from "lucide-react";
 import { AnalyticsContent } from "./AdminAnalyticsPage";
 import type { SafeUser, CrmModule, CrmModuleField, CrmModuleWithFields, CrmFieldType, crmFieldTypeValues, ScreenshotPolicy } from "@shared/schema";
 import { DEFAULT_SCREENSHOT_POLICY } from "@shared/schema";
@@ -33,7 +33,6 @@ interface AdminUserDetails {
   lastName: string | null;
   profileImageUrl: string | null;
   role: string | null;
-  lastGeneratedPassword: string | null;
   lastLoginAt: Date | null;
   createdAt: Date | null;
   updatedAt: Date | null;
@@ -167,7 +166,6 @@ function UserManagementContent() {
   const [, setLocation] = useLocation();
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{ firstName: string; lastName: string; email: string; hoursPerDay: number; canViewDailyUpdates: number }>({ firstName: "", lastName: "", email: "", hoursPerDay: 8, canViewDailyUpdates: 0 });
-  const [copiedPassword, setCopiedPassword] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [showArchived, setShowArchived] = useState(false);
   const USERS_PER_PAGE = 10;
@@ -272,14 +270,12 @@ function UserManagementContent() {
     mutationFn: async (userId: string) => {
       return await apiRequest("POST", `/api/admin/users/${userId}/reset-password`);
     },
-    onSuccess: (data: any) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      if (data.newPassword) {
-        toast({ 
-          title: "Password reset successfully",
-          description: `New password: ${data.newPassword}${data.emailSent ? " (Email sent)" : " (Email failed to send)"}`
-        });
-      }
+      toast({
+        title: "Password-set invite sent",
+        description: "They can set their password at the IdentityProvider. This is not a Workspace Invitation.",
+      });
     },
     onError: (error: any) => {
       toast({
@@ -312,12 +308,6 @@ function UserManagementContent() {
     }
   };
 
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedPassword(id);
-    setTimeout(() => setCopiedPassword(null), 2000);
-  };
-
   if (usersLoading) {
     return (
       <div className="space-y-4">
@@ -337,7 +327,7 @@ function UserManagementContent() {
               User Management
             </CardTitle>
             <CardDescription className="mt-1">
-              View and manage all users. Create new users, update their info, or reset their passwords.
+              View and manage all users. Create new users, update their info, or send a password-set invite.
             </CardDescription>
           </div>
           <Button
@@ -561,15 +551,15 @@ function UserManagementContent() {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>Reset Password</AlertDialogTitle>
+                              <AlertDialogTitle>Send password-set invite</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This will generate a new random password for {u.firstName} {u.lastName} and send it to their email ({u.email}).
+                                This sends {u.firstName} {u.lastName} ({u.email}) an IdentityProvider invite to set their password. It is not a Workspace Invitation and does not change Membership.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction onClick={() => resetPasswordMutation.mutate(u.id)}>
-                                Reset Password
+                                Send invite
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -677,8 +667,7 @@ function CreateUserPage() {
     lastName: "",
     role: "user" as "user" | "admin",
   });
-  const [createdUser, setCreatedUser] = useState<{ email: string; password: string; emailSent: boolean } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [createdUser, setCreatedUser] = useState<{ email: string; inviteSent: boolean } | null>(null);
 
   const createUserMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -688,12 +677,13 @@ function CreateUserPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       setCreatedUser({
         email: formData.email,
-        password: data.generatedPassword,
-        emailSent: data.emailSent,
+        inviteSent: data.inviteSent === true,
       });
-      toast({ 
-        title: "User created successfully",
-        description: data.emailSent ? "Credentials sent via email" : "Email could not be sent - please share credentials manually"
+      toast({
+        title: "User created",
+        description: data.inviteSent
+          ? "A password-set invite was sent. They still need an active Membership to enter the Workspace."
+          : "The User was created but the password-set invite did not send.",
       });
     },
     onError: (error: any) => {
@@ -708,14 +698,6 @@ function CreateUserPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     createUserMutation.mutate(formData);
-  };
-
-  const copyCredentials = () => {
-    if (createdUser) {
-      navigator.clipboard.writeText(`Email: ${createdUser.email}\nPassword: ${createdUser.password}`);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
   };
 
   return (
@@ -742,32 +724,20 @@ function CreateUserPage() {
               User Created Successfully
             </CardTitle>
             <CardDescription>
-              {createdUser.emailSent 
-                ? "The user has been sent their credentials via email."
-                : "Email could not be sent. Please share the credentials below manually."}
+              {createdUser.inviteSent
+                ? "A password-set invite was sent. That invite is not a Workspace Invitation and does not grant Membership."
+                : "The User was created. The password-set invite did not send — try reset from their profile."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="bg-muted p-4 rounded-lg space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-muted-foreground">Email</Label>
-                  <p className="font-mono" data-testid="text-created-email">{createdUser.email}</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-muted-foreground">Password</Label>
-                  <p className="font-mono" data-testid="text-created-password">{createdUser.password}</p>
-                </div>
+              <div>
+                <Label className="text-muted-foreground">Email</Label>
+                <p className="font-mono" data-testid="text-created-email">{createdUser.email}</p>
               </div>
             </div>
             
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              <Button onClick={copyCredentials} variant="outline" data-testid="button-copy-credentials">
-                {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                {copied ? "Copied!" : "Copy Credentials"}
-              </Button>
               <Button onClick={() => {
                 setCreatedUser(null);
                 setFormData({ email: "", firstName: "", lastName: "", role: "user" });
@@ -785,7 +755,7 @@ function CreateUserPage() {
           <CardHeader>
             <CardTitle>User Details</CardTitle>
             <CardDescription>
-              Enter the user's information. A random password will be generated and sent to their email.
+              Enter the user's information. They will receive a password-set invite at the IdentityProvider — not a generated DocuFlow password.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -827,7 +797,7 @@ function CreateUserPage() {
                   data-testid="input-create-email"
                 />
                 <p className="text-sm text-muted-foreground">
-                  The login credentials will be sent to this email address.
+                  A password-set invite will be sent to this address. It is not a Workspace Invitation.
                 </p>
               </div>
               
@@ -866,8 +836,6 @@ function CreateUserPage() {
 function UserDetailPage({ userId }: { userId: string }) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const [showPassword, setShowPassword] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const { data: userDetails, isLoading } = useQuery<AdminUserDetails>({
     queryKey: ["/api/admin/users", userId],
@@ -880,7 +848,10 @@ function UserDetailPage({ userId }: { userId: string }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users", userId] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      toast({ title: "Password reset successfully" });
+      toast({
+        title: "Password-set invite sent",
+        description: "They can set their password at the IdentityProvider.",
+      });
     },
     onError: (error: any) => {
       toast({
@@ -890,14 +861,6 @@ function UserDetailPage({ userId }: { userId: string }) {
       });
     },
   });
-
-  const copyPassword = () => {
-    if (userDetails?.lastGeneratedPassword) {
-      navigator.clipboard.writeText(userDetails.lastGeneratedPassword);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -999,56 +962,25 @@ function UserDetailPage({ userId }: { userId: string }) {
             )}
           </div>
 
-          <div className="border-t pt-4">
-            <Label className="text-muted-foreground text-sm">Last Generated Password</Label>
-            {userDetails.lastGeneratedPassword ? (
-              <div className="flex items-center gap-2 mt-2">
-                <div className="bg-muted px-3 py-2 rounded-md font-mono flex-1" data-testid="text-generated-password">
-                  {showPassword ? userDetails.lastGeneratedPassword : "••••••••••••••••"}
-                </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setShowPassword(!showPassword)}
-                  data-testid="button-toggle-password"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={copyPassword}
-                  data-testid="button-copy-password"
-                >
-                  {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                </Button>
-              </div>
-            ) : (
-              <p className="text-muted-foreground mt-2" data-testid="text-no-password">
-                No generated password available. The user may have set their own password.
-              </p>
-            )}
-          </div>
-
           <div className="border-t pt-4 flex gap-2">
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" disabled={resetPasswordMutation.isPending} data-testid="button-reset-user-password">
                   <Key className="w-4 h-4 mr-2" />
-                  Reset Password
+                  Send password-set invite
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Reset Password</AlertDialogTitle>
+                  <AlertDialogTitle>Send password-set invite</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will generate a new random password for {userDetails.firstName} {userDetails.lastName} and send it to their email ({userDetails.email}).
+                    This sends {userDetails.firstName} {userDetails.lastName} ({userDetails.email}) an IdentityProvider invite to set their password. It is not a Workspace Invitation and does not change Membership.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction onClick={() => resetPasswordMutation.mutate()}>
-                    Reset Password
+                    Send invite
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

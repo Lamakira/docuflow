@@ -20,53 +20,6 @@ export function getResendClient(): { client: Resend; fromEmail: string } {
   };
 }
 
-// Send welcome email with credentials to new user
-export async function sendWelcomeEmail(
-  toEmail: string, 
-  firstName: string, 
-  password: string,
-  appUrl: string
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const { client, fromEmail } = getResendClient();
-    
-    const result = await client.emails.send({
-      from: fromEmail,
-      to: toEmail,
-      subject: 'Welcome to DocuFlow - Your Account Credentials',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1 style="color: #333;">Welcome to DocuFlow!</h1>
-          <p>Hello ${firstName},</p>
-          <p>Your account has been created. Here are your login credentials:</p>
-          <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>Email:</strong> ${toEmail}</p>
-            <p style="margin: 5px 0;"><strong>Password:</strong> ${password}</p>
-          </div>
-          <p>Please log in and change your password as soon as possible for security.</p>
-          <p>
-            <a href="${appUrl}/auth" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
-              Log In to DocuFlow
-            </a>
-          </p>
-          <p style="color: #666; font-size: 12px; margin-top: 30px;">
-            If you did not request this account, please ignore this email.
-          </p>
-        </div>
-      `
-    });
-
-    if (result.error) {
-      return { success: false, error: result.error.message };
-    }
-
-    return { success: true };
-  } catch (error: any) {
-    console.error('Failed to send welcome email:', error);
-    return { success: false, error: error.message || 'Failed to send email' };
-  }
-}
-
 // Send project assignment notification email
 export async function sendProjectAssignmentEmail(
   toEmail: string, 
@@ -202,50 +155,6 @@ export async function sendDailyUpdateReminderEmail(
     return { success: true };
   } catch (error: any) {
     console.error('Failed to send daily update reminder email:', error);
-    return { success: false, error: error.message || 'Failed to send email' };
-  }
-}
-
-// Send password reset/update email
-export async function sendPasswordUpdateEmail(
-  toEmail: string, 
-  firstName: string, 
-  newPassword: string,
-  appUrl: string
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const { client, fromEmail } = getResendClient();
-    
-    const result = await client.emails.send({
-      from: fromEmail,
-      to: toEmail,
-      subject: 'DocuFlow - Your Password Has Been Updated',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1 style="color: #333;">Password Updated</h1>
-          <p>Hello ${firstName},</p>
-          <p>Your DocuFlow password has been updated by an administrator. Here are your new credentials:</p>
-          <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>Email:</strong> ${toEmail}</p>
-            <p style="margin: 5px 0;"><strong>New Password:</strong> ${newPassword}</p>
-          </div>
-          <p>Please log in and change your password as soon as possible for security.</p>
-          <p>
-            <a href="${appUrl}/auth" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
-              Log In to DocuFlow
-            </a>
-          </p>
-        </div>
-      `
-    });
-
-    if (result.error) {
-      return { success: false, error: result.error.message };
-    }
-
-    return { success: true };
-  } catch (error: any) {
-    console.error('Failed to send password update email:', error);
     return { success: false, error: error.message || 'Failed to send email' };
   }
 }

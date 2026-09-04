@@ -883,18 +883,7 @@ export class DatabaseStorage implements IStorage {
       const noteCreatorsData = noteCreatorIds.length > 0
         ? await db.select().from(users).where(or(...noteCreatorIds.map(id => eq(users.id, id))))
         : [];
-      const noteCreatorMap = new Map(noteCreatorsData.map(u => [u.id, {
-        id: u.id,
-        email: u.email,
-        firstName: u.firstName,
-        lastName: u.lastName,
-        profileImageUrl: u.profileImageUrl,
-        role: u.role,
-        isMainAdmin: u.isMainAdmin,
-        lastGeneratedPassword: u.lastGeneratedPassword,
-        createdAt: u.createdAt,
-        updatedAt: u.updatedAt,
-      } as SafeUser]));
+      const noteCreatorMap = new Map(noteCreatorsData.map((u) => [u.id, toSafeUser(u)]));
       
       // Keep only the latest note per project
       allNotes.forEach(note => {
@@ -1716,7 +1705,7 @@ export class DatabaseStorage implements IStorage {
     
     const creatorIds = [...new Set(notes.map(n => n.createdById))];
     const creatorsData = await db.select().from(users).where(or(...creatorIds.map(id => eq(users.id, id))));
-    const creatorMap = new Map(creatorsData.map(u => [u.id, { id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName, profileImageUrl: u.profileImageUrl, role: u.role, hoursPerDay: u.hoursPerDay, isMainAdmin: u.isMainAdmin, canViewDailyUpdates: u.canViewDailyUpdates, lastGeneratedPassword: u.lastGeneratedPassword, isArchived: u.isArchived, lastLoginAt: u.lastLoginAt, createdAt: u.createdAt, updatedAt: u.updatedAt }]));
+    const creatorMap = new Map(creatorsData.map((u) => [u.id, toSafeUser(u)]));
     
     return notes.map(n => ({
       ...n,
@@ -1735,7 +1724,7 @@ export class DatabaseStorage implements IStorage {
     if (!note) return undefined;
     
     const [creator] = await db.select().from(users).where(eq(users.id, note.createdById));
-    const safeCreator = creator ? { id: creator.id, email: creator.email, firstName: creator.firstName, lastName: creator.lastName, profileImageUrl: creator.profileImageUrl, role: creator.role, hoursPerDay: creator.hoursPerDay, isMainAdmin: creator.isMainAdmin, canViewDailyUpdates: creator.canViewDailyUpdates, lastGeneratedPassword: creator.lastGeneratedPassword, isArchived: creator.isArchived, lastLoginAt: creator.lastLoginAt, createdAt: creator.createdAt, updatedAt: creator.updatedAt } : undefined;
+    const safeCreator = creator ? toSafeUser(creator) : undefined;
     
     return { ...note, createdBy: safeCreator };
   }
@@ -1773,22 +1762,7 @@ export class DatabaseStorage implements IStorage {
       const [user] = await db.select().from(users).where(eq(users.id, record.changedById));
       historyWithUsers.push({
         ...record,
-        changedBy: user ? {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          profileImageUrl: user.profileImageUrl,
-          role: user.role,
-          hoursPerDay: user.hoursPerDay,
-          isMainAdmin: user.isMainAdmin,
-          canViewDailyUpdates: user.canViewDailyUpdates,
-          lastGeneratedPassword: user.lastGeneratedPassword,
-          isArchived: user.isArchived,
-          lastLoginAt: user.lastLoginAt,
-          createdAt: user.createdAt,
-          updatedAt: user.updatedAt,
-        } : undefined,
+        changedBy: user ? toSafeUser(user) : undefined,
       });
     }
     return historyWithUsers;
@@ -1818,7 +1792,7 @@ export class DatabaseStorage implements IStorage {
     const fromUsersData = fromUserIds.length > 0 
       ? await db.select().from(users).where(sql`${users.id} IN ${fromUserIds}`)
       : [];
-    const fromUserMap = new Map(fromUsersData.map(u => [u.id, { id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName, profileImageUrl: u.profileImageUrl, role: u.role, hoursPerDay: u.hoursPerDay, isMainAdmin: u.isMainAdmin, canViewDailyUpdates: u.canViewDailyUpdates, lastGeneratedPassword: u.lastGeneratedPassword, isArchived: u.isArchived, lastLoginAt: u.lastLoginAt, createdAt: u.createdAt, updatedAt: u.updatedAt }]));
+    const fromUserMap = new Map(fromUsersData.map((u) => [u.id, toSafeUser(u)]));
 
     const projectsData = crmProjectIds.length > 0
       ? await db.select().from(crmProjects).leftJoin(projects, eq(crmProjects.projectId, projects.id)).where(sql`${crmProjects.id} IN ${crmProjectIds}`)

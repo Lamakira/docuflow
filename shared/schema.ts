@@ -65,11 +65,13 @@ export const sessions = pgTable(
 export const userRoleValues = ["admin", "user"] as const;
 export type UserRole = typeof userRoleValues[number];
 
-// User storage table with email/password auth
+// User storage table. `password` is nullable so a new User can be invited at
+// the IdentityProvider without a placeholder hash (#160). Existing hashes may
+// remain until the column drops (#161).
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique().notNull(),
-  password: varchar("password", { length: 255 }).notNull(),
+  password: varchar("password", { length: 255 }),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
@@ -82,7 +84,7 @@ export const users = pgTable("users", {
   isArchived: boolean("is_archived").notNull().default(false),
   // Subject id this User is linked to at the IdentityProvider (#108, ADR-0007).
   // Vendor-neutral on purpose: Clerk stays behind the port. NULL means not yet
-  // imported. `password` stays authoritative for the current login path.
+  // linked. `password` stays until #161 and is no longer written for new Users.
   identityProviderSubjectId: varchar("identity_provider_subject_id").unique(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -99,17 +101,22 @@ export const insertUserSchema = createInsertSchema(users).omit({
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 /**
- * The User shape HTTP returns: no bcrypt hash, and no IdentityProvider subject id
- * (#108) — that link is a server-side identity concern, not something a client
- * needs or should learn.
+ * The User shape HTTP returns: no bcrypt hash, no last generated password
+ * (#160), and no IdentityProvider subject id (#108) — that link is a
+ * server-side identity concern, not something a client needs or should learn.
  */
-export type SafeUser = Omit<User, "password" | "identityProviderSubjectId">;
+export type SafeUser = Omit<User, "password" | "identityProviderSubjectId" | "lastGeneratedPassword">;
 
-/** Drop the two columns `SafeUser` excludes. */
-export function toSafeUser<T extends Partial<Pick<User, "password" | "identityProviderSubjectId">>>(
-  user: T
-): Omit<T, "password" | "identityProviderSubjectId"> {
-  const { password: _password, identityProviderSubjectId: _subjectId, ...safe } = user;
+/** Drop the columns `SafeUser` excludes. */
+export function toSafeUser<
+  T extends Partial<Pick<User, "password" | "identityProviderSubjectId" | "lastGeneratedPassword">>,
+>(user: T): Omit<T, "password" | "identityProviderSubjectId" | "lastGeneratedPassword"> {
+  const {
+    password: _password,
+    identityProviderSubjectId: _subjectId,
+    lastGeneratedPassword: _generated,
+    ...safe
+  } = user;
   return safe;
 }
 
