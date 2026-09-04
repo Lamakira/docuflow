@@ -255,6 +255,13 @@ longer impersonates the Owner, and Device Enrollment still grows through
 pairing from a signed-in web session (`POST /api/agent/auth/login` is 410 as of
 [#159](https://github.com/Lamakira/docuflow/issues/159)).
 
+`identity-invites` ([#160](https://github.com/Lamakira/docuflow/issues/160))
+covers admin create and reset inviting at the IdentityProvider instead of
+writing a bcrypt hash. The Clerk fake records the invite; CI never calls Clerk.
+`users.password` is nullable in the journal. A created User still needs an
+active Membership to enter the Workspace. `POST /api/auth/login` stays
+unmounted.
+
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`
@@ -264,7 +271,7 @@ implementation and each suite's header lists what the document gets wrong):
 | Suite                            | Covers                                                              |
 | -------------------------------- | ------------------------------------------------------------------- |
 | `auth-session`                   | register/login/logout, session persistence, `isAuthenticated` variants |
-| `users-admin`                    | user directory, admin CRUD, generated passwords, account emails, SuperAdmin guards |
+| `users-admin`                    | user directory, admin CRUD, IdentityProvider invites, SuperAdmin guards |
 | `projects-documents`             | projects, retired endpoints, the TipTap page tree, search            |
 | `crm-clients-contacts`           | clients and their contact people                                    |
 | `crm-projects`                   | CRM projects, pagination, stage history, review clock, assignment    |

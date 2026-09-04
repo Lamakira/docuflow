@@ -7,9 +7,9 @@ export interface TestUser {
   id: string;
   email: string;
   /**
-   * The password on `users.password`. Since #159 no HTTP surface checks it —
-   * web sign-in is Clerk (#110) and agent enrollment is pairing. Kept so
-   * suites that still write or email the hash can name the value they wrote.
+   * The password on `users.password` when the fixture wrote one. Since #159 no
+   * HTTP surface checks it — web sign-in is Clerk (#110) and agent enrollment
+   * is pairing. Admin create/reset no longer write a hash (#160).
    */
   password: string;
   /** Agent already carrying this user's IdentityProvider session token. */
@@ -180,6 +180,9 @@ export async function signIn(app: Express, userId: string): Promise<Agent> {
 
   let subjectId = user.identityProviderSubjectId;
   if (!subjectId) {
+    if (!user.password) {
+      throw new Error(`signIn: User ${userId} has no IdentityProvider link and no password hash`);
+    }
     const identity = await identityProvider.importPasswordUser({
       email: user.email,
       passwordHash: user.password,

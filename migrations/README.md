@@ -35,6 +35,7 @@ journal is not part of it and is never applied.
 | 0023 | `0023_steep_marvel_zombies.sql` | Pending seat-decrease quantity on `workspace_billing` (#144). |
 | 0024 | `0024_spotty_gideon.sql` | Pending Checkout Session id on `workspace_billing` (#144). |
 | 0025 | `0025_thankful_silver_sable.sql` | IdentityProvider subject id on `users` (#108). Nullable and unique; the link a Clerk import writes back. `users.password` stays. |
+| 0026 | `0026_young_morg.sql` | `users.password` nullable (#160). New Users need no placeholder hash. Existing hashes stay until #161 drops the column. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
@@ -181,6 +182,8 @@ Two rules, from ADR-0017:
   `--dry-run` as its checkpoint and a post-run re-read as its verifier. The
   classification it records is
   [`docs/migration/phase-5-user-import.md`](../docs/migration/phase-5-user-import.md).
+  `0026` makes `users.password` nullable as pure DDL (#160); admin create
+  writes NULL instead of a hash, and the column drops on #161.
 - **Expand and contract.** Add the new shape, move the reads and writes, drop
   the old one in a later deploy. Rollback is redeploying the previous image,
   never a down migration, so no migration may make the previous image unable to

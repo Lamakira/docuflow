@@ -1,9 +1,8 @@
 import express from "express";
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
-import { randomBytes } from "crypto";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, getUserId, hashPassword } from "./auth";
+import { setupAuth, isAuthenticated, getUserId } from "./auth";
 import { config } from "./config";
 import { z } from "zod";
 import {
@@ -16,7 +15,7 @@ import { ObjectPermission } from "./objectAcl";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
-import { webAuthConfigRoute } from "./modules/identity";
+import { webAuthConfigRoute, identityProvider } from "./modules/identity";
 import { registerWebhookEndpointRoutes } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
 import { SeatExhaustedError } from "./modules/billing";
@@ -52,7 +51,7 @@ import {
   getTranscriptStatus,
   retryTranscript,
 } from "./transcripts";
-import { sendWelcomeEmail, sendPasswordUpdateEmail, sendProjectAssignmentEmail } from "./email";
+import { sendProjectAssignmentEmail } from "./email";
 import { deliverPendingDueReminders } from "./dueReminders";
 import {
   DAILY_UPDATE_NUDGE_HOUR,
@@ -2751,7 +2750,7 @@ Instructions:
     }
   });
 
-  // Get single user details (admin only) - includes password info for admin viewing
+  // Get single user details (admin only)
   app.get("/api/admin/users/:id", isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const user = await storage.getAdminUserDetails(req.params.id);
@@ -2766,7 +2765,7 @@ Instructions:
         return res.status(403).json({ message: "Cannot view SuperAdmin details" });
       }
       
-      // Return user without the hashed password but with the last generated password
+      // Return user without the hash, IdentityProvider subject, or last generated password
       res.json(toSafeUser(user));
     } catch (error) {
       console.error("Error fetching user details:", error);
@@ -2824,43 +2823,22 @@ Instructions:
       if (existingUser) {
         return res.status(409).json({ message: "User with this email already exists" });
       }
-      
-      // Generate random password
-      const generatedPassword = randomBytes(8).toString('hex');
-      const hashedPassword = await hashPassword(generatedPassword);
-      
-      // Create user with generated password stored for admin viewing
+
       const newUser = await storage.createUser({
         email: parsed.data.email,
-        password: hashedPassword,
         firstName: parsed.data.firstName,
         lastName: parsed.data.lastName,
-        lastGeneratedPassword: generatedPassword,
       });
-      
-      // Update role if not default
+
       if (parsed.data.role !== "user") {
         await storage.updateUserRole(newUser.id, parsed.data.role);
       }
-      
-      // Get app URL for email
-      const protocol = req.headers['x-forwarded-proto'] || 'https';
-      const host = req.headers.host || 'localhost:5000';
-      const appUrl = `${protocol}://${host}`;
-      
-      // Send welcome email
-      const emailResult = await sendWelcomeEmail(
-        parsed.data.email,
-        parsed.data.firstName,
-        generatedPassword,
-        appUrl
-      );
-      
-      res.status(201).json({ 
-        user: { ...newUser, password: undefined },
-        generatedPassword,
-        emailSent: emailResult.success,
-        emailError: emailResult.error
+
+      await identityProvider.sendPasswordSetInvite({ email: parsed.data.email });
+
+      res.status(201).json({
+        user: toSafeUser(newUser),
+        inviteSent: true,
       });
     } catch (error) {
       if (error instanceof SeatExhaustedError) {
@@ -2936,42 +2914,18 @@ Instructions:
   // Reset user password (admin only)
   app.post("/api/admin/users/:id/reset-password", isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      const user = await storage.getUserWithPassword(req.params.id);
+      const user = await storage.getUser(req.params.id);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
-      // Check if target user is SuperAdmin
+
       if (user.isMainAdmin && user.id !== getUserId(req)) {
         return res.status(403).json({ message: "Cannot modify the SuperAdmin" });
       }
-      
-      // Generate new random password
-      const newPassword = randomBytes(8).toString('hex');
-      const hashedPassword = await hashPassword(newPassword);
-      
-      // Update password and store the generated password for admin viewing
-      await storage.updateUserPassword(req.params.id, hashedPassword, newPassword);
-      
-      // Get app URL for email
-      const protocol = req.headers['x-forwarded-proto'] || 'https';
-      const host = req.headers.host || 'localhost:5000';
-      const appUrl = `${protocol}://${host}`;
-      
-      // Send password update email
-      const emailResult = await sendPasswordUpdateEmail(
-        user.email,
-        user.firstName || 'User',
-        newPassword,
-        appUrl
-      );
-      
-      res.json({ 
-        success: true, 
-        newPassword,
-        emailSent: emailResult.success,
-        emailError: emailResult.error
-      });
+
+      await identityProvider.sendPasswordSetInvite({ email: user.email });
+
+      res.json({ success: true, inviteSent: true });
     } catch (error) {
       console.error("Error resetting password:", error);
       res.status(500).json({ message: "Failed to reset password" });

@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import {
-  login,
   makeMainAdmin,
   registerAdmin,
   registerUser,
@@ -11,8 +10,8 @@ import {
 import { emailsTo, sentEmails } from "../fakes/resend";
 
 /**
- * Characterization: user directory, admin user management, and the account
- * emails that go with them.
+ * Characterization: user directory, admin user management, and IdentityProvider
+ * password-set invites on create and reset.
  *
  * Quirks frozen here:
  *  - `GET /api/users` hides archived users from everyone; only an admin passing
@@ -20,9 +19,9 @@ import { emailsTo, sentEmails } from "../fakes/resend";
  *  - `POST /api/admin/users` echoes the freshly inserted row, so a user created
  *    with `role: "admin"` comes back as `role: "user"` — the promotion happens
  *    after the row the response was built from.
- *  - The generated password is returned in the response body and stored in
- *    `lastGeneratedPassword`, which `GET /api/admin/users/:id` then serves back
- *    in the clear.
+ *  - Create and reset invite at the IdentityProvider (#160). They do not return
+ *    a generated password, and `GET /api/admin/users/:id` does not serve
+ *    `lastGeneratedPassword`.
  *  - SuperAdmin protection is per-route and inconsistent: role, update, archive,
  *    reset-password and delete each guard it differently.
  *  - Deleting a user answers 200 `{ success: true }`, not 204.
@@ -69,7 +68,7 @@ describe("users and admin management (characterization)", () => {
     expect(settings.body).toEqual({ message: "Access denied" });
   });
 
-  it("creates a user, mails the credentials, and reports the pre-promotion row", async () => {
+  it("creates a user, invites them at the IdentityProvider, and reports the pre-promotion row", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const email = uniqueEmail("created");
@@ -82,32 +81,25 @@ describe("users and admin management (characterization)", () => {
     });
 
     expect(res.status).toBe(201);
-    expect(res.body.emailSent).toBe(true);
-    expect(res.body.emailError).toBeUndefined();
-    expect(typeof res.body.generatedPassword).toBe("string");
+    expect(res.body.inviteSent).toBe(true);
+    expect(res.body).not.toHaveProperty("generatedPassword");
+    expect(res.body).not.toHaveProperty("emailSent");
     expect(res.body.user).toMatchObject({
       email,
       firstName: "New",
       lastName: "Hire",
       // Quirk: the role update runs after this row was read, so the response
-      // still says "user" even though the account is an admin.
+      // still says "user" even though the User is an admin.
       role: "user",
     });
     expect(res.body.user).not.toHaveProperty("password");
-    // Quirk: the plaintext password is echoed in the body and persisted.
-    expect(res.body.user.lastGeneratedPassword).toBe(res.body.generatedPassword);
+    expect(res.body.user).not.toHaveProperty("lastGeneratedPassword");
 
-    const mail = emailsTo(email);
-    expect(mail).toHaveLength(1);
-    expect(mail[0].subject).toBe("Welcome to DocuFlow - Your Account Credentials");
-    expect(mail[0].html).toContain(res.body.generatedPassword);
+    expect(emailsTo(email)).toHaveLength(0);
 
-    // The account really is an admin. Signing it in imports it into the
-    // IdentityProvider by the hash the route just wrote, which is the step
-    // `npm run identity:import:users` performs for a real admin-created User.
-    const created = await login(app, email);
-    const asCreated = await created.get("/api/admin/users");
-    expect(asCreated.status).toBe(200);
+    const details = await admin.agent.get(`/api/admin/users/${res.body.user.id}`);
+    expect(details.status).toBe(200);
+    expect(details.body.role).toBe("admin");
 
     const duplicate = await admin.agent
       .post("/api/admin/users")
@@ -120,7 +112,7 @@ describe("users and admin management (characterization)", () => {
     expect(invalid.body.message).toBe("Invalid user data");
   });
 
-  it("serves admin user details in the clear, minus the hash", async () => {
+  it("serves admin user details minus the hash and any generated password", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const created = await admin.agent
@@ -130,8 +122,7 @@ describe("users and admin management (characterization)", () => {
     const res = await admin.agent.get(`/api/admin/users/${created.body.user.id}`);
     expect(res.status).toBe(200);
     expect(res.body).not.toHaveProperty("password");
-    // Quirk: the generated password is readable by any admin, indefinitely.
-    expect(res.body.lastGeneratedPassword).toBe(created.body.generatedPassword);
+    expect(res.body).not.toHaveProperty("lastGeneratedPassword");
 
     const missing = await admin.agent.get("/api/admin/users/00000000-0000-0000-0000-000000000000");
     expect(missing.status).toBe(404);
@@ -235,7 +226,7 @@ describe("users and admin management (characterization)", () => {
     expect(malformed.body).toEqual({ message: "Failed to archive user" });
   });
 
-  it("resets a password, mails the new one, and invalidates the old one", async () => {
+  it("resets by sending a password-set invite and does not return a password", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const member = await registerUser(app);
@@ -243,12 +234,11 @@ describe("users and admin management (characterization)", () => {
     const res = await admin.agent.post(`/api/admin/users/${member.id}/reset-password`);
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.emailSent).toBe(true);
-    expect(typeof res.body.newPassword).toBe("string");
+    expect(res.body.inviteSent).toBe(true);
+    expect(res.body).not.toHaveProperty("newPassword");
+    expect(res.body).not.toHaveProperty("emailSent");
 
-    const mail = emailsTo(member.email);
-    expect(mail).toHaveLength(1);
-    expect(mail[0].subject).toBe("DocuFlow - Your Password Has Been Updated");
+    expect(emailsTo(member.email)).toHaveLength(0);
 
     const missing = await admin.agent.post(
       "/api/admin/users/00000000-0000-0000-0000-000000000000/reset-password"

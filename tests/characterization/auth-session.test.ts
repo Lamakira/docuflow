@@ -15,8 +15,8 @@ import { login, newAgent, promoteToAdmin, registerUser, uniqueEmail } from "../h
  *  - `GET /api/auth/user` answers 200 with a JSON `null` body when nobody is
  *    signed in, and does the same when the session names a deleted user — the
  *    SPA treats "no user" and "unknown user" identically.
- *  - It returns the whole user row minus `password`, which still carries
- *    `lastGeneratedPassword` (an admin-only field) and every internal flag.
+ *  - It returns the whole user row minus `password`, `identityProviderSubjectId`,
+ *    and `lastGeneratedPassword` (#160), plus every remaining internal flag.
  *  - `POST /api/auth/logout` destroys the legacy cookie session, which a Clerk
  *    sign-in never created. It answers 200 and the provider session it could not
  *    reach still works — ending that one is Clerk's job, and the SPA calls it.
@@ -81,9 +81,7 @@ describe("auth and session (characterization)", () => {
       profileImageUrl: null,
     });
     expect(res.body).not.toHaveProperty("password");
-    // Quirk: the admin-only "last generated password" column ships to every
-    // caller because the route strips `password` and nothing else.
-    expect(res.body).toHaveProperty("lastGeneratedPassword", null);
+    expect(res.body).not.toHaveProperty("lastGeneratedPassword");
   });
 
   it("keeps the provider session across requests and records the last login", async () => {
