@@ -194,7 +194,7 @@ describe("dual-auth drain over HTTP (#109)", () => {
 
     // #109 froze this as a 200: during the drain the User's own password still
     // worked. #110 answered 410; #111 deleted the stubs.
-    const login = await newAgent(app).post("/api/auth/login").send({ email, password: user.password });
+    const login = await newAgent(app).post("/api/auth/login").send({ email, password: "password123" });
 
     expect(login.status).toBe(404);
   });
@@ -226,9 +226,8 @@ describe("dual-auth drain over HTTP (#109)", () => {
 });
 
 /**
- * An OIDC-only User, built the way `identity-user-import` builds one: `upsertUser`
- * is the Replit OIDC callback's own write, and it leaves the `REPLIT_OIDC_USER`
- * placeholder on `users.password` rather than a hash.
+ * An unlinked User, built the way Replit OIDC used to write one: `upsertUser`
+ * with no IdentityProvider subject id. Hashes are gone (#161).
  */
 async function registerOidcOnlyUser(id: string): Promise<{ id: string; email: string }> {
   const { storage } = await import("../../server/storage");
@@ -238,7 +237,7 @@ async function registerOidcOnlyUser(id: string): Promise<{ id: string; email: st
 }
 
 describe("password-set invites for OIDC-only Users (#109)", () => {
-  it("invites the Users with no usable hash and leaves password Users alone", async () => {
+  it("invites unlinked Users and leaves linked Users alone", async () => {
     const { sendPasswordSetInvites } = await import("../../server/modules/identity");
     const app = await makeApp();
     const password = await registerUser(app, { email: uniqueEmail("password") });
@@ -255,10 +254,9 @@ describe("password-set invites for OIDC-only Users (#109)", () => {
       { userId: oidc.id, email: oidc.email, status: "invited", inviteId: "inv_fake_1" },
     ]);
     expect(report.outcomes.map((outcome) => outcome.email)).not.toContain(password.email);
-    // The password User keeps the password they registered with: no invite, and
-    // nothing written to their row.
-    const untouched = await storage.getUserWithPassword(password.id);
-    expect(untouched?.password).toMatch(/^\$2[aby]\$/);
+    // A linked User is not invited. Credentials live at the IdentityProvider.
+    const untouched = await storage.getUser(password.id);
+    expect(untouched?.identityProviderSubjectId).toEqual(expect.any(String));
   });
 
   it("re-running invites nobody a second time", async () => {
@@ -291,7 +289,7 @@ describe("password-set invites for OIDC-only Users (#109)", () => {
     ]);
     // The link is what stops the verifier staying red once invites are answered:
     // an accepted invitee is no longer owed one, and no third run mails them.
-    expect((await storage.getUserWithPassword(oidc.id))?.identityProviderSubjectId).toBe(subject);
+    expect((await storage.getUser(oidc.id))?.identityProviderSubjectId).toBe(subject);
     expect(after.remainingToInvite).toBe(0);
     const third = await sendPasswordSetInvites({ persistence: storage, provider });
     expect(third.outcomes).toEqual([]);

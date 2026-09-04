@@ -4,37 +4,22 @@ import { beforeEach, describe, expect, it } from "vitest";
  * Phase 9 ticket #160: admin create and reset invite at the IdentityProvider
  * instead of writing a DocuFlow password (ADR-0007, ADR-0017, ADR-0018).
  *
- * Seam is HTTP against the real app, plus the journal. The Clerk SDK is aliased
- * to `tests/fakes/clerk.ts`, so no run reaches api.clerk.com.
+ * Seam is HTTP against the real app. The Clerk SDK is aliased to
+ * `tests/fakes/clerk.ts`, so no run reaches api.clerk.com. The columns
+ * themselves dropping is #161 (`identity-password-column-dropped`).
  */
 
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { newAgent, registerAdmin, registerUser, uniqueEmail } from "../helpers/auth";
 import { clerkCreateInvitationCalls, createClerkClient, issueClerkSession } from "../fakes/clerk";
-import { isUsablePasswordHash } from "../../server/modules/identity/identityProvider";
 
 beforeEach(async () => {
   await resetDb();
 });
 
-describe("users.password is nullable (#160)", () => {
-  it("is nullable in a database migrated through the journal", async () => {
-    const { pool } = await import("../../server/db");
-    const { rows } = await pool.query<{ is_nullable: string }>(
-      `SELECT is_nullable
-         FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'users'
-          AND column_name = 'password'`
-    );
-
-    expect(rows).toEqual([{ is_nullable: "YES" }]);
-  });
-});
-
 describe("admin create invites at the IdentityProvider (#160)", () => {
-  it("creates a User with no usable hash, sends a password-set invite, and grants Membership the usual way", async () => {
+  it("creates a User, sends a password-set invite, and grants Membership the usual way", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const email = uniqueEmail("invite-create");
@@ -47,19 +32,15 @@ describe("admin create invites at the IdentityProvider (#160)", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.inviteSent).toBe(true);
+    expect(res.body.user).not.toHaveProperty("password");
+    expect(res.body.user).not.toHaveProperty("lastGeneratedPassword");
     expect(clerkCreateInvitationCalls().map((call) => call.emailAddress)).toContain(email);
 
     const { pool } = await import("../../server/db");
     const user = (
-      await pool.query<{
-        id: string;
-        password: string | null;
-        last_generated_password: string | null;
-      }>(`SELECT id, password, last_generated_password FROM users WHERE email = $1`, [email])
+      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email])
     ).rows[0];
     expect(user).toBeDefined();
-    expect(isUsablePasswordHash(user.password)).toBe(false);
-    expect(user.last_generated_password).toBeNull();
 
     const memberships = (
       await pool.query<{ id: string; archived_at: Date | null }>(
@@ -102,30 +83,16 @@ describe("admin create invites at the IdentityProvider (#160)", () => {
 });
 
 describe("admin reset invites at the IdentityProvider (#160)", () => {
-  it("sends a password-set invite and leaves the existing hash untouched", async () => {
+  it("sends a password-set invite and does not write a User password", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const member = await registerUser(app);
-    const { pool } = await import("../../server/db");
-    const before = (
-      await pool.query<{ password: string | null }>(`SELECT password FROM users WHERE id = $1`, [
-        member.id,
-      ])
-    ).rows[0].password;
 
     const res = await admin.agent.post(`/api/admin/users/${member.id}/reset-password`);
 
     expect(res.status).toBe(200);
     expect(res.body.inviteSent).toBe(true);
     expect(clerkCreateInvitationCalls().map((call) => call.emailAddress)).toContain(member.email);
-
-    const after = (
-      await pool.query<{ password: string | null }>(`SELECT password FROM users WHERE id = $1`, [
-        member.id,
-      ])
-    ).rows[0].password;
-    expect(after).toBe(before);
-    expect(isUsablePasswordHash(after)).toBe(true);
   });
 });
 

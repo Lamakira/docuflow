@@ -48,7 +48,7 @@ beforeEach(async () => {
 async function insertUser(): Promise<string> {
   const id = randomUUID();
   await withClient(url, (client) =>
-    client.query(`INSERT INTO users (id, email, password) VALUES ($1, $2, 'x')`, [
+    client.query(`INSERT INTO users (id, email) VALUES ($1, $2)`, [
       id,
       `${id}@example.test`,
     ])

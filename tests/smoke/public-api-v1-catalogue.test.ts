@@ -132,7 +132,6 @@ describe("public /api/v1 catalogue — Clients", () => {
     await plantOtherWorkspace();
     const other = await storage.createUser({
       email: "other@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Other",
     });
     await db.delete(memberships).where(eq(memberships.userId, other.id));
@@ -264,7 +263,6 @@ describe("public /api/v1 catalogue — Projects", () => {
     await plantOtherWorkspace();
     const other = await storage.createUser({
       email: "other-proj@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Other",
     });
     await db.delete(memberships).where(eq(memberships.userId, other.id));
@@ -343,7 +341,6 @@ describe("public /api/v1 catalogue — Time Entries", () => {
     await plantOtherWorkspace();
     const other = await storage.createUser({
       email: "other-time@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Other",
     });
     await db.delete(memberships).where(eq(memberships.userId, other.id));

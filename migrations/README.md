@@ -36,6 +36,7 @@ journal is not part of it and is never applied.
 | 0024 | `0024_spotty_gideon.sql` | Pending Checkout Session id on `workspace_billing` (#144). |
 | 0025 | `0025_thankful_silver_sable.sql` | IdentityProvider subject id on `users` (#108). Nullable and unique; the link a Clerk import writes back. `users.password` stays. |
 | 0026 | `0026_young_morg.sql` | `users.password` nullable (#160). New Users need no placeholder hash. Existing hashes stay until #161 drops the column. |
+| 0027 | `0027_confused_captain_stacy.sql` | Drops `users.password` and `users.last_generated_password` (#161). Credentials live at the IdentityProvider. No down migration. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on

@@ -102,8 +102,8 @@ describe("workspace_id tighten", () => {
   it("rejects a write that omits workspace_id", async () => {
     await withClient(scratch, async (client) => {
       await client.query(
-        `INSERT INTO users (id, email, password, role, is_main_admin, created_at)
-         VALUES ('u-tighten', 'tighten@example.test', 'x', 'user', 0, '2020-01-01')
+        `INSERT INTO users (id, email, role, is_main_admin, created_at)
+         VALUES ('u-tighten', 'tighten@example.test', 'user', 0, '2020-01-01')
          ON CONFLICT (id) DO NOTHING`
       );
       await expect(
@@ -146,8 +146,8 @@ describe("workspace_id tighten", () => {
         [OTHER_WORKSPACE_ID]
       );
       await client.query(
-        `INSERT INTO users (id, email, password, role, is_main_admin, created_at)
-         VALUES ('u-rel', 'rel@example.test', 'x', 'user', 0, '2020-01-01')
+        `INSERT INTO users (id, email, role, is_main_admin, created_at)
+         VALUES ('u-rel', 'rel@example.test', 'user', 0, '2020-01-01')
          ON CONFLICT (id) DO NOTHING`
       );
       await client.query(
@@ -171,8 +171,8 @@ describe("workspace_id tighten", () => {
         [OTHER_WORKSPACE_ID]
       );
       await client.query(
-        `INSERT INTO users (id, email, password, role, is_main_admin, created_at)
-         VALUES ('u-parent', 'parent@example.test', 'x', 'user', 0, '2020-01-01')
+        `INSERT INTO users (id, email, role, is_main_admin, created_at)
+         VALUES ('u-parent', 'parent@example.test', 'user', 0, '2020-01-01')
          ON CONFLICT (id) DO NOTHING`
       );
       await client.query(

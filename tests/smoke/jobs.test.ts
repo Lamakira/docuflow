@@ -203,7 +203,7 @@ describe("jobs port", () => {
 
     await expect(
       db.transaction(async (tx) => {
-        await tx.insert(users).values({ email, password: "not-a-real-hash" });
+        await tx.insert(users).values({ email });
         await jobs.enqueue({ type: WORK, payload: { marker: true } }, tx);
         tx.rollback();
       })

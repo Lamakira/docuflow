@@ -220,15 +220,12 @@ request path uses and ADR-0023's exit test cannot be written without; it runs
 against the GCS fake, and `ReplitStoragePort.list` is uncovered, like the rest of
 that adapter.
 
-`identity-user-import` ([#108](https://github.com/Lamakira/docuflow/issues/108))
-covers importing existing Users into the IdentityProvider by bcrypt hash. The
-seam is the use case over the port plus the
-`users.identity_provider_subject_id` link it writes back — the port fake answers,
-so no run reaches Clerk. The cases that earn the suite are the two refusals: a
-User with no usable hash is listed for a password-set invite rather than given an
-invented password, and a linked User short-circuits before the port, so a second
-run creates no second Clerk User. `users.password`, Membership, and Devices are
-asserted untouched, and characterization of `/api/auth/*` stays where it is.
+`identity-user-import` ([#108](https://github.com/Lamakira/docuflow/issues/108),
+updated by [#161](https://github.com/Lamakira/docuflow/issues/161))
+covers classifying remaining Users for the IdentityProvider. Hashes are gone
+from `users`, so nobody is imported by digest: an unlinked User is listed for a
+password-set invite, and a linked User short-circuits before the port.
+Membership and Devices are asserted untouched.
 
 `identity-dual-auth` ([#109](https://github.com/Lamakira/docuflow/issues/109))
 covers how a provider session resolves after the import: a session the real
@@ -236,7 +233,7 @@ import linked reaches that User's Membership. What earns it is the refusals: a
 subject nobody is linked to is 401 even though the provider vouches for it; and
 the desktop agent's own `Authorization: Bearer` is never read as a provider
 session, so Devices stay on the token path this phase does not touch. Invites are
-here too: only Users with no usable hash are sent one, a second run sends
+here too: only unlinked Users are sent one, a second run sends
 nothing, an answered invite becomes a subject-id link instead of a second mail,
 and the verifier re-reads rather than tallies. The drain's legacy half is gone
 since #110 and the flag since #111, so what the suite once froze as
@@ -258,9 +255,14 @@ pairing from a signed-in web session (`POST /api/agent/auth/login` is 410 as of
 `identity-invites` ([#160](https://github.com/Lamakira/docuflow/issues/160))
 covers admin create and reset inviting at the IdentityProvider instead of
 writing a bcrypt hash. The Clerk fake records the invite; CI never calls Clerk.
-`users.password` is nullable in the journal. A created User still needs an
+A created User still needs an
 active Membership to enter the Workspace. `POST /api/auth/login` stays
 unmounted.
+
+`identity-password-column-dropped` ([#161](https://github.com/Lamakira/docuflow/issues/161))
+covers the journal dropping `users.password` and `users.last_generated_password`.
+Agent password login stays 410; pairing still enrolls a Device; a Clerk session
+still enters the Workspace.
 
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1

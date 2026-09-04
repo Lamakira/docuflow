@@ -35,15 +35,9 @@ export interface IdentityPersistence extends UserImportPersistence, DualAuthPers
       canViewDailyUpdates?: number;
     }
   ): Promise<SafeUser | undefined>;
-  updateUserPassword(
-    userId: string,
-    hashedPassword: string,
-    plainPassword?: string
-  ): Promise<SafeUser | undefined>;
   touchUserLastLogin(userId: string): Promise<void>;
   getAdminUserDetails(userId: string): Promise<User | undefined>;
   deleteUser(userId: string): Promise<void>;
-  getUserWithPassword(userId: string): Promise<User | undefined>;
 
   createAgentPairingCode(data: {
     userId: string;

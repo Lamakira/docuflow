@@ -162,7 +162,6 @@ describe("Service Accounts (Identity & Access)", () => {
 
     const other = await storage.createUser({
       email: "other@test.invalid",
-      password: "not-a-real-hash",
       firstName: "Other",
     });
     await db.delete(memberships).where(eq(memberships.userId, other.id));

@@ -84,7 +84,7 @@ export interface IdentityProvider {
   findIdentityByEmail(email: string): Promise<ProviderIdentity | undefined>;
 }
 
-/** bcrypt as stored on `users.password`. The OIDC placeholder is not usable. */
+/** bcrypt digest the IdentityProvider import accepts. The OIDC placeholder is not usable. */
 const BCRYPT = /^\$2[abxy]\$\d{2}\$[./A-Za-z0-9]{53}$/;
 
 export function isUsablePasswordHash(hash: string | null | undefined): boolean {

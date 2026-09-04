@@ -141,7 +141,7 @@ describe("desktop agent auth and devices (characterization)", () => {
 
     const withCredentials = await newAgent(app).post("/api/agent/auth/login").send({
       email: user.email,
-      password: user.password,
+      password: "password123",
       deviceMeta: { deviceName: "Workstation", os: "linux-6.0", clientVersion: "0.1.0" },
     });
     expect(withCredentials.status).toBe(410);

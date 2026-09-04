@@ -203,7 +203,6 @@ export class DatabaseStorage implements IStorage {
       .values({
         id: userData.id,
         email: userData.email ?? "",
-        password: "REPLIT_OIDC_USER",
         firstName: userData.firstName ?? undefined,
         lastName: userData.lastName ?? undefined,
         profileImageUrl: userData.profileImageUrl ?? undefined,
@@ -228,13 +227,15 @@ export class DatabaseStorage implements IStorage {
    * stable order so a partial run resumes where it stopped. Archived Users are
    * included: authorization is DocuFlow's, so whether an account may act is a
    * Membership question, not a reason to leave its identity unimported.
+   *
+   * Hashes are gone (#161). An unlinked User is owed a password-set invite, not
+   * an import by digest.
    */
   async listUsersForIdentityImport(): Promise<ImportableUser[]> {
     return db
       .select({
         id: users.id,
         email: users.email,
-        password: users.password,
         firstName: users.firstName,
         lastName: users.lastName,
         identityProviderSubjectId: users.identityProviderSubjectId,
@@ -1402,19 +1403,6 @@ export class DatabaseStorage implements IStorage {
     return updated && toSafeUser(updated);
   }
 
-  async updateUserPassword(userId: string, hashedPassword: string, plainPassword?: string): Promise<SafeUser | undefined> {
-    const updateData: any = { password: hashedPassword, updatedAt: new Date() };
-    if (plainPassword) {
-      updateData.lastGeneratedPassword = plainPassword;
-    }
-    const [updated] = await db
-      .update(users)
-      .set(updateData)
-      .where(eq(users.id, userId))
-      .returning();
-    return updated && toSafeUser(updated);
-  }
-
   /**
    * Stamp the last login for a User who arrived on an IdentityProvider session
    * (#110). Clerk owns the sign-in, so there is no login moment on this side to
@@ -1444,11 +1432,6 @@ export class DatabaseStorage implements IStorage {
 
   async deleteUser(userId: string): Promise<void> {
     await db.delete(users).where(eq(users.id, userId));
-  }
-
-  async getUserWithPassword(userId: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
-    return user;
   }
 
   // Company Document Folders

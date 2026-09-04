@@ -134,8 +134,6 @@ describe("db:backfill:crm-links", () => {
       .values({
         id: randomUUID(),
         email: `${randomUUID()}@example.test`,
-        // Never used — nothing here logs in — but the column is NOT NULL.
-        password: "not-a-real-hash",
         role: "user",
       })
       .returning({ id: users.id });
@@ -194,7 +192,6 @@ describe("db:backfill:crm-links", () => {
         Array.from({ length: count }, () => ({
           id: randomUUID(),
           email: `${randomUUID()}@example.test`,
-          password: "not-a-real-hash",
           role: "user",
         }))
       )

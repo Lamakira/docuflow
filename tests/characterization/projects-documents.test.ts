@@ -176,9 +176,7 @@ describe("projects and documents (characterization)", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ id: doc.id, projectId: project.id });
     expect(res.body.createdBy).toMatchObject({ id: user.id, firstName: "Ada" });
-    // Quirk: the inlined creator is the raw user row, so the password hash ships
-    // to every caller that opens a page.
-    expect(res.body.createdBy).toHaveProperty("password");
+    expect(res.body.createdBy).not.toHaveProperty("password");
 
     const missing = await user.agent.get("/api/documents/00000000-0000-0000-0000-000000000000");
     expect(missing.status).toBe(404);

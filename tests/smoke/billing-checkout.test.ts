@@ -201,7 +201,6 @@ async function plantPaidMembers(count: number) {
       .insert(users)
       .values({
         email: `paid-${i}@test.invalid`,
-        password: "not-a-real-hash",
         firstName: `P${i}`,
       })
       .returning();

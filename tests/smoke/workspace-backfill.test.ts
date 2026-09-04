@@ -228,7 +228,6 @@ describe("Project write stamps workspace_id", () => {
 
     const user = await storage.createUser({
       email: "tracer@example.test",
-      password: "not-a-real-hash",
       firstName: "Ada",
     });
 

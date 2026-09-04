@@ -129,8 +129,8 @@ describe("workspace RLS", () => {
         [OTHER_WORKSPACE_ID]
       );
       await client.query(
-        `INSERT INTO users (id, email, password, role, is_main_admin, created_at)
-         VALUES ('u-rls', 'rls@example.test', 'x', 'user', 0, '2020-01-01')
+        `INSERT INTO users (id, email, role, is_main_admin, created_at)
+         VALUES ('u-rls', 'rls@example.test', 'user', 0, '2020-01-01')
          ON CONFLICT (id) DO NOTHING`
       );
       await client.query(
@@ -158,8 +158,8 @@ describe("workspace RLS", () => {
   it("returns no Workspace-owned rows when the scope GUC is missing", async () => {
     await withClient(owner, async (client) => {
       await client.query(
-        `INSERT INTO users (id, email, password, role, is_main_admin, created_at)
-         VALUES ('u-rls-closed', 'closed@example.test', 'x', 'user', 0, '2020-01-01')
+        `INSERT INTO users (id, email, role, is_main_admin, created_at)
+         VALUES ('u-rls-closed', 'closed@example.test', 'user', 0, '2020-01-01')
          ON CONFLICT (id) DO NOTHING`
       );
       await client.query(
@@ -185,8 +185,8 @@ describe("workspace RLS", () => {
         [OTHER_WORKSPACE_ID]
       );
       await client.query(
-        `INSERT INTO users (id, email, password, role, is_main_admin, created_at)
-         VALUES ('u-rls-scope', 'scope@example.test', 'x', 'user', 0, '2020-01-01')
+        `INSERT INTO users (id, email, role, is_main_admin, created_at)
+         VALUES ('u-rls-scope', 'scope@example.test', 'user', 0, '2020-01-01')
          ON CONFLICT (id) DO NOTHING`
       );
       await client.query(
@@ -225,8 +225,8 @@ describe("workspace RLS", () => {
         [OTHER_WORKSPACE_ID]
       );
       await client.query(
-        `INSERT INTO users (id, email, password, role, is_main_admin, created_at)
-         VALUES ('u-rls-tx', 'tx@example.test', 'x', 'user', 0, '2020-01-01')
+        `INSERT INTO users (id, email, role, is_main_admin, created_at)
+         VALUES ('u-rls-tx', 'tx@example.test', 'user', 0, '2020-01-01')
          ON CONFLICT (id) DO NOTHING`
       );
       await client.query(
@@ -260,8 +260,8 @@ describe("workspace RLS", () => {
         [OTHER_WORKSPACE_ID]
       );
       await client.query(
-        `INSERT INTO users (id, email, password, role, is_main_admin, created_at)
-         VALUES ('u-rls-forge', 'forge@example.test', 'x', 'user', 0, '2020-01-01')
+        `INSERT INTO users (id, email, role, is_main_admin, created_at)
+         VALUES ('u-rls-forge', 'forge@example.test', 'user', 0, '2020-01-01')
          ON CONFLICT (id) DO NOTHING`
       );
     });

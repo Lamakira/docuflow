@@ -24,11 +24,11 @@ describe("desktop agent auth (characterization smoke)", () => {
 
   it("answers 410 on password login, whatever is posted", async () => {
     const app = await makeApp();
-    const user = await registerUser(app, { email: "agent@example.com", password: "password123" });
+    const user = await registerUser(app, { email: "agent@example.com" });
 
     const withCredentials = await newAgent(app).post("/api/agent/auth/login").send({
       email: user.email,
-      password: user.password,
+      password: "password123",
       deviceMeta: { deviceName: "Smoke Machine", os: "linux" },
     });
     expect(withCredentials.status).toBe(410);
@@ -47,7 +47,7 @@ describe("desktop agent auth (characterization smoke)", () => {
 
   it("refreshes an already paired Device and rejects unknown device credentials", async () => {
     const app = await makeApp();
-    const user = await registerUser(app, { email: "agent@example.com", password: "password123" });
+    const user = await registerUser(app, { email: "agent@example.com" });
     const device = await loginDevice(app, user, { deviceName: "Smoke Machine", os: "linux" });
 
     const refresh = await newAgent(app).post("/api/agent/auth/refresh").send({
@@ -68,7 +68,7 @@ describe("desktop agent auth (characterization smoke)", () => {
 
   it("pairs a Device from a signed-in web session and refuses a used or expired code", async () => {
     const app = await makeApp();
-    const user = await registerUser(app, { email: "agent@example.com", password: "password123" });
+    const user = await registerUser(app, { email: "agent@example.com" });
 
     const anonymous = await newAgent(app).post("/api/agent/pairing/start").send({});
     expect(anonymous.status).toBe(401);

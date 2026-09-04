@@ -6,17 +6,12 @@ export type Agent = ReturnType<typeof request.agent>;
 export interface TestUser {
   id: string;
   email: string;
-  /**
-   * The password on `users.password` when the fixture wrote one. Since #159 no
-   * HTTP surface checks it — web sign-in is Clerk (#110) and agent enrollment
-   * is pairing. Admin create/reset no longer write a hash (#160).
-   */
-  password: string;
   /** Agent already carrying this user's IdentityProvider session token. */
   agent: Agent;
 }
 
-const DEFAULT_PASSWORD = "password123";
+/** Known-good bcrypt of `password123` at cost 4. Used only at the IdentityProvider. */
+const PROVIDER_TEST_HASH = "$2b$04$CJHjh937SDvS7hh3rhGtDeDrY0sTbWMloGRi22XPxY7Zb9scpnnj2";
 
 let sequence = 0;
 
@@ -44,27 +39,9 @@ export function newAgent(app: Express): Agent {
 }
 
 /**
- * bcrypt at the app's own cost, computed once per distinct password.
- *
- * Twelve rounds is deliberately slow, and the harness hashes the same handful of
- * passwords hundreds of times; caching keeps the real cost factor on the stored
- * hash — which is what the import reads — without paying it per user.
- */
-const hashes = new Map<string, Promise<string>>();
-
-function passwordHash(password: string): Promise<string> {
-  let hash = hashes.get(password);
-  if (!hash) {
-    hash = import("../../server/auth").then(({ hashPassword }) => hashPassword(password));
-    hashes.set(password, hash);
-  }
-  return hash;
-}
-
-/**
  * A User who signs in the way the web signs in after #110: the row is created
- * directly, imported into the IdentityProvider by bcrypt hash the way #108 does
- * it, and the returned agent carries a provider session token on every request.
+ * directly with no password (#161), linked at the IdentityProvider, and the
+ * returned agent carries a provider session token on every request.
  *
  * Created through storage rather than over HTTP because there is no longer a
  * registration endpoint to post to — `POST /api/auth/register` is retired, and
@@ -72,36 +49,33 @@ function passwordHash(password: string): Promise<string> {
  */
 export async function registerUser(
   app: Express,
-  overrides: { email?: string; password?: string; firstName?: string; lastName?: string } = {}
+  overrides: { email?: string; firstName?: string; lastName?: string } = {}
 ): Promise<TestUser> {
   const user = await createUnlinkedUser(overrides);
   return { ...user, agent: await signIn(app, user.id) };
 }
 
 /**
- * A User row with a real bcrypt hash and no IdentityProvider link — the state
- * every User was in before the #108 import ran, and the one the import suites
- * are about.
+ * A User row with no IdentityProvider link — the state every User was in before
+ * the #108 import ran, and the one the import suites are about.
  *
  * No agent comes back, because linking is what makes signing in possible. A
  * suite that wants one anyway passes the id to `signIn`, which links first.
  */
 export async function createUnlinkedUser(
-  overrides: { email?: string; password?: string; firstName?: string; lastName?: string } = {}
+  overrides: { email?: string; firstName?: string; lastName?: string } = {}
 ): Promise<Omit<TestUser, "agent">> {
   const email = overrides.email ?? uniqueEmail();
-  const password = overrides.password ?? DEFAULT_PASSWORD;
   const { storage } = await import("../../server/storage");
 
   const user = await storage.createUser({
     email,
-    password: await passwordHash(password),
     firstName: overrides.firstName ?? null,
     lastName: overrides.lastName ?? null,
     profileImageUrl: null,
   });
 
-  return { id: user.id, email, password };
+  return { id: user.id, email };
 }
 
 /**
@@ -114,7 +88,7 @@ export async function createUnlinkedUser(
  */
 export async function registerAdmin(
   app: Express,
-  overrides: { email?: string; password?: string; firstName?: string; lastName?: string } = {}
+  overrides: { email?: string; firstName?: string; lastName?: string } = {}
 ): Promise<TestUser> {
   const user = await registerUser(app, { email: overrides.email ?? uniqueEmail("admin"), ...overrides });
   await promoteToAdmin(user.id);
@@ -166,26 +140,24 @@ async function updateUserRow(userId: string, assignment: string): Promise<void> 
  * Sign an existing User in on a fresh agent — a second browser, in other words.
  *
  * Links the User to the IdentityProvider if the suite has not already, then
- * mints a session token for the subject that came back. The provider is reached
- * through the port; `vitest.config.ts` aliases the Clerk SDK to
- * `tests/fakes/clerk.ts`, so no run leaves the process.
+ * mints a session token for the subject that came back. The digest used to
+ * import lives only at the provider — it is never written onto `users`. The
+ * provider is reached through the port; `vitest.config.ts` aliases the Clerk
+ * SDK to `tests/fakes/clerk.ts`, so no run leaves the process.
  */
 export async function signIn(app: Express, userId: string): Promise<Agent> {
   const { storage } = await import("../../server/storage");
   const { identityProvider } = await import("../../server/modules/identity");
   const { issueClerkSession } = await import("../fakes/clerk");
 
-  const user = await storage.getUserWithPassword(userId);
+  const user = await storage.getUser(userId);
   if (!user) throw new Error(`signIn: no User ${userId}`);
 
   let subjectId = user.identityProviderSubjectId;
   if (!subjectId) {
-    if (!user.password) {
-      throw new Error(`signIn: User ${userId} has no IdentityProvider link and no password hash`);
-    }
     const identity = await identityProvider.importPasswordUser({
       email: user.email,
-      passwordHash: user.password,
+      passwordHash: PROVIDER_TEST_HASH,
       firstName: user.firstName,
       lastName: user.lastName,
     });
