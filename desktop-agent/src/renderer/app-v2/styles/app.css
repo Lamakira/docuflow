@@ -1592,6 +1592,13 @@ button:disabled { cursor: default; }
   outline: none;
 }
 .v2-input:focus { border-color: var(--divider); }
+.v2-login__code {
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 18px;
+  text-align: center;
+}
 .v2-login__error {
   margin: 0;
   display: flex;

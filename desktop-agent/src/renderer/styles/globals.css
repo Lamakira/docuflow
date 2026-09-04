@@ -803,6 +803,7 @@ a:hover { text-decoration: underline; }
 .login-page__title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.25rem; }
 .login-page__subtitle { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.5rem; }
 .login-page__form { display: flex; flex-direction: column; gap: 0.125rem; flex: 1; }
+.login-page__code { letter-spacing: 0.35em; text-transform: uppercase; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .login-page__error { font-size: 0.78rem; color: var(--red); margin-top: 0.25rem; text-align: center; }
 .login-page__footer { margin-top: auto; padding-top: 1rem; display: flex; justify-content: center; }
 

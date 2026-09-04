@@ -380,7 +380,7 @@ describe("User import against the database", () => {
 
   it("leaves Membership and Devices untouched", async () => {
     const { makeApp } = await import("../helpers/app");
-    const { createUnlinkedUser } = await import("../helpers/auth");
+    const { createUnlinkedUser, signIn } = await import("../helpers/auth");
     const { loginDevice } = await import("../helpers/agent");
     const { storage } = await import("../../server/storage");
     const { pool } = await import("../../server/db");
@@ -389,8 +389,11 @@ describe("User import against the database", () => {
     );
     const app = await makeApp();
     // Unlinked, so the import below has something to do rather than no-opping.
+    // Pairing needs a web session, which links; clear the subject after enroll
+    // so import still runs against this User.
     const user = await createUnlinkedUser();
-    const device = await loginDevice(app, user);
+    const device = await loginDevice(app, { ...user, agent: await signIn(app, user.id) });
+    await pool.query(`UPDATE users SET identity_provider_subject_id = NULL WHERE id = $1`, [user.id]);
     const membershipsBefore = await pool.query(
       `SELECT id, user_id, workspace_id, workspace_role_id, archived_at FROM memberships ORDER BY id`
     );

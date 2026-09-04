@@ -1,6 +1,6 @@
 /**
  * Preload script — exposes safe IPC bridge to renderer.
- * S4: pairing code removed, replaced with email+password login.
+ * Enrollment is a pairing code from a signed-in web session (#159).
  */
 
 import { contextBridge, ipcRenderer } from "electron";
@@ -8,7 +8,7 @@ import { contextBridge, ipcRenderer } from "electron";
 contextBridge.exposeInMainWorld("agentBridge", {
   // Auth
   getState: () => ipcRenderer.invoke("agent:get-state"),
-  login: (data: { email: string; password: string }) =>
+  login: (data: { pairingCode: string }) =>
     ipcRenderer.invoke("agent:login", data),
   unpair: () => ipcRenderer.invoke("agent:unpair"),
 
@@ -57,7 +57,7 @@ contextBridge.exposeInMainWorld("agentBridge", {
     return () => ipcRenderer.off("agent:idle-dismiss", handler);
   },
 
-  // Login progress events pushed from main during waitForBackend + loginWithPassword
+  // Pairing progress events pushed from main during waitForBackend + completePairing
   onLoginProgress: (callback: (data: { message: string }) => void) => {
     const handler = (_event: any, data: { message: string }) => callback(data);
     ipcRenderer.on("agent:login-progress", handler);

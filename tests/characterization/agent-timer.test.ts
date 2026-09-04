@@ -15,8 +15,8 @@ import { loginDevice } from "../helpers/agent";
  * both are frozen.
  *
  * Quirks frozen here:
- *  - Agent auth is device-scoped: `POST /api/agent/auth/login` creates a *new*
- *    device row on every call, so signing in twice from one machine leaves two.
+ *  - Agent auth is device-scoped: pairing complete creates a *new*
+ *    device row on every call, so pairing twice from one machine leaves two.
  *  - `isAgentAuthenticated` already rejects a revoked device with 403, so the
  *    per-route `requireActiveDevice` check behind it can never see one — its
  *    revoked branch is unreachable.
@@ -44,13 +44,24 @@ describe("desktop agent timer (characterization)", () => {
     return { crmProjectId: crmProject.id, taskId: task.id };
   }
 
-  it("mints device credentials from an email and password, and refuses anything else", async () => {
+  it("refuses password login and mints device credentials from pairing instead", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
 
-    const res = await newAgent(app).post("/api/agent/auth/login").send({
+    const retired = await newAgent(app).post("/api/agent/auth/login").send({
       email: user.email,
       password: user.password,
+      deviceMeta: { deviceName: "Test Workstation" },
+    });
+    expect(retired.status).toBe(410);
+    expect(retired.body).toEqual({
+      message:
+        "This sign-in path has moved to pairing. Pair a Device from a signed-in DocuFlow web session.",
+    });
+
+    const start = await user.agent.post("/api/agent/pairing/start").send({});
+    const res = await newAgent(app).post("/api/agent/pairing/complete").send({
+      pairingCode: start.body.pairingCode,
       deviceMeta: { deviceName: "Test Workstation" },
     });
     expect(res.status).toBe(200);
@@ -64,31 +75,7 @@ describe("desktop agent timer (characterization)", () => {
     expect(res.body.accessToken.split(".")).toHaveLength(3);
     expect(res.body.expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
-    const wrongPassword = await newAgent(app).post("/api/agent/auth/login").send({
-      email: user.email,
-      password: "not-the-password",
-      deviceMeta: { deviceName: "Test Workstation" },
-    });
-    expect(wrongPassword.status).toBe(401);
-    expect(wrongPassword.body).toEqual({ message: "Invalid email or password" });
-
-    // Quirk: an unknown account is indistinguishable from a bad password.
-    const unknownAccount = await newAgent(app).post("/api/agent/auth/login").send({
-      email: "nobody@example.com",
-      password: "password123",
-      deviceMeta: { deviceName: "Test Workstation" },
-    });
-    expect(unknownAccount.status).toBe(401);
-    expect(unknownAccount.body).toEqual({ message: "Invalid email or password" });
-
-    const badPayload = await newAgent(app)
-      .post("/api/agent/auth/login")
-      .send({ email: user.email, password: user.password });
-    expect(badPayload.status).toBe(400);
-    expect(badPayload.body.message).toBe("Invalid request");
-    expect(Array.isArray(badPayload.body.errors)).toBe(true);
-
-    // Quirk: every login creates another device rather than reusing the machine's.
+    // Quirk: every pairing complete creates another device rather than reusing the machine's.
     const second = await loginDevice(app, user);
     expect(second.deviceId).not.toBe(res.body.deviceId);
     const devices = await user.agent.get("/api/agent/devices");

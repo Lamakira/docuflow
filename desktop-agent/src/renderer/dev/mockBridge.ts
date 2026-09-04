@@ -231,9 +231,9 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
     getState: async () => state(),
     timerState: async () => timer,
 
-    login: async ({ email }) => {
+    login: async ({ pairingCode }) => {
       if (failing) return { ok: false, error: 'Cannot reach app.docuflow.io' };
-      if (!email.includes('@')) return { ok: false, error: 'Invalid email or password.' };
+      if (!pairingCode || pairingCode.length !== 6) return { ok: false, error: 'Invalid pairing code' };
       return { ok: true };
     },
     // Real unpair clears the session, so getState must stop reporting paired —

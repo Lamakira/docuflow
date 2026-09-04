@@ -776,7 +776,7 @@ ipcMain.handle("agent:get-state", () => {
   };
 });
 
-ipcMain.handle("agent:login", async (event, { email, password }) => {
+ipcMain.handle("agent:login", async (event, { pairingCode }) => {
   const sendProgress = (message: string) => {
     try { event.sender.send("agent:login-progress", { message }); } catch { /* window may be closing */ }
   };
@@ -784,16 +784,15 @@ ipcMain.handle("agent:login", async (event, { email, password }) => {
   try {
     store.setClientVersion(app.getVersion());
     const deviceName = os.hostname() || "Desktop";
+    const code = String(pairingCode ?? "").trim().toUpperCase();
 
-    console.log(`[Main] auth.login.start — url=${API_BASE} user=${email}`);
+    console.log(`[Main] auth.pair.start — url=${API_BASE}`);
 
-    // Step 1: ping backend to confirm agent routes are loaded (handles Replit cold-start)
     sendProgress("Connecting to server…");
     await apiClient.waitForBackend(sendProgress);
 
-    // Step 2: authenticate
-    sendProgress("Signing in…");
-    const result = await apiClient.loginWithPassword(email, password, {
+    sendProgress("Pairing…");
+    const result = await apiClient.completePairing(code, {
       deviceName,
       os: process.platform,
       clientVersion: app.getVersion(),
@@ -804,7 +803,7 @@ ipcMain.handle("agent:login", async (event, { email, password }) => {
     // and active entry context cannot leak to the new user.
     store.clearTimer();
 
-    console.log(`[Main] auth.login.success — user=${result.user.email} device=${result.deviceId}`);
+    console.log(`[Main] auth.pair.success — user=${result.user.email} device=${result.deviceId}`);
     startWorkers();
     await syncTimerFromServer().catch(() => { /* non-fatal */ });
     // Populate workedTodayServerBase immediately for the new user instead of
@@ -815,7 +814,7 @@ ipcMain.handle("agent:login", async (event, { email, password }) => {
     pushStateToRenderer();
     return { ok: true };
   } catch (error: any) {
-    console.log(`[Main] auth.login.failed — ${error.message}`);
+    console.log(`[Main] auth.pair.failed — ${error.message}`);
     return { ok: false, error: error.message };
   }
 });

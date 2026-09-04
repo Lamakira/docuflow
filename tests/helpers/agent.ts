@@ -9,8 +9,8 @@ import { parseSigningKey } from "../../server/signingKeys";
 
 /**
  * Desktop-agent fixtures: the v1 protocol's door is a bearer token minted for a
- * device, not a session cookie, so every agent suite starts by signing a device
- * in and keeps the credentials it hands back.
+ * device, not a session cookie, so every agent suite starts by pairing a device
+ * and keeps the credentials it hands back.
  */
 
 export interface AgentDevice {
@@ -28,17 +28,20 @@ export interface DeviceMeta {
   clientVersion?: string;
 }
 
-/** Sign a registered user's desktop agent in and keep the device credentials. */
+/** Pair a registered user's desktop agent and keep the device credentials. */
 export async function loginDevice(
   app: Express,
   user: TestUser,
   deviceMeta: DeviceMeta = {}
 ): Promise<AgentDevice> {
+  const start = await user.agent.post("/api/agent/pairing/start").send({});
+  if (start.status !== 200) {
+    throw new Error(`loginDevice pairing start failed: ${start.status} ${JSON.stringify(start.body)}`);
+  }
   const res = await newAgent(app)
-    .post("/api/agent/auth/login")
+    .post("/api/agent/pairing/complete")
     .send({
-      email: user.email,
-      password: user.password,
+      pairingCode: start.body.pairingCode,
       deviceMeta: {
         deviceName: "Test Workstation",
         os: "linux",
@@ -47,7 +50,7 @@ export async function loginDevice(
       },
     });
   if (res.status !== 200) {
-    throw new Error(`loginDevice failed: ${res.status} ${JSON.stringify(res.body)}`);
+    throw new Error(`loginDevice pairing complete failed: ${res.status} ${JSON.stringify(res.body)}`);
   }
   return {
     deviceId: res.body.deviceId,

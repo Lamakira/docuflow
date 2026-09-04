@@ -161,7 +161,7 @@ function reducer(state: State, action: Action): State {
 interface AgentContextValue {
   state: State;
   dispatch: React.Dispatch<Action>;
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  login: (pairingCode: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
   startTimer: (args: {
     crmProjectId: string;
@@ -235,12 +235,12 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(id);
   }, [state.agentState?.timer.status, state.agentState?.timer.entryId]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (pairingCode: string) => {
     dispatch({ type: 'SET_LOGIN_PROGRESS', message: 'Connecting…' });
     const stopProgress = bridge.onLoginProgress((d) =>
       dispatch({ type: 'SET_LOGIN_PROGRESS', message: d.message })
     );
-    const result = await bridge.login({ email, password });
+    const result = await bridge.login({ pairingCode });
     stopProgress();
     dispatch({ type: 'SET_LOGIN_PROGRESS', message: null });
     if (result.ok) {

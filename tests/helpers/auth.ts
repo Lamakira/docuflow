@@ -7,9 +7,9 @@ export interface TestUser {
   id: string;
   email: string;
   /**
-   * The password on `users.password`. Since #110 the web never checks it — it is
-   * here for the surfaces that still do, which is the desktop agent's
-   * `POST /api/agent/auth/login`.
+   * The password on `users.password`. Since #159 no HTTP surface checks it —
+   * web sign-in is Clerk (#110) and agent enrollment is pairing. Kept so
+   * suites that still write or email the hash can name the value they wrote.
    */
   password: string;
   /** Agent already carrying this user's IdentityProvider session token. */
@@ -48,8 +48,7 @@ export function newAgent(app: Express): Agent {
  *
  * Twelve rounds is deliberately slow, and the harness hashes the same handful of
  * passwords hundreds of times; caching keeps the real cost factor on the stored
- * hash — which is what the import reads and the agent login verifies — without
- * paying it per user.
+ * hash — which is what the import reads — without paying it per user.
  */
 const hashes = new Map<string, Promise<string>>();
 

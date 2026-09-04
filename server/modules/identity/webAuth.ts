@@ -12,9 +12,10 @@
  * instead of getting the SPA shell. `POST /api/auth/login` and
  * `/api/auth/register` are gone with the rest of the password web path.
  *
- * Two password surfaces deliberately survive: the desktop agent's
- * `POST /api/agent/auth/login`, which #105 leaves on its own token path, and the
- * admin reset that writes `users.password`. Neither is a web session.
+ * One password surface deliberately survives until a later ticket: the admin
+ * reset that writes `users.password`. The desktop agent's
+ * `POST /api/agent/auth/login` is 410 (#159); Devices pair from a signed-in
+ * web session. Neither leftover is a web session.
  */
 
 import type { RequestHandler } from "express";

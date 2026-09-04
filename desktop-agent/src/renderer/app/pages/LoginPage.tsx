@@ -2,25 +2,27 @@ import React, { useState } from 'react';
 import { useAgent } from '../stores/AgentContext';
 import { ConnectionBadge } from '../components/common/ConnectionBadge';
 
+const PAIRING_CODE_LENGTH = 6;
+
 export function LoginPage() {
   const { state, login } = useAgent();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [pairingCode, setPairingCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const progress = state.loginProgress;
   const apiBaseSource = state.agentState?.apiBaseSource ?? null;
+  const ready = pairingCode.length === PAIRING_CODE_LENGTH;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.trim() || !password) return;
+    if (!ready) return;
     setError(null);
     setLoading(true);
-    const result = await login(email.trim(), password);
+    const result = await login(pairingCode);
     setLoading(false);
     if (!result.ok) {
-      setError(result.error ?? 'Sign in failed');
+      setError(result.error ?? 'Pairing failed');
     }
   }
 
@@ -37,39 +39,31 @@ export function LoginPage() {
           <span>⚠</span>
           <div>
             <strong>Session ended</strong><br />
-            This device was disconnected. Please sign in again.
+            This device was disconnected. Pair it again from the web app.
           </div>
         </div>
       )}
 
-      <div className="login-page__title">Sign in</div>
-      <div className="login-page__subtitle">Connect to your DocuFlow workspace</div>
+      <div className="login-page__title">Pair this device</div>
+      <div className="login-page__subtitle">
+        In DocuFlow, open Devices and generate a pairing code.
+      </div>
 
       <form className="login-page__form" onSubmit={handleSubmit} style={{ flex: 'none' }}>
         <div className="field">
-          <label className="field__label" htmlFor="email">Email</label>
+          <label className="field__label" htmlFor="pairing-code">Pairing code</label>
           <input
-            id="email"
-            className="field__input"
-            type="email"
-            placeholder="you@example.com"
+            id="pairing-code"
+            className="field__input login-page__code"
+            type="text"
+            inputMode="text"
             autoComplete="off"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={loading}
-          />
-        </div>
-
-        <div className="field">
-          <label className="field__label" htmlFor="password">Password</label>
-          <input
-            id="password"
-            className="field__input"
-            type="password"
-            placeholder="Enter your password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            autoCapitalize="characters"
+            spellCheck={false}
+            maxLength={PAIRING_CODE_LENGTH}
+            placeholder="XXXXXX"
+            value={pairingCode}
+            onChange={(e) => setPairingCode(e.target.value.toUpperCase().replace(/[^A-Z2-9]/g, ''))}
             disabled={loading}
           />
         </div>
@@ -77,10 +71,10 @@ export function LoginPage() {
         <button
           type="submit"
           className="btn btn--primary btn--full"
-          disabled={loading || !email || !password}
+          disabled={loading || !ready}
           style={{ marginTop: '0.5rem' }}
         >
-          {loading ? (progress ?? 'Connecting…') : 'Sign in'}
+          {loading ? (progress ?? 'Connecting…') : 'Pair device'}
         </button>
 
         {error && <div className="login-page__error">{error}</div>}

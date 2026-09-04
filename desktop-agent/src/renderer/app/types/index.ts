@@ -58,7 +58,7 @@ export interface BreakdownRow {
 
 export interface AgentBridge {
   getState: () => Promise<AgentState>;
-  login: (data: { email: string; password: string }) => Promise<{ ok: boolean; error?: string }>;
+  login: (data: { pairingCode: string }) => Promise<{ ok: boolean; error?: string }>;
   unpair: () => Promise<{ ok: boolean }>;
   getProjects: () => Promise<{ ok: boolean; data: Project[]; error?: string }>;
   /** Answers for any project that exists, listed or not; 404s on one that does not. */

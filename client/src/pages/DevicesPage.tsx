@@ -37,6 +37,7 @@ import {
   ShieldCheck,
   ShieldX,
   Download,
+  Link2,
 } from "lucide-react";
 import { TimeTrackingLayout } from "@/components/TimeTrackingLayout";
 
@@ -124,6 +125,9 @@ function groupByMachine(rawDevices: Device[]): MachineGroup[] {
 export default function DevicesPage() {
   const { toast } = useToast();
   const [showConnectDialog, setShowConnectDialog] = useState(false);
+  const [showPairDialog, setShowPairDialog] = useState(false);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
   const [revokeMachineKey, setRevokeMachineKey] = useState<string | null>(null);
 
   // Fetch devices
@@ -159,6 +163,29 @@ export default function DevicesPage() {
     },
   });
 
+  const pairMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/agent/pairing/start", {}) as Promise<{
+        pairingCode: string;
+        expiresAt: string;
+      }>;
+    },
+    onSuccess: (data) => {
+      setPairingCode(data.pairingCode);
+      setPairingExpiresAt(data.expiresAt);
+    },
+    onError: () => {
+      toast({ title: "Could not generate a pairing code", variant: "destructive" });
+    },
+  });
+
+  const openPairDialog = () => {
+    setPairingCode(null);
+    setPairingExpiresAt(null);
+    setShowPairDialog(true);
+    pairMutation.mutate();
+  };
+
   const groupToRevoke = machineGroups.find(g => g.key === revokeMachineKey);
 
   return (
@@ -172,17 +199,23 @@ export default function DevicesPage() {
             Manage Desktop Agent connections
           </p>
         </div>
-        <Button variant="outline" onClick={() => setShowConnectDialog(true)}>
-          <Download className="h-4 w-4 mr-2" />
-          Get the app
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={openPairDialog}>
+            <Link2 className="h-4 w-4 mr-2" />
+            Pair a device
+          </Button>
+          <Button variant="outline" onClick={() => setShowConnectDialog(true)}>
+            <Download className="h-4 w-4 mr-2" />
+            Get the app
+          </Button>
+        </div>
       </div>
 
       {/* Help note */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg px-4 py-3">
         <Monitor className="h-4 w-4 shrink-0" />
         <span>
-          Install the desktop app and sign in with your DocuFlow account to connect this device.
+          Install the desktop app, then pair it with a code from this page.
         </span>
       </div>
 
@@ -257,7 +290,7 @@ export default function DevicesPage() {
             <div className="text-center py-12 text-muted-foreground">
               <Smartphone className="h-12 w-12 mx-auto mb-4 opacity-20" />
               <p className="font-medium">No devices connected</p>
-              <p className="text-sm mt-1">Install the desktop app and sign in to connect your first device</p>
+              <p className="text-sm mt-1">Install the desktop app and pair it with a code from this page</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -308,7 +341,7 @@ export default function DevicesPage() {
           <DialogHeader>
             <DialogTitle>Download Desktop Agent</DialogTitle>
             <DialogDescription>
-              Install the desktop app, then sign in with your DocuFlow email and password to connect.
+              Install the desktop app, then come back here and generate a pairing code.
             </DialogDescription>
           </DialogHeader>
 
@@ -347,10 +380,54 @@ export default function DevicesPage() {
               </Button>
             )}
             <p className="text-xs text-muted-foreground text-center">
-              Once installed, sign in with your DocuFlow account.
+              Once installed, generate a pairing code on this page and enter it in the agent.
               The device will appear in this list automatically.
             </p>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPairDialog} onOpenChange={setShowPairDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pair a device</DialogTitle>
+            <DialogDescription>
+              Enter this code in the desktop agent. It expires in 10 minutes and can be used once.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 text-center">
+            {pairMutation.isPending && !pairingCode ? (
+              <p className="text-sm text-muted-foreground">Generating a code…</p>
+            ) : pairingCode ? (
+              <>
+                <p className="text-3xl font-mono tracking-[0.35em] font-semibold pl-[0.35em]">
+                  {pairingCode}
+                </p>
+                {pairingExpiresAt && (
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Expires {new Date(pairingExpiresAt).toLocaleTimeString()}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">Could not generate a code.</p>
+            )}
+          </div>
+          <DialogFooter className="sm:justify-between gap-2">
+            <Button
+              variant="outline"
+              onClick={() => pairMutation.mutate()}
+              disabled={pairMutation.isPending}
+            >
+              New code
+            </Button>
+            <Button
+              onClick={() => pairingCode && navigator.clipboard.writeText(pairingCode)}
+              disabled={!pairingCode}
+            >
+              Copy code
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -361,7 +438,7 @@ export default function DevicesPage() {
             <AlertDialogTitle>Revoke device?</AlertDialogTitle>
             <AlertDialogDescription>
               This will disconnect "{groupToRevoke?.name}" and prevent it from syncing data.
-              The device will need to sign in again to reconnect.
+              The device will need to pair again to reconnect.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

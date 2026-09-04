@@ -112,24 +112,24 @@ describe("X-API-Key no longer impersonates the Owner (#111)", () => {
 });
 
 describe("Device Enrollment is untouched (#111)", () => {
-  it("still pairs a Device through the agent's password login", async () => {
+  it("still pairs a Device from a signed-in web session", async () => {
     const app = await makeApp();
     const user = await registerUser(app, { email: uniqueEmail("device") });
 
-    const login = await newAgent(app).post("/api/agent/auth/login").send({
-      email: user.email,
-      password: user.password,
+    const start = await user.agent.post("/api/agent/pairing/start").send({});
+    const complete = await newAgent(app).post("/api/agent/pairing/complete").send({
+      pairingCode: start.body.pairingCode,
       deviceMeta: { deviceName: "Workstation", os: "linux", clientVersion: "0.1.0" },
     });
 
-    expect(login.status).toBe(200);
-    expect(typeof login.body.accessToken).toBe("string");
+    expect(complete.status).toBe(200);
+    expect(typeof complete.body.accessToken).toBe("string");
 
     const devices = await user.agent.get("/api/agent/devices");
     expect(devices.status).toBe(200);
     expect(devices.body.data).toHaveLength(1);
     expect(devices.body.data[0]).toMatchObject({
-      id: login.body.deviceId,
+      id: complete.body.deviceId,
       userId: user.id,
       name: "Workstation",
     });

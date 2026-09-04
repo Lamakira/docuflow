@@ -21,7 +21,7 @@ let sharpLib: ((input: Buffer) => any) | null = null;
   }
 })();
 import { storage } from "./storage";
-import { isAuthenticated, getUserId, verifyPassword } from "./auth";
+import { isAuthenticated, getUserId } from "./auth";
 import { config } from "./config";
 import { agentProtocolHandshake, allowAgentProtocol } from "./agentProtocol";
 import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
@@ -168,15 +168,9 @@ const pairingCompleteSchema = z.object({
   deviceMeta: deviceMetaSchema,
 });
 
-const agentLoginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-  deviceMeta: deviceMetaSchema,
-});
-
 type DeviceMeta = z.infer<typeof deviceMetaSchema>;
 
-/** Mint a Device + Device Enrollment the way agent login and pairing complete both do. */
+/** Mint a Device + Device Enrollment the way pairing complete does. */
 async function enrollDeviceForUser(userId: string, deviceMeta: DeviceMeta) {
   const deviceToken = generateToken(DEVICE_TOKEN_LENGTH);
   const deviceTokenHash = hashToken(deviceToken);
@@ -247,15 +241,18 @@ const confirmSchema = z.object({
 
 // ─── Route registration ───
 
+export const AGENT_PASSWORD_AUTH_RETIRED =
+  "This sign-in path has moved to pairing. Pair a Device from a signed-in DocuFlow web session.";
+
 export function registerAgentRoutes(app: Express): void {
 
   /**
-   * Ping endpoint — confirms agent routes are loaded and email/password auth is available.
-   * Desktop app calls this before login to distinguish "server down" from "wrong server version".
+   * Ping endpoint — confirms agent routes are loaded and pairing is the enrollment path.
+   * Desktop app calls this before pairing to distinguish "server down" from "wrong server version".
    * No auth required.
    */
   app.get("/api/agent/ping", (_req, res) => {
-    res.json({ ok: true, server: "DocuFlow", agentAuth: "email-password-v1" });
+    res.json({ ok: true, server: "DocuFlow", agentAuth: "pairing-v1" });
   });
 
   // ═══════════════════════════════════════
@@ -279,7 +276,7 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
-  /** Agent: consume a pairing code and enroll a Device the same way login does. */
+  /** Agent: consume a pairing code and enroll a Device. */
   app.post("/api/agent/pairing/complete", async (req, res) => {
     try {
       const body = pairingCompleteSchema.parse(req.body);
@@ -342,59 +339,12 @@ export function registerAgentRoutes(app: Express): void {
   // ═══════════════════════════════════════
 
   /**
-   * Agent: login with DocuFlow email + password.
-   * Creates a Device for this machine and returns credentials.
-   * Stays up through #158; retired by #159.
+   * Retired (#159). Pairing is the only enrollment path. Answered before the
+   * body is read so a leftover agent cannot tell a known address from an
+   * unknown one, and nothing posted can mint a Device.
    */
-  app.post("/api/agent/auth/login", async (req, res) => {
-    try {
-      const body = agentLoginSchema.parse(req.body);
-
-      const user = await storage.getUserByEmail(body.email);
-      if (!user) {
-        // No id to name: the address that was tried is the payload ADR-0016
-        // keeps out of telemetry, and the reason is what a failed login is
-        // looked at for. `logInfo` would drop it anyway (#26).
-        logInfo("agent.auth.login.failed", { reason: "user_not_found" });
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-
-      const valid = await verifyPassword(body.password, user.password);
-      if (!valid) {
-        logInfo("agent.auth.login.failed", { userId: user.id, reason: "bad_password" });
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-
-      const { device, deviceToken, accessToken, expiresAt } = await enrollDeviceForUser(
-        user.id,
-        body.deviceMeta
-      );
-      const now = new Date();
-
-      logInfo("agent.auth.login.success", { userId: user.id, deviceId: device.id });
-      res.json({
-        deviceId: device.id,
-        deviceToken,
-        accessToken,
-        expiresAt: expiresAt.toISOString(),
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-        },
-        ...agentProtocolHandshake(now),
-      });
-    } catch (error) {
-      if (error instanceof ArchivedMembershipError || error instanceof NoActiveMembershipError) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid request", errors: error.errors });
-      }
-      logError("agent.auth.login.failed", error);
-      res.status(500).json({ message: "Login failed" });
-    }
+  app.post("/api/agent/auth/login", (_req, res) => {
+    res.status(410).json({ message: AGENT_PASSWORD_AUTH_RETIRED });
   });
 
   /** Agent: refresh access token using device token */

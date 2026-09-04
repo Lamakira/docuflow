@@ -13,23 +13,23 @@ export function DesktopAppDoc() {
         </DocP>
       </DocSection>
 
-      <DocSection title="Sign in (device session)" sectionId="section-sign-in-agent">
+      <DocSection title="Pair this device" sectionId="section-sign-in-agent">
         <DocP>
-          The agent authenticates with the DocuFlow server using your organisational credentials and registers this
-          device. A long-lived device token is stored locally on the machine (under the application&apos;s user data
+          The agent enrolls with a pairing code from a signed-in DocuFlow web session
+          (Time Tracking → Devices) and registers this device. A long-lived device token is stored locally on the machine (under the application&apos;s user data
           path). This session is separate from an open browser tab: signing out in the browser does not automatically
           sign out the agent until you disconnect or unpair from the agent itself.
         </DocP>
         <HelpScreenshot
           slotId="desktop-login"
-          caption="Desktop agent sign-in window."
-          expectedLabel="Desktop agent login window with email/password fields."
+          caption="Desktop agent pairing window."
+          expectedLabel="Desktop agent pairing window with a pairing-code field."
         />
       </DocSection>
 
       <DocSection title="Main window: project and task picker" sectionId="section-picker">
         <DocP>
-          After login, the main window lists CRM projects and, once a project is selected, tasks for that project.
+          After pairing, the main window lists CRM projects and, once a project is selected, tasks for that project.
           Starting the timer is done by choosing a task row (the flow is task-centric from the picker). If the project
           has no tasks, create tasks from the web app under{" "}
           <strong className="text-foreground">Time Tracking → Projects &amp; Tasks</strong> first.

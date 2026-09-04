@@ -96,7 +96,8 @@ a database you care about, and never at anything production-related.
   `storage`. The one exception is `tests/helpers/auth.ts`, which writes the admin
   role directly: every route that can grant it is itself admin-only, so there is
   no HTTP path to the first admin.
-- Sign desktop agents in with `loginDevice` from `tests/helpers/agent.ts`, which
+- Pair a desktop agent with `loginDevice` from `tests/helpers/agent.ts`, which
+  mints a pairing code from the User's web session and completes it, then
   returns a request agent already carrying the bearer token. The same module
   mints tokens with the harness's fixed `JWT_SECRET` — a `<key-id>:<secret>` pair,
   both halves of which a minted token needs — for the middleware branches (an
@@ -251,7 +252,8 @@ publishable key and never the secret.
 covers the leftovers coming out: a Clerk session works with the dual-auth flag
 unset, Replit OIDC routes answer 410 without reading `REPL_ID`, `X-API-Key` no
 longer impersonates the Owner, and Device Enrollment still grows through
-`POST /api/agent/auth/login`.
+pairing from a signed-in web session (`POST /api/agent/auth/login` is 410 as of
+[#159](https://github.com/Lamakira/docuflow/issues/159)).
 
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
@@ -271,8 +273,8 @@ implementation and each suite's header lists what the document gets wrong):
 | `content-extraction`             | the text an uploaded PDF, Word or text file comes out as, and the four outcomes the upload route distinguishes |
 | `tasks-members-reminders`        | tasks, project membership, per-user reminders                       |
 | `time-tracking`                  | start/pause/resume/stop/activity, visibility, stats                 |
-| `agent-timer`                    | the desktop agent's device login and its half of the shared tracker  |
-| `agent-auth`                     | device login, refresh, revocation, and pairing from a signed-in web session |
+| `agent-timer`                    | the desktop agent's pairing enrollment and its half of the shared tracker |
+| `agent-auth`                     | pairing, retired password login, refresh, and revocation |
 | `agent-ingestion`                | heartbeats, timer sync, policy delivery, activity event batches      |
 | `agent-screenshots`              | the agent's presign / upload / confirm flow and the tombstone it hits |
 | `agent-workspace`                | the agent's project and task pickers, capabilities, and day totals   |

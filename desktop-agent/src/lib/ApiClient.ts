@@ -178,10 +178,10 @@ export class ApiClient {
     return { ready: false };
   }
 
-  async loginWithPassword(email: string, password: string, meta: DeviceMeta): Promise<LoginResult> {
-    const res = await this.rawFetch(`${API_BASE}/api/agent/auth/login`, {
+  async completePairing(pairingCode: string, meta: DeviceMeta): Promise<LoginResult> {
+    const res = await this.rawFetch(`${API_BASE}/api/agent/pairing/complete`, {
       method: "POST",
-      body: JSON.stringify({ email, password, deviceMeta: meta }),
+      body: JSON.stringify({ pairingCode, deviceMeta: meta }),
     });
 
     if (!res.ok) {
@@ -190,16 +190,13 @@ export class ApiClient {
         throw new Error(`Server error (HTTP ${res.status}). Check your network connection.`);
       }
       const data = await res.json().catch(() => ({ message: res.statusText }));
-      if (res.status === 401) throw new Error("Invalid email or password");
-      throw new Error(data.message || "Sign in failed");
+      throw new Error(data.message || "Pairing failed");
     }
 
     const ct = res.headers.get("content-type") ?? "";
     if (!ct.includes("application/json")) {
-      // Server is running (probe passed) but login endpoint returned HTML.
-      // The deployed server code does not include the S4 auth route.
       throw new Error(
-        "Login API not available on this server. " +
+        "Pairing API not available on this server. " +
         "Please pull the latest code and redeploy the DocuFlow server."
       );
     }
