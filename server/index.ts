@@ -5,7 +5,6 @@ import "./telemetry";
 import { createApp, log } from "./app";
 import { config, logConfigSummary } from "./config";
 import { serveStatic } from "./static";
-import { detectMigrationFlags } from "./migrationFlags";
 
 /**
  * Boot reads the database and never changes it (#24, ADR-0017).
@@ -31,11 +30,6 @@ import { detectMigrationFlags } from "./migrationFlags";
     await worker.running;
     return;
   }
-
-  // Read-only probe: which optional migrations this database has, which decides
-  // whether the tasks routes serve or answer 503. It creates nothing — a
-  // database short of a migration is a deploy that skipped its pre-deploy step.
-  await detectMigrationFlags();
 
   const { app, httpServer } = await createApp();
 

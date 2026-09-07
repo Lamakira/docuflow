@@ -39,7 +39,9 @@ delete process.env.GCS_SERVICE_ACCOUNT_KEY;
 process.env.RESEND_API_KEY = "test-resend-key";
 process.env.RESEND_FROM_EMAIL = "DocuFlow <noreply@docuflow.test>";
 // The desktop-release CI token may not be inherited from a developer's shell;
-// each suite sets what it needs. Dual-auth and MCP_API_KEY are gone (#111).
+// each suite sets what it needs. Dual-auth and MCP_API_KEY impersonation are
+// gone (#111). The MCP companion uses a Service Account Bearer key (#163), not
+// this process environment.
 delete process.env.DESKTOP_RELEASE_CI_TOKEN;
 delete process.env.DOCUFLOW_IDENTITY_DUAL_AUTH;
 delete process.env.MCP_API_KEY;

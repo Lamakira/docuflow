@@ -13,7 +13,6 @@
 | **Secondary location** | CRM Project Page → Tasks card → "New task" button |
 | **Desktop** | Task selector in Desktop Agent timer UI (read-only — no creation) |
 | **API** | `GET /api/tasks?crmProjectId=` · `POST /api/tasks` · `DELETE /api/tasks/:id` |
-| **Gate** | `isTasksEnabled()` — requires `tasks` table + `task_id` column on `time_entries` |
 | **Flow** | Select project → tasks load → select or create task → start timer |
 | **Desktop flow** | Create on web first → appears in desktop dropdown |
 

@@ -238,26 +238,20 @@ Ces identifiants sont valides sur la branche `refactor/project_assignment` et l'
 
 **Location**: `mcp-server/`
 
-The MCP (Model Context Protocol) server enables Claude Desktop to interact with DocuFlow directly. It communicates via STDIO transport and calls the DocuFlow REST API using API key authentication.
+The MCP (Model Context Protocol) server enables Claude Desktop to interact with DocuFlow directly. It communicates via STDIO transport and calls the public `/api/v1` catalogue as a Service Account.
 
-**Authentication**: Used to send `X-API-Key` matching `MCP_API_KEY`, which impersonated the Owner. [#111](https://github.com/Lamakira/docuflow/issues/111) removed that bypass; this companion still sends the header and the API ignores it.
+**Authentication**: `Authorization: Bearer` with a Service Account key from `DOCUFLOW_API_KEY`. [#111](https://github.com/Lamakira/docuflow/issues/111) removed Owner impersonation via `X-API-Key` / `MCP_API_KEY`; [#163](https://github.com/Lamakira/docuflow/issues/163) pointed this companion at `/api/v1`. A leftover `X-API-Key` on guarded `/api/*` remains 401.
 
 **Build**: `npx tsc --project mcp-server/tsconfig.json` outputs to `mcp-server/build/index.js`
 
-**Available Tools** (22 total):
+**Available Tools** (public catalogue):
 - Projects: list_projects, get_project
-- Documents: list_documents, get_document, create_document, update_document, delete_document, list_recent_documents
-- Search: search (full-text across all projects)
-- CRM Clients: list_clients, get_client, create_client
-- CRM Projects: list_crm_projects, get_crm_project
-- Time Tracking: list_time_entries, get_time_tracking_stats, start_time_tracking, stop_time_tracking, get_active_time_entry
-- AI: ask_ai (semantic search + GPT response)
-- Users: list_users
-- Notifications: get_notifications
+- Clients: list_clients, get_client, create_client
+- Time Entries: list_time_entries
 
 **Environment Variables** (set in Claude Desktop config):
 - `DOCUFLOW_API_URL`: The published app URL (e.g. https://your-app.replit.app)
-- `DOCUFLOW_API_KEY`: unused since #111 removed `MCP_API_KEY` impersonation
+- `DOCUFLOW_API_KEY`: Service Account plaintext key (`dfsa_…`)
 
 ### Time Tracking Architecture
 

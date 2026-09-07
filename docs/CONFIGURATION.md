@@ -159,6 +159,11 @@ Three `Authorization: Bearer` surfaces are never read as provider sessions —
 is a Service Account secret, and `/api/internal/*`, where it is
 `DESKTOP_RELEASE_CI_TOKEN`. Enrolled Devices do not re-pair for this phase.
 
+The MCP companion (`mcp-server/`) is a separate STDIO process. It presents
+`DOCUFLOW_API_KEY` as that Service Account secret against `/api/v1`. It is not
+a server boot variable — `server/config.ts` does not read `DOCUFLOW_API_KEY`
+or `MCP_API_KEY`. A leftover `X-API-Key` on guarded `/api/*` remains 401.
+
 Three routes under `/api/agent/` are the exception, because they are the web's
 own Device management rather than the Device's: `GET /api/agent/devices`,
 `POST /api/agent/device/revoke`, and `POST /api/agent/devices/revoke-machine` are

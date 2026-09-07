@@ -74,7 +74,6 @@ import {
 } from "./modules/activity/evidenceJobs";
 import { applyTimerCommand, nextTimerSequence } from "./modules/time/commands";
 import { logTimeEvent, logError, logInfo } from "./logger";
-import { isTasksEnabled } from "./migrationFlags";
 import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
 
 // Helper to get OpenAI client lazily (only when needed, not at import time)
@@ -3449,7 +3448,6 @@ Instructions:
   // ========== TASKS ROUTES ==========
 
   app.get("/api/tasks", isAuthenticated, async (req: any, res) => {
-    if (!isTasksEnabled()) return res.json({ data: [] });
     try {
       const { crmProjectId, includeArchived } = req.query;
       if (!crmProjectId) return res.status(400).json({ message: "crmProjectId is required" });
@@ -3464,7 +3462,6 @@ Instructions:
   });
 
   app.post("/api/tasks", isAuthenticated, async (req: any, res) => {
-    if (!isTasksEnabled()) return res.status(503).json({ message: "Tasks feature not available yet — migration pending" });
     try {
       const userId = getUserId(req)!;
       const { crmProjectId, name, description } = req.body;
@@ -3485,7 +3482,6 @@ Instructions:
   });
 
   app.patch("/api/tasks/:id", isAuthenticated, async (req: any, res) => {
-    if (!isTasksEnabled()) return res.status(503).json({ message: "Tasks feature not available yet — migration pending" });
     try {
       const task = await storage.getTask(req.params.id);
       if (!task) return res.status(404).json({ message: "Task not found" });
@@ -3502,7 +3498,6 @@ Instructions:
   });
 
   app.delete("/api/tasks/:id", isAuthenticated, async (req: any, res) => {
-    if (!isTasksEnabled()) return res.status(503).json({ message: "Tasks feature not available yet — migration pending" });
     try {
       const task = await storage.getTask(req.params.id);
       if (!task) return res.status(404).json({ message: "Task not found" });
@@ -3796,9 +3791,9 @@ Instructions:
     }
   });
 
-  /** Whether the client must supply a task when starting the timer (tasks migration applied). */
+  /** Whether the client must supply a task when starting the timer. */
   app.get("/api/time-tracking/capabilities", isAuthenticated, async (_req: any, res) => {
-    res.json({ requiresTask: isTasksEnabled() });
+    res.json({ requiresTask: true });
   });
   
   // Start time tracking
@@ -3806,24 +3801,21 @@ Instructions:
     try {
       const userId = getUserId(req)!;
       const { crmProjectId, description } = req.body;
-      // Strip taskId if migration 002 hasn't been applied yet
-      const taskId = isTasksEnabled() ? (req.body.taskId || null) : null;
+      const taskId = req.body.taskId || null;
       
       if (!crmProjectId) {
         return res.status(400).json({ message: "Project is required" });
       }
 
-      if (isTasksEnabled()) {
-        if (!taskId || typeof taskId !== "string") {
-          return res.status(400).json({ message: "taskId is required" });
-        }
-        const task = await storage.getTask(taskId);
-        if (!task || task.crmProjectId !== crmProjectId) {
-          return res.status(400).json({ message: "Invalid task for this project" });
-        }
-        if (task.status === "archived") {
-          return res.status(400).json({ message: "Cannot start timer on an archived task" });
-        }
+      if (!taskId || typeof taskId !== "string") {
+        return res.status(400).json({ message: "taskId is required" });
+      }
+      const task = await storage.getTask(taskId);
+      if (!task || task.crmProjectId !== crmProjectId) {
+        return res.status(400).json({ message: "Invalid task for this project" });
+      }
+      if (task.status === "archived") {
+        return res.status(400).json({ message: "Cannot start timer on an archived task" });
       }
       
       const now = new Date();

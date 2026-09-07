@@ -69,7 +69,7 @@ A companion **MCP server** exposes the app's API to Claude Desktop.
 ### 3.3 Time Tracking (web)
 - `TimeTrackerContext` (client/src/contexts/TimeTrackerContext.tsx) is the single global source of truth: active entry polling (10s), display duration ticking, start/pause/resume/stop mutations.
 - **Multi-tab coordination**: a `MultiTabCoordinator` elects one tab as leader; only the leader runs the 60s heartbeat (`POST /api/time-tracking/:id/activity`) and screenshot scheduling; followers receive duration via broadcast.
-- **Task requirement**: `GET /api/time-tracking/capabilities` returns `requiresTask` (true when the tasks migration is applied — see `server/migrationFlags.ts`); the UI then requires a task selection before starting a timer.
+- **Task requirement**: `GET /api/time-tracking/capabilities` returns `{ requiresTask: true }`; the UI requires a task selection before starting a timer. The `tasks` table is required by the journal (#163).
 - Web screen capture is optional (`ScreenCaptureWebService`, getDisplayMedia-based, random intervals, presigned upload).
 - Idle handling in web: if the tab is hidden ≥ 3 minutes while running, the timer auto-pauses on return.
 - Pages: entries list, Projects & Tasks management, Devices (agent device list + revocation), Download page (installers), admin Dashboard, and **Screencasts** — an admin review page for screenshots with timezone selector (admin-curated `allowedTimezones` in org settings), activity percentages, and soft-delete of screenshots.
@@ -102,9 +102,9 @@ A companion **MCP server** exposes the app's API to Claude Desktop.
 - All company documents are automatically extracted and embedded into `company_document_embeddings` for AI search.
 
 ### 3.7 MCP Server (`mcp-server/index.ts`)
-- Single-file MCP server, STDIO transport, for Claude Desktop. It still sends `X-API-Key`; since #111 the API ignores that header and no longer impersonates the Owner.
-- **22 tools**: list_projects, get_project, list_documents, get_document, create_document, update_document, delete_document, list_recent_documents, search, list_clients, get_client, create_client, list_crm_projects, get_crm_project, list_time_entries, get_time_tracking_stats, start_time_tracking, stop_time_tracking, get_active_time_entry, ask_ai, list_users, get_notifications.
-- Build: `npx tsc --project mcp-server/tsconfig.json` → `mcp-server/build/index.js`. Config env vars: `DOCUFLOW_API_URL`, `DOCUFLOW_API_KEY`.
+- Single-file MCP server, STDIO transport, for Claude Desktop. Authenticates as a Service Account against `/api/v1` with `Authorization: Bearer` from `DOCUFLOW_API_KEY`. Does not set `X-API-Key`; that header on guarded `/api/*` remains 401 (#111, #163).
+- Tools map to the public catalogue: list_projects, get_project, list_clients, get_client, create_client, list_time_entries.
+- Build: `npx tsc --project mcp-server/tsconfig.json` → `mcp-server/build/index.js`. Config env vars: `DOCUFLOW_API_URL`, `DOCUFLOW_API_KEY` (a Service Account plaintext key).
 
 ### 3.8 Help Center
 - In-app help hub (`/help-center`) and article viewer (`/help-center/:slug`), articles registered in `client/src/pages/help-center/articleRegistry.tsx`. Article screenshots are admin-uploaded to public object storage and mapped by slot id in `org_settings.helpCenterScreenshots` (`GET /api/help-center/screenshot-map`).
@@ -209,7 +209,7 @@ All app routes require session auth (`isAuthenticated`) unless noted. Files: `se
 - **Schema-first**: all types flow from `shared/schema.ts` via Drizzle + drizzle-zod (`createInsertSchema().omit(...)`, `$inferSelect`). Client-facing user type is `SafeUser` (password omitted).
 - **Integer booleans**: many flags are `integer` 0/1 (isMainAdmin, isRead, isSystem, …); newer columns use real booleans (isArchived, waitingOnClient). `team_invites.isActive` is a varchar "true"/"false".
 - **TanStack Query**: default fetcher keyed by URL, `staleTime: Infinity`, hierarchical array query keys, `apiRequest` for mutations + explicit invalidation.
-- **Migration flags** (`server/migrationFlags.ts`): the server probes at startup whether the `tasks` table / `time_entries.task_id` exist and toggles task-requirement behavior (`/api/time-tracking/capabilities`) accordingly — dev/staging/prod schemas can lag each other. ADR-0017 requires every migration flag carry an owner and a removal gate; `DB_DRIVER` is **not** one of them — #25 settled it as permanent configuration (the database decides the driver), so do not go looking for its gate.
+- **`DB_DRIVER` is not a migration flag**: #25 settled it as permanent configuration (the database decides the driver). The `tasks` boot probe (`detectMigrationFlags` / `isTasksEnabled`) was removed in #163.
 - **Deprecations to be aware of**: `crm_projects.assigneeId` (use `project_members`), agent pairing-code flow (410 Gone; use email/password login), direct documentation-project create/delete (managed through CRM).
 - **New routes need a server restart** in dev — Vite's catch-all otherwise returns HTML with status 200, masking a missing API route as "success".
 - **Idempotency**: agent timer commands via `clientCommandId`; event batches via `agent_processed_batches`; scheduled jobs (reminders, daily-update emails) use DB-backed per-recipient dedup, never in-memory guards.
