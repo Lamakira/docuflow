@@ -1,4 +1,4 @@
-import type { Express, RequestHandler } from "express";
+import type { Express, Request, RequestHandler } from "express";
 import { z } from "zod";
 import { isAuthenticated, getUserId } from "../../auth";
 import {
@@ -49,7 +49,7 @@ const paymentMethodBody = z.object({
   returnUrl: z.string().url(),
 });
 
-function actorOf(req: { session?: unknown; user?: unknown }) {
+function actorOf(req: Request) {
   return { kind: "user" as const, id: getUserId(req) };
 }
 
@@ -78,7 +78,7 @@ function sendBillingError(
 
 /**
  * Web BFF billing commands plus the unauthenticated Stripe webhook inbox.
- * Session cookies. Owner or Administrator. `{ message }` errors. Webhook HTTP
+ * IdentityProvider session. Owner or Administrator. `{ message }` errors. Webhook HTTP
  * returns without applying Entitlements (ADR-0013).
  */
 export function registerBillingRoutes(app: Express): void {

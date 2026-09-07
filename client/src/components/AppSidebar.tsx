@@ -81,11 +81,6 @@ export function AppSidebar() {
 
   const handleLogout = useCallback(async () => {
     try {
-      // Server first: this only ever reached the cookie session, which since
-      // #110 means a Replit OIDC one, and it needs the token still attached to
-      // be recognised. Clerk goes last because signing out there ends the
-      // session that actually signed this browser in — and navigates away.
-      await apiRequest("POST", "/api/auth/logout");
       queryClient.cancelQueries();
       queryClient.setQueryData(["/api/auth/user"], null);
       queryClient.removeQueries({

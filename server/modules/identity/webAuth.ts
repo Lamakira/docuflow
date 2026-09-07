@@ -1,5 +1,6 @@
 /**
- * Web authentication after Clerk is the only path (#111, ADR-0007, ADR-0017).
+ * Web authentication after Clerk is the only path (#111, #162, ADR-0007,
+ * ADR-0017).
  *
  * DocuFlow no longer verifies a password, mints a session of its own, or
  * impersonates the Owner through `X-API-Key`. The browser presents an
@@ -7,10 +8,10 @@
  * authorization is untouched — the Membership still decides what that User may
  * do, and Clerk cannot grant Workspace authority.
  *
- * `GET /api/login`, `/api/callback`, and `/api/logout` stay mounted rather than
- * being deleted, so a leftover Replit OIDC bookmark is told what happened
- * instead of getting the SPA shell. `POST /api/auth/login` and
- * `/api/auth/register` are gone with the rest of the password web path.
+ * `GET /api/login`, `/api/callback`, `/api/logout`, and `POST /api/auth/logout`
+ * are unmounted. A leftover bookmark is a 404, not a kept handler.
+ * `POST /api/auth/login` and `/api/auth/register` are gone with the rest of the
+ * password web path.
  *
  * Credentials live at the IdentityProvider. Admin reset sends a password-set
  * invite (#160) and does not write a digest. The desktop agent's
@@ -21,18 +22,6 @@
 import type { RequestHandler } from "express";
 import type { WebAuthConfig } from "@shared/webAuth";
 import { config, webSignInAvailable } from "../../config";
-
-export const WEB_PASSWORD_AUTH_RETIRED =
-  "This sign-in path has moved to Clerk. Sign in from the DocuFlow sign-in page.";
-
-/**
- * Answered before the body is read. Validating first would let a caller tell a
- * known address from an unknown one on an endpoint that no longer authenticates
- * anyone, and there is nothing a well-formed payload could make this route do.
- */
-export const webPasswordAuthRetired: RequestHandler = (_req, res) => {
-  res.status(410).json({ message: WEB_PASSWORD_AUTH_RETIRED });
-};
 
 /**
  * Served at runtime rather than baked into the bundle: one image is built and

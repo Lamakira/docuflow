@@ -27,24 +27,19 @@ export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // `@opentelemetry/*` package, by not being listed. See server/telemetry.ts.
 //
 // Listing a package is also a claim about it: that it resolves nothing relative
-// to its own directory, because after bundling that directory is `dist/`. The
-// two the runtime tree would otherwise have to keep (#36) were checked against
-// that — `connect-pg-simple` reads `table.sql` from beside the module, but only
-// down the `createTableIfMissing` branch, and server/auth.ts passes it `false`;
-// `drizzle-orm` reaches its dialects through static imports. Both are safe to
-// inline and are therefore devDependencies. `optionalDependencies` is where the
-// answer came out the other way — see `externalDependencies` below.
+// to its own directory, because after bundling that directory is `dist/`.
+// `drizzle-orm` reaches its dialects through static imports and is safe to
+// inline. `optionalDependencies` is where the answer came out the other way —
+// see `externalDependencies` below.
 const allowlist = [
   "@google/generative-ai",
   "@neondatabase/serverless",
   "axios",
-  "connect-pg-simple",
   "cors",
   "date-fns",
   "drizzle-orm",
   "drizzle-zod",
   "express-rate-limit",
-  "express-session",
   "jsonwebtoken",
   "memorystore",
   "multer",

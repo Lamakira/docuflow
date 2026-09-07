@@ -14,7 +14,7 @@ import { loginDevice, PNG_1X1, type AgentDevice } from "../helpers/agent";
  *
  * Quirks frozen here:
  *  - The strict 20-per-15-minutes auth limiter is mounted on `/api/login` and
- *    `/api/register`. `GET /api/login` is a retired OIDC stub (410); `POST
+ *    `/api/register`. `GET /api/login` is unmounted (#162, 404); `POST
  *    /api/register` is unmounted (404 until the limiter's 429). It is not on
  *    `/api/auth/login` and `/api/auth/register`, which #111 unmounted.
  *  - The global limit is 120 requests per minute per IP across `/api/`, and it

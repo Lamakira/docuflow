@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 /**
- * Phase 5 ticket #111: Replit OIDC, `MCP_API_KEY`, and the dual-auth flag come
- * out together (ADR-0007, ADR-0017). Clerk is the only web authentication path.
+ * Phase 5 ticket #111 plus Phase 9 ticket #162: Replit OIDC, `MCP_API_KEY`,
+ * and the dual-auth flag come out together (ADR-0007, ADR-0017, ADR-0018).
+ * Clerk is the only web authentication path. Leftover OIDC bookmarks are
+ * unmounted — a 404, not a kept 410 handler.
  *
  * Seam is HTTP: the same `/api/*` a browser and an old client hit. Device
  * Enrollment is asserted untouched; the agent's own token path is characterized
@@ -69,24 +71,24 @@ describe("Clerk is the web session, with no drain flag (#111)", () => {
   });
 });
 
-describe("Replit OIDC routes fail closed (#111)", () => {
-  it("answers 410 on login, callback, and logout, even with REPL_ID set", async () => {
+describe("Replit OIDC stubs are unmounted (#162)", () => {
+  it("answers 404 on login, callback, and logout, even with REPL_ID set", async () => {
     const app = await makeApp();
     process.env.REPL_ID = "would-have-been-the-oidc-client";
     process.env.ISSUER_URL = "https://replit.com/oidc";
 
     for (const path of ["/api/login", "/api/callback", "/api/logout"]) {
       const res = await newAgent(app).get(path);
-      expect(res.status, path).toBe(410);
-      expect(res.body.message, path).toMatch(/Clerk/);
+      expect(res.status, path).toBe(404);
     }
   });
 
-  it("establishes no session from the retired OIDC callback", async () => {
+  it("establishes no session from a leftover OIDC callback bookmark", async () => {
     const app = await makeApp();
     const agent = newAgent(app);
 
-    await agent.get("/api/callback?code=anything");
+    const callback = await agent.get("/api/callback?code=anything");
+    expect(callback.status).toBe(404);
     await expect(agent.get("/api/auth/user").then((res) => res.body)).resolves.toBeNull();
     const denied = await agent.get("/api/projects");
     expect(denied.status).toBe(401);

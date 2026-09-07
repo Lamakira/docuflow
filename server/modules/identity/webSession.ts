@@ -1,6 +1,6 @@
 /**
  * IdentityProvider session resolution (#109 as the drain, #111 as the only web
- * path; ADR-0007, ADR-0017).
+ * path, #162 as web-session vocabulary; ADR-0007, ADR-0017).
  *
  * An `Authorization: Bearer` session the IdentityProvider issued is resolved to
  * the `users.id` the import (#108) linked its subject to. `WorkspaceContext` is
@@ -16,11 +16,12 @@ import { IdentityProviderError, type IdentityProvider } from "./identityProvider
 
 /**
  * Route prefixes whose `Authorization: Bearer` header already means something
- * else, and which the drain therefore never reads: Device access tokens on the
- * desktop agent (which this phase leaves untouched), Service Account secrets on
- * the public API, and the release CI token on the internal endpoints.
+ * else, and which a web session therefore never reads: Device access tokens on
+ * the desktop agent (which this phase leaves untouched), Service Account
+ * secrets on the public API, and the release CI token on the internal
+ * endpoints.
  */
-export const PATHS_NOT_DRAINED = ["/api/agent", "/api/v1", "/api/internal"] as const;
+export const PATHS_WITHOUT_WEB_SESSION = ["/api/agent", "/api/v1", "/api/internal"] as const;
 
 /**
  * The exceptions inside `/api/agent`: routes under that prefix that are the
@@ -39,9 +40,9 @@ export const WEB_SESSION_AGENT_PATHS = [
   "/api/agent/pairing/start",
 ] as const;
 
-export function isDrainablePath(path: string): boolean {
+export function isWebSessionPath(path: string): boolean {
   if ((WEB_SESSION_AGENT_PATHS as readonly string[]).includes(path)) return true;
-  return !PATHS_NOT_DRAINED.some(
+  return !PATHS_WITHOUT_WEB_SESSION.some(
     (prefix) => path === prefix || path.startsWith(`${prefix}/`)
   );
 }
@@ -52,7 +53,7 @@ export function bearerToken(header: string | undefined): string | undefined {
   return token.length > 0 ? token : undefined;
 }
 
-export interface DualAuthPersistence {
+export interface WebSessionPersistence {
   /** The User the import linked to this subject id, if any. */
   getUserByIdentityProviderSubjectId(subjectId: string): Promise<{ id: string } | undefined>;
 }
@@ -64,7 +65,7 @@ export interface DualAuthPersistence {
  */
 export async function userIdFromIdentitySession(deps: {
   provider: IdentityProvider;
-  persistence: DualAuthPersistence;
+  persistence: WebSessionPersistence;
   token: string;
 }): Promise<string | undefined> {
   const { provider, persistence, token } = deps;

@@ -59,13 +59,13 @@ export {
   importUsersIntoIdentityProvider,
   planUserImport,
 } from "./userImport";
-export type { DualAuthPersistence } from "./dualAuth";
+export type { WebSessionPersistence } from "./webSession";
 export {
   bearerToken,
-  isDrainablePath,
+  isWebSessionPath,
   userIdFromIdentitySession,
   WEB_SESSION_AGENT_PATHS,
-} from "./dualAuth";
+} from "./webSession";
 export type {
   PasswordSetInviteOutcome,
   PasswordSetInviteReport,
@@ -73,19 +73,13 @@ export type {
 } from "./passwordSetInvites";
 export { planPasswordSetInvites, sendPasswordSetInvites } from "./passwordSetInvites";
 export type { WebAuthConfig } from "@shared/webAuth";
-export {
-  WEB_PASSWORD_AUTH_RETIRED,
-  webAuthConfig,
-  webAuthConfigRoute,
-  webPasswordAuthRetired,
-} from "./webAuth";
+export { webAuthConfig, webAuthConfigRoute } from "./webAuth";
 
 /** Process-wide IdentityProvider. Missing Clerk credentials fail closed. HTTP still authenticates as today. */
 export const identityProvider = identityProviderFromAppConfig(config.identity);
 
 export const IDENTITY_TABLES = [
   "users",
-  "sessions",
   "devices",
   "agent_pairing_codes",
   "device_enrollments",

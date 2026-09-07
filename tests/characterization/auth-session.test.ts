@@ -17,13 +17,12 @@ import { login, newAgent, promoteToAdmin, registerUser, uniqueEmail } from "../h
  *    SPA treats "no user" and "unknown user" identically.
  *  - It returns the whole user row minus `identityProviderSubjectId` (#108),
  *    plus every remaining internal flag. Credentials are not on the row (#161).
- *  - `POST /api/auth/logout` destroys the legacy cookie session, which a Clerk
- *    sign-in never created. It answers 200 and the provider session it could not
- *    reach still works — ending that one is Clerk's job, and the SPA calls it.
+ *  - `POST /api/auth/logout` is unmounted (#162). It used to destroy a cookie
+ *    session a Clerk sign-in never created. Ending the provider session is
+ *    Clerk's job, and the SPA calls it.
  *  - The strict brute-force limiter is still mounted on `/api/login` and
- *    `/api/register` — the retired Replit OIDC paths, which now answer 410 —
- *    not on the `/api/auth/*` endpoints, which no longer have credentials to
- *    brute-force.
+ *    `/api/register` — leftover OIDC prefixes that now answer 404 — not on the
+ *    `/api/auth/*` endpoints, which no longer have credentials to brute-force.
  *  - `X-API-Key` is ignored. It used to impersonate the Owner when it matched
  *    `MCP_API_KEY`; that header is gone.
  *  - Any error inside `GET /api/auth/user` is swallowed into a `null` body.
@@ -99,22 +98,15 @@ describe("auth and session (characterization)", () => {
     expect((await user.agent.get("/api/projects")).status).toBe(200);
   });
 
-  it("logs out of a session it never had, and the provider session survives", async () => {
+  it("has no cookie logout, and the provider session still enters the Workspace", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
 
-    const first = await user.agent.post("/api/auth/logout");
-    expect(first.status).toBe(200);
-    expect(first.body).toEqual({ message: "Logged out successfully" });
+    const gone = await user.agent.post("/api/auth/logout");
+    expect(gone.status).toBe(404);
 
-    // Quirk: destroying an already-destroyed session is not an error — the route
-    // answers 200 for a caller that was never signed in.
-    const second = await user.agent.post("/api/auth/logout");
-    expect(second.status).toBe(200);
-
-    // And the quirk that matters after #110: this route only ever reached the
-    // cookie session. The provider session is still a way in, which is why the
-    // SPA signs out through Clerk rather than through here.
+    // The unmounted route never reached Clerk. The provider session is still a
+    // way in, which is why the SPA signs out through Clerk rather than here.
     const after = await user.agent.get("/api/projects");
     expect(after.status).toBe(200);
   });

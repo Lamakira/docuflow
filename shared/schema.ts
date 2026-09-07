@@ -21,7 +21,7 @@ import { z } from "zod";
 
 /**
  * Immutable Workspace stamp on every Workspace-owned row (#96).
- * The global allowlist (`users`, `sessions`, `desktop_releases`,
+ * The global allowlist (`users`, `desktop_releases`,
  * `scheduler_leases`, `billing_webhook_inbox`) never gets this column.
  */
 function workspaceIdColumn() {
@@ -49,17 +49,6 @@ function workspaceScopedFk(
     foreignColumns: [parent.id, parent.workspaceId],
   }).onDelete(onDelete);
 }
-
-// Session storage table
-export const sessions = pgTable(
-  "sessions",
-  {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
-  },
-  (table) => [index("IDX_session_expire").on(table.expire)]
-);
 
 // User role enum values
 export const userRoleValues = ["admin", "user"] as const;
