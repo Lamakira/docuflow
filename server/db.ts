@@ -42,8 +42,8 @@ export type Db = PgDatabase<NodePgQueryResultHKT, typeof schema>;
 // stop being true when the migration ends. So there is no removal gate to carry
 // (ADR-0017 wants one only for temporary switches), both drivers ship in the
 // image on purpose, and `pg` is a runtime dependency — it is imported above
-// whichever branch below runs, and `connect-pg-simple` builds a second pool from
-// `conString` regardless. See docs/CONTAINER.md.
+// whichever branch below runs. Cookie sessions used to open a second pool
+// through `connect-pg-simple`; that store is gone (#162). See docs/CONTAINER.md.
 const usePg = driver === "pg";
 
 neonConfig.webSocketConstructor = ws;

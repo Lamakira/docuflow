@@ -16,7 +16,6 @@ const APP_ROLE = "docuflow_app";
 const APP_PASSWORD = "rls-harness";
 const GLOBAL_ALLOWLIST = [
   "users",
-  "sessions",
   "desktop_releases",
   "scheduler_leases",
   "billing_webhook_inbox",

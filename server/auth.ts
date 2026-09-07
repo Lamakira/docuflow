@@ -1,15 +1,11 @@
-import session from "express-session";
 import type { Express, RequestHandler } from "express";
-import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
-import { config } from "./config";
 import { gateSessionWrite } from "./modules/billing/sessionWriteGate";
 import {
   bearerToken,
   identityProvider,
-  isDrainablePath,
+  isWebSessionPath,
   userIdFromIdentitySession,
-  webPasswordAuthRetired,
 } from "./modules/identity";
 import {
   ArchivedMembershipError,
@@ -18,44 +14,13 @@ import {
   runWithWorkspaceContext,
 } from "./workspaceContext";
 
-export function getSession() {
-  const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 7 days
-  const pgStore = connectPg(session);
-  const sessionStore = new pgStore({
-    conString: config.database.connectionString,
-    createTableIfMissing: false,
-    ttl: sessionTtl,
-    tableName: "sessions",
-  });
-  return session({
-    secret: config.sessionSecret,
-    store: sessionStore,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      secure: config.isProduction,
-      maxAge: sessionTtl,
-      sameSite: "lax" as const,
-    },
-  });
-}
-
 export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
-  app.use(getSession());
 
   // Part of the session layer, so every route sees an IdentityProvider session
   // the same way — `/api/auth/user` included, which reads `getUserId` without
   // going through `isAuthenticated`.
   app.use(identitySession);
-
-  // Replit OIDC used to live here. The routes stay mounted so a leftover
-  // bookmark or the previous SPA's "Continue with Replit" button is told what
-  // happened rather than falling through to the SPA shell.
-  app.get("/api/login", webPasswordAuthRetired);
-  app.get("/api/callback", webPasswordAuthRetired);
-  app.get("/api/logout", webPasswordAuthRetired);
 }
 
 /**
@@ -69,7 +34,7 @@ export async function setupAuth(app: Express) {
  * carries a token of their own, and this phase does not touch them.
  */
 export const identitySession: RequestHandler = async (req, res, next) => {
-  if (!isDrainablePath(req.path)) return next();
+  if (!isWebSessionPath(req.path)) return next();
   const token = bearerToken(req.headers.authorization);
   if (!token) return next();
   try {

@@ -1,17 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 /**
- * Phase 5 ticket #109: the dual-auth drain (ADR-0007, ADR-0017).
+ * Phase 5 ticket #109 plus Phase 9 ticket #162: IdentityProvider session
+ * resolution (ADR-0007, ADR-0017, ADR-0018). Drain-era names are gone; the
+ * skip list is web-session vocabulary. Bearer IdentityProvider / Device /
+ * Service Account behavior does not change.
  *
- * Two seams. The first is `server/modules/identity/dualAuth.ts` — a provider
+ * Two seams. The first is `server/modules/identity/webSession.ts` — a provider
  * session token resolved to the `users.id` the import linked it to, proven
  * against the port fake. The second is HTTP: a provider session must reach the
  * same Membership, and the bearer paths that already carry a token of their
  * own must not be read as one.
- *
- * #110 retired the drain's legacy half and #111 removed the flag, so this
- * suite no longer has a rollback surface to flip. What stays true is how a
- * provider session resolves.
  *
  * Live Clerk is never reached. `vitest.config.ts` aliases `@clerk/backend` to
  * `tests/fakes/clerk.ts`, and the credentials named below are that fake's.
@@ -35,7 +34,7 @@ beforeEach(async () => {
 describe("dual-auth session resolution (#109)", () => {
   it("resolves a provider session to the User the import linked it to", async () => {
     const { userIdFromIdentitySession } = await import(
-      "../../server/modules/identity/dualAuth"
+      "../../server/modules/identity/webSession"
     );
     const provider = new FakeIdentityProvider();
     const identity = await provider.importPasswordUser({
@@ -59,7 +58,7 @@ describe("dual-auth session resolution (#109)", () => {
 
   it("resolves nobody for an unverifiable token, an unlinked subject, or a closed provider", async () => {
     const { userIdFromIdentitySession } = await import(
-      "../../server/modules/identity/dualAuth"
+      "../../server/modules/identity/webSession"
     );
     const { createIdentityProvider } = await import("../../server/modules/identity");
     const provider = new FakeIdentityProvider();
@@ -89,31 +88,32 @@ describe("dual-auth session resolution (#109)", () => {
   });
 
   it("leaves the bearer paths that already carry a token of their own alone", async () => {
-    const { isDrainablePath } = await import("../../server/modules/identity/dualAuth");
+    const { isWebSessionPath } = await import("../../server/modules/identity/webSession");
 
-    expect(isDrainablePath("/api/agent/timer/start")).toBe(false);
-    expect(isDrainablePath("/api/v1/projects")).toBe(false);
-    expect(isDrainablePath("/api/projects")).toBe(true);
-    expect(isDrainablePath("/api/auth/user")).toBe(true);
+    expect(isWebSessionPath("/api/agent/timer/start")).toBe(false);
+    expect(isWebSessionPath("/api/v1/projects")).toBe(false);
+    expect(isWebSessionPath("/api/internal/desktop-releases")).toBe(false);
+    expect(isWebSessionPath("/api/projects")).toBe(true);
+    expect(isWebSessionPath("/api/auth/user")).toBe(true);
     // Not a prefix match on the string: a route that merely starts with the
-    // same letters is still drained.
-    expect(isDrainablePath("/api/agents")).toBe(true);
+    // same letters is still a web-session path.
+    expect(isWebSessionPath("/api/agents")).toBe(true);
 
     // The exceptions inside `/api/agent`: the web's own Device management,
     // guarded by `isAuthenticated` and reached from the browser. Skipping these
     // is what would leave a signed-in User unable to revoke their own Device
     // or mint a pairing code.
-    expect(isDrainablePath("/api/agent/devices")).toBe(true);
-    expect(isDrainablePath("/api/agent/device/revoke")).toBe(true);
-    expect(isDrainablePath("/api/agent/devices/revoke-machine")).toBe(true);
-    expect(isDrainablePath("/api/agent/pairing/start")).toBe(true);
+    expect(isWebSessionPath("/api/agent/devices")).toBe(true);
+    expect(isWebSessionPath("/api/agent/device/revoke")).toBe(true);
+    expect(isWebSessionPath("/api/agent/devices/revoke-machine")).toBe(true);
+    expect(isWebSessionPath("/api/agent/pairing/start")).toBe(true);
     // Exact matches only — a Device-token route under the same text is not one.
-    expect(isDrainablePath("/api/agent/devices/anything-else")).toBe(false);
+    expect(isWebSessionPath("/api/agent/devices/anything-else")).toBe(false);
   });
 
   it("names every session-guarded route under the agent prefix", async () => {
     const { WEB_SESSION_AGENT_PATHS } = await import(
-      "../../server/modules/identity/dualAuth"
+      "../../server/modules/identity/webSession"
     );
     const { readFileSync } = await import("node:fs");
 
@@ -130,7 +130,7 @@ describe("dual-auth session resolution (#109)", () => {
   });
 
   it("reads only a well-formed bearer credential", async () => {
-    const { bearerToken } = await import("../../server/modules/identity/dualAuth");
+    const { bearerToken } = await import("../../server/modules/identity/webSession");
 
     expect(bearerToken("Bearer sess_abc")).toBe("sess_abc");
     expect(bearerToken("Bearer   sess_abc  ")).toBe("sess_abc");
@@ -218,8 +218,8 @@ describe("dual-auth drain over HTTP (#109)", () => {
       .get("/api/agent/timer/active")
       .set("Authorization", "Bearer not-a-provider-session");
 
-    // The agent's own middleware answers, in its own words — the drain never
-    // saw the header.
+    // The agent's own middleware answers, in its own words — web-session
+    // resolution never saw the header.
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ message: "Invalid access token" });
   });

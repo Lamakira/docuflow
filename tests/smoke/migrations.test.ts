@@ -125,6 +125,9 @@ describe("migration journal", () => {
     // #161 dropped `users.password` and `users.last_generated_password`, so
     // push no longer creates them. 0026 still ALTERs `password`. Restore the
     // columns so the apply path can reach 0027, which drops them.
+    //
+    // #162 dropped `sessions`, so push no longer creates it. Restore the
+    // table so the apply path can reach 0028, which drops it.
     const scratch = urlForDatabase(SCRATCH_DB);
     await withClient(scratch, (client) =>
       client.query(`
@@ -157,6 +160,11 @@ describe("migration journal", () => {
         );
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "password" varchar(255);
         ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "last_generated_password" varchar(255);
+        CREATE TABLE IF NOT EXISTS "sessions" (
+          "sid" varchar PRIMARY KEY NOT NULL,
+          "sess" jsonb NOT NULL,
+          "expire" timestamp NOT NULL
+        );
       `)
     );
 
@@ -188,6 +196,7 @@ describe("migration journal", () => {
       "0025_thankful_silver_sable",
       "0026_young_morg",
       "0027_confused_captain_stacy",
+      "0028_volatile_thunderbolt_ross",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -223,6 +232,7 @@ describe("migration journal", () => {
       { version: "0025_thankful_silver_sable", baselined: false },
       { version: "0026_young_morg", baselined: false },
       { version: "0027_confused_captain_stacy", baselined: false },
+      { version: "0028_volatile_thunderbolt_ross", baselined: false },
     ]);
   });
 

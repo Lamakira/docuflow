@@ -31,10 +31,11 @@ export function setIdentityTokenProvider(provider: TokenProvider): void {
 type SignOut = () => Promise<void>;
 
 /**
- * Ending the session is the provider's job — `POST /api/auth/logout` only ever
- * reached the cookie session, which a Clerk sign-in never created. Registered
- * the same way the token is, so a sign-out button does not have to be inside
- * `ClerkProvider` (a deployment with no key never mounts one).
+ * Ending the session is the provider's job. `POST /api/auth/logout` used to
+ * reach only a cookie session, which a Clerk sign-in never created, and is
+ * unmounted (#162). Registered the same way the token is, so a sign-out button
+ * does not have to be inside `ClerkProvider` (a deployment with no key never
+ * mounts one).
  */
 let signOutOfProvider: SignOut = async () => {};
 

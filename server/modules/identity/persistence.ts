@@ -7,9 +7,9 @@ import type {
   AgentPairingCode,
 } from "@shared/schema";
 import type { UserImportPersistence } from "./userImport";
-import type { DualAuthPersistence } from "./dualAuth";
+import type { WebSessionPersistence } from "./webSession";
 
-export interface IdentityPersistence extends UserImportPersistence, DualAuthPersistence {
+export interface IdentityPersistence extends UserImportPersistence, WebSessionPersistence {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(userData: InsertUser): Promise<User>;

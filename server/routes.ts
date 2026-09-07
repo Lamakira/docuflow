@@ -114,6 +114,11 @@ function extractTextFromContent(content: any): string {
   return text.trim();
 }
 
+/** Identifies web Timer Commands now that cookie `sessionID` is gone (#162). */
+function webTimerOrigin(userId: string): string {
+  return `web:${userId}`;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -171,19 +176,6 @@ export async function registerRoutes(
   // What the SPA needs before it can offer a sign-in box: Clerk's publishable
   // key, read at runtime because one image serves every environment (ADR-0018).
   app.get("/api/auth/config", webAuthConfigRoute);
-
-  // Logout destroys a cookie session this image no longer mints. It stays so a
-  // leftover POST from an older SPA is not an error; ending a Clerk session is
-  // the provider's job, and the SPA calls that.
-  app.post("/api/auth/logout", (req: Request, res) => {
-    req.session.destroy((err) => {
-      if (err) {
-        console.error("Error destroying session:", err);
-        return res.status(500).json({ message: "Failed to logout" });
-      }
-      res.json({ message: "Logged out successfully" });
-    });
-  });
 
   app.get("/api/projects", isAuthenticated, async (req: Request, res) => {
     try {
@@ -3837,7 +3829,7 @@ Instructions:
       const now = new Date();
       const result = await applyTimerCommand({
         userId,
-        origin: `web:${req.sessionID ?? userId}`,
+        origin: webTimerOrigin(userId),
         sequence: nextTimerSequence(),
         kind: "start",
         claimedEffectiveAt: now,
@@ -3882,7 +3874,7 @@ Instructions:
       const now = new Date();
       const result = await applyTimerCommand({
         userId,
-        origin: `web:${req.sessionID ?? userId}`,
+        origin: webTimerOrigin(userId),
         sequence: nextTimerSequence(),
         kind: "pause",
         claimedEffectiveAt: now,
@@ -3924,7 +3916,7 @@ Instructions:
       const now = new Date();
       const result = await applyTimerCommand({
         userId,
-        origin: `web:${req.sessionID ?? userId}`,
+        origin: webTimerOrigin(userId),
         sequence: nextTimerSequence(),
         kind: "resume",
         claimedEffectiveAt: now,
@@ -3965,7 +3957,7 @@ Instructions:
       const now = new Date();
       const result = await applyTimerCommand({
         userId,
-        origin: `web:${req.sessionID ?? userId}`,
+        origin: webTimerOrigin(userId),
         sequence: nextTimerSequence(),
         kind: "stop",
         claimedEffectiveAt: now,
@@ -4116,7 +4108,7 @@ Instructions:
       const now = new Date();
       const result = await applyTimerCommand({
         userId,
-        origin: `web:${req.sessionID ?? userId}`,
+        origin: webTimerOrigin(userId),
         sequence: nextTimerSequence(),
         kind: "adjust",
         claimedEffectiveAt: now,
