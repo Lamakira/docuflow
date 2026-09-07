@@ -264,6 +264,13 @@ covers the journal dropping `users.password` and `users.last_generated_password`
 Agent password login stays 410; pairing still enrolls a Device; a Clerk session
 still enters the Workspace.
 
+`mcp-companion` and `tasks-required` ([#163](https://github.com/Lamakira/docuflow/issues/163))
+cover the Phase 9 leftover-probe close. The MCP companion authenticates as a
+Service Account against `/api/v1` and does not set `X-API-Key`; a matching
+`X-API-Key` on guarded `/api/*` remains 401. Config still refuses `MCP_API_KEY`
+impersonation. `detectMigrationFlags` / `isTasksEnabled` are gone; Task routes
+do not 503 on a migrated database.
+
 `tests/characterization/` freezes the legacy web API
 ([#20](https://github.com/Lamakira/docuflow/issues/20)) and the desktop agent v1
 protocol ([#21](https://github.com/Lamakira/docuflow/issues/21), the `agent-*`

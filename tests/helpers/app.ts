@@ -10,11 +10,7 @@ let cached: { app: Express; stopBackgroundJobs: () => void } | null = null;
 export async function makeApp(): Promise<Express> {
   if (cached) return cached.app;
   const { createApp } = await import("../../server/app");
-  const { detectMigrationFlags } = await import("../../server/migrationFlags");
   const { app, stopBackgroundJobs } = await createApp();
-  // Boot parity with server/index.ts: enables the tasks routes when the
-  // tasks table exists (the global setup's schema push creates it).
-  await detectMigrationFlags();
   cached = { app, stopBackgroundJobs };
   return app;
 }

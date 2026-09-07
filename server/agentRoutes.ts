@@ -27,7 +27,6 @@ import { agentProtocolHandshake, allowAgentProtocol } from "./agentProtocol";
 import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
 import { logInfo, logError, logTimeEvent } from "./logger";
 import { parseObjectPath, storagePort } from "./objectStorage";
-import { isTasksEnabled } from "./migrationFlags";
 import {
   commitActivityScreenshot,
   createActivityJobsPort,
@@ -916,7 +915,6 @@ export function registerAgentRoutes(app: Express): void {
 
   /** Agent: list tasks for a CRM project (for timer start dropdown) */
   app.get("/api/agent/tasks", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
-    if (!isTasksEnabled()) return res.json({ data: [] });
     try {
       const userId = req.agentUserId!;
       const { crmProjectId } = req.query as { crmProjectId?: string };
@@ -938,9 +936,6 @@ export function registerAgentRoutes(app: Express): void {
 
   /** Agent: create a task under a CRM project (mirrors web POST /api/tasks, Bearer auth). */
   app.post("/api/agent/tasks", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
-    if (!isTasksEnabled()) {
-      return res.status(503).json({ message: "Tasks feature not available yet — migration pending" });
-    }
     try {
       const userId = req.agentUserId!;
       const { crmProjectId, name, description } = req.body as {
@@ -968,9 +963,9 @@ export function registerAgentRoutes(app: Express): void {
     }
   });
 
-  /** Agent: timer / task policy flags (tasks table present). */
+  /** Agent: timer / task policy flags. */
   app.get("/api/agent/capabilities", isAgentAuthenticated as any, async (_req: AgentAuthRequest, res) => {
-    res.json({ requiresTask: isTasksEnabled() });
+    res.json({ requiresTask: true });
   });
 
   /** Agent: list CRM projects (for timer start dropdown) */
@@ -1021,8 +1016,7 @@ export function registerAgentRoutes(app: Express): void {
 
       const userId = req.agentUserId!;
       const { crmProjectId, description, deviceId, clientCommandId } = req.body;
-      // Strip taskId if migration 002 hasn't been applied yet
-      const taskId = isTasksEnabled() ? (req.body.taskId || null) : null;
+      const taskId = req.body.taskId || null;
 
       if (!crmProjectId) {
         return res.status(400).json({ message: "crmProjectId is required" });
@@ -1034,18 +1028,16 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      if (isTasksEnabled() && !taskId) {
+      if (!taskId) {
         return res.status(400).json({ message: "taskId is required" });
       }
 
-      if (isTasksEnabled() && taskId) {
-        const task = await storage.getTask(taskId);
-        if (!task || task.crmProjectId !== crmProjectId) {
-          return res.status(400).json({ message: "Invalid task for this project" });
-        }
-        if (task.status === "archived") {
-          return res.status(400).json({ message: "Cannot start timer on an archived task" });
-        }
+      const task = await storage.getTask(taskId);
+      if (!task || task.crmProjectId !== crmProjectId) {
+        return res.status(400).json({ message: "Invalid task for this project" });
+      }
+      if (task.status === "archived") {
+        return res.status(400).json({ message: "Cannot start timer on an archived task" });
       }
 
       // Idempotency: if we've already processed this command, return the existing entry
