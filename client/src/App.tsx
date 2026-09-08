@@ -1,4 +1,5 @@
 import { Switch, Route, Redirect } from "wouter";
+import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 import { flags } from "@/lib/featureFlags";
 import { authenticatedPresentation } from "@/v2/presentation";
 import { V2AuthenticatedApp } from "@/v2/V2AuthenticatedApp";
@@ -9,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { IdentityProviderSession } from "@/components/IdentityProviderSession";
+import { useWebAuthConfig, WebAuthConfigProvider } from "@/lib/webAuthConfig";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
@@ -77,21 +79,33 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
+function SignedOutSwitch() {
+  return (
+    <Switch>
+      <Route path="/" component={Landing} />
+      <Route path="/auth" component={AuthPage} />
+      <Route component={Landing} />
+    </Switch>
+  );
+}
 
-  if (isLoading) {
+function ProviderSessionRouter() {
+  const { isLoaded, isSignedIn } = useClerkAuth();
+  const { isAuthenticated, isLoading, isFetching } = useAuth();
+
+  if (!isLoaded || isLoading) {
     return <LoadingScreen />;
   }
 
+  // After Clerk Organization selection the browser is on `/` with a session
+  // and a null `/api/auth/user`. Landing there looks like a failed sign-in.
+  if (isSignedIn && !isAuthenticated) {
+    if (isFetching) return <LoadingScreen />;
+    return <AuthPage />;
+  }
+
   if (!isAuthenticated) {
-    return (
-      <Switch>
-        <Route path="/" component={Landing} />
-        <Route path="/auth" component={AuthPage} />
-        <Route component={Landing} />
-      </Switch>
-    );
+    return <SignedOutSwitch />;
   }
 
   if (authenticatedPresentation(flags.webAppV2).chrome === "v2") {
@@ -139,6 +153,13 @@ function Router() {
   );
 }
 
+function Router() {
+  const webAuth = useWebAuthConfig();
+  if (!webAuth) return <LoadingScreen />;
+  if (!webAuth.publishableKey) return <SignedOutSwitch />;
+  return <ProviderSessionRouter />;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -146,9 +167,11 @@ function App() {
         <TooltipProvider>
           {/* Clerk owns the web session since #110; everything below reaches the
               API with the token it issues. */}
-          <IdentityProviderSession>
-            <Router />
-          </IdentityProviderSession>
+          <WebAuthConfigProvider>
+            <IdentityProviderSession>
+              <Router />
+            </IdentityProviderSession>
+          </WebAuthConfigProvider>
           <Toaster />
         </TooltipProvider>
       </ThemeProvider>

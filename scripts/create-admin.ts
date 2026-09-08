@@ -3,14 +3,15 @@
  * create-admin.ts — Create an admin user directly in the database.
  *
  * Usage:
- *   npx tsx scripts/create-admin.ts <email> <firstName> <lastName>
+ *   npx tsx --env-file-if-exists=.env scripts/create-admin.ts <email> <firstName> <lastName>
  *
  * Example:
- *   DATABASE_URL="postgres://..." npx tsx scripts/create-admin.ts admin@example.com Alice Smith
+ *   npx tsx --env-file-if-exists=.env scripts/create-admin.ts admin@example.com Alice Smith
  *
- * The script uses DATABASE_URL (or PG* vars as fallback) and inserts a user with
- * role='admin' and isMainAdmin=1. Credentials live at the IdentityProvider
- * (#161); this script does not write a password.
+ * Bare `npx tsx` does not load `.env`. `DATABASE_URL` (or all PG* vars) must
+ * be in the process environment. The script inserts a user with role='admin'
+ * and isMainAdmin=1. Credentials live at the IdentityProvider (#161); this
+ * script does not write a password.
  *
  * Plain node-postgres, like every other script here: nothing an operational
  * command does needs the Neon serverless driver (ADR-0016).
@@ -23,7 +24,7 @@ async function main() {
   const [, , email, firstName, lastName] = process.argv;
 
   if (!email || !firstName || !lastName) {
-    console.error("Usage: npx tsx scripts/create-admin.ts <email> <firstName> <lastName>");
+    console.error("Usage: npx tsx --env-file-if-exists=.env scripts/create-admin.ts <email> <firstName> <lastName>");
     process.exit(1);
   }
 
@@ -47,6 +48,12 @@ async function main() {
     );
 
     const user = result.rows[0];
+    await pool.query(
+      `INSERT INTO memberships (workspace_id, user_id, workspace_role_id)
+       VALUES ('seeded', $1, 'seeded-member')
+       ON CONFLICT DO NOTHING`,
+      [user.id],
+    );
     console.log("\nAdmin user created:");
     console.log(`  id:          ${user.id}`);
     console.log(`  email:       ${user.email}`);

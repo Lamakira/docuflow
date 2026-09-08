@@ -48,9 +48,13 @@ export type ProviderIdentity = {
   email: string;
 };
 
+/**
+ * Only the subject: DocuFlow reads the address off its own `users` row, and
+ * fetching it from the provider cost a network round trip on every single
+ * authenticated request for a field no caller ever looked at.
+ */
 export type IdentitySession = {
   providerSubjectId: string;
-  email: string;
 };
 
 export type PasswordSetInviteRequest = {

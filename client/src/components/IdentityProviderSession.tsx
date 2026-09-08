@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { ClerkProvider, useAuth as useClerkAuth } from "@clerk/clerk-react";
+import { ClerkProvider, useAuth as useClerkAuth, useOrganization } from "@clerk/clerk-react";
 import { queryClient } from "@/lib/queryClient";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { setIdentitySignOut, setIdentityTokenProvider } from "@/lib/identitySession";
@@ -21,6 +21,7 @@ import { useWebAuthConfig } from "@/lib/webAuthConfig";
 /** Wires the token into `/api/*` and keeps `useAuth()` in step with Clerk. */
 function BridgeToApi({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn, getToken, signOut } = useClerkAuth();
+  const { organization } = useOrganization();
 
   // Set during render rather than in an effect, and the `isLoaded` guard below
   // does not make that unnecessary: children first render in the same commit as
@@ -43,15 +44,29 @@ function BridgeToApi({ children }: { children: React.ReactNode }) {
   });
 
   // Signing in or out changes who `/api/auth/user` answers for, and every
-  // Workspace-scoped query behind it. Only on a *change*, though: clearing on
-  // the first commit would throw away the queries the children just started.
+  // Workspace-scoped query behind it. Clerk Organization selection is a session
+  // task that finishes after the first `/api/auth/user` may already have run
+  // without a token; that query is cached as null (and window-focus refetch is
+  // off), so a later active session would otherwise keep painting Landing.
   const lastSignedIn = useRef<boolean | null>(null);
+  const lastOrgId = useRef<string | null>(null);
   useEffect(() => {
     if (!isLoaded) return;
-    const was = lastSignedIn.current;
-    lastSignedIn.current = isSignedIn ?? false;
-    if (was !== null && was !== isSignedIn) queryClient.clear();
-  }, [isLoaded, isSignedIn]);
+    const signedIn = Boolean(isSignedIn);
+    const orgId = organization?.id ?? null;
+    const wasSignedIn = lastSignedIn.current;
+    const wasOrgId = lastOrgId.current;
+    lastSignedIn.current = signedIn;
+    lastOrgId.current = orgId;
+
+    if (wasSignedIn === true && signedIn === false) {
+      queryClient.clear();
+      return;
+    }
+    if (signedIn && (wasSignedIn !== true || wasOrgId !== orgId)) {
+      void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    }
+  }, [isLoaded, isSignedIn, organization?.id]);
 
   if (!isLoaded) return <LoadingScreen />;
   return <>{children}</>;
@@ -67,7 +82,13 @@ export function IdentityProviderSession({ children }: { children: React.ReactNod
   if (!webAuth.publishableKey) return <>{children}</>;
 
   return (
-    <ClerkProvider publishableKey={webAuth.publishableKey} afterSignOutUrl="/">
+    <ClerkProvider
+      publishableKey={webAuth.publishableKey}
+      afterSignOutUrl="/"
+      signInForceRedirectUrl="/auth"
+      signInFallbackRedirectUrl="/auth"
+      taskUrls={{ "choose-organization": "/auth" }}
+    >
       <BridgeToApi>{children}</BridgeToApi>
     </ClerkProvider>
   );

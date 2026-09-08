@@ -60,12 +60,19 @@ export async function createApp(): Promise<{
     message: { message: "Too many requests, please try again later" },
     skip: (req) => {
       const path = req.originalUrl.split("?")[0];
-      return path === "/api/v1" || path.startsWith("/api/v1/");
+      if (path === "/api/v1" || path.startsWith("/api/v1/")) return true;
+      // A 429 here is painted as "sign-in is not configured".
+      if (path === "/api/auth/config") return true;
+      return false;
     },
     // TODO [PLACEHOLDER]: Tune these values after observing real traffic patterns.
     // Consider per-user rate limiting (keyed on session userId) for Desktop Agent.
   });
-  app.use("/api/", globalLimiter);
+  // Clerk + SPA polling + HMR burn 120/min from localhost within seconds.
+  // Test and production still enforce it.
+  if (process.env.NODE_ENV !== "development") {
+    app.use("/api/", globalLimiter);
+  }
 
   // Stricter limit on auth endpoints to prevent brute force
   const authLimiter = rateLimit({

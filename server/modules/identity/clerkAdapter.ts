@@ -42,6 +42,19 @@ function toIdentity(user: ClerkUser, fallbackEmail?: string): ProviderIdentity {
   return { providerSubjectId: user.id, email };
 }
 
+/** @clerk/backend `verifyToken` returns `{ data }` or `{ errors }`, not a bare payload. */
+function sessionPayloadFromVerifyResult(result: unknown): { sub?: string } {
+  if (!result || typeof result !== "object") throw new IdentitySessionError();
+  const record = result as { data?: { sub?: string }; errors?: unknown[]; sub?: string };
+  if (Array.isArray(record.errors) && record.errors.length > 0) {
+    throw new IdentitySessionError();
+  }
+  if (record.data && typeof record.data === "object") {
+    return record.data;
+  }
+  return record;
+}
+
 export class ClerkIdentityProvider implements IdentityProvider {
   private readonly clerk: ReturnType<typeof createClerkClient>;
   private readonly secretKey: string;
@@ -97,13 +110,20 @@ export class ClerkIdentityProvider implements IdentityProvider {
 
   async verifySessionToken(token: string): Promise<IdentitySession> {
     try {
-      const payload = await verifyToken(token, { secretKey: this.secretKey });
+      const payload = sessionPayloadFromVerifyResult(
+        await verifyToken(token, { secretKey: this.secretKey }),
+      );
       const subject = payload.sub;
-      if (!subject) throw new IdentitySessionError();
-      const user = await this.clerk.users.getUser(subject);
-      return toIdentity(user);
+      if (typeof subject !== "string" || subject.length === 0) throw new IdentitySessionError();
+      return { providerSubjectId: subject };
     } catch (error) {
       if (error instanceof IdentityProviderError) throw error;
+      if (process.env.NODE_ENV !== "test") {
+        console.error(
+          "Clerk session token rejected:",
+          error instanceof Error ? error.message : error,
+        );
+      }
       throw new IdentitySessionError();
     }
   }

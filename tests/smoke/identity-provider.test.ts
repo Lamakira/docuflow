@@ -64,7 +64,6 @@ describe("IdentityProvider fake", () => {
 
     await expect(provider.verifySessionToken(token)).resolves.toEqual({
       providerSubjectId: "user_fake_1",
-      email: "ada@example.com",
     });
   });
 
@@ -190,7 +189,6 @@ describe("Clerk adapter", () => {
 
     await expect(provider.verifySessionToken(token)).resolves.toEqual({
       providerSubjectId: "user_test_1",
-      email: "ada@example.com",
     });
   });
 
