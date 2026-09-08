@@ -16,8 +16,38 @@
 
 type TokenProvider = () => Promise<string | null>;
 
-let provideToken: TokenProvider = async () => null;
-let installed = false;
+type SignOut = () => Promise<void>;
+
+/**
+ * The interceptor and the component that feeds it are two different importers,
+ * and a module's `let` is only a singleton per module *instance*. Vite's dev
+ * server can hand out the same file under two ids (`?v=` on one importer's
+ * rewritten specifier and not the other's), and then `main.tsx` wraps `fetch`
+ * in one copy while `IdentityProviderSession` sets the provider on the other —
+ * every `/api/*` call goes out unauthenticated and the SPA never becomes a
+ * User. Anchoring the state on `globalThis` makes the wiring survive that, and
+ * an HMR reload of this module, without changing what any caller does.
+ */
+type IdentitySessionState = {
+  provideToken: TokenProvider;
+  signOutOfProvider: SignOut;
+  installed: boolean;
+};
+
+const STATE_KEY = "__docuflowIdentitySession__";
+
+const globals = globalThis as unknown as Record<
+  typeof STATE_KEY,
+  IdentitySessionState | undefined
+>;
+
+const state: IdentitySessionState =
+  globals[STATE_KEY] ??
+  (globals[STATE_KEY] = {
+    provideToken: async () => null,
+    signOutOfProvider: async () => {},
+    installed: false,
+  });
 
 /**
  * Point the interceptor at Clerk's session. Called from inside `ClerkProvider`,
@@ -25,10 +55,8 @@ let installed = false;
  * does for anyone signed out.
  */
 export function setIdentityTokenProvider(provider: TokenProvider): void {
-  provideToken = provider;
+  state.provideToken = provider;
 }
-
-type SignOut = () => Promise<void>;
 
 /**
  * Ending the session is the provider's job. `POST /api/auth/logout` used to
@@ -37,14 +65,12 @@ type SignOut = () => Promise<void>;
  * does not have to be inside `ClerkProvider` (a deployment with no key never
  * mounts one).
  */
-let signOutOfProvider: SignOut = async () => {};
-
 export function setIdentitySignOut(signOut: SignOut): void {
-  signOutOfProvider = signOut;
+  state.signOutOfProvider = signOut;
 }
 
 export function signOutOfIdentityProvider(): Promise<void> {
-  return signOutOfProvider();
+  return state.signOutOfProvider();
 }
 
 function isDocuFlowApi(input: RequestInfo | URL): boolean {
@@ -88,8 +114,8 @@ function alreadyAuthorized(input: RequestInfo | URL, init?: RequestInit): boolea
  * stack wrappers on top of each other.
  */
 export function installIdentitySessionHeader(): void {
-  if (installed) return;
-  installed = true;
+  if (state.installed) return;
+  state.installed = true;
 
   const original = window.fetch.bind(window);
 
@@ -97,7 +123,7 @@ export function installIdentitySessionHeader(): void {
     if (!isDocuFlowApi(input) || !needsIdentityHeader(input) || alreadyAuthorized(input, init)) {
       return original(input, init);
     }
-    const token = await provideToken();
+    const token = await state.provideToken();
     if (!token) return original(input, init);
 
     // A `Request` carries its own headers; anything else takes them from init.
