@@ -1,0 +1,25 @@
+name: docuflow
+
+services:
+  dev-db:
+    # Same pgvector image as the test harness: embeddings are vector(1536).
+    # Persistent volume — unlike docker-compose.test.yml, this database survives
+    # restarts and is not truncated by npm test.
+    image: pgvector/pgvector:pg16
+    container_name: docuflow-dev-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: docuflow_dev
+    ports:
+      - "5434:5432"
+    volumes:
+      - docuflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d docuflow_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  docuflow_pgdata:
