@@ -1,0 +1,28 @@
+import { matchV2Route } from "./presentation";
+import { useLocation } from "wouter";
+
+export function V2TodayPage() {
+  return (
+    <div className="df-page" data-testid="v2-today">
+      <h1 className="df-title">Today</h1>
+      <p style={{ color: "#59657A", fontSize: 13.5, maxWidth: "62ch", lineHeight: 1.55 }}>
+        Nothing needs you yet. Active Projects and Needs attention will land here from this Workspace.
+      </p>
+    </div>
+  );
+}
+
+export function V2PlaceholderPage() {
+  const [location] = useLocation();
+  const match = matchV2Route(location);
+  const title = match.kind === "placeholder" ? match.title : "Today";
+
+  return (
+    <div className="df-page" data-testid="v2-placeholder">
+      <h1 className="df-title">{title}</h1>
+      <p style={{ color: "#59657A", fontSize: 13.5, maxWidth: "62ch", lineHeight: 1.55 }}>
+        This destination is not in the current batch. It stays on v2 tokens rather than the previous screens.
+      </p>
+    </div>
+  );
+}

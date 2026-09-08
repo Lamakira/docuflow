@@ -21,6 +21,7 @@
  *   screencasts          Show the Screencasts tab and page
  *   desktopWidget        Floating always-on-top timer widget in Electron
  *   screenshotCompression  WebP compression on screenshot upload (server-side)
+ *   webAppV2             Parallel v2 authenticated chrome (ADR-0003, #171)
  */
 
 interface FlagDef {
@@ -29,7 +30,7 @@ interface FlagDef {
   description: string;
 }
 
-const FLAG_DEFS = {
+export const FLAG_DEFS = {
   screencasts: {
     dev: true,
     prod: true,
@@ -45,19 +46,34 @@ const FLAG_DEFS = {
     prod: true,
     description: "Server-side WebP compression + 1920px resize on screenshot upload via sharp",
   },
+  webAppV2: {
+    dev: true,
+    prod: false,
+    description: "Parallel v2 authenticated chrome — Today, rail, command bar",
+  },
 } satisfies Record<string, FlagDef>;
 
 export type FeatureFlag = keyof typeof FLAG_DEFS;
 
 const env = import.meta.env.PROD ? "prod" : "dev";
 
-function resolveFlag(name: FeatureFlag): boolean {
-  // Per-flag env var override: VITE_FLAG_SCREENCASTS=true|false
-  const envKey = `VITE_FLAG_${name.replace(/([A-Z])/g, "_$1").toUpperCase()}`;
-  const override = import.meta.env[envKey];
+export function flagEnvKey(name: string): string {
+  return `VITE_FLAG_${name.replace(/([A-Z])/g, "_$1").toUpperCase()}`;
+}
+
+export function resolveFlagValue(
+  def: FlagDef,
+  environment: "dev" | "prod",
+  override: string | undefined,
+): boolean {
   if (override === "true") return true;
   if (override === "false") return false;
-  return FLAG_DEFS[name][env];
+  return def[environment];
+}
+
+function resolveFlag(name: FeatureFlag): boolean {
+  const override = import.meta.env[flagEnvKey(name)];
+  return resolveFlagValue(FLAG_DEFS[name], env, typeof override === "string" ? override : undefined);
 }
 
 /** Resolved flag values for the current environment. */

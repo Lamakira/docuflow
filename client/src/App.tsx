@@ -1,4 +1,7 @@
 import { Switch, Route, Redirect } from "wouter";
+import { flags } from "@/lib/featureFlags";
+import { authenticatedPresentation } from "@/v2/presentation";
+import { V2AuthenticatedApp } from "@/v2/V2AuthenticatedApp";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -89,6 +92,10 @@ function Router() {
         <Route component={Landing} />
       </Switch>
     );
+  }
+
+  if (authenticatedPresentation(flags.webAppV2).chrome === "v2") {
+    return <V2AuthenticatedApp />;
   }
 
   return (
