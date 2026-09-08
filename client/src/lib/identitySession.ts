@@ -62,6 +62,22 @@ function isDocuFlowApi(input: RequestInfo | URL): boolean {
   }
 }
 
+/** Public boot config — a hanging Clerk getToken must not block whether sign-in exists. */
+function needsIdentityHeader(input: RequestInfo | URL): boolean {
+  const raw =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url;
+  try {
+    const url = new URL(raw, window.location.origin);
+    return url.pathname !== "/api/auth/config";
+  } catch {
+    return true;
+  }
+}
+
 function alreadyAuthorized(input: RequestInfo | URL, init?: RequestInit): boolean {
   if (new Headers(init?.headers).has("Authorization")) return true;
   return input instanceof Request && input.headers.has("Authorization");
@@ -78,7 +94,7 @@ export function installIdentitySessionHeader(): void {
   const original = window.fetch.bind(window);
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (!isDocuFlowApi(input) || alreadyAuthorized(input, init)) {
+    if (!isDocuFlowApi(input) || !needsIdentityHeader(input) || alreadyAuthorized(input, init)) {
       return original(input, init);
     }
     const token = await provideToken();

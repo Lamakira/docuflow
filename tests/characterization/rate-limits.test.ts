@@ -19,6 +19,8 @@ import { loginDevice, PNG_1X1, type AgentDevice } from "../helpers/agent";
  *    `/api/auth/login` and `/api/auth/register`, which #111 unmounted.
  *  - The global limit is 120 requests per minute per IP across `/api/`, and it
  *    counts every request, authenticated or not.
+ *  - `GET /api/auth/config` is skipped: a 429 there is painted as
+ *    "sign-in is not configured", which is the wrong failure.
  *  - Limits are keyed on the client IP behind one trusted proxy hop, so an
  *    `X-Forwarded-For` header decides which budget a request spends.
  *  - Over the limit the response is 429 with `{ message: "Too many requests,
@@ -58,6 +60,11 @@ describe("rate limiting (characterization)", () => {
     // `/health` sits before the limiter and keeps answering.
     const health = await request(app).get("/health").set("X-Forwarded-For", ip);
     expect(health.status).toBe(200);
+
+    // Boot config must still answer — the SPA maps a failed fetch to
+    // "sign-in is not configured".
+    const config = await request(app).get("/api/auth/config").set("X-Forwarded-For", ip);
+    expect(config.status).toBe(200);
   });
 
   it("does not apply the strict auth limiter to the endpoints the SPA logged in through", async () => {
