@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CloseIcon } from "./icons";
 import type { NotificationWithDetails } from "@shared/schema";
 import type { V2CommandPanel } from "./presentation";
+import { EMPTY_TIMESHEET_APPROVALS } from "./today";
 
 export function V2ContextPanel({
   panel,
@@ -10,8 +11,10 @@ export function V2ContextPanel({
   panel: V2CommandPanel;
   onClose: () => void;
 }) {
-  const title = panel === "ask" ? "Ask DocuFlow" : "Notifications";
-  const kicker = panel === "ask" ? "ASK" : "INBOX";
+  const title =
+    panel === "ask" ? "Ask DocuFlow" : panel === "approvals" ? EMPTY_TIMESHEET_APPROVALS.title : "Notifications";
+  const kicker =
+    panel === "ask" ? "ASK" : panel === "approvals" ? EMPTY_TIMESHEET_APPROVALS.kicker : "INBOX";
 
   const { data: notifications = [] } = useQuery<NotificationWithDetails[]>({
     queryKey: ["/api/notifications"],
@@ -40,7 +43,11 @@ export function V2ContextPanel({
         </button>
       </header>
       <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
-        {panel === "ask" ? (
+        {panel === "approvals" ? (
+          <p style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "62ch", color: "#59657A" }}>
+            {EMPTY_TIMESHEET_APPROVALS.copy}
+          </p>
+        ) : panel === "ask" ? (
           <p style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "62ch", color: "#59657A" }}>
             Ask about records in this Workspace. Answers stay on this panel and honor Document Access.
           </p>

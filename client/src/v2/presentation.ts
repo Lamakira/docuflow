@@ -9,7 +9,11 @@ export function authenticatedPresentation(v2Enabled: boolean): AuthenticatedPres
     : { chrome: "v1", signedInHome: "home" };
 }
 
-export type V2CommandPanel = "ask" | "notifications";
+export type V2CommandPanel = "ask" | "notifications" | "approvals";
+
+export function defaultPanelForRoute(path: string): V2CommandPanel | null {
+  return matchV2Route(path).kind === "today" ? "approvals" : null;
+}
 
 export type V2Match =
   | { kind: "today"; title: "Today"; href: "/" }

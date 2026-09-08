@@ -1,16 +1,7 @@
 import { matchV2Route } from "./presentation";
 import { useLocation } from "wouter";
 
-export function V2TodayPage() {
-  return (
-    <div className="df-page" data-testid="v2-today">
-      <h1 className="df-title">Today</h1>
-      <p style={{ color: "#59657A", fontSize: 13.5, maxWidth: "62ch", lineHeight: 1.55 }}>
-        Nothing needs you yet. Active Projects and Needs attention will land here from this Workspace.
-      </p>
-    </div>
-  );
-}
+export { V2TodayPage } from "./V2Today";
 
 export function V2PlaceholderPage() {
   const [location] = useLocation();
