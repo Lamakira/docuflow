@@ -106,7 +106,8 @@ export function createClerkClient(_options: { secretKey?: string; publishableKey
 export async function verifyToken(token: string, _options: { secretKey?: string }) {
   const payload = sessions.get(token);
   if (!payload) throw new Error("invalid token");
-  return payload;
+  // Match @clerk/backend: JwtReturnType<{ data } | { errors }>
+  return { data: payload };
 }
 
 /** Test helper — not on the port. */
