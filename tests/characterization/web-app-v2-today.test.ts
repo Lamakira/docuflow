@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultPanelForRoute, matchV2Route } from "../../client/src/v2/presentation";
+import { matchV2Route } from "../../client/src/v2/presentation";
 import { composeToday, type TodayInput } from "../../client/src/v2/today";
 
 /**
@@ -38,8 +38,6 @@ describe("Today desktop from live Workspace records (#172)", () => {
     expect(today.subhead).toBe("Nothing needs you yet.");
     expect(today.approvals.empty).toBe(true);
     expect(today.approvals.copy.toLowerCase()).toContain("timesheet");
-    expect(defaultPanelForRoute("/")).toBe("approvals");
-    expect(defaultPanelForRoute("/projects")).toBe(null);
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
     }

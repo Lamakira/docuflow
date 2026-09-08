@@ -11,10 +11,6 @@ export function authenticatedPresentation(v2Enabled: boolean): AuthenticatedPres
 
 export type V2CommandPanel = "ask" | "notifications" | "approvals";
 
-export function defaultPanelForRoute(path: string): V2CommandPanel | null {
-  return matchV2Route(path).kind === "today" ? "approvals" : null;
-}
-
 export type V2Match =
   | { kind: "today"; title: "Today"; href: "/" }
   | { kind: "auth-redirect"; title: "Today"; href: "/" }
