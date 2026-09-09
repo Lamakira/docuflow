@@ -372,7 +372,7 @@
   white-space: nowrap;
 }
 
-.df-ink-btn {
+.df-v2 .df-ink-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -845,7 +845,7 @@
   font-size: 13.5px;
 }
 
-.df-check {
+.df-v2 .df-check {
   width: 14px;
   height: 14px;
   flex: none;
