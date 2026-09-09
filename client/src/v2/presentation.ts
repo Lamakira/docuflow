@@ -30,6 +30,7 @@ export type V2Match =
   | { kind: "today"; title: "Today"; href: "/" }
   | { kind: "auth-redirect"; title: "Today"; href: "/" }
   | { kind: "dossier"; title: string; href: "/projects"; projectId: string; tab: DossierTabId }
+  | { kind: "documents"; title: "Workspace Documents"; href: "/documents" }
   | { kind: "placeholder"; title: string; href: string };
 
 export type V2NavId =
@@ -97,7 +98,6 @@ const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> 
   { href: "/opportunities", title: "Opportunities" },
   { href: "/clients", title: "Clients" },
   { href: "/projects", title: "Projects" },
-  { href: "/documents", title: "Workspace Documents" },
   { href: "/project-documentation", title: "Project Documentation" },
   { href: "/time", title: "Time Tracking" },
   { href: "/activity", title: "Activity" },
@@ -135,6 +135,12 @@ export function matchV2Route(path: string): V2Match {
   const pathname = path.split("?")[0] || "/";
   if (pathname === "/auth") return { kind: "auth-redirect", title: "Today", href: "/" };
   if (pathname === "/") return { kind: "today", title: "Today", href: "/" };
+  if (pathname === "/documents") {
+    return { kind: "documents", title: "Workspace Documents", href: "/documents" };
+  }
+  if (pathname.startsWith("/documents/")) {
+    return { kind: "placeholder", title: "Document", href: "/documents" };
+  }
 
   const dossier = parseDossierPath(pathname);
   if (dossier) {
@@ -169,6 +175,7 @@ export const V2_FOOTER_NAV: V2NavItem[] = [
 export function navIdForPath(path: string): V2NavId | null {
   const match = matchV2Route(path);
   if (match.kind === "today" || match.kind === "auth-redirect") return "today";
+  if (match.kind === "documents") return "documents";
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -189,6 +196,12 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
       { label: workspace, href: "/" },
       { label: "PROJECTS", href: "/projects" },
       { label: match.tab.toUpperCase() },
+    ];
+  }
+  if (match.kind === "documents") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "WORKSPACE DOCUMENTS" },
     ];
   }
   return [
