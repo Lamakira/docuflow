@@ -78,9 +78,9 @@ describe("Project Dossier routing (#173)", () => {
       expect(match.projectId).toBe("prj-live");
       expect(match.tab).toBe(tab);
     }
-    expect(matchV2Route("/projects").kind).toBe("placeholder");
-    expect(matchV2Route("/project/prj-live").kind).toBe("placeholder");
-    expect(matchV2Route("/crm/project/1").kind).toBe("placeholder");
+    expect(matchV2Route("/projects").kind).toBe("projects");
+    expect(matchV2Route("/project/prj-live").kind).not.toBe("placeholder");
+    expect(matchV2Route("/crm/project/1").kind).toBe("dossier");
   });
 });
 

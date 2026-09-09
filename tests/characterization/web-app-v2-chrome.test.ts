@@ -51,7 +51,6 @@ describe("v2 chrome behind the client flag (#171)", () => {
     const placeholders = [
       "/opportunities",
       "/clients",
-      "/projects",
       "/project-documentation",
       "/time",
       "/activity",
@@ -66,8 +65,7 @@ describe("v2 chrome behind the client flag (#171)", () => {
     }
 
     const v1Leaks = [
-      "/crm",
-      "/crm/project/1",
+      "/crm/client/1",
       "/company-documents",
       "/time-tracking",
       "/time-tracking/dashboard",
@@ -76,11 +74,14 @@ describe("v2 chrome behind the client flag (#171)", () => {
       "/help-center/getting-started",
       "/documentation",
       "/daily-update",
-      "/project/abc",
     ];
     for (const path of v1Leaks) {
       expect(matchV2Route(path).kind, path).toBe("placeholder");
     }
+
+    expect(matchV2Route("/projects").kind).toBe("projects");
+    expect(matchV2Route("/crm").kind).toBe("projects");
+    expect(matchV2Route("/project/abc").kind).not.toBe("placeholder");
 
     expect(navIdForPath("/help")).toBe("help");
     expect(navIdForPath("/devices")).toBe("devices");
