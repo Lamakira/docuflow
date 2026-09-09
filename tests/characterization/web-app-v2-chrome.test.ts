@@ -130,7 +130,7 @@ describe("v2 chrome behind the client flag (#171)", () => {
     expect(idle.holdsAmber).toBe(false);
   });
 
-  it("shows the current Workspace only and does not switch Active Workspace", () => {
+  it("shows Workspace initials and Workspace Role labels", () => {
     expect(workspaceInitials("Keystone Studio")).toBe("KS");
     expect(workspaceInitials("DocuFlow")).toBe("DO");
     expect(workspaceRoleLabel({ role: "admin", owner: true })).toBe("OWNER");

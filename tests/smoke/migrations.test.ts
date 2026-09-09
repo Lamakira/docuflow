@@ -197,6 +197,7 @@ describe("migration journal", () => {
       "0026_young_morg",
       "0027_confused_captain_stacy",
       "0028_volatile_thunderbolt_ross",
+      "0029_pale_roland_deschain",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -233,6 +234,7 @@ describe("migration journal", () => {
       { version: "0026_young_morg", baselined: false },
       { version: "0027_confused_captain_stacy", baselined: false },
       { version: "0028_volatile_thunderbolt_ross", baselined: false },
+      { version: "0029_pale_roland_deschain", baselined: false },
     ]);
   });
 

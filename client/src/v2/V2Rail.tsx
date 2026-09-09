@@ -17,6 +17,7 @@ import {
   workspaceInitials,
   workspaceRoleLabel,
 } from "./presentation";
+import { workspaceSwitcher, type MembershipOption, type MembershipsResponse } from "./workspace";
 
 type V2RailProps = {
   collapsed: boolean;
@@ -25,6 +26,9 @@ type V2RailProps = {
   memberCount: number;
   projectCount: number;
   drawer?: boolean;
+  memberships?: MembershipsResponse;
+  timerWorkspaceId?: string | null;
+  onSwitchWorkspace?: (workspaceId: string) => void;
 };
 
 export function V2Rail({
@@ -34,6 +38,9 @@ export function V2Rail({
   memberCount,
   projectCount,
   drawer = false,
+  memberships,
+  timerWorkspaceId = null,
+  onSwitchWorkspace,
 }: V2RailProps) {
   const [location] = useLocation();
   const { user } = useAuth();
@@ -105,6 +112,9 @@ export function V2Rail({
             name={workspaceName}
             initials={initials}
             memberCount={memberCount}
+            memberships={memberships}
+            timerWorkspaceId={timerWorkspaceId}
+            onSwitchWorkspace={onSwitchWorkspace}
           />
         )}
       </div>
@@ -229,11 +239,25 @@ function WorkspaceSelector({
   name,
   initials,
   memberCount,
+  memberships,
+  timerWorkspaceId,
+  onSwitchWorkspace,
 }: {
   name: string;
   initials: string;
   memberCount: number;
+  memberships?: MembershipsResponse;
+  timerWorkspaceId: string | null;
+  onSwitchWorkspace?: (workspaceId: string) => void;
 }) {
+  const switcher = workspaceSwitcher({
+    memberships: memberships?.memberships ?? [
+      { workspaceId: "active", workspaceName: name, workspaceRole: "MEMBER", condition: null },
+    ],
+    activeWorkspaceId: memberships?.activeWorkspaceId ?? "active",
+    timerWorkspaceId,
+  });
+
   return (
     <details>
       <summary className="df-ws" style={{ listStyle: "none" }} data-testid="v2-workspace-selector">
@@ -250,17 +274,53 @@ function WorkspaceSelector({
         </span>
         <SwapIcon />
       </summary>
-      <div className="df-menu" style={{ marginTop: 6 }} data-testid="v2-workspace-menu">
-        <button type="button" disabled>
-          <span className="df-tile" style={{ width: 18, height: 18, borderRadius: 4, fontSize: 8 }}>
-            {initials}
-          </span>
-          <span style={{ flex: 1 }}>{name}</span>
-          <span className="df-mono" style={{ fontSize: 9, color: "#1F9D6B" }}>
-            CURRENT
-          </span>
-        </button>
+      <div className="df-menu df-ws-menu" style={{ marginTop: 6 }} data-testid="v2-workspace-menu">
+        {switcher.rows.map((row) => (
+          <WorkspaceRow
+            key={row.workspaceId}
+            row={row}
+            onSwitch={row.active ? undefined : onSwitchWorkspace}
+          />
+        ))}
       </div>
     </details>
+  );
+}
+
+function WorkspaceRow({
+  row,
+  onSwitch,
+}: {
+  row: MembershipOption & { active: boolean; timer: boolean };
+  onSwitch?: (workspaceId: string) => void;
+}) {
+  const initials = workspaceInitials(row.workspaceName);
+  return (
+    <button
+      type="button"
+      disabled={row.active || !onSwitch}
+      onClick={() => onSwitch?.(row.workspaceId)}
+      data-testid={`v2-workspace-${row.workspaceId}`}
+    >
+      <span className="df-tile" style={{ width: 18, height: 18, borderRadius: 4, fontSize: 8 }}>
+        {initials}
+      </span>
+      <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", textAlign: "left" }}>
+        <span>{row.workspaceName}</span>
+        <span className="df-mono" style={{ fontSize: 9, color: "#59657A" }}>
+          {row.workspaceRole}
+          {row.condition ? ` · ${row.condition}` : ""}
+        </span>
+      </span>
+      {row.active ? (
+        <span className="df-mono" style={{ fontSize: 9, color: "#1F9D6B" }}>
+          Active
+        </span>
+      ) : row.timer ? (
+        <span className="df-mono" style={{ fontSize: 9, color: "#E9A23B" }}>
+          TIMER
+        </span>
+      ) : null}
+    </button>
   );
 }

@@ -3,11 +3,13 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import type { SafeUser } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { V2AppBar } from "./V2AppBar";
 import { V2CommandBar } from "./V2CommandBar";
 import { V2ContextPanel } from "./V2ContextPanel";
 import { V2Rail } from "./V2Rail";
 import { V2TimerChip } from "./V2TimerChip";
+import { V2WorkspaceChooser } from "./V2WorkspaceChooser";
 import {
   chromeLayoutForViewport,
   contextSurface,
@@ -17,9 +19,11 @@ import {
   type V2CommandPanel,
 } from "./presentation";
 import { motionForSurface } from "./motion";
+import { workspaceEntry, type MembershipsResponse } from "./workspace";
 import "./tokens.css";
 
 const RAIL_DESTINATION_MOTION = motionForSurface("rail-destination").enterExit;
+const WORKSPACE_SWITCH_MOTION = motionForSurface("workspace-switch").enterExit;
 
 const FONTSHARE_HREF =
   "https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700&f[]=switzer@400,500,600,700&display=swap";
@@ -29,9 +33,13 @@ const DESKTOP_LAYOUT = chromeLayoutForViewport(1280);
 const V2ChromeContext = createContext<{
   openPanel: (panel: V2CommandPanel) => void;
   layout: V2ChromeLayout;
+  memberships: MembershipsResponse | undefined;
+  switchWorkspace: (workspaceId: string) => Promise<void>;
 }>({
   openPanel: () => {},
   layout: DESKTOP_LAYOUT,
+  memberships: undefined,
+  switchWorkspace: async () => {},
 });
 
 export function useV2Chrome() {
@@ -49,6 +57,11 @@ function useViewportWidth(): number {
   return width;
 }
 
+async function switchWorkspace(workspaceId: string): Promise<void> {
+  await apiRequest("PUT", "/api/memberships/active", { workspaceId });
+  await queryClient.invalidateQueries();
+}
+
 export function V2Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [collapsed, setCollapsed] = useState(() =>
@@ -60,11 +73,14 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
   const layout = chromeLayoutForViewport(width);
   const mobile = layout.mode === "mobile";
   const surface = contextSurface(panel, layout, location);
-  const { isRunning } = useTimeTracker();
+  const { isRunning, activeEntry } = useTimeTracker();
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
   const { data: projectsResponse } = useQuery<{ total?: number }>({
     queryKey: ["/api/crm/projects", "v2-count"],
     queryFn: () => fetch("/api/crm/projects?pageSize=1").then((res) => res.json()),
+  });
+  const { data: memberships } = useQuery<MembershipsResponse>({
+    queryKey: ["/api/memberships"],
   });
 
   useEffect(() => {
@@ -105,14 +121,24 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
         setPanel(next);
       },
       layout,
+      memberships,
+      switchWorkspace,
     }),
-    [layout],
+    [layout, memberships],
   );
-  const workspaceName = "Workspace";
+  const timerWorkspaceLabel =
+    memberships?.memberships.find((row) => row.workspaceId === activeEntry?.workspaceId)?.workspaceName ??
+    null;
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  const workspaceName = current?.workspaceName ?? "Workspace";
   const memberCount = users.length;
   const projectCount = projectsResponse?.total ?? 0;
   const showRail = layout.rail === "fixed" || navOpen;
   const sheetOpen = surface.kind === "sheet";
+  const entry = workspaceEntry({
+    memberships: memberships?.memberships ?? [],
+    lastActiveWorkspaceId: memberships?.preferredWorkspaceId ?? null,
+  });
 
   function selectPanel(next: V2CommandPanel | null) {
     setNavOpen(false);
@@ -120,11 +146,19 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
   }
 
   function toggleRail() {
-    setCollapsed((current) => {
-      const next = !current;
+    setCollapsed((currentCollapsed) => {
+      const next = !currentCollapsed;
       writeRailCollapsed(window.localStorage, next);
       return next;
     });
+  }
+
+  if (memberships && entry.kind === "chooser") {
+    return (
+      <V2ChromeContext.Provider value={chrome}>
+        <V2WorkspaceChooser rows={entry.rows} onChoose={(id) => void switchWorkspace(id)} />
+      </V2ChromeContext.Provider>
+    );
   }
 
   return (
@@ -154,6 +188,9 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
             memberCount={memberCount}
             projectCount={projectCount}
             drawer={layout.rail === "drawer"}
+            memberships={memberships}
+            timerWorkspaceId={activeEntry?.workspaceId ?? null}
+            onSwitchWorkspace={(id) => void switchWorkspace(id)}
           />
         ) : null}
         <div
@@ -182,13 +219,25 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
                 onMenu={() => setNavOpen(true)}
               />
             ) : (
-              <V2CommandBar workspaceName={workspaceName} panel={panel} onPanel={selectPanel} />
+              <V2CommandBar
+                workspaceName={workspaceName}
+                panel={panel}
+                onPanel={selectPanel}
+                timerWorkspaceLabel={timerWorkspaceLabel}
+              />
             )}
             <div className="df-chrome-body">
               <div className="df-stage">
-                {layout.timer === "strip" ? <V2TimerChip variant="strip" /> : null}
+                {layout.timer === "strip" ? <V2TimerChip variant="strip" workspaceLabel={timerWorkspaceLabel} /> : null}
                 <main className="df-main" data-motion={RAIL_DESTINATION_MOTION}>
-                  {children}
+                  <div
+                    key={memberships?.activeWorkspaceId ?? "workspace"}
+                    className="df-workspace-content"
+                    data-motion={WORKSPACE_SWITCH_MOTION}
+                    data-testid="v2-workspace-content"
+                  >
+                    {children}
+                  </div>
                 </main>
               </div>
               {panel && surface.kind !== "none" ? (

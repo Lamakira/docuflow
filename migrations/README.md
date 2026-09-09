@@ -38,6 +38,7 @@ journal is not part of it and is never applied.
 | 0026 | `0026_young_morg.sql` | `users.password` nullable (#160). New Users need no placeholder hash. Existing hashes stay until #161 drops the column. |
 | 0027 | `0027_confused_captain_stacy.sql` | Drops `users.password` and `users.last_generated_password` (#161). Credentials live at the IdentityProvider. No down migration. |
 | 0028 | `0028_volatile_thunderbolt_ross.sql` | Drops `sessions` (#162). Cookie `express-session` is gone; Clerk is the only web session. No down migration. |
+| 0029 | `0029_pale_roland_deschain.sql` | Nullable `users.active_workspace_id` (#183). Persisted Active Workspace preference; not tenancy. ON DELETE SET NULL. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
@@ -188,6 +189,8 @@ Two rules, from ADR-0017:
   writes NULL instead of a hash, and the column drops on #161.
   `0028` drops the leftover `sessions` table as pure DDL (#162) after cookie
   `express-session` left the boot path.
+  `0029` adds `users.active_workspace_id` as pure DDL (#183); the preference is
+  written by `PUT /api/memberships/active`.
 - **Expand and contract.** Add the new shape, move the reads and writes, drop
   the old one in a later deploy. Rollback is redeploying the previous image,
   never a down migration, so no migration may make the previous image unable to

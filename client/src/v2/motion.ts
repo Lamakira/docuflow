@@ -3,8 +3,8 @@
  * curves. Frequency then purpose: if either fails, the output is no animation.
  *
  * Do not animate: search `/`, command-palette overlays, rail destination
- * clicks, focus jumps. Chrome press (including rail items) is the only motion
- * this ticket ships; destination enter/exit stays instant.
+ * clicks, focus jumps, Workspace chooser pointer/keyboard, Timer chip on switch.
+ * Workspace switch content may crossfade (occasional; preventing a jarring change).
  */
 
 export const V2_MOTION_TOKENS = {
@@ -22,7 +22,11 @@ export type MotionSurface =
   | "command-palette"
   | "focus-jump"
   | "chrome-press"
-  | "rail-collapse";
+  | "rail-collapse"
+  | "workspace-switch"
+  | "workspace-chooser-pointer"
+  | "workspace-chooser-keyboard"
+  | "timer-chip";
 
 export type MotionRecipe = {
   enterExit: "instant" | "standard" | "none";
@@ -40,6 +44,10 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "focus-jump": "keyboard-or-100+",
   "chrome-press": "tens",
   "rail-collapse": "occasional",
+  "workspace-switch": "occasional",
+  "workspace-chooser-pointer": "keyboard-or-100+",
+  "workspace-chooser-keyboard": "keyboard-or-100+",
+  "timer-chip": "keyboard-or-100+",
 };
 
 export function motionForSurface(

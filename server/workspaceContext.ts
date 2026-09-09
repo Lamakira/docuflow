@@ -8,7 +8,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { and, eq, isNull, type AnyColumn } from "drizzle-orm";
-import { deviceEnrollments, memberships, workspaces, SEEDED_WORKSPACE_ID } from "@shared/schema";
+import { deviceEnrollments, memberships, users, workspaces, SEEDED_WORKSPACE_ID } from "@shared/schema";
 import { db } from "./db";
 import { setWorkspaceContextReader } from "./workspaceScope";
 
@@ -70,8 +70,13 @@ export async function contextFromUser(userId: string): Promise<WorkspaceContext>
     .from(memberships)
     .where(and(eq(memberships.userId, userId), isNull(memberships.archivedAt)));
 
-  const membership =
-    active.find((row) => row.workspaceId === SEEDED_WORKSPACE_ID) ?? active[0];
+  const [user] = await db
+    .select({ activeWorkspaceId: users.activeWorkspaceId })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const membership = pickActiveMembership(active, user?.activeWorkspaceId ?? null);
 
   if (membership) {
     return {
@@ -88,6 +93,21 @@ export async function contextFromUser(userId: string): Promise<WorkspaceContext>
     .limit(1);
   if (archived) throw new ArchivedMembershipError();
   throw new NoActiveMembershipError();
+}
+
+function pickActiveMembership<T extends { workspaceId: string }>(
+  active: T[],
+  preferredWorkspaceId: string | null,
+): T | undefined {
+  if (active.length === 1) return active[0];
+  if (preferredWorkspaceId) {
+    const preferred = active.find((row) => row.workspaceId === preferredWorkspaceId);
+    if (preferred) return preferred;
+  }
+  return (
+    active.find((row) => row.workspaceId === SEEDED_WORKSPACE_ID) ??
+    [...active].sort((a, b) => a.workspaceId.localeCompare(b.workspaceId))[0]
+  );
 }
 
 export async function contextFromDevice(

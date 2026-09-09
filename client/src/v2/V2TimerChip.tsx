@@ -2,7 +2,13 @@ import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { PlayIcon, PauseIcon } from "./icons";
 import { timerChipModel } from "./presentation";
 
-export function V2TimerChip({ variant = "chip" }: { variant?: "chip" | "strip" }) {
+export function V2TimerChip({
+  variant = "chip",
+  workspaceLabel = null,
+}: {
+  variant?: "chip" | "strip";
+  workspaceLabel?: string | null;
+}) {
   const {
     activeEntry,
     displayDuration,
@@ -28,6 +34,7 @@ export function V2TimerChip({ variant = "chip" }: { variant?: "chip" | "strip" }
     displayDuration,
     projectLabel,
     taskLabel: task?.name ?? null,
+    workspaceLabel,
   });
 
   function onToggle() {

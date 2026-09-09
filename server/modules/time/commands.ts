@@ -17,7 +17,7 @@ import {
   type TimerCommandPayload,
 } from "@shared/schema";
 import { db, type Db } from "../../db";
-import { inWorkspace, requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
+import { inWorkspace, requireWorkspaceContext, runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 
 export type TimeWriter = Pick<Db, "insert" | "select" | "update" | "delete">;
 
@@ -42,6 +42,16 @@ export function nextTimerSequence(idempotencyKey?: string): number {
     return Number(process.hrtime.bigint() % BigInt("8000000000000000"));
   }
   return Number(BigInt(`0x${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 13)}`));
+}
+
+/** Time Entry by id, ignoring Active Workspace. Ownership is checked at the HTTP boundary. */
+export async function loadTimeEntryById(id: string): Promise<TimeEntry | undefined> {
+  const [entry] = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
+  return entry;
+}
+
+export function inTimeEntryWorkspace<T>(entry: TimeEntry, fn: () => T): T {
+  return runWithWorkspaceContext({ workspaceId: entry.workspaceId, userId: entry.userId }, fn);
 }
 
 export async function listTimerCommands(userId: string): Promise<TimerCommand[]> {
