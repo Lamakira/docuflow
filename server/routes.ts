@@ -16,7 +16,7 @@ import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
 import { webAuthConfigRoute, identityProvider } from "./modules/identity";
-import { registerWebhookEndpointRoutes } from "./modules/workspace/http";
+import { registerActiveWorkspaceRoutes, registerWebhookEndpointRoutes } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
 import { SeatExhaustedError } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
@@ -72,7 +72,7 @@ import {
   createActivityJobsPort,
   ingestActivityScreenshot,
 } from "./modules/activity/evidenceJobs";
-import { applyTimerCommand, nextTimerSequence } from "./modules/time/commands";
+import { applyTimerCommand, inTimeEntryWorkspace, loadTimeEntryById, nextTimerSequence } from "./modules/time/commands";
 import { logTimeEvent, logError, logInfo } from "./logger";
 import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
 
@@ -147,6 +147,7 @@ export async function registerRoutes(
 
   // Webhook Endpoints (Workspace). Session BFF; not /api/v1.
   registerWebhookEndpointRoutes(app);
+  registerActiveWorkspaceRoutes(app);
 
   // Public `/api/v1` kernel. Service Account keys only (ADR-0011).
   registerPublicApiV1(app);
@@ -3849,7 +3850,7 @@ Instructions:
   app.post("/api/time-tracking/:id/pause", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const entry = await storage.getTimeEntry(req.params.id);
+      const entry = await loadTimeEntryById(req.params.id);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });
@@ -3857,22 +3858,23 @@ Instructions:
       
       if (entry.userId !== userId) {
         return res.status(403).json({ message: "Not authorized" });
-      }
-      
+      } 
       if (entry.status !== "running") {
         return res.status(400).json({ message: "Entry is not running" });
       }
 
       const now = new Date();
-      const result = await applyTimerCommand({
-        userId,
-        origin: webTimerOrigin(userId),
-        sequence: nextTimerSequence(),
-        kind: "pause",
-        claimedEffectiveAt: now,
-        receivedAt: now,
-        payload: { timeEntryId: entry.id },
-      });
+      const result = await inTimeEntryWorkspace(entry, () =>
+        applyTimerCommand({
+          userId,
+          origin: webTimerOrigin(userId),
+          sequence: nextTimerSequence(),
+          kind: "pause",
+          claimedEffectiveAt: now,
+          receivedAt: now,
+          payload: { timeEntryId: entry.id },
+        }),
+      );
       const updated = result.timeEntry;
       if (!updated) {
         return res.status(500).json({ message: "Failed to pause time tracking" });
@@ -3891,7 +3893,7 @@ Instructions:
     try {
       const userId = getUserId(req)!;
       const { discardIdleTime } = req.body;
-      const entry = await storage.getTimeEntry(req.params.id);
+      const entry = await loadTimeEntryById(req.params.id);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });
@@ -3899,22 +3901,23 @@ Instructions:
       
       if (entry.userId !== userId) {
         return res.status(403).json({ message: "Not authorized" });
-      }
-      
+      } 
       if (entry.status !== "paused") {
         return res.status(400).json({ message: "Entry is not paused" });
       }
 
       const now = new Date();
-      const result = await applyTimerCommand({
-        userId,
-        origin: webTimerOrigin(userId),
-        sequence: nextTimerSequence(),
-        kind: "resume",
-        claimedEffectiveAt: now,
-        receivedAt: now,
-        payload: { timeEntryId: entry.id, discardIdleTime: !!discardIdleTime },
-      });
+      const result = await inTimeEntryWorkspace(entry, () =>
+        applyTimerCommand({
+          userId,
+          origin: webTimerOrigin(userId),
+          sequence: nextTimerSequence(),
+          kind: "resume",
+          claimedEffectiveAt: now,
+          receivedAt: now,
+          payload: { timeEntryId: entry.id, discardIdleTime: !!discardIdleTime },
+        }),
+      );
       const updated = result.timeEntry;
       if (!updated) {
         return res.status(500).json({ message: "Failed to resume time tracking" });
@@ -3932,7 +3935,7 @@ Instructions:
   app.post("/api/time-tracking/:id/stop", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const entry = await storage.getTimeEntry(req.params.id);
+      const entry = await loadTimeEntryById(req.params.id);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });
@@ -3940,22 +3943,23 @@ Instructions:
       
       if (entry.userId !== userId) {
         return res.status(403).json({ message: "Not authorized" });
-      }
-      
+      } 
       if (entry.status === "stopped") {
         return res.status(400).json({ message: "Entry is already stopped" });
       }
 
       const now = new Date();
-      const result = await applyTimerCommand({
-        userId,
-        origin: webTimerOrigin(userId),
-        sequence: nextTimerSequence(),
-        kind: "stop",
-        claimedEffectiveAt: now,
-        receivedAt: now,
-        payload: { timeEntryId: entry.id },
-      });
+      const result = await inTimeEntryWorkspace(entry, () =>
+        applyTimerCommand({
+          userId,
+          origin: webTimerOrigin(userId),
+          sequence: nextTimerSequence(),
+          kind: "stop",
+          claimedEffectiveAt: now,
+          receivedAt: now,
+          payload: { timeEntryId: entry.id },
+        }),
+      );
       const updated = result.timeEntry;
       if (!updated) {
         return res.status(500).json({ message: "Failed to stop time tracking" });
@@ -3973,7 +3977,7 @@ Instructions:
   app.post("/api/time-tracking/:id/activity", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const entry = await storage.getTimeEntry(req.params.id);
+      const entry = await loadTimeEntryById(req.params.id);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });
@@ -3981,8 +3985,7 @@ Instructions:
       
       if (entry.userId !== userId) {
         return res.status(403).json({ message: "Not authorized" });
-      }
-      
+      } 
       if (entry.status !== "running") {
         return res.json(entry); // Just return current state if not running
       }
@@ -3992,10 +3995,12 @@ Instructions:
       const lastActivity = entry.lastActivityAt || entry.startTime;
       const elapsedSeconds = Math.floor((now.getTime() - new Date(lastActivity).getTime()) / 1000);
       
-      const updated = await storage.updateTimeEntry(entry.id, {
-        duration: (entry.duration || 0) + elapsedSeconds,
-        lastActivityAt: now,
-      });
+      const updated = await inTimeEntryWorkspace(entry, () =>
+        storage.updateTimeEntry(entry.id, {
+          duration: (entry.duration || 0) + elapsedSeconds,
+          lastActivityAt: now,
+        }),
+      );
       
       res.json(updated);
     } catch (error) {
@@ -4086,7 +4091,7 @@ Instructions:
   app.patch("/api/time-tracking/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const entry = await storage.getTimeEntry(req.params.id);
+      const entry = await loadTimeEntryById(req.params.id);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });
@@ -4094,22 +4099,23 @@ Instructions:
       
       if (entry.userId !== userId) {
         return res.status(403).json({ message: "Not authorized" });
-      }
-      
+      } 
       const { description } = req.body;
       const now = new Date();
-      const result = await applyTimerCommand({
-        userId,
-        origin: webTimerOrigin(userId),
-        sequence: nextTimerSequence(),
-        kind: "adjust",
-        claimedEffectiveAt: now,
-        receivedAt: now,
-        payload: {
-          timeEntryId: entry.id,
-          description: description !== undefined ? description : entry.description,
-        },
-      });
+      const result = await inTimeEntryWorkspace(entry, () =>
+        applyTimerCommand({
+          userId,
+          origin: webTimerOrigin(userId),
+          sequence: nextTimerSequence(),
+          kind: "adjust",
+          claimedEffectiveAt: now,
+          receivedAt: now,
+          payload: {
+            timeEntryId: entry.id,
+            description: description !== undefined ? description : entry.description,
+          },
+        }),
+      );
       const updated = result.timeEntry;
       if (!updated) {
         return res.status(500).json({ message: "Failed to update time entry" });

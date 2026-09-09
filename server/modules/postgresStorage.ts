@@ -108,8 +108,11 @@ import {
   DOCUMENT_ACCESS_WORKSPACE,
   SEEDED_WORKSPACE_ID,
   SEEDED_MEMBER_ROLE_ID,
+  PARALLEL_WORKSPACE_ID,
+  PARALLEL_MEMBER_ROLE_ID,
   memberships,
   deviceEnrollments,
+  workspaces,
   toSafeUser,
 } from "@shared/schema";
 import { db } from "../db";
@@ -167,6 +170,7 @@ export class DatabaseStorage implements IStorage {
     return db.transaction(async (tx) => {
       const [user] = await tx.insert(users).values(userData).returning();
       await this.ensureSeededMembership(user, tx);
+      await this.ensureParallelMembership(user, tx);
       return user;
     });
   }
@@ -193,6 +197,7 @@ export class DatabaseStorage implements IStorage {
           .where(eq(users.email, userData.email))
           .returning();
         await this.ensureSeededMembership(updated);
+        await this.ensureParallelMembership(updated);
         return updated;
       }
     }
@@ -219,6 +224,7 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     await this.ensureSeededMembership(user);
+    await this.ensureParallelMembership(user);
     return user;
   }
 
@@ -290,6 +296,41 @@ export class DatabaseStorage implements IStorage {
           workspaceId: SEEDED_WORKSPACE_ID,
           userId: user.id,
           workspaceRoleId: SEEDED_MEMBER_ROLE_ID,
+          archivedAt: user.isArchived ? new Date() : null,
+        })
+        .onConflictDoNothing();
+    });
+  }
+
+  /**
+   * In the parallel v2 environment, also join Harbour View so the switcher
+   * can be demonstrated (#183). Production stays one Membership.
+   */
+  private async ensureParallelMembership(
+    user: User,
+    writer: Pick<typeof db, "insert" | "select"> = db
+  ): Promise<void> {
+    if (process.env.NODE_ENV !== "development") return;
+    const [workspace] = await writer
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(eq(workspaces.id, PARALLEL_WORKSPACE_ID))
+      .limit(1);
+    if (!workspace) return;
+    await runWithWorkspaceContext({ workspaceId: PARALLEL_WORKSPACE_ID }, async () => {
+      const [existing] = await writer
+        .select({ id: memberships.id })
+        .from(memberships)
+        .where(and(eq(memberships.workspaceId, PARALLEL_WORKSPACE_ID), eq(memberships.userId, user.id)))
+        .limit(1);
+      if (existing) return;
+      if (!user.isArchived) await assertSeatAvailable(writer);
+      await writer
+        .insert(memberships)
+        .values({
+          workspaceId: PARALLEL_WORKSPACE_ID,
+          userId: user.id,
+          workspaceRoleId: PARALLEL_MEMBER_ROLE_ID,
           archivedAt: user.isArchived ? new Date() : null,
         })
         .onConflictDoNothing();
@@ -623,7 +664,7 @@ export class DatabaseStorage implements IStorage {
     const userProjects = await db
       .select()
       .from(projects)
-      .where(and(eq(projects.ownerId, userId), like(projects.name, searchPattern)));
+      .where(and(eq(projects.ownerId, userId), like(projects.name, searchPattern), inWorkspace(projects)));
 
     for (const project of userProjects) {
       results.push({
@@ -1761,16 +1802,21 @@ export class DatabaseStorage implements IStorage {
 
   async getUserNotifications(userId: string): Promise<NotificationWithDetails[]> {
     const notifs = await db
-      .select()
+      .select({
+        notification: notifications,
+        workspaceId: workspaces.id,
+        workspaceName: workspaces.name,
+      })
       .from(notifications)
-      .where(and(eq(notifications.userId, userId), inWorkspace(notifications)))
+      .leftJoin(workspaces, eq(workspaces.id, notifications.workspaceId))
+      .where(eq(notifications.userId, userId))
       .orderBy(desc(notifications.createdAt))
       .limit(50);
 
     if (!notifs.length) return [];
 
-    const fromUserIds = [...new Set(notifs.map(n => n.fromUserId).filter(Boolean))];
-    const crmProjectIds = [...new Set(notifs.map(n => n.crmProjectId).filter(Boolean))];
+    const fromUserIds = [...new Set(notifs.map((n) => n.notification.fromUserId).filter(Boolean))];
+    const crmProjectIds = [...new Set(notifs.map((n) => n.notification.crmProjectId).filter(Boolean))];
 
     const fromUsersData = fromUserIds.length > 0 
       ? await db.select().from(users).where(sql`${users.id} IN ${fromUserIds}`)
@@ -1782,10 +1828,14 @@ export class DatabaseStorage implements IStorage {
       : [];
     const projectMap = new Map(projectsData.map(p => [p.crm_projects.id, { id: p.crm_projects.id, project: p.projects ? { name: p.projects.name } : undefined }]));
 
-    return notifs.map(n => ({
-      ...n,
-      fromUser: n.fromUserId ? fromUserMap.get(n.fromUserId) : undefined,
-      crmProject: n.crmProjectId ? projectMap.get(n.crmProjectId) : undefined,
+    return notifs.map((n) => ({
+      ...n.notification,
+      fromUser: n.notification.fromUserId ? fromUserMap.get(n.notification.fromUserId) : undefined,
+      crmProject: n.notification.crmProjectId ? projectMap.get(n.notification.crmProjectId) : undefined,
+      workspace:
+        n.workspaceId && n.workspaceName
+          ? { id: n.workspaceId, name: n.workspaceName }
+          : undefined,
     }));
   }
 

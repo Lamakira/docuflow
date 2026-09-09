@@ -2,7 +2,13 @@ import { timePersistence, type TimePersistence } from "./persistence";
 
 export type { TimePersistence };
 export { timePersistence };
-export { applyTimerCommand, listTimerCommands, nextTimerSequence } from "./commands";
+export {
+  applyTimerCommand,
+  inTimeEntryWorkspace,
+  listTimerCommands,
+  loadTimeEntryById,
+  nextTimerSequence,
+} from "./commands";
 export type { ApplyTimerCommandInput, ApplyTimerCommandResult } from "./commands";
 export { getAllowedTimezones, upsertAllowedTimezones } from "./schedule";
 

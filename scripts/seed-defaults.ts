@@ -22,7 +22,7 @@
 
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { crmModuleFields, crmModules, orgSettings, SEEDED_WORKSPACE_ID } from "../shared/schema";
+import { crmModuleFields, crmModules, memberships, orgSettings, workspaceBilling, workspaceRoles, workspaces, SEEDED_WORKSPACE_ID, PARALLEL_WORKSPACE_ID, PARALLEL_OWNER_ROLE_ID, PARALLEL_ADMINISTRATOR_ROLE_ID, PARALLEL_MEMBER_ROLE_ID } from "../shared/schema";
 import { openDb, type Report, type ScriptDb } from "./lib/db";
 import { isEntryPoint } from "./lib/entrypoint";
 
@@ -156,6 +156,61 @@ export async function seedDefaults(
 ): Promise<void> {
   await seedCrmDefaults(db, report);
   await seedOrgSettings(db, report);
+  await seedParallelWorkspace(db, report);
+}
+
+/**
+ * Second Workspace so the v2 switcher can be demonstrated (#183).
+ * Skipped in production. Idempotent.
+ */
+export async function seedParallelWorkspace(
+  db: ScriptDb,
+  report: Report = () => {}
+): Promise<void> {
+  if (process.env.NODE_ENV === "production") return;
+
+  await db.insert(workspaces).values({ id: PARALLEL_WORKSPACE_ID, name: "Harbour View" }).onConflictDoNothing();
+  await db
+    .insert(workspaceRoles)
+    .values([
+      { id: PARALLEL_OWNER_ROLE_ID, workspaceId: PARALLEL_WORKSPACE_ID, slug: "owner", name: "Owner" },
+      {
+        id: PARALLEL_ADMINISTRATOR_ROLE_ID,
+        workspaceId: PARALLEL_WORKSPACE_ID,
+        slug: "administrator",
+        name: "Administrator",
+      },
+      { id: PARALLEL_MEMBER_ROLE_ID, workspaceId: PARALLEL_WORKSPACE_ID, slug: "member", name: "Member" },
+    ])
+    .onConflictDoNothing();
+  await db
+    .insert(workspaceBilling)
+    .values({
+      workspaceId: PARALLEL_WORKSPACE_ID,
+      planKey: "legacy",
+      registryVersion: 1,
+      billingState: "Active",
+      purchasedSeatCapacity: 500,
+      authorizationVersion: 1,
+    })
+    .onConflictDoNothing();
+
+  if (process.env.NODE_ENV === "development") {
+    const existing = await db.select({ userId: memberships.userId }).from(memberships);
+    const ids = [...new Set(existing.map((row) => row.userId))];
+    for (const userId of ids) {
+      await db
+        .insert(memberships)
+        .values({
+          workspaceId: PARALLEL_WORKSPACE_ID,
+          userId,
+          workspaceRoleId: PARALLEL_MEMBER_ROLE_ID,
+        })
+        .onConflictDoNothing();
+    }
+  }
+
+  report(`parallel workspace: ${PARALLEL_WORKSPACE_ID}`);
 }
 
 if (isEntryPoint(import.meta.url)) {

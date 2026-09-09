@@ -61,6 +61,21 @@ async function restoreSeededWorkspaceCatalog(): Promise<void> {
     )
     VALUES ('seeded', 'legacy', 1, 'Active', 500, 1)
     ON CONFLICT (workspace_id) DO NOTHING;
+    INSERT INTO workspaces (id, name)
+    VALUES ('parallel', 'Harbour View')
+    ON CONFLICT (id) DO NOTHING;
+    INSERT INTO workspace_roles (id, workspace_id, slug, name)
+    VALUES
+      ('parallel-owner', 'parallel', 'owner', 'Owner'),
+      ('parallel-administrator', 'parallel', 'administrator', 'Administrator'),
+      ('parallel-member', 'parallel', 'member', 'Member')
+    ON CONFLICT (id) DO NOTHING;
+    INSERT INTO workspace_billing (
+      workspace_id, plan_key, registry_version, billing_state,
+      purchased_seat_capacity, authorization_version
+    )
+    VALUES ('parallel', 'legacy', 1, 'Active', 500, 1)
+    ON CONFLICT (workspace_id) DO NOTHING;
   `);
 }
 

@@ -71,6 +71,11 @@ export const users = pgTable("users", {
   // Vendor-neutral on purpose: Clerk stays behind the port. NULL means not yet
   // linked.
   identityProviderSubjectId: varchar("identity_provider_subject_id").unique(),
+  // Persisted Active Workspace preference (#183). Not tenancy — users stay
+  // global. NULL means the User has not chosen; HTTP then uses a stable fallback.
+  activeWorkspaceId: varchar("active_workspace_id").references((): AnyPgColumn => workspaces.id, {
+    onDelete: "set null",
+  }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -79,6 +84,7 @@ export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   role: true,
   identityProviderSubjectId: true,
+  activeWorkspaceId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -1047,6 +1053,7 @@ export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type NotificationWithDetails = Notification & {
   fromUser?: SafeUser;
   crmProject?: { id: string; project?: { name: string } };
+  workspace?: { id: string; name: string };
 };
 
 // CRM Module field type enum values
@@ -1634,6 +1641,12 @@ export const SEEDED_WORKSPACE_ID = "seeded";
 export const SEEDED_OWNER_ROLE_ID = "seeded-owner";
 export const SEEDED_ADMINISTRATOR_ROLE_ID = "seeded-administrator";
 export const SEEDED_MEMBER_ROLE_ID = "seeded-member";
+
+/** Second Workspace in the parallel v2 environment so the switcher can be demonstrated (#183). */
+export const PARALLEL_WORKSPACE_ID = "parallel";
+export const PARALLEL_OWNER_ROLE_ID = "parallel-owner";
+export const PARALLEL_ADMINISTRATOR_ROLE_ID = "parallel-administrator";
+export const PARALLEL_MEMBER_ROLE_ID = "parallel-member";
 
 export const workspaceRoleSlugValues = ["owner", "administrator", "member"] as const;
 export type WorkspaceRoleSlug = (typeof workspaceRoleSlugValues)[number];

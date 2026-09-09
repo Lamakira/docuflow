@@ -270,6 +270,7 @@ export type TimerChipInput = {
   displayDuration: number;
   projectLabel: string | null;
   taskLabel: string | null;
+  workspaceLabel?: string | null;
 };
 
 export type TimerChipModel = {
@@ -291,6 +292,7 @@ export function formatElapsedClock(seconds: number): string {
 
 export function timerChipModel(input: TimerChipInput): TimerChipModel {
   const clock = formatElapsedClock(input.displayDuration);
+  const workspaceLabel = input.workspaceLabel?.trim() || null;
   if (input.isRunning) {
     return {
       appearance: "running",
@@ -298,7 +300,7 @@ export function timerChipModel(input: TimerChipInput): TimerChipModel {
       pagePrimary: "case-ink",
       clock,
       title: input.projectLabel ?? "Timer running",
-      subtitle: input.taskLabel,
+      subtitle: workspaceLabel ?? input.taskLabel,
     };
   }
   if (input.isPaused || input.hasActiveEntry) {
@@ -308,7 +310,7 @@ export function timerChipModel(input: TimerChipInput): TimerChipModel {
       pagePrimary: "case-ink",
       clock,
       title: "Timer paused",
-      subtitle: input.taskLabel,
+      subtitle: workspaceLabel ?? input.taskLabel,
     };
   }
   return {

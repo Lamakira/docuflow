@@ -1,6 +1,6 @@
 import type { Express, RequestHandler } from "express";
 import { z } from "zod";
-import { isAuthenticated } from "../../auth";
+import { isAuthenticated, getUserId } from "../../auth";
 import {
   canManageWebhookEndpoints,
   createWebhookEndpoint,
@@ -12,6 +12,11 @@ import {
   UnknownWebhookEventTypeError,
   WebhookEndpointNotFoundError,
 } from "./webhookEndpoints";
+import {
+  InvalidActiveWorkspaceError,
+  listMemberships,
+  setActiveWorkspace,
+} from "./activeWorkspace";
 
 const createBody = z.object({
   url: z.string().url(),
@@ -89,6 +94,35 @@ export function registerWebhookEndpointRoutes(app: Express): void {
       res.json(await rotateWebhookEndpointSecret(req.params.id));
     } catch (error) {
       if (!notFound(res, error)) throw error;
+    }
+  });
+}
+
+/**
+ * User-global Membership list and Active Workspace preference (#183).
+ * Session cookies only. Errors stay `{ message }`.
+ */
+export function registerActiveWorkspaceRoutes(app: Express): void {
+  app.get("/api/memberships", isAuthenticated, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    res.json(await listMemberships(userId));
+  });
+
+  app.put("/api/memberships/active", isAuthenticated, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const parsed = z.object({ workspaceId: z.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });
+    }
+    try {
+      res.json(await setActiveWorkspace(userId, parsed.data.workspaceId));
+    } catch (error) {
+      if (error instanceof InvalidActiveWorkspaceError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
+      throw error;
     }
   });
 }

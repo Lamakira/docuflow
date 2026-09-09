@@ -14,9 +14,10 @@ type V2CommandBarProps = {
   workspaceName: string;
   panel: Panel;
   onPanel: (panel: Panel) => void;
+  timerWorkspaceLabel?: string | null;
 };
 
-export function V2CommandBar({ workspaceName, panel, onPanel }: V2CommandBarProps) {
+export function V2CommandBar({ workspaceName, panel, onPanel, timerWorkspaceLabel = null }: V2CommandBarProps) {
   const [location] = useLocation();
   const crumbs = breadcrumbFor(location, workspaceName);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -69,7 +70,7 @@ export function V2CommandBar({ workspaceName, panel, onPanel }: V2CommandBarProp
 
         <div style={{ flex: 1 }} />
 
-        <V2TimerChip />
+        <V2TimerChip workspaceLabel={timerWorkspaceLabel} />
 
         <button
           type="button"

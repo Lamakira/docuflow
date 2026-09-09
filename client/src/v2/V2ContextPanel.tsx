@@ -3,6 +3,7 @@ import { CloseIcon } from "./icons";
 import type { NotificationWithDetails } from "@shared/schema";
 import type { V2ChromeLayout, V2CommandPanel } from "./presentation";
 import { EMPTY_TIMESHEET_APPROVALS } from "./today";
+import { notificationOrigin } from "./workspace";
 
 export function V2ContextPanel({
   panel,
@@ -95,9 +96,7 @@ export function V2ContextPanel({
                 {notification.message || "Notification"}
               </span>
               <span className="df-mono" style={{ fontSize: 10, color: "#59657A" }}>
-                {notification.createdAt
-                  ? new Date(notification.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                  : ""}
+                {notificationOrigin(notification)}
               </span>
             </div>
           ))
