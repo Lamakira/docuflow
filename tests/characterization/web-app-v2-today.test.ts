@@ -43,7 +43,7 @@ describe("Today desktop from live Workspace records (#172)", () => {
     }
   });
 
-  it("lists Active Projects from this Workspace and opens the v2 Dossier placeholder", () => {
+  it("lists Active Projects from this Workspace and opens the Project Dossier", () => {
     const today = composeToday(
       emptyInput({
         projects: [
@@ -91,7 +91,7 @@ describe("Today desktop from live Workspace records (#172)", () => {
     expect(row.budgetPercent).toBe(62);
     expect(row.trackedMtd).toBe("71.7 h");
     expect(row.href).toBe("/projects/prj-live");
-    expect(matchV2Route(row.href).kind).toBe("placeholder");
+    expect(matchV2Route(row.href).kind).toBe("dossier");
     expect(JSON.stringify(today.projects)).not.toContain("Keystone");
   });
 

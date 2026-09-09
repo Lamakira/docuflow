@@ -52,8 +52,6 @@ describe("v2 chrome behind the client flag (#171)", () => {
       "/opportunities",
       "/clients",
       "/projects",
-      "/projects/abc",
-      "/projects/abc/tasks",
       "/documents",
       "/project-documentation",
       "/time",
