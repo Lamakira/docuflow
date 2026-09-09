@@ -296,6 +296,12 @@ function composeKnowledge(input: TodayInput): KnowledgeRow[] {
   }));
 }
 
+export function mobileProjectMeta(
+  row: Pick<ActiveProjectRow, "clientLabel" | "status" | "trackedMtd">,
+): string {
+  return `${row.clientLabel} · ${row.status} · ${row.trackedMtd}`;
+}
+
 export const EMPTY_TIMESHEET_APPROVALS = {
   empty: true as const,
   kicker: "APPROVAL QUEUE",

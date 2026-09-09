@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { signOutOfIdentityProvider } from "@/lib/identitySession";
 import { queryClient } from "@/lib/queryClient";
 import {
+  CloseIcon,
   CollapseIcon,
   KebabIcon,
   RailIcon,
@@ -23,6 +24,7 @@ type V2RailProps = {
   workspaceName: string;
   memberCount: number;
   projectCount: number;
+  drawer?: boolean;
 };
 
 export function V2Rail({
@@ -31,6 +33,7 @@ export function V2Rail({
   workspaceName,
   memberCount,
   projectCount,
+  drawer = false,
 }: V2RailProps) {
   const [location] = useLocation();
   const { user } = useAuth();
@@ -63,7 +66,12 @@ export function V2Rail({
   }
 
   return (
-    <aside className="df-rail" data-collapsed={collapsed ? "true" : "false"} data-testid="v2-rail">
+    <aside
+      className="df-rail"
+      data-collapsed={collapsed ? "true" : "false"}
+      data-drawer={drawer ? "true" : "false"}
+      data-testid="v2-rail"
+    >
       <div className="df-rail-head">
         <div
           style={{
@@ -75,12 +83,12 @@ export function V2Rail({
           {!collapsed ? <span className="df-brand">DocuFlow</span> : null}
           <button
             type="button"
-            title={collapsed ? "Expand navigation" : "Collapse navigation"}
+            title={drawer ? "Close navigation" : collapsed ? "Expand navigation" : "Collapse navigation"}
             onClick={onToggleCollapse}
             style={{ display: "flex", padding: 3, borderRadius: 5, background: "transparent", border: 0, cursor: "pointer" }}
             data-testid="v2-rail-collapse"
           >
-            <CollapseIcon />
+            {drawer ? <CloseIcon /> : <CollapseIcon />}
           </button>
         </div>
 

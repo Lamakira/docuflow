@@ -10,7 +10,8 @@ import type {
   SafeUser,
 } from "@shared/schema";
 import { useV2Chrome } from "./V2Shell";
-import { composeToday, type TodayInput, type TodayProject } from "./today";
+import { SparkleIcon } from "./icons";
+import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -67,11 +68,24 @@ function meterFill(status: string): string {
   return "#0F1524";
 }
 
+function TodayActionBar({ onApprovals, onAsk }: { onApprovals: () => void; onAsk: () => void }) {
+  return (
+    <div className="df-action-bar" data-testid="v2-action-bar">
+      <button type="button" className="df-ink-btn df-action-primary" onClick={onApprovals}>
+        Resolve approvals
+      </button>
+      <button type="button" className="df-action-ask" data-testid="v2-ask" aria-label="Ask DocuFlow" onClick={onAsk}>
+        <SparkleIcon />
+      </button>
+    </div>
+  );
+}
+
 export function V2TodayPage() {
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
   const { isRunning } = useTimeTracker();
-  const { openPanel } = useV2Chrome();
+  const { openPanel, layout } = useV2Chrome();
   const dayStart = useMemo(() => startOfDay(now), [now]);
   const dayEnd = useMemo(() => endOfDay(now), [now]);
   const monthStart = useMemo(() => startOfMonth(now), [now]);
@@ -130,34 +144,40 @@ export function V2TodayPage() {
 
   if (projectsLoading) {
     return (
-      <div className="df-page" data-testid="v2-today">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Today</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
+      <div className="df-page df-today" data-testid="v2-today">
+        <div className="df-today-body">
+          <header className="df-today-head">
+            <div>
+              <h1 className="df-title">Today</h1>
+              <p className="df-subhead">Loading this Workspace…</p>
+            </div>
+          </header>
+          <div className="df-card" style={{ minHeight: 160 }} />
+          <div className="df-card" style={{ minHeight: 200 }} />
+          <div className="df-split">
+            <div className="df-card" style={{ minHeight: 180 }} />
+            <div className="df-card" style={{ minHeight: 180 }} />
           </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 160 }} />
-        <div className="df-card" style={{ minHeight: 200 }} />
-        <div className="df-split">
-          <div className="df-card" style={{ minHeight: 180 }} />
-          <div className="df-card" style={{ minHeight: 180 }} />
         </div>
+        {layout.actionBar ? (
+          <TodayActionBar onApprovals={() => openPanel("approvals")} onAsk={() => openPanel("ask")} />
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="df-page" data-testid="v2-today">
+    <div className="df-page df-today" data-testid="v2-today">
+      <div className="df-today-body">
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div className="df-today-title-row">
             <h1 className="df-title">Today</h1>
             <span className="df-date-chip">{today.dateChip}</span>
           </div>
           <p className="df-subhead">{today.subhead}</p>
         </div>
-        <button type="button" className="df-ink-btn" onClick={() => openPanel("approvals")}>
+        <button type="button" className="df-ink-btn df-today-resolve" onClick={() => openPanel("approvals")}>
           Resolve approvals
         </button>
       </header>
@@ -168,7 +188,7 @@ export function V2TodayPage() {
             <h2 className="df-card-title">Needs attention</h2>
             <span className="df-count-chip">{today.attention.length} ITEMS</span>
           </div>
-          <span className="df-mono" style={{ fontSize: 10, color: "#8A94A6", letterSpacing: "0.06em" }}>
+          <span className="df-mono df-attention-sort" style={{ fontSize: 10, color: "#8A94A6", letterSpacing: "0.06em" }}>
             SORTED BY IMPACT
           </span>
         </div>
@@ -196,7 +216,7 @@ export function V2TodayPage() {
             VIEW ALL {projectTotal}
           </Link>
         </div>
-        <div className="df-register-head">
+        <div className="df-register-head df-desktop-only">
           <span>PROJECT / CLIENT</span>
           <span>STATUS</span>
           <span>LEAD</span>
@@ -213,43 +233,57 @@ export function V2TodayPage() {
               className="df-register-row"
               data-testid={`v2-project-row-${row.id}`}
             >
-              <span style={{ minWidth: 0 }}>
-                <div className="df-row-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {row.name}
-                </div>
-                <div className="df-mono df-meta">
-                  {row.clientLabel} · {row.kindLabel}
-                </div>
-              </span>
-              <span>
-                <span className="df-status" data-status={row.status}>
-                  {row.status}
+              {layout.stackedRegister ? (
+                <span className="df-project-mobile">
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <div className="df-row-title">{row.name}</div>
+                    <div className="df-mono df-meta">{mobileProjectMeta(row)}</div>
+                  </span>
+                  <span className="df-mono" style={{ fontSize: 11 }}>
+                    {row.budgetPercent == null ? "—" : `${row.budgetPercent}%`}
+                  </span>
                 </span>
-              </span>
-              <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.lead}</span>
-              <span>
-                {row.budgetPercent == null ? (
-                  <span className="df-mono df-meta">—</span>
-                ) : (
-                  <span className="df-meter-row">
-                    <span className="df-meter">
-                      <span
-                        className="df-meter-fill"
-                        style={{
-                          width: `${Math.min(100, row.budgetPercent)}%`,
-                          background: meterFill(row.status),
-                        }}
-                      />
-                    </span>
-                    <span className="df-mono" style={{ fontSize: 11, width: 36 }}>
-                      {row.budgetPercent}%
+              ) : (
+                <>
+                  <span style={{ minWidth: 0 }}>
+                    <div className="df-row-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {row.name}
+                    </div>
+                    <div className="df-mono df-meta">
+                      {row.clientLabel} · {row.kindLabel}
+                    </div>
+                  </span>
+                  <span>
+                    <span className="df-status" data-status={row.status}>
+                      {row.status}
                     </span>
                   </span>
-                )}
-              </span>
-              <span className="df-mono" style={{ fontSize: 12, textAlign: "right" }}>
-                {row.trackedMtd}
-              </span>
+                  <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.lead}</span>
+                  <span>
+                    {row.budgetPercent == null ? (
+                      <span className="df-mono df-meta">—</span>
+                    ) : (
+                      <span className="df-meter-row">
+                        <span className="df-meter">
+                          <span
+                            className="df-meter-fill"
+                            style={{
+                              width: `${Math.min(100, row.budgetPercent)}%`,
+                              background: meterFill(row.status),
+                            }}
+                          />
+                        </span>
+                        <span className="df-mono" style={{ fontSize: 11, width: 36 }}>
+                          {row.budgetPercent}%
+                        </span>
+                      </span>
+                    )}
+                  </span>
+                  <span className="df-mono" style={{ fontSize: 12, textAlign: "right" }}>
+                    {row.trackedMtd}
+                  </span>
+                </>
+              )}
             </Link>
           ))
         )}
@@ -313,6 +347,10 @@ export function V2TodayPage() {
           )}
         </section>
       </div>
+      </div>
+      {layout.actionBar ? (
+        <TodayActionBar onApprovals={() => openPanel("approvals")} onAsk={() => openPanel("ask")} />
+      ) : null}
     </div>
   );
 }

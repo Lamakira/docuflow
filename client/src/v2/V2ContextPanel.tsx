@@ -1,20 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { CloseIcon } from "./icons";
 import type { NotificationWithDetails } from "@shared/schema";
-import type { V2CommandPanel } from "./presentation";
+import type { V2ChromeLayout, V2CommandPanel } from "./presentation";
 import { EMPTY_TIMESHEET_APPROVALS } from "./today";
 
 export function V2ContextPanel({
   panel,
   onClose,
+  surface = "side-panel",
 }: {
   panel: V2CommandPanel;
   onClose: () => void;
+  surface?: V2ChromeLayout["context"];
 }) {
   const title =
     panel === "ask" ? "Ask DocuFlow" : panel === "approvals" ? EMPTY_TIMESHEET_APPROVALS.title : "Notifications";
   const kicker =
     panel === "ask" ? "ASK" : panel === "approvals" ? EMPTY_TIMESHEET_APPROVALS.kicker : "INBOX";
+  const sheet = surface === "sheet";
 
   const { data: notifications = [] } = useQuery<NotificationWithDetails[]>({
     queryKey: ["/api/notifications"],
@@ -22,10 +25,17 @@ export function V2ContextPanel({
   });
 
   return (
-    <aside className="df-panel" data-testid={`v2-panel-${panel}`}>
+    <aside
+      className={sheet ? "df-sheet" : "df-panel"}
+      data-testid={sheet ? `v2-sheet-${panel}` : `v2-panel-${panel}`}
+      aria-label={title}
+    >
+      {sheet ? (
+        <button type="button" className="df-sheet-handle" aria-label="Close" onClick={onClose} />
+      ) : null}
       <header
         style={{
-          padding: "14px 16px",
+          padding: sheet ? "12px 16px 13px" : "14px 16px",
           borderBottom: "1px solid #D8DEE6",
           display: "flex",
           alignItems: "flex-start",
@@ -36,9 +46,22 @@ export function V2ContextPanel({
           <div className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.08em" }}>
             {kicker}
           </div>
-          <div style={{ fontFamily: "var(--df-font-display)", fontWeight: 700, fontSize: 18 }}>{title}</div>
+          <div
+            style={{
+              fontFamily: "var(--df-font-display)",
+              fontWeight: 700,
+              fontSize: sheet ? 19 : 18,
+            }}
+          >
+            {title}
+          </div>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close panel" style={{ background: "transparent", border: 0, cursor: "pointer", padding: 4 }}>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close panel"
+          style={{ background: "transparent", border: 0, cursor: "pointer", padding: 4 }}
+        >
           <CloseIcon />
         </button>
       </header>
@@ -80,6 +103,13 @@ export function V2ContextPanel({
           ))
         )}
       </div>
+      {sheet ? (
+        <div className="df-sheet-foot">
+          <button type="button" className="df-ghost-btn df-sheet-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      ) : null}
     </aside>
   );
 }

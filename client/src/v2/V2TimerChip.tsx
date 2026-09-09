@@ -2,7 +2,7 @@ import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { PlayIcon, PauseIcon } from "./icons";
 import { timerChipModel } from "./presentation";
 
-export function V2TimerChip() {
+export function V2TimerChip({ variant = "chip" }: { variant?: "chip" | "strip" }) {
   const {
     activeEntry,
     displayDuration,
@@ -35,12 +35,15 @@ export function V2TimerChip() {
     else if (model.appearance === "paused") handleResume();
   }
 
+  const strip = variant === "strip";
+  if (strip && model.appearance === "idle") return null;
+
   return (
     <button
       type="button"
-      className="df-chip"
+      className={strip ? "df-timer-strip" : "df-chip"}
       data-appearance={model.appearance}
-      data-testid="v2-timer-chip"
+      data-testid={strip ? "v2-timer-strip" : "v2-timer-chip"}
       data-amber={model.holdsAmber ? "true" : "false"}
       onClick={onToggle}
       disabled={model.appearance === "idle"}
@@ -54,17 +57,17 @@ export function V2TimerChip() {
           flex: "none",
         }}
       />
-      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, minWidth: 0 }}>
+      <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3, minWidth: 0, flex: strip ? 1 : undefined }}>
         <span
           className={model.appearance === "running" ? undefined : "df-nav"}
           style={{
             fontWeight: 500,
-            fontSize: model.appearance === "paused" ? 12 : 11.5,
+            fontSize: strip ? 12 : model.appearance === "paused" ? 12 : 11.5,
             color: model.appearance === "running" ? "#0F1524" : "#59657A",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            maxWidth: 180,
+            maxWidth: strip ? "none" : 180,
           }}
         >
           {model.title}
@@ -82,7 +85,7 @@ export function V2TimerChip() {
         className="df-mono"
         style={{
           fontWeight: 700,
-          fontSize: 14,
+          fontSize: strip ? 15 : 14,
           minWidth: 74,
           textAlign: "right",
           color: model.appearance === "running" ? "#0F1524" : "#59657A",
@@ -92,7 +95,7 @@ export function V2TimerChip() {
       </span>
       {model.appearance === "running" ? (
         <>
-          <span style={{ width: 1, height: 20, background: "var(--df-amber)", opacity: 0.4 }} />
+          {strip ? null : <span style={{ width: 1, height: 20, background: "var(--df-amber)", opacity: 0.4 }} />}
           <PauseIcon />
         </>
       ) : model.appearance === "paused" ? (
