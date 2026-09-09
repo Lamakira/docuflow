@@ -27,5 +27,13 @@ transcript.txt
 .idea/
 
 # Harness build output (npm run harness serves from source; build writes here)
-desktop-agent/.harness/.local-dev/
+desktop-agent/.harness/
 .local-dev/
+
+# Local design exploration and prototype HTML — not app or Replit runtime
+docs/design/
+docs/web-app-v2/AMENDMENTS.md
+docs/web-app-v2/design_handoff_docuflow_anchor_batch/
+docs/web-app-v2/directions/
+docs/web-app-v2/mockups/
+docs/web-app-v2/research/
