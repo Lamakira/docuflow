@@ -82,6 +82,8 @@ const DOSSIER_TAB_SET = new Set<string>(DOSSIER_TAB_IDS);
 export type V2Match =
   | { kind: "today"; title: "Today"; href: "/" }
   | { kind: "auth-redirect"; title: "Today"; href: "/" }
+  | { kind: "projects"; title: "Projects"; href: "/projects" }
+  | { kind: "legacy-project"; title: "Projects"; href: "/projects"; legacyProjectId: string }
   | { kind: "dossier"; title: string; href: "/projects"; projectId: string; tab: DossierTabId }
   | { kind: "documents"; title: "Workspace Documents"; href: "/documents" }
   | { kind: "placeholder"; title: string; href: string };
@@ -150,7 +152,6 @@ export const V2_NAV: V2NavSection[] = [
 const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> = [
   { href: "/opportunities", title: "Opportunities" },
   { href: "/clients", title: "Clients" },
-  { href: "/projects", title: "Projects" },
   { href: "/project-documentation", title: "Project Documentation" },
   { href: "/time", title: "Time Tracking" },
   { href: "/activity", title: "Activity" },
@@ -161,7 +162,7 @@ const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> 
 ];
 
 const V1_TO_PLACEHOLDER: Array<{ test: (path: string) => boolean; href: string; title: string }> = [
-  { test: (path) => path === "/crm" || path.startsWith("/crm/"), href: "/clients", title: "Clients" },
+  { test: (path) => path.startsWith("/crm/client"), href: "/clients", title: "Clients" },
   { test: (path) => path === "/company-documents" || path.startsWith("/company-documents/"), href: "/documents", title: "Workspace Documents" },
   { test: (path) => path === "/time-tracking/devices" || path.startsWith("/time-tracking/devices/"), href: "/devices", title: "Devices" },
   { test: (path) => path === "/devices" || path.startsWith("/devices/"), href: "/devices", title: "Devices" },
@@ -170,9 +171,20 @@ const V1_TO_PLACEHOLDER: Array<{ test: (path: string) => boolean; href: string; 
   { test: (path) => path === "/help-center" || path.startsWith("/help-center/"), href: "/help", title: "Help Center" },
   { test: (path) => path === "/documentation" || path.startsWith("/documentation/"), href: "/project-documentation", title: "Project Documentation" },
   { test: (path) => path === "/daily-update" || path.startsWith("/daily-update/"), href: "/daily-update", title: "Daily Update" },
-  { test: (path) => path.startsWith("/project/"), href: "/projects", title: "Projects" },
   { test: (path) => path.startsWith("/document/"), href: "/documents", title: "Workspace Documents" },
 ];
+
+function parseV1ProjectRecord(pathname: string): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] !== "crm" || parts[1] !== "project" || !parts[2] || parts[2] === "new") return null;
+  return parts[2];
+}
+
+function parseLegacyProjectPath(pathname: string): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] !== "project" || !parts[1]) return null;
+  return parts[1];
+}
 
 export function parseDossierPath(pathname: string): { projectId: string; tab: DossierTabId } | null {
   const parts = pathname.split("/").filter(Boolean);
@@ -193,6 +205,31 @@ export function matchV2Route(path: string): V2Match {
   }
   if (pathname.startsWith("/documents/")) {
     return { kind: "placeholder", title: "Document", href: "/documents" };
+  }
+
+  if (pathname === "/projects" || pathname === "/crm" || pathname === "/crm/project/new") {
+    return { kind: "projects", title: "Projects", href: "/projects" };
+  }
+
+  const projectId = parseV1ProjectRecord(pathname);
+  if (projectId) {
+    return {
+      kind: "dossier",
+      title: "Overview",
+      href: "/projects",
+      projectId,
+      tab: "overview",
+    };
+  }
+
+  const legacyProjectId = parseLegacyProjectPath(pathname);
+  if (legacyProjectId) {
+    return {
+      kind: "legacy-project",
+      title: "Projects",
+      href: "/projects",
+      legacyProjectId,
+    };
   }
 
   const dossier = parseDossierPath(pathname);
@@ -229,6 +266,7 @@ export function navIdForPath(path: string): V2NavId | null {
   const match = matchV2Route(path);
   if (match.kind === "today" || match.kind === "auth-redirect") return "today";
   if (match.kind === "documents") return "documents";
+  if (match.kind === "projects" || match.kind === "legacy-project") return "projects";
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -249,6 +287,12 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
       { label: workspace, href: "/" },
       { label: "PROJECTS", href: "/projects" },
       { label: match.tab.toUpperCase() },
+    ];
+  }
+  if (match.kind === "projects" || match.kind === "legacy-project") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "PROJECTS" },
     ];
   }
   if (match.kind === "documents") {
