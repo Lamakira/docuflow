@@ -11,9 +11,25 @@ export function authenticatedPresentation(v2Enabled: boolean): AuthenticatedPres
 
 export type V2CommandPanel = "ask" | "notifications" | "approvals";
 
+export const DOSSIER_TAB_IDS = [
+  "overview",
+  "tasks",
+  "time",
+  "activity",
+  "updates",
+  "documents",
+  "files",
+  "settings",
+] as const;
+
+export type DossierTabId = (typeof DOSSIER_TAB_IDS)[number];
+
+const DOSSIER_TAB_SET = new Set<string>(DOSSIER_TAB_IDS);
+
 export type V2Match =
   | { kind: "today"; title: "Today"; href: "/" }
   | { kind: "auth-redirect"; title: "Today"; href: "/" }
+  | { kind: "dossier"; title: string; href: "/projects"; projectId: string; tab: DossierTabId }
   | { kind: "placeholder"; title: string; href: string };
 
 export type V2NavId =
@@ -80,7 +96,7 @@ export const V2_NAV: V2NavSection[] = [
 const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> = [
   { href: "/opportunities", title: "Opportunities" },
   { href: "/clients", title: "Clients" },
-  { href: "/projects", title: "Projects", prefixes: ["/projects/"] },
+  { href: "/projects", title: "Projects" },
   { href: "/documents", title: "Workspace Documents" },
   { href: "/project-documentation", title: "Project Documentation" },
   { href: "/time", title: "Time Tracking" },
@@ -105,10 +121,31 @@ const V1_TO_PLACEHOLDER: Array<{ test: (path: string) => boolean; href: string; 
   { test: (path) => path.startsWith("/document/"), href: "/documents", title: "Workspace Documents" },
 ];
 
+export function parseDossierPath(pathname: string): { projectId: string; tab: DossierTabId } | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] !== "projects" || parts.length < 2) return null;
+  if (parts.length === 2) return { projectId: parts[1], tab: "overview" };
+  if (parts.length === 3 && DOSSIER_TAB_SET.has(parts[2])) {
+    return { projectId: parts[1], tab: parts[2] as DossierTabId };
+  }
+  return null;
+}
+
 export function matchV2Route(path: string): V2Match {
   const pathname = path.split("?")[0] || "/";
   if (pathname === "/auth") return { kind: "auth-redirect", title: "Today", href: "/" };
   if (pathname === "/") return { kind: "today", title: "Today", href: "/" };
+
+  const dossier = parseDossierPath(pathname);
+  if (dossier) {
+    return {
+      kind: "dossier",
+      title: dossier.tab === "overview" ? "Overview" : dossier.tab.replace(/^\w/, (ch) => ch.toUpperCase()),
+      href: "/projects",
+      projectId: dossier.projectId,
+      tab: dossier.tab,
+    };
+  }
 
   for (const entry of PLACEHOLDERS) {
     if (pathname === entry.href) return { kind: "placeholder", title: entry.title, href: entry.href };
@@ -145,6 +182,13 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "TODAY" },
+    ];
+  }
+  if (match.kind === "dossier") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "PROJECTS", href: "/projects" },
+      { label: match.tab.toUpperCase() },
     ];
   }
   return [
