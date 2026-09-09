@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BellIcon, MenuIcon, SearchIcon } from "./icons";
 import { SearchOverlay } from "./V2CommandBar";
+import { selectCommandPanel } from "./chrome";
 import { workspaceInitials, type V2CommandPanel } from "./presentation";
 
 type V2AppBarProps = {
@@ -60,7 +61,7 @@ export function V2AppBar({ workspaceName, panel, onPanel, onMenu }: V2AppBarProp
           className="df-app-icon"
           data-testid="v2-notifications"
           aria-label="Notifications"
-          onClick={() => onPanel(panel === "notifications" ? null : "notifications")}
+          onClick={() => onPanel(selectCommandPanel(panel, "notifications"))}
         >
           <BellIcon />
           {unreadCount > 0 ? <span className="df-badge">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}

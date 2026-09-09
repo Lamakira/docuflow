@@ -3,8 +3,10 @@
  * curves. Frequency then purpose: if either fails, the output is no animation.
  *
  * Do not animate: search `/`, command-palette overlays, rail destination
- * clicks, focus jumps, Workspace chooser pointer/keyboard, Timer chip on switch.
+ * clicks, focus jumps, Workspace chooser pointer/keyboard, Timer chip on switch,
+ * search keystrokes, result-list filtering.
  * Workspace switch content may crossfade (occasional; preventing a jarring change).
+ * Toasts enter and exit the same bottom edge (occasional; spatial consistency).
  */
 
 export const V2_MOTION_TOKENS = {
@@ -26,7 +28,8 @@ export type MotionSurface =
   | "workspace-switch"
   | "workspace-chooser-pointer"
   | "workspace-chooser-keyboard"
-  | "timer-chip";
+  | "timer-chip"
+  | "toast";
 
 export type MotionRecipe = {
   enterExit: "instant" | "standard" | "none";
@@ -48,6 +51,7 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "workspace-chooser-pointer": "keyboard-or-100+",
   "workspace-chooser-keyboard": "keyboard-or-100+",
   "timer-chip": "keyboard-or-100+",
+  toast: "occasional",
 };
 
 export function motionForSurface(

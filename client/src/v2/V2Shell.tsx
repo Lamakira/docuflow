@@ -9,7 +9,9 @@ import { V2CommandBar } from "./V2CommandBar";
 import { V2ContextPanel } from "./V2ContextPanel";
 import { V2Rail } from "./V2Rail";
 import { V2TimerChip } from "./V2TimerChip";
+import { V2ToastHost, type V2Toast } from "./V2Toast";
 import { V2WorkspaceChooser } from "./V2WorkspaceChooser";
+import { selectCommandPanel } from "./chrome";
 import {
   chromeLayoutForViewport,
   contextSurface,
@@ -68,6 +70,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
     typeof window === "undefined" ? false : readRailCollapsed(window.localStorage),
   );
   const [panel, setPanel] = useState<V2CommandPanel | null>(null);
+  const [toast, setToast] = useState<V2Toast | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const width = useViewportWidth();
   const layout = chromeLayoutForViewport(width);
@@ -118,7 +121,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
     () => ({
       openPanel: (next: V2CommandPanel) => {
         setNavOpen(false);
-        setPanel(next);
+        setPanel((current) => selectCommandPanel(current, next));
       },
       layout,
       memberships,
@@ -139,6 +142,14 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
     memberships: memberships?.memberships ?? [],
     lastActiveWorkspaceId: memberships?.preferredWorkspaceId ?? null,
   });
+
+  function showToast(message: string, undo?: () => void) {
+    setToast({ id: Date.now(), message, undo, state: "in" });
+  }
+
+  function dismissToast() {
+    setToast((current) => (current ? { ...current, state: "leaving" } : null));
+  }
 
   function selectPanel(next: V2CommandPanel | null) {
     setNavOpen(false);
@@ -224,11 +235,14 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
                 panel={panel}
                 onPanel={selectPanel}
                 timerWorkspaceLabel={timerWorkspaceLabel}
+                onToast={showToast}
               />
             )}
             <div className="df-chrome-body">
               <div className="df-stage">
-                {layout.timer === "strip" ? <V2TimerChip variant="strip" workspaceLabel={timerWorkspaceLabel} /> : null}
+                {layout.timer === "strip" ? (
+                  <V2TimerChip variant="strip" workspaceLabel={timerWorkspaceLabel} onToast={showToast} />
+                ) : null}
                 <main className="df-main" data-motion={RAIL_DESTINATION_MOTION}>
                   <div
                     key={memberships?.activeWorkspaceId ?? "workspace"}
@@ -246,6 +260,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </div>
+        <V2ToastHost toast={toast} onDismiss={dismissToast} onGone={() => setToast(null)} />
       </div>
     </V2ChromeContext.Provider>
   );

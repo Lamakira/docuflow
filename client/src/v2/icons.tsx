@@ -12,9 +12,12 @@ import {
   Monitor,
   MoreVertical,
   PanelLeft,
+  Check,
   Pause,
   Play,
   Search,
+  Send,
+  Square,
   Settings,
   Sparkles,
   Target,
@@ -84,4 +87,16 @@ export function KebabIcon() {
 
 export function CloseIcon() {
   return <X width={14} height={14} strokeWidth={1.4} color="#59657A" />;
+}
+
+export function CheckIcon() {
+  return <Check width={12} height={12} strokeWidth={1.8} color="#1F9D6B" />;
+}
+
+export function StopIcon() {
+  return <Square width={11} height={11} strokeWidth={1.6} color="#0F1524" fill="#0F1524" />;
+}
+
+export function SendIcon() {
+  return <Send width={14} height={14} strokeWidth={1.6} color="#fff" />;
 }
