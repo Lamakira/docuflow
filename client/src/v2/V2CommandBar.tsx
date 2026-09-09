@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { BellIcon, CloseIcon, SearchIcon, SparkleIcon } from "./icons";
 import { V2TimerChip } from "./V2TimerChip";
+import { composeSearch, selectCommandPanel, chromeRefusal, type SearchModel } from "./chrome";
 import { motionForSurface } from "./motion";
 import { type V2CommandPanel, breadcrumbFor } from "./presentation";
 
@@ -15,9 +16,16 @@ type V2CommandBarProps = {
   panel: Panel;
   onPanel: (panel: Panel) => void;
   timerWorkspaceLabel?: string | null;
+  onToast?: (message: string) => void;
 };
 
-export function V2CommandBar({ workspaceName, panel, onPanel, timerWorkspaceLabel = null }: V2CommandBarProps) {
+export function V2CommandBar({
+  workspaceName,
+  panel,
+  onPanel,
+  timerWorkspaceLabel = null,
+  onToast,
+}: V2CommandBarProps) {
   const [location] = useLocation();
   const crumbs = breadcrumbFor(location, workspaceName);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -70,13 +78,13 @@ export function V2CommandBar({ workspaceName, panel, onPanel, timerWorkspaceLabe
 
         <div style={{ flex: 1 }} />
 
-        <V2TimerChip workspaceLabel={timerWorkspaceLabel} />
+        <V2TimerChip workspaceLabel={timerWorkspaceLabel} onToast={onToast} />
 
         <button
           type="button"
           className="df-ghost-btn"
           data-testid="v2-ask"
-          onClick={() => onPanel(panel === "ask" ? null : "ask")}
+          onClick={() => onPanel(selectCommandPanel(panel, "ask"))}
         >
           <SparkleIcon />
           Ask DocuFlow
@@ -86,7 +94,7 @@ export function V2CommandBar({ workspaceName, panel, onPanel, timerWorkspaceLabe
           type="button"
           className="df-icon-btn"
           data-testid="v2-notifications"
-          onClick={() => onPanel(panel === "notifications" ? null : "notifications")}
+          onClick={() => onPanel(selectCommandPanel(panel, "notifications"))}
           aria-label="Notifications"
         >
           <BellIcon />
@@ -99,17 +107,65 @@ export function V2CommandBar({ workspaceName, panel, onPanel, timerWorkspaceLabe
   );
 }
 
+type WorkspaceDocumentSearch = {
+  documents?: Array<{ id: string; name: string; access?: string | null; folder?: { name: string } | null }>;
+  folders?: Array<{ id: string; name: string }>;
+  filteredByAccess?: boolean;
+  restrictedHidden?: number;
+};
+
+async function loadSearch(query: string): Promise<{ model: SearchModel; knowledgeRefusal: string | null }> {
+  const q = encodeURIComponent(query.trim());
+  const [searchRes, knowledgeRes] = await Promise.all([
+    fetch(`/api/search?q=${q}`, { credentials: "include" }),
+    fetch(`/api/company-documents/search?q=${q}`, { credentials: "include" }),
+  ]);
+  const searchBody = searchRes.ok ? await searchRes.json() : [];
+  const knowledge: WorkspaceDocumentSearch = knowledgeRes.ok ? await knowledgeRes.json() : { documents: [], folders: [] };
+  const hits = Array.isArray(searchBody) ? searchBody : (searchBody.results ?? []);
+  const accessFromBody = !Array.isArray(searchBody) && searchBody.filteredByAccess === true;
+  const accessFact =
+    accessFromBody || knowledge.filteredByAccess === true
+      ? {
+          filteredByAccess: true as const,
+          restrictedHidden:
+            !Array.isArray(searchBody) && typeof searchBody.restrictedHidden === "number"
+              ? searchBody.restrictedHidden
+              : knowledge.restrictedHidden,
+        }
+      : undefined;
+  return {
+    model: composeSearch({
+      query,
+      searchHits: hits,
+      workspaceDocuments: (knowledge.documents ?? []).map((document) => ({
+        id: document.id,
+        name: document.name,
+        access: document.access,
+        folderName: document.folder?.name,
+      })),
+      folders: knowledge.folders ?? [],
+      accessFact,
+    }),
+    knowledgeRefusal:
+      knowledgeRes.status === 401 || knowledgeRes.status === 403
+        ? chromeRefusal({ kind: "capability", capability: "View Workspace Documents" })
+        : null,
+  };
+}
+
 export function SearchOverlay({ workspaceName, onClose }: { workspaceName: string; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const { data: results = [] } = useQuery<Array<{ type: string; id: string; title: string; projectName?: string }>>({
-    queryKey: ["/api/search", query],
-    queryFn: () =>
-      query.trim()
-        ? fetch(`/api/search?q=${encodeURIComponent(query.trim())}`).then((res) => res.json())
-        : Promise.resolve([]),
-    enabled: query.trim().length > 0,
+  const trimmed = query.trim();
+  const { data, isFetching } = useQuery({
+    queryKey: ["/api/search", trimmed, "v2-chrome"],
+    queryFn: () => loadSearch(trimmed),
+    enabled: trimmed.length > 0,
   });
+  const rows = data?.model.rows ?? [];
+  const footer = data?.model.footer ?? null;
+  const knowledgeRefusal = data?.knowledgeRefusal ?? null;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -132,6 +188,7 @@ export function SearchOverlay({ workspaceName, onClose }: { workspaceName: strin
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={`Search ${workspaceName}`}
+            aria-label={`Search ${workspaceName}`}
             style={{
               flex: 1,
               border: 0,
@@ -144,34 +201,27 @@ export function SearchOverlay({ workspaceName, onClose }: { workspaceName: strin
             <CloseIcon />
           </button>
         </div>
-        <div>
-          {results.map((result) => (
-            <div
-              key={`${result.type}-${result.id}`}
-              style={{
-                display: "flex",
-                gap: 12,
-                padding: "12px 14px",
-                borderBottom: "1px solid #EAEDF1",
-              }}
-            >
-              <span className="df-mono" style={{ width: 74, fontSize: 10, color: "#59657A", textTransform: "uppercase" }}>
-                {result.type}
-              </span>
-              <span style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 500, fontSize: 13.5 }}>{result.title}</div>
-                {result.projectName ? (
-                  <div className="df-mono" style={{ fontSize: 10, color: "#59657A", textTransform: "uppercase" }}>
-                    {result.projectName}
-                  </div>
+        <div className="df-search-hits">
+          {knowledgeRefusal ? <p className="df-refusal">{knowledgeRefusal}</p> : null}
+          {trimmed && !isFetching && rows.length === 0 && !knowledgeRefusal ? (
+            <p style={{ padding: "14px", fontSize: 13.5, color: "#59657A" }}>No results in this Workspace.</p>
+          ) : (
+            rows.map((row) => (
+              <Link key={row.id} href={row.href} onClick={onClose} className="df-search-row">
+                <span className="df-mono" style={{ width: 74, flex: "none", fontSize: 10, color: "#59657A" }}>
+                  {row.kind}
+                </span>
+                <span style={{ minWidth: 0, flex: 1, fontWeight: 500, fontSize: 13.5 }}>{row.title}</span>
+                {row.meta ? (
+                  <span className="df-mono" style={{ fontSize: 10.5, color: "#59657A" }}>
+                    {row.meta}
+                  </span>
                 ) : null}
-              </span>
-            </div>
-          ))}
+              </Link>
+            ))
+          )}
         </div>
-        <div className="df-mono" style={{ padding: "10px 14px", fontSize: 10, color: "#59657A", background: "#F3F5F7" }}>
-          RESULTS FILTERED BY YOUR ACCESS
-        </div>
+        {footer ? <div className="df-search-foot">{footer}</div> : null}
       </div>
     </>
   );
