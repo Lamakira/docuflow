@@ -11,6 +11,59 @@ export function authenticatedPresentation(v2Enabled: boolean): AuthenticatedPres
 
 export type V2CommandPanel = "ask" | "notifications" | "approvals";
 
+export const V2_MOBILE_MAX_WIDTH = 639;
+export const V2_DESKTOP_CONTENT_MIN_WIDTH = 1060;
+
+export type V2ChromeLayout = {
+  mode: "desktop" | "mobile";
+  chrome: "command-bar" | "app-bar";
+  timer: "chip" | "strip";
+  context: "side-panel" | "sheet";
+  rail: "fixed" | "drawer";
+  contentMinWidth: number | null;
+  stackedRegister: boolean;
+  actionBar: boolean;
+};
+
+export function chromeLayoutForViewport(width: number): V2ChromeLayout {
+  if (width <= V2_MOBILE_MAX_WIDTH) {
+    return {
+      mode: "mobile",
+      chrome: "app-bar",
+      timer: "strip",
+      context: "sheet",
+      rail: "drawer",
+      contentMinWidth: null,
+      stackedRegister: true,
+      actionBar: true,
+    };
+  }
+  return {
+    mode: "desktop",
+    chrome: "command-bar",
+    timer: "chip",
+    context: "side-panel",
+    rail: "fixed",
+    contentMinWidth: V2_DESKTOP_CONTENT_MIN_WIDTH,
+    stackedRegister: false,
+    actionBar: false,
+  };
+}
+
+export type ContextSurface = {
+  kind: "none" | "side-panel" | "sheet";
+  route: string;
+};
+
+export function contextSurface(
+  panel: V2CommandPanel | null,
+  layout: V2ChromeLayout,
+  route: string,
+): ContextSurface {
+  if (!panel) return { kind: "none", route };
+  return { kind: layout.context, route };
+}
+
 export const DOSSIER_TAB_IDS = [
   "overview",
   "tasks",

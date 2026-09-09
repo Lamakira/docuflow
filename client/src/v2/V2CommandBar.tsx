@@ -95,7 +95,7 @@ export function V2CommandBar({ workspaceName, panel, onPanel }: V2CommandBarProp
   );
 }
 
-function SearchOverlay({ workspaceName, onClose }: { workspaceName: string; onClose: () => void }) {
+export function SearchOverlay({ workspaceName, onClose }: { workspaceName: string; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const { data: results = [] } = useQuery<Array<{ type: string; id: string; title: string; projectName?: string }>>({

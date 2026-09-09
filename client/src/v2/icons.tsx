@@ -8,6 +8,7 @@ import {
   Folder,
   Grid2x2,
   HelpCircle,
+  Menu,
   Monitor,
   MoreVertical,
   PanelLeft,
@@ -55,6 +56,10 @@ export function SwapIcon() {
 
 export function SearchIcon() {
   return <Search width={14} height={14} strokeWidth={1.4} color="#59657A" />;
+}
+
+export function MenuIcon() {
+  return <Menu width={18} height={18} strokeWidth={1.5} color="#0F1524" />;
 }
 
 export function SparkleIcon() {
