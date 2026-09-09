@@ -16,7 +16,10 @@ import {
   type V2ChromeLayout,
   type V2CommandPanel,
 } from "./presentation";
+import { motionForSurface } from "./motion";
 import "./tokens.css";
+
+const RAIL_DESTINATION_MOTION = motionForSurface("rail-destination").enterExit;
 
 const FONTSHARE_HREF =
   "https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700&f[]=switzer@400,500,600,700&display=swap";
@@ -184,7 +187,9 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
             <div className="df-chrome-body">
               <div className="df-stage">
                 {layout.timer === "strip" ? <V2TimerChip variant="strip" /> : null}
-                <main className="df-main">{children}</main>
+                <main className="df-main" data-motion={RAIL_DESTINATION_MOTION}>
+                  {children}
+                </main>
               </div>
               {panel && surface.kind !== "none" ? (
                 <V2ContextPanel panel={panel} onClose={() => setPanel(null)} surface={surface.kind} />

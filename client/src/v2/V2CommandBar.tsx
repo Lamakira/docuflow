@@ -3,7 +3,10 @@ import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { BellIcon, CloseIcon, SearchIcon, SparkleIcon } from "./icons";
 import { V2TimerChip } from "./V2TimerChip";
+import { motionForSurface } from "./motion";
 import { type V2CommandPanel, breadcrumbFor } from "./presentation";
+
+const SEARCH_MOTION = motionForSurface("search-overlay").enterExit;
 
 type Panel = V2CommandPanel | null;
 
@@ -113,8 +116,14 @@ export function SearchOverlay({ workspaceName, onClose }: { workspaceName: strin
 
   return (
     <>
-      <div className="df-overlay-scrim" onClick={onClose} />
-      <div className="df-overlay" role="dialog" aria-label={`Search ${workspaceName}`} data-testid="v2-search-overlay">
+      <div className="df-overlay-scrim" data-motion={SEARCH_MOTION} onClick={onClose} />
+      <div
+        className="df-overlay"
+        role="dialog"
+        aria-label={`Search ${workspaceName}`}
+        data-testid="v2-search-overlay"
+        data-motion={SEARCH_MOTION}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid #D8DEE6" }}>
           <SearchIcon />
           <input
