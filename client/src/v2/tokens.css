@@ -17,6 +17,17 @@
   --df-font-mono: "JetBrains Mono", ui-monospace, monospace;
   --df-rail-width: 240px;
   --df-rail-collapsed: 60px;
+  /* Motion substrate (#182). Later tickets use these; do not invent curves.
+     Ordinary UI: --ease-out. Drawers/sheets: --ease-drawer. On-screen morph: --ease-in-out.
+     Never ease-in on UI, never transition: all, never scale(0).
+     Hover transform belongs in (hover: hover) and (pointer: fine).
+     Search overlay and rail destination clicks stay instant. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-press: 160ms;
+  --duration-ui: 180ms;
+  --duration-drawer: 400ms;
   color: var(--df-case-ink);
   background: var(--df-cold-stock);
   font-family: var(--df-font-ui);
@@ -102,7 +113,8 @@
   width: var(--df-rail-width);
   background: var(--df-cold-stock);
   border-right: 1px solid var(--df-divider);
-  transition: width 160ms ease;
+  /* Handoff: collapse 160ms. Same duration token as press; reduced-motion drops it. */
+  transition: width var(--duration-press) var(--ease-out);
 }
 
 .df-rail[data-collapsed="true"] {
@@ -608,6 +620,8 @@
   inset: 0;
   background: rgba(15, 21, 36, 0.28);
   z-index: 40;
+  transition: none;
+  animation: none;
 }
 
 .df-overlay {
@@ -621,6 +635,8 @@
   box-shadow: 0 20px 50px rgba(15, 21, 36, 0.25);
   z-index: 41;
   overflow: hidden;
+  transition: none;
+  animation: none;
 }
 
 .df-user-card {
@@ -684,9 +700,56 @@
   display: none;
 }
 
+.df-v2 [data-motion="instant"] {
+  transition: none;
+  animation: none;
+}
+
+.df-search,
+.df-ghost-btn,
+.df-icon-btn,
+.df-app-icon,
+.df-chip,
+.df-timer-strip,
+.df-ws,
+.df-rail-item,
+.df-action-ask,
+.df-action-primary,
+.df-ink-btn {
+  transition: transform var(--duration-press) var(--ease-out);
+}
+
+.df-search:active,
+.df-ghost-btn:active,
+.df-icon-btn:active,
+.df-app-icon:active,
+.df-chip:active,
+.df-timer-strip:active,
+.df-ws:active,
+.df-rail-item:active,
+.df-action-ask:active,
+.df-action-primary:active,
+.df-ink-btn:active {
+  transform: scale(0.97);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .df-rail {
     transition: none;
+  }
+
+  .df-search:active,
+  .df-ghost-btn:active,
+  .df-icon-btn:active,
+  .df-app-icon:active,
+  .df-chip:active,
+  .df-timer-strip:active,
+  .df-ws:active,
+  .df-rail-item:active,
+  .df-action-ask:active,
+  .df-action-primary:active,
+  .df-ink-btn:active {
+    transform: none;
   }
 }
 
@@ -1190,6 +1253,8 @@
   min-width: 0;
   overflow-y: auto;
   background: var(--df-cold-stock);
+  transition: none;
+  animation: none;
 }
 
 .df-app-bar {
