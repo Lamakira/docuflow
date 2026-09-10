@@ -8,8 +8,9 @@ import { projectHref } from "./today";
 
 /**
  * Opportunities pipeline (#187).
- * Novelty: Opportunity Stage-change as state indication (the marker morphs).
- * Do not animate: pipeline scroll, dragging every card as decoration, initial mount of columns.
+ * Novelty: Opportunity Stage-change as state indication (the card moves to another Stage column).
+ * Do not animate: pipeline scroll, decorative card tilt, initial mount of columns.
+ * Pointer-follow drag is the write, not decoration.
  */
 
 export type OpportunityStageOption = {

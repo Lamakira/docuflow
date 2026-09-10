@@ -7,7 +7,7 @@
  * search keystrokes, result-list filtering.
  * Workspace switch content may crossfade (occasional; preventing a jarring change).
  * Client register → record may fade the body while identity stays (occasional; preventing a jarring change).
- * Opportunity Stage-change may morph the stage marker (occasional; state indication).
+ * Opportunity Stage-change moves the card to another Stage column (occasional; state indication).
  * Toasts enter and exit the same bottom edge (occasional; spatial consistency).
  */
 

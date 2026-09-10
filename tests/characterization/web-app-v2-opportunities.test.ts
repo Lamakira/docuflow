@@ -69,8 +69,12 @@ describe("Opportunities routing (#187)", () => {
     expect(appSource).toMatch(/path="\/opportunities"/);
     expect(appSource).toMatch(/path="\/opportunities"\s+component=\{V2OpportunitiesPage\}/);
     expect(pageSource).toContain('motionForSurface("opportunity-stage-change")');
-    expect(pageSource).toContain("df-opportunity-move");
-    expect(pageSource).toContain("Move {card.name}");
+    expect(pageSource).toContain("DragDropContext");
+    expect(pageSource).toContain("Droppable");
+    expect(pageSource).toContain("Draggable");
+    expect(pageSource).toContain("isDragDisabled");
+    expect(pageSource).not.toContain("df-opportunity-move");
+    expect(pageSource).not.toContain("Move {card.name}");
     expect(pageSource).not.toContain("df-opportunity-stage-input");
     expect(pageSource).not.toContain("df-opportunity-stage-control");
   });
@@ -247,7 +251,7 @@ describe("Opportunity Stage writes (#187)", () => {
 });
 
 describe("Opportunity Stage-change motion (#187)", () => {
-  it("morphs the stage marker and keeps reduced-motion as opacity only", () => {
+  it("moves the Opportunity between Stage columns and keeps reduced-motion from adding extra movement", () => {
     const motion = motionForSurface("opportunity-stage-change");
     expect(motion.enterExit).toBe("standard");
     expect(motion.keepOpacity).toBe(true);
@@ -257,22 +261,25 @@ describe("Opportunity Stage-change motion (#187)", () => {
     expect(reduced.keepOpacity).toBe(true);
     expect(reduced.enterExit).toBe("standard");
 
-    expect(rule(".df-opportunity-card[data-motion=\"standard\"]")).toMatch(/opacity/);
-    expect(css).toMatch(/@starting-style[\s\S]*\.df-opportunity-card\[data-motion="standard"\]/);
-    expect(reducedMotionCss()).toMatch(/\.df-opportunity-card[^{]*\{[^}]*transform:\s*none/);
-    expect(reducedMotionCss()).toMatch(/@starting-style[\s\S]*transform:\s*none/);
+    expect(pageSource).toContain("DragDropContext");
+    expect(pageSource).toContain("handleDragEnd");
+    expect(css).not.toMatch(/\.df-opportunity-card\[data-motion/);
+    expect(reducedMotionCss()).toMatch(/\.df-opportunity-card[^{]*\{[^}]*animation:\s*none/);
     expect(reducedMotionCss()).not.toMatch(/opacity:\s*0/);
   });
 
-  it("does not animate pipeline scroll, column mount, or decorative card drag", () => {
+  it("does not animate pipeline scroll, column mount, or decorative card tilt", () => {
     expect(rule(".df-opportunity-pipeline")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/scroll-behavior:\s*auto/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/scrollbar-width:\s*none/);
     expect(rule(".df-opportunity-column")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-column")).toMatch(/animation:\s*none/);
+    expect(rule(".df-opportunity-drop")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-card")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-card")).toMatch(/animation:\s*none/);
+    expect(rule(".df-opportunity-card")).toMatch(/cursor:\s*grab/);
+    expect(rule(".df-opportunity-card[data-dragging=\"true\"]")).toMatch(/box-shadow/);
   });
 });
 

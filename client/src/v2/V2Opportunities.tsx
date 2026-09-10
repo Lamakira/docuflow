@@ -1,4 +1,5 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
+import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { CrmClient, CrmProjectWithDetails, SafeUser } from "@shared/schema";
@@ -13,8 +14,6 @@ import {
   composeOpportunityStages,
   opportunityWriteRefusal,
   stageOptionsFromFieldOptions,
-  type OpportunityCard,
-  type OpportunityColumn,
   type OpportunityPipelineRowInput,
 } from "./opportunities";
 
@@ -56,47 +55,11 @@ function toPipelineRow(row: CrmProjectWithDetails): OpportunityPipelineRowInput 
   };
 }
 
-function OpportunityMoveMenu({
-  card,
-  columns,
-  disabled,
-  onChange,
-}: {
-  card: OpportunityCard;
-  columns: OpportunityColumn[];
-  disabled: boolean;
-  onChange: (nextStage: string) => void;
-}) {
-  if (!card.canChangeStage) return null;
-
-  return (
-    <details className="df-opportunity-move">
-      <summary>Move {card.name}</summary>
-      <div className="df-menu">
-        {columns
-          .filter((column) => column.id !== card.stage)
-          .map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              disabled={disabled}
-              onClick={(event) => {
-                event.currentTarget.closest("details")?.removeAttribute("open");
-                onChange(option.id);
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-      </div>
-    </details>
-  );
-}
-
 export function V2OpportunitiesPage() {
   const { layout, memberships } = useV2Chrome();
   const [filterQuery, setFilterQuery] = useState("");
   const [changingId, setChangingId] = useState<string | null>(null);
+  const pipelineRef = useRef<HTMLDivElement>(null);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [clientId, setClientId] = useState("");
@@ -164,11 +127,25 @@ export function V2OpportunitiesPage() {
   const changeStage = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       apiRequest("PATCH", `/api/crm/projects/${id}`, { status }),
-    onMutate: async ({ id }) => {
+    onMutate: async ({ id, status }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/crm/projects"] });
+      const previous = queryClient.getQueryData<OpportunityRowsResponse>(["/api/crm/projects", "register"]);
+      if (previous) {
+        queryClient.setQueryData<OpportunityRowsResponse>(["/api/crm/projects", "register"], {
+          ...previous,
+          data: previous.data.map((row) =>
+            row.id === id ? { ...row, status: status as CrmProjectWithDetails["status"] } : row,
+          ),
+        });
+      }
       setChangingId(id);
       setWriteRefusal(null);
+      return { previous };
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/crm/projects", "register"], context.previous);
+      }
       setChangingId(null);
       setWriteRefusal(
         opportunityWriteRefusal({
@@ -210,6 +187,16 @@ export function V2OpportunitiesPage() {
   }
 
   const rowsById = new Map((projectsResponse?.data ?? []).map((row) => [row.id, row]));
+
+  function handleDragEnd(result: DropResult) {
+    pipelineRef.current?.setAttribute("data-dragging", "false");
+    const { destination, source, draggableId } = result;
+    if (!destination) return;
+    if (destination.droppableId === source.droppableId) return;
+    const row = rowsById.get(draggableId);
+    if (!row) return;
+    onStageChange(row, source.droppableId, destination.droppableId);
+  }
 
   if (isLoading) {
     return (
@@ -300,50 +287,75 @@ export function V2OpportunitiesPage() {
 
       {pipeline.empty ? <p className="df-empty">{pipeline.emptyCopy}</p> : null}
 
-      <div
-        className="df-opportunity-pipeline"
-        data-stacked={layout.stackedRegister ? "true" : "false"}
-        data-testid="v2-opportunities-pipeline"
+      <DragDropContext
+        onDragStart={() => pipelineRef.current?.setAttribute("data-dragging", "true")}
+        onDragEnd={handleDragEnd}
       >
-        {pipeline.columns.map((column) => (
-          <section key={column.id} className="df-card df-opportunity-column" data-terminal={column.terminal ? "true" : "false"}>
-            <div className="df-card-head">
-              <h2 className="df-card-title">{column.label}</h2>
-              <span className="df-count-chip">{column.cards.length}</span>
-            </div>
-            {column.cards.length === 0 ? null : (
-              column.cards.map((card) => {
-                const row = rowsById.get(card.id);
-                return (
-                  <article
-                    key={card.id}
-                    className="df-opportunity-card"
-                    data-motion={card.changing ? STAGE_CHANGE_MOTION : "none"}
-                    data-testid={`v2-opportunity-card-${card.id}`}
+        <div
+          ref={pipelineRef}
+          className="df-opportunity-pipeline"
+          data-stacked={layout.stackedRegister ? "true" : "false"}
+          data-dragging="false"
+          data-motion={STAGE_CHANGE_MOTION}
+          data-testid="v2-opportunities-pipeline"
+        >
+          {pipeline.columns.map((column) => (
+            <section
+              key={column.id}
+              className="df-card df-opportunity-column"
+              data-terminal={column.terminal ? "true" : "false"}
+            >
+              <div className="df-card-head">
+                <h2 className="df-card-title">{column.label}</h2>
+                <span className="df-count-chip">{column.cards.length}</span>
+              </div>
+              <Droppable droppableId={column.id}>
+                {(provided, snapshot) => (
+                  <div
+                    ref={provided.innerRef}
+                    {...provided.droppableProps}
+                    className="df-opportunity-drop"
+                    data-over={snapshot.isDraggingOver ? "true" : "false"}
                   >
-                    {card.projectHref ? (
-                      <Link href={card.projectHref} className="df-row-title">
-                        {card.name}
-                      </Link>
-                    ) : (
-                      <div className="df-row-title">{card.name}</div>
-                    )}
-                    {card.clientLabel ? (
-                      <div className="df-opportunity-card-client">{card.clientLabel}</div>
-                    ) : null}
-                    <OpportunityMoveMenu
-                      card={card}
-                      columns={pipeline.columns}
-                      disabled={changeStage.isPending && changingId === card.id}
-                      onChange={(nextStage) => row && onStageChange(row, card.stage, nextStage)}
-                    />
-                  </article>
-                );
-              })
-            )}
-          </section>
-        ))}
-      </div>
+                    {column.cards.map((card, index) => (
+                      <Draggable
+                        key={card.id}
+                        draggableId={card.id}
+                        index={index}
+                        isDragDisabled={!card.canChangeStage || readOnly}
+                      >
+                        {(drag, dragSnapshot) => (
+                          <article
+                            ref={drag.innerRef}
+                            {...drag.draggableProps}
+                            {...drag.dragHandleProps}
+                            className="df-opportunity-card"
+                            data-dragging={dragSnapshot.isDragging ? "true" : "false"}
+                            data-locked={!card.canChangeStage || readOnly ? "true" : "false"}
+                            data-testid={`v2-opportunity-card-${card.id}`}
+                          >
+                            {card.projectHref ? (
+                              <Link href={card.projectHref} className="df-row-title">
+                                {card.name}
+                              </Link>
+                            ) : (
+                              <div className="df-row-title">{card.name}</div>
+                            )}
+                            {card.clientLabel ? (
+                              <div className="df-opportunity-card-client">{card.clientLabel}</div>
+                            ) : null}
+                          </article>
+                        )}
+                      </Draggable>
+                    ))}
+                    {provided.placeholder}
+                  </div>
+                )}
+              </Droppable>
+            </section>
+          ))}
+        </div>
+      </DragDropContext>
 
       <div className="df-library-foot">
         {pipeline.count} {pipeline.count === 1 ? "Opportunity" : "Opportunities"}
