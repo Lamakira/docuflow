@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
-import type { CrmProjectWithDetails, Document, SafeUser } from "@shared/schema";
+import type { CrmProjectWithDetails, Document, Project, SafeUser } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
 import { chromeRefusal } from "./chrome";
@@ -16,11 +16,12 @@ type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 
 type LibraryPayload = {
   capabilityMiss: boolean;
-  projects: CrmProjectWithDetails[];
+  folders: Project[];
+  crm: CrmProjectWithDetails[];
   documents: Document[];
 };
 
-async function loadProjects(): Promise<CrmProjectWithDetails[]> {
+async function loadCrmProjects(): Promise<CrmProjectWithDetails[]> {
   const pageSize = 200;
   const rows: CrmProjectWithDetails[] = [];
   let page = 1;
@@ -29,8 +30,7 @@ async function loadProjects(): Promise<CrmProjectWithDetails[]> {
     const res = await fetch(`/api/crm/projects?page=${page}&pageSize=${pageSize}`, {
       credentials: "include",
     });
-    if (res.status === 401 || res.status === 403) throw new Error("capability");
-    if (!res.ok) throw new Error("Failed to fetch Projects");
+    if (res.status === 401 || res.status === 403 || !res.ok) return rows;
     const body = (await res.json()) as ProjectsResponse;
     const batch = body.data ?? [];
     total = body.total ?? rows.length + batch.length;
@@ -42,29 +42,26 @@ async function loadProjects(): Promise<CrmProjectWithDetails[]> {
 }
 
 async function loadProjectLibrary(): Promise<LibraryPayload> {
-  try {
-    const projects = await loadProjects();
-    const documentable = projects.filter((project) => project.documentationEnabled && project.project?.id);
-    const nested = await Promise.all(
-      documentable.map(async (project) => {
-        const projectId = project.project?.id;
-        if (!projectId) return [] as Document[];
-        const res = await fetch(`/api/projects/${projectId}/documents`, { credentials: "include" });
-        if (!res.ok) return [] as Document[];
-        return (await res.json()) as Document[];
-      }),
-    );
-    return {
-      capabilityMiss: false,
-      projects,
-      documents: nested.flat(),
-    };
-  } catch (error) {
-    if (error instanceof Error && error.message === "capability") {
-      return { capabilityMiss: true, projects: [], documents: [] };
-    }
-    throw error;
+  const documentableRes = await fetch("/api/projects/documentable", { credentials: "include" });
+  if (documentableRes.status === 401 || documentableRes.status === 403) {
+    return { capabilityMiss: true, folders: [], crm: [], documents: [] };
   }
+  if (!documentableRes.ok) throw new Error("Failed to fetch Project Documentation");
+  const folders = (await documentableRes.json()) as Project[];
+  const crm = await loadCrmProjects();
+  const nested = await Promise.all(
+    folders.map(async (project) => {
+      const res = await fetch(`/api/projects/${project.id}/documents`, { credentials: "include" });
+      if (!res.ok) return [] as Document[];
+      return (await res.json()) as Document[];
+    }),
+  );
+  return {
+    capabilityMiss: false,
+    folders,
+    crm,
+    documents: nested.flat(),
+  };
 }
 
 export function V2ProjectDocumentationPage() {
@@ -84,30 +81,36 @@ export function V2ProjectDocumentationPage() {
   const readOnly = current?.condition === "Read-only";
 
   const { data, isLoading } = useQuery<LibraryPayload>({
-    queryKey: ["/api/crm/projects", "project-documentation"],
+    queryKey: ["/api/projects/documentable", "project-documentation"],
     queryFn: loadProjectLibrary,
   });
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
   const owner = users.find((member) => member.isMainAdmin === 1);
   const ownerName = owner ? memberName(owner) : null;
 
+  const crmByProjectId = new Map(
+    (data?.crm ?? []).map((project) => [project.project?.id, project] as const),
+  );
   const library = composeProjectDocumentation({
     now,
     workspaceName,
-    projects: (data?.projects ?? []).map((project) => {
-      const memberIds = (project.members ?? [])
-        .map((row) => row.userId || row.user?.id)
-        .filter((id): id is string => Boolean(id));
+    projects: (data?.folders ?? []).map((project) => {
+      const crm = crmByProjectId.get(project.id);
+      const memberIds = crm
+        ? (crm.members ?? [])
+            .map((row) => row.userId || row.user?.id)
+            .filter((id): id is string => Boolean(id))
+        : [project.ownerId];
       return {
         id: project.id,
-        documentProjectId: project.project?.id ?? project.id,
-        name: project.project?.name || "Untitled Project",
-        documentationEnabled: Boolean(project.documentationEnabled),
+        documentProjectId: project.id,
+        name: project.name || "Untitled Project",
+        documentationEnabled: true,
         visible: projectVisibleTo({
           role: current?.workspaceRole?.toLowerCase() || null,
           userId: user?.id ?? "",
           memberIds,
-          assigneeId: project.assigneeId ?? project.assignee?.id ?? null,
+          assigneeId: crm?.assigneeId ?? crm?.assignee?.id ?? project.ownerId,
         }),
         updatedAt: project.updatedAt,
       };
@@ -131,8 +134,7 @@ export function V2ProjectDocumentationPage() {
   });
   const folderMotion = useFolderExpandMotion(filterQuery);
 
-  const selected = (data?.projects ?? []).find((project) => project.id === selectedProjectId);
-  const selectedDocumentProjectId = selected?.project?.id ?? null;
+  const selectedDocumentProjectId = selectedProjectId;
 
   function refuseWrite(errorMessage?: string) {
     if (readOnly) {
@@ -156,7 +158,7 @@ export function V2ProjectDocumentationPage() {
       });
     },
     onSuccess: (created: { id?: string }) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", "project-documentation"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"] });
       setCreateMode(null);
       setName("");
       setWriteRefusal(null);
@@ -179,6 +181,7 @@ export function V2ProjectDocumentationPage() {
         isDocumentationOnly: true,
       }),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"] });
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
       setCreateMode(null);
       setName("");

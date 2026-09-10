@@ -79,6 +79,15 @@ describe("Project Documentation and Document editor routing (#189)", () => {
     expect(appSource).toMatch(/path="\/documentation"/);
   });
 
+  it("lists documentation folders from the existing documentable read, not the CRM register", () => {
+    const pageSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2ProjectDocumentation.tsx"),
+      "utf8",
+    );
+    expect(pageSource).toContain("/api/projects/documentable");
+    expect(pageSource).toContain("isDocumentationOnly: true");
+  });
+
   it("opens a Workspace Document from the library in the v2 editor, not a placeholder", () => {
     const match = matchV2Route("/documents/doc-live");
     expect(match.kind).toBe("document-editor");
