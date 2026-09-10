@@ -101,7 +101,7 @@ describe("Today mobile pattern (#175)", () => {
     expect(today.approvals.empty).toBe(true);
     expect(today.approvals.copy.toLowerCase()).toContain("timesheet");
     expect(JSON.stringify(today)).not.toContain("Keystone");
-    expect(matchV2Route("/opportunities").kind).toBe("placeholder");
+    expect(matchV2Route("/opportunities").kind).toBe("opportunities");
   });
 
   it("gives the running Timer strip the viewport's only amber", () => {

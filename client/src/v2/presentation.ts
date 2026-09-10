@@ -88,6 +88,7 @@ export type V2Match =
   | { kind: "documents"; title: "Workspace Documents"; href: "/documents" }
   | { kind: "clients"; title: "Clients"; href: "/clients" }
   | { kind: "client-record"; title: string; href: "/clients"; clientId: string }
+  | { kind: "opportunities"; title: "Opportunities"; href: "/opportunities" }
   | { kind: "placeholder"; title: string; href: string };
 
 export type V2NavId =
@@ -152,7 +153,6 @@ export const V2_NAV: V2NavSection[] = [
 ];
 
 const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> = [
-  { href: "/opportunities", title: "Opportunities" },
   { href: "/project-documentation", title: "Project Documentation" },
   { href: "/time", title: "Time Tracking" },
   { href: "/activity", title: "Activity" },
@@ -212,6 +212,10 @@ export function matchV2Route(path: string): V2Match {
   }
   if (pathname.startsWith("/documents/")) {
     return { kind: "placeholder", title: "Document", href: "/documents" };
+  }
+
+  if (pathname === "/opportunities") {
+    return { kind: "opportunities", title: "Opportunities", href: "/opportunities" };
   }
 
   if (pathname === "/clients" || pathname === "/crm/client/new") {
@@ -284,6 +288,7 @@ export function navIdForPath(path: string): V2NavId | null {
   if (match.kind === "documents") return "documents";
   if (match.kind === "projects" || match.kind === "legacy-project") return "projects";
   if (match.kind === "clients" || match.kind === "client-record") return "clients";
+  if (match.kind === "opportunities") return "opportunities";
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -316,6 +321,12 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "WORKSPACE DOCUMENTS" },
+    ];
+  }
+  if (match.kind === "opportunities") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "OPPORTUNITIES" },
     ];
   }
   if (match.kind === "clients") {

@@ -555,6 +555,114 @@
   animation: none;
 }
 
+.df-opportunities-filter {
+  transition: none;
+  animation: none;
+}
+
+.df-opportunity-pipeline {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  transition: none;
+  animation: none;
+  scroll-behavior: auto;
+}
+
+.df-opportunity-pipeline[data-stacked="true"] {
+  flex-direction: column;
+  overflow-x: hidden;
+}
+
+.df-opportunity-pipeline[data-stacked="true"] .df-opportunity-column {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  transition: none;
+  animation: none;
+}
+
+.df-opportunity-column {
+  flex: 0 0 240px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  transition: none;
+  animation: none;
+}
+
+.df-opportunity-column .df-card-title {
+  font-family: var(--df-font-ui);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.df-opportunity-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--df-divider);
+  transition: none;
+  animation: none;
+}
+
+.df-opportunity-card .df-row-title {
+  color: inherit;
+  text-decoration: none;
+}
+
+.df-opportunity-stage {
+  align-self: flex-start;
+  font-family: var(--df-font-ui);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 10px;
+  color: var(--df-archive-slate);
+  background: var(--df-cold-stock);
+  cursor: default;
+  transition: none;
+  animation: none;
+}
+
+select.df-opportunity-stage {
+  font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.df-opportunity-stage[data-status="won"] {
+  color: var(--df-signed-off);
+  background: #e4f4ec;
+}
+
+.df-opportunity-stage[data-status="lost"] {
+  color: var(--df-archive-slate);
+}
+
+.df-opportunity-stage[data-motion="standard"] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--duration-ui) var(--ease-out),
+    transform var(--duration-ui) var(--ease-in-out);
+}
+
+@starting-style {
+  .df-opportunity-stage[data-motion="standard"] {
+    opacity: 0.4;
+    transform: scale(0.97);
+  }
+}
+
 .df-client-identity {
   transition: none;
   animation: none;
@@ -1845,6 +1953,17 @@
   .df-client-record-body {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
+  .df-opportunity-stage {
+    transform: none;
+    transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
+  @starting-style {
+    .df-opportunity-stage[data-motion="standard"] {
+      transform: none;
+    }
   }
 
   .df-toast {
