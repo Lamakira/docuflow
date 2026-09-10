@@ -194,7 +194,7 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
       stageLabel: column.label,
       terminal,
       canChangeStage: !terminal,
-      projectHref: stage === "won" ? projectHref(row.id) : null,
+      projectHref: projectHref(row.id),
       changing: row.id === input.changingId,
     });
   }

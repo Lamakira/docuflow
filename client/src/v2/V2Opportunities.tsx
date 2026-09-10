@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent } from "react";
 import {
   DragDropContext,
   Draggable,
@@ -6,7 +6,7 @@ import {
   type DraggableProvided,
   type DropResult,
 } from "@hello-pangea/dnd";
-import { Link } from "wouter";
+import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { CrmClient, CrmProjectWithDetails, SafeUser } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -66,17 +66,48 @@ function opportunityCloneRoot(): HTMLElement {
   return document.querySelector<HTMLElement>(".df-v2") ?? document.body;
 }
 
+function isOpportunityCardClick(
+  event: Pick<MouseEvent, "button" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "clientX" | "clientY">,
+  origin: { x: number; y: number } | null,
+): boolean {
+  if (!origin) return false;
+  if (event.button !== 0 || event.shiftKey || event.altKey) return false;
+  return Math.abs(event.clientX - origin.x) <= 5 && Math.abs(event.clientY - origin.y) <= 5;
+}
+
 function OpportunityCardView({
   card,
   provided,
   dragging,
   locked,
+  onOpen,
 }: {
   card: OpportunityCard;
   provided: DraggableProvided;
   dragging: boolean;
   locked: boolean;
+  onOpen: (href: string) => void;
 }) {
+  const origin = useRef<{ x: number; y: number } | null>(null);
+  const href = card.projectHref;
+
+  function onPointerDown(event: PointerEvent<HTMLElement>) {
+    if (event.button !== 0) return;
+    origin.current = { x: event.clientX, y: event.clientY };
+  }
+
+  function onClick(event: MouseEvent<HTMLElement>) {
+    if (!href || dragging) return;
+    if (!isOpportunityCardClick(event, origin.current)) return;
+    origin.current = null;
+    event.preventDefault();
+    if (event.metaKey || event.ctrlKey) {
+      window.open(href, "_blank", "noopener,noreferrer");
+      return;
+    }
+    onOpen(href);
+  }
+
   return (
     <article
       ref={provided.innerRef}
@@ -85,15 +116,12 @@ function OpportunityCardView({
       className="df-opportunity-card"
       data-dragging={dragging ? "true" : "false"}
       data-locked={locked ? "true" : "false"}
+      data-href={href ?? undefined}
       data-testid={`v2-opportunity-card-${card.id}`}
+      onPointerDown={onPointerDown}
+      onClick={onClick}
     >
-      {card.projectHref ? (
-        <Link href={card.projectHref} className="df-row-title">
-          {card.name}
-        </Link>
-      ) : (
-        <div className="df-row-title">{card.name}</div>
-      )}
+      <div className="df-row-title">{card.name}</div>
       {card.clientLabel ? <div className="df-opportunity-card-client">{card.clientLabel}</div> : null}
     </article>
   );
@@ -106,11 +134,12 @@ function renderOpportunityClone(
 ) {
   const card = cardsById.get(rubric.draggableId);
   if (!card) return null;
-  return <OpportunityCardView card={card} provided={provided} dragging locked={false} />;
+  return <OpportunityCardView card={card} provided={provided} dragging locked={false} onOpen={() => {}} />;
 }
 
 export function V2OpportunitiesPage() {
   const { layout, memberships } = useV2Chrome();
+  const [, setLocation] = useLocation();
   const [filterQuery, setFilterQuery] = useState("");
   const [changingId, setChangingId] = useState<string | null>(null);
   const pipelineRef = useRef<HTMLDivElement>(null);
@@ -393,6 +422,7 @@ export function V2OpportunitiesPage() {
                             provided={drag}
                             dragging={false}
                             locked={!card.canChangeStage || readOnly}
+                            onOpen={setLocation}
                           />
                         )}
                       </Draggable>

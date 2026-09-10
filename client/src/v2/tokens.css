@@ -653,7 +653,7 @@
 }
 
 .df-opportunity-card[data-locked="true"] {
-  cursor: default;
+  cursor: pointer;
 }
 
 .df-opportunity-card[data-dragging="true"] {

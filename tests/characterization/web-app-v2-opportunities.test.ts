@@ -76,6 +76,8 @@ describe("Opportunities routing (#187)", () => {
     expect(pageSource).toContain("renderClone");
     expect(pageSource).toContain("getContainerForClone");
     expect(pageSource).toContain("opportunityCloneRoot");
+    expect(pageSource).toContain("isOpportunityCardClick");
+    expect(pageSource).toContain("setLocation");
     expect(pageSource).not.toContain("df-opportunity-move");
     expect(pageSource).not.toContain("Move {card.name}");
     expect(pageSource).not.toContain("df-opportunity-stage-input");
@@ -129,6 +131,12 @@ describe("Opportunities pipeline from live Opportunity rows (#187)", () => {
     expect(pipeline.columns.find((column) => column.id === "lead")?.cards.map((card) => card.id)).toEqual([
       "opp-lead",
     ]);
+    const lead = pipeline.columns.find((column) => column.id === "lead")?.cards[0];
+    expect(lead).toMatchObject({
+      id: "opp-lead",
+      projectHref: "/projects/opp-lead",
+    });
+    expect(matchV2Route(lead!.projectHref!).kind).toBe("dossier");
     const won = pipeline.columns.find((column) => column.id === "won")?.cards[0];
     expect(won).toMatchObject({
       id: "opp-won",
