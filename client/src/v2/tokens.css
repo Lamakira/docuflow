@@ -645,7 +645,7 @@
   border: 1px solid var(--df-divider);
   border-radius: 12px;
   background: var(--df-card-white);
-  cursor: grab;
+  cursor: pointer;
   user-select: none;
   box-sizing: border-box;
   transition: none;
@@ -654,6 +654,10 @@
 
 .df-opportunity-card[data-locked="true"] {
   cursor: pointer;
+}
+
+.df-opportunity-card[data-pressing="true"] {
+  cursor: grabbing;
 }
 
 .df-opportunity-card[data-dragging="true"] {

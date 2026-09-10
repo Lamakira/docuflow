@@ -289,7 +289,10 @@ describe("Opportunity Stage-change motion (#187)", () => {
     expect(rule(".df-opportunity-drop")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-card")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-card")).toMatch(/animation:\s*none/);
-    expect(rule(".df-opportunity-card")).toMatch(/cursor:\s*grab/);
+    expect(rule(".df-opportunity-card")).toMatch(/cursor:\s*pointer/);
+    expect(rule(".df-opportunity-card")).not.toMatch(/cursor:\s*grab;/);
+    expect(rule(".df-opportunity-card[data-pressing=\"true\"]")).toMatch(/cursor:\s*grabbing/);
+    expect(rule(".df-opportunity-card[data-dragging=\"true\"]")).toMatch(/cursor:\s*grabbing/);
     expect(rule(".df-opportunity-card")).toMatch(/align-self:\s*stretch/);
     expect(rule(".df-opportunity-card")).not.toMatch(/width:\s*100%/);
     expect(rule(".df-opportunity-card[data-dragging=\"true\"]")).toMatch(/box-shadow/);

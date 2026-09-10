@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent } from "react";
 import {
   DragDropContext,
   Draggable,
@@ -89,11 +89,23 @@ function OpportunityCardView({
   onOpen: (href: string) => void;
 }) {
   const origin = useRef<{ x: number; y: number } | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
   const href = card.projectHref;
+
+  useEffect(() => {
+    const clearPress = () => cardRef.current?.setAttribute("data-pressing", "false");
+    window.addEventListener("pointerup", clearPress);
+    window.addEventListener("pointercancel", clearPress);
+    return () => {
+      window.removeEventListener("pointerup", clearPress);
+      window.removeEventListener("pointercancel", clearPress);
+    };
+  }, []);
 
   function onPointerDown(event: PointerEvent<HTMLElement>) {
     if (event.button !== 0) return;
     origin.current = { x: event.clientX, y: event.clientY };
+    if (!locked && !dragging) event.currentTarget.setAttribute("data-pressing", "true");
   }
 
   function onClick(event: MouseEvent<HTMLElement>) {
@@ -110,11 +122,15 @@ function OpportunityCardView({
 
   return (
     <article
-      ref={provided.innerRef}
+      ref={(element) => {
+        provided.innerRef(element);
+        cardRef.current = element;
+      }}
       {...provided.draggableProps}
       {...provided.dragHandleProps}
       className="df-opportunity-card"
       data-dragging={dragging ? "true" : "false"}
+      data-pressing="false"
       data-locked={locked ? "true" : "false"}
       data-href={href ?? undefined}
       data-testid={`v2-opportunity-card-${card.id}`}
