@@ -93,6 +93,7 @@ export type V2Match =
   | { kind: "opportunities"; title: "Opportunities"; href: "/opportunities" }
   | { kind: "time"; title: "Time Tracking"; href: "/time" }
   | { kind: "daily-update"; title: "Daily Update"; href: "/daily-update" }
+  | { kind: "activity"; title: "Activity"; href: "/activity" }
   | { kind: "placeholder"; title: string; href: string };
 
 export type V2NavId =
@@ -157,7 +158,6 @@ export const V2_NAV: V2NavSection[] = [
 ];
 
 const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> = [
-  { href: "/activity", title: "Activity" },
   { href: "/people", title: "People" },
   { href: "/administration", title: "Administration" },
   { href: "/help", title: "Help Center" },
@@ -209,8 +209,13 @@ function parseProjectDocumentPath(pathname: string): string | null {
   return null;
 }
 
+function isScreencastsRewrite(pathname: string): boolean {
+  return pathname === "/time-tracking/screencasts" || pathname.startsWith("/time-tracking/screencasts/");
+}
+
 function isTimeTrackingRewrite(pathname: string): boolean {
   if (pathname === "/time-tracking/devices" || pathname.startsWith("/time-tracking/devices/")) return false;
+  if (isScreencastsRewrite(pathname)) return false;
   return pathname === "/time-tracking" || pathname.startsWith("/time-tracking/");
 }
 
@@ -273,6 +278,10 @@ export function matchV2Route(path: string): V2Match {
 
   if (pathname === "/time") {
     return { kind: "time", title: "Time Tracking", href: "/time" };
+  }
+
+  if (pathname === "/activity" || isScreencastsRewrite(pathname)) {
+    return { kind: "activity", title: "Activity", href: "/activity" };
   }
 
   if (isTimeTrackingRewrite(pathname)) {
@@ -359,6 +368,7 @@ export function navIdForPath(path: string): V2NavId | null {
   if (match.kind === "clients" || match.kind === "client-record") return "clients";
   if (match.kind === "opportunities") return "opportunities";
   if (match.kind === "time") return "time";
+  if (match.kind === "activity") return "activity";
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -423,6 +433,12 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "TIME TRACKING" },
+    ];
+  }
+  if (match.kind === "activity") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "ACTIVITY" },
     ];
   }
   if (match.kind === "daily-update") {

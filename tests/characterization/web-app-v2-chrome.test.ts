@@ -49,7 +49,6 @@ describe("v2 chrome behind the client flag (#171)", () => {
 
   it("treats unimplemented destinations as v2 placeholders, never v1 screens", () => {
     const placeholders = [
-      "/activity",
       "/people",
       "/administration",
       "/help",
