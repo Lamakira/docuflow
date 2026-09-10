@@ -13,6 +13,8 @@ import {
   composeOpportunityStages,
   opportunityWriteRefusal,
   stageOptionsFromFieldOptions,
+  type OpportunityCard,
+  type OpportunityColumn,
   type OpportunityPipelineRowInput,
 } from "./opportunities";
 
@@ -52,6 +54,50 @@ function toPipelineRow(row: CrmProjectWithDetails): OpportunityPipelineRowInput 
     projectType: row.projectType,
     isDocumentationOnly: row.isDocumentationOnly ?? 0,
   };
+}
+
+function OpportunityStageControl({
+  card,
+  columns,
+  disabled,
+  onChange,
+}: {
+  card: OpportunityCard;
+  columns: OpportunityColumn[];
+  disabled: boolean;
+  onChange: (nextStage: string) => void;
+}) {
+  const stageMotion = card.changing ? STAGE_CHANGE_MOTION : "none";
+  const marker = (
+    <span
+      className="df-opportunity-stage"
+      data-status={card.stage}
+      data-motion={stageMotion}
+    >
+      {card.stageLabel}
+    </span>
+  );
+
+  if (!card.canChangeStage) return marker;
+
+  return (
+    <label className="df-opportunity-stage-control">
+      {marker}
+      <select
+        className="df-opportunity-stage-input"
+        value={card.stage}
+        aria-label={`Opportunity Stage for ${card.name}`}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {columns.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 export function V2OpportunitiesPage() {
@@ -272,12 +318,9 @@ export function V2OpportunitiesPage() {
               <h2 className="df-card-title">{column.label}</h2>
               <span className="df-count-chip">{column.cards.length}</span>
             </div>
-            {column.cards.length === 0 ? (
-              pipeline.empty ? null : <p className="df-empty">None in this stage.</p>
-            ) : (
+            {column.cards.length === 0 ? null : (
               column.cards.map((card) => {
                 const row = rowsById.get(card.id);
-                const stageMotion = card.changing ? STAGE_CHANGE_MOTION : "none";
                 return (
                   <article
                     key={card.id}
@@ -291,32 +334,15 @@ export function V2OpportunitiesPage() {
                     ) : (
                       <div className="df-row-title">{card.name}</div>
                     )}
-                    <div className="df-meta">{card.clientLabel}</div>
-                    {card.canChangeStage ? (
-                      <select
-                        className="df-opportunity-stage"
-                        data-status={card.stage}
-                        data-motion={stageMotion}
-                        value={card.stage}
-                        aria-label="Opportunity Stage"
-                        disabled={changeStage.isPending && changingId === card.id}
-                        onChange={(event) => row && onStageChange(row, card.stage, event.target.value)}
-                      >
-                        {pipeline.columns.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span
-                        className="df-opportunity-stage"
-                        data-status={card.stage}
-                        data-motion={stageMotion}
-                      >
-                        {card.stageLabel}
-                      </span>
-                    )}
+                    {card.clientLabel ? (
+                      <div className="df-opportunity-card-client">{card.clientLabel}</div>
+                    ) : null}
+                    <OpportunityStageControl
+                      card={card}
+                      columns={pipeline.columns}
+                      disabled={changeStage.isPending && changingId === card.id}
+                      onChange={(nextStage) => row && onStageChange(row, card.stage, nextStage)}
+                    />
                   </article>
                 );
               })

@@ -69,7 +69,8 @@ describe("Opportunities routing (#187)", () => {
     expect(appSource).toMatch(/path="\/opportunities"/);
     expect(appSource).toMatch(/path="\/opportunities"\s+component=\{V2OpportunitiesPage\}/);
     expect(pageSource).toContain('motionForSurface("opportunity-stage-change")');
-    expect(pageSource).toContain('motionForSurface("opportunity-stage-change")');
+    expect(pageSource).toContain("df-opportunity-stage-control");
+    expect(pageSource).toContain("Opportunity Stage for");
   });
 });
 
@@ -165,6 +166,27 @@ describe("Opportunities pipeline from live Opportunity rows (#187)", () => {
     expect(stages.find((stage) => stage.id === "lost")?.terminal).toBe(true);
     expect(stages.find((stage) => stage.id === "qualified")?.terminal).toBe(false);
   });
+
+  it("shows human Opportunity Stage names instead of stored slugs", () => {
+    const stages = composeOpportunityStages(
+      stageOptionsFromFieldOptions(["discovering_call_completed", "proposal_sent"]),
+    );
+
+    expect(stages.find((stage) => stage.id === "discovering_call_completed")?.label).toBe(
+      "Discovering call completed",
+    );
+    expect(stages.find((stage) => stage.id === "proposal_sent")?.label).toBe("Proposal sent");
+
+    const pipeline = composeOpportunityPipeline(
+      emptyPipeline({
+        stages,
+        rows: [row({ combinedStatus: "discovering_call_completed", clientName: null })],
+      }),
+    );
+    const card = pipeline.columns.find((column) => column.id === "discovering_call_completed")?.cards[0];
+    expect(card?.stageLabel).toBe("Discovering call completed");
+    expect(card?.clientLabel).toBe("");
+  });
 });
 
 describe("Opportunity Stage writes (#187)", () => {
@@ -250,6 +272,8 @@ describe("Opportunity Stage-change motion (#187)", () => {
     expect(rule(".df-opportunity-column")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-card")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-card")).toMatch(/animation:\s*none/);
+    expect(rule(".df-opportunity-stage-control")).toMatch(/inline-grid/);
+    expect(rule(".df-opportunity-stage-input")).toMatch(/opacity:\s*0/);
   });
 });
 

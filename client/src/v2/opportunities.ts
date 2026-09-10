@@ -76,9 +76,14 @@ const TERMINAL_STAGES: OpportunityStageOption[] = [
 ];
 
 function stageLabel(id: string, provided?: string): string {
-  const raw = provided?.trim();
-  if (raw) return raw;
-  return id.replace(/_/g, " ");
+  const source = (provided?.trim() || id).trim();
+  if (!source) return id;
+  const isSlug =
+    /_/.test(source) ||
+    (!/\s/.test(source) && (source === source.toLowerCase() || source === source.toUpperCase()));
+  if (!isSlug) return source;
+  const words = source.replace(/[_-]+/g, " ").toLowerCase().replace(/\s+/g, " ").trim();
+  return words.replace(/^\w/, (character) => character.toUpperCase());
 }
 
 export function stageOptionsFromFieldOptions(options: string[] | null | undefined): OpportunityStageOption[] {
@@ -183,7 +188,7 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
     column.cards.push({
       id: row.id,
       name: row.name || "Untitled Opportunity",
-      clientLabel: row.clientName || "—",
+      clientLabel: row.clientName?.trim() || "",
       stage,
       stageLabel: column.label,
       terminal,
