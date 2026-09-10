@@ -49,7 +49,6 @@ describe("v2 chrome behind the client flag (#171)", () => {
 
   it("treats unimplemented destinations as v2 placeholders, never v1 screens", () => {
     const placeholders = [
-      "/time",
       "/activity",
       "/people",
       "/administration",
@@ -62,12 +61,9 @@ describe("v2 chrome behind the client flag (#171)", () => {
     }
 
     const v1Leaks = [
-      "/time-tracking",
-      "/time-tracking/dashboard",
       "/admin",
       "/help-center",
       "/help-center/getting-started",
-      "/daily-update",
     ];
     for (const path of v1Leaks) {
       expect(matchV2Route(path).kind, path).toBe("placeholder");
@@ -82,6 +78,9 @@ describe("v2 chrome behind the client flag (#171)", () => {
     expect(matchV2Route("/project-documentation").kind).toBe("project-documentation");
     expect(matchV2Route("/documentation").kind).toBe("project-documentation");
     expect(matchV2Route("/company-documents").kind).toBe("documents");
+    expect(matchV2Route("/time").kind).toBe("time");
+    expect(matchV2Route("/time-tracking").kind).toBe("time");
+    expect(matchV2Route("/daily-update").kind).toBe("daily-update");
 
     expect(navIdForPath("/help")).toBe("help");
     expect(navIdForPath("/devices")).toBe("devices");

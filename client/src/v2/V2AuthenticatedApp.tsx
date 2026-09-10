@@ -7,6 +7,8 @@ import {
   V2DocumentsPage,
   V2ProjectDocumentationPage,
   V2DocumentPage,
+  V2TimePage,
+  V2DailyUpdatePage,
 } from "./V2Pages";
 import { V2ClientRecordPage, V2ClientRecordRedirect, V2ClientsPage } from "./V2Clients";
 import { V2OpportunitiesPage } from "./V2Opportunities";
@@ -66,6 +68,23 @@ export function V2AuthenticatedApp() {
             <Redirect to="/projects" />
           </Route>
           <Route path="/project/:id" component={V2LegacyProjectPage} />
+          <Route path="/time" component={V2TimePage} />
+          <Route path="/time-tracking/devices/:rest">
+            <V2PlaceholderPage />
+          </Route>
+          <Route path="/time-tracking/devices">
+            <V2PlaceholderPage />
+          </Route>
+          <Route path="/time-tracking/:rest">
+            <Redirect to="/time" />
+          </Route>
+          <Route path="/time-tracking">
+            <Redirect to="/time" />
+          </Route>
+          <Route path="/daily-update/:rest">
+            <Redirect to="/daily-update" />
+          </Route>
+          <Route path="/daily-update" component={V2DailyUpdatePage} />
           <Route component={V2PlaceholderPage} />
         </Switch>
       </V2Shell>
