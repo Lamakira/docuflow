@@ -656,7 +656,12 @@
   cursor: pointer;
 }
 
-.df-opportunity-card[data-pressing="true"] {
+.df-v2 .df-opportunity-card[data-rfd-drag-handle-context-id] {
+  cursor: pointer;
+}
+
+.df-opportunity-card[data-pressing="true"],
+.df-v2 .df-opportunity-card[data-pressing="true"] {
   cursor: grabbing;
 }
 
@@ -664,6 +669,10 @@
   cursor: grabbing;
   box-shadow: 0 8px 24px rgba(15, 21, 36, 0.12);
   z-index: 3;
+}
+
+.df-v2 .df-opportunity-card[data-dragging="true"] {
+  cursor: grabbing;
 }
 
 .df-opportunity-card .df-row-title {
