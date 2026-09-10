@@ -527,7 +527,9 @@
 }
 
 .df-projects-register .df-register-row[data-selected="true"],
-.df-projects-register .df-register-row:active {
+.df-projects-register .df-register-row:active,
+.df-clients-register .df-register-row[data-selected="true"],
+.df-clients-register .df-register-row:active {
   background: var(--df-cold-stock);
   border-left: 2px solid var(--df-case-ink);
   padding-left: 16px;
@@ -536,6 +538,42 @@
 .df-projects-register .df-register-row {
   transition: none;
   animation: none;
+}
+
+.df-clients-register .df-register-row {
+  transition: none;
+  animation: none;
+}
+
+.df-clients-register .df-register-head,
+.df-clients-register .df-register-row {
+  grid-template-columns: 1.5fr 1.1fr 0.8fr 0.8fr 0.6fr;
+}
+
+.df-clients-filter {
+  transition: none;
+  animation: none;
+}
+
+.df-client-identity {
+  transition: none;
+  animation: none;
+}
+
+.df-client-record-body[data-motion="standard"] {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity var(--duration-ui) var(--ease-out);
+}
+
+@starting-style {
+  .df-client-record-body[data-motion="standard"] {
+    opacity: 0;
+  }
+}
+
+.df-client-record-body .df-register-row {
+  grid-template-columns: 1.6fr 1fr;
 }
 
 .df-status-word {
@@ -1800,6 +1838,11 @@
   }
 
   .df-workspace-content {
+    transform: none;
+    transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
+  .df-client-record-body {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
   }
