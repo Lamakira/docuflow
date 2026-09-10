@@ -15,6 +15,9 @@ export type DossierProject = {
   budgetedHours: number | null;
   actualHours: number | null;
   updatedAt?: Date | string | null;
+  startDate?: Date | string | null;
+  dueDate?: Date | string | null;
+  documentationEnabled?: number | null;
   project?: { id: string; name: string } | null;
   client?: {
     id?: string;
@@ -61,6 +64,24 @@ export type DossierScreenshot = {
   entryIdleTime?: number | null;
 };
 
+export type DossierTimeEntry = {
+  id: string;
+  duration: number;
+  startTime: Date | string | null;
+  userId: string;
+  taskId?: string | null;
+  status: string;
+  description?: string | null;
+  user?: DossierPerson | null;
+};
+
+export type DossierFile = {
+  id: string;
+  title: string;
+  updatedAt: Date | string | null;
+  access?: string | null;
+};
+
 export type DossierInput = {
   now: Date;
   currentUserId: string;
@@ -76,6 +97,9 @@ export type DossierInput = {
   users: Array<DossierPerson & { id: string }>;
   trackingTaskId: string | null;
   clientActiveProjectCount: number;
+  timeEntries: DossierTimeEntry[];
+  dailyUpdates: DossierDailyUpdate[];
+  files: DossierFile[];
 };
 
 export type DossierTab = {
@@ -84,6 +108,16 @@ export type DossierTab = {
   href: string;
   count: string | null;
   active: boolean;
+};
+
+export type DossierTaskRow = {
+  id: string;
+  title: string;
+  done: boolean;
+  flag: "TIMER RUNNING" | "BLOCKED" | null;
+  meta: string;
+  status: string;
+  statusValue: string;
 };
 
 export type DossierModel = {
@@ -109,15 +143,47 @@ export type DossierModel = {
   nextActions: {
     openCount: number;
     blockedCount: number;
+    rows: DossierTaskRow[];
+    empty: boolean;
+    emptyCopy: string;
+  };
+  tasks: {
+    rows: DossierTaskRow[];
+    empty: boolean;
+    emptyCopy: string;
+    assignees: Array<{ id: string; name: string }>;
+  };
+  time: {
     rows: Array<{
       id: string;
-      title: string;
-      done: boolean;
-      flag: "TIMER RUNNING" | "BLOCKED" | null;
-      meta: string;
+      when: string;
+      who: string;
+      task: string;
+      duration: string;
+      status: string;
     }>;
     empty: boolean;
     emptyCopy: string;
+  };
+  updates: {
+    kind: "empty" | "records" | "refusal";
+    copy: string;
+    rows: Array<{
+      id: string;
+      prose: string | null;
+      blocker: string | null;
+      meta: string | null;
+    }>;
+  };
+  files: {
+    rows: Array<{ id: string; title: string; meta: string }>;
+    empty: boolean;
+    emptyCopy: string;
+  };
+  settings: {
+    fields: Array<{ label: string; value: string }>;
+    lead: { id: string; name: string } | null;
+    members: Array<{ id: string; name: string }>;
   };
   dailyUpdate: {
     kind: "empty" | "record" | "refusal";
@@ -175,6 +241,13 @@ const TAB_LABEL: Record<DossierTabId, string> = {
   settings: "Settings",
 };
 
+const TASK_STATUS_LABEL: Record<string, string> = {
+  open: "TO DO",
+  in_progress: "IN PROGRESS",
+  done: "DONE",
+  archived: "ARCHIVED",
+};
+
 const VIEW_DAILY_UPDATES_CAPABILITY = "View Daily Updates";
 
 function parseDate(value: Date | string | null | undefined): Date | null {
@@ -223,8 +296,12 @@ function personChip(user: DossierPerson): { name: string; initials: string } {
   return { name: memberName(user), initials: memberInitials(user) };
 }
 
+function visibleRecords<T extends { access?: string | null }>(records: T[]): T[] {
+  return records.filter((record) => record.access !== "restricted");
+}
+
 function visibleDocuments(documents: DossierDocument[]): DossierDocument[] {
-  return documents.filter((document) => document.access !== "restricted");
+  return visibleRecords(documents);
 }
 
 function capabilityRefusal(capability: string, ownerName: string | null): string {
@@ -284,6 +361,8 @@ function composeNextActions(input: DossierInput): DossierModel["nextActions"] {
       done,
       flag: !done && input.trackingTaskId === task.id ? ("TIMER RUNNING" as const) : null,
       meta: done ? `DONE${doneAt ? ` ${formatDayStamp(doneAt)}` : ""}` : "",
+      status: TASK_STATUS_LABEL[task.status] ?? task.status.replace(/_/g, " ").toUpperCase(),
+      statusValue: task.status,
     };
   });
   return {
@@ -295,11 +374,135 @@ function composeNextActions(input: DossierInput): DossierModel["nextActions"] {
   };
 }
 
+function projectAssignees(project: DossierProject | null): Array<{ id: string; name: string }> {
+  const assignees: Array<{ id: string; name: string }> = [];
+  const seen = new Set<string>();
+  for (const member of project?.members ?? []) {
+    if (!member.user?.id) continue;
+    if (seen.has(member.user.id)) continue;
+    seen.add(member.user.id);
+    assignees.push({ id: member.user.id, name: memberName(member.user) });
+  }
+  if (project?.assignee?.id && !seen.has(project.assignee.id)) {
+    assignees.unshift({ id: project.assignee.id, name: memberName(project.assignee) });
+  }
+  return assignees;
+}
+
+function composeTime(input: DossierInput): DossierModel["time"] {
+  const tasksById = new Map(input.tasks.map((task) => [task.id, task.name]));
+  const usersById = new Map(input.users.map((user) => [user.id, user]));
+  const rows = input.timeEntries.map((entry) => {
+    const user = entry.user ?? (entry.userId ? usersById.get(entry.userId) : undefined);
+    return {
+      id: entry.id,
+      when: formatWhen(entry.startTime, input.now),
+      who: user ? memberName(user) : "Member",
+      task: (entry.taskId && tasksById.get(entry.taskId)) || "—",
+      duration: formatHours(entry.duration),
+      status: entry.status.replace(/_/g, " ").toUpperCase(),
+    };
+  });
+  return {
+    rows,
+    empty: rows.length === 0,
+    emptyCopy: "No Time Entries on this Project you can access.",
+  };
+}
+
+function composeUpdateRow(update: DossierDailyUpdate): DossierModel["updates"]["rows"][number] {
+  const prose = (update.whatHappened || update.whatWasDone || update.nextSteps || "").trim();
+  const blocker = update.waitingOnClient || update.blockageType ? "Waiting on the Client." : null;
+  const when = parseDate(update.updateDate ?? update.createdAt ?? null);
+  const who = update.user ? memberName(update.user) : null;
+  const metaParts = [
+    when ? `${formatDayStamp(when)} ${formatClock(when)}` : null,
+    who ? who.toUpperCase() : null,
+  ].filter(Boolean);
+  return {
+    id: update.id,
+    prose: prose || null,
+    blocker,
+    meta: metaParts.length > 0 ? metaParts.join(" · ") : null,
+  };
+}
+
+function composeUpdates(input: DossierInput): DossierModel["updates"] {
+  if (input.dailyUpdateCapabilityMiss) {
+    return {
+      kind: "refusal",
+      copy: capabilityRefusal(VIEW_DAILY_UPDATES_CAPABILITY, input.ownerName),
+      rows: [],
+    };
+  }
+  const list =
+    input.dailyUpdates.length > 0
+      ? input.dailyUpdates
+      : input.dailyUpdate
+        ? [input.dailyUpdate]
+        : [];
+  if (list.length === 0) {
+    return {
+      kind: "empty",
+      copy: "No Daily Update on this Project yet.",
+      rows: [],
+    };
+  }
+  return {
+    kind: "records",
+    copy: "",
+    rows: list.map(composeUpdateRow),
+  };
+}
+
+function composeFiles(input: DossierInput): DossierModel["files"] {
+  const files = visibleRecords(input.files);
+  return {
+    rows: files.map((file) => ({
+      id: file.id,
+      title: file.title,
+      meta: formatWhen(file.updatedAt, input.now),
+    })),
+    empty: files.length === 0,
+    emptyCopy: "No Files on this Project you can access.",
+  };
+}
+
+function composeSettings(input: DossierInput): DossierModel["settings"] {
+  const project = input.project;
+  if (!project) {
+    return { fields: [], lead: null, members: [] };
+  }
+  const lead = project.assignee?.id
+    ? { id: project.assignee.id, name: memberName(project.assignee) }
+    : null;
+  const members = projectAssignees(project);
+  const start = parseDate(project.startDate ?? null);
+  const due = parseDate(project.dueDate ?? null);
+  const fields: Array<{ label: string; value: string }> = [
+    { label: "NAME", value: project.project?.name || "Untitled Project" },
+    { label: "CLIENT", value: project.client?.name || "—" },
+    { label: "KIND", value: kindLabel(project) },
+    { label: "STATUS", value: statusLabel(project.projectStatus) },
+    { label: "LEAD", value: lead?.name || "—" },
+    { label: "BUDGET", value: project.budgetedHours != null && project.budgetedHours > 0 ? hoursLabel(project.budgetedHours) : "—" },
+    { label: "START", value: start ? formatDayStamp(start) : "—" },
+    { label: "DUE", value: due ? formatDayStamp(due) : "—" },
+    { label: "DOCUMENTATION", value: project.documentationEnabled ? "ON" : "OFF" },
+  ];
+  return { fields, lead, members };
+}
+
 export function composeDossier(input: DossierInput): DossierModel {
   const project = input.project;
   const missing = !project;
   const documents = visibleDocuments(input.documents);
   const nextActions = composeNextActions(input);
+  const time = composeTime(input);
+  const updates = composeUpdates(input);
+  const files = composeFiles(input);
+  const settings = composeSettings(input);
+  const assignees = projectAssignees(project);
   const trackedMtd = formatHours(input.monthSeconds);
   const budgeted = project?.budgetedHours ?? 0;
   const actual = project?.actualHours ?? 0;
@@ -315,9 +518,19 @@ export function composeDossier(input: DossierInput): DossierModel {
         count:
           id === "tasks"
             ? String(nextActions.rows.length)
-            : id === "documents"
-              ? String(documents.length)
-              : null,
+            : id === "time"
+              ? String(time.rows.length)
+              : id === "activity"
+                ? String(screenshots.length)
+                : id === "updates"
+                  ? updates.kind === "records"
+                    ? String(updates.rows.length)
+                    : null
+                  : id === "documents"
+                    ? String(documents.length)
+                    : id === "files"
+                      ? String(files.rows.length)
+                      : null,
         active: id === input.tab,
       }))
     : [];
@@ -380,7 +593,7 @@ export function composeDossier(input: DossierInput): DossierModel {
   return {
     missing,
     tab: input.tab,
-    tabIsPlaceholder: input.tab !== "overview",
+    tabIsPlaceholder: false,
     identity,
     stats: {
       budgetPercent,
@@ -390,6 +603,16 @@ export function composeDossier(input: DossierInput): DossierModel {
     },
     tabs,
     nextActions,
+    tasks: {
+      rows: nextActions.rows,
+      empty: nextActions.empty,
+      emptyCopy: nextActions.emptyCopy,
+      assignees,
+    },
+    time,
+    updates,
+    files,
+    settings,
     dailyUpdate: composeDailyUpdate(input),
     evidence: {
       tiles: screenshots.map((shot) => {
@@ -404,7 +627,7 @@ export function composeDossier(input: DossierInput): DossierModel {
       }),
       empty: screenshots.length === 0,
       emptyCopy: "No Activity Evidence for this Project you can access.",
-      footnote: "Members can see their own Activity Evidence and request review.",
+      footnote: "Members can see their own Activity Evidence. Tracking Policy decides who else may review it.",
     },
     budgetTime: {
       consumedLabel:

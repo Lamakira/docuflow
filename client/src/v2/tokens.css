@@ -1080,6 +1080,8 @@
   gap: 14px 22px;
   align-items: flex-start;
   justify-content: space-between;
+  transition: none;
+  animation: none;
 }
 
 .df-dossier-copy {
@@ -1169,6 +1171,8 @@
   font-weight: 500;
   font-size: 13px;
   white-space: nowrap;
+  transition: none;
+  animation: none;
 }
 
 .df-tab[data-active="true"] {
@@ -1185,6 +1189,38 @@
 .df-dossier-body {
   padding: 20px 22px 28px;
   min-width: 1060px;
+}
+
+.df-dossier-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.df-dossier-pane[data-motion="standard"] {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity var(--duration-ui) var(--ease-out);
+}
+
+@starting-style {
+  .df-dossier-pane[data-motion="standard"] {
+    opacity: 0;
+  }
+}
+
+.df-dossier-tasks .df-task-row {
+  transition: none;
+  animation: none;
+}
+
+.df-dossier-activity .df-evidence-grid {
+  animation: none;
+}
+
+.df-dossier-settings input {
+  transition: none;
+  animation: none;
 }
 
 .df-overview {
@@ -1981,6 +2017,11 @@
   }
 
   .df-client-record-body {
+    transform: none;
+    transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
+  .df-dossier-pane {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
   }
