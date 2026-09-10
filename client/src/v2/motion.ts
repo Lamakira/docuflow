@@ -7,6 +7,7 @@
  * search keystrokes, result-list filtering.
  * Workspace switch content may crossfade (occasional; preventing a jarring change).
  * Client register → record may fade the body while identity stays (occasional; preventing a jarring change).
+ * Dossier tab content may crossfade; the tab underline is state, not a parade (occasional; preventing a jarring change).
  * Opportunity Stage-change moves the card to another Stage column (occasional; state indication).
  * Toasts enter and exit the same bottom edge (occasional; spatial consistency).
  */
@@ -29,6 +30,7 @@ export type MotionSurface =
   | "rail-collapse"
   | "workspace-switch"
   | "client-register-record"
+  | "dossier-tab-swap"
   | "opportunity-stage-change"
   | "workspace-chooser-pointer"
   | "workspace-chooser-keyboard"
@@ -53,6 +55,7 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "rail-collapse": "occasional",
   "workspace-switch": "occasional",
   "client-register-record": "occasional",
+  "dossier-tab-swap": "occasional",
   "opportunity-stage-change": "occasional",
   "workspace-chooser-pointer": "keyboard-or-100+",
   "workspace-chooser-keyboard": "keyboard-or-100+",
