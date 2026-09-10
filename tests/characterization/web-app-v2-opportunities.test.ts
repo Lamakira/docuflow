@@ -69,8 +69,10 @@ describe("Opportunities routing (#187)", () => {
     expect(appSource).toMatch(/path="\/opportunities"/);
     expect(appSource).toMatch(/path="\/opportunities"\s+component=\{V2OpportunitiesPage\}/);
     expect(pageSource).toContain('motionForSurface("opportunity-stage-change")');
-    expect(pageSource).toContain("df-opportunity-stage-control");
-    expect(pageSource).toContain("Opportunity Stage for");
+    expect(pageSource).toContain("df-opportunity-move");
+    expect(pageSource).toContain("Move {card.name}");
+    expect(pageSource).not.toContain("df-opportunity-stage-input");
+    expect(pageSource).not.toContain("df-opportunity-stage-control");
   });
 });
 
@@ -255,11 +257,9 @@ describe("Opportunity Stage-change motion (#187)", () => {
     expect(reduced.keepOpacity).toBe(true);
     expect(reduced.enterExit).toBe("standard");
 
-    expect(rule(".df-opportunity-stage")).toMatch(/--df-font-ui/);
-    expect(css).toMatch(/\.df-opportunity-stage\[data-status="won"\][^{]*\{[^}]*--df-signed-off/);
-    expect(rule(".df-opportunity-stage[data-motion=\"standard\"]")).toMatch(/opacity/);
-    expect(css).toMatch(/@starting-style[\s\S]*\.df-opportunity-stage\[data-motion="standard"\]/);
-    expect(reducedMotionCss()).toMatch(/\.df-opportunity-stage[^{]*\{[^}]*transform:\s*none/);
+    expect(rule(".df-opportunity-card[data-motion=\"standard\"]")).toMatch(/opacity/);
+    expect(css).toMatch(/@starting-style[\s\S]*\.df-opportunity-card\[data-motion="standard"\]/);
+    expect(reducedMotionCss()).toMatch(/\.df-opportunity-card[^{]*\{[^}]*transform:\s*none/);
     expect(reducedMotionCss()).toMatch(/@starting-style[\s\S]*transform:\s*none/);
     expect(reducedMotionCss()).not.toMatch(/opacity:\s*0/);
   });
@@ -268,12 +268,11 @@ describe("Opportunity Stage-change motion (#187)", () => {
     expect(rule(".df-opportunity-pipeline")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/scroll-behavior:\s*auto/);
+    expect(rule(".df-opportunity-pipeline")).toMatch(/scrollbar-width:\s*none/);
     expect(rule(".df-opportunity-column")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-column")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-card")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-card")).toMatch(/animation:\s*none/);
-    expect(rule(".df-opportunity-stage-control")).toMatch(/inline-grid/);
-    expect(rule(".df-opportunity-stage-input")).toMatch(/opacity:\s*0/);
   });
 });
 

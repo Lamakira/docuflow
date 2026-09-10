@@ -56,7 +56,7 @@ function toPipelineRow(row: CrmProjectWithDetails): OpportunityPipelineRowInput 
   };
 }
 
-function OpportunityStageControl({
+function OpportunityMoveMenu({
   card,
   columns,
   disabled,
@@ -67,36 +67,29 @@ function OpportunityStageControl({
   disabled: boolean;
   onChange: (nextStage: string) => void;
 }) {
-  const stageMotion = card.changing ? STAGE_CHANGE_MOTION : "none";
-  const marker = (
-    <span
-      className="df-opportunity-stage"
-      data-status={card.stage}
-      data-motion={stageMotion}
-    >
-      {card.stageLabel}
-    </span>
-  );
-
-  if (!card.canChangeStage) return marker;
+  if (!card.canChangeStage) return null;
 
   return (
-    <label className="df-opportunity-stage-control">
-      {marker}
-      <select
-        className="df-opportunity-stage-input"
-        value={card.stage}
-        aria-label={`Opportunity Stage for ${card.name}`}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {columns.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <details className="df-opportunity-move">
+      <summary>Move {card.name}</summary>
+      <div className="df-menu">
+        {columns
+          .filter((column) => column.id !== card.stage)
+          .map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              disabled={disabled}
+              onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                onChange(option.id);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+      </div>
+    </details>
   );
 }
 
@@ -325,6 +318,7 @@ export function V2OpportunitiesPage() {
                   <article
                     key={card.id}
                     className="df-opportunity-card"
+                    data-motion={card.changing ? STAGE_CHANGE_MOTION : "none"}
                     data-testid={`v2-opportunity-card-${card.id}`}
                   >
                     {card.projectHref ? (
@@ -337,7 +331,7 @@ export function V2OpportunitiesPage() {
                     {card.clientLabel ? (
                       <div className="df-opportunity-card-client">{card.clientLabel}</div>
                     ) : null}
-                    <OpportunityStageControl
+                    <OpportunityMoveMenu
                       card={card}
                       columns={pipeline.columns}
                       disabled={changeStage.isPending && changingId === card.id}
