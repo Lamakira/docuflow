@@ -205,7 +205,7 @@ export type DossierModel = {
     unapproved: string | null;
   };
   documents: {
-    rows: Array<{ id: string; title: string; meta: string }>;
+    rows: Array<{ id: string; title: string; meta: string; href: string }>;
     count: number;
     empty: boolean;
     emptyCopy: string;
@@ -641,6 +641,7 @@ export function composeDossier(input: DossierInput): DossierModel {
         id: document.id,
         title: document.title,
         meta: formatWhen(document.updatedAt, input.now),
+        href: `/document/${document.id}`,
       })),
       count: documents.length,
       empty: documents.length === 0,

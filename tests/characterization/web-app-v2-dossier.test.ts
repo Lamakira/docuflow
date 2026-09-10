@@ -173,8 +173,9 @@ describe("Project Dossier Overview from live Workspace records (#173)", () => {
     expect(dossier.dailyUpdate.prose).toContain("Imported the remaining vendor batches.");
     expect(dossier.dailyUpdate.blocker).toBeTruthy();
     expect(dossier.documents.rows).toEqual([
-      { id: "d1", title: "Scope notes", meta: "12:41" },
+      { id: "d1", title: "Scope notes", meta: "12:41", href: "/document/d1" },
     ]);
+    expect(matchV2Route(dossier.documents.rows[0].href).kind).toBe("document-editor");
     expect(dossier.evidence.tiles).toHaveLength(1);
     expect(dossier.evidence.tiles[0].kind).toBe("screenshot");
     expect(dossier.client?.name).toBe("Harbor Co");

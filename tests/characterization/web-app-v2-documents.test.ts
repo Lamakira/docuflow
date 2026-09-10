@@ -36,12 +36,12 @@ describe("Workspace Documents routing (#174)", () => {
     ]);
   });
 
-  it("opens a Document that this batch does not implement as a v2 placeholder, not the v1 editor", () => {
-    expect(matchV2Route("/documents/doc-live").kind).toBe("placeholder");
-    expect(matchV2Route("/documents/new").kind).toBe("placeholder");
-    expect(matchV2Route("/company-documents").kind).toBe("placeholder");
-    expect(matchV2Route("/company-documents/doc-live/edit").kind).toBe("placeholder");
-    expect(matchV2Route("/company-documents/doc-live/view").kind).toBe("placeholder");
+  it("opens a Workspace Document in the v2 editor, not a placeholder or the v1 editor", () => {
+    expect(matchV2Route("/documents/doc-live").kind).toBe("document-editor");
+    expect(matchV2Route("/documents/new").kind).toBe("documents");
+    expect(matchV2Route("/company-documents").kind).toBe("documents");
+    expect(matchV2Route("/company-documents/doc-live/edit").kind).toBe("document-editor");
+    expect(matchV2Route("/company-documents/doc-live/view").kind).toBe("document-editor");
   });
 });
 
@@ -129,7 +129,7 @@ describe("Workspace Documents register from live Workspace records (#174)", () =
       href: "/documents/doc-1",
     });
     expect(child?.path).toContain("Policies");
-    expect(matchV2Route(child!.href!).kind).toBe("placeholder");
+    expect(matchV2Route(child!.href!).kind).toBe("document-editor");
     const root = library.rows.find((row) => row.id === "doc-root");
     expect(root).toMatchObject({
       kind: "document",
@@ -140,9 +140,16 @@ describe("Workspace Documents register from live Workspace records (#174)", () =
       href: "/documents/doc-root",
     });
     const file = library.rows.find((row) => row.id === "file-1");
-    expect(file).toBeUndefined();
+    expect(file).toMatchObject({
+      kind: "file",
+      name: "brand-kit.zip",
+      type: "FILE",
+      child: true,
+      href: "/documents/file-1",
+    });
     const templates = library.rows.find((row) => row.id === "fld-4");
     expect(templates?.type).toBe("FOLDER");
+    expect(templates?.expanded).toBe(false);
     expect(library.preview).toMatchObject({
       title: "Policies",
     });

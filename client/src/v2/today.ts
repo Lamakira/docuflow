@@ -292,7 +292,7 @@ function composeKnowledge(input: TodayInput): KnowledgeRow[] {
     title: document.title,
     meta: `PROJECT DOC · ${projectNameByDocProject.get(document.projectId) ?? "Project"}`,
     when: formatWhen(document.updatedAt, input.now),
-    href: "/project-documentation",
+    href: `/document/${document.id}`,
   }));
 }
 

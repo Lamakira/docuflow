@@ -80,6 +80,10 @@ export function documentHref(id: string): string {
   return `/documents/${id}`;
 }
 
+export function projectDocumentHref(id: string): string {
+  return `/document/${id}`;
+}
+
 export function composeLibrary(input: LibraryInput): LibraryModel {
   const subhead = librarySubhead(input.workspaceName);
   if (input.capabilityMiss) {
@@ -122,7 +126,7 @@ export function composeLibrary(input: LibraryInput): LibraryModel {
     if (needle && !folderMatches && matchingChildren.length === 0) continue;
 
     const showChildren = expanded.has(folder.id) || (Boolean(needle) && matchingChildren.length > 0);
-    const listedChildren = needle && !folderMatches ? matchingChildren : showChildren ? matchingChildren : [];
+    const listedChildren = needle && !folderMatches ? matchingChildren : matchingChildren;
     rows.push(folderRow(folder, children, showChildren, folder.id === input.selectedFolderId, input.now));
     for (const document of listedChildren) {
       rows.push(itemRow(document, folder.name, true, input.now));

@@ -3,7 +3,7 @@
  * refusals, and toast copy. Motion lives in motion.ts.
  */
 
-import { documentHref } from "./library";
+import { documentHref, projectDocumentHref } from "./library";
 import type { V2CommandPanel } from "./presentation";
 import { projectHref } from "./today";
 import { notificationOrigin } from "./workspace";
@@ -51,19 +51,33 @@ export function composeSearch(input: {
   workspaceDocuments: SearchWorkspaceDocument[];
   folders: SearchFolder[];
   accessFact?: SearchAccessFact;
+  assignedProjectNames?: string[];
 }): SearchModel {
   if (!input.query.trim()) {
     return { rows: [], footer: null };
   }
   const rows: SearchRow[] = [];
+  const assigned =
+    input.assignedProjectNames === undefined
+      ? null
+      : new Set(input.assignedProjectNames.map((name) => name.toLowerCase()));
 
   for (const hit of input.searchHits) {
+    if (hit.type === "document" && assigned) {
+      const projectName = (hit.projectName ?? "").toLowerCase();
+      if (!projectName || !assigned.has(projectName)) continue;
+    }
     rows.push({
       id: `${hit.type}-${hit.id}`,
       kind: hit.type.toUpperCase(),
       title: hit.title,
       meta: hit.projectName ?? null,
-      href: hit.type === "project" ? projectHref(hit.id) : "/project-documentation",
+      href:
+        hit.type === "project"
+          ? projectHref(hit.id)
+          : hit.type === "document"
+            ? projectDocumentHref(hit.id)
+            : "/project-documentation",
     });
   }
 

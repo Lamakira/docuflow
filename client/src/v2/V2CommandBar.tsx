@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import type { CrmProjectWithDetails } from "@shared/schema";
+import { useAuth } from "@/hooks/useAuth";
 import { BellIcon, CloseIcon, SearchIcon, SparkleIcon } from "./icons";
 import { V2TimerChip } from "./V2TimerChip";
 import { composeSearch, selectCommandPanel, chromeRefusal, type SearchModel } from "./chrome";
 import { motionForSurface } from "./motion";
 import { type V2CommandPanel, breadcrumbFor } from "./presentation";
+import { projectVisibleTo } from "./projects";
+import { useV2Chrome } from "./V2Shell";
 
 const SEARCH_MOTION = motionForSurface("search-overlay").enterExit;
 
@@ -114,11 +118,15 @@ type WorkspaceDocumentSearch = {
   restrictedHidden?: number;
 };
 
-async function loadSearch(query: string): Promise<{ model: SearchModel; knowledgeRefusal: string | null }> {
+async function loadSearch(
+  query: string,
+  viewer: { userId: string; role: string | null },
+): Promise<{ model: SearchModel; knowledgeRefusal: string | null }> {
   const q = encodeURIComponent(query.trim());
-  const [searchRes, knowledgeRes] = await Promise.all([
+  const [searchRes, knowledgeRes, projectsRes] = await Promise.all([
     fetch(`/api/search?q=${q}`, { credentials: "include" }),
     fetch(`/api/company-documents/search?q=${q}`, { credentials: "include" }),
+    fetch("/api/crm/projects?pageSize=500", { credentials: "include" }),
   ]);
   const searchBody = searchRes.ok ? await searchRes.json() : [];
   const knowledge: WorkspaceDocumentSearch = knowledgeRes.ok ? await knowledgeRes.json() : { documents: [], folders: [] };
@@ -134,6 +142,23 @@ async function loadSearch(query: string): Promise<{ model: SearchModel; knowledg
               : knowledge.restrictedHidden,
         }
       : undefined;
+  const projects = projectsRes.ok
+    ? (((await projectsRes.json()) as { data?: CrmProjectWithDetails[] }).data ?? [])
+    : [];
+  const assignedProjectNames = projects
+    .filter((project) => {
+      const memberIds = (project.members ?? [])
+        .map((row) => row.userId || row.user?.id)
+        .filter((id): id is string => Boolean(id));
+      return projectVisibleTo({
+        role: viewer.role,
+        userId: viewer.userId,
+        memberIds,
+        assigneeId: project.assigneeId ?? project.assignee?.id ?? null,
+      });
+    })
+    .map((project) => project.project?.name)
+    .filter((name): name is string => Boolean(name));
   return {
     model: composeSearch({
       query,
@@ -146,6 +171,7 @@ async function loadSearch(query: string): Promise<{ model: SearchModel; knowledg
       })),
       folders: knowledge.folders ?? [],
       accessFact,
+      assignedProjectNames,
     }),
     knowledgeRefusal:
       knowledgeRes.status === 401 || knowledgeRes.status === 403
@@ -158,9 +184,22 @@ export function SearchOverlay({ workspaceName, onClose }: { workspaceName: strin
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const trimmed = query.trim();
+  const { user } = useAuth();
+  const { memberships } = useV2Chrome();
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const { data, isFetching } = useQuery({
-    queryKey: ["/api/search", trimmed, "v2-chrome"],
-    queryFn: () => loadSearch(trimmed),
+    queryKey: [
+      "/api/search",
+      trimmed,
+      "v2-chrome",
+      user?.id ?? "",
+      current?.workspaceRole ?? "",
+    ],
+    queryFn: () =>
+      loadSearch(trimmed, {
+        userId: user?.id ?? "",
+        role: current?.workspaceRole?.toLowerCase() || null,
+      }),
     enabled: trimmed.length > 0,
   });
   const rows = data?.model.rows ?? [];
