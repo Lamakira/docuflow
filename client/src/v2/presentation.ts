@@ -86,6 +86,8 @@ export type V2Match =
   | { kind: "legacy-project"; title: "Projects"; href: "/projects"; legacyProjectId: string }
   | { kind: "dossier"; title: string; href: "/projects"; projectId: string; tab: DossierTabId }
   | { kind: "documents"; title: "Workspace Documents"; href: "/documents" }
+  | { kind: "clients"; title: "Clients"; href: "/clients" }
+  | { kind: "client-record"; title: string; href: "/clients"; clientId: string }
   | { kind: "placeholder"; title: string; href: string };
 
 export type V2NavId =
@@ -151,7 +153,6 @@ export const V2_NAV: V2NavSection[] = [
 
 const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> = [
   { href: "/opportunities", title: "Opportunities" },
-  { href: "/clients", title: "Clients" },
   { href: "/project-documentation", title: "Project Documentation" },
   { href: "/time", title: "Time Tracking" },
   { href: "/activity", title: "Activity" },
@@ -162,7 +163,6 @@ const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> 
 ];
 
 const V1_TO_PLACEHOLDER: Array<{ test: (path: string) => boolean; href: string; title: string }> = [
-  { test: (path) => path.startsWith("/crm/client"), href: "/clients", title: "Clients" },
   { test: (path) => path === "/company-documents" || path.startsWith("/company-documents/"), href: "/documents", title: "Workspace Documents" },
   { test: (path) => path === "/time-tracking/devices" || path.startsWith("/time-tracking/devices/"), href: "/devices", title: "Devices" },
   { test: (path) => path === "/devices" || path.startsWith("/devices/"), href: "/devices", title: "Devices" },
@@ -186,6 +186,13 @@ function parseLegacyProjectPath(pathname: string): string | null {
   return parts[1];
 }
 
+function parseClientRecordPath(pathname: string): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] === "clients" && parts[1] && parts[1] !== "new" && parts.length === 2) return parts[1];
+  if (parts[0] === "crm" && parts[1] === "client" && parts[2] && parts[2] !== "new") return parts[2];
+  return null;
+}
+
 export function parseDossierPath(pathname: string): { projectId: string; tab: DossierTabId } | null {
   const parts = pathname.split("/").filter(Boolean);
   if (parts[0] !== "projects" || parts.length < 2) return null;
@@ -205,6 +212,15 @@ export function matchV2Route(path: string): V2Match {
   }
   if (pathname.startsWith("/documents/")) {
     return { kind: "placeholder", title: "Document", href: "/documents" };
+  }
+
+  if (pathname === "/clients" || pathname === "/crm/client/new") {
+    return { kind: "clients", title: "Clients", href: "/clients" };
+  }
+
+  const clientId = parseClientRecordPath(pathname);
+  if (clientId) {
+    return { kind: "client-record", title: "Client", href: "/clients", clientId };
   }
 
   if (pathname === "/projects" || pathname === "/crm" || pathname === "/crm/project/new") {
@@ -267,6 +283,7 @@ export function navIdForPath(path: string): V2NavId | null {
   if (match.kind === "today" || match.kind === "auth-redirect") return "today";
   if (match.kind === "documents") return "documents";
   if (match.kind === "projects" || match.kind === "legacy-project") return "projects";
+  if (match.kind === "clients" || match.kind === "client-record") return "clients";
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -299,6 +316,19 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "WORKSPACE DOCUMENTS" },
+    ];
+  }
+  if (match.kind === "clients") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "CLIENTS" },
+    ];
+  }
+  if (match.kind === "client-record") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "CLIENTS", href: "/clients" },
+      { label: "RECORD" },
     ];
   }
   return [

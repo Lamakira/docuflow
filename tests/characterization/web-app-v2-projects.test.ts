@@ -43,7 +43,7 @@ describe("Projects routing (#185)", () => {
     });
     expect(matchV2Route("/project/doc-live").kind).not.toBe("placeholder");
     expect(matchV2Route("/project/doc-live").href).toBe("/projects");
-    expect(matchV2Route("/crm/client/cli-1").kind).toBe("placeholder");
+    expect(matchV2Route("/crm/client/cli-1").kind).toBe("client-record");
   });
 });
 
