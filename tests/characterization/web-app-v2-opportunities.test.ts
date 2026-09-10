@@ -73,6 +73,9 @@ describe("Opportunities routing (#187)", () => {
     expect(pageSource).toContain("Droppable");
     expect(pageSource).toContain("Draggable");
     expect(pageSource).toContain("isDragDisabled");
+    expect(pageSource).toContain("renderClone");
+    expect(pageSource).toContain("getContainerForClone");
+    expect(pageSource).toContain("opportunityCloneRoot");
     expect(pageSource).not.toContain("df-opportunity-move");
     expect(pageSource).not.toContain("Move {card.name}");
     expect(pageSource).not.toContain("df-opportunity-stage-input");
@@ -279,6 +282,8 @@ describe("Opportunity Stage-change motion (#187)", () => {
     expect(rule(".df-opportunity-card")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-card")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-card")).toMatch(/cursor:\s*grab/);
+    expect(rule(".df-opportunity-card")).toMatch(/align-self:\s*stretch/);
+    expect(rule(".df-opportunity-card")).not.toMatch(/width:\s*100%/);
     expect(rule(".df-opportunity-card[data-dragging=\"true\"]")).toMatch(/box-shadow/);
   });
 });

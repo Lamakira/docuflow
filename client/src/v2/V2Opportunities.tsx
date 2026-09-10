@@ -1,5 +1,11 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
+import {
+  DragDropContext,
+  Draggable,
+  Droppable,
+  type DraggableProvided,
+  type DropResult,
+} from "@hello-pangea/dnd";
 import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { CrmClient, CrmProjectWithDetails, SafeUser } from "@shared/schema";
@@ -14,6 +20,7 @@ import {
   composeOpportunityStages,
   opportunityWriteRefusal,
   stageOptionsFromFieldOptions,
+  type OpportunityCard,
   type OpportunityPipelineRowInput,
 } from "./opportunities";
 
@@ -53,6 +60,53 @@ function toPipelineRow(row: CrmProjectWithDetails): OpportunityPipelineRowInput 
     projectType: row.projectType,
     isDocumentationOnly: row.isDocumentationOnly ?? 0,
   };
+}
+
+function opportunityCloneRoot(): HTMLElement {
+  return document.querySelector<HTMLElement>(".df-v2") ?? document.body;
+}
+
+function OpportunityCardView({
+  card,
+  provided,
+  dragging,
+  locked,
+}: {
+  card: OpportunityCard;
+  provided: DraggableProvided;
+  dragging: boolean;
+  locked: boolean;
+}) {
+  return (
+    <article
+      ref={provided.innerRef}
+      {...provided.draggableProps}
+      {...provided.dragHandleProps}
+      className="df-opportunity-card"
+      data-dragging={dragging ? "true" : "false"}
+      data-locked={locked ? "true" : "false"}
+      data-testid={`v2-opportunity-card-${card.id}`}
+    >
+      {card.projectHref ? (
+        <Link href={card.projectHref} className="df-row-title">
+          {card.name}
+        </Link>
+      ) : (
+        <div className="df-row-title">{card.name}</div>
+      )}
+      {card.clientLabel ? <div className="df-opportunity-card-client">{card.clientLabel}</div> : null}
+    </article>
+  );
+}
+
+function renderOpportunityClone(
+  cardsById: Map<string, OpportunityCard>,
+  provided: DraggableProvided,
+  rubric: { draggableId: string },
+) {
+  const card = cardsById.get(rubric.draggableId);
+  if (!card) return null;
+  return <OpportunityCardView card={card} provided={provided} dragging locked={false} />;
 }
 
 export function V2OpportunitiesPage() {
@@ -187,6 +241,9 @@ export function V2OpportunitiesPage() {
   }
 
   const rowsById = new Map((projectsResponse?.data ?? []).map((row) => [row.id, row]));
+  const cardsById = new Map(
+    pipeline.columns.flatMap((column) => column.cards.map((card) => [card.id, card] as const)),
+  );
 
   function handleDragEnd(result: DropResult) {
     pipelineRef.current?.setAttribute("data-dragging", "false");
@@ -309,7 +366,13 @@ export function V2OpportunitiesPage() {
                 <h2 className="df-card-title">{column.label}</h2>
                 <span className="df-count-chip">{column.cards.length}</span>
               </div>
-              <Droppable droppableId={column.id}>
+              <Droppable
+                droppableId={column.id}
+                renderClone={(provided, _snapshot, rubric) =>
+                  renderOpportunityClone(cardsById, provided, rubric)
+                }
+                getContainerForClone={opportunityCloneRoot}
+              >
                 {(provided, snapshot) => (
                   <div
                     ref={provided.innerRef}
@@ -324,27 +387,13 @@ export function V2OpportunitiesPage() {
                         index={index}
                         isDragDisabled={!card.canChangeStage || readOnly}
                       >
-                        {(drag, dragSnapshot) => (
-                          <article
-                            ref={drag.innerRef}
-                            {...drag.draggableProps}
-                            {...drag.dragHandleProps}
-                            className="df-opportunity-card"
-                            data-dragging={dragSnapshot.isDragging ? "true" : "false"}
-                            data-locked={!card.canChangeStage || readOnly ? "true" : "false"}
-                            data-testid={`v2-opportunity-card-${card.id}`}
-                          >
-                            {card.projectHref ? (
-                              <Link href={card.projectHref} className="df-row-title">
-                                {card.name}
-                              </Link>
-                            ) : (
-                              <div className="df-row-title">{card.name}</div>
-                            )}
-                            {card.clientLabel ? (
-                              <div className="df-opportunity-card-client">{card.clientLabel}</div>
-                            ) : null}
-                          </article>
+                        {(drag) => (
+                          <OpportunityCardView
+                            card={card}
+                            provided={drag}
+                            dragging={false}
+                            locked={!card.canChangeStage || readOnly}
+                          />
                         )}
                       </Draggable>
                     ))}
