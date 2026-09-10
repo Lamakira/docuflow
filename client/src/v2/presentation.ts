@@ -91,6 +91,8 @@ export type V2Match =
   | { kind: "clients"; title: "Clients"; href: "/clients" }
   | { kind: "client-record"; title: string; href: "/clients"; clientId: string }
   | { kind: "opportunities"; title: "Opportunities"; href: "/opportunities" }
+  | { kind: "time"; title: "Time Tracking"; href: "/time" }
+  | { kind: "daily-update"; title: "Daily Update"; href: "/daily-update" }
   | { kind: "placeholder"; title: string; href: string };
 
 export type V2NavId =
@@ -155,7 +157,6 @@ export const V2_NAV: V2NavSection[] = [
 ];
 
 const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> = [
-  { href: "/time", title: "Time Tracking" },
   { href: "/activity", title: "Activity" },
   { href: "/people", title: "People" },
   { href: "/administration", title: "Administration" },
@@ -166,10 +167,8 @@ const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> 
 const V1_TO_PLACEHOLDER: Array<{ test: (path: string) => boolean; href: string; title: string }> = [
   { test: (path) => path === "/time-tracking/devices" || path.startsWith("/time-tracking/devices/"), href: "/devices", title: "Devices" },
   { test: (path) => path === "/devices" || path.startsWith("/devices/"), href: "/devices", title: "Devices" },
-  { test: (path) => path === "/time-tracking" || path.startsWith("/time-tracking/"), href: "/time", title: "Time Tracking" },
   { test: (path) => path === "/admin" || path.startsWith("/admin/"), href: "/administration", title: "Administration" },
   { test: (path) => path === "/help-center" || path.startsWith("/help-center/"), href: "/help", title: "Help Center" },
-  { test: (path) => path === "/daily-update" || path.startsWith("/daily-update/"), href: "/daily-update", title: "Daily Update" },
 ];
 
 function parseV1ProjectRecord(pathname: string): string | null {
@@ -208,6 +207,11 @@ function parseProjectDocumentPath(pathname: string): string | null {
   const parts = pathname.split("/").filter(Boolean);
   if (parts[0] === "document" && parts[1]) return parts[1];
   return null;
+}
+
+function isTimeTrackingRewrite(pathname: string): boolean {
+  if (pathname === "/time-tracking/devices" || pathname.startsWith("/time-tracking/devices/")) return false;
+  return pathname === "/time-tracking" || pathname.startsWith("/time-tracking/");
 }
 
 export function parseDossierPath(pathname: string): { projectId: string; tab: DossierTabId } | null {
@@ -265,6 +269,18 @@ export function matchV2Route(path: string): V2Match {
 
   if (pathname === "/opportunities") {
     return { kind: "opportunities", title: "Opportunities", href: "/opportunities" };
+  }
+
+  if (pathname === "/time") {
+    return { kind: "time", title: "Time Tracking", href: "/time" };
+  }
+
+  if (isTimeTrackingRewrite(pathname)) {
+    return { kind: "time", title: "Time Tracking", href: "/time" };
+  }
+
+  if (pathname === "/daily-update" || pathname.startsWith("/daily-update/")) {
+    return { kind: "daily-update", title: "Daily Update", href: "/daily-update" };
   }
 
   if (pathname === "/clients" || pathname === "/crm/client/new") {
@@ -342,6 +358,7 @@ export function navIdForPath(path: string): V2NavId | null {
   if (match.kind === "projects" || match.kind === "legacy-project") return "projects";
   if (match.kind === "clients" || match.kind === "client-record") return "clients";
   if (match.kind === "opportunities") return "opportunities";
+  if (match.kind === "time") return "time";
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -400,6 +417,18 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "OPPORTUNITIES" },
+    ];
+  }
+  if (match.kind === "time") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "TIME TRACKING" },
+    ];
+  }
+  if (match.kind === "daily-update") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "DAILY UPDATE" },
     ];
   }
   if (match.kind === "clients") {

@@ -11,6 +11,7 @@
  * Client register → record may fade the body while identity stays (occasional; preventing a jarring change).
  * Dossier tab content may crossfade; the tab underline is state, not a parade (occasional; preventing a jarring change).
  * Opportunity Stage-change moves the card to another Stage column (occasional; state indication).
+ * Time Entry add/remove uses an enter/exit bridge (occasional; preventing a jarring change).
  * Toasts enter and exit the same bottom edge (occasional; spatial consistency).
  */
 
@@ -34,6 +35,7 @@ export type MotionSurface =
   | "client-register-record"
   | "dossier-tab-swap"
   | "opportunity-stage-change"
+  | "time-entry"
   | "workspace-chooser-pointer"
   | "workspace-chooser-keyboard"
   | "timer-chip"
@@ -63,6 +65,7 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "client-register-record": "occasional",
   "dossier-tab-swap": "occasional",
   "opportunity-stage-change": "occasional",
+  "time-entry": "occasional",
   "workspace-chooser-pointer": "keyboard-or-100+",
   "workspace-chooser-keyboard": "keyboard-or-100+",
   "timer-chip": "keyboard-or-100+",

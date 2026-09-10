@@ -555,6 +555,36 @@
   animation: none;
 }
 
+.df-time-register .df-register-head,
+.df-time-register .df-register-row {
+  grid-template-columns: 0.55fr 1.4fr 1fr 0.8fr 0.7fr 0.7fr 0.55fr;
+}
+
+.df-time-row[data-motion="standard"] {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--duration-ui) var(--ease-out),
+    transform var(--duration-ui) var(--ease-out);
+}
+
+@starting-style {
+  .df-time-row[data-motion="standard"] {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.df-time-row[data-state="leaving"][data-motion="standard"] {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.df-time-clock {
+  transition: none;
+  animation: none;
+}
+
 .df-opportunities-filter {
   transition: none;
   animation: none;
@@ -1301,6 +1331,48 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.df-daily-form {
+  padding: 16px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.df-daily-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.df-daily-field input,
+.df-daily-field select,
+.df-daily-field textarea {
+  font: inherit;
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--df-card-white);
+  transition: none;
+  animation: none;
+}
+
+.df-daily-field textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.df-daily-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.df-daily-check input {
+  width: auto;
+  padding: 0;
 }
 
 .df-blocker {
@@ -2096,6 +2168,21 @@
 
   .df-opportunity-card {
     animation: none;
+  }
+
+  .df-time-row[data-motion="standard"] {
+    transform: none;
+    transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
+  .df-time-row[data-state="leaving"][data-motion="standard"] {
+    transform: none;
+  }
+
+  @starting-style {
+    .df-time-row[data-motion="standard"] {
+      transform: none;
+    }
   }
 
   .df-accordion {
