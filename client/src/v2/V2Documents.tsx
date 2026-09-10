@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
-import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { FileText, Folder, Search } from "lucide-react";
+import { useMemo, useState, type FormEvent } from "react";
+import { Link, useLocation } from "wouter";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Search } from "lucide-react";
 import type {
   CompanyDocumentFolderWithCreator,
   CompanyDocumentWithUploader,
   SafeUser,
 } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { chromeRefusal } from "./chrome";
 import {
   composeLibrary,
   type LibraryDocument,
@@ -14,12 +16,24 @@ import {
   type LibraryInput,
 } from "./library";
 import { memberName } from "./today";
+import { useV2Chrome } from "./V2Shell";
+import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 
 type LibraryPayload = {
   capabilityMiss: boolean;
   folders: CompanyDocumentFolderWithCreator[];
   documents: CompanyDocumentWithUploader[];
 };
+
+type CreateMode = "document" | "folder" | "upload" | null;
+
+function actionFromSearch(): CreateMode {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("new") === "1") return "document";
+  if (params.get("folder") === "1") return "folder";
+  if (params.get("upload") === "1") return "upload";
+  return null;
+}
 
 async function readJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
@@ -100,9 +114,17 @@ function toDocument(document: CompanyDocumentWithUploader): LibraryDocument {
 
 export function V2DocumentsPage() {
   const now = useMemo(() => new Date(), []);
+  const [, navigate] = useLocation();
+  const { memberships } = useV2Chrome();
   const [filterQuery, setFilterQuery] = useState("");
   const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [createMode, setCreateMode] = useState<CreateMode>(() => actionFromSearch());
+  const [name, setName] = useState("");
+  const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  const workspaceName = current?.workspaceName ?? "this Workspace";
+  const readOnly = current?.condition === "Read-only";
 
   const { data, isLoading } = useQuery<LibraryPayload>({
     queryKey: ["/api/company-document-folders", "workspace-library"],
@@ -113,7 +135,7 @@ export function V2DocumentsPage() {
 
   const input: LibraryInput = {
     now,
-    workspaceName: "this Workspace",
+    workspaceName,
     folders: (data?.folders ?? []).map(toFolder),
     documents: (data?.documents ?? []).map(toDocument),
     expandedFolderIds,
@@ -123,12 +145,99 @@ export function V2DocumentsPage() {
     ownerName: owner ? memberName(owner) : null,
   };
   const library = composeLibrary(input);
+  const folderMotion = useFolderExpandMotion(filterQuery);
+
+  function refuseWrite(errorMessage?: string) {
+    if (readOnly) {
+      setWriteRefusal(
+        chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }),
+      );
+      return true;
+    }
+    if (errorMessage) {
+      setWriteRefusal(chromeRefusal({ kind: "generic", message: errorMessage }));
+    }
+    return false;
+  }
+
+  const createDocument = useMutation({
+    mutationFn: (documentName: string) =>
+      apiRequest("POST", "/api/company-documents", {
+        name: documentName,
+        content: { type: "doc", content: [{ type: "paragraph" }] },
+        ...(selectedFolderId ? { folderId: selectedFolderId } : {}),
+      }),
+    onSuccess: (created: { id?: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-documents"] });
+      setCreateMode(null);
+      setName("");
+      setWriteRefusal(null);
+      if (created?.id) navigate(`/documents/${created.id}`);
+    },
+    onError: (error: Error) => {
+      refuseWrite(error.message);
+    },
+  });
+
+  const createFolder = useMutation({
+    mutationFn: (folderName: string) => apiRequest("POST", "/api/company-document-folders", { name: folderName }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
+      setCreateMode(null);
+      setName("");
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => {
+      refuseWrite(error.message);
+    },
+  });
+
+  const uploadFile = useMutation({
+    mutationFn: async (file: File) => {
+      const urlResponse = await apiRequest("POST", "/api/company-documents/upload-url");
+      const { uploadURL, objectPath } = urlResponse as { uploadURL: string; objectPath: string };
+      const uploadResponse = await fetch(uploadURL, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      if (!uploadResponse.ok) throw new Error(`Failed to upload ${file.name}`);
+      return apiRequest("POST", "/api/company-documents", {
+        name: file.name.replace(/\.[^/.]+$/, ""),
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type || "application/octet-stream",
+        storagePath: objectPath,
+        ...(selectedFolderId ? { folderId: selectedFolderId } : {}),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-documents"] });
+      setCreateMode(null);
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => {
+      refuseWrite(error.message);
+    },
+  });
 
   function onFolderClick(folderId: string) {
+    folderMotion.onUserExpand();
     setSelectedFolderId(folderId);
     setExpandedFolderIds((current) =>
       current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId],
     );
+  }
+
+  function onCreate(event: FormEvent) {
+    event.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (refuseWrite()) return;
+    if (createMode === "folder") createFolder.mutate(trimmed);
+    if (createMode === "document") createDocument.mutate(trimmed);
   }
 
   if (isLoading) {
@@ -156,17 +265,55 @@ export function V2DocumentsPage() {
             <p className="df-subhead">{library.subhead}</p>
           </div>
           <div className="df-library-actions">
-            <Link href="/documents/new-folder" className="df-ghost-btn">
+            <button type="button" className="df-ghost-btn" onClick={() => setCreateMode("folder")}>
               New folder
-            </Link>
-            <Link href="/documents/upload" className="df-ghost-btn">
+            </button>
+            <button type="button" className="df-ghost-btn" onClick={() => setCreateMode("upload")}>
               Upload File
-            </Link>
-            <Link href="/documents/new" className="df-ink-btn">
+            </button>
+            <button type="button" className="df-ink-btn" onClick={() => setCreateMode("document")}>
               New Document
-            </Link>
+            </button>
           </div>
         </header>
+
+        {createMode === "document" || createMode === "folder" ? (
+          <form className="df-filter-bar" onSubmit={onCreate}>
+            <label className="df-filter-input">
+              <input
+                type="text"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={createMode === "folder" ? "Folder name" : "Document name"}
+                aria-label={createMode === "folder" ? "Folder name" : "Document name"}
+              />
+            </label>
+            <button
+              type="submit"
+              className="df-ink-btn"
+              disabled={createDocument.isPending || createFolder.isPending || !name.trim()}
+            >
+              Create
+            </button>
+          </form>
+        ) : null}
+        {createMode === "upload" ? (
+          <div className="df-filter-bar">
+            <label className="df-filter-input">
+              <input
+                type="file"
+                aria-label="Upload File"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  if (refuseWrite()) return;
+                  uploadFile.mutate(file);
+                }}
+              />
+            </label>
+          </div>
+        ) : null}
+        {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
 
         <div className="df-filter-bar">
           <label className="df-filter-input">
@@ -191,90 +338,12 @@ export function V2DocumentsPage() {
           </div>
         </div>
 
-        <section className="df-card" data-testid="v2-documents-register">
-          <div className="df-library-head">
-            <span>NAME / PATH</span>
-            <span>TYPE</span>
-            <span>ACCESS</span>
-            <span>LAST EDITOR</span>
-            <span style={{ textAlign: "right" }}>UPDATED</span>
-          </div>
-          {library.refusal ? (
-            <p className="df-refusal">{library.refusal}</p>
-          ) : library.empty ? (
-            <p className="df-empty">{library.emptyCopy}</p>
-          ) : (
-            library.rows.map((row) => {
-              const body = (
-                <>
-                  <span style={{ minWidth: 0, display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    {row.kind === "folder" ? (
-                      <Folder width={15} height={15} strokeWidth={1.4} color="#0F1524" style={{ marginTop: 2, flex: "none" }} />
-                    ) : (
-                      <FileText width={15} height={15} strokeWidth={1.4} color="#59657A" style={{ marginTop: 2, flex: "none" }} />
-                    )}
-                    <span style={{ minWidth: 0 }}>
-                      <div
-                        className="df-row-title"
-                        style={{
-                          fontWeight: row.kind === "folder" ? 600 : 500,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {row.name}
-                      </div>
-                      <div className="df-mono df-meta">{row.path}</div>
-                    </span>
-                  </span>
-                  <span className="df-mono df-meta">{row.type}</span>
-                  <span>
-                    <span className="df-status">{row.access}</span>
-                  </span>
-                  <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.editor}</span>
-                  <span className="df-mono" style={{ fontSize: 12, textAlign: "right" }}>
-                    {row.updated}
-                  </span>
-                </>
-              );
-
-              if (row.kind === "folder") {
-                return (
-                  <button
-                    key={row.id}
-                    type="button"
-                    className="df-library-row"
-                    data-expanded={row.expanded ? "true" : "false"}
-                    data-selected={row.selected ? "true" : "false"}
-                    data-testid={`v2-folder-row-${row.id}`}
-                    onClick={() => onFolderClick(row.id)}
-                  >
-                    {body}
-                  </button>
-                );
-              }
-
-              return (
-                <Link
-                  key={row.id}
-                  href={row.href ?? "/documents/new"}
-                  className="df-library-row"
-                  data-child={row.child ? "true" : "false"}
-                  data-testid={`v2-document-row-${row.id}`}
-                >
-                  {body}
-                </Link>
-              );
-            })
-          )}
-          <div className="df-library-foot">
-            <span>
-              {library.itemCount} {library.itemCount === 1 ? "ITEM" : "ITEMS"} · {library.folderCount}{" "}
-              {library.folderCount === 1 ? "FOLDER" : "FOLDERS"}
-            </span>
-          </div>
-        </section>
+        <V2LibraryRegister
+          library={library}
+          testId="v2-documents-register"
+          instantExpand={folderMotion.instantExpand}
+          onFolderClick={onFolderClick}
+        />
       </div>
 
       {library.preview ? (

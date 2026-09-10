@@ -1543,6 +1543,8 @@
   background: transparent;
   font-size: 13px;
   outline: none;
+  transition: none;
+  animation: none;
 }
 
 .df-filter-input input::placeholder {
@@ -1650,6 +1652,71 @@
   background: var(--df-cold-stock);
   border-left: 2px solid var(--df-case-ink);
   padding-left: 16px;
+}
+
+.df-accordion {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--duration-ui) var(--ease-out);
+}
+
+.df-accordion[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+
+.df-accordion[data-motion="instant"] {
+  transition: none;
+}
+
+.df-accordion-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.df-editor-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--df-card-white);
+}
+
+.df-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--df-divider);
+  flex: none;
+}
+
+.df-save-state {
+  font-family: var(--df-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--df-archive-slate);
+  transition: color var(--duration-ui) var(--ease-out), opacity var(--duration-ui) var(--ease-out);
+}
+
+.df-save-state[data-state="saved"] {
+  color: var(--df-signed-off);
+}
+
+.df-editor {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 22px 40px;
+  transition: none;
+  animation: none;
+}
+
+.df-editor input,
+.df-editor textarea,
+.df-editor .ProseMirror {
+  transition: none;
+  animation: none;
 }
 
 .df-library-foot {
@@ -1904,7 +1971,8 @@
 .df-v2[data-chrome="mobile"] .df-page,
 .df-v2[data-chrome="mobile"] .df-dossier-body,
 .df-v2[data-chrome="mobile"] .df-library,
-.df-v2[data-chrome="mobile"] .df-library-main {
+.df-v2[data-chrome="mobile"] .df-library-main,
+.df-v2[data-chrome="mobile"] .df-editor-page {
   min-width: 0;
 }
 
@@ -2028,6 +2096,10 @@
 
   .df-opportunity-card {
     animation: none;
+  }
+
+  .df-accordion {
+    transition: none;
   }
 
   .df-toast {

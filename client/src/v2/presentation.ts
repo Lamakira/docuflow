@@ -86,6 +86,8 @@ export type V2Match =
   | { kind: "legacy-project"; title: "Projects"; href: "/projects"; legacyProjectId: string }
   | { kind: "dossier"; title: string; href: "/projects"; projectId: string; tab: DossierTabId }
   | { kind: "documents"; title: "Workspace Documents"; href: "/documents" }
+  | { kind: "project-documentation"; title: "Project Documentation"; href: "/project-documentation" }
+  | { kind: "document-editor"; title: string; href: string; documentId: string; source: "workspace" | "project" }
   | { kind: "clients"; title: "Clients"; href: "/clients" }
   | { kind: "client-record"; title: string; href: "/clients"; clientId: string }
   | { kind: "opportunities"; title: "Opportunities"; href: "/opportunities" }
@@ -153,7 +155,6 @@ export const V2_NAV: V2NavSection[] = [
 ];
 
 const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> = [
-  { href: "/project-documentation", title: "Project Documentation" },
   { href: "/time", title: "Time Tracking" },
   { href: "/activity", title: "Activity" },
   { href: "/people", title: "People" },
@@ -163,15 +164,12 @@ const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> 
 ];
 
 const V1_TO_PLACEHOLDER: Array<{ test: (path: string) => boolean; href: string; title: string }> = [
-  { test: (path) => path === "/company-documents" || path.startsWith("/company-documents/"), href: "/documents", title: "Workspace Documents" },
   { test: (path) => path === "/time-tracking/devices" || path.startsWith("/time-tracking/devices/"), href: "/devices", title: "Devices" },
   { test: (path) => path === "/devices" || path.startsWith("/devices/"), href: "/devices", title: "Devices" },
   { test: (path) => path === "/time-tracking" || path.startsWith("/time-tracking/"), href: "/time", title: "Time Tracking" },
   { test: (path) => path === "/admin" || path.startsWith("/admin/"), href: "/administration", title: "Administration" },
   { test: (path) => path === "/help-center" || path.startsWith("/help-center/"), href: "/help", title: "Help Center" },
-  { test: (path) => path === "/documentation" || path.startsWith("/documentation/"), href: "/project-documentation", title: "Project Documentation" },
   { test: (path) => path === "/daily-update" || path.startsWith("/daily-update/"), href: "/daily-update", title: "Daily Update" },
-  { test: (path) => path.startsWith("/document/"), href: "/documents", title: "Workspace Documents" },
 ];
 
 function parseV1ProjectRecord(pathname: string): string | null {
@@ -193,6 +191,25 @@ function parseClientRecordPath(pathname: string): string | null {
   return null;
 }
 
+const DOCUMENT_LIBRARY_ACTIONS = new Set(["new", "new-folder", "upload", "access"]);
+
+function parseWorkspaceDocumentPath(pathname: string): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] === "documents" && parts[1] && !DOCUMENT_LIBRARY_ACTIONS.has(parts[1]) && parts.length === 2) {
+    return parts[1];
+  }
+  if (parts[0] === "company-documents" && parts[1] && (parts[2] === "edit" || parts[2] === "view")) {
+    return parts[1];
+  }
+  return null;
+}
+
+function parseProjectDocumentPath(pathname: string): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] === "document" && parts[1]) return parts[1];
+  return null;
+}
+
 export function parseDossierPath(pathname: string): { projectId: string; tab: DossierTabId } | null {
   const parts = pathname.split("/").filter(Boolean);
   if (parts[0] !== "projects" || parts.length < 2) return null;
@@ -210,8 +227,40 @@ export function matchV2Route(path: string): V2Match {
   if (pathname === "/documents") {
     return { kind: "documents", title: "Workspace Documents", href: "/documents" };
   }
+  if (pathname === "/company-documents") {
+    return { kind: "documents", title: "Workspace Documents", href: "/documents" };
+  }
   if (pathname.startsWith("/documents/")) {
-    return { kind: "placeholder", title: "Document", href: "/documents" };
+    const action = pathname.split("/").filter(Boolean)[1];
+    if (action && DOCUMENT_LIBRARY_ACTIONS.has(action)) {
+      return { kind: "documents", title: "Workspace Documents", href: "/documents" };
+    }
+  }
+
+  const workspaceDocumentId = parseWorkspaceDocumentPath(pathname);
+  if (workspaceDocumentId) {
+    return {
+      kind: "document-editor",
+      title: "Document",
+      href: "/documents",
+      documentId: workspaceDocumentId,
+      source: "workspace",
+    };
+  }
+
+  const projectDocumentId = parseProjectDocumentPath(pathname);
+  if (projectDocumentId) {
+    return {
+      kind: "document-editor",
+      title: "Document",
+      href: "/project-documentation",
+      documentId: projectDocumentId,
+      source: "project",
+    };
+  }
+
+  if (pathname === "/project-documentation" || pathname === "/documentation" || pathname.startsWith("/documentation/")) {
+    return { kind: "project-documentation", title: "Project Documentation", href: "/project-documentation" };
   }
 
   if (pathname === "/opportunities") {
@@ -286,6 +335,10 @@ export function navIdForPath(path: string): V2NavId | null {
   const match = matchV2Route(path);
   if (match.kind === "today" || match.kind === "auth-redirect") return "today";
   if (match.kind === "documents") return "documents";
+  if (match.kind === "project-documentation") return "project-documentation";
+  if (match.kind === "document-editor") {
+    return match.source === "project" ? "project-documentation" : "documents";
+  }
   if (match.kind === "projects" || match.kind === "legacy-project") return "projects";
   if (match.kind === "clients" || match.kind === "client-record") return "clients";
   if (match.kind === "opportunities") return "opportunities";
@@ -321,6 +374,26 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "WORKSPACE DOCUMENTS" },
+    ];
+  }
+  if (match.kind === "project-documentation") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "PROJECT DOCUMENTATION" },
+    ];
+  }
+  if (match.kind === "document-editor") {
+    if (match.source === "project") {
+      return [
+        { label: workspace, href: "/" },
+        { label: "PROJECT DOCUMENTATION", href: "/project-documentation" },
+        { label: "DOCUMENT" },
+      ];
+    }
+    return [
+      { label: workspace, href: "/" },
+      { label: "WORKSPACE DOCUMENTS", href: "/documents" },
+      { label: "DOCUMENT" },
     ];
   }
   if (match.kind === "opportunities") {

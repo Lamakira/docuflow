@@ -4,7 +4,9 @@
  *
  * Do not animate: search `/`, command-palette overlays, rail destination
  * clicks, focus jumps, Workspace chooser pointer/keyboard, Timer chip on switch,
- * search keystrokes, result-list filtering.
+ * search keystrokes, result-list filtering, library filter typing, editor keystrokes.
+ * Folder expand may animate height (occasional; state indication).
+ * Save state may morph color/opacity without a celebration.
  * Workspace switch content may crossfade (occasional; preventing a jarring change).
  * Client register → record may fade the body while identity stays (occasional; preventing a jarring change).
  * Dossier tab content may crossfade; the tab underline is state, not a parade (occasional; preventing a jarring change).
@@ -35,7 +37,11 @@ export type MotionSurface =
   | "workspace-chooser-pointer"
   | "workspace-chooser-keyboard"
   | "timer-chip"
-  | "toast";
+  | "toast"
+  | "folder-expand"
+  | "library-filter"
+  | "editor-typing"
+  | "editor-save";
 
 export type MotionRecipe = {
   enterExit: "instant" | "standard" | "none";
@@ -61,6 +67,10 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "workspace-chooser-keyboard": "keyboard-or-100+",
   "timer-chip": "keyboard-or-100+",
   toast: "occasional",
+  "folder-expand": "occasional",
+  "library-filter": "keyboard-or-100+",
+  "editor-typing": "keyboard-or-100+",
+  "editor-save": "occasional",
 };
 
 export function motionForSurface(
@@ -85,6 +95,10 @@ export function motionForSurface(
 
   if (frequency === "tens") {
     return { enterExit: "none", press: "scale", movement: "none", keepOpacity: true };
+  }
+
+  if (surface === "editor-save") {
+    return { enterExit: "standard", press: "none", movement: "none", keepOpacity: true };
   }
 
   return { enterExit: "standard", press: "none", movement: "allowed", keepOpacity: true };

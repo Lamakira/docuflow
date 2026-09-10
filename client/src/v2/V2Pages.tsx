@@ -4,6 +4,8 @@ import { useLocation } from "wouter";
 export { V2TodayPage } from "./V2Today";
 export { V2DossierPage } from "./V2Dossier";
 export { V2DocumentsPage } from "./V2Documents";
+export { V2ProjectDocumentationPage } from "./V2ProjectDocumentation";
+export { V2DocumentPage } from "./V2Document";
 
 export function V2PlaceholderPage() {
   const [location] = useLocation();

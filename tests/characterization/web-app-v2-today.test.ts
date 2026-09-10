@@ -183,10 +183,10 @@ describe("Today desktop from live Workspace records (#172)", () => {
         title: "Scope notes",
         meta: "PROJECT DOC · Ledger rebuild",
         when: "12:41",
-        href: "/project-documentation",
+        href: "/document/doc-9",
       },
     ]);
-    expect(matchV2Route(today.knowledge[0].href).kind).toBe("placeholder");
+    expect(matchV2Route(today.knowledge[0].href).kind).toBe("document-editor");
   });
 
   it("does not invent other members' workday hours the User cannot see", () => {

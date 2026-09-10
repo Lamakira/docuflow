@@ -747,10 +747,10 @@ function DossierOverview({
             <p className="df-empty">{dossier.documents.emptyCopy}</p>
           ) : (
             dossier.documents.rows.map((row) => (
-              <div key={row.id} className="df-doc-row">
+              <Link key={row.id} href={row.href} className="df-doc-row">
                 <span className="df-row-title">{row.title}</span>
                 <span className="df-mono df-meta">{row.meta}</span>
-              </div>
+              </Link>
             ))
           )}
         </section>
@@ -979,10 +979,10 @@ function DossierDocuments({ dossier }: { dossier: DossierModel }) {
         <p className="df-empty">{dossier.documents.emptyCopy}</p>
       ) : (
         dossier.documents.rows.map((row) => (
-          <div key={row.id} className="df-doc-row">
+          <Link key={row.id} href={row.href} className="df-doc-row">
             <span className="df-row-title">{row.title}</span>
             <span className="df-mono df-meta">{row.meta}</span>
-          </div>
+          </Link>
         ))
       )}
     </section>

@@ -1,6 +1,13 @@
 import { Redirect, Route, Switch } from "wouter";
 import { TimeTrackerProvider } from "@/contexts/TimeTrackerContext";
-import { V2PlaceholderPage, V2TodayPage, V2DossierPage, V2DocumentsPage } from "./V2Pages";
+import {
+  V2PlaceholderPage,
+  V2TodayPage,
+  V2DossierPage,
+  V2DocumentsPage,
+  V2ProjectDocumentationPage,
+  V2DocumentPage,
+} from "./V2Pages";
 import { V2ClientRecordPage, V2ClientRecordRedirect, V2ClientsPage } from "./V2Clients";
 import { V2OpportunitiesPage } from "./V2Opportunities";
 import { V2ProjectRecordRedirect, V2LegacyProjectPage, V2ProjectsPage } from "./V2Projects";
@@ -16,6 +23,32 @@ export function V2AuthenticatedApp() {
           </Route>
           <Route path="/" component={V2TodayPage} />
           <Route path="/documents" component={V2DocumentsPage} />
+          <Route path="/documents/new">
+            <Redirect to="/documents?new=1" />
+          </Route>
+          <Route path="/documents/new-folder">
+            <Redirect to="/documents?folder=1" />
+          </Route>
+          <Route path="/documents/upload">
+            <Redirect to="/documents?upload=1" />
+          </Route>
+          <Route path="/documents/access">
+            <Redirect to="/documents" />
+          </Route>
+          <Route path="/documents/:id" component={V2DocumentPage} />
+          <Route path="/company-documents/:id/edit" component={V2DocumentPage} />
+          <Route path="/company-documents/:id/view" component={V2DocumentPage} />
+          <Route path="/company-documents">
+            <Redirect to="/documents" />
+          </Route>
+          <Route path="/project-documentation" component={V2ProjectDocumentationPage} />
+          <Route path="/documentation">
+            <Redirect to="/project-documentation" />
+          </Route>
+          <Route path="/documentation/:rest">
+            <Redirect to="/project-documentation" />
+          </Route>
+          <Route path="/document/:id" component={V2DocumentPage} />
           <Route path="/opportunities" component={V2OpportunitiesPage} />
           <Route path="/clients" component={V2ClientsPage} />
           <Route path="/clients/:id" component={V2ClientRecordPage} />
