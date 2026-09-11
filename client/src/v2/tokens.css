@@ -658,6 +658,90 @@ button.df-activity-row {
   transition: opacity var(--duration-ui) var(--ease-out);
 }
 
+.df-people-register {
+  animation: none;
+  overflow: visible;
+}
+
+.df-people-register .df-register-head,
+.df-people-register .df-register-row {
+  grid-template-columns: 1.6fr 0.9fr 1.4fr 0.7fr 0.7fr;
+}
+
+.df-people-register .df-register-row {
+  transition: none;
+  animation: none;
+}
+
+.df-people-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.df-people-register .df-avatar {
+  transition: none;
+  animation: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .df-people-register .df-avatar:hover {
+    transform: none;
+  }
+}
+
+.df-people-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.df-refusal-anchor {
+  position: relative;
+  display: inline-flex;
+  justify-content: flex-end;
+}
+
+.df-refusal-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 4;
+  width: min(320px, 72vw);
+  background: var(--df-card-white);
+  border: 1px solid var(--df-divider);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(15, 21, 36, 0.12);
+  transform-origin: top right;
+}
+
+.df-refusal-pop[data-motion="standard"] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--duration-ui) var(--ease-out),
+    transform var(--duration-ui) var(--ease-out);
+}
+
+@starting-style {
+  .df-refusal-pop[data-motion="standard"] {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.df-refusal-pop[data-motion="instant"] {
+  transition: none;
+}
+
+.df-refusal-pop .df-refusal {
+  padding: 12px 14px 4px;
+}
+
+.df-refusal-pop .df-ghost-link {
+  margin: 0 14px 12px;
+}
+
 .df-opportunities-filter {
   transition: none;
   animation: none;
@@ -1708,6 +1792,10 @@ button.df-activity-row {
   white-space: nowrap;
 }
 
+.df-filter-chip input[type="checkbox"] {
+  margin-right: 6px;
+}
+
 .df-filter-chip select {
   border: 0;
   background: transparent;
@@ -2253,12 +2341,21 @@ button.df-activity-row {
     transition: opacity var(--duration-ui) var(--ease-out);
   }
 
+  .df-refusal-pop[data-motion="standard"] {
+    transform: none;
+    transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
   .df-time-row[data-state="leaving"][data-motion="standard"] {
     transform: none;
   }
 
   @starting-style {
     .df-time-row[data-motion="standard"] {
+      transform: none;
+    }
+
+    .df-refusal-pop[data-motion="standard"] {
       transform: none;
     }
   }
