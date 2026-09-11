@@ -9,6 +9,7 @@ import {
   V2DocumentPage,
   V2TimePage,
   V2DailyUpdatePage,
+  V2TeamDailyUpdatesPage,
   V2ActivityPage,
   V2PeoplePage,
   V2AdministrationPage,
@@ -84,6 +85,9 @@ export function V2AuthenticatedApp() {
           <Route path="/help-center">
             <Redirect to="/help" />
           </Route>
+          <Route path="/admin/daily-updates">
+            <Redirect to="/daily-updates" />
+          </Route>
           <Route path="/admin/user/:id">
             <Redirect to="/administration" />
           </Route>
@@ -111,6 +115,7 @@ export function V2AuthenticatedApp() {
           <Route path="/time-tracking">
             <Redirect to="/time" />
           </Route>
+          <Route path="/daily-updates" component={V2TeamDailyUpdatesPage} />
           <Route path="/daily-update/:rest">
             <Redirect to="/daily-update" />
           </Route>

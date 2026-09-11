@@ -518,6 +518,31 @@
   flex: none;
 }
 
+button.df-cta {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.df-attention-row[data-state="resolved"][data-motion="standard"] {
+  opacity: 0.55;
+  transition: opacity var(--duration-ui) var(--ease-out);
+}
+
+.df-attention-row[data-state="resolved"] .df-cta {
+  text-decoration: none;
+  cursor: default;
+}
+
+.df-attention-row .df-row-title {
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
 .df-register-head,
 .df-register-row {
   display: grid;
@@ -1698,6 +1723,51 @@ button.df-activity-row {
   padding: 0;
 }
 
+.df-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.df-kpi-value {
+  font-family: var(--df-font-display);
+  font-weight: 700;
+  font-size: 22px;
+  line-height: 1.2;
+  transition: none;
+  animation: none;
+}
+
+.df-kpi-label {
+  margin-top: 4px;
+  font-family: var(--df-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--df-archive-slate);
+  text-transform: uppercase;
+}
+
+.df-rollcall {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  padding: 16px 18px;
+}
+
+.df-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.df-person-chip {
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
 .df-blocker {
   background: var(--df-cold-stock);
   border: 1px solid var(--df-divider);
@@ -2454,6 +2524,15 @@ button.df-activity-row {
   display: none;
 }
 
+.df-v2[data-chrome="mobile"] button.df-cta {
+  display: inline;
+}
+
+.df-v2[data-chrome="mobile"] .df-kpi-grid,
+.df-v2[data-chrome="mobile"] .df-rollcall {
+  grid-template-columns: 1fr 1fr;
+}
+
 .df-v2[data-chrome="mobile"] .df-register-row {
   display: flex;
   grid-template-columns: none;
@@ -2529,6 +2608,10 @@ button.df-activity-row {
   .df-help-article[data-motion="standard"] {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
+  .df-attention-row[data-state="resolved"][data-motion="standard"] {
+    transform: none;
   }
 
   .df-time-row[data-state="leaving"][data-motion="standard"] {

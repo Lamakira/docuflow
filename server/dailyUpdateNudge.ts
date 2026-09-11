@@ -60,6 +60,58 @@ function isOnWorkday(when: Date, workday: string): boolean {
   return workdayAt(when).workday === workday;
 }
 
+export type DailyUpdateRollCallMember = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+  profileImageUrl: string | null;
+};
+
+export async function todayDailyUpdateStatus(at: Date): Promise<{
+  date: string;
+  submitted: DailyUpdateRollCallMember[];
+  missing: DailyUpdateRollCallMember[];
+}> {
+  const { workday } = workdayAt(at);
+  const inWorkspace = await activeMemberUserIds();
+  const since = new Date(at.getTime() - 36 * 60 * 60 * 1000);
+  const recent = await storage.getProjectDailyUpdatesForAdmin({ startDate: since });
+  const submittedIds = new Set(
+    recent
+      .filter((u) => tzDayKeyAndHour(new Date(u.updateDate), DAILY_UPDATE_NUDGE_TIMEZONE).dayKey === workday)
+      .map((u) => u.userId),
+  );
+  const members = (await storage.getAllUsers()).filter(
+    (u) => u.role === "user" && !u.isArchived && inWorkspace.has(u.id),
+  );
+  const toDto = (u: (typeof members)[number]): DailyUpdateRollCallMember => ({
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    email: u.email,
+    profileImageUrl: u.profileImageUrl,
+  });
+  return {
+    date: workday,
+    submitted: members.filter((u) => submittedIds.has(u.id)).map(toDto),
+    missing: members.filter((u) => !submittedIds.has(u.id)).map(toDto),
+  };
+}
+
+export async function remindMissingDailyUpdates(at: Date): Promise<{
+  date: string;
+  sent: number;
+  missing: number;
+}> {
+  const rollCall = await todayDailyUpdateStatus(at);
+  let sent = 0;
+  for (const member of rollCall.missing) {
+    if (await nudgeMemberForWorkday(member.id, rollCall.date)) sent += 1;
+  }
+  return { date: rollCall.date, sent, missing: rollCall.missing.length };
+}
+
 export async function membersMissingDailyUpdate(at: Date): Promise<{ id: string }[]> {
   const { workday, hour } = workdayAt(at);
   if (hour < DAILY_UPDATE_NUDGE_HOUR) return [];

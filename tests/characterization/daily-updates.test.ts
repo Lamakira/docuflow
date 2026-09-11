@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { eq, and } from "drizzle-orm";
+import { SEEDED_WORKSPACE_ID, memberships, notifications, workspaceBilling } from "../../shared/schema";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { grantDailyUpdatesAccess, registerAdmin, registerUser } from "../helpers/auth";
 import { createCrmProject } from "../helpers/fixtures";
+import { resetEmails, sentEmails } from "../fakes/resend";
 
 /**
  * Characterization: per-project daily updates and the dashboards built on them.
@@ -21,6 +24,7 @@ import { createCrmProject } from "../helpers/fixtures";
 describe("project daily updates (characterization)", () => {
   beforeEach(async () => {
     await resetDb();
+    resetEmails();
   });
 
   it("creates an update for the caller and lists it back by day", async () => {
@@ -214,5 +218,100 @@ describe("project daily updates (characterization)", () => {
     expect(Object.keys(res.body.submitted[0]).sort()).toEqual(
       ["email", "firstName", "id", "lastName", "profileImageUrl"].sort()
     );
+  });
+
+  it("reminds members missing today's Daily Update through a real write", async () => {
+    const app = await makeApp();
+    const manager = await registerUser(app);
+    await grantDailyUpdatesAccess(manager.id);
+    const submitted = await registerUser(app, { firstName: "Sub" });
+    const missing = await registerUser(app, { firstName: "Miss" });
+    const { crmProject } = await createCrmProject(manager.agent);
+
+    await submitted.agent
+      .post("/api/daily-updates")
+      .send({ crmProjectId: crmProject.id, status: "on_track" });
+
+    const stranger = await registerUser(app);
+    const refused = await stranger.agent.post("/api/admin/daily-updates/remind");
+    expect(refused.status).toBe(403);
+    expect(refused.body).toEqual({ message: "Access denied" });
+
+    const rollCall = await manager.agent.get("/api/admin/daily-updates/today-status");
+    const missingIds = rollCall.body.missing.map((row: { id: string }) => row.id);
+    expect(missingIds).toContain(missing.id);
+    expect(missingIds).not.toContain(submitted.id);
+
+    const reminded = await manager.agent.post("/api/admin/daily-updates/remind");
+    expect(reminded.status).toBe(200);
+    expect(reminded.body).toMatchObject({
+      date: rollCall.body.date,
+      sent: missingIds.length,
+      missing: missingIds.length,
+    });
+
+    const inbox = await missing.agent.get("/api/notifications");
+    expect(inbox.status).toBe(200);
+    expect(inbox.body.some((row: { type: string }) => row.type === "daily_update_reminder")).toBe(true);
+
+    const submittedInbox = await submitted.agent.get("/api/notifications");
+    expect(
+      submittedInbox.body.filter((row: { type: string }) => row.type === "daily_update_reminder"),
+    ).toEqual([]);
+
+    expect(
+      sentEmails().some(
+        (mail) => mail.to === missing.email && /daily update/i.test(mail.subject),
+      ),
+    ).toBe(true);
+
+    const again = await manager.agent.post("/api/admin/daily-updates/remind");
+    expect(again.status).toBe(200);
+    expect(again.body.sent).toBe(0);
+    expect(again.body.missing).toBe(missingIds.length);
+  });
+
+  it("does not remind a User without a Membership in this Workspace", async () => {
+    const app = await makeApp();
+    const manager = await registerUser(app);
+    await grantDailyUpdatesAccess(manager.id);
+    const outsider = await registerUser(app, { firstName: "Out" });
+    const { db } = await import("../../server/db");
+    await db
+      .update(memberships)
+      .set({ archivedAt: new Date() })
+      .where(and(eq(memberships.userId, outsider.id), eq(memberships.workspaceId, SEEDED_WORKSPACE_ID)));
+
+    const rollCall = await manager.agent.get("/api/admin/daily-updates/today-status");
+    expect(rollCall.body.missing.map((row: { id: string }) => row.id)).not.toContain(outsider.id);
+
+    const reminded = await manager.agent.post("/api/admin/daily-updates/remind");
+    expect(reminded.status).toBe(200);
+
+    const inbox = await db
+      .select({ type: notifications.type })
+      .from(notifications)
+      .where(eq(notifications.userId, outsider.id));
+    expect(inbox.filter((row) => row.type === "daily_update_reminder")).toEqual([]);
+    expect(sentEmails().some((mail) => mail.to === outsider.email)).toBe(false);
+  });
+
+  it("names Read-only on Remind and does not send", async () => {
+    const app = await makeApp();
+    const manager = await registerUser(app);
+    await grantDailyUpdatesAccess(manager.id);
+    const missing = await registerUser(app, { firstName: "Miss" });
+    const { db } = await import("../../server/db");
+
+    await db
+      .update(workspaceBilling)
+      .set({ billingState: "ReadOnly" })
+      .where(eq(workspaceBilling.workspaceId, SEEDED_WORKSPACE_ID));
+
+    const res = await manager.agent.post("/api/admin/daily-updates/remind");
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ message: "Workspace is read-only" });
+    expect((await missing.agent.get("/api/notifications")).body).toEqual([]);
+    expect(sentEmails()).toEqual([]);
   });
 });

@@ -57,6 +57,8 @@ import {
   DAILY_UPDATE_NUDGE_HOUR,
   DAILY_UPDATE_NUDGE_TIMEZONE,
   nudgeMembersMissingDailyUpdate,
+  remindMissingDailyUpdates,
+  todayDailyUpdateStatus,
   tzDayKeyAndHour,
 } from "./dailyUpdateNudge";
 import { STALE_CHECK_WINDOW_MS, flagStaleRunningEntries } from "./staleTimer";
@@ -4485,30 +4487,19 @@ Instructions:
   // "Today" overview so admins/managers can see at a glance who forgot.
   app.get("/api/admin/daily-updates/today-status", isAuthenticated, canViewDailyUpdates, async (_req, res) => {
     try {
-      const tz = DAILY_UPDATE_NUDGE_TIMEZONE;
-      const now = new Date();
-      const todayKey = tzDayKeyAndHour(now, tz).dayKey;
-      const since = new Date(now.getTime() - 36 * 60 * 60 * 1000);
-      const recent = await storage.getProjectDailyUpdatesForAdmin({ startDate: since });
-      const submittedIds = new Set(
-        recent
-          .filter((u) => tzDayKeyAndHour(new Date(u.updateDate), tz).dayKey === todayKey)
-          .map((u) => u.userId),
-      );
-      const employees = (await storage.getAllUsers()).filter((u) => u.role === "user" && !u.isArchived);
-      const toDto = (u: typeof employees[number]) => ({
-        id: u.id,
-        firstName: u.firstName,
-        lastName: u.lastName,
-        email: u.email,
-        profileImageUrl: u.profileImageUrl,
-      });
-      const submitted = employees.filter((u) => submittedIds.has(u.id)).map(toDto);
-      const missing = employees.filter((u) => !submittedIds.has(u.id)).map(toDto);
-      res.json({ date: todayKey, submitted, missing });
+      res.json(await todayDailyUpdateStatus(new Date()));
     } catch (error) {
       console.error("Error fetching today's daily update status:", error);
       res.status(500).json({ message: "Failed to fetch today's status" });
+    }
+  });
+
+  app.post("/api/admin/daily-updates/remind", isAuthenticated, canViewDailyUpdates, async (_req, res) => {
+    try {
+      res.json(await remindMissingDailyUpdates(new Date()));
+    } catch (error) {
+      console.error("Error reminding missing Daily Updates:", error);
+      res.status(500).json({ message: "Failed to remind missing Daily Updates" });
     }
   });
 
