@@ -3796,6 +3796,17 @@ Instructions:
   app.get("/api/time-tracking/capabilities", isAuthenticated, async (_req: any, res) => {
     res.json({ requiresTask: true });
   });
+
+  /** Tracking Policy applied to the caller. Members may inspect it (#191). */
+  app.get("/api/time-tracking/tracking-policy", isAuthenticated, async (_req: any, res) => {
+    try {
+      const screenshotPolicy = await storage.getScreenshotPolicy();
+      res.json({ screenshotPolicy });
+    } catch (error) {
+      console.error("Error fetching Tracking Policy:", error);
+      res.status(500).json({ message: "Failed to fetch Tracking Policy" });
+    }
+  });
   
   // Start time tracking
   app.post("/api/time-tracking/start", isAuthenticated, async (req: any, res) => {
