@@ -129,6 +129,36 @@ describe("Today desktop from live Workspace records (#172)", () => {
     expect(today.attention.some((row) => row.id === "n2")).toBe(false);
     expect(today.subhead).toMatch(/need you/i);
     expect(today.approvals.empty).toBe(true);
+
+    const remind = today.attention.find((row) => row.id === "daily-updates-missing");
+    expect(remind).toMatchObject({
+      kind: "UPDATE",
+      cta: "Remind",
+      action: "remind",
+      state: "open",
+      href: "/daily-updates",
+    });
+    expect(remind?.cta.toLowerCase()).not.toBe("open");
+  });
+
+  it("resolves the missing Daily Update row after Remind succeeds", () => {
+    const today = composeToday(
+      emptyInput({
+        missingDailyUpdates: [{ id: "u2", firstName: "Pat", lastName: "Ng", email: "pat@example.com" }],
+        dailyUpdateReminded: true,
+      }),
+    );
+    expect(today.attention).toEqual([
+      expect.objectContaining({
+        id: "daily-updates-missing",
+        action: "remind",
+        state: "resolved",
+        cta: "Reminded",
+        meta: "REMINDED",
+      }),
+    ]);
+    expect(today.approvals.empty).toBe(true);
+    expect(JSON.stringify(today.attention).toLowerCase()).not.toMatch(/timesheet/);
   });
 
   it("fills workday and recent knowledge from records the User can access", () => {

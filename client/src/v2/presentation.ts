@@ -93,6 +93,7 @@ export type V2Match =
   | { kind: "opportunities"; title: "Opportunities"; href: "/opportunities" }
   | { kind: "time"; title: "Time Tracking"; href: "/time" }
   | { kind: "daily-update"; title: "Daily Update"; href: "/daily-update" }
+  | { kind: "daily-updates"; title: "Daily Updates"; href: "/daily-updates" }
   | { kind: "activity"; title: "Activity"; href: "/activity" }
   | { kind: "people"; title: "People"; href: "/people" }
   | { kind: "administration"; title: "Administration"; href: "/administration" }
@@ -291,6 +292,10 @@ export function matchV2Route(path: string): V2Match {
 
   if (pathname === "/people") {
     return { kind: "people", title: "People", href: "/people" };
+  }
+
+  if (pathname === "/daily-updates" || pathname === "/admin/daily-updates" || pathname.startsWith("/admin/daily-updates/")) {
+    return { kind: "daily-updates", title: "Daily Updates", href: "/daily-updates" };
   }
 
   if (pathname === "/administration" || pathname === "/admin" || pathname.startsWith("/admin/")) {
@@ -493,6 +498,12 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "DAILY UPDATE" },
+    ];
+  }
+  if (match.kind === "daily-updates") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "DAILY UPDATES" },
     ];
   }
   if (match.kind === "clients") {

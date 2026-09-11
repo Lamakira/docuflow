@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import type {
@@ -9,9 +9,17 @@ import type {
   NotificationWithDetails,
   SafeUser,
 } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useV2Chrome } from "./V2Shell";
 import { SparkleIcon } from "./icons";
-import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
+import {
+  adminDailyUpdateTodayStatusPath,
+  canViewTeamDailyUpdates,
+  dailyUpdateRemindRefusal,
+  remindDailyUpdatesPath,
+} from "./dailyUpdate";
+import { motionForSurface } from "./motion";
+import { composeToday, memberName, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -81,11 +89,20 @@ function TodayActionBar({ onApprovals, onAsk }: { onApprovals: () => void; onAsk
   );
 }
 
+const REMIND_MOTION = motionForSurface("daily-update-remind").enterExit;
+const REFUSAL_MOTION = motionForSurface("capability-refusal").enterExit;
+
 export function V2TodayPage() {
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
   const { isRunning } = useTimeTracker();
-  const { openPanel, layout } = useV2Chrome();
+  const { openPanel, layout, memberships } = useV2Chrome();
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  const workspaceName = current?.workspaceName ?? "this Workspace";
+  const readOnly = current?.condition === "Read-only";
+  const canViewTeam = canViewTeamDailyUpdates(user);
+  const [dailyUpdateReminded, setDailyUpdateReminded] = useState(false);
+  const [remindRefusal, setRemindRefusal] = useState<string | null>(null);
   const dayStart = useMemo(() => startOfDay(now), [now]);
   const dayEnd = useMemo(() => endOfDay(now), [now]);
   const monthStart = useMemo(() => startOfMonth(now), [now]);
@@ -111,10 +128,23 @@ export function V2TodayPage() {
     queryKey: ["/api/time-tracking/stats", "month", monthStart.toISOString()],
     queryFn: () => fetch(statsUrl(monthStart, dayEnd), { credentials: "include" }).then((res) => res.json()),
   });
-  const { data: todayStatus } = useQuery<DailyUpdateTodayStatus | null>({
-    queryKey: ["/api/admin/daily-updates/today-status"],
+  const { data: people } = useQuery<{
+    memberships: Array<{ firstName: string | null; lastName: string | null; email: string; workspaceRole: string }>;
+  }>({
+    queryKey: ["/api/workspace/memberships"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/daily-updates/today-status", { credentials: "include" });
+      const res = await fetch("/api/workspace/memberships", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Memberships");
+      return res.json();
+    },
+  });
+  const owner = (people?.memberships ?? []).find((row) => row.workspaceRole === "OWNER");
+  const ownerName = owner ? memberName(owner) : null;
+  const { data: todayStatus } = useQuery<DailyUpdateTodayStatus | null>({
+    queryKey: [adminDailyUpdateTodayStatusPath()],
+    enabled: canViewTeam,
+    queryFn: async () => {
+      const res = await fetch(adminDailyUpdateTodayStatusPath(), { credentials: "include" });
       if (res.status === 401 || res.status === 403) return null;
       if (!res.ok) return null;
       return res.json();
@@ -138,9 +168,37 @@ export function V2TodayPage() {
     monthSecondsByProject: monthStats?.byProject ?? [],
     missingDailyUpdates: todayStatus ? todayStatus.missing : null,
     trackingUserId: isRunning && user?.id ? user.id : null,
+    dailyUpdateReminded,
   };
   const today = composeToday(input);
   const projectTotal = projectsResponse?.total ?? today.projects.length;
+
+  const remind = useMutation({
+    mutationFn: () => apiRequest("POST", remindDailyUpdatesPath()),
+    onSuccess: () => {
+      setDailyUpdateReminded(true);
+      setRemindRefusal(null);
+      queryClient.invalidateQueries({ queryKey: [adminDailyUpdateTodayStatusPath()] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+    onError: (error: Error) => {
+      setRemindRefusal(
+        dailyUpdateRemindRefusal({
+          workspaceName,
+          ownerName,
+          errorMessage: error.message,
+        }),
+      );
+    },
+  });
+
+  function onRemind() {
+    if (readOnly) {
+      setRemindRefusal(dailyUpdateRemindRefusal({ workspaceName, ownerName, readOnly: true }));
+      return;
+    }
+    remind.mutate();
+  }
 
   if (projectsLoading) {
     return (
@@ -198,14 +256,54 @@ export function V2TodayPage() {
             Workspace.
           </p>
         ) : (
-          today.attention.map((row) => (
-            <Link key={row.id} href={row.href} className="df-attention-row">
-              <span className="df-mono df-kind">{row.kind}</span>
-              <span className="df-row-title">{row.title}</span>
-              <span className="df-mono df-meta">{row.meta}</span>
-              <span className="df-cta">{row.cta}</span>
-            </Link>
-          ))
+          today.attention.map((row) =>
+            row.action === "remind" ? (
+              <div
+                key={row.id}
+                className="df-attention-row"
+                data-state={row.state}
+                data-motion={REMIND_MOTION}
+                data-testid="v2-today-remind-row"
+              >
+                <span className="df-mono df-kind">{row.kind}</span>
+                <Link href={row.href} className="df-row-title">
+                  {row.title}
+                </Link>
+                <span className="df-mono df-meta">{row.meta}</span>
+                <span className="df-refusal-anchor">
+                  <button
+                    type="button"
+                    className="df-cta"
+                    data-testid="v2-today-remind"
+                    disabled={row.state === "resolved" || remind.isPending}
+                    onClick={onRemind}
+                  >
+                    {row.cta}
+                  </button>
+                  {remindRefusal ? (
+                    <div
+                      className="df-refusal-pop"
+                      data-motion={REFUSAL_MOTION}
+                      role="status"
+                      data-testid="v2-today-remind-refusal"
+                    >
+                      <p className="df-refusal">{remindRefusal}</p>
+                      <button type="button" className="df-ghost-link" onClick={() => setRemindRefusal(null)}>
+                        Close
+                      </button>
+                    </div>
+                  ) : null}
+                </span>
+              </div>
+            ) : (
+              <Link key={row.id} href={row.href} className="df-attention-row">
+                <span className="df-mono df-kind">{row.kind}</span>
+                <span className="df-row-title">{row.title}</span>
+                <span className="df-mono df-meta">{row.meta}</span>
+                <span className="df-cta">{row.cta}</span>
+              </Link>
+            ),
+          )
         )}
       </section>
 

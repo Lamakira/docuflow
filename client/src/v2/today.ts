@@ -44,6 +44,7 @@ export type TodayInput = {
   monthSecondsByProject: Array<{ crmProjectId: string; totalDuration: number }>;
   missingDailyUpdates: Array<{ id: string; firstName: string | null; lastName: string | null; email: string }> | null;
   trackingUserId: string | null;
+  dailyUpdateReminded?: boolean;
 };
 
 export type AttentionKind = "UPDATE" | "MENTION" | "REMINDER";
@@ -55,6 +56,8 @@ export type AttentionRow = {
   meta: string;
   href: string;
   cta: string;
+  action: "open" | "remind";
+  state: "open" | "resolved";
 };
 
 export type ActiveProjectRow = {
@@ -154,7 +157,7 @@ function yesterdayOf(now: Date): Date {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
 }
 
-function formatWhen(updatedAt: Date | string | null, now: Date): string {
+export function formatWhen(updatedAt: Date | string | null, now: Date): string {
   if (!updatedAt) return "";
   const value = updatedAt instanceof Date ? updatedAt : new Date(updatedAt);
   if (Number.isNaN(value.getTime())) return "";
@@ -200,13 +203,16 @@ function composeAttention(input: TodayInput): AttentionRow[] {
         : names.length === 2
           ? `2 missing Daily Updates from ${names[0]} and ${names[1]}`
           : `${names.length} missing Daily Updates`;
+    const reminded = Boolean(input.dailyUpdateReminded);
     rows.push({
       id: "daily-updates-missing",
       kind: "UPDATE",
       title,
-      meta: "TODAY",
-      href: "/daily-update",
-      cta: "Remind",
+      meta: reminded ? "REMINDED" : "TODAY",
+      href: "/daily-updates",
+      cta: reminded ? "Reminded" : "Remind",
+      action: "remind",
+      state: reminded ? "resolved" : "open",
     });
   }
 
@@ -221,6 +227,8 @@ function composeAttention(input: TodayInput): AttentionRow[] {
       meta: notification.createdAt ? formatWhen(notification.createdAt, input.now) : "",
       href: notificationHref(notification),
       cta: "Open",
+      action: "open",
+      state: "open",
     });
   }
 

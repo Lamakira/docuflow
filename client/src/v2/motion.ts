@@ -12,6 +12,7 @@
  * Dossier tab content may crossfade; the tab underline is state, not a parade (occasional; preventing a jarring change).
  * Opportunity Stage-change moves the card to another Stage column (occasional; state indication).
  * Time Entry add/remove uses an enter/exit bridge (occasional; preventing a jarring change).
+ * Remind from Today resolves the row or opens a refusal from that control (occasional; state indication).
  * Activity Evidence expands from its row (occasional; spatial consistency).
  * Capability refusal opens from the control that failed (occasional; spatial consistency).
  * A shown-once secret confirmation is rare state indication, not a celebration overlay.
@@ -55,7 +56,8 @@ export type MotionSurface =
   | "editor-save"
   | "pairing-code"
   | "help-article"
-  | "help-search";
+  | "help-search"
+  | "daily-update-remind";
 
 export type MotionRecipe = {
   enterExit: "instant" | "standard" | "none";
@@ -92,6 +94,7 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "pairing-code": "occasional",
   "help-article": "tens",
   "help-search": "keyboard-or-100+",
+  "daily-update-remind": "occasional",
 };
 
 export function motionForSurface(
