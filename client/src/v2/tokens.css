@@ -746,6 +746,122 @@ button.df-activity-row {
   }
 }
 
+.df-devices-register .df-register-head,
+.df-devices-register .df-register-row {
+  grid-template-columns: 1.4fr 0.7fr 0.8fr 0.9fr 0.8fr;
+}
+
+.df-devices-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.df-devices-action,
+.df-devices-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  text-align: right;
+}
+
+.df-pairing-pending {
+  animation: none;
+  color: var(--df-archive-slate);
+  font-size: 13.5px;
+}
+
+.df-pairing-code {
+  font-family: var(--df-font-mono);
+  font-weight: 600;
+  font-size: 28px;
+  letter-spacing: 0.28em;
+  text-align: center;
+}
+
+.df-pairing-code[data-motion="standard"] {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--duration-ui) var(--ease-out),
+    transform var(--duration-ui) var(--ease-out);
+}
+
+@starting-style {
+  .df-pairing-code[data-motion="standard"] {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.df-help-search {
+  animation: none;
+}
+
+.df-help-toc {
+  animation: none;
+}
+
+.df-help-toc-list {
+  margin: 0;
+  padding: 8px 18px 16px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.df-help-toc-list a {
+  color: var(--df-archive-slate);
+  font-size: 13px;
+}
+
+.df-help-topics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.df-help-topic {
+  padding: 16px 18px;
+}
+
+.df-help-topic-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.df-help-topic-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--df-archive-slate);
+}
+
+.df-help-article {
+  padding: 18px 22px 24px;
+}
+
+.df-help-article[data-motion="standard"] {
+  opacity: 1;
+  transform: none;
+  transition: opacity var(--duration-ui) var(--ease-out);
+}
+
+@starting-style {
+  .df-help-article[data-motion="standard"] {
+    opacity: 0;
+  }
+}
+
+.df-status[data-status="ONLINE"] {
+  color: var(--df-signed-off);
+  border-color: #bfe5d5;
+  background: #f1faf6;
+}
+
 .df-refusal-anchor {
   position: relative;
   display: inline-flex;
@@ -2357,6 +2473,10 @@ button.df-activity-row {
   grid-template-columns: 1fr;
 }
 
+.df-v2[data-chrome="mobile"] .df-help-topics {
+  grid-template-columns: 1fr;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .df-sheet {
     box-shadow: none;
@@ -2401,6 +2521,16 @@ button.df-activity-row {
     transition: opacity var(--duration-ui) var(--ease-out);
   }
 
+  .df-pairing-code[data-motion="standard"] {
+    transform: none;
+    transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
+  .df-help-article[data-motion="standard"] {
+    transform: none;
+    transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
   .df-time-row[data-state="leaving"][data-motion="standard"] {
     transform: none;
   }
@@ -2415,6 +2545,10 @@ button.df-activity-row {
     }
 
     .df-secret-once[data-motion="standard"] {
+      transform: none;
+    }
+
+    .df-pairing-code[data-motion="standard"] {
       transform: none;
     }
   }

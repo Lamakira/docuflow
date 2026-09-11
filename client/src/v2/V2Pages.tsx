@@ -11,6 +11,8 @@ export { V2DailyUpdatePage } from "./V2DailyUpdate";
 export { V2ActivityPage } from "./V2Activity";
 export { V2PeoplePage } from "./V2People";
 export { V2AdministrationPage } from "./V2Administration";
+export { V2DevicesPage } from "./V2Devices";
+export { V2HelpPage } from "./V2Help";
 
 export function V2PlaceholderPage() {
   const [location] = useLocation();
