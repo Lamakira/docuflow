@@ -16,6 +16,9 @@
  * Capability refusal opens from the control that failed (occasional; spatial consistency).
  * A shown-once secret confirmation is rare state indication, not a celebration overlay.
  * Toasts enter and exit the same bottom edge (occasional; spatial consistency).
+ * Pairing code appears as rare explanation / state — no bounce, there is no gesture.
+ * Help article open is tens/day — opacity only, no page-slide.
+ * Do not animate: Help search keystrokes, pairing spinner as decoration, article TOC highlight chasing scroll.
  */
 
 export const V2_MOTION_TOKENS = {
@@ -49,7 +52,10 @@ export type MotionSurface =
   | "folder-expand"
   | "library-filter"
   | "editor-typing"
-  | "editor-save";
+  | "editor-save"
+  | "pairing-code"
+  | "help-article"
+  | "help-search";
 
 export type MotionRecipe = {
   enterExit: "instant" | "standard" | "none";
@@ -83,6 +89,9 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "library-filter": "keyboard-or-100+",
   "editor-typing": "keyboard-or-100+",
   "editor-save": "occasional",
+  "pairing-code": "occasional",
+  "help-article": "tens",
+  "help-search": "keyboard-or-100+",
 };
 
 export function motionForSurface(
@@ -93,6 +102,10 @@ export function motionForSurface(
 
   if (frequency === "keyboard-or-100+") {
     return { enterExit: "instant", press: "none", movement: "none", keepOpacity: true };
+  }
+
+  if (surface === "help-article") {
+    return { enterExit: "standard", press: "none", movement: "none", keepOpacity: true };
   }
 
   // Drop movement; keep opacity/color. Occasional surfaces may still fade.

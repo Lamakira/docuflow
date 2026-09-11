@@ -48,22 +48,12 @@ describe("v2 chrome behind the client flag (#171)", () => {
   });
 
   it("treats unimplemented destinations as v2 placeholders, never v1 screens", () => {
-    const placeholders = [
-      "/help",
-      "/devices",
-    ];
-    for (const path of placeholders) {
-      const match = matchV2Route(path);
-      expect(match.kind, path).toBe("placeholder");
-    }
+    expect(matchV2Route("/not-in-this-batch").kind).toBe("placeholder");
 
-    const v1Leaks = [
-      "/help-center",
-      "/help-center/getting-started",
-    ];
-    for (const path of v1Leaks) {
-      expect(matchV2Route(path).kind, path).toBe("placeholder");
-    }
+    expect(matchV2Route("/help").kind).toBe("help");
+    expect(matchV2Route("/help-center").kind).toBe("help");
+    expect(matchV2Route("/help-center/getting-started").kind).toBe("help");
+    expect(matchV2Route("/devices").kind).toBe("devices");
 
     expect(matchV2Route("/projects").kind).toBe("projects");
     expect(matchV2Route("/crm").kind).toBe("projects");

@@ -75,7 +75,7 @@ describe("Time Tracking and Daily Update routing (#190)", () => {
     expect(matchV2Route("/time-tracking")).toMatchObject({ kind: "time", href: "/time" });
     expect(matchV2Route("/time-tracking/dashboard")).toMatchObject({ kind: "time", href: "/time" });
     expect(matchV2Route("/time-tracking/projects")).toMatchObject({ kind: "time", href: "/time" });
-    expect(matchV2Route("/time-tracking/devices").kind).toBe("placeholder");
+    expect(matchV2Route("/time-tracking/devices").kind).toBe("devices");
     expect(matchV2Route("/time-tracking/devices").href).toBe("/devices");
     expect(appSource).toMatch(/path="\/time-tracking"/);
     expect(JSON.stringify(matchV2Route("/time"))).not.toMatch(/timesheet/i);

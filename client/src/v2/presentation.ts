@@ -96,6 +96,8 @@ export type V2Match =
   | { kind: "activity"; title: "Activity"; href: "/activity" }
   | { kind: "people"; title: "People"; href: "/people" }
   | { kind: "administration"; title: "Administration"; href: "/administration" }
+  | { kind: "devices"; title: "Devices"; href: "/devices" }
+  | { kind: "help"; title: "Help Center"; href: "/help"; slug?: string }
   | { kind: "placeholder"; title: string; href: string };
 
 export type V2NavId =
@@ -159,16 +161,20 @@ export const V2_NAV: V2NavSection[] = [
   },
 ];
 
-const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> = [
-  { href: "/help", title: "Help Center" },
-  { href: "/devices", title: "Devices" },
-];
+function isDevicesPath(pathname: string): boolean {
+  return (
+    pathname === "/devices" ||
+    pathname.startsWith("/devices/") ||
+    pathname === "/time-tracking/devices" ||
+    pathname.startsWith("/time-tracking/devices/")
+  );
+}
 
-const V1_TO_PLACEHOLDER: Array<{ test: (path: string) => boolean; href: string; title: string }> = [
-  { test: (path) => path === "/time-tracking/devices" || path.startsWith("/time-tracking/devices/"), href: "/devices", title: "Devices" },
-  { test: (path) => path === "/devices" || path.startsWith("/devices/"), href: "/devices", title: "Devices" },
-  { test: (path) => path === "/help-center" || path.startsWith("/help-center/"), href: "/help", title: "Help Center" },
-];
+function parseHelpPath(pathname: string): { slug?: string } | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] !== "help" && parts[0] !== "help-center") return null;
+  return { slug: parts[1] };
+}
 
 function parseV1ProjectRecord(pathname: string): string | null {
   const parts = pathname.split("/").filter(Boolean);
@@ -291,6 +297,17 @@ export function matchV2Route(path: string): V2Match {
     return { kind: "administration", title: "Administration", href: "/administration" };
   }
 
+  if (isDevicesPath(pathname)) {
+    return { kind: "devices", title: "Devices", href: "/devices" };
+  }
+
+  const help = parseHelpPath(pathname);
+  if (help) {
+    return help.slug
+      ? { kind: "help", title: "Help Center", href: "/help", slug: help.slug }
+      : { kind: "help", title: "Help Center", href: "/help" };
+  }
+
   if (isTimeTrackingRewrite(pathname)) {
     return { kind: "time", title: "Time Tracking", href: "/time" };
   }
@@ -344,17 +361,6 @@ export function matchV2Route(path: string): V2Match {
     };
   }
 
-  for (const entry of PLACEHOLDERS) {
-    if (pathname === entry.href) return { kind: "placeholder", title: entry.title, href: entry.href };
-    if (entry.prefixes?.some((prefix) => pathname.startsWith(prefix))) {
-      return { kind: "placeholder", title: entry.title, href: entry.href };
-    }
-  }
-
-  for (const leak of V1_TO_PLACEHOLDER) {
-    if (leak.test(pathname)) return { kind: "placeholder", title: leak.title, href: leak.href };
-  }
-
   return { kind: "placeholder", title: "Not in this batch", href: pathname };
 }
 
@@ -378,6 +384,8 @@ export function navIdForPath(path: string): V2NavId | null {
   if (match.kind === "activity") return "activity";
   if (match.kind === "people") return "people";
   if (match.kind === "administration") return "administration";
+  if (match.kind === "devices") return "devices";
+  if (match.kind === "help") return "help";
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -460,6 +468,25 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "ADMINISTRATION" },
+    ];
+  }
+  if (match.kind === "devices") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "DEVICES" },
+    ];
+  }
+  if (match.kind === "help") {
+    if (match.slug) {
+      return [
+        { label: workspace, href: "/" },
+        { label: "HELP CENTER", href: "/help" },
+        { label: match.slug.replace(/-/g, " ").toUpperCase() },
+      ];
+    }
+    return [
+      { label: workspace, href: "/" },
+      { label: "HELP CENTER" },
     ];
   }
   if (match.kind === "daily-update") {

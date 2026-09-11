@@ -12,6 +12,8 @@ import {
   V2ActivityPage,
   V2PeoplePage,
   V2AdministrationPage,
+  V2DevicesPage,
+  V2HelpPage,
 } from "./V2Pages";
 import { V2ClientRecordPage, V2ClientRecordRedirect, V2ClientsPage } from "./V2Clients";
 import { V2OpportunitiesPage } from "./V2Opportunities";
@@ -75,6 +77,13 @@ export function V2AuthenticatedApp() {
           <Route path="/activity" component={V2ActivityPage} />
           <Route path="/people" component={V2PeoplePage} />
           <Route path="/administration" component={V2AdministrationPage} />
+          <Route path="/devices" component={V2DevicesPage} />
+          <Route path="/help/:slug" component={V2HelpPage} />
+          <Route path="/help" component={V2HelpPage} />
+          <Route path="/help-center/:slug" component={V2HelpPage} />
+          <Route path="/help-center">
+            <Redirect to="/help" />
+          </Route>
           <Route path="/admin/user/:id">
             <Redirect to="/administration" />
           </Route>
@@ -91,10 +100,10 @@ export function V2AuthenticatedApp() {
             <Redirect to="/activity" />
           </Route>
           <Route path="/time-tracking/devices/:rest">
-            <V2PlaceholderPage />
+            <Redirect to="/devices" />
           </Route>
           <Route path="/time-tracking/devices">
-            <V2PlaceholderPage />
+            <Redirect to="/devices" />
           </Route>
           <Route path="/time-tracking/:rest">
             <Redirect to="/time" />
