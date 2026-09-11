@@ -1,8 +1,16 @@
 /**
- * v2 chrome actions (#184). Search, Timer commands, Ask, Notifications,
- * refusals, and toast copy. Motion lives in motion.ts.
+ * v2 chrome actions (#184, #210). Search, Timer commands, Ask, Notifications,
+ * Delivery Preference, account menu, refusals, and toast copy. Motion lives
+ * in motion.ts.
  */
 
+import { isVisibleDocumentAccess } from "@shared/documentAccess";
+import {
+  DELIVERY_CATEGORIES,
+  emailChannelEnabled,
+  toggleDeliveryPreference,
+  type DeliveryCategoryId,
+} from "@shared/deliveryPreference";
 import { documentHref, projectDocumentHref } from "./library";
 import type { V2CommandPanel } from "./presentation";
 import { projectHref } from "./today";
@@ -106,8 +114,7 @@ export function composeSearch(input: {
 }
 
 function isVisibleDocument(access: string | null | undefined): boolean {
-  const value = (access ?? "workspace").toLowerCase();
-  return value === "workspace" || value === "everyone";
+  return isVisibleDocumentAccess(access);
 }
 
 function searchFooter(fact: SearchAccessFact | undefined): string | null {
@@ -157,6 +164,7 @@ export type NotificationRow = {
 
 export type NotificationsModel = {
   rows: NotificationRow[];
+  unreadCount: number;
   emptyCopy: string;
 };
 
@@ -164,17 +172,19 @@ export function composeNotifications(input: {
   notifications: ChromeNotification[];
   now: Date;
 }): NotificationsModel {
+  const rows = input.notifications.map((notification) => ({
+    id: notification.id,
+    kind: notificationKind(notification.type),
+    title: notification.message?.trim() || "You have a notification",
+    when: formatWhen(notification.createdAt, input.now),
+    origin: notificationOrigin(notification),
+    href: notificationHref(notification),
+    unread: notification.isRead === 0,
+  }));
   return {
     emptyCopy: "No notifications yet.",
-    rows: input.notifications.map((notification) => ({
-      id: notification.id,
-      kind: notificationKind(notification.type),
-      title: notification.message?.trim() || "You have a notification",
-      when: formatWhen(notification.createdAt, input.now),
-      origin: notificationOrigin(notification),
-      href: notificationHref(notification),
-      unread: notification.isRead === 0,
-    })),
+    unreadCount: rows.filter((row) => row.unread).length,
+    rows,
   };
 }
 
@@ -191,21 +201,40 @@ function notificationHref(notification: ChromeNotification): string {
   return "/";
 }
 
+export const ASK_CHAT_MODE = "both" as const;
+
+export type AskCitationInput = {
+  id: string;
+  title: string;
+  kind: "document" | "project-document";
+  access?: string | null;
+};
+
 export type AskMessageInput = {
   role: "user" | "assistant";
   content: string;
   relevantDocs?: number;
+  citations?: AskCitationInput[];
+};
+
+export type AskSource = {
+  id: string;
+  title: string;
+  kind: string;
+  href: string;
 };
 
 export type AskMessage = {
   role: "user" | "assistant";
   content: string;
   source: string | null;
+  sources: AskSource[];
 };
 
 export type AskModel = {
   kicker: string;
   title: string;
+  mode: "workspace-records";
   messages: AskMessage[];
   emptyCopy: string;
   footnote: string;
@@ -215,17 +244,100 @@ export function composeAsk(input: { messages: AskMessageInput[] }): AskModel {
   return {
     kicker: "ASK DOCUFLOW",
     title: "Answers from your records",
+    mode: "workspace-records",
     emptyCopy:
       "Ask about a Project, Client, or policy in this Workspace. Answers honor Document Access.",
     footnote: "Restricted Documents stay hidden from this panel when they are hidden from search and the library.",
-    messages: input.messages.map((message) => ({
-      role: message.role,
-      content: message.content,
-      source:
-        message.role === "assistant" && (message.relevantDocs ?? 0) > 0
-          ? "SOURCES · Records in this Workspace"
-          : null,
-    })),
+    messages: input.messages.map((message) => {
+      const sources = message.role === "assistant" ? citeAskSources(message.citations ?? []) : [];
+      const cited =
+        message.role === "assistant" &&
+        (sources.length > 0 || ((message.relevantDocs ?? 0) > 0 && message.citations === undefined));
+      return {
+        role: message.role,
+        content: message.content,
+        source: cited ? "SOURCES · Records in this Workspace" : null,
+        sources,
+      };
+    }),
+  };
+}
+
+function citeAskSources(citations: AskCitationInput[]): AskSource[] {
+  const seen = new Set<string>();
+  const sources: AskSource[] = [];
+  for (const citation of citations) {
+    if (!isVisibleDocument(citation.access)) continue;
+    if (seen.has(citation.id)) continue;
+    seen.add(citation.id);
+    sources.push({
+      id: citation.id,
+      title: citation.title,
+      kind: citation.kind === "project-document" ? "PROJECT DOCUMENT" : "DOCUMENT",
+      href:
+        citation.kind === "project-document" ? projectDocumentHref(citation.id) : documentHref(citation.id),
+    });
+  }
+  return sources;
+}
+
+export {
+  DELIVERY_CATEGORIES,
+  toggleDeliveryPreference,
+  type DeliveryCategoryId,
+};
+
+export type DeliveryChannelState = { on: boolean; locked: boolean };
+
+export type DeliveryPreferenceRow = {
+  id: DeliveryCategoryId;
+  label: string;
+  inbox: { on: true; locked: true };
+  email: DeliveryChannelState;
+};
+
+export type DeliveryPreferenceModel = {
+  kicker: string;
+  title: string;
+  copy: string;
+  rows: DeliveryPreferenceRow[];
+};
+
+export function composeDeliveryPreference(input: {
+  workspaceName: string;
+  emailByCategory: Partial<Record<DeliveryCategoryId, boolean>>;
+}): DeliveryPreferenceModel {
+  return {
+    kicker: "CHANNELS",
+    title: "Delivery Preference",
+    copy: `The in-app inbox cannot be disabled. Delivery Preference is for ${input.workspaceName}. Security, billing, and membership notices always arrive.`,
+    rows: DELIVERY_CATEGORIES.map((category) => {
+      const locked = category.mandatory;
+      return {
+        id: category.id,
+        label: category.label,
+        inbox: { on: true, locked: true },
+        email: { on: emailChannelEnabled(input.emailByCategory, category.id), locked },
+      };
+    }),
+  };
+}
+
+export type AccountTheme = "light" | "dark" | "system";
+
+export type AccountMenuModel = {
+  themeOptions: Array<{ id: AccountTheme; label: string; selected: boolean }>;
+  signOutLabel: "Sign out";
+};
+
+export function composeAccountMenu(input: { theme: AccountTheme }): AccountMenuModel {
+  return {
+    signOutLabel: "Sign out",
+    themeOptions: [
+      { id: "light", label: "Light", selected: input.theme === "light" },
+      { id: "dark", label: "Dark", selected: input.theme === "dark" },
+      { id: "system", label: "System", selected: input.theme === "system" },
+    ],
   };
 }
 

@@ -8,6 +8,7 @@ import { storage } from "./storage";
 import { config } from "./config";
 import { sendReminderDueEmail } from "./email";
 import type { Job, JobTypeDeclaration } from "./jobs";
+import { emailEnabledForUser } from "./modules/notifications/deliveryPreference";
 import { forEachWorkspace } from "./workspaceContext";
 
 export const DUE_REMINDER_JOB = "due-reminder.deliver";
@@ -46,7 +47,10 @@ export async function deliverDueReminder(reminderId: string): Promise<void> {
 
   if (!emailDone) {
     const user = await storage.getUser(reminder.userId);
-    if (user?.email) {
+    if (!user?.email || !(await emailEnabledForUser(reminder.userId, "reminders"))) {
+      await storage.updateReminder(reminder.id, { emailSent: 1 });
+      emailDone = true;
+    } else {
       const recipientName = user.firstName || user.email;
       const emailResult = await sendReminderDueEmail(
         user.email,
@@ -63,9 +67,6 @@ export async function deliverDueReminder(reminderId: string): Promise<void> {
       } else {
         throw new Error(emailResult?.error ?? "email delivery failed");
       }
-    } else {
-      await storage.updateReminder(reminder.id, { emailSent: 1 });
-      emailDone = true;
     }
   }
 

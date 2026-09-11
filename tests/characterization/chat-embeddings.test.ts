@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { registerUser } from "../helpers/auth";
-import { createCrmProject, createDocument, tiptap } from "../helpers/fixtures";
+import { createCrmProject, createDocument, createFolder, tiptap } from "../helpers/fixtures";
 import { chatCalls, embeddingCalls, setChatReply } from "../fakes/openai";
 import { completeUpload } from "../helpers/objects";
 import { pdfSaying } from "../helpers/pdf";
@@ -16,8 +16,9 @@ import { pdfSaying } from "../helpers/pdf";
  * Quirks frozen here:
  *  - Document embeddings are not generated on the save request;
  *    `POST /api/embeddings/rebuild` is the synchronous path.
- *  - Chat always answers 200 with `{ message, model, relevantDocs, usedFallback }`
+ *  - Chat always answers 200 with `{ message, model, relevantDocs, usedFallback, citations }`
  *    and the model name hard-coded to "gpt-4.1-nano".
+ *  - `citations` lists Documents included in the prompt so Ask can inspect sources.
  *  - With no embeddings to match, chat falls back to pasting whole documents
  *    into the prompt and reports `usedFallback: true`.
  *  - Every user's chat sees every project in the workspace, because the project
@@ -58,12 +59,13 @@ describe("chat and embeddings (characterization)", () => {
 
     const res = await user.agent.post("/api/chat").send({ message: "How do I restart?" });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      message: "Restart it from the console.",
-      model: "gpt-4.1-nano",
-      relevantDocs: 0,
-      usedFallback: true,
-    });
+    expect(res.body.message).toBe("Restart it from the console.");
+    expect(res.body.model).toBe("gpt-4.1-nano");
+    expect(res.body.relevantDocs).toBe(0);
+    expect(res.body.usedFallback).toBe(true);
+    expect(res.body.citations).toEqual([
+      expect.objectContaining({ title: "Runbook", kind: "project-document" }),
+    ]);
 
     const [call] = chatCalls();
     expect(call.model).toBe("gpt-4.1-nano");
@@ -193,6 +195,9 @@ describe("chat and embeddings (characterization)", () => {
     expect(res.status).toBe(200);
     expect(res.body.usedFallback).toBe(false);
     expect(res.body.relevantDocs).toBeGreaterThan(0);
+    expect(res.body.citations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ title: "Deployment", kind: "project-document" })]),
+    );
 
     const systemPrompt = chatCalls().at(-1)!.messages[0].content;
     expect(systemPrompt).toContain("# Relevant Project Documentation");
@@ -211,5 +216,36 @@ describe("chat and embeddings (characterization)", () => {
     // Quirk: the project overview is built from the company-wide list, so a user
     // with no projects still sees every project name in the prompt.
     expect(chatCalls().at(-1)!.messages[0].content).toContain("Someone Elses Project");
+  });
+
+  it("keeps restricted Workspace Documents out of the prompt and citations", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const folder = await createFolder(user.agent, { name: "Payroll" });
+    const hidden = await user.agent.post("/api/company-documents").send({
+      name: "Payroll bands",
+      folderId: folder.id,
+      content: tiptap("secret compensation bands"),
+    });
+    expect(hidden.status).toBe(201);
+    const { pool } = await import("../../server/db");
+    await pool.query(`UPDATE company_documents SET access = 'restricted' WHERE id = $1`, [hidden.body.id]);
+    await user.agent.post("/api/company-documents").send({
+      name: "Leave policy",
+      content: tiptap("Receipts within 30 days"),
+    });
+    await user.agent.post("/api/embeddings/rebuild");
+
+    const res = await user.agent.post("/api/chat").send({
+      message: "compensation bands",
+      mode: "company",
+    });
+    expect(res.status).toBe(200);
+    const prompt = chatCalls().at(-1)!.messages[0].content;
+    expect(prompt).not.toContain("Payroll bands");
+    expect(prompt).not.toContain("secret compensation bands");
+    expect((res.body.citations as Array<{ title: string }>).map((citation) => citation.title)).not.toContain(
+      "Payroll bands",
+    );
   });
 });

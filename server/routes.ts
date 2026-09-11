@@ -16,6 +16,8 @@ import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
 import { webAuthConfigRoute, identityProvider } from "./modules/identity";
+import { registerDeliveryPreferenceRoutes } from "./modules/notifications/http";
+import { emailEnabledForUser } from "./modules/notifications/deliveryPreference";
 import { registerActiveWorkspaceRoutes, registerWebhookEndpointRoutes } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
 import { SeatExhaustedError } from "./modules/billing";
@@ -46,6 +48,7 @@ import {
   searchCompanyDocumentChunks,
   rebuildAllCompanyDocumentEmbeddings,
 } from "./embeddings";
+import { isVisibleDocumentAccess, uniqueChatCitations, workspaceDocumentAccessById, workspaceDocumentVisible, type ChatCitation } from "./askCitations";
 import {
   syncDocumentVideoTranscripts,
   getTranscriptStatus,
@@ -150,6 +153,7 @@ export async function registerRoutes(
   // Webhook Endpoints (Workspace). Session BFF; not /api/v1.
   registerWebhookEndpointRoutes(app);
   registerActiveWorkspaceRoutes(app);
+  registerDeliveryPreferenceRoutes(app);
 
   // Public `/api/v1` kernel. Service Account keys only (ADR-0011).
   registerPublicApiV1(app);
@@ -1020,8 +1024,9 @@ export async function registerRoutes(
       let projectOverview = "";
       let companyDocsOverview = "";
       let relevantContext = "";
-      let searchResults: { chunkText: string; title: string; projectName: string; breadcrumbs: string[]; similarity: number }[] = [];
+      let searchResults: { documentId: string; chunkText: string; title: string; projectName: string; breadcrumbs: string[]; similarity: number }[] = [];
       let usedFallback = false;
+      const citations: ChatCitation[] = [];
       
       // Get project overview and docs if mode includes projects
       if (mode === "projects" || mode === "both") {
@@ -1040,6 +1045,9 @@ export async function registerRoutes(
           searchResults = await searchSimilarChunks(userId, message, mode === "both" ? 10 : 15);
           
           if (searchResults.length > 0) {
+            for (const result of searchResults) {
+              citations.push({ id: result.documentId, title: result.title, kind: "project-document" });
+            }
             relevantContext = "# Relevant Project Documentation\n\n";
             
             const byDocument = new Map<string, typeof searchResults>();
@@ -1083,6 +1091,7 @@ export async function registerRoutes(
                 relevantContext += "\n[Additional content available via semantic search...]\n";
                 break;
               }
+              citations.push({ id: doc.id, title: doc.title, kind: "project-document" });
             
             const project = projectMap.get(doc.projectId);
             const projectName = project?.name || "Unknown Project";
@@ -1101,7 +1110,9 @@ export async function registerRoutes(
       
       // Get company documents if mode includes company
       if (mode === "company" || mode === "both") {
-        const companyDocs = await storage.getCompanyDocuments();
+        const accessById = await workspaceDocumentAccessById();
+        const allCompanyDocs = await storage.getCompanyDocuments();
+        const companyDocs = allCompanyDocs.filter((doc) => isVisibleDocumentAccess(doc.access));
         const folders = await storage.getCompanyDocumentFolders();
         const folderMap = new Map(folders.map(f => [f.id, f]));
         
@@ -1125,13 +1136,22 @@ export async function registerRoutes(
           
           // Use vector search for company documents
           try {
-            const companySearchResults = await searchCompanyDocumentChunks(message, mode === "both" ? 8 : 12);
+            const wanted = mode === "both" ? 8 : 12;
+            const companySearchResults = (await searchCompanyDocumentChunks(message, wanted * 4))
+              .filter((result) => workspaceDocumentVisible(result.companyDocumentId, accessById))
+              .slice(0, wanted);
             
             if (companySearchResults.length > 0) {
               relevantContext += "\n\n# Relevant Company Documents\n\n";
               
               const byCompanyDoc = new Map<string, typeof companySearchResults>();
               for (const result of companySearchResults) {
+                citations.push({
+                  id: result.companyDocumentId,
+                  title: result.title,
+                  kind: "document",
+                  access: accessById.get(result.companyDocumentId) ?? "workspace",
+                });
                 const key = `${result.folderName}/${result.title}`;
                 const existing = byCompanyDoc.get(key) || [];
                 existing.push(result);
@@ -1183,6 +1203,12 @@ export async function registerRoutes(
               if (docContent.length + companyCharsUsed <= MAX_COMPANY_CHARS) {
                 companyContent.push(docContent);
                 companyCharsUsed += docContent.length;
+                citations.push({
+                  id: doc.id,
+                  title: doc.name,
+                  kind: "document",
+                  access: doc.access,
+                });
               }
             }
             
@@ -1242,7 +1268,8 @@ Instructions:
         message: assistantMessage,
         model: "gpt-4.1-nano",
         relevantDocs: searchResults.length,
-        usedFallback
+        usedFallback,
+        citations: uniqueChatCitations(citations),
       });
     } catch (error: any) {
       console.error("Error in chat:", error);
@@ -1775,14 +1802,16 @@ Instructions:
             
             // Send email notification
             const appUrl = `${req.protocol}://${req.get('host')}`;
-            await sendProjectAssignmentEmail(
-              assignee.email,
-              assignee.firstName || 'Team Member',
-              projectName,
-              `${assigner.firstName || ''} ${assigner.lastName || ''}`.trim() || 'A team member',
-              appUrl,
-              req.params.id
-            );
+            if (await emailEnabledForUser(newAssigneeId, "work-assignments")) {
+              await sendProjectAssignmentEmail(
+                assignee.email,
+                assignee.firstName || 'Team Member',
+                projectName,
+                `${assigner.firstName || ''} ${assigner.lastName || ''}`.trim() || 'A team member',
+                appUrl,
+                req.params.id
+              );
+            }
           }
         } catch (notifError) {
           console.error("Error sending assignment notification:", notifError);

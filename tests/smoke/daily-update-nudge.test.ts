@@ -116,4 +116,16 @@ describe("Daily Update nudge Job", () => {
     expect(sentEmails()).toHaveLength(1);
     expect(await worker.runOne()).toBeNull();
   });
+
+  it("skips email when reminders Delivery Preference is off, and still writes the inbox", async () => {
+    const { storage, user } = await seedMember();
+    const { putDeliveryPreference } = await import("../../server/modules/notifications/deliveryPreference");
+    const { nudgeMemberForWorkday } = await import("../../server/dailyUpdateNudge");
+
+    await inSeededWorkspace(() => putDeliveryPreference(user.id, { reminders: false }));
+    expect(await inSeededWorkspace(() => nudgeMemberForWorkday(user.id, WORKDAY))).toBe(true);
+
+    expect(await inSeededWorkspace(() => storage.getUserNotifications(user.id))).toHaveLength(1);
+    expect(sentEmails()).toEqual([]);
+  });
 });

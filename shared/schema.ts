@@ -1758,6 +1758,7 @@ export const memberships = pgTable(
     archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
+    deliveryPreferences: jsonb("delivery_preferences").$type<Record<string, boolean>>(),
   },
   (table) => [
     uniqueIndex("idx_memberships_workspace_user").on(table.workspaceId, table.userId),

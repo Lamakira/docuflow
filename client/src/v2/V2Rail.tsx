@@ -1,7 +1,9 @@
 import { Link, useLocation } from "wouter";
+import { useTheme } from "@/components/ThemeProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { signOutOfIdentityProvider } from "@/lib/identitySession";
 import { queryClient } from "@/lib/queryClient";
+import { composeAccountMenu } from "./chrome";
 import {
   CloseIcon,
   CollapseIcon,
@@ -44,6 +46,8 @@ export function V2Rail({
 }: V2RailProps) {
   const [location] = useLocation();
   const { user } = useAuth();
+  const { theme, setTheme } = useTheme();
+  const account = composeAccountMenu({ theme });
   const activeId = navIdForPath(location);
   const initials = workspaceInitials(workspaceName);
   const displayName =
@@ -224,9 +228,20 @@ export function V2Rail({
               </>
             ) : null}
           </summary>
-          <div className="df-menu" style={{ marginTop: 6 }}>
+          <div className="df-menu" style={{ marginTop: 6 }} data-testid="v2-account-menu">
+            {account.themeOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setTheme(option.id)}
+                data-selected={option.selected ? "true" : "false"}
+                data-testid={`v2-theme-${option.id}`}
+              >
+                {option.label}
+              </button>
+            ))}
             <button type="button" onClick={handleSignOut} data-testid="v2-sign-out">
-              Sign out
+              {account.signOutLabel}
             </button>
           </div>
         </details>
