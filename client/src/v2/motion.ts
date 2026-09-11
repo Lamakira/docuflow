@@ -13,6 +13,7 @@
  * Opportunity Stage-change moves the card to another Stage column (occasional; state indication).
  * Time Entry add/remove uses an enter/exit bridge (occasional; preventing a jarring change).
  * Activity Evidence expands from its row (occasional; spatial consistency).
+ * Capability refusal opens from the control that failed (occasional; spatial consistency).
  * Toasts enter and exit the same bottom edge (occasional; spatial consistency).
  */
 
@@ -38,6 +39,7 @@ export type MotionSurface =
   | "opportunity-stage-change"
   | "time-entry"
   | "activity-evidence-expand"
+  | "capability-refusal"
   | "workspace-chooser-pointer"
   | "workspace-chooser-keyboard"
   | "timer-chip"
@@ -69,6 +71,7 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "opportunity-stage-change": "occasional",
   "time-entry": "occasional",
   "activity-evidence-expand": "occasional",
+  "capability-refusal": "occasional",
   "workspace-chooser-pointer": "keyboard-or-100+",
   "workspace-chooser-keyboard": "keyboard-or-100+",
   "timer-chip": "keyboard-or-100+",

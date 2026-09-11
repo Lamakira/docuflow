@@ -94,6 +94,7 @@ export type V2Match =
   | { kind: "time"; title: "Time Tracking"; href: "/time" }
   | { kind: "daily-update"; title: "Daily Update"; href: "/daily-update" }
   | { kind: "activity"; title: "Activity"; href: "/activity" }
+  | { kind: "people"; title: "People"; href: "/people" }
   | { kind: "placeholder"; title: string; href: string };
 
 export type V2NavId =
@@ -158,7 +159,6 @@ export const V2_NAV: V2NavSection[] = [
 ];
 
 const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> = [
-  { href: "/people", title: "People" },
   { href: "/administration", title: "Administration" },
   { href: "/help", title: "Help Center" },
   { href: "/devices", title: "Devices" },
@@ -284,6 +284,10 @@ export function matchV2Route(path: string): V2Match {
     return { kind: "activity", title: "Activity", href: "/activity" };
   }
 
+  if (pathname === "/people") {
+    return { kind: "people", title: "People", href: "/people" };
+  }
+
   if (isTimeTrackingRewrite(pathname)) {
     return { kind: "time", title: "Time Tracking", href: "/time" };
   }
@@ -369,6 +373,7 @@ export function navIdForPath(path: string): V2NavId | null {
   if (match.kind === "opportunities") return "opportunities";
   if (match.kind === "time") return "time";
   if (match.kind === "activity") return "activity";
+  if (match.kind === "people") return "people";
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -439,6 +444,12 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "ACTIVITY" },
+    ];
+  }
+  if (match.kind === "people") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "PEOPLE" },
     ];
   }
   if (match.kind === "daily-update") {

@@ -15,6 +15,7 @@ import {
 import {
   InvalidActiveWorkspaceError,
   listMemberships,
+  listWorkspaceMemberships,
   setActiveWorkspace,
 } from "./activeWorkspace";
 
@@ -107,6 +108,12 @@ export function registerActiveWorkspaceRoutes(app: Express): void {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
     res.json(await listMemberships(userId));
+  });
+
+  app.get("/api/workspace/memberships", isAuthenticated, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    res.json(await listWorkspaceMemberships(userId, req.query.includeArchived === "true"));
   });
 
   app.put("/api/memberships/active", isAuthenticated, async (req, res) => {

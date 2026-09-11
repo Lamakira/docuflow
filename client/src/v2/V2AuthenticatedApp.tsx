@@ -10,6 +10,7 @@ import {
   V2TimePage,
   V2DailyUpdatePage,
   V2ActivityPage,
+  V2PeoplePage,
 } from "./V2Pages";
 import { V2ClientRecordPage, V2ClientRecordRedirect, V2ClientsPage } from "./V2Clients";
 import { V2OpportunitiesPage } from "./V2Opportunities";
@@ -71,6 +72,7 @@ export function V2AuthenticatedApp() {
           <Route path="/project/:id" component={V2LegacyProjectPage} />
           <Route path="/time" component={V2TimePage} />
           <Route path="/activity" component={V2ActivityPage} />
+          <Route path="/people" component={V2PeoplePage} />
           <Route path="/time-tracking/screencasts/:rest">
             <Redirect to="/activity" />
           </Route>

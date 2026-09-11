@@ -4,16 +4,19 @@
  * already bound to one Workspace. This is a User-global surface.
  */
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
+  capabilities,
+  membershipCapabilities,
   memberships,
   users,
   workspaceBilling,
+  workspaceRoleCapabilities,
   workspaceRoles,
   workspaces,
 } from "@shared/schema";
 import { db } from "../../db";
-import { requireWorkspaceContext } from "../../workspaceContext";
+import { inWorkspace, requireWorkspaceContext } from "../../workspaceContext";
 
 export type WorkspaceCondition = "Trial" | "Read-only" | "Past due" | null;
 
@@ -102,6 +105,133 @@ export async function listMemberships(userId: string): Promise<MembershipsRespon
     preferredWorkspaceId: loaded.preferredWorkspaceId,
     memberships: sortMemberships(loaded.memberships, activeWorkspaceId),
   };
+}
+
+export type WorkspacePersonView = {
+  membershipId: string;
+  userId: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+  workspaceRole: string;
+  capabilities: string[];
+  archived: boolean;
+};
+
+export type WorkspaceMembershipsResponse = {
+  memberships: WorkspacePersonView[];
+};
+
+/**
+ * Memberships in the Active Workspace (#192). GET /api/users is global and
+ * does not carry Workspace Role or Capabilities, so this cannot be composed.
+ */
+export async function listWorkspaceMemberships(
+  requesterUserId: string,
+  includeArchivedQuery: boolean,
+): Promise<WorkspaceMembershipsResponse> {
+  const [requester] = await db
+    .select({ slug: workspaceRoles.slug })
+    .from(memberships)
+    .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
+    .where(
+      and(
+        inWorkspace(memberships),
+        eq(memberships.userId, requesterUserId),
+        isNull(memberships.archivedAt),
+      ),
+    )
+    .limit(1);
+  const canReviewArchived = requester?.slug === "owner" || requester?.slug === "administrator";
+  const includeArchived = includeArchivedQuery && canReviewArchived;
+
+  const rows = await db
+    .select({
+      membershipId: memberships.id,
+      userId: memberships.userId,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      archivedAt: memberships.archivedAt,
+      slug: workspaceRoles.slug,
+      workspaceRoleId: memberships.workspaceRoleId,
+    })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
+    .where(
+      includeArchived
+        ? inWorkspace(memberships)
+        : and(inWorkspace(memberships), isNull(memberships.archivedAt)),
+    )
+    .orderBy(asc(users.firstName), asc(users.lastName), asc(users.email));
+
+  const roleIds = [...new Set(rows.map((row) => row.workspaceRoleId))];
+  const membershipIds = rows.map((row) => row.membershipId);
+
+  const roleCaps =
+    roleIds.length === 0
+      ? []
+      : await db
+          .select({
+            workspaceRoleId: workspaceRoleCapabilities.workspaceRoleId,
+            name: capabilities.name,
+          })
+          .from(workspaceRoleCapabilities)
+          .innerJoin(capabilities, eq(capabilities.id, workspaceRoleCapabilities.capabilityId))
+          .where(
+            and(
+              inWorkspace(workspaceRoleCapabilities),
+              inArray(workspaceRoleCapabilities.workspaceRoleId, roleIds),
+            ),
+          );
+
+  const extraCaps =
+    membershipIds.length === 0
+      ? []
+      : await db
+          .select({
+            membershipId: membershipCapabilities.membershipId,
+            name: capabilities.name,
+          })
+          .from(membershipCapabilities)
+          .innerJoin(capabilities, eq(capabilities.id, membershipCapabilities.capabilityId))
+          .where(
+            and(
+              inWorkspace(membershipCapabilities),
+              inArray(membershipCapabilities.membershipId, membershipIds),
+            ),
+          );
+
+  const roleCapMap = new Map<string, string[]>();
+  for (const cap of roleCaps) pushUnique(roleCapMap, cap.workspaceRoleId, cap.name);
+  const extraCapMap = new Map<string, string[]>();
+  for (const cap of extraCaps) pushUnique(extraCapMap, cap.membershipId, cap.name);
+
+  return {
+    memberships: rows.map((row) => {
+      const names = [
+        ...(roleCapMap.get(row.workspaceRoleId) ?? []),
+        ...(extraCapMap.get(row.membershipId) ?? []),
+      ];
+      return {
+        membershipId: row.membershipId,
+        userId: row.userId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        email: row.email,
+        workspaceRole: membershipRoleLabel(row.slug),
+        capabilities: [...new Set(names)].sort((a, b) => a.localeCompare(b)),
+        archived: row.archivedAt != null,
+      };
+    }),
+  };
+}
+
+function pushUnique(map: Map<string, string[]>, key: string, name: string): void {
+  const list = map.get(key) ?? [];
+  if (!list.includes(name)) list.push(name);
+  map.set(key, list);
 }
 
 export async function setActiveWorkspace(
