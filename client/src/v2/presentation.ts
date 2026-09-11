@@ -95,6 +95,7 @@ export type V2Match =
   | { kind: "daily-update"; title: "Daily Update"; href: "/daily-update" }
   | { kind: "activity"; title: "Activity"; href: "/activity" }
   | { kind: "people"; title: "People"; href: "/people" }
+  | { kind: "administration"; title: "Administration"; href: "/administration" }
   | { kind: "placeholder"; title: string; href: string };
 
 export type V2NavId =
@@ -159,7 +160,6 @@ export const V2_NAV: V2NavSection[] = [
 ];
 
 const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> = [
-  { href: "/administration", title: "Administration" },
   { href: "/help", title: "Help Center" },
   { href: "/devices", title: "Devices" },
 ];
@@ -167,7 +167,6 @@ const PLACEHOLDERS: Array<{ href: string; title: string; prefixes?: string[] }> 
 const V1_TO_PLACEHOLDER: Array<{ test: (path: string) => boolean; href: string; title: string }> = [
   { test: (path) => path === "/time-tracking/devices" || path.startsWith("/time-tracking/devices/"), href: "/devices", title: "Devices" },
   { test: (path) => path === "/devices" || path.startsWith("/devices/"), href: "/devices", title: "Devices" },
-  { test: (path) => path === "/admin" || path.startsWith("/admin/"), href: "/administration", title: "Administration" },
   { test: (path) => path === "/help-center" || path.startsWith("/help-center/"), href: "/help", title: "Help Center" },
 ];
 
@@ -288,6 +287,10 @@ export function matchV2Route(path: string): V2Match {
     return { kind: "people", title: "People", href: "/people" };
   }
 
+  if (pathname === "/administration" || pathname === "/admin" || pathname.startsWith("/admin/")) {
+    return { kind: "administration", title: "Administration", href: "/administration" };
+  }
+
   if (isTimeTrackingRewrite(pathname)) {
     return { kind: "time", title: "Time Tracking", href: "/time" };
   }
@@ -374,6 +377,7 @@ export function navIdForPath(path: string): V2NavId | null {
   if (match.kind === "time") return "time";
   if (match.kind === "activity") return "activity";
   if (match.kind === "people") return "people";
+  if (match.kind === "administration") return "administration";
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -450,6 +454,12 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "PEOPLE" },
+    ];
+  }
+  if (match.kind === "administration") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "ADMINISTRATION" },
     ];
   }
   if (match.kind === "daily-update") {

@@ -10,6 +10,7 @@ export { V2TimePage } from "./V2Time";
 export { V2DailyUpdatePage } from "./V2DailyUpdate";
 export { V2ActivityPage } from "./V2Activity";
 export { V2PeoplePage } from "./V2People";
+export { V2AdministrationPage } from "./V2Administration";
 
 export function V2PlaceholderPage() {
   const [location] = useLocation();

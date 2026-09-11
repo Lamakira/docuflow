@@ -14,6 +14,7 @@
  * Time Entry add/remove uses an enter/exit bridge (occasional; preventing a jarring change).
  * Activity Evidence expands from its row (occasional; spatial consistency).
  * Capability refusal opens from the control that failed (occasional; spatial consistency).
+ * A shown-once secret confirmation is rare state indication, not a celebration overlay.
  * Toasts enter and exit the same bottom edge (occasional; spatial consistency).
  */
 
@@ -40,6 +41,7 @@ export type MotionSurface =
   | "time-entry"
   | "activity-evidence-expand"
   | "capability-refusal"
+  | "secret-once"
   | "workspace-chooser-pointer"
   | "workspace-chooser-keyboard"
   | "timer-chip"
@@ -72,6 +74,7 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "time-entry": "occasional",
   "activity-evidence-expand": "occasional",
   "capability-refusal": "occasional",
+  "secret-once": "occasional",
   "workspace-chooser-pointer": "keyboard-or-100+",
   "workspace-chooser-keyboard": "keyboard-or-100+",
   "timer-chip": "keyboard-or-100+",

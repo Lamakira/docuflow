@@ -694,6 +694,56 @@ button.df-activity-row {
 .df-people-action {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
+}
+
+.df-admin-register .df-register-head,
+.df-admin-register .df-register-row {
+  grid-template-columns: 1.6fr 1.3fr 0.7fr 0.9fr;
+}
+
+.df-admin-register .df-register-row {
+  transition: none;
+  animation: none;
+}
+
+.df-admin-form input {
+  animation: none;
+  transition: none;
+}
+
+.df-admin-billing-figure {
+  font-family: var(--df-font-mono);
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  animation: none;
+  transition: none;
+}
+
+.df-admin-secret {
+  display: block;
+  font-family: var(--df-font-mono);
+  font-size: 12px;
+  word-break: break-all;
+  background: var(--df-cold-stock);
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.df-secret-once[data-motion="standard"] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--duration-ui) var(--ease-out),
+    transform var(--duration-ui) var(--ease-out);
+}
+
+@starting-style {
+  .df-secret-once[data-motion="standard"] {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 
 .df-refusal-anchor {
@@ -2346,6 +2396,11 @@ button.df-activity-row {
     transition: opacity var(--duration-ui) var(--ease-out);
   }
 
+  .df-secret-once[data-motion="standard"] {
+    transform: none;
+    transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
   .df-time-row[data-state="leaving"][data-motion="standard"] {
     transform: none;
   }
@@ -2356,6 +2411,10 @@ button.df-activity-row {
     }
 
     .df-refusal-pop[data-motion="standard"] {
+      transform: none;
+    }
+
+    .df-secret-once[data-motion="standard"] {
       transform: none;
     }
   }
