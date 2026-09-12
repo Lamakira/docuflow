@@ -4,7 +4,8 @@
  *
  * Do not animate: search `/`, command-palette overlays, rail destination
  * clicks, focus jumps, Workspace chooser pointer/keyboard, Timer chip on switch,
- * search keystrokes, result-list filtering, library filter typing, editor keystrokes.
+ * search keystrokes, result-list filtering, Ask composer keystrokes, Delivery
+ * Preference toggles, library filter typing, editor keystrokes.
  * Folder expand may animate height (occasional; state indication).
  * Save state may morph color/opacity without a celebration.
  * Workspace switch content may crossfade (occasional; preventing a jarring change).
@@ -17,6 +18,7 @@
  * Capability refusal opens from the control that failed (occasional; spatial consistency).
  * A shown-once secret confirmation is rare state indication, not a celebration overlay.
  * Toasts enter and exit the same bottom edge (occasional; spatial consistency).
+ * A Notification appearing in the inbox enters from that same edge (occasional; spatial consistency).
  * Pairing code appears as rare explanation / state — no bounce, there is no gesture.
  * Help article open is tens/day — opacity only, no page-slide.
  * Do not animate: Help search keystrokes, pairing spinner as decoration, article TOC highlight chasing scroll.
@@ -57,7 +59,10 @@ export type MotionSurface =
   | "pairing-code"
   | "help-article"
   | "help-search"
-  | "daily-update-remind";
+  | "daily-update-remind"
+  | "notification-inbox"
+  | "ask-composer"
+  | "delivery-preference";
 
 export type MotionRecipe = {
   enterExit: "instant" | "standard" | "none";
@@ -95,6 +100,9 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "help-article": "tens",
   "help-search": "keyboard-or-100+",
   "daily-update-remind": "occasional",
+  "notification-inbox": "occasional",
+  "ask-composer": "keyboard-or-100+",
+  "delivery-preference": "keyboard-or-100+",
 };
 
 export function motionForSurface(

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BellIcon, MenuIcon, SearchIcon } from "./icons";
+import { BellIcon, MenuIcon, SearchIcon, SparkleIcon } from "./icons";
 import { SearchOverlay } from "./V2CommandBar";
 import { selectCommandPanel } from "./chrome";
 import { workspaceInitials, type V2CommandPanel } from "./presentation";
@@ -55,6 +55,15 @@ export function V2AppBar({ workspaceName, panel, onPanel, onMenu }: V2AppBarProp
           data-testid="v2-search"
         >
           <SearchIcon />
+        </button>
+        <button
+          type="button"
+          className="df-app-icon"
+          data-testid="v2-ask"
+          aria-label="Ask DocuFlow"
+          onClick={() => onPanel(selectCommandPanel(panel, "ask"))}
+        >
+          <SparkleIcon />
         </button>
         <button
           type="button"

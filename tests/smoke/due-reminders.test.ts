@@ -209,4 +209,22 @@ describe("due-reminder Job", () => {
     });
     expect(await jobs.claim("worker-2")).toBeNull();
   });
+
+  it("skips email when reminders Delivery Preference is off, and still writes the inbox", async () => {
+    const { storage, user, reminder } = await seedDueReminder();
+    const { putDeliveryPreference } = await import("../../server/modules/notifications/deliveryPreference");
+    const { deliverDueReminder } = await import("../../server/dueReminders");
+
+    await inSeededWorkspace(() => putDeliveryPreference(user.id, { reminders: false }));
+    await inSeededWorkspace(() => deliverDueReminder(reminder.id));
+
+    expect(await inSeededWorkspace(() => storage.getUserNotifications(user.id))).toHaveLength(1);
+    expect(sentEmails()).toEqual([]);
+    expect(await inSeededWorkspace(() => storage.getReminder(reminder.id))).toMatchObject({
+      notifiedInApp: 1,
+      emailSent: 1,
+      notified: 1,
+      status: "due",
+    });
+  });
 });

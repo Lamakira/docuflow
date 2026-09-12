@@ -9,6 +9,7 @@ import { config } from "./config";
 import { sendDailyUpdateReminderEmail } from "./email";
 import type { Job, JobTypeDeclaration, JobsPort } from "./jobs";
 import { workspaceOfCause } from "./jobs";
+import { emailEnabledForUser } from "./modules/notifications/deliveryPreference";
 import { storage } from "./storage";
 import { activeMemberUserIds, forEachWorkspace, requireWorkspaceContext } from "./workspaceContext";
 
@@ -155,7 +156,7 @@ export async function nudgeMemberForWorkday(userId: string, workday: string): Pr
     type: "daily_update_reminder",
     message: "Don't forget to submit your daily update before you finish your day.",
   });
-  if (user.email) {
+  if (user.email && (await emailEnabledForUser(userId, "reminders"))) {
     await sendDailyUpdateReminderEmail(user.email, user.firstName || user.email, config.appUrl);
   }
   return true;
