@@ -1771,6 +1771,52 @@ export const memberships = pgTable(
 
 export type Membership = typeof memberships.$inferSelect;
 
+export const invitationStatusValues = ["pending", "accepted", "revoked", "expired"] as const;
+export type InvitationStatus = (typeof invitationStatusValues)[number];
+
+/**
+ * Workspace Invitation (#211, Flow 6). Pending consumes no Billable Seat.
+ * Acceptance creates a Membership in this Workspace, not a Workspace.
+ */
+export const invitations = pgTable(
+  "invitations",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    workspaceId: varchar("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    email: varchar("email").notNull(),
+    workspaceRoleId: varchar("workspace_role_id")
+      .notNull()
+      .references(() => workspaceRoles.id, { onDelete: "restrict" }),
+    token: varchar("token", { length: 64 }).notNull(),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    invitedByUserId: varchar("invited_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    expiresAt: timestamp("expires_at").notNull(),
+    acceptedAt: timestamp("accepted_at"),
+    revokedAt: timestamp("revoked_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_invitations_token").on(table.token),
+    uniqueIndex("idx_invitations_workspace_email").on(table.workspaceId, table.email),
+    index("idx_invitations_workspace").on(table.workspaceId),
+    index("idx_invitations_email").on(table.email),
+    idInWorkspace(table, "invitations"),
+    workspaceScopedFk(
+      "invitations_role_workspace_fk",
+      [table.workspaceRoleId, table.workspaceId],
+      workspaceRoles,
+      "restrict",
+    ),
+  ],
+);
+
+export type Invitation = typeof invitations.$inferSelect;
+
 /**
  * Authorization connecting one Device to one Workspace through the owner's
  * Membership (#94). A Device has no Workspace authority without an enrollment.

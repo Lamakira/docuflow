@@ -41,6 +41,7 @@ export const WORKSPACE_TABLES = [
   "memberships",
   "membership_capabilities",
   "webhook_endpoints",
+  "invitations",
 ] as const;
 
 export const webhookEndpointPersistence: WebhookEndpointPersistence = {

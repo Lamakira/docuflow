@@ -19,9 +19,11 @@
  * A shown-once secret confirmation is rare state indication, not a celebration overlay.
  * Toasts enter and exit the same bottom edge (occasional; spatial consistency).
  * A Notification appearing in the inbox enters from that same edge (occasional; spatial consistency).
+ * Accepting an Invitation is rare state indication (Membership appears in People). No bounce.
  * Pairing code appears as rare explanation / state — no bounce, there is no gesture.
  * Help article open is tens/day — opacity only, no page-slide.
- * Do not animate: Help search keystrokes, pairing spinner as decoration, article TOC highlight chasing scroll.
+ * Do not animate: Help search keystrokes, pairing spinner as decoration, article TOC highlight chasing scroll,
+ * register filter typing, role dropdown as decoration, seat digits counting.
  */
 
 export const V2_MOTION_TOKENS = {
@@ -62,7 +64,11 @@ export type MotionSurface =
   | "daily-update-remind"
   | "notification-inbox"
   | "ask-composer"
-  | "delivery-preference";
+  | "delivery-preference"
+  | "invitation-accept"
+  | "people-filter"
+  | "people-role"
+  | "people-seats";
 
 export type MotionRecipe = {
   enterExit: "instant" | "standard" | "none";
@@ -103,6 +109,10 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "notification-inbox": "occasional",
   "ask-composer": "keyboard-or-100+",
   "delivery-preference": "keyboard-or-100+",
+  "invitation-accept": "occasional",
+  "people-filter": "keyboard-or-100+",
+  "people-role": "keyboard-or-100+",
+  "people-seats": "keyboard-or-100+",
 };
 
 export function motionForSurface(

@@ -1,12 +1,16 @@
 import { workspaceInitials } from "./presentation";
-import type { MembershipOption } from "./workspace";
+import type { ChooserInvitationRow, MembershipOption } from "./workspace";
 
 export function V2WorkspaceChooser({
   rows,
+  invitations = [],
   onChoose,
+  onAccept,
 }: {
   rows: MembershipOption[];
+  invitations?: ChooserInvitationRow[];
   onChoose: (workspaceId: string) => void;
+  onAccept?: (token: string) => void;
 }) {
   return (
     <div className="df-v2 df-chooser" data-testid="v2-workspace-chooser" style={{ height: "100vh", display: "flex" }}>
@@ -46,6 +50,27 @@ export function V2WorkspaceChooser({
                   {row.condition ? ` · ${row.condition}` : ""}
                 </span>
               </span>
+            </button>
+          ))}
+          {invitations.map((row) => (
+            <button
+              key={row.id}
+              type="button"
+              className="df-ws"
+              data-testid={`v2-chooser-invitation-${row.id}`}
+              onClick={() => onAccept?.(row.token)}
+              style={{ width: "100%", textAlign: "left" }}
+            >
+              <span className="df-tile" style={{ width: 22, height: 22, borderRadius: 4, fontSize: 10 }}>
+                {workspaceInitials(row.workspaceName)}
+              </span>
+              <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{row.workspaceName}</span>
+                <span className="df-mono" style={{ fontSize: 9.5, color: "#59657A" }}>
+                  Invitation · {row.workspaceRole}
+                </span>
+              </span>
+              <span className="df-ghost-link">Accept</span>
             </button>
           ))}
         </div>

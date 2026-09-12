@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { motionForSurface } from "../../client/src/v2/motion";
 import {
+  chooserInvitationRows,
   membershipRoleLabel,
   notificationOrigin,
   timerChipOnSwitch,
@@ -58,6 +59,16 @@ describe("v2 Active Workspace (#183)", () => {
       workspaceRole: "ADMINISTRATOR",
       condition: "Trial",
     });
+  });
+
+  it("shows the chooser when a pending Invitation must surface as an accept action", () => {
+    expect(
+      workspaceEntry({
+        memberships: [seeded],
+        lastActiveWorkspaceId: "seeded",
+        invitations: [{ id: "inv-1" }],
+      }).kind,
+    ).toBe("chooser");
   });
 
   it("offers the last Active Workspace first and enters it on the next sign-in", () => {
@@ -147,6 +158,43 @@ describe("v2 Active Workspace (#183)", () => {
     expect(reducedMotionCss()).toMatch(/\.df-workspace-content[^{]*\{[^}]*transform:\s*none/);
     expect(rule(".df-ws-menu")).toMatch(/transition:\s*none/);
     expect(rule(".df-chooser")).toMatch(/transition:\s*none/);
+  });
+
+  it("surfaces a pending Invitation as an accept action, not as a Membership", () => {
+    const invitations = chooserInvitationRows([
+      {
+        id: "inv-1",
+        workspaceId: "parallel",
+        workspaceName: "Harbour View",
+        workspaceRole: "MEMBER",
+        token: "ab".padEnd(64, "c"),
+      },
+    ]);
+    expect(invitations).toEqual([
+      {
+        kind: "invitation",
+        action: "accept",
+        id: "inv-1",
+        workspaceId: "parallel",
+        workspaceName: "Harbour View",
+        workspaceRole: "MEMBER",
+        token: "ab".padEnd(64, "c"),
+      },
+    ]);
+    expect(invitations[0]).not.toHaveProperty("archived");
+
+    const chooserSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2WorkspaceChooser.tsx"),
+      "utf8",
+    );
+    expect(chooserSource).toContain("Invitation");
+    expect(chooserSource).toContain("Accept");
+
+    const shellSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Shell.tsx"),
+      "utf8",
+    );
+    expect(shellSource).toContain("myInvitationsPath");
   });
 });
 

@@ -17,6 +17,7 @@ import {
   V2HelpPage,
 } from "./V2Pages";
 import { V2ClientRecordPage, V2ClientRecordRedirect, V2ClientsPage } from "./V2Clients";
+import { V2InvitationAcceptPage } from "./V2InvitationAccept";
 import { V2OpportunitiesPage } from "./V2Opportunities";
 import { V2ProjectRecordRedirect, V2LegacyProjectPage, V2ProjectsPage } from "./V2Projects";
 import { V2Shell } from "./V2Shell";
@@ -77,6 +78,7 @@ export function V2AuthenticatedApp() {
           <Route path="/time" component={V2TimePage} />
           <Route path="/activity" component={V2ActivityPage} />
           <Route path="/people" component={V2PeoplePage} />
+          <Route path="/invitations/:token" component={V2InvitationAcceptPage} />
           <Route path="/administration" component={V2AdministrationPage} />
           <Route path="/devices" component={V2DevicesPage} />
           <Route path="/help/:slug" component={V2HelpPage} />
