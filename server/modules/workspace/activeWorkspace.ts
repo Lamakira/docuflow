@@ -116,6 +116,8 @@ export type WorkspacePersonView = {
   workspaceRole: string;
   capabilities: string[];
   archived: boolean;
+  hoursPerDay: number;
+  canViewDailyUpdates: number;
 };
 
 export type WorkspaceMembershipsResponse = {
@@ -152,6 +154,8 @@ export async function listWorkspaceMemberships(
       firstName: users.firstName,
       lastName: users.lastName,
       email: users.email,
+      hoursPerDay: users.hoursPerDay,
+      canViewDailyUpdates: users.canViewDailyUpdates,
       archivedAt: memberships.archivedAt,
       slug: workspaceRoles.slug,
       workspaceRoleId: memberships.workspaceRoleId,
@@ -223,6 +227,8 @@ export async function listWorkspaceMemberships(
         workspaceRole: membershipRoleLabel(row.slug),
         capabilities: [...new Set(names)].sort((a, b) => a.localeCompare(b)),
         archived: row.archivedAt != null,
+        hoursPerDay: row.hoursPerDay,
+        canViewDailyUpdates: row.canViewDailyUpdates,
       };
     }),
   };

@@ -96,6 +96,7 @@ export type V2Match =
   | { kind: "daily-updates"; title: "Daily Updates"; href: "/daily-updates" }
   | { kind: "activity"; title: "Activity"; href: "/activity" }
   | { kind: "people"; title: "People"; href: "/people" }
+  | { kind: "invitation-accept"; title: "Invitation"; href: string }
   | { kind: "administration"; title: "Administration"; href: "/administration" }
   | { kind: "devices"; title: "Devices"; href: "/devices" }
   | { kind: "help"; title: "Help Center"; href: "/help"; slug?: string }
@@ -294,6 +295,10 @@ export function matchV2Route(path: string): V2Match {
     return { kind: "people", title: "People", href: "/people" };
   }
 
+  if (pathname.startsWith("/invitations/")) {
+    return { kind: "invitation-accept", title: "Invitation", href: pathname };
+  }
+
   if (pathname === "/daily-updates" || pathname === "/admin/daily-updates" || pathname.startsWith("/admin/daily-updates/")) {
     return { kind: "daily-updates", title: "Daily Updates", href: "/daily-updates" };
   }
@@ -388,6 +393,7 @@ export function navIdForPath(path: string): V2NavId | null {
   if (match.kind === "time") return "time";
   if (match.kind === "activity") return "activity";
   if (match.kind === "people") return "people";
+  if (match.kind === "invitation-accept") return null;
   if (match.kind === "administration") return "administration";
   if (match.kind === "devices") return "devices";
   if (match.kind === "help") return "help";

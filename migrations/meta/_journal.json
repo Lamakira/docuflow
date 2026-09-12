@@ -218,6 +218,13 @@
       "when": 1789146718549,
       "tag": "0030_solid_thundra",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1789203420124,
+      "tag": "0031_typical_rage",
+      "breakpoints": true
     }
   ]
 }

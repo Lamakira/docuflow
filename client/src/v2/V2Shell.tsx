@@ -21,7 +21,8 @@ import {
   type V2CommandPanel,
 } from "./presentation";
 import { motionForSurface } from "./motion";
-import { workspaceEntry, type MembershipsResponse } from "./workspace";
+import { invitationAcceptPath, myInvitationsPath } from "./people";
+import { chooserInvitationRows, workspaceEntry, type MembershipsResponse, type PendingInvitationOption } from "./workspace";
 import "./tokens.css";
 
 const RAIL_DESTINATION_MOTION = motionForSurface("rail-destination").enterExit;
@@ -64,6 +65,11 @@ async function switchWorkspace(workspaceId: string): Promise<void> {
   await queryClient.invalidateQueries();
 }
 
+async function acceptPendingInvitation(token: string): Promise<void> {
+  await apiRequest("POST", invitationAcceptPath(), { token });
+  await queryClient.invalidateQueries();
+}
+
 export function V2Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [collapsed, setCollapsed] = useState(() =>
@@ -84,6 +90,10 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
   });
   const { data: memberships } = useQuery<MembershipsResponse>({
     queryKey: ["/api/memberships"],
+  });
+  const { data: invitations = [] } = useQuery<PendingInvitationOption[]>({
+    queryKey: [myInvitationsPath()],
+    enabled: Boolean(memberships),
   });
 
   useEffect(() => {
@@ -141,7 +151,9 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
   const entry = workspaceEntry({
     memberships: memberships?.memberships ?? [],
     lastActiveWorkspaceId: memberships?.preferredWorkspaceId ?? null,
+    invitations,
   });
+  const onInvitation = location.startsWith("/invitations/");
 
   function showToast(message: string, undo?: () => void) {
     setToast({ id: Date.now(), message, undo, state: "in" });
@@ -164,10 +176,19 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
     });
   }
 
+  if (onInvitation) {
+    return <V2ChromeContext.Provider value={chrome}>{children}</V2ChromeContext.Provider>;
+  }
+
   if (memberships && entry.kind === "chooser") {
     return (
       <V2ChromeContext.Provider value={chrome}>
-        <V2WorkspaceChooser rows={entry.rows} onChoose={(id) => void switchWorkspace(id)} />
+        <V2WorkspaceChooser
+          rows={entry.rows}
+          invitations={chooserInvitationRows(invitations)}
+          onChoose={(id) => void switchWorkspace(id)}
+          onAccept={(token) => void acceptPendingInvitation(token)}
+        />
       </V2ChromeContext.Provider>
     );
   }

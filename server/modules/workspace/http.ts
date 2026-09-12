@@ -18,6 +18,26 @@ import {
   listWorkspaceMemberships,
   setActiveWorkspace,
 } from "./activeWorkspace";
+import {
+  InvitationAlreadyAcceptedError,
+  InvitationAlreadyPendingError,
+  InvitationDuplicateMembershipError,
+  InvitationEmailMismatchError,
+  InvitationExpiredError,
+  InvitationNotFoundError,
+  InvitationRoleError,
+  InvitationRevokedError,
+  InvitationUnauthorizedError,
+  MembershipNotFoundError,
+  acceptInvitation,
+  canManageInvitations,
+  listInvitationsForUser,
+  listWorkspaceInvitations,
+  revokeInvitation,
+  sendInvitation,
+  updateMembershipProfile,
+} from "./invitations";
+import { SeatExhaustedError } from "../billing/writeClassification";
 
 const createBody = z.object({
   url: z.string().url(),
@@ -130,6 +150,107 @@ export function registerActiveWorkspaceRoutes(app: Express): void {
         return res.status(error.statusCode).json({ message: error.message });
       }
       throw error;
+    }
+  });
+}
+
+const sendBody = z.object({
+  email: z.string().email(),
+  workspaceRole: z.string().min(1),
+});
+
+const profileBody = z.object({
+  hoursPerDay: z.number().int().min(1).max(24).optional(),
+  canViewDailyUpdates: z.union([z.literal(0), z.literal(1)]).optional(),
+});
+
+function invitationError(res: { status: (code: number) => { json: (body: unknown) => void } }, error: unknown): boolean {
+  if (
+    error instanceof InvitationNotFoundError ||
+    error instanceof InvitationRoleError ||
+    error instanceof InvitationDuplicateMembershipError ||
+    error instanceof InvitationAlreadyPendingError ||
+    error instanceof InvitationRevokedError ||
+    error instanceof InvitationExpiredError ||
+    error instanceof InvitationAlreadyAcceptedError ||
+    error instanceof InvitationEmailMismatchError ||
+    error instanceof InvitationUnauthorizedError ||
+    error instanceof MembershipNotFoundError ||
+    error instanceof SeatExhaustedError
+  ) {
+    res.status(error.statusCode).json({ message: error.message });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Invitation BFF (#211). Session cookies. Send/revoke: Owner or Administrator.
+ * Accept is identity-session only — an invitee may have no Membership yet.
+ * Errors stay `{ message }`.
+ */
+export function registerInvitationRoutes(app: Express): void {
+  const requireManager: RequestHandler = async (_req, res, next) => {
+    if (!(await canManageInvitations())) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    next();
+  };
+
+  app.get("/api/workspace/invitations", isAuthenticated, async (_req, res) => {
+    res.json(await listWorkspaceInvitations());
+  });
+
+  app.get("/api/invitations", isAuthenticated, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    res.json(await listInvitationsForUser(userId));
+  });
+
+  app.post("/api/workspace/invitations", isAuthenticated, requireManager, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const parsed = sendBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });
+    }
+    try {
+      const created = await sendInvitation(userId, parsed.data);
+      res.status(201).json(created);
+    } catch (error) {
+      if (!invitationError(res, error)) throw error;
+    }
+  });
+
+  app.post("/api/workspace/invitations/:id/revoke", isAuthenticated, requireManager, async (req, res) => {
+    try {
+      res.json(await revokeInvitation(req.params.id));
+    } catch (error) {
+      if (!invitationError(res, error)) throw error;
+    }
+  });
+
+  app.patch("/api/workspace/memberships/:id", isAuthenticated, requireManager, async (req, res) => {
+    const parsed = profileBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });
+    }
+    try {
+      res.json(await updateMembershipProfile(req.params.id, parsed.data));
+    } catch (error) {
+      if (!invitationError(res, error)) throw error;
+    }
+  });
+
+  app.post("/api/invitations/accept", async (req, res) => {
+    const parsed = z.object({ token: z.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });
+    }
+    try {
+      res.json(await acceptInvitation({ token: parsed.data.token, authorization: req.headers.authorization }));
+    } catch (error) {
+      if (!invitationError(res, error)) throw error;
     }
   });
 }

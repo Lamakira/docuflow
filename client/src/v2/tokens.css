@@ -722,6 +722,33 @@ button.df-activity-row {
   gap: 10px;
 }
 
+.df-people-filter input {
+  transition: none;
+  animation: none;
+}
+
+.df-people-role {
+  animation: none;
+  transition: none;
+}
+
+.df-people-seats {
+  animation: none;
+  transition: none;
+}
+
+.df-people-row-wrap[data-just-accepted="true"][data-motion="standard"] {
+  opacity: 1;
+  transform: none;
+  transition: opacity var(--duration-ui) var(--ease-out);
+}
+
+@starting-style {
+  .df-people-row-wrap[data-just-accepted="true"][data-motion="standard"] {
+    opacity: 0;
+  }
+}
+
 .df-admin-register .df-register-head,
 .df-admin-register .df-register-row {
   grid-template-columns: 1.6fr 1.3fr 0.7fr 0.9fr;

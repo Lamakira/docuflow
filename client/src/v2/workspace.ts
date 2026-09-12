@@ -19,6 +19,27 @@ export type MembershipsResponse = {
   memberships: MembershipOption[];
 };
 
+export type PendingInvitationOption = {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  workspaceRole: string;
+  token: string;
+};
+
+export type ChooserInvitationRow = PendingInvitationOption & {
+  kind: "invitation";
+  action: "accept";
+};
+
+export function chooserInvitationRows(invitations: PendingInvitationOption[]): ChooserInvitationRow[] {
+  return invitations.map((row) => ({
+    ...row,
+    kind: "invitation",
+    action: "accept",
+  }));
+}
+
 export type WorkspaceEntry =
   | { kind: "enter"; workspaceId: string }
   | { kind: "chooser"; rows: MembershipOption[] };
@@ -47,8 +68,12 @@ function byName(a: MembershipOption, b: MembershipOption): number {
 export function workspaceEntry(input: {
   memberships: MembershipOption[];
   lastActiveWorkspaceId: string | null;
+  invitations?: Array<{ id: string }>;
 }): WorkspaceEntry {
   const rows = activeMemberships(input.memberships).sort(byName);
+  if ((input.invitations?.length ?? 0) > 0) {
+    return { kind: "chooser", rows };
+  }
   if (rows.length === 1) {
     return { kind: "enter", workspaceId: rows[0].workspaceId };
   }

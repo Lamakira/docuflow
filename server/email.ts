@@ -158,3 +158,37 @@ export async function sendDailyUpdateReminderEmail(
     return { success: false, error: error.message || 'Failed to send email' };
   }
 }
+
+export async function sendInvitationEmail(input: {
+  toEmail: string;
+  workspaceName: string;
+  workspaceRole: string;
+  acceptUrl: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { client, fromEmail } = getResendClient();
+    const result = await client.emails.send({
+      from: fromEmail,
+      to: input.toEmail,
+      subject: `DocuFlow — Invitation to ${input.workspaceName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h1 style="color: #333;">Invitation</h1>
+          <p>You have been invited to join <strong>${input.workspaceName}</strong> as ${input.workspaceRole}.</p>
+          <p>This Invitation does not consume a Billable Seat until you accept.</p>
+          <p>
+            <a href="${input.acceptUrl}" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+              Accept Invitation
+            </a>
+          </p>
+        </div>
+      `,
+    });
+    if (result.error) return { success: false, error: result.error.message };
+    return { success: true };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to send Invitation email";
+    console.error("Failed to send Invitation email:", error);
+    return { success: false, error: message };
+  }
+}

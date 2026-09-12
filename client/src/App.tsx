@@ -1,8 +1,9 @@
-import { Switch, Route, Redirect } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 import { flags } from "@/lib/featureFlags";
 import { authenticatedPresentation } from "@/v2/presentation";
 import { V2AuthenticatedApp } from "@/v2/V2AuthenticatedApp";
+import { V2InvitationAcceptPage } from "@/v2/V2InvitationAccept";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -79,11 +80,16 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+function isInvitationPath(path: string): boolean {
+  return path.startsWith("/invitations/");
+}
+
 function SignedOutSwitch() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
       <Route path="/auth" component={AuthPage} />
+      <Route path="/invitations/:token" component={V2InvitationAcceptPage} />
       <Route component={Landing} />
     </Switch>
   );
@@ -92,6 +98,7 @@ function SignedOutSwitch() {
 function ProviderSessionRouter() {
   const { isLoaded, isSignedIn } = useClerkAuth();
   const { isAuthenticated, isLoading, isFetching } = useAuth();
+  const [location] = useLocation();
 
   if (!isLoaded || isLoading) {
     return <LoadingScreen />;
@@ -99,8 +106,11 @@ function ProviderSessionRouter() {
 
   // After Clerk Organization selection the browser is on `/` with a session
   // and a null `/api/auth/user`. Landing there looks like a failed sign-in.
+  // Invitation acceptance is the exception: the invitee may have a Clerk
+  // session and no User until they accept (Flow 6).
   if (isSignedIn && !isAuthenticated) {
     if (isFetching) return <LoadingScreen />;
+    if (isInvitationPath(location)) return <V2InvitationAcceptPage />;
     return <AuthPage />;
   }
 
@@ -121,6 +131,7 @@ function ProviderSessionRouter() {
         <Route path="/auth">
           <Redirect to="/" />
         </Route>
+        <Route path="/invitations/:token" component={V2InvitationAcceptPage} />
         <Route path="/crm" component={CrmPage} />
         <Route path="/crm/project/new" component={ProjectCreatePage} />
         <Route path="/crm/project/:id" component={CrmProjectPage} />
