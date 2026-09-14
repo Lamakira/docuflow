@@ -155,6 +155,18 @@ import { assertSeatAvailable } from "./billing/seats";
 import type { ImportableUser } from "./identity/userImport";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
 
+/**
+ * Devices and Users carry no `workspace_id` of their own — a Device belongs to
+ * a Workspace through the Membership of the User who enrolled it. Operator
+ * reads scope through this rather than reading the whole table (ADR-0006).
+ */
+function workspaceUserIds() {
+  return db
+    .select({ userId: memberships.userId })
+    .from(memberships)
+    .where(inWorkspace(memberships));
+}
+
 export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
@@ -1961,8 +1973,16 @@ export class DatabaseStorage implements IStorage {
 
   // CRM Modules
   async getCrmModules(): Promise<CrmModuleWithFields[]> {
-    const modules = await db.select().from(crmModules).orderBy(asc(crmModules.displayOrder), asc(crmModules.name));
-    const fields = await db.select().from(crmModuleFields).orderBy(asc(crmModuleFields.displayOrder), asc(crmModuleFields.name));
+    const modules = await db
+      .select()
+      .from(crmModules)
+      .where(inWorkspace(crmModules))
+      .orderBy(asc(crmModules.displayOrder), asc(crmModules.name));
+    const fields = await db
+      .select()
+      .from(crmModuleFields)
+      .where(inWorkspace(crmModuleFields))
+      .orderBy(asc(crmModuleFields.displayOrder), asc(crmModuleFields.name));
     
     return modules.map(mod => ({
       ...mod,
@@ -1971,10 +1991,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCrmModule(id: string): Promise<CrmModuleWithFields | undefined> {
-    const [mod] = await db.select().from(crmModules).where(eq(crmModules.id, id));
+    const [mod] = await db
+      .select()
+      .from(crmModules)
+      .where(and(inWorkspace(crmModules), eq(crmModules.id, id)));
     if (!mod) return undefined;
-    
-    const fields = await db.select().from(crmModuleFields).where(eq(crmModuleFields.moduleId, id)).orderBy(asc(crmModuleFields.displayOrder), asc(crmModuleFields.name));
+
+    const fields = await db
+      .select()
+      .from(crmModuleFields)
+      .where(and(inWorkspace(crmModuleFields), eq(crmModuleFields.moduleId, id)))
+      .orderBy(asc(crmModuleFields.displayOrder), asc(crmModuleFields.name));
     return { ...mod, fields };
   }
 
@@ -1990,22 +2017,29 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(crmModules)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(crmModules.id, id))
+      .where(and(inWorkspace(crmModules), eq(crmModules.id, id)))
       .returning();
     return updated;
   }
 
   async deleteCrmModule(id: string): Promise<void> {
-    await db.delete(crmModules).where(eq(crmModules.id, id));
+    await db.delete(crmModules).where(and(inWorkspace(crmModules), eq(crmModules.id, id)));
   }
 
   // CRM Module Fields
   async getCrmModuleFields(moduleId: string): Promise<CrmModuleField[]> {
-    return await db.select().from(crmModuleFields).where(eq(crmModuleFields.moduleId, moduleId)).orderBy(asc(crmModuleFields.displayOrder), asc(crmModuleFields.name));
+    return await db
+      .select()
+      .from(crmModuleFields)
+      .where(and(inWorkspace(crmModuleFields), eq(crmModuleFields.moduleId, moduleId)))
+      .orderBy(asc(crmModuleFields.displayOrder), asc(crmModuleFields.name));
   }
 
   async getCrmModuleField(id: string): Promise<CrmModuleField | undefined> {
-    const [field] = await db.select().from(crmModuleFields).where(eq(crmModuleFields.id, id));
+    const [field] = await db
+      .select()
+      .from(crmModuleFields)
+      .where(and(inWorkspace(crmModuleFields), eq(crmModuleFields.id, id)));
     return field;
   }
 
@@ -2021,13 +2055,13 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(crmModuleFields)
       .set({ ...data, options: data.options as string[] | null | undefined, updatedAt: new Date() })
-      .where(eq(crmModuleFields.id, id))
+      .where(and(inWorkspace(crmModuleFields), eq(crmModuleFields.id, id)))
       .returning();
     return updated;
   }
 
   async deleteCrmModuleField(id: string): Promise<void> {
-    await db.delete(crmModuleFields).where(eq(crmModuleFields.id, id));
+    await db.delete(crmModuleFields).where(and(inWorkspace(crmModuleFields), eq(crmModuleFields.id, id)));
   }
 
   // CRM Custom Field Values
@@ -2768,7 +2802,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getHelpCenterScreenshots(): Promise<HelpCenterScreenshotsMap> {
-    const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
+    const [row] = await db
+      .select()
+      .from(orgSettings)
+      .where(and(inWorkspace(orgSettings), eq(orgSettings.id, "default")));
     const raw = row?.helpCenterScreenshots;
     if (!raw || typeof raw !== "object") return {};
     return { ...(raw as Record<string, string>) };
@@ -2784,7 +2821,10 @@ export class DatabaseStorage implements IStorage {
       if (v === null) delete merged[k];
       else merged[k] = v;
     }
-    const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
+    const [row] = await db
+      .select()
+      .from(orgSettings)
+      .where(and(inWorkspace(orgSettings), eq(orgSettings.id, "default")));
     if (!row) {
       await db.insert(orgSettings).values(stampWorkspace({
         id: "default",
@@ -2797,7 +2837,7 @@ export class DatabaseStorage implements IStorage {
       await db
         .update(orgSettings)
         .set({ helpCenterScreenshots: merged, updatedAt: new Date() })
-        .where(eq(orgSettings.id, "default"));
+        .where(and(inWorkspace(orgSettings), eq(orgSettings.id, "default")));
     }
   }
 
@@ -2843,6 +2883,7 @@ export class DatabaseStorage implements IStorage {
       entriesCount: sql<number>`COUNT(*)::int`,
       lowActivity: sql<number>`COUNT(CASE WHEN ${timeEntries.duration} > 0 AND ${timeEntries.idleTime} > ${timeEntries.duration} * 0.5 THEN 1 END)::int`,
     }).from(timeEntries).where(and(
+      inWorkspace(timeEntries),
       eq(timeEntries.status, "stopped"),
       sql`${timeEntries.startTime} >= ${startDate}`,
       sql`${timeEntries.startTime} <= ${endDate}`,
@@ -2850,15 +2891,16 @@ export class DatabaseStorage implements IStorage {
 
     const [runningStats] = await db.select({
       runningNow: sql<number>`COUNT(*)::int`,
-    }).from(timeEntries).where(eq(timeEntries.status, "running"));
+    }).from(timeEntries).where(and(inWorkspace(timeEntries), eq(timeEntries.status, "running")));
 
     const [activeToday] = await db.select({
       count: sql<number>`COUNT(DISTINCT ${timeEntries.userId})::int`,
-    }).from(timeEntries).where(sql`${timeEntries.startTime} >= ${todayStart}`);
+    }).from(timeEntries).where(and(inWorkspace(timeEntries), sql`${timeEntries.startTime} >= ${todayStart}`));
 
     const [screenshotsCount] = await db.select({
       count: sql<number>`COUNT(*)::int`,
     }).from(timeEntryScreenshots).where(and(
+      inWorkspace(timeEntryScreenshots),
       sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
       sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
       sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
@@ -2867,7 +2909,10 @@ export class DatabaseStorage implements IStorage {
 
     const [revokedCount] = await db.select({
       count: sql<number>`COUNT(*)::int`,
-    }).from(devices).where(sql`${devices.revokedAt} IS NOT NULL`);
+    }).from(devices).where(and(
+      inArray(devices.userId, workspaceUserIds()),
+      sql`${devices.revokedAt} IS NOT NULL`,
+    ));
 
     return {
       totalTrackedSeconds: entriesStats?.totalDuration ?? 0,
@@ -3007,6 +3052,7 @@ export class DatabaseStorage implements IStorage {
     const { startDate, endDate, userId } = opts;
 
     const entryConds: any[] = [
+      inWorkspace(timeEntries),
       eq(timeEntries.status, "stopped"),
       sql`${timeEntries.startTime} >= ${startDate}`,
       sql`${timeEntries.startTime} <= ${endDate}`,
@@ -3020,6 +3066,7 @@ export class DatabaseStorage implements IStorage {
     }).from(timeEntries).where(and(...entryConds)).groupBy(timeEntries.userId);
 
     const eventConds: any[] = [
+      inWorkspace(agentActivityEvents),
       eq(agentActivityEvents.eventType, "idle_start"),
       sql`${agentActivityEvents.timestamp} >= ${startDate}`,
       sql`${agentActivityEvents.timestamp} <= ${endDate}`,
@@ -3065,6 +3112,7 @@ export class DatabaseStorage implements IStorage {
     const { startDate, endDate, userId } = opts;
 
     const conds: any[] = [
+      inWorkspace(timeEntryScreenshots),
       sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
       sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
       sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
@@ -3278,6 +3326,7 @@ export class DatabaseStorage implements IStorage {
 
     // ── 1. Business truth: tracked seconds per user (time_entries ONLY) ──────
     const entryConds: any[] = [
+      inWorkspace(timeEntries),
       eq(timeEntries.status, "stopped"),
       sql`${timeEntries.startTime} >= ${startDate}`,
       sql`${timeEntries.startTime} <= ${endDate}`,
@@ -3297,6 +3346,7 @@ export class DatabaseStorage implements IStorage {
 
     // ── 2. Evidence: screenshots per user in window ───────────────────────────
     const shotConds: any[] = [
+      inWorkspace(timeEntryScreenshots),
       sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
       sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
       sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
@@ -3512,6 +3562,7 @@ export class DatabaseStorage implements IStorage {
 
     // Shared filter conditions on time_entries (business truth source)
     const entryConds: any[] = [
+      inWorkspace(timeEntries),
       eq(timeEntries.status, "stopped"),
       sql`${timeEntries.startTime} >= ${startDate}`,
       sql`${timeEntries.startTime} <= ${endDate}`,
@@ -3728,6 +3779,7 @@ export class DatabaseStorage implements IStorage {
     const { startDate, endDate, userId } = opts;
 
     const entryConds: any[] = [
+      inWorkspace(timeEntries),
       eq(timeEntries.status, "stopped"),
       sql`${timeEntries.startTime} >= ${startDate}`,
       sql`${timeEntries.startTime} <= ${endDate}`,
@@ -3888,7 +3940,11 @@ export class DatabaseStorage implements IStorage {
     revokedAt: Date | null;
     createdAt: Date | null;
   }>> {
-    const allDevices = await db.select().from(devices).orderBy(desc(devices.lastSeenAt));
+    const allDevices = await db
+      .select()
+      .from(devices)
+      .where(inArray(devices.userId, workspaceUserIds()))
+      .orderBy(desc(devices.lastSeenAt));
     const uids = [...new Set(allDevices.map(d => d.userId))];
     const usersList = uids.length > 0
       ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })

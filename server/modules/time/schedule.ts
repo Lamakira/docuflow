@@ -4,14 +4,17 @@
  * engine reads and writes the workspace timezone list stored there.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { DEFAULT_ALLOWED_TIMEZONES, orgSettings } from "@shared/schema";
 import { db } from "../../db";
-import { requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
+import { inWorkspace, requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 
 export async function getAllowedTimezones(): Promise<string[]> {
   requireWorkspaceContext();
-  const [row] = await db.select().from(orgSettings).where(eq(orgSettings.id, "default"));
+  const [row] = await db
+    .select()
+    .from(orgSettings)
+    .where(and(inWorkspace(orgSettings), eq(orgSettings.id, "default")));
   return row?.allowedTimezones ?? DEFAULT_ALLOWED_TIMEZONES;
 }
 
@@ -21,7 +24,7 @@ export async function upsertAllowedTimezones(timezones: string[]): Promise<void>
     .insert(orgSettings)
     .values(stampWorkspace({ id: "default", allowedTimezones: timezones, updatedAt: new Date() }))
     .onConflictDoUpdate({
-      target: orgSettings.id,
+      target: [orgSettings.workspaceId, orgSettings.id],
       set: { allowedTimezones: timezones, updatedAt: new Date() },
     });
 }
