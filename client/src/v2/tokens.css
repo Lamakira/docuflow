@@ -653,9 +653,18 @@ button.df-activity-row {
 
 /* A Contact row reads like a person (#213): identity, then the reachable
    detail, then its badges — not one joined string pushed to the far edge. */
-.df-contact-row {
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+/* Distinct from `.df-contact-row`, which is the Dossier's flex contact line.
+   Head and row share one track list so a column sits under its own name. */
+.df-client-contacts .df-register-head,
+.df-client-contact-row {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 0.9fr) minmax(0, 0.9fr) auto;
   gap: 18px;
+}
+
+.df-contact-role {
+  font-size: 13px;
+  color: var(--df-case-ink);
+  overflow-wrap: anywhere;
 }
 
 .df-contact-badges {
@@ -669,10 +678,6 @@ button.df-activity-row {
 /* An email is a literal identifier; uppercasing it changes what it looks like. */
 .df-meta[data-case="preserve"] {
   text-transform: none;
-}
-
-.df-v2[data-chrome="mobile"] .df-contact-row {
-  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 /* Record attributes (#213). A boxed tile is for a metric, where the figure is

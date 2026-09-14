@@ -300,7 +300,7 @@ export function V2ClientsPage() {
 }
 
 export function V2ClientRecordPage() {
-  const { memberships, showToast } = useV2Chrome();
+  const { layout, memberships, showToast } = useV2Chrome();
   const [location] = useLocation();
   const match = matchV2Route(location);
   const clientId = match.kind === "client-record" ? match.clientId : "";
@@ -481,7 +481,7 @@ export function V2ClientRecordPage() {
         ) : (
           <div className="df-overview">
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <section className="df-card">
+              <section className="df-card df-client-contacts">
                 <div className="df-card-head">
                   <h2 className="df-card-title">On this Client</h2>
                   <span className="df-mono df-meta">{record.contacts.length}</span>
@@ -506,9 +506,33 @@ export function V2ClientRecordPage() {
                 ) : null}
                 {record.contacts.length === 0 ? (
                   <p className="df-empty">{record.contactsEmptyCopy}</p>
-                ) : (
+                ) : layout.stackedRegister ? (
                   record.contacts.map((contact) => (
-                    <div key={contact.id} className="df-register-row df-contact-row">
+                    <div key={contact.id} className="df-register-row">
+                      <span className="df-people-member">
+                        <span className="df-avatar">{contact.initials}</span>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <div className="df-row-title">
+                            {contact.name}
+                            {contact.primary ? <span className="df-flag">PRIMARY</span> : null}
+                          </div>
+                          <div className="df-mono df-meta" data-case="preserve">
+                            {[contact.role, contact.email, contact.phone].filter(Boolean).join(" · ") || "—"}
+                          </div>
+                        </span>
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <>
+                  <div className="df-register-head df-desktop-only">
+                    <span>CONTACT</span>
+                    <span>PHONE</span>
+                    <span>ROLE</span>
+                    <span />
+                  </div>
+                  {record.contacts.map((contact) => (
+                    <div key={contact.id} className="df-register-row df-client-contact-row">
                       {/* A Contact is a person, so it reads like one: the People
                           row shape, not a name with every field joined beside it. */}
                       <span className="df-people-member">
@@ -523,12 +547,15 @@ export function V2ClientRecordPage() {
                         </span>
                       </span>
                       <span className="df-mono df-meta">{contact.phone ?? "—"}</span>
+                      {/* A role is free text, not a state from a closed set, so
+                          it is read as text; PRIMARY is a boolean, so it is a flag. */}
+                      <span className="df-contact-role">{contact.role ?? "—"}</span>
                       <span className="df-contact-badges">
-                        {contact.role ? <span className="df-status">{contact.role}</span> : null}
-                        {contact.primary ? <span className="df-status" data-status="ACTIVE">PRIMARY</span> : null}
+                        {contact.primary ? <span className="df-flag">PRIMARY</span> : null}
                       </span>
                     </div>
-                  ))
+                  ))}
+                  </>
                 )}
               </section>
 

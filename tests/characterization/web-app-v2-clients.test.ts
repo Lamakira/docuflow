@@ -106,7 +106,21 @@ describe("Client editor shows what it saved (#213)", () => {
     // Identity, then the reachable detail, then badges — not one joined string.
     expect(clientSource).toContain("df-people-member");
     expect(clientSource).toContain("df-contact-badges");
-    expect(clientSource).not.toMatch(/contact\.role, contact\.email, contact\.phone/);
+    // Columns say nothing without a head; the desktop register names each one.
+    expect(clientSource).toMatch(/<span>CONTACT<\/span>/);
+    expect(clientSource).toMatch(/<span>PHONE<\/span>/);
+    expect(clientSource).toMatch(/<span>ROLE<\/span>/);
+    // A role is free text, so it is read as text — a status pill would claim it
+    // came from a closed set.
+    expect(clientSource).toContain("df-contact-role");
+    // `.df-contact-row` is the Dossier's flex contact line: reusing that name
+    // let its display:flex win and the columns drifted off their own headers.
+    expect(clientSource).toContain("df-client-contact-row");
+    expect(clientSource).toContain("df-client-contacts");
+    expect(rule(".df-client-contacts .df-register-head,\n.df-client-contact-row")).toMatch(
+      /grid-template-columns/,
+    );
+    expect(clientSource).not.toMatch(/df-status">\{contact\.role\}/);
     // An email is a literal identifier; uppercasing it changes what it looks like.
     expect(clientSource).toContain('data-case="preserve"');
     expect(rule('.df-meta[data-case="preserve"]')).toMatch(/text-transform:\s*none/);
