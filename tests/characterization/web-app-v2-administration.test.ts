@@ -4,14 +4,26 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { motionForSurface } from "../../client/src/v2/motion";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
+import { DEFAULT_SCREENSHOT_POLICY, type ScreenshotPolicy } from "@shared/schema";
 import {
+  addAllowedTimezone,
+  analyticsActivityPath,
+  analyticsCoveragePath,
+  analyticsDevicesPath,
+  analyticsExportPath,
+  analyticsOverviewPath,
+  analyticsRange,
   billingCancelPath,
   billingCheckoutPath,
   billingPaymentMethodPath,
   billingSeatsPath,
   billingSubscriptionPath,
   composeAdministration,
+  composeAnalytics,
+  composeTrackingPolicyEditor,
   hostedBillingSession,
+  workspaceSettingsPath,
+  removeAllowedTimezone,
   rotateServiceAccountPath,
   rotateWebhookEndpointPath,
   revokeServiceAccountPath,
@@ -20,7 +32,10 @@ import {
   webhookEnablePath,
   webhookEndpointsPath,
   administrationWriteRefusal,
+  trackingPolicyIssue,
   type AdministrationInput,
+  type AnalyticsInput,
+  type TrackingPolicyInput,
 } from "../../client/src/v2/administration";
 
 /**
@@ -422,3 +437,666 @@ function reducedMotionCss(): string {
     .map((match) => match[1])
     .join("\n");
 }
+
+/**
+ * Administration deepened with analytics, Tracking Policy, and the remaining
+ * billing actions (#212). Seams stay the pure composers over existing
+ * `/api/admin/analytics*` and `/api/admin/org-settings`. HTTP stays
+ * characterized in admin-analytics.test.ts and notifications-org-settings.test.ts.
+ */
+
+const NOW = new Date("2026-09-14T12:00:00.000Z");
+const RANGE = analyticsRange("7d", NOW);
+
+function emptyAnalytics(overrides: Partial<AnalyticsInput> = {}): AnalyticsInput {
+  return {
+    now: NOW,
+    workspaceRole: "OWNER",
+    ownerName: "Sam Lee",
+    range: RANGE,
+    overview: null,
+    activity: null,
+    coverage: null,
+    devices: [],
+    ...overrides,
+  };
+}
+
+function policyDraft(overrides: Partial<ScreenshotPolicy> = {}): ScreenshotPolicy {
+  return { ...DEFAULT_SCREENSHOT_POLICY, ...overrides };
+}
+
+function editorInput(overrides: Partial<TrackingPolicyInput> = {}): TrackingPolicyInput {
+  return {
+    workspaceName: "Harbor Co",
+    workspaceRole: "OWNER",
+    ownerName: "Sam Lee",
+    condition: null,
+    saved: policyDraft(),
+    draft: policyDraft(),
+    savedTimezones: [],
+    draftTimezones: [],
+    justSaved: false,
+    ...overrides,
+  };
+}
+
+describe("Administration analytics (#212)", () => {
+  it("asks the existing analytics routes for the chosen range", () => {
+    expect(RANGE.end).toEqual(NOW);
+    expect(RANGE.start).toEqual(new Date("2026-09-07T12:00:00.000Z"));
+    expect(analyticsRange("30d", NOW).start).toEqual(new Date("2026-08-15T12:00:00.000Z"));
+    expect(analyticsRange("90d", NOW).start).toEqual(new Date("2026-06-16T12:00:00.000Z"));
+
+    const query = "start=2026-09-07T12%3A00%3A00.000Z&end=2026-09-14T12%3A00%3A00.000Z";
+    expect(analyticsOverviewPath(RANGE)).toBe(`/api/admin/analytics/overview?${query}`);
+    expect(analyticsActivityPath(RANGE)).toBe(`/api/admin/analytics/activity?${query}`);
+    expect(analyticsCoveragePath(RANGE)).toBe(`/api/admin/analytics/coverage?${query}`);
+    expect(analyticsDevicesPath()).toBe("/api/admin/analytics/devices");
+    expect(analyticsExportPath(RANGE)).toBe(`/api/admin/analytics/export?${query}`);
+    expect(workspaceSettingsPath()).toBe("/api/admin/org-settings");
+  });
+
+  it("refuses a Member from the analytics control by naming the Capability", () => {
+    const page = composeAnalytics(emptyAnalytics({ workspaceRole: "MEMBER" }));
+
+    expect(page.kind).toBe("refusal");
+    if (page.kind !== "refusal") return;
+    expect(page.refusal).toBe(
+      "You do not have the Administration Capability. Sam Lee (Owner) can grant it.",
+    );
+    expect(page.refusal.toLowerCase()).not.toContain("permission denied");
+    expect(page.refusal.toLowerCase()).not.toContain("403");
+  });
+
+  it("names the refusal when the BFF refuses the read, instead of drawing an empty range", () => {
+    const analytics = composeAnalytics(emptyAnalytics({ refused: true }));
+    expect(analytics.kind).toBe("refusal");
+    if (analytics.kind !== "refusal") return;
+    expect(analytics.refusal).toBe(
+      "You do not have the Administration Capability. Sam Lee (Owner) can grant it.",
+    );
+
+    const policy = composeTrackingPolicyEditor(editorInput({ refused: true }));
+    expect(policy.kind).toBe("refusal");
+  });
+
+  it("says a failed read failed, rather than reporting an outage as an empty Workspace", () => {
+    const analytics = composeAnalytics(emptyAnalytics({ readFailed: true }));
+    expect(analytics.kind).toBe("unreadable");
+    if (analytics.kind !== "unreadable") return;
+    expect(analytics.note.toLowerCase()).toContain("could not be read");
+    expect(analytics.note.toLowerCase()).not.toContain("no tracked time");
+  });
+
+  it("refuses to edit an unread Tracking Policy so a save cannot overwrite it with defaults", () => {
+    const policy = composeTrackingPolicyEditor(editorInput({ saved: null }));
+    expect(policy.kind).toBe("unreadable");
+    if (policy.kind !== "unreadable") return;
+    expect(policy.note.toLowerCase()).toContain("could not be read");
+    expect(JSON.stringify(policy)).not.toContain("canSave");
+  });
+
+  it("reads overview, activity, coverage, devices, and export for an Owner", () => {
+    const page = composeAnalytics(
+      emptyAnalytics({
+        overview: {
+          totalTrackedSeconds: 45000,
+          totalIdleSeconds: 5400,
+          entriesCount: 12,
+          runningNow: 1,
+          activeUsersToday: 3,
+          screenshotsInWindow: 40,
+          lowActivityEntries: 2,
+          revokedDevices: 1,
+        },
+        activity: {
+          byUser: [
+            {
+              userId: "u-1",
+              userName: "Ada Byron",
+              totalSeconds: 36000,
+              idleSeconds: 3600,
+              idleEventCount: 4,
+            },
+          ],
+        },
+        coverage: {
+          summary: {
+            totalTrackedSeconds: 45000,
+            totalScreenshots: 40,
+            expectedScreenshots: 50,
+            coveragePercent: 80,
+            totalEntries: 12,
+            entriesWithoutScreenshots: 2,
+            lowCoverageEntries: 3,
+            deletedScreenshots: 1,
+          },
+          byUser: [
+            {
+              userId: "u-1",
+              userName: "Ada Byron",
+              trackedSeconds: 36000,
+              entriesCount: 9,
+              entriesWithoutScreenshots: 1,
+              screenshotCount: 32,
+              expectedScreenshots: 40,
+              coveragePct: 80,
+            },
+          ],
+        },
+        devices: [
+          {
+            id: "dev-1",
+            userId: "u-1",
+            userName: "Ada Byron",
+            name: "Ada MacBook",
+            os: "macOS",
+            clientVersion: "1.4.0",
+            lastSeenAt: "2026-09-14T11:30:00.000Z",
+            revokedAt: null,
+            createdAt: "2026-08-01T00:00:00.000Z",
+          },
+          {
+            id: "dev-2",
+            userId: "u-2",
+            userName: "Grace Hopper",
+            name: "Retired ThinkPad",
+            os: "Windows",
+            clientVersion: null,
+            lastSeenAt: null,
+            revokedAt: "2026-09-10T00:00:00.000Z",
+            createdAt: "2026-07-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+    expect(page.rangeLabel).toBe("7 SEP – 14 SEP");
+    expect(page.overview).toEqual([
+      { label: "TRACKED", value: "12.5 h" },
+      { label: "IDLE", value: "1.5 h" },
+      { label: "TIME ENTRIES", value: "12" },
+      { label: "RUNNING NOW", value: "1" },
+      { label: "ACTIVE TODAY", value: "3" },
+      { label: "EVIDENCE", value: "40" },
+      { label: "LOW ACTIVITY", value: "2" },
+      { label: "REVOKED DEVICES", value: "1" },
+    ]);
+    expect(page.activity.rows).toEqual([
+      {
+        userId: "u-1",
+        who: "Ada Byron",
+        tracked: "10.0 h",
+        idle: "1.0 h",
+        idleEvents: "4",
+      },
+    ]);
+    expect(page.activity.footnote).toBe(
+      "Recorded totals with provenance. DocuFlow does not score or rank Members.",
+    );
+    expect(page.coverage.summary).toEqual([
+      { label: "COVERAGE", value: "80%" },
+      { label: "EVIDENCE", value: "40 of 50" },
+      { label: "ENTRIES WITHOUT EVIDENCE", value: "2" },
+      { label: "TOMBSTONED", value: "1" },
+    ]);
+    expect(page.coverage.rows).toEqual([
+      {
+        userId: "u-1",
+        who: "Ada Byron",
+        tracked: "10.0 h",
+        entries: "9",
+        evidence: "32 of 40",
+        coverage: "80%",
+      },
+    ]);
+    expect(page.devices.rows).toEqual([
+      {
+        id: "dev-1",
+        name: "Ada MacBook",
+        who: "Ada Byron",
+        platform: "macOS · 1.4.0",
+        lastSeen: "30m ago",
+        status: "ACTIVE",
+      },
+      {
+        id: "dev-2",
+        name: "Retired ThinkPad",
+        who: "Grace Hopper",
+        platform: "Windows",
+        lastSeen: "Never",
+        status: "REVOKED",
+      },
+    ]);
+    expect(page.export).toEqual({
+      href: analyticsExportPath(RANGE),
+      label: "Export CSV",
+      filename: "docuflow-export-2026-09-07.csv",
+    });
+  });
+
+  it("keeps empty analytics honest and never shows sample names", () => {
+    const page = composeAnalytics(emptyAnalytics());
+    const blob = JSON.stringify(page);
+
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+    expect(page.overview).toEqual([]);
+    expect(page.activity.empty).toBe(true);
+    expect(page.activity.rows).toEqual([]);
+    expect(page.activity.emptyCopy.toLowerCase()).toContain("no tracked time");
+    expect(page.coverage.empty).toBe(true);
+    expect(page.coverage.summary).toEqual([]);
+    expect(page.coverage.emptyCopy.toLowerCase()).toContain("evidence");
+    expect(page.devices.empty).toBe(true);
+    expect(page.devices.emptyCopy.toLowerCase()).toContain("device");
+    for (const name of SAMPLE_NAMES) {
+      expect(blob).not.toContain(name);
+    }
+  });
+
+  it("reports a missing coverage percentage as unknown, never as zero", () => {
+    const page = composeAnalytics(
+      emptyAnalytics({
+        coverage: {
+          summary: {
+            totalTrackedSeconds: 0,
+            totalScreenshots: 0,
+            expectedScreenshots: 0,
+            coveragePercent: null,
+            totalEntries: 0,
+            entriesWithoutScreenshots: 0,
+            lowCoverageEntries: 0,
+            deletedScreenshots: 0,
+          },
+          byUser: [
+            {
+              userId: "u-1",
+              userName: "Ada Byron",
+              trackedSeconds: 0,
+              entriesCount: 0,
+              entriesWithoutScreenshots: 0,
+              screenshotCount: 0,
+              expectedScreenshots: 0,
+              coveragePct: null,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+    expect(page.coverage.summary[0]).toEqual({ label: "COVERAGE", value: "—" });
+    expect(page.coverage.rows[0].coverage).toBe("—");
+  });
+
+  it("reports recorded Activity Evidence totals, never a score or a Member ranking", () => {
+    const page = composeAnalytics(
+      emptyAnalytics({
+        activity: {
+          byUser: [
+            {
+              userId: "u-1",
+              userName: "Ada Byron",
+              totalSeconds: 36000,
+              idleSeconds: 18000,
+              idleEventCount: 4,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+    // CONTEXT.md Activity Evidence: no productivity scores or member rankings.
+    expect(JSON.stringify(page.activity.rows)).not.toContain("50%");
+    expect(Object.keys(page.activity.rows[0])).toEqual([
+      "userId",
+      "who",
+      "tracked",
+      "idle",
+      "idleEvents",
+    ]);
+    expect(pageSource).not.toMatch(/IDLE SHARE|idleShare|score|ranking/i);
+  });
+
+  it("does not decorate analytics with animated charts or counting figures", () => {
+    expect(pageSource).not.toMatch(/recharts|chart\.js|ResponsiveContainer/i);
+    expect(rule(".df-analytics-figure")).toMatch(/animation:\s*none/);
+    expect(rule(".df-analytics-figure")).toMatch(/transition:\s*none/);
+  });
+});
+
+describe("Tracking Policy editing (#212)", () => {
+  it("mirrors the server bounds before a save is attempted", () => {
+    expect(trackingPolicyIssue(policyDraft())).toBeNull();
+    expect(trackingPolicyIssue(policyDraft({ captureIntervalMinMin: 1 }))).toBe(
+      "Minimum capture interval must be at least 3 minutes.",
+    );
+    expect(
+      trackingPolicyIssue(policyDraft({ captureIntervalMinMin: 3, captureIntervalMaxMin: 20 })),
+    ).toBe("Maximum capture interval cannot exceed 15 minutes.");
+    expect(
+      trackingPolicyIssue(policyDraft({ captureIntervalMinMin: 10, captureIntervalMaxMin: 5 })),
+    ).toBe("Minimum capture interval cannot exceed the maximum.");
+    expect(trackingPolicyIssue(policyDraft({ idleTimeoutMinutes: 90 }))).toBe(
+      "Idle timeout must be between 1 and 60 minutes.",
+    );
+    expect(trackingPolicyIssue(policyDraft({ idleCountdownSeconds: 5 }))).toBe(
+      "Idle countdown must be between 15 and 120 seconds.",
+    );
+  });
+
+  it("refuses a Member and names the Workspace condition for a read-only Workspace", () => {
+    const member = composeTrackingPolicyEditor(editorInput({ workspaceRole: "MEMBER" }));
+    expect(member.kind).toBe("refusal");
+    if (member.kind !== "refusal") return;
+    expect(member.refusal).toBe(
+      "You do not have the Administration Capability. Sam Lee (Owner) can grant it.",
+    );
+
+    const readOnly = composeTrackingPolicyEditor(editorInput({ condition: "Read-only" }));
+    expect(readOnly.kind).toBe("ready");
+    if (readOnly.kind !== "ready") return;
+    expect(readOnly.editable).toBe(false);
+    expect(readOnly.writeRefusal).toBe(
+      "Harbor Co is read-only. Viewing, export, and recovery stay available.",
+    );
+    expect(readOnly.canSave).toBe(false);
+  });
+
+  it("only offers a save once the draft differs and stays valid", () => {
+    const clean = composeTrackingPolicyEditor(editorInput());
+    expect(clean.kind).toBe("ready");
+    if (clean.kind !== "ready") return;
+    expect(clean.dirty).toBe(false);
+    expect(clean.canSave).toBe(false);
+    expect(clean.issue).toBeNull();
+    expect(clean.savedNote).toBeNull();
+
+    const dirty = composeTrackingPolicyEditor(
+      editorInput({ draft: policyDraft({ captureIntervalMaxMin: 9 }) }),
+    );
+    expect(dirty.kind).toBe("ready");
+    if (dirty.kind !== "ready") return;
+    expect(dirty.dirty).toBe(true);
+    expect(dirty.canSave).toBe(true);
+
+    const invalid = composeTrackingPolicyEditor(
+      editorInput({ draft: policyDraft({ idleTimeoutMinutes: 0 }) }),
+    );
+    expect(invalid.kind).toBe("ready");
+    if (invalid.kind !== "ready") return;
+    expect(invalid.dirty).toBe(true);
+    expect(invalid.canSave).toBe(false);
+    expect(invalid.issue).toBe("Idle timeout must be between 1 and 60 minutes.");
+  });
+
+  it("signs off a saved policy without celebrating it", () => {
+    const page = composeTrackingPolicyEditor(editorInput({ justSaved: true }));
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+    expect(page.savedNote).toBe("Policy saved. Devices apply it on their next heartbeat.");
+    expect(page.savedNote?.toLowerCase()).not.toMatch(/congratulations|nice work|🎉/);
+  });
+
+  it("owns the Screencasts timezone list and validates every entry", () => {
+    expect(addAllowedTimezone([], "Europe/Paris")).toEqual({
+      ok: true,
+      timezones: ["Europe/Paris"],
+    });
+    expect(addAllowedTimezone(["Europe/Paris"], "  America/New_York  ")).toEqual({
+      ok: true,
+      timezones: ["Europe/Paris", "America/New_York"],
+    });
+    expect(addAllowedTimezone(["Europe/Paris"], "Europe/Paris")).toEqual({
+      ok: false,
+      reason: '"Europe/Paris" is already in the list.',
+    });
+    expect(addAllowedTimezone([], "Nowhere/Nothing")).toEqual({
+      ok: false,
+      reason: '"Nowhere/Nothing" is not a valid IANA timezone.',
+    });
+    expect(addAllowedTimezone([], "   ")).toEqual({
+      ok: false,
+      reason: "Enter an IANA timezone, for example Europe/Paris.",
+    });
+    expect(removeAllowedTimezone(["Europe/Paris", "America/New_York"], "Europe/Paris")).toEqual([
+      "America/New_York",
+    ]);
+
+    const page = composeTrackingPolicyEditor(
+      editorInput({ savedTimezones: [], draftTimezones: ["Europe/Paris"] }),
+    );
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+    expect(page.timezones.rows).toEqual(["Europe/Paris"]);
+    expect(page.timezones.empty).toBe(false);
+    expect(page.timezones.dirty).toBe(true);
+
+    const none = composeTrackingPolicyEditor(editorInput());
+    expect(none.kind).toBe("ready");
+    if (none.kind !== "ready") return;
+    expect(none.timezones.empty).toBe(true);
+    expect(none.timezones.emptyCopy.toLowerCase()).toContain("browser timezone");
+  });
+
+  it("leaves Activity displaying the policy rather than rebuilding it", () => {
+    const activitySource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Activity.tsx"),
+      "utf8",
+    );
+    expect(activitySource).toContain("trackingPolicyPath");
+    expect(activitySource).toContain("policyLines");
+    expect(activitySource).not.toContain("org-settings");
+    expect(pageSource).toContain("composeTrackingPolicyEditor");
+  });
+});
+
+describe("Administration controls (#212)", () => {
+  it("uses the shadcn checkbox rather than a bare input, and labels every one", () => {
+    expect(pageSource).toContain('from "@/components/ui/checkbox"');
+    expect(pageSource).not.toContain('type="checkbox"');
+    // Radix renders a button, which a <label> cannot implicitly label.
+    expect(pageSource).toContain("htmlFor={id}");
+    expect(rule(".df-v2 .df-checkbox")).toMatch(/border-radius/);
+    expect(rule('.df-v2 .df-checkbox[data-state="checked"]')).toMatch(/var\(--df-case-ink\)/);
+    // The tick must not inherit the ink it sits on.
+    expect(rule(".df-v2 .df-checkbox")).toMatch(/color:\s*var\(--df-card-white\)/);
+    // shadcn ships Tailwind state classes at equal weight; ours must outrank
+    // them so the control never depends on stylesheet order.
+    expect(css).toContain('.df-v2 .df-checkbox[data-state="checked"]');
+  });
+
+  it("waits with the destination's real geometry, not an empty box", () => {
+    expect(pageSource).toContain('from "@/components/ui/skeleton"');
+    // The old placeholder was a bare card with a hardcoded height.
+    expect(pageSource).not.toContain("minHeight: 280");
+    // Section titles are known before any fetch, so the wait states them.
+    expect(pageSource).toContain('<SkeletonSection title="Analytics"');
+    expect(pageSource).toContain('<SkeletonSection title="Billing"');
+    // The wait reuses the real bands and rows, so nothing moves on arrival.
+    expect(pageSource).toContain('className="df-figure-band"');
+    expect(pageSource).toContain('className="df-register-row"');
+    expect(pageSource).toContain('aria-busy="true"');
+    expect(pageSource).toContain('role="status"');
+  });
+
+  it("breathes on opacity only and stops entirely under reduced motion", () => {
+    const recipe = motionForSurface("skeleton");
+    expect(recipe.movement).toBe("none");
+    expect(recipe.enterExit).toBe("instant");
+    expect(recipe.keepOpacity).toBe(true);
+
+    expect(rule(".df-v2 .df-skeleton")).toMatch(/animation:\s*df-skeleton-breathe/);
+    // A breathe that moved anything would fight the geometry it is holding.
+    expect(css).toMatch(/@keyframes df-skeleton-breathe[^}]*\{[^}]*opacity/);
+    expect(rule(".df-v2 .df-skeleton")).not.toMatch(/transform/);
+    expect(reducedMotionCss()).toMatch(
+      /\.df-v2 \.df-skeleton[^{]*\{[^}]*animation:\s*none/,
+    );
+  });
+
+  it("uses the shadcn select for the range, not a native one", () => {
+    expect(pageSource).toContain('from "@/components/ui/select"');
+    expect(pageSource).not.toContain("<select");
+    expect(pageSource).not.toContain("<option");
+    // Radix portals the panel to document.body, outside `.df-v2`, so it must
+    // carry the class itself or every --df-* token stops resolving.
+    expect(pageSource).toContain('className="df-v2 df-select-content"');
+    expect(rule(".df-v2.df-select-content")).toMatch(/var\(--df-card-white\)/);
+    // shadcn's own `h-9 w-full border-input` must lose to the chip.
+    expect(rule(".df-v2 .df-select-trigger")).toMatch(/width:\s*auto/);
+    expect(rule(".df-v2 .df-select-item\[data-highlighted\]")).toMatch(/var\(--df-hover\)/);
+  });
+
+  it("gives a field and the button beside it one shared control height", () => {
+    expect(css).toMatch(/--df-control-h:\s*\d+px/);
+    const shared = css.match(/([^}]*)\{\s*height:\s*var\(--df-control-h\);\s*\}/);
+    expect(shared).not.toBeNull();
+    const selectors = shared![1];
+    for (const control of [
+      ".df-toolbar .df-ghost-btn",
+      ".df-form-actions .df-ink-btn",
+      ".df-inline-form .df-ghost-btn",
+    ]) {
+      expect(selectors).toContain(control);
+    }
+  });
+
+  it("scrolls the chrome without drawing a scrollbar", () => {
+    expect(rule(".df-main,\n.df-rail-body")).toMatch(/scrollbar-width:\s*none/);
+    expect(css).toMatch(/\.df-main::-webkit-scrollbar[^{]*\{[^}]*display:\s*none/);
+  });
+});
+
+describe("Tracking Policy save motion (#212)", () => {
+  it("treats the save as occasional state indication and keeps reduced motion on opacity", () => {
+    const recipe = motionForSurface("tracking-policy-save");
+    expect(recipe.enterExit).toBe("standard");
+    expect(recipe.keepOpacity).toBe(true);
+
+    const reduced = motionForSurface("tracking-policy-save", { reducedMotion: true });
+    expect(reduced.movement).toBe("none");
+    expect(reduced.keepOpacity).toBe(true);
+
+    expect(rule('.df-policy-saved[data-motion="standard"]')).toMatch(/var\(--ease-out\)/);
+    expect(rule('.df-policy-saved[data-motion="standard"]')).not.toMatch(/transition\s*:\s*all\b/);
+    expect(rule(".df-policy-form input")).toMatch(/animation:\s*none/);
+    expect(reducedMotionCss()).toMatch(
+      /\.df-policy-saved\[data-motion="standard"\][^{]*\{[^}]*transform:\s*none/,
+    );
+  });
+});
+
+describe("Administration billing remainder (#212)", () => {
+  it("keeps a seeded or legacy Workspace out of Checkout", () => {
+    const legacy = composeAdministration(
+      emptyAdmin({
+        billing: {
+          planKey: "legacy",
+          billingState: "Active",
+          purchasedSeatCapacity: 25,
+          consumedSeatCount: 4,
+          trialEndsAt: null,
+          periodEndsAt: null,
+          cancelAtPeriodEnd: false,
+          stripeCustomerId: null,
+        },
+      }),
+    );
+
+    expect(legacy.kind).toBe("ready");
+    if (legacy.kind !== "ready") return;
+    expect(legacy.billing.plan).toBe("Legacy");
+    expect(legacy.billing.actions.map((action) => action.id)).toEqual(["cancel"]);
+    expect(legacy.billing.actions.map((action) => action.id)).not.toContain("checkout");
+    expect(legacy.billing.actions.map((action) => action.id)).not.toContain("seats");
+  });
+
+  it("reads the subscription as discrete facts, including the term the BFF already returns", () => {
+    const trial = composeAdministration(
+      emptyAdmin({
+        billing: {
+          planKey: "trial",
+          billingState: "Trialing",
+          purchasedSeatCapacity: 1,
+          consumedSeatCount: 1,
+          trialEndsAt: "2026-09-20T00:00:00.000Z",
+          periodEndsAt: null,
+          cancelAtPeriodEnd: false,
+          stripeCustomerId: null,
+        },
+      }),
+    );
+    expect(trial.kind).toBe("ready");
+    if (trial.kind !== "ready") return;
+    expect(trial.billing.figures).toEqual([
+      { label: "PLAN", value: "Trial" },
+      { label: "CONDITION", value: "Trial" },
+      { label: "BILLABLE SEATS", value: "1 of 1" },
+      { label: "TRIAL ENDS", value: "20 SEP 2026" },
+    ]);
+
+    const cancelling = composeAdministration(
+      emptyAdmin({
+        billing: {
+          planKey: "pro",
+          billingState: "Active",
+          purchasedSeatCapacity: 8,
+          consumedSeatCount: 3,
+          trialEndsAt: null,
+          periodEndsAt: "2026-10-01T00:00:00.000Z",
+          cancelAtPeriodEnd: true,
+          stripeCustomerId: "cus_123",
+        },
+      }),
+    );
+    expect(cancelling.kind).toBe("ready");
+    if (cancelling.kind !== "ready") return;
+    expect(cancelling.billing.figures[3]).toEqual({
+      label: "ACCESS ENDS",
+      value: "1 OCT 2026",
+    });
+
+    const renewing = composeAdministration(
+      emptyAdmin({
+        billing: {
+          planKey: "pro",
+          billingState: "Active",
+          purchasedSeatCapacity: 8,
+          consumedSeatCount: 3,
+          trialEndsAt: null,
+          periodEndsAt: "2026-10-01T00:00:00.000Z",
+          cancelAtPeriodEnd: false,
+          stripeCustomerId: "cus_123",
+        },
+      }),
+    );
+    expect(renewing.kind).toBe("ready");
+    if (renewing.kind !== "ready") return;
+    expect(renewing.billing.figures[3]).toEqual({ label: "RENEWS", value: "1 OCT 2026" });
+
+    const none = composeAdministration(emptyAdmin());
+    expect(none.kind).toBe("ready");
+    if (none.kind !== "ready") return;
+    expect(none.billing.available).toBe(false);
+    expect(none.billing.figures).toEqual([]);
+  });
+
+  it("names the refusal when Checkout is refused for a seeded Workspace", () => {
+    expect(
+      administrationWriteRefusal({
+        kind: "error",
+        workspaceName: "Harbor Co",
+        ownerName: "Sam Lee",
+        errorMessage: "Checkout is not available for this Workspace",
+      }),
+    ).toBe("Checkout is not available for this Workspace");
+  });
+});

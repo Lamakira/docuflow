@@ -15,6 +15,7 @@
   --df-font-display: "Cabinet Grotesk", sans-serif;
   --df-font-ui: "Switzer", system-ui, sans-serif;
   --df-font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --df-control-h: 34px;
   --df-rail-width: 240px;
   --df-rail-collapsed: 60px;
   /* Motion substrate (#182). Later tickets use these; do not invent curves.
@@ -795,6 +796,499 @@ button.df-activity-row {
   .df-secret-once[data-motion="standard"] {
     opacity: 0;
     transform: translateY(8px);
+  }
+}
+
+/* Administration (#212).
+   A card owns no padding, so every band inside one carries the house 18px gutter.
+   A section is head + optional toolbar + optional figure band + register.
+   Figures are read, never animated. */
+.df-card-head-text {
+  min-width: 0;
+}
+
+.df-card-sub {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+  max-width: 68ch;
+}
+
+.df-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--df-divider-light);
+}
+
+/* Four to a row, so eight figures read as two even rows and four as one. */
+.df-figure-band {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 18px;
+}
+
+.df-figure-band + .df-register-head {
+  border-top: 1px solid var(--df-divider-light);
+}
+
+.df-analytics-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px;
+  border: 1px solid var(--df-divider);
+  border-radius: 8px;
+  background: var(--df-cold-stock);
+  animation: none;
+  transition: none;
+}
+
+.df-analytics-figure-label {
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--df-archive-slate);
+}
+
+.df-analytics-figure-value {
+  font-family: var(--df-font-mono);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--df-case-ink);
+}
+
+/* A primary action is sized to its label and sits in a footer, never a full-width slab. */
+.df-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--df-divider-light);
+}
+
+.df-form-actions > .df-form-note {
+  margin: 0;
+  margin-right: auto;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+  max-width: 64ch;
+}
+
+.df-form-actions > .df-refusal-inline {
+  color: var(--df-destructive);
+}
+
+/* A footer action row sits on the card edge, not inside the body gutter. */
+.df-daily-form > .df-form-actions {
+  margin: 4px -18px -18px;
+}
+
+/* A field is read at a comfortable measure; the card may be far wider. */
+.df-admin-form > .df-daily-field,
+.df-policy-form .df-daily-form > .df-daily-field {
+  max-width: 560px;
+}
+
+.df-admin-form > fieldset.df-daily-field {
+  display: block;
+  padding: 10px 14px 14px;
+  border: 1px solid var(--df-divider-light);
+  border-radius: 8px;
+  background: var(--df-cold-stock);
+}
+
+.df-admin-form > fieldset.df-daily-field > legend {
+  padding: 0 4px;
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--df-archive-slate);
+}
+
+.df-admin-form > fieldset.df-daily-field > .df-daily-check {
+  margin-top: 9px;
+}
+
+.df-inline-form {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 10px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.df-inline-form > .df-daily-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.df-inline-form > .df-ghost-btn {
+  padding: 9px 14px;
+}
+
+.df-v2[data-chrome="mobile"] .df-inline-form {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* One control height across a form row, so a field and the button beside it
+   share a baseline and a top edge. */
+.df-admin-form .df-daily-field > input,
+.df-admin-form .df-daily-field > select,
+.df-policy-form .df-daily-field > input,
+.df-policy-form .df-daily-field > select,
+.df-toolbar .df-filter-chip,
+.df-toolbar .df-ghost-btn,
+.df-inline-form .df-ghost-btn,
+.df-form-actions .df-ink-btn,
+.df-form-actions .df-ghost-btn,
+.df-billing-actions .df-ink-btn,
+.df-billing-actions .df-ghost-btn {
+  height: var(--df-control-h);
+}
+
+.df-toolbar .df-filter-chip,
+.df-toolbar .df-ghost-btn,
+.df-inline-form .df-ghost-btn,
+.df-form-actions .df-ink-btn,
+.df-form-actions .df-ghost-btn,
+.df-billing-actions .df-ink-btn,
+.df-billing-actions .df-ghost-btn {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.df-admin-form .df-daily-field > input,
+.df-policy-form .df-daily-field > input {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.df-toolbar .df-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Checkbox — the shadcn/Radix control wearing v2 tokens. Distinct from
+   `.df-check`, which is the Dossier's Task-completion control. */
+/* `.df-v2 button` sets `color: inherit`, so the tick needs the matching weight
+   or it inherits the ink and disappears on a checked box. */
+.df-v2 .df-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--df-divider);
+  border-radius: 4px;
+  background: var(--df-card-white);
+  color: var(--df-card-white);
+  cursor: pointer;
+  transition: background-color var(--duration-press) var(--ease-out),
+    border-color var(--duration-press) var(--ease-out);
+}
+
+.df-v2 .df-checkbox[data-state="checked"] {
+  background: var(--df-case-ink);
+  border-color: var(--df-case-ink);
+}
+
+.df-v2 .df-checkbox[data-state="indeterminate"] {
+  background: var(--df-case-ink);
+  border-color: var(--df-case-ink);
+}
+
+.df-v2 .df-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.df-v2 .df-checkbox > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.df-v2 .df-checkbox svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 3;
+}
+
+.df-checkbox-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.df-checkbox-row[data-disabled="true"] {
+  cursor: not-allowed;
+  color: var(--df-muted-ink);
+}
+
+/* Skeleton — the shadcn control wearing v2 tokens.
+   A destination's section titles are known before any fetch; only the values
+   are not. So the skeleton carries the real geometry and only the values are
+   unexposed, and nothing moves when the data lands. */
+.df-v2 .df-skeleton {
+  display: block;
+  background: var(--df-cold-stock);
+  border: 1px solid var(--df-divider-light);
+  border-radius: 4px;
+  height: 11px;
+  animation: df-skeleton-breathe 1.6s var(--ease-in-out) infinite;
+}
+
+@keyframes df-skeleton-breathe {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.df-skeleton[data-width="short"] {
+  width: 54px;
+}
+
+.df-skeleton[data-width="medium"] {
+  width: 96px;
+}
+
+.df-skeleton[data-width="long"] {
+  width: 160px;
+}
+
+.df-v2 .df-skeleton[data-role="value"] {
+  height: 18px;
+  width: 72px;
+}
+
+/* Hold the exact height the real content will occupy, so the register and the
+   card head keep their geometry when the data lands. */
+.df-register-row[data-skeleton="true"] {
+  min-height: 48px;
+}
+
+.df-card-sub[data-skeleton="true"] {
+  display: flex;
+  align-items: center;
+  min-height: 18px;
+}
+
+.df-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Select — the shadcn/Radix control wearing v2 tokens. The trigger IS the
+   filter chip, so it must outrank shadcn's own `h-9 w-full border-input`. */
+.df-v2 .df-select-trigger {
+  width: auto;
+  justify-content: flex-start;
+  gap: 8px;
+  border: 1px solid var(--df-divider);
+  border-radius: 3px;
+  background: var(--df-card-white);
+  color: var(--df-case-ink);
+  cursor: pointer;
+}
+
+.df-v2 .df-select-trigger > span:not(.df-select-prefix) {
+  font-family: var(--df-font-ui);
+  font-weight: 500;
+  font-size: 12.5px;
+}
+
+.df-select-prefix {
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--df-archive-slate);
+}
+
+.df-v2 .df-select-trigger > svg {
+  width: 13px;
+  height: 13px;
+  opacity: 1;
+  color: var(--df-archive-slate);
+}
+
+/* The panel is portalled to the body and carries `.df-v2` itself, so it both
+   defines the tokens and needs its own surface rather than the page ground. */
+.df-v2.df-select-content {
+  min-width: var(--radix-select-trigger-width);
+  background: var(--df-card-white);
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(15, 21, 36, 0.12);
+  padding: 4px;
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-select-item {
+  padding: 7px 10px 7px 26px;
+  border-radius: 4px;
+  font-family: var(--df-font-ui);
+  font-size: 12.5px;
+  cursor: pointer;
+  outline: none;
+}
+
+.df-v2 .df-select-item[data-highlighted] {
+  background: var(--df-hover);
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-select-item[data-state="checked"] {
+  font-weight: 600;
+}
+
+.df-v2 .df-select-item svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 3;
+}
+
+/* Billing reads as facts plus decisions, like every other section. */
+.df-billing-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--df-divider-light);
+}
+
+.df-billing-actions > .df-form-note {
+  margin: 0;
+  margin-right: auto;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+  max-width: 64ch;
+}
+
+.df-v2[data-chrome="mobile"] .df-billing-actions {
+  padding: 12px 13px;
+}
+
+.df-v2[data-chrome="mobile"] .df-billing-actions > .df-form-note {
+  flex: 1 0 100%;
+}
+
+.df-analytics-register .df-register-head[data-columns="4"],
+.df-analytics-register .df-register-row[data-columns="4"] {
+  grid-template-columns: 1.7fr 0.9fr 0.9fr 0.9fr;
+}
+
+.df-analytics-register .df-register-head[data-columns="5"],
+.df-analytics-register .df-register-row[data-columns="5"] {
+  grid-template-columns: 1.7fr 0.8fr 0.8fr 0.9fr 0.8fr;
+}
+
+.df-analytics-register .df-register-row {
+  transition: none;
+  animation: none;
+}
+
+/* Numbers read as a column, so they align on the same left edge as their head. */
+.df-analytics-register .df-register-row > .df-mono {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  text-transform: none;
+  color: var(--df-case-ink);
+}
+
+/* Tracking Policy (#212) — the form never animates on a keystroke. */
+.df-policy-form input {
+  animation: none;
+  transition: none;
+}
+
+.df-policy-form select {
+  animation: none;
+  transition: none;
+}
+
+.df-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px 18px;
+  max-width: 560px;
+}
+
+/* A switched-off branch keeps its space but stops inviting input. */
+.df-policy-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--df-divider-light);
+  border-radius: 8px;
+  background: var(--df-cold-stock);
+}
+
+.df-policy-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+  max-width: 68ch;
+}
+
+.df-policy-timezone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  font-family: var(--df-font-mono);
+  font-size: 12px;
+}
+
+.df-policy-saved[data-motion="standard"] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--duration-ui) var(--ease-out),
+    transform var(--duration-ui) var(--ease-out);
+}
+
+@starting-style {
+  .df-policy-saved[data-motion="standard"] {
+    opacity: 0;
+    transform: translateY(4px);
   }
 }
 
@@ -2334,6 +2828,20 @@ button.df-activity-row {
   animation: none;
 }
 
+/* The chrome scrolls without drawing a bar; the wheel, keys and trackpad are untouched. */
+.df-main,
+.df-rail-body {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.df-main::-webkit-scrollbar,
+.df-rail-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 .df-workspace-content {
   flex: 1;
   min-width: 0;
@@ -2585,6 +3093,38 @@ button.df-activity-row {
   padding: 10px 13px;
 }
 
+/* Administration bands follow the mobile card gutter (#212). */
+.df-v2[data-chrome="mobile"] .df-toolbar,
+.df-v2[data-chrome="mobile"] .df-figure-band,
+.df-v2[data-chrome="mobile"] .df-form-actions {
+  padding: 12px 13px;
+}
+
+.df-v2[data-chrome="mobile"] .df-daily-form > .df-form-actions {
+  margin: 4px -13px -13px;
+}
+
+.df-v2[data-chrome="mobile"] .df-figure-band {
+  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+}
+
+.df-v2[data-chrome="mobile"] .df-policy-grid {
+  grid-template-columns: 1fr;
+  max-width: none;
+}
+
+.df-v2[data-chrome="mobile"] .df-toolbar {
+  justify-content: flex-start;
+}
+
+.df-v2[data-chrome="mobile"] .df-form-actions > .df-form-note {
+  flex: 1 0 100%;
+}
+
+.df-v2[data-chrome="mobile"] .df-card-sub {
+  font-size: 12px;
+}
+
 .df-v2[data-chrome="mobile"] .df-card-title {
   font-size: 14px;
 }
@@ -2684,6 +3224,19 @@ button.df-activity-row {
     transition: opacity var(--duration-ui) var(--ease-out);
   }
 
+  .df-checkbox {
+    transition: none;
+  }
+
+  .df-v2 .df-skeleton {
+    animation: none;
+  }
+
+  .df-policy-saved[data-motion="standard"] {
+    transform: none;
+    transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
   .df-pairing-code[data-motion="standard"] {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
@@ -2712,6 +3265,10 @@ button.df-activity-row {
     }
 
     .df-secret-once[data-motion="standard"] {
+      transform: none;
+    }
+
+    .df-policy-saved[data-motion="standard"] {
       transform: none;
     }
 

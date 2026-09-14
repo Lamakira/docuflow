@@ -21,6 +21,11 @@
  * A Notification appearing in the inbox enters from that same edge (occasional; spatial consistency).
  * Accepting an Invitation is rare state indication (Membership appears in People). No bounce.
  * Pairing code appears as rare explanation / state — no bounce, there is no gesture.
+ * A saved Tracking Policy is signed off (occasional; state indication) — no celebration.
+ * A loading skeleton carries the destination's real geometry and breathes on opacity only,
+ * so nothing moves when the data lands; reduced motion stops the breathe outright.
+ * Do not animate: analytics charts or figures as decoration, billing figures counting up,
+ * Tracking Policy keystrokes, timezone list typing.
  * Help article open is tens/day — opacity only, no page-slide.
  * Do not animate: Help search keystrokes, pairing spinner as decoration, article TOC highlight chasing scroll,
  * register filter typing, role dropdown as decoration, seat digits counting.
@@ -50,6 +55,8 @@ export type MotionSurface =
   | "activity-evidence-expand"
   | "capability-refusal"
   | "secret-once"
+  | "tracking-policy-save"
+  | "skeleton"
   | "workspace-chooser-pointer"
   | "workspace-chooser-keyboard"
   | "timer-chip"
@@ -94,6 +101,9 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "activity-evidence-expand": "occasional",
   "capability-refusal": "occasional",
   "secret-once": "occasional",
+  "tracking-policy-save": "occasional",
+  // Shown on most navigations: no enter/exit, no movement, opacity only.
+  skeleton: "keyboard-or-100+",
   "workspace-chooser-pointer": "keyboard-or-100+",
   "workspace-chooser-keyboard": "keyboard-or-100+",
   "timer-chip": "keyboard-or-100+",

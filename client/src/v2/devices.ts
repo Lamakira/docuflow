@@ -70,7 +70,8 @@ export function revokeMachinePath(): string {
   return "/api/agent/devices/revoke-machine";
 }
 
-function formatRelativeTime(dateStr: string | null, now: Date): string {
+/** Shared with Administration analytics (#212): one relative clock for Devices. */
+export function formatRelativeTime(dateStr: string | null, now: Date): string {
   if (!dateStr) return "Never";
   const minutes = Math.floor((now.getTime() - new Date(dateStr).getTime()) / 60000);
   if (minutes < 1) return "Just now";
