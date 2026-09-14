@@ -15,6 +15,9 @@
  * Time Entry add/remove uses an enter/exit bridge (occasional; preventing a jarring change).
  * Remind from Today resolves the row or opens a refusal from that control (occasional; state indication).
  * Activity Evidence expands from its row (occasional; spatial consistency).
+ * A File opens from its Dossier row (occasional; spatial consistency) — the row is the origin.
+ * Do not animate: note composer keystrokes, Reminder date typing, module-field option drag
+ * as decoration unless the drag is the write.
  * Capability refusal opens from the control that failed (occasional; spatial consistency).
  * A shown-once secret confirmation is rare state indication, not a celebration overlay.
  * Toasts enter and exit the same bottom edge (occasional; spatial consistency).
@@ -53,6 +56,7 @@ export type MotionSurface =
   | "opportunity-stage-change"
   | "time-entry"
   | "activity-evidence-expand"
+  | "dossier-file-open"
   | "capability-refusal"
   | "secret-once"
   | "tracking-policy-save"
@@ -99,6 +103,7 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "opportunity-stage-change": "occasional",
   "time-entry": "occasional",
   "activity-evidence-expand": "occasional",
+  "dossier-file-open": "occasional",
   "capability-refusal": "occasional",
   "secret-once": "occasional",
   "tracking-policy-save": "occasional",

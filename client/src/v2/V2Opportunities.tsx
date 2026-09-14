@@ -167,10 +167,7 @@ export function V2OpportunityRecordPage() {
     return <div className="df-page"><p className="df-empty">This Opportunity could not be loaded.</p></div>;
   }
 
-  const record = composeOpportunityRecord({
-    ...toPipelineRow(row),
-    linkedProjectId: opportunityStageFromCombined(row.status) === "won" ? row.id : null,
-  });
+  const record = composeOpportunityRecord(toPipelineRow(row));
   return (
     <div className="df-page" data-testid="v2-opportunity-record">
       <header className="df-dossier-head">
@@ -193,9 +190,6 @@ export function V2OpportunityRecordPage() {
         <div style={{ padding: "16px 18px" }}>
           <div className="df-kv"><span>CLIENT</span><span>{record.clientLabel}</span></div>
           <div className="df-kv"><span>STAGE</span><span>{record.stage}</span></div>
-          {record.linkedProjectHref ? (
-            <a className="df-ghost-link" href={record.linkedProjectHref}>Open linked Client Project</a>
-          ) : null}
         </div>
       </section>
     </div>

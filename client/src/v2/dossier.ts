@@ -83,6 +83,27 @@ export type DossierFile = {
   href?: string;
 };
 
+/** `file` leaves the app to open the object; `app` is a v2 route; `none` has no destination. */
+export type DossierReminderRow = {
+  id: string;
+  title: string;
+  note: string | null;
+  due: string;
+  status: string;
+  done: boolean;
+  canComplete: boolean;
+  canReopen: boolean;
+  draft: { title: string; note: string; dueAt: string };
+};
+
+export type DossierFileRow = {
+  id: string;
+  title: string;
+  meta: string;
+  href: string;
+  target: "file" | "app" | "none";
+};
+
 export type DossierReminder = {
   id: string;
   title: string;
@@ -202,12 +223,12 @@ export type DossierModel = {
     }>;
   };
   files: {
-    rows: Array<{ id: string; title: string; meta: string; href: string }>;
+    rows: DossierFileRow[];
     empty: boolean;
     emptyCopy: string;
   };
   reminders: {
-    rows: Array<{ id: string; title: string; note: string | null; due: string; status: string; done: boolean }>;
+    rows: DossierReminderRow[];
     empty: boolean;
     emptyCopy: string;
   };
@@ -493,6 +514,21 @@ function composeUpdates(input: DossierInput): DossierModel["updates"] {
   };
 }
 
+/**
+ * A Dossier File comes from a note attachment, so its href is an object path
+ * the backend serves — not a v2 route. Client-side routing one lands on the
+ * placeholder, which is the dead name #213 forbids, so the row says which kind
+ * of destination it has and the page opens it accordingly. The viewer itself
+ * belongs to the Knowledge ticket; this only has to reach the File.
+ */
+function fileTarget(href: string | undefined): DossierFileRow["target"] {
+  if (!href) return "none";
+  if (/^https?:\/\//i.test(href) || href.startsWith("/public-objects/") || href.startsWith("/objects/")) {
+    return "file";
+  }
+  return "app";
+}
+
 function composeFiles(input: DossierInput): DossierModel["files"] {
   const files = visibleRecords(input.files);
   return {
@@ -500,22 +536,43 @@ function composeFiles(input: DossierInput): DossierModel["files"] {
       id: file.id,
       title: file.title,
       meta: formatWhen(file.updatedAt, input.now),
-      href: file.href ?? `/documents/${file.id}`,
+      href: file.href ?? "",
+      target: fileTarget(file.href),
     })),
     empty: files.length === 0,
     emptyCopy: "No Files on this Project you can access.",
   };
 }
 
+/** `<input type="datetime-local">` wants local wall-clock, not an ISO instant. */
+function datetimeLocalValue(value: Date | string | null | undefined): string {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part: number) => part.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function composeReminders(input: DossierInput): DossierModel["reminders"] {
-  const rows = input.reminders.map((reminder) => ({
-    id: reminder.id,
-    title: reminder.title,
-    note: reminder.note ?? null,
-    due: formatWhen(reminder.dueAt, input.now),
-    status: reminder.status.replace(/_/g, " ").toUpperCase(),
-    done: reminder.status === "done",
-  }));
+  const rows = input.reminders.map((reminder) => {
+    const done = reminder.status === "done";
+    return {
+      id: reminder.id,
+      title: reminder.title,
+      note: reminder.note ?? null,
+      due: formatWhen(reminder.dueAt, input.now),
+      status: reminder.status.replace(/_/g, " ").toUpperCase(),
+      done,
+      canComplete: !done,
+      canReopen: done,
+      // The edit form needs the values back, not the formatted ones.
+      draft: {
+        title: reminder.title,
+        note: reminder.note ?? "",
+        dueAt: datetimeLocalValue(reminder.dueAt),
+      },
+    };
+  });
   return { rows, empty: rows.length === 0, emptyCopy: "No Reminders on this Project yet." };
 }
 

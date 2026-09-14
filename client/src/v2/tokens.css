@@ -651,6 +651,25 @@ button.df-activity-row {
   grid-template-rows: 1fr;
 }
 
+/* A File opens from its Dossier row (#213), so the row itself is the origin:
+   it lifts under the pointer rather than the page announcing the change. */
+.df-file-row[data-motion="standard"] {
+  transition:
+    background-color var(--duration-press) var(--ease-out),
+    box-shadow var(--duration-press) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .df-file-row[data-motion="standard"]:hover {
+    background: var(--df-cold-stock);
+    box-shadow: inset 2px 0 0 var(--df-case-ink);
+  }
+}
+
+.df-file-row[data-motion="standard"]:active {
+  background: var(--df-hover);
+}
+
 .df-activity-expand[data-motion="instant"] {
   transition: none;
 }
@@ -3212,6 +3231,10 @@ button.df-activity-row {
   .df-activity-expand[data-motion="standard"] {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
+  .df-file-row[data-motion="standard"] {
+    transition: background-color var(--duration-press) var(--ease-out);
   }
 
   .df-refusal-pop[data-motion="standard"] {

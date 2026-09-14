@@ -98,7 +98,7 @@ describe("Opportunities routing (#187)", () => {
 });
 
 describe("Opportunity record (#213)", () => {
-  it("keeps sales identity separate from a linked Client Project", () => {
+  it("keeps sales identity separate from delivery work", () => {
     const record = composeOpportunityRecord({
       id: "opp-1",
       name: "Ledger renewal",
@@ -106,7 +106,6 @@ describe("Opportunity record (#213)", () => {
       combinedStatus: "won_in_progress",
       projectType: "one_time",
       isDocumentationOnly: 0,
-      linkedProjectId: "prj-1",
     });
 
     expect(record).toMatchObject({
@@ -114,8 +113,12 @@ describe("Opportunity record (#213)", () => {
       clientLabel: "Harbor Co",
       stage: "WON",
       terminal: true,
-      linkedProjectHref: "/projects/prj-1",
     });
+    // A won Opportunity "may create a Client Project but is not itself delivery
+    // work" (CONTEXT). The legacy rows share one id, so a link built from it
+    // would point the Opportunity at itself; the record offers none.
+    expect(JSON.stringify(record)).not.toContain("/projects/");
+    expect(pageSource).not.toContain("linked Client Project");
   });
 });
 

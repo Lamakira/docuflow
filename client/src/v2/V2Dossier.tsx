@@ -50,6 +50,7 @@ type DailyUpdatesQuery = {
 
 const LIVE_PROJECT_STATUSES = new Set(["active", "on_hold", "in_review", "completed"]);
 const TAB_MOTION = motionForSurface("dossier-tab-swap").enterExit;
+const FILE_OPEN_MOTION = motionForSurface("dossier-file-open").enterExit;
 const TASK_STATUS_OPTIONS = [
   { value: "open", label: "To do" },
   { value: "in_progress", label: "In progress" },
@@ -420,8 +421,14 @@ export function V2DossierPage() {
     },
     onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
   });
-  const updateReminder = useMutation({
+  const setReminderStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => apiRequest("PATCH", `/api/reminders/${id}`, { status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] }),
+    onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
+  });
+  const updateReminder = useMutation({
+    mutationFn: ({ id, title, note, dueAt }: { id: string; title: string; note: string; dueAt: string }) =>
+      apiRequest("PATCH", `/api/reminders/${id}`, { title, note, dueAt: new Date(dueAt).toISOString() }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] }),
     onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
   });
@@ -694,7 +701,8 @@ export function V2DossierPage() {
               reminderDueAt,
               setReminderDueAt,
               onCreateReminder: (event) => { event.preventDefault(); if (!reminderTitle.trim() || !reminderDueAt || refuseWrite()) return; createReminder.mutate(); },
-              onCompleteReminder: (id) => { if (!refuseWrite()) updateReminder.mutate({ id, status: "done" }); },
+              onSetReminderStatus: (id, status) => { if (!refuseWrite()) setReminderStatus.mutate({ id, status }); },
+              onEditReminder: (id, draft) => { if (!refuseWrite()) updateReminder.mutate({ id, ...draft }); },
               onDeleteReminder: (id) => { if (!refuseWrite()) deleteReminder.mutate(id); },
             })}
           </div>
@@ -736,7 +744,8 @@ function renderDossierTab(props: {
   reminderDueAt: string;
   setReminderDueAt: (value: string) => void;
   onCreateReminder: (event: FormEvent) => void;
-  onCompleteReminder: (id: string) => void;
+  onSetReminderStatus: (id: string, status: string) => void;
+  onEditReminder: (id: string, draft: { title: string; note: string; dueAt: string }) => void;
   onDeleteReminder: (id: string) => void;
 }): ReactNode {
   const { dossier } = props;
@@ -1153,6 +1162,112 @@ function DossierNotes({
   );
 }
 
+/**
+ * A Reminder is editable, not only completable: `PATCH /api/reminders/:id`
+ * already takes title, note and dueAt, and a done one can go back to upcoming.
+ * The row keeps its own draft so the panel does not carry per-row state.
+ */
+function ReminderRow({
+  reminder,
+  onSetStatus,
+  onEdit,
+  onDelete,
+}: {
+  reminder: DossierModel["reminders"]["rows"][number];
+  onSetStatus: (id: string, status: string) => void;
+  onEdit: (id: string, draft: { title: string; note: string; dueAt: string }) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(reminder.draft);
+
+  function open() {
+    setDraft(reminder.draft);
+    setEditing(true);
+  }
+
+  if (editing) {
+    return (
+      <div className="df-register-row df-reminder-edit" data-testid={`v2-dossier-reminder-edit-${reminder.id}`}>
+        <form
+          className="df-admin-form df-daily-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!draft.title.trim() || !draft.dueAt) return;
+            onEdit(reminder.id, draft);
+            setEditing(false);
+          }}
+        >
+          <label className="df-daily-field">
+            Title
+            <input
+              type="text"
+              value={draft.title}
+              aria-label="Reminder title"
+              onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+            />
+          </label>
+          <label className="df-daily-field">
+            Note
+            <input
+              type="text"
+              value={draft.note}
+              aria-label="Reminder note"
+              onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))}
+            />
+          </label>
+          <label className="df-daily-field">
+            Due
+            <input
+              type="datetime-local"
+              value={draft.dueAt}
+              aria-label="Reminder due date"
+              onChange={(event) => setDraft((current) => ({ ...current, dueAt: event.target.value }))}
+            />
+          </label>
+          <div className="df-form-actions">
+            <button type="button" className="df-ghost-btn" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+            <button type="submit" className="df-ink-btn" disabled={!draft.title.trim() || !draft.dueAt}>
+              Save Reminder
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="df-register-row" data-done={reminder.done ? "true" : "false"}>
+      <span>
+        <span className="df-row-title">{reminder.title}</span>
+        {reminder.note ? <span className="df-mono df-meta">{reminder.note}</span> : null}
+      </span>
+      <span className="df-mono df-meta">{reminder.due}</span>
+      <span className="df-status">{reminder.status}</span>
+      <span className="df-people-action">
+        {reminder.canComplete ? (
+          <button type="button" className="df-ghost-link" onClick={() => onSetStatus(reminder.id, "done")}>
+            Done
+          </button>
+        ) : null}
+        {reminder.canReopen ? (
+          <button type="button" className="df-ghost-link" onClick={() => onSetStatus(reminder.id, "upcoming")}>
+            Reopen
+          </button>
+        ) : null}
+        <button type="button" className="df-ghost-link" onClick={open}>
+          Edit
+        </button>
+        <button type="button" className="df-ghost-link" onClick={() => onDelete(reminder.id)}>
+          Delete
+        </button>
+      </span>
+    </div>
+  );
+}
+
 function DossierReminders({
   dossier,
   reminderTitle,
@@ -1162,7 +1277,8 @@ function DossierReminders({
   reminderDueAt,
   setReminderDueAt,
   onCreateReminder,
-  onCompleteReminder,
+  onSetReminderStatus,
+  onEditReminder,
   onDeleteReminder,
 }: {
   dossier: DossierModel;
@@ -1173,7 +1289,8 @@ function DossierReminders({
   reminderDueAt: string;
   setReminderDueAt: (value: string) => void;
   onCreateReminder: (event: FormEvent) => void;
-  onCompleteReminder: (id: string) => void;
+  onSetReminderStatus: (id: string, status: string) => void;
+  onEditReminder: (id: string, draft: { title: string; note: string; dueAt: string }) => void;
   onDeleteReminder: (id: string) => void;
 }) {
   return (
@@ -1185,14 +1302,19 @@ function DossierReminders({
         <label className="df-daily-field">DUE<input type="datetime-local" value={reminderDueAt} onChange={(event) => setReminderDueAt(event.target.value)} /></label>
         <button type="submit" className="df-ink-btn" disabled={!reminderTitle.trim() || !reminderDueAt}>Add reminder</button>
       </form>
-      {dossier.reminders.empty ? <p className="df-empty">{dossier.reminders.emptyCopy}</p> : dossier.reminders.rows.map((reminder) => (
-        <div key={reminder.id} className="df-register-row" data-done={reminder.done ? "true" : "false"}>
-          <span><span className="df-row-title">{reminder.title}</span>{reminder.note ? <span className="df-mono df-meta">{reminder.note}</span> : null}</span>
-          <span className="df-mono df-meta">{reminder.due}</span>
-          <span className="df-status">{reminder.status}</span>
-          <span className="df-people-action">{!reminder.done ? <button type="button" className="df-ghost-link" onClick={() => onCompleteReminder(reminder.id)}>Done</button> : null}<button type="button" className="df-ghost-link" onClick={() => onDeleteReminder(reminder.id)}>Delete</button></span>
-        </div>
-      ))}
+      {dossier.reminders.empty ? (
+        <p className="df-empty">{dossier.reminders.emptyCopy}</p>
+      ) : (
+        dossier.reminders.rows.map((reminder) => (
+          <ReminderRow
+            key={reminder.id}
+            reminder={reminder}
+            onSetStatus={onSetReminderStatus}
+            onEdit={onEditReminder}
+            onDelete={onDeleteReminder}
+          />
+        ))
+      )}
     </section>
   );
 }
@@ -1228,12 +1350,43 @@ function DossierFiles({ dossier }: { dossier: DossierModel }) {
       {dossier.files.empty ? (
         <p className="df-empty">{dossier.files.emptyCopy}</p>
       ) : (
-        dossier.files.rows.map((row) => (
-          <Link key={row.id} href={row.href} className="df-doc-row">
-            <span className="df-row-title">{row.title}</span>
-            <span className="df-mono df-meta">{row.meta}</span>
-          </Link>
-        ))
+        dossier.files.rows.map((row) => {
+          const body = (
+            <>
+              <span className="df-row-title">{row.title}</span>
+              <span className="df-mono df-meta">{row.meta}</span>
+            </>
+          );
+          // An object path is served by the backend, not routed by wouter:
+          // <Link> would client-route it into the placeholder (#213).
+          if (row.target === "file") {
+            return (
+              <a
+                key={row.id}
+                href={row.href}
+                target="_blank"
+                rel="noreferrer"
+                className="df-doc-row df-file-row"
+                data-motion={FILE_OPEN_MOTION}
+                data-testid={`v2-dossier-file-${row.id}`}
+              >
+                {body}
+              </a>
+            );
+          }
+          if (row.target === "app") {
+            return (
+              <Link key={row.id} href={row.href} className="df-doc-row df-file-row" data-motion={FILE_OPEN_MOTION}>
+                {body}
+              </Link>
+            );
+          }
+          return (
+            <div key={row.id} className="df-doc-row" data-testid={`v2-dossier-file-${row.id}`}>
+              {body}
+            </div>
+          );
+        })
       )}
     </section>
   );

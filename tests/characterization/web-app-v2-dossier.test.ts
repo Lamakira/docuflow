@@ -452,7 +452,10 @@ describe("Project Dossier remaining tabs from live records (#188)", () => {
       }),
     );
     expect(dossier.documents.rows[0].title).toBe("Scope notes");
-    expect(dossier.files.rows).toEqual([{ id: "f1", title: "Kickoff deck.pdf", meta: "11:00", href: "/documents/f1" }]);
+    // No href means no destination: the row is listed but is not a link to nowhere.
+    expect(dossier.files.rows).toEqual([
+      { id: "f1", title: "Kickoff deck.pdf", meta: "11:00", href: "", target: "none" },
+    ]);
     expect(dossier.files.empty).toBe(false);
   });
 
@@ -524,3 +527,114 @@ function reducedMotionCss(): string {
     .map((match) => match[1])
     .join("\n");
 }
+
+describe("Dossier Reminders are editable, not just completable (#213)", () => {
+  it("carries the raw fields an edit needs, and says when a Reminder can reopen", () => {
+    const dossier = composeDossier(
+      emptyInput({
+        tab: "reminders",
+        project: liveProject(),
+        reminders: [
+          {
+            id: "rem-1",
+            title: "Chase signature",
+            note: "Before the review",
+            dueAt: new Date(2026, 8, 10, 9, 0, 0),
+            status: "upcoming",
+          },
+          {
+            id: "rem-2",
+            title: "Send invoice",
+            note: null,
+            dueAt: new Date(2026, 8, 9, 9, 0, 0),
+            status: "done",
+          },
+        ],
+      }),
+    );
+
+    const [open, done] = dossier.reminders.rows;
+    expect(open).toMatchObject({ id: "rem-1", done: false, canComplete: true, canReopen: false });
+    expect(done).toMatchObject({ id: "rem-2", done: true, canComplete: false, canReopen: true });
+
+    // An edit form needs the values back, not the formatted ones.
+    expect(open.draft).toEqual({
+      title: "Chase signature",
+      note: "Before the review",
+      dueAt: "2026-09-10T09:00",
+    });
+    expect(done.draft.note).toBe("");
+  });
+
+  it("edits a Reminder through the route that already takes those fields", () => {
+    expect(pageSource).toMatch(/PATCH", `\/api\/reminders\/\$\{[^}]+\}`, \{ title/);
+    expect(pageSource).toContain("canReopen");
+  });
+});
+
+describe("Dossier Files open the File (#213)", () => {
+  it("renders an object path as a real link out, never client-routed into the placeholder", () => {
+    // wouter <Link> would client-route /public-objects/... and fall through to
+    // V2PlaceholderPage — the dead name the ticket forbids.
+    expect(pageSource).toContain('row.target === "file"');
+    expect(pageSource).toMatch(/<a\s[^>]*href=\{row\.href\}/);
+    expect(pageSource).toContain('rel="noreferrer"');
+  });
+
+  it("opens the File from its row, which is this ticket's one novelty", () => {
+    const recipe = motionForSurface("dossier-file-open");
+    expect(recipe.enterExit).toBe("standard");
+    expect(recipe.keepOpacity).toBe(true);
+
+    const reduced = motionForSurface("dossier-file-open", { reducedMotion: true });
+    expect(reduced.movement).toBe("none");
+
+    // The row is the origin, so the row itself carries the motion.
+    expect(pageSource).toContain("FILE_OPEN_MOTION");
+    expect(rule('.df-file-row[data-motion="standard"]')).toMatch(/var\(--ease-out\)/);
+    expect(rule('.df-file-row[data-motion="standard"]')).not.toMatch(/transition\s*:\s*all\b/);
+    expect(reducedMotionCss()).toMatch(/\.df-file-row\[data-motion="standard"\]/);
+  });
+
+  it("marks an object URL as a File to open, not an in-app route", () => {
+    const dossier = composeDossier(
+      emptyInput({
+        tab: "files",
+        project: liveProject(),
+        // The only source of Dossier Files is a note attachment, whose href is
+        // an object path served by the backend — not a v2 route.
+        files: [
+          {
+            id: "note-1-0",
+            title: "Kickoff deck.pdf",
+            updatedAt: new Date(2026, 8, 8, 11, 0, 0),
+            href: "/public-objects/uploads/kickoff.pdf",
+          },
+        ],
+      }),
+    );
+
+    expect(dossier.files.rows).toHaveLength(1);
+    const row = dossier.files.rows[0];
+    expect(row.href).toBe("/public-objects/uploads/kickoff.pdf");
+    // Client-side routing an object path lands on the v2 placeholder, which is
+    // the dead name the ticket forbids.
+    expect(row.target).toBe("file");
+  });
+
+  it("never invents a Document route for a File that has no href", () => {
+    const dossier = composeDossier(
+      emptyInput({
+        tab: "files",
+        project: liveProject(),
+        files: [{ id: "note-9-2", title: "Orphan.pdf", updatedAt: null }],
+      }),
+    );
+
+    const row = dossier.files.rows[0];
+    // "note-9-2" is a note-attachment id, never a Document id.
+    expect(row.href).not.toContain("/documents/");
+    expect(row.target).toBe("none");
+  });
+});
+
