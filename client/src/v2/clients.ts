@@ -105,6 +105,9 @@ export type ClientRecordContact = {
   id: string;
   name: string;
   role: string | null;
+  email?: string | null;
+  phone?: string | null;
+  isPrimary?: number | null;
 };
 
 export type ClientRecordProjectInput = {
@@ -119,6 +122,9 @@ export type ClientIdentitySeed = {
   status: string | null;
   source: string | null;
   email?: string | null;
+  phone?: string | null;
+  phoneFormat?: string | null;
+  fiverrUsername?: string | null;
 };
 
 export type ClientRecordInput = {
@@ -127,8 +133,11 @@ export type ClientRecordInput = {
     name: string;
     company: string | null;
     email: string | null;
+    phone?: string | null;
+    phoneFormat?: string | null;
     status: string | null;
     source: string | null;
+    fiverrUsername?: string | null;
     notes: string | null;
     contacts: ClientRecordContact[];
   } | null;
@@ -145,6 +154,9 @@ export type ClientRecordIdentity = {
   company: string;
   email: string | null;
   source: string;
+  phone: string | null;
+  phoneFormat: string | null;
+  fiverrUsername: string | null;
 };
 
 export type ClientRecordModel = {
@@ -152,7 +164,7 @@ export type ClientRecordModel = {
   unavailable: boolean;
   emptyCopy: string;
   identity: ClientRecordIdentity | null;
-  contacts: Array<{ id: string; name: string; role: string | null }>;
+  contacts: Array<{ id: string; name: string; role: string | null; email: string | null; phone: string | null; primary: boolean }>;
   contactsEmptyCopy: string;
   projects: Array<{ id: string; name: string; status: string; href: string }>;
   projectsEmptyCopy: string;
@@ -180,6 +192,9 @@ function identityFrom(client: ClientIdentitySeed): ClientRecordIdentity {
     company: client.company || "—",
     email: client.email ?? null,
     source: sourceLabel(client.source),
+    phone: client.phone ?? null,
+    phoneFormat: client.phoneFormat ?? null,
+    fiverrUsername: client.fiverrUsername ?? null,
   };
 }
 
@@ -230,6 +245,9 @@ export function composeClientRecord(input: ClientRecordInput): ClientRecordModel
     id: contact.id,
     name: contact.name,
     role: contact.role,
+    email: contact.email ?? null,
+    phone: contact.phone ?? null,
+    primary: contact.isPrimary === 1,
   }));
   const projects = input.projects.map((project) => ({
     id: project.id,

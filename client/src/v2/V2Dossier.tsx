@@ -6,12 +6,17 @@ import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type {
   CrmProjectWithDetails,
+  CrmProjectNoteWithCreator,
+  CrmModuleField,
   Document,
   ProjectDailyUpdateWithDetails,
   SafeUser,
   Task,
   TimeEntryWithDetails,
+  Reminder,
 } from "@shared/schema";
+import { AudioRecorder } from "@/components/editor/AudioRecorder";
+import { NoteAudioPlayer } from "@/components/NoteAudioPlayer";
 import { chromeRefusal } from "./chrome";
 import {
   composeDossier,
@@ -173,6 +178,23 @@ function toDossierTimeEntry(entry: TimeEntryWithDetails): DossierTimeEntry {
   };
 }
 
+function filesFromNotes(notes: CrmProjectNoteWithCreator[]) {
+  return notes.flatMap((note) => {
+    if (!note.attachments) return [];
+    try {
+      const attachments = JSON.parse(note.attachments) as Array<{ url: string; filename: string }>;
+      return attachments.map((attachment, index) => ({
+        id: `${note.id}-${index}`,
+        title: attachment.filename,
+        updatedAt: note.createdAt,
+        href: attachment.url,
+      }));
+    } catch {
+      return [];
+    }
+  });
+}
+
 export function V2DossierPage() {
   const [location] = useLocation();
   const match = matchV2Route(location);
@@ -191,6 +213,12 @@ export function V2DossierPage() {
   const [projectName, setProjectName] = useState("");
   const [memberId, setMemberId] = useState("");
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
+  const [noteContent, setNoteContent] = useState("");
+  const [recordingNote, setRecordingNote] = useState(false);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [reminderTitle, setReminderTitle] = useState("");
+  const [reminderNote, setReminderNote] = useState("");
+  const [reminderDueAt, setReminderDueAt] = useState("");
 
   const { data: project, isLoading: projectLoading } = useQuery<CrmProjectWithDetails | null>({
     queryKey: ["/api/crm/projects", projectId],
@@ -269,6 +297,19 @@ export function V2DossierPage() {
   const { data: projectsResponse } = useQuery<ProjectsResponse>({
     queryKey: ["/api/crm/projects", { pageSize: 500 }],
     queryFn: () => fetch("/api/crm/projects?pageSize=500", { credentials: "include" }).then((res) => res.json()),
+  });
+  const { data: notes = [] } = useQuery<CrmProjectNoteWithCreator[]>({
+    queryKey: ["/api/crm/projects", projectId, "notes"],
+    enabled: Boolean(projectId),
+    queryFn: () => apiRequest("GET", `/api/crm/projects/${projectId}/notes`),
+  });
+  const { data: reminders = [] } = useQuery<Reminder[]>({
+    queryKey: ["/api/crm/projects", projectId, "reminders"],
+    enabled: Boolean(projectId),
+    queryFn: () => apiRequest("GET", `/api/crm/projects/${projectId}/reminders`),
+  });
+  const { data: projectFields = [] } = useQuery<CrmModuleField[]>({
+    queryKey: ["/api/modules/projects/fields"],
   });
 
   useEffect(() => {
@@ -350,6 +391,62 @@ export function V2DossierPage() {
     },
   });
 
+  const createNote = useMutation({
+    mutationFn: (body: { content: string; audioUrl?: string; audioRecordingId?: string; transcriptStatus?: string }) =>
+      apiRequest("POST", `/api/crm/projects/${projectId}/notes`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "notes"] });
+      setNoteContent("");
+      setRecordingNote(false);
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuseWrite(error.message, "Manage Project Notes"),
+  });
+  const deleteNote = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/crm/projects/${projectId}/notes/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "notes"] }),
+    onError: (error: Error) => refuseWrite(error.message, "Manage Project Notes"),
+  });
+  const createReminder = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/crm/projects/${projectId}/reminders`, {
+      title: reminderTitle.trim(),
+      note: reminderNote.trim() || null,
+      dueAt: new Date(reminderDueAt).toISOString(),
+      taskId: null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] });
+      setReminderTitle(""); setReminderNote(""); setReminderDueAt(""); setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
+  });
+  const updateReminder = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) => apiRequest("PATCH", `/api/reminders/${id}`, { status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] }),
+    onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
+  });
+  const deleteReminder = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/reminders/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] }),
+    onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
+  });
+
+  async function uploadAudioNote(audioBlob: Blob) {
+    if (refuseWrite()) return;
+    setUploadingAudio(true);
+    try {
+      const uploadSlot = await apiRequest("POST", "/api/objects/upload");
+      const uploaded = await fetch(uploadSlot.uploadURL, { method: "PUT", body: audioBlob, headers: { "Content-Type": "audio/webm" }, credentials: "include" });
+      if (!uploaded.ok) throw new Error("Failed to upload audio");
+      const audio = await apiRequest("POST", "/api/audio/upload", { audioUrl: uploadSlot.objectPath });
+      createNote.mutate({ content: "Voice note", audioUrl: audio.audioUrl, audioRecordingId: audio.id, transcriptStatus: audio.transcriptStatus });
+    } catch (error) {
+      refuseWrite(error instanceof Error ? error.message : "Failed to upload audio");
+    } finally {
+      setUploadingAudio(false);
+    }
+  }
+
   const clientId = project?.clientId;
   const clientActiveProjectCount = (projectsResponse?.data ?? []).filter(
     (row) => row.clientId && row.clientId === clientId && LIVE_PROJECT_STATUSES.has(row.projectStatus),
@@ -378,7 +475,12 @@ export function V2DossierPage() {
     clientActiveProjectCount,
     timeEntries: (timeEntriesResponse?.data ?? []).map(toDossierTimeEntry),
     dailyUpdates: (dailyUpdates?.rows ?? []).map(toDossierDailyUpdate),
-    files: [],
+    files: filesFromNotes(notes),
+    reminders,
+    notes,
+    customFields: projectFields
+      .filter((field) => field.isEnabled === 1 && field.isSystem !== 1)
+      .map((field) => ({ name: field.name, slug: field.slug, value: (project as unknown as Record<string, unknown> | undefined)?.[field.slug] })),
   };
   const dossier = composeDossier(input);
   const firstTodoTask = dossier.nextActions.rows.find((row) => !row.done);
@@ -577,6 +679,23 @@ export function V2DossierPage() {
               onAddMember,
               users,
               memberPending: addMember.isPending,
+              noteContent,
+              setNoteContent,
+              onCreateNote: () => { if (!noteContent.trim() || refuseWrite()) return; createNote.mutate({ content: noteContent.trim() }); },
+              onDeleteNote: (id) => { if (!refuseWrite()) deleteNote.mutate(id); },
+              recordingNote,
+              setRecordingNote,
+              onAudio: uploadAudioNote,
+              uploadingAudio,
+              reminderTitle,
+              setReminderTitle,
+              reminderNote,
+              setReminderNote,
+              reminderDueAt,
+              setReminderDueAt,
+              onCreateReminder: (event) => { event.preventDefault(); if (!reminderTitle.trim() || !reminderDueAt || refuseWrite()) return; createReminder.mutate(); },
+              onCompleteReminder: (id) => { if (!refuseWrite()) updateReminder.mutate({ id, status: "done" }); },
+              onDeleteReminder: (id) => { if (!refuseWrite()) deleteReminder.mutate(id); },
             })}
           </div>
         ) : null}
@@ -602,12 +721,31 @@ function renderDossierTab(props: {
   onAddMember: (event: FormEvent) => void;
   users: SafeUser[];
   memberPending: boolean;
+  noteContent: string;
+  setNoteContent: (value: string) => void;
+  onCreateNote: () => void;
+  onDeleteNote: (id: string) => void;
+  recordingNote: boolean;
+  setRecordingNote: (value: boolean) => void;
+  onAudio: (blob: Blob) => void;
+  uploadingAudio: boolean;
+  reminderTitle: string;
+  setReminderTitle: (value: string) => void;
+  reminderNote: string;
+  setReminderNote: (value: string) => void;
+  reminderDueAt: string;
+  setReminderDueAt: (value: string) => void;
+  onCreateReminder: (event: FormEvent) => void;
+  onCompleteReminder: (id: string) => void;
+  onDeleteReminder: (id: string) => void;
 }): ReactNode {
   const { dossier } = props;
   if (dossier.tab === "tasks") return <DossierTasks {...props} />;
   if (dossier.tab === "time") return <DossierTime dossier={dossier} />;
   if (dossier.tab === "activity") return <DossierActivity dossier={dossier} />;
   if (dossier.tab === "updates") return <DossierUpdates dossier={dossier} />;
+  if (dossier.tab === "notes") return <DossierNotes {...props} />;
+  if (dossier.tab === "reminders") return <DossierReminders {...props} />;
   if (dossier.tab === "documents") return <DossierDocuments dossier={dossier} />;
   if (dossier.tab === "files") return <DossierFiles dossier={dossier} />;
   if (dossier.tab === "settings") return <DossierSettings {...props} />;
@@ -968,6 +1106,97 @@ function DossierUpdates({ dossier }: { dossier: DossierModel }) {
   );
 }
 
+function DossierNotes({
+  dossier,
+  noteContent,
+  setNoteContent,
+  onCreateNote,
+  onDeleteNote,
+  recordingNote,
+  setRecordingNote,
+  onAudio,
+  uploadingAudio,
+}: {
+  dossier: DossierModel;
+  noteContent: string;
+  setNoteContent: (value: string) => void;
+  onCreateNote: () => void;
+  onDeleteNote: (id: string) => void;
+  recordingNote: boolean;
+  setRecordingNote: (value: boolean) => void;
+  onAudio: (blob: Blob) => void;
+  uploadingAudio: boolean;
+}) {
+  return (
+    <section className="df-card">
+      <div className="df-card-head"><h2 className="df-card-title">Project notes</h2><span className="df-count-chip">{dossier.notes.rows.length}</span></div>
+      <div className="df-daily-form">
+        {recordingNote ? (
+          <AudioRecorder onRecordingComplete={onAudio} onCancel={() => setRecordingNote(false)} isUploading={uploadingAudio} />
+        ) : (
+          <div className="df-inline-form">
+            <label className="df-daily-field" style={{ flex: 1 }}>NOTE<textarea value={noteContent} onChange={(event) => setNoteContent(event.target.value)} aria-label="Project note" /></label>
+            <button type="button" className="df-ghost-btn" onClick={() => setRecordingNote(true)}>Record audio</button>
+            <button type="button" className="df-ink-btn" onClick={onCreateNote} disabled={!noteContent.trim()}>Add note</button>
+          </div>
+        )}
+      </div>
+      {dossier.notes.empty ? <p className="df-empty">{dossier.notes.emptyCopy}</p> : dossier.notes.rows.map((note) => (
+        <article key={note.id} className="df-update-body">
+          <div className="df-mono df-meta">{note.meta}</div>
+          <p className="df-prose">{note.content}</p>
+          {note.audioUrl ? <NoteAudioPlayer audioUrl={note.audioUrl} audioRecordingId={note.audioRecordingId ?? undefined} transcriptStatus={note.transcriptStatus ?? undefined} audioTranscript={note.audioTranscript ?? undefined} /> : null}
+          <button type="button" className="df-ghost-link" onClick={() => onDeleteNote(note.id)}>Delete</button>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function DossierReminders({
+  dossier,
+  reminderTitle,
+  setReminderTitle,
+  reminderNote,
+  setReminderNote,
+  reminderDueAt,
+  setReminderDueAt,
+  onCreateReminder,
+  onCompleteReminder,
+  onDeleteReminder,
+}: {
+  dossier: DossierModel;
+  reminderTitle: string;
+  setReminderTitle: (value: string) => void;
+  reminderNote: string;
+  setReminderNote: (value: string) => void;
+  reminderDueAt: string;
+  setReminderDueAt: (value: string) => void;
+  onCreateReminder: (event: FormEvent) => void;
+  onCompleteReminder: (id: string) => void;
+  onDeleteReminder: (id: string) => void;
+}) {
+  return (
+    <section className="df-card">
+      <div className="df-card-head"><h2 className="df-card-title">Reminders</h2><span className="df-count-chip">{dossier.reminders.rows.length}</span></div>
+      <form className="df-admin-form df-daily-form" onSubmit={onCreateReminder}>
+        <label className="df-daily-field">TITLE<input value={reminderTitle} onChange={(event) => setReminderTitle(event.target.value)} /></label>
+        <label className="df-daily-field">NOTE<textarea value={reminderNote} onChange={(event) => setReminderNote(event.target.value)} /></label>
+        <label className="df-daily-field">DUE<input type="datetime-local" value={reminderDueAt} onChange={(event) => setReminderDueAt(event.target.value)} /></label>
+        <button type="submit" className="df-ink-btn" disabled={!reminderTitle.trim() || !reminderDueAt}>Add reminder</button>
+      </form>
+      {dossier.reminders.empty ? <p className="df-empty">{dossier.reminders.emptyCopy}</p> : dossier.reminders.rows.map((reminder) => (
+        <div key={reminder.id} className="df-register-row" data-done={reminder.done ? "true" : "false"}>
+          <span><span className="df-row-title">{reminder.title}</span>{reminder.note ? <span className="df-mono df-meta">{reminder.note}</span> : null}</span>
+          <span className="df-mono df-meta">{reminder.due}</span>
+          <span className="df-status">{reminder.status}</span>
+          <span className="df-people-action">{!reminder.done ? <button type="button" className="df-ghost-link" onClick={() => onCompleteReminder(reminder.id)}>Done</button> : null}<button type="button" className="df-ghost-link" onClick={() => onDeleteReminder(reminder.id)}>Delete</button></span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function DossierDocuments({ dossier }: { dossier: DossierModel }) {
   return (
     <section className="df-card">
@@ -1000,10 +1229,10 @@ function DossierFiles({ dossier }: { dossier: DossierModel }) {
         <p className="df-empty">{dossier.files.emptyCopy}</p>
       ) : (
         dossier.files.rows.map((row) => (
-          <div key={row.id} className="df-doc-row">
+          <Link key={row.id} href={row.href} className="df-doc-row">
             <span className="df-row-title">{row.title}</span>
             <span className="df-mono df-meta">{row.meta}</span>
-          </div>
+          </Link>
         ))
       )}
     </section>

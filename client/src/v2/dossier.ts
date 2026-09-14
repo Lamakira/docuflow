@@ -80,6 +80,29 @@ export type DossierFile = {
   title: string;
   updatedAt: Date | string | null;
   access?: string | null;
+  href?: string;
+};
+
+export type DossierReminder = {
+  id: string;
+  title: string;
+  note?: string | null;
+  dueAt: Date | string;
+  status: string;
+  notified?: number | null;
+  taskId?: string | null;
+};
+
+export type DossierNote = {
+  id: string;
+  content: string;
+  createdAt?: Date | string | null;
+  audioUrl?: string | null;
+  audioRecordingId?: string | null;
+  transcriptStatus?: string | null;
+  audioTranscript?: string | null;
+  attachments?: string | null;
+  createdBy?: DossierPerson | null;
 };
 
 export type DossierInput = {
@@ -100,6 +123,9 @@ export type DossierInput = {
   timeEntries: DossierTimeEntry[];
   dailyUpdates: DossierDailyUpdate[];
   files: DossierFile[];
+  reminders: DossierReminder[];
+  notes: DossierNote[];
+  customFields: Array<{ name: string; slug: string; value: unknown }>;
 };
 
 export type DossierTab = {
@@ -176,7 +202,17 @@ export type DossierModel = {
     }>;
   };
   files: {
-    rows: Array<{ id: string; title: string; meta: string }>;
+    rows: Array<{ id: string; title: string; meta: string; href: string }>;
+    empty: boolean;
+    emptyCopy: string;
+  };
+  reminders: {
+    rows: Array<{ id: string; title: string; note: string | null; due: string; status: string; done: boolean }>;
+    empty: boolean;
+    emptyCopy: string;
+  };
+  notes: {
+    rows: Array<{ id: string; content: string; meta: string; audioUrl: string | null; audioRecordingId: string | null; transcriptStatus: string | null; audioTranscript: string | null }>;
     empty: boolean;
     emptyCopy: string;
   };
@@ -236,6 +272,8 @@ const TAB_LABEL: Record<DossierTabId, string> = {
   time: "Time",
   activity: "Activity",
   updates: "Updates",
+  notes: "Notes",
+  reminders: "Reminders",
   documents: "Documents",
   files: "Files",
   settings: "Settings",
@@ -462,10 +500,36 @@ function composeFiles(input: DossierInput): DossierModel["files"] {
       id: file.id,
       title: file.title,
       meta: formatWhen(file.updatedAt, input.now),
+      href: file.href ?? `/documents/${file.id}`,
     })),
     empty: files.length === 0,
     emptyCopy: "No Files on this Project you can access.",
   };
+}
+
+function composeReminders(input: DossierInput): DossierModel["reminders"] {
+  const rows = input.reminders.map((reminder) => ({
+    id: reminder.id,
+    title: reminder.title,
+    note: reminder.note ?? null,
+    due: formatWhen(reminder.dueAt, input.now),
+    status: reminder.status.replace(/_/g, " ").toUpperCase(),
+    done: reminder.status === "done",
+  }));
+  return { rows, empty: rows.length === 0, emptyCopy: "No Reminders on this Project yet." };
+}
+
+function composeNotes(input: DossierInput): DossierModel["notes"] {
+  const rows = input.notes.map((note) => ({
+    id: note.id,
+    content: note.content,
+    meta: [note.createdAt ? formatWhen(note.createdAt, input.now) : null, note.createdBy ? memberName(note.createdBy).toUpperCase() : null].filter(Boolean).join(" · "),
+    audioUrl: note.audioUrl ?? null,
+    audioRecordingId: note.audioRecordingId ?? null,
+    transcriptStatus: note.transcriptStatus ?? null,
+    audioTranscript: note.audioTranscript ?? null,
+  }));
+  return { rows, empty: rows.length === 0, emptyCopy: "No notes on this Project yet." };
 }
 
 function composeSettings(input: DossierInput): DossierModel["settings"] {
@@ -490,6 +554,13 @@ function composeSettings(input: DossierInput): DossierModel["settings"] {
     { label: "DUE", value: due ? formatDayStamp(due) : "—" },
     { label: "DOCUMENTATION", value: project.documentationEnabled ? "ON" : "OFF" },
   ];
+  for (const field of input.customFields) {
+    if (field.value === null || field.value === undefined || field.value === "") continue;
+    fields.push({
+      label: field.name.toUpperCase(),
+      value: Array.isArray(field.value) ? field.value.join(", ") : String(field.value),
+    });
+  }
   return { fields, lead, members };
 }
 
@@ -501,6 +572,8 @@ export function composeDossier(input: DossierInput): DossierModel {
   const time = composeTime(input);
   const updates = composeUpdates(input);
   const files = composeFiles(input);
+  const reminders = composeReminders(input);
+  const notes = composeNotes(input);
   const settings = composeSettings(input);
   const assignees = projectAssignees(project);
   const trackedMtd = formatHours(input.monthSeconds);
@@ -530,6 +603,10 @@ export function composeDossier(input: DossierInput): DossierModel {
                     ? String(documents.length)
                     : id === "files"
                       ? String(files.rows.length)
+                      : id === "notes"
+                        ? String(notes.rows.length)
+                        : id === "reminders"
+                          ? String(reminders.rows.length)
                       : null,
         active: id === input.tab,
       }))
@@ -612,6 +689,8 @@ export function composeDossier(input: DossierInput): DossierModel {
     time,
     updates,
     files,
+    reminders,
+    notes,
     settings,
     dailyUpdate: composeDailyUpdate(input),
     evidence: {

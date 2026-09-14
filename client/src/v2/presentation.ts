@@ -70,6 +70,8 @@ export const DOSSIER_TAB_IDS = [
   "time",
   "activity",
   "updates",
+  "notes",
+  "reminders",
   "documents",
   "files",
   "settings",
@@ -91,6 +93,7 @@ export type V2Match =
   | { kind: "clients"; title: "Clients"; href: "/clients" }
   | { kind: "client-record"; title: string; href: "/clients"; clientId: string }
   | { kind: "opportunities"; title: "Opportunities"; href: "/opportunities" }
+  | { kind: "opportunity-record"; title: "Opportunity"; href: "/opportunities"; opportunityId: string }
   | { kind: "time"; title: "Time Tracking"; href: "/time" }
   | { kind: "daily-update"; title: "Daily Update"; href: "/daily-update" }
   | { kind: "daily-updates"; title: "Daily Updates"; href: "/daily-updates" }
@@ -282,6 +285,12 @@ export function matchV2Route(path: string): V2Match {
   if (pathname === "/opportunities") {
     return { kind: "opportunities", title: "Opportunities", href: "/opportunities" };
   }
+  if (pathname.startsWith("/opportunities/")) {
+    const opportunityId = pathname.split("/").filter(Boolean)[1];
+    if (opportunityId) {
+      return { kind: "opportunity-record", title: "Opportunity", href: "/opportunities", opportunityId };
+    }
+  }
 
   if (pathname === "/time") {
     return { kind: "time", title: "Time Tracking", href: "/time" };
@@ -389,7 +398,7 @@ export function navIdForPath(path: string): V2NavId | null {
   }
   if (match.kind === "projects" || match.kind === "legacy-project") return "projects";
   if (match.kind === "clients" || match.kind === "client-record") return "clients";
-  if (match.kind === "opportunities") return "opportunities";
+  if (match.kind === "opportunities" || match.kind === "opportunity-record") return "opportunities";
   if (match.kind === "time") return "time";
   if (match.kind === "activity") return "activity";
   if (match.kind === "people") return "people";
@@ -455,6 +464,13 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "OPPORTUNITIES" },
+    ];
+  }
+  if (match.kind === "opportunity-record") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "OPPORTUNITIES", href: "/opportunities" },
+      { label: "RECORD" },
     ];
   }
   if (match.kind === "time") {

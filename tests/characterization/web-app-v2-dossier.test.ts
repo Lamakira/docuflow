@@ -33,6 +33,9 @@ function emptyInput(overrides: Partial<DossierInput> = {}): DossierInput {
     timeEntries: [],
     dailyUpdates: [],
     files: [],
+    reminders: [],
+    notes: [],
+    customFields: [],
     ...overrides,
   };
 }
@@ -81,7 +84,7 @@ describe("Project Dossier routing (#173)", () => {
   });
 
   it("keeps remaining Dossier tabs in the same chrome, not v1 screens", () => {
-    for (const tab of ["tasks", "time", "activity", "updates", "documents", "files", "settings"] as const) {
+    for (const tab of ["tasks", "time", "activity", "updates", "notes", "reminders", "documents", "files", "settings"] as const) {
       const match = matchV2Route(`/projects/prj-live/${tab}`);
       expect(match.kind, tab).toBe("dossier");
       if (match.kind !== "dossier") continue;
@@ -91,6 +94,42 @@ describe("Project Dossier routing (#173)", () => {
     expect(matchV2Route("/projects").kind).toBe("projects");
     expect(matchV2Route("/project/prj-live").kind).not.toBe("placeholder");
     expect(matchV2Route("/crm/project/1").kind).toBe("dossier");
+  });
+
+  it("composes Reminders CRUD, notes with audio, and openable File rows (#213)", () => {
+    const dossier = composeDossier(emptyInput({
+      tab: "notes",
+      project: liveProject(),
+      reminders: [{
+        id: "rem-1",
+        title: "Call Client",
+        note: "Confirm approval",
+        dueAt: new Date(2026, 8, 15, 9, 0),
+        status: "upcoming",
+        notified: 0,
+      }],
+      notes: [{
+        id: "note-1",
+        content: "Voice update",
+        createdAt: new Date(2026, 8, 14, 10, 0),
+        audioUrl: "/objects/audio.webm",
+        audioRecordingId: "audio-1",
+        transcriptStatus: "processing",
+        audioTranscript: null,
+        attachments: JSON.stringify([{ url: "/public-objects/scope.pdf", filename: "scope.pdf", filesize: 12, filetype: "application/pdf" }]),
+        createdBy: { id: "user-1", firstName: "Sam", lastName: "Lee" },
+      }],
+      files: [{ id: "f1", title: "Kickoff deck.pdf", updatedAt: new Date(2026, 8, 8, 11, 0), href: "/documents/f1" }],
+      customFields: [{ name: "Region", slug: "region", value: "West Africa" }],
+    }));
+
+    expect(dossier.reminders.rows[0]).toMatchObject({ id: "rem-1", status: "UPCOMING" });
+    expect(dossier.notes.rows[0]).toMatchObject({ id: "note-1", audioRecordingId: "audio-1" });
+    expect(dossier.files.rows[0].href).toBe("/documents/f1");
+    expect(dossier.settings.fields).toContainEqual({ label: "REGION", value: "West Africa" });
+    expect(pageSource).toContain("/api/audio/upload");
+    expect(pageSource).toContain("/reminders`");
+    expect(pageSource).toContain("/notes`");
   });
 });
 
@@ -413,7 +452,7 @@ describe("Project Dossier remaining tabs from live records (#188)", () => {
       }),
     );
     expect(dossier.documents.rows[0].title).toBe("Scope notes");
-    expect(dossier.files.rows).toEqual([{ id: "f1", title: "Kickoff deck.pdf", meta: "11:00" }]);
+    expect(dossier.files.rows).toEqual([{ id: "f1", title: "Kickoff deck.pdf", meta: "11:00", href: "/documents/f1" }]);
     expect(dossier.files.empty).toBe(false);
   });
 

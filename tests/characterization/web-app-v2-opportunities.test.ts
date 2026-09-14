@@ -12,6 +12,8 @@ import {
   FALLBACK_OPEN_STAGES,
   opportunityWriteRefusal,
   stageOptionsFromFieldOptions,
+  opportunityHref,
+  composeOpportunityRecord,
   type OpportunityPipelineInput,
   type OpportunityPipelineRowInput,
 } from "../../client/src/v2/opportunities";
@@ -83,6 +85,38 @@ describe("Opportunities routing (#187)", () => {
     expect(pageSource).not.toContain("df-opportunity-stage-input");
     expect(pageSource).not.toContain("df-opportunity-stage-control");
   });
+
+  it("opens a pipeline card as an Opportunity record, not a Project Dossier (#213)", () => {
+    expect(opportunityHref("opp-1")).toBe("/opportunities/opp-1");
+    expect(matchV2Route("/opportunities/opp-1")).toMatchObject({
+      kind: "opportunity-record",
+      opportunityId: "opp-1",
+    });
+    expect(appSource).toContain("V2OpportunityRecordPage");
+    expect(appSource).toMatch(/path="\/opportunities\/:id"/);
+  });
+});
+
+describe("Opportunity record (#213)", () => {
+  it("keeps sales identity separate from a linked Client Project", () => {
+    const record = composeOpportunityRecord({
+      id: "opp-1",
+      name: "Ledger renewal",
+      clientName: "Harbor Co",
+      combinedStatus: "won_in_progress",
+      projectType: "one_time",
+      isDocumentationOnly: 0,
+      linkedProjectId: "prj-1",
+    });
+
+    expect(record).toMatchObject({
+      title: "Ledger renewal",
+      clientLabel: "Harbor Co",
+      stage: "WON",
+      terminal: true,
+      linkedProjectHref: "/projects/prj-1",
+    });
+  });
 });
 
 describe("Opportunities pipeline from live Opportunity rows (#187)", () => {
@@ -136,7 +170,8 @@ describe("Opportunities pipeline from live Opportunity rows (#187)", () => {
       id: "opp-lead",
       projectHref: "/projects/opp-lead",
     });
-    expect(matchV2Route(lead!.projectHref!).kind).toBe("dossier");
+    expect(lead!.recordHref).toBe("/opportunities/opp-lead");
+    expect(matchV2Route(lead!.recordHref).kind).toBe("opportunity-record");
     const won = pipeline.columns.find((column) => column.id === "won")?.cards[0];
     expect(won).toMatchObject({
       id: "opp-won",
@@ -149,7 +184,7 @@ describe("Opportunities pipeline from live Opportunity rows (#187)", () => {
     expect(JSON.stringify(pipeline)).not.toContain("Internal tooling");
     expect(JSON.stringify(pipeline)).not.toContain("Handbook");
     expect(JSON.stringify(pipeline)).not.toContain("Keystone");
-    expect(matchV2Route(won!.projectHref!).kind).toBe("dossier");
+    expect(matchV2Route(won!.recordHref).kind).toBe("opportunity-record");
   });
 
   it("filters by name without inventing rows", () => {

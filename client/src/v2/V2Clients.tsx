@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { CrmClient, CrmContact, CrmProjectWithDetails, SafeUser } from "@shared/schema";
@@ -285,9 +285,18 @@ export function V2ClientsPage() {
 }
 
 export function V2ClientRecordPage() {
+  const { memberships } = useV2Chrome();
   const [location] = useLocation();
   const match = matchV2Route(location);
   const clientId = match.kind === "client-record" ? match.clientId : "";
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  const workspaceName = current?.workspaceName ?? "this Workspace";
+  const readOnly = current?.condition === "Read-only";
+  const [editing, setEditing] = useState(false);
+  const [addingContact, setAddingContact] = useState(false);
+  const [draft, setDraft] = useState({ email: "", phone: "", company: "", notes: "", source: "", fiverrUsername: "" });
+  const [contactDraft, setContactDraft] = useState({ name: "", role: "", email: "", phone: "", isPrimary: false });
+  const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
   const seed = (queryClient.getQueryData<CrmClient[]>(["/api/crm/clients", "register"]) ?? []).find(
     (row) => row.id === clientId,
@@ -317,6 +326,57 @@ export function V2ClientRecordPage() {
     [projectsResponse, clientId],
   );
 
+  useEffect(() => {
+    if (!client) return;
+    setDraft({
+      email: client.email ?? "",
+      phone: client.phone ?? "",
+      company: client.company ?? "",
+      notes: client.notes ?? "",
+      source: client.source ?? "",
+      fiverrUsername: client.fiverrUsername ?? "",
+    });
+  }, [client]);
+
+  function refuse(error?: Error) {
+    setWriteRefusal(clientWriteRefusal({ readOnly, workspaceName, errorMessage: error?.message }));
+  }
+
+  const updateClient = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/crm/clients/${clientId}`, {
+      email: draft.email || null,
+      phone: draft.phone || null,
+      company: draft.company || null,
+      notes: draft.notes || null,
+      source: draft.source || null,
+      fiverrUsername: draft.source === "fiverr" ? draft.fiverrUsername || null : null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/clients", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/clients"] });
+      setEditing(false);
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuse(error),
+  });
+
+  const createContact = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/crm/clients/${clientId}/contacts`, {
+      name: contactDraft.name.trim(),
+      role: contactDraft.role || null,
+      email: contactDraft.email || null,
+      phone: contactDraft.phone || null,
+      isPrimary: contactDraft.isPrimary ? 1 : 0,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/clients", clientId] });
+      setContactDraft({ name: "", role: "", email: "", phone: "", isPrimary: false });
+      setAddingContact(false);
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuse(error),
+  });
+
   const record = composeClientRecord({
     client: client
       ? {
@@ -324,13 +384,19 @@ export function V2ClientRecordPage() {
           name: client.name,
           company: client.company,
           email: client.email,
+          phone: client.phone,
+          phoneFormat: client.phoneFormat,
           status: client.status,
           source: client.source,
+          fiverrUsername: client.fiverrUsername,
           notes: client.notes,
           contacts: (client.contacts ?? []).map((contact) => ({
             id: contact.id,
             name: contact.name,
             role: contact.role ?? null,
+            email: contact.email ?? null,
+            phone: contact.phone ?? null,
+            isPrimary: contact.isPrimary ?? 0,
           })),
         }
       : null,
@@ -376,6 +442,8 @@ export function V2ClientRecordPage() {
                     <span className="df-mono df-meta">{record.identity.email}</span>
                   ) : null}
                   <span className="df-mono df-meta">{record.identity.source}</span>
+                  {record.identity.phone ? <span className="df-mono df-meta">{record.identity.phone}</span> : null}
+                  {record.identity.fiverrUsername ? <span className="df-mono df-meta">FIVERR @{record.identity.fiverrUsername}</span> : null}
                 </div>
               </>
             ) : (
@@ -389,6 +457,7 @@ export function V2ClientRecordPage() {
       </header>
 
       <div className="df-dossier-body df-client-record-body" data-motion={RECORD_MOTION}>
+        {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
         {isLoading ? (
           <div className="df-card" style={{ minHeight: 240 }} />
         ) : record.missing || record.unavailable ? (
@@ -400,14 +469,24 @@ export function V2ClientRecordPage() {
                 <div className="df-card-head">
                   <h2 className="df-card-title">On this Client</h2>
                   <span className="df-mono df-meta">{record.contacts.length}</span>
+                  <button type="button" className="df-ghost-link" onClick={() => setAddingContact((open) => !open)}>Add contact</button>
                 </div>
+                {addingContact ? (
+                  <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); if (contactDraft.name.trim()) createContact.mutate(); }}>
+                    {(["name", "role", "email", "phone"] as const).map((field) => (
+                      <label key={field} className="df-daily-field">{field.toUpperCase()}<input value={contactDraft[field]} onChange={(event) => setContactDraft((value) => ({ ...value, [field]: event.target.value }))} /></label>
+                    ))}
+                    <label className="df-checkbox-row"><input type="checkbox" checked={contactDraft.isPrimary} onChange={(event) => setContactDraft((value) => ({ ...value, isPrimary: event.target.checked }))} />Primary contact</label>
+                    <button className="df-ink-btn" type="submit" disabled={!contactDraft.name.trim() || createContact.isPending}>Create contact</button>
+                  </form>
+                ) : null}
                 {record.contacts.length === 0 ? (
                   <p className="df-empty">{record.contactsEmptyCopy}</p>
                 ) : (
                   record.contacts.map((contact) => (
                     <div key={contact.id} className="df-register-row">
                       <span className="df-row-title">{contact.name}</span>
-                      <span className="df-mono df-meta">{contact.role || "—"}</span>
+                      <span className="df-mono df-meta">{[contact.role, contact.email, contact.phone, contact.primary ? "PRIMARY" : null].filter(Boolean).join(" · ") || "—"}</span>
                     </div>
                   ))
                 )}
@@ -416,8 +495,17 @@ export function V2ClientRecordPage() {
               <section className="df-card">
                 <div className="df-card-head">
                   <h2 className="df-card-title">Notes</h2>
+                  <button type="button" className="df-ghost-link" onClick={() => setEditing((open) => !open)}>Edit Client</button>
                 </div>
-                {record.notes ? (
+                {editing ? (
+                  <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); updateClient.mutate(); }}>
+                    {(["company", "email", "phone"] as const).map((field) => <label key={field} className="df-daily-field">{field.toUpperCase()}<input value={draft[field]} onChange={(event) => setDraft((value) => ({ ...value, [field]: event.target.value }))} /></label>)}
+                    <label className="df-daily-field">SOURCE<select value={draft.source} onChange={(event) => setDraft((value) => ({ ...value, source: event.target.value }))}><option value="">NONE</option><option value="direct">DIRECT</option><option value="zoho">ZOHO</option><option value="fiverr">FIVERR</option></select></label>
+                    {draft.source === "fiverr" ? <label className="df-daily-field">FIVERR USERNAME<input value={draft.fiverrUsername} onChange={(event) => setDraft((value) => ({ ...value, fiverrUsername: event.target.value }))} /></label> : null}
+                    <label className="df-daily-field">NOTES<textarea value={draft.notes} onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))} /></label>
+                    <button className="df-ink-btn" type="submit" disabled={updateClient.isPending}>Save Client</button>
+                  </form>
+                ) : record.notes ? (
                   <p className="df-prose" style={{ padding: "16px 18px" }}>
                     {record.notes}
                   </p>

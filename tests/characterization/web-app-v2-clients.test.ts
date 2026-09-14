@@ -33,6 +33,10 @@ const appSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2AuthenticatedApp.tsx"),
   "utf8",
 );
+const pageSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
+  "utf8",
+);
 
 describe("Clients routing (#186)", () => {
   it("shows a live register on the rail Clients destination", () => {
@@ -188,6 +192,44 @@ describe("Client record from live Client reads (#186)", () => {
     expect(record.notes).toBe("Pier contract.");
     expect(JSON.stringify(record)).not.toContain("Keystone");
     expect(JSON.stringify(record)).not.toContain("v1");
+  });
+
+  it("shows the v1 Client fields and related-contact details (#213)", () => {
+    const record = composeClientRecord({
+      client: {
+        id: "cli-1",
+        name: "Harbor Co",
+        company: "Harbor Co Ltd",
+        email: "work@harbor.test",
+        phone: "+229 01 02 03 04",
+        phoneFormat: "international",
+        status: "client",
+        source: "fiverr",
+        fiverrUsername: "harbor_ops",
+        notes: "Prefers written updates.",
+        contacts: [{
+          id: "contact-1",
+          name: "Pat Ng",
+          role: "Approver",
+          email: "pat@harbor.test",
+          phone: "+229 05 06 07 08",
+          isPrimary: 1,
+        }],
+      },
+      projects: [],
+    });
+
+    expect(record.identity).toMatchObject({
+      phone: "+229 01 02 03 04",
+      fiverrUsername: "harbor_ops",
+    });
+    expect(record.contacts[0]).toMatchObject({
+      email: "pat@harbor.test",
+      phone: "+229 05 06 07 08",
+      primary: true,
+    });
+    expect(pageSource).toContain("/contacts`");
+    expect(pageSource).toContain('apiRequest("PATCH", `/api/crm/clients/${clientId}`');
   });
 
   it("empty and missing records are honest", () => {

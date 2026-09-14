@@ -97,6 +97,19 @@ describe("Administration routing (#193)", () => {
   });
 });
 
+describe("Administration CRM modules and fields (#213)", () => {
+  it("rewrites the v1 modules tab into live v2 Administration controls", () => {
+    expect(pageSource).toContain('queryKey: ["/api/admin/modules"]');
+    expect(pageSource).toContain('apiRequest("POST", "/api/admin/modules"');
+    expect(pageSource).toContain('apiRequest("PATCH", `/api/admin/modules/${id}`');
+    expect(pageSource).toContain('apiRequest("DELETE", `/api/admin/modules/${id}`');
+    expect(pageSource).toContain('apiRequest("POST", `/api/admin/modules/${selectedModule.id}/fields`');
+    expect(pageSource).toContain('apiRequest("PATCH", `/api/admin/fields/${id}`');
+    expect(pageSource).toContain('apiRequest("DELETE", `/api/admin/fields/${id}`');
+    expect(pageSource).toContain('data-testid="v2-administration-crm-modules"');
+  });
+});
+
 describe("Administration from operator routes (#193)", () => {
   it("refuses Members with a named Capability, never permission denied", () => {
     const page = composeAdministration(
