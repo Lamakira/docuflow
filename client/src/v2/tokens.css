@@ -653,14 +653,6 @@ button.df-activity-row {
 
 /* A Contact row reads like a person (#213): identity, then the reachable
    detail, then its badges — not one joined string pushed to the far edge. */
-/* Distinct from `.df-contact-row`, which is the Dossier's flex contact line.
-   Head and row share one track list so a column sits under its own name. */
-.df-client-contacts .df-register-head,
-.df-client-contact-row {
-  grid-template-columns: minmax(0, 2fr) minmax(0, 0.9fr) minmax(0, 0.9fr) auto;
-  gap: 18px;
-}
-
 .df-contact-role {
   font-size: 13px;
   color: var(--df-case-ink);
@@ -1756,6 +1748,16 @@ button.df-activity-row {
 
 .df-client-record-body .df-register-row {
   grid-template-columns: 1.6fr 1fr;
+}
+
+/* The Contact register carries four columns, so it overrides the two-column
+   default above — same weight, so it has to come after it. Distinct from
+   `.df-contact-row`, which is the Dossier's flex contact line. Head and row
+   share one track list, or a column does not sit under its own name. */
+.df-client-contacts .df-register-head,
+.df-client-record-body .df-client-contact-row {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 0.9fr) minmax(0, 0.9fr) auto;
+  gap: 18px;
 }
 
 .df-status-word {

@@ -117,9 +117,13 @@ describe("Client editor shows what it saved (#213)", () => {
     // let its display:flex win and the columns drifted off their own headers.
     expect(clientSource).toContain("df-client-contact-row");
     expect(clientSource).toContain("df-client-contacts");
-    expect(rule(".df-client-contacts .df-register-head,\n.df-client-contact-row")).toMatch(
-      /grid-template-columns/,
-    );
+    // `.df-client-record-body .df-register-row` sets two tracks at the same
+    // weight, so this rule only wins by coming after it — a harness without that
+    // ancestor renders correctly while the real record wraps its last columns.
+    const twoTrack = css.indexOf(".df-client-record-body .df-register-row");
+    const fourTrack = css.indexOf(".df-client-record-body .df-client-contact-row");
+    expect(twoTrack).toBeGreaterThan(-1);
+    expect(fourTrack).toBeGreaterThan(twoTrack);
     expect(clientSource).not.toMatch(/df-status">\{contact\.role\}/);
     // An email is a literal identifier; uppercasing it changes what it looks like.
     expect(clientSource).toContain('data-case="preserve"');
