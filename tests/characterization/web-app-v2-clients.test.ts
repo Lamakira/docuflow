@@ -74,6 +74,17 @@ describe("Client editor shows what it saved (#213)", () => {
     ]);
   });
 
+  it("reads record attributes as stacked pairs, not as metric tiles", () => {
+    // A boxed tile is for a metric. Forcing record attributes into equal-width
+    // tiles truncated the email; after Resend's contact metadata grid and Rox,
+    // whose property rows are explicitly not carded individually.
+    expect(clientSource).toContain("df-record-fields");
+    expect(clientSource).not.toContain("df-analytics-figure");
+    // An email is prose, so the value is UI text rather than the mono a figure uses.
+    expect(rule(".df-record-field-value")).not.toMatch(/font-family/);
+    expect(rule(".df-record-field")).not.toMatch(/border:/);
+  });
+
   it("names the card for what it edits, and signs off the save", () => {
     // The card edits the whole Client; calling it "Notes" described one field.
     expect(clientSource).toContain("Client details");

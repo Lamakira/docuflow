@@ -651,6 +651,52 @@ button.df-activity-row {
   grid-template-rows: 1fr;
 }
 
+/* Record attributes (#213). A boxed tile is for a metric, where the figure is
+   the subject. On a record the subject is the label-to-value relation, so the
+   pair is stacked and uncarded, and the value is UI text rather than mono — an
+   email is prose, not a figure, and a fixed tile width truncated it.
+   After Resend's contact metadata grid and Rox, whose property rows are
+   explicitly not carded individually. */
+.df-record-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px 28px;
+  padding: 16px 18px;
+}
+
+.df-record-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.df-record-field-label {
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--df-archive-slate);
+}
+
+.df-record-field-value {
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--df-case-ink);
+  overflow-wrap: anywhere;
+}
+
+.df-record-field-value[data-empty="true"] {
+  color: var(--df-muted-ink);
+}
+
+.df-v2[data-chrome="mobile"] .df-record-fields {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  padding: 12px 13px;
+  gap: 14px 18px;
+}
+
 /* Voice notes on the Dossier (#213). Recording is a state, so the elapsed
    counter does not animate and the composer does not react to a keystroke. */
 .df-audio-recorder {

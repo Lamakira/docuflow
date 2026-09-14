@@ -549,11 +549,13 @@ export function V2ClientRecordPage() {
                   </form>
                 ) : (
                   <>
-                    <div className="df-figure-band">
+                    <div className="df-record-fields">
                       {record.details.map((row) => (
-                        <div key={row.label} className="df-analytics-figure">
-                          <span className="df-analytics-figure-label">{row.label}</span>
-                          <span className="df-analytics-figure-value">{row.value}</span>
+                        <div key={row.label} className="df-record-field">
+                          <span className="df-record-field-label">{row.label}</span>
+                          <span className="df-record-field-value" data-empty={row.value === "—" ? "true" : "false"}>
+                            {row.value}
+                          </span>
                         </div>
                       ))}
                     </div>
