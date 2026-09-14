@@ -77,6 +77,41 @@ describe("Client editor shows what it saved (#213)", () => {
     ]);
   });
 
+  it("reads a Contact like a person, the way a Membership reads on People", () => {
+    const record = composeClientRecord({
+      client: {
+        id: "c1",
+        name: "Harbor Co",
+        company: null,
+        email: null,
+        phone: null,
+        phoneFormat: null,
+        status: "lead",
+        source: null,
+        fiverrUsername: null,
+        notes: null,
+        contacts: [
+          { id: "k1", name: "Said Arikama", role: "Directeur", email: "said@harbor.co", phone: "0101", isPrimary: 1 },
+          { id: "k2", name: "Ada", role: null, email: null, phone: null, isPrimary: 0 },
+        ],
+      },
+      projects: [],
+      now: new Date(2026, 8, 14, 12, 0, 0),
+    });
+
+    expect(record.contacts[0]).toMatchObject({ name: "Said Arikama", initials: "SA", primary: true });
+    // One word gives two letters rather than one lonely capital.
+    expect(record.contacts[1].initials).toBe("AD");
+
+    // Identity, then the reachable detail, then badges — not one joined string.
+    expect(clientSource).toContain("df-people-member");
+    expect(clientSource).toContain("df-contact-badges");
+    expect(clientSource).not.toMatch(/contact\.role, contact\.email, contact\.phone/);
+    // An email is a literal identifier; uppercasing it changes what it looks like.
+    expect(clientSource).toContain('data-case="preserve"');
+    expect(rule('.df-meta[data-case="preserve"]')).toMatch(/text-transform:\s*none/);
+  });
+
   it("reads record attributes as stacked pairs, not as metric tiles", () => {
     // A boxed tile is for a metric. Forcing record attributes into equal-width
     // tiles truncated the email; after Resend's contact metadata grid and Rox,

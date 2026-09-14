@@ -651,6 +651,30 @@ button.df-activity-row {
   grid-template-rows: 1fr;
 }
 
+/* A Contact row reads like a person (#213): identity, then the reachable
+   detail, then its badges — not one joined string pushed to the far edge. */
+.df-contact-row {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+  gap: 18px;
+}
+
+.df-contact-badges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* An email is a literal identifier; uppercasing it changes what it looks like. */
+.df-meta[data-case="preserve"] {
+  text-transform: none;
+}
+
+.df-v2[data-chrome="mobile"] .df-contact-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 /* Record attributes (#213). A boxed tile is for a metric, where the figure is
    the subject. On a record the subject is the label-to-value relation, so the
    pair is stacked and uncarded, and the value is UI text rather than mono — an

@@ -159,12 +159,23 @@ export type ClientRecordIdentity = {
   fiverrUsername: string | null;
 };
 
+/** A Contact reads like a person, the way a Membership does on People (#213). */
+export type ClientRecordContactRow = {
+  id: string;
+  name: string;
+  initials: string;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+  primary: boolean;
+};
+
 export type ClientRecordModel = {
   missing: boolean;
   unavailable: boolean;
   emptyCopy: string;
   identity: ClientRecordIdentity | null;
-  contacts: Array<{ id: string; name: string; role: string | null; email: string | null; phone: string | null; primary: boolean }>;
+  contacts: ClientRecordContactRow[];
   contactsEmptyCopy: string;
   projects: Array<{ id: string; name: string; status: string; href: string }>;
   projectsEmptyCopy: string;
@@ -247,6 +258,7 @@ export function composeClientRecord(input: ClientRecordInput): ClientRecordModel
   const contacts = input.client.contacts.map((contact) => ({
     id: contact.id,
     name: contact.name,
+    initials: contactInitials(contact.name),
     role: contact.role,
     email: contact.email ?? null,
     phone: contact.phone ?? null,
@@ -278,6 +290,14 @@ export function composeClientRecord(input: ClientRecordInput): ClientRecordModel
  * back. Before this the card showed only `notes`, and everything else the form
  * saved was invisible until the editor was reopened (#213).
  */
+/** Two letters from a person's name, one when they gave only one word. */
+function contactInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
+}
+
 function clientDetails(
   identity: ClientRecordIdentity,
   notes: string | null,

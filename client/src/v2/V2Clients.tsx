@@ -508,9 +508,25 @@ export function V2ClientRecordPage() {
                   <p className="df-empty">{record.contactsEmptyCopy}</p>
                 ) : (
                   record.contacts.map((contact) => (
-                    <div key={contact.id} className="df-register-row">
-                      <span className="df-row-title">{contact.name}</span>
-                      <span className="df-mono df-meta">{[contact.role, contact.email, contact.phone, contact.primary ? "PRIMARY" : null].filter(Boolean).join(" · ") || "—"}</span>
+                    <div key={contact.id} className="df-register-row df-contact-row">
+                      {/* A Contact is a person, so it reads like one: the People
+                          row shape, not a name with every field joined beside it. */}
+                      <span className="df-people-member">
+                        <span className="df-avatar">{contact.initials}</span>
+                        <span style={{ minWidth: 0 }}>
+                          <div className="df-row-title">{contact.name}</div>
+                          {contact.email ? (
+                            <div className="df-mono df-meta" data-case="preserve">
+                              {contact.email}
+                            </div>
+                          ) : null}
+                        </span>
+                      </span>
+                      <span className="df-mono df-meta">{contact.phone ?? "—"}</span>
+                      <span className="df-contact-badges">
+                        {contact.role ? <span className="df-status">{contact.role}</span> : null}
+                        {contact.primary ? <span className="df-status" data-status="ACTIVE">PRIMARY</span> : null}
+                      </span>
                     </div>
                   ))
                 )}
