@@ -659,9 +659,16 @@ button.df-activity-row {
    explicitly not carded individually. */
 .df-record-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  /* 150px keeps four short attributes on one row in a card of this width;
+     190px fitted only three and left the fourth orphaned on a second row. */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 16px 28px;
   padding: 16px 18px;
+}
+
+/* Notes are prose, so they take the full row rather than a narrow column. */
+.df-record-field[data-wide="true"] {
+  grid-column: 1 / -1;
 }
 
 .df-record-field {
@@ -682,6 +689,7 @@ button.df-activity-row {
 
 .df-record-field-value {
   font-size: 13.5px;
+  white-space: pre-wrap;
   line-height: 1.4;
   color: var(--df-case-ink);
   overflow-wrap: anywhere;

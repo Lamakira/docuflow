@@ -170,7 +170,7 @@ export type ClientRecordModel = {
   projectsEmptyCopy: string;
   notes: string | null;
   /** What the editor just wrote, readable without reopening the editor (#213). */
-  details: Array<{ label: string; value: string }>;
+  details: Array<{ label: string; value: string; wide?: true }>;
 };
 
 const PROJECT_STATUS_LABEL: Record<string, string> = {
@@ -269,7 +269,7 @@ export function composeClientRecord(input: ClientRecordInput): ClientRecordModel
     projects,
     projectsEmptyCopy: projects.length === 0 ? "No Client Projects yet." : "",
     notes: input.client.notes,
-    details: clientDetails(identityFrom(input.client)),
+    details: clientDetails(identityFrom(input.client), input.client.notes),
   };
 }
 
@@ -278,8 +278,11 @@ export function composeClientRecord(input: ClientRecordInput): ClientRecordModel
  * back. Before this the card showed only `notes`, and everything else the form
  * saved was invisible until the editor was reopened (#213).
  */
-function clientDetails(identity: ClientRecordIdentity): Array<{ label: string; value: string }> {
-  const rows: Array<{ label: string; value: string }> = [
+function clientDetails(
+  identity: ClientRecordIdentity,
+  notes: string | null,
+): Array<{ label: string; value: string; wide?: true }> {
+  const rows: Array<{ label: string; value: string; wide?: true }> = [
     { label: "COMPANY", value: identity.company },
     { label: "EMAIL", value: identity.email ?? "—" },
     { label: "PHONE", value: identity.phone ?? "—" },
@@ -288,6 +291,9 @@ function clientDetails(identity: ClientRecordIdentity): Array<{ label: string; v
   if (identity.fiverrUsername) {
     rows.push({ label: "FIVERR", value: `@${identity.fiverrUsername}` });
   }
+  // Notes belong in the same block: a separate paragraph below stacked two
+  // gutters and left a band of empty card between them.
+  rows.push({ label: "NOTES", value: notes?.trim() || "—", wide: true });
   return rows;
 }
 

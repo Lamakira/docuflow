@@ -71,6 +71,9 @@ describe("Client editor shows what it saved (#213)", () => {
       { label: "EMAIL", value: "techma@techma.ca" },
       { label: "PHONE", value: "0101010101" },
       { label: "SOURCE", value: "DIRECT" },
+      // Notes join the same block: a separate paragraph below stacked two
+      // gutters and left a band of empty card between them.
+      { label: "NOTES", value: "—", wide: true },
     ]);
   });
 

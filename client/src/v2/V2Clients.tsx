@@ -551,7 +551,11 @@ export function V2ClientRecordPage() {
                   <>
                     <div className="df-record-fields">
                       {record.details.map((row) => (
-                        <div key={row.label} className="df-record-field">
+                        <div
+                          key={row.label}
+                          className="df-record-field"
+                          data-wide={row.wide ? "true" : "false"}
+                        >
                           <span className="df-record-field-label">{row.label}</span>
                           <span className="df-record-field-value" data-empty={row.value === "—" ? "true" : "false"}>
                             {row.value}
@@ -559,13 +563,6 @@ export function V2ClientRecordPage() {
                         </div>
                       ))}
                     </div>
-                    {record.notes ? (
-                      <p className="df-prose" style={{ padding: "16px 18px" }}>
-                        {record.notes}
-                      </p>
-                    ) : (
-                      <p className="df-empty">No notes filed yet.</p>
-                    )}
                   </>
                 )}
               </section>
