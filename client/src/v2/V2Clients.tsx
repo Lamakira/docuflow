@@ -2,6 +2,14 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { CrmClient, CrmContact, CrmProjectWithDetails, SafeUser } from "@shared/schema";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   clientHref,
@@ -75,6 +83,13 @@ export function V2ClientRecordRedirect() {
   if (match.kind === "client-record") return <Redirect to={clientHref(match.clientId)} />;
   return <Redirect to="/clients" />;
 }
+
+const CLIENT_SOURCES = [
+  { id: "none", label: "NONE" },
+  { id: "direct", label: "DIRECT" },
+  { id: "zoho", label: "ZOHO" },
+  { id: "fiverr", label: "FIVERR" },
+] as const;
 
 export function V2ClientsPage() {
   const { layout, memberships } = useV2Chrome();
@@ -476,7 +491,15 @@ export function V2ClientRecordPage() {
                     {(["name", "role", "email", "phone"] as const).map((field) => (
                       <label key={field} className="df-daily-field">{field.toUpperCase()}<input value={contactDraft[field]} onChange={(event) => setContactDraft((value) => ({ ...value, [field]: event.target.value }))} /></label>
                     ))}
-                    <label className="df-checkbox-row"><input type="checkbox" checked={contactDraft.isPrimary} onChange={(event) => setContactDraft((value) => ({ ...value, isPrimary: event.target.checked }))} />Primary contact</label>
+                    <div className="df-checkbox-row">
+                      <Checkbox
+                        id="df-contact-primary"
+                        className="df-checkbox"
+                        checked={contactDraft.isPrimary}
+                        onCheckedChange={(next) => setContactDraft((value) => ({ ...value, isPrimary: next === true }))}
+                      />
+                      <label htmlFor="df-contact-primary">Primary contact</label>
+                    </div>
                     <button className="df-ink-btn" type="submit" disabled={!contactDraft.name.trim() || createContact.isPending}>Create contact</button>
                   </form>
                 ) : null}
@@ -500,7 +523,25 @@ export function V2ClientRecordPage() {
                 {editing ? (
                   <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); updateClient.mutate(); }}>
                     {(["company", "email", "phone"] as const).map((field) => <label key={field} className="df-daily-field">{field.toUpperCase()}<input value={draft[field]} onChange={(event) => setDraft((value) => ({ ...value, [field]: event.target.value }))} /></label>)}
-                    <label className="df-daily-field">SOURCE<select value={draft.source} onChange={(event) => setDraft((value) => ({ ...value, source: event.target.value }))}><option value="">NONE</option><option value="direct">DIRECT</option><option value="zoho">ZOHO</option><option value="fiverr">FIVERR</option></select></label>
+                    <div className="df-daily-field">
+                      SOURCE
+                      <Select
+                        value={draft.source || "none"}
+                        onValueChange={(next) => setDraft((value) => ({ ...value, source: next === "none" ? "" : next }))}
+                      >
+                        <SelectTrigger className="df-filter-chip df-select-trigger" aria-label="Client source">
+                          <SelectValue />
+                        </SelectTrigger>
+                        {/* Radix portals outside `.df-v2`, so the panel carries the class itself. */}
+                        <SelectContent className="df-v2 df-select-content">
+                          {CLIENT_SOURCES.map((source) => (
+                            <SelectItem key={source.id} value={source.id} className="df-select-item">
+                              {source.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     {draft.source === "fiverr" ? <label className="df-daily-field">FIVERR USERNAME<input value={draft.fiverrUsername} onChange={(event) => setDraft((value) => ({ ...value, fiverrUsername: event.target.value }))} /></label> : null}
                     <label className="df-daily-field">NOTES<textarea value={draft.notes} onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))} /></label>
                     <button className="df-ink-btn" type="submit" disabled={updateClient.isPending}>Save Client</button>

@@ -146,7 +146,6 @@ export type DossierInput = {
   files: DossierFile[];
   reminders: DossierReminder[];
   notes: DossierNote[];
-  customFields: Array<{ name: string; slug: string; value: unknown }>;
 };
 
 export type DossierTab = {
@@ -611,13 +610,9 @@ function composeSettings(input: DossierInput): DossierModel["settings"] {
     { label: "DUE", value: due ? formatDayStamp(due) : "—" },
     { label: "DOCUMENTATION", value: project.documentationEnabled ? "ON" : "OFF" },
   ];
-  for (const field of input.customFields) {
-    if (field.value === null || field.value === undefined || field.value === "") continue;
-    fields.push({
-      label: field.name.toUpperCase(),
-      value: Array.isArray(field.value) ? field.value.join(", ") : String(field.value),
-    });
-  }
+  // Custom CRM field values are not shown here: `crm_custom_field_values`
+  // holds them but no route exposes it, so there is nothing honest to render.
+  // Composing one needs a BFF route, which #213 does not carry.
   return { fields, lead, members };
 }
 

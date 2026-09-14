@@ -38,6 +38,24 @@ const pageSource = readFileSync(
   "utf8",
 );
 
+describe("Client record controls use the shadcn set (#213)", () => {
+  const clientSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
+    "utf8",
+  );
+
+  it("has no bare checkbox or native select left on the record", () => {
+    expect(clientSource).not.toContain('type="checkbox"');
+    expect(clientSource).not.toContain("<select");
+    expect(clientSource).toContain('from "@/components/ui/checkbox"');
+    expect(clientSource).toContain('from "@/components/ui/select"');
+    // Radix renders a button, which a wrapping <label> cannot implicitly label.
+    expect(clientSource).toContain('htmlFor="df-contact-primary"');
+    // The select panel portals out of `.df-v2` and must carry the class itself.
+    expect(clientSource).toContain('className="df-v2 df-select-content"');
+  });
+});
+
 describe("Clients routing (#186)", () => {
   it("shows a live register on the rail Clients destination", () => {
     const match = matchV2Route("/clients");

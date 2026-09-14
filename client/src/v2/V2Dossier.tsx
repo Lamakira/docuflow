@@ -15,8 +15,7 @@ import type {
   TimeEntryWithDetails,
   Reminder,
 } from "@shared/schema";
-import { AudioRecorder } from "@/components/editor/AudioRecorder";
-import { NoteAudioPlayer } from "@/components/NoteAudioPlayer";
+import { V2AudioRecorder, V2NoteAudioPlayer } from "./V2NoteAudio";
 import { chromeRefusal } from "./chrome";
 import {
   composeDossier,
@@ -309,10 +308,6 @@ export function V2DossierPage() {
     enabled: Boolean(projectId),
     queryFn: () => apiRequest("GET", `/api/crm/projects/${projectId}/reminders`),
   });
-  const { data: projectFields = [] } = useQuery<CrmModuleField[]>({
-    queryKey: ["/api/modules/projects/fields"],
-  });
-
   useEffect(() => {
     setProjectName(project?.project?.name ?? "");
     setWriteRefusal(null);
@@ -485,9 +480,6 @@ export function V2DossierPage() {
     files: filesFromNotes(notes),
     reminders,
     notes,
-    customFields: projectFields
-      .filter((field) => field.isEnabled === 1 && field.isSystem !== 1)
-      .map((field) => ({ name: field.name, slug: field.slug, value: (project as unknown as Record<string, unknown> | undefined)?.[field.slug] })),
   };
   const dossier = composeDossier(input);
   const firstTodoTask = dossier.nextActions.rows.find((row) => !row.done);
@@ -1141,7 +1133,7 @@ function DossierNotes({
       <div className="df-card-head"><h2 className="df-card-title">Project notes</h2><span className="df-count-chip">{dossier.notes.rows.length}</span></div>
       <div className="df-daily-form">
         {recordingNote ? (
-          <AudioRecorder onRecordingComplete={onAudio} onCancel={() => setRecordingNote(false)} isUploading={uploadingAudio} />
+          <V2AudioRecorder onRecordingComplete={onAudio} onCancel={() => setRecordingNote(false)} isUploading={uploadingAudio} />
         ) : (
           <div className="df-inline-form">
             <label className="df-daily-field" style={{ flex: 1 }}>NOTE<textarea value={noteContent} onChange={(event) => setNoteContent(event.target.value)} aria-label="Project note" /></label>
@@ -1154,7 +1146,7 @@ function DossierNotes({
         <article key={note.id} className="df-update-body">
           <div className="df-mono df-meta">{note.meta}</div>
           <p className="df-prose">{note.content}</p>
-          {note.audioUrl ? <NoteAudioPlayer audioUrl={note.audioUrl} audioRecordingId={note.audioRecordingId ?? undefined} transcriptStatus={note.transcriptStatus ?? undefined} audioTranscript={note.audioTranscript ?? undefined} /> : null}
+          {note.audioUrl ? <V2NoteAudioPlayer audioUrl={note.audioUrl} audioRecordingId={note.audioRecordingId ?? undefined} transcriptStatus={note.transcriptStatus ?? undefined} audioTranscript={note.audioTranscript ?? undefined} /> : null}
           <button type="button" className="df-ghost-link" onClick={() => onDeleteNote(note.id)}>Delete</button>
         </article>
       ))}

@@ -651,6 +651,49 @@ button.df-activity-row {
   grid-template-rows: 1fr;
 }
 
+/* Voice notes on the Dossier (#213). Recording is a state, so the elapsed
+   counter does not animate and the composer does not react to a keystroke. */
+.df-audio-recorder {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 18px;
+  border: 1px solid var(--df-divider-light);
+  border-radius: 8px;
+  background: var(--df-cold-stock);
+}
+
+.df-audio-clock {
+  font-family: var(--df-font-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--df-case-ink);
+  animation: none;
+  transition: none;
+}
+
+.df-audio-note {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.df-audio-player {
+  width: 100%;
+  max-width: 420px;
+  height: 32px;
+}
+
+.df-audio-transcript {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--df-archive-slate);
+  max-width: 68ch;
+}
+
 /* A File opens from its Dossier row (#213), so the row itself is the origin:
    it lifts under the pointer rather than the page announcing the change. */
 .df-file-row[data-motion="standard"] {

@@ -35,7 +35,6 @@ function emptyInput(overrides: Partial<DossierInput> = {}): DossierInput {
     files: [],
     reminders: [],
     notes: [],
-    customFields: [],
     ...overrides,
   };
 }
@@ -120,13 +119,14 @@ describe("Project Dossier routing (#173)", () => {
         createdBy: { id: "user-1", firstName: "Sam", lastName: "Lee" },
       }],
       files: [{ id: "f1", title: "Kickoff deck.pdf", updatedAt: new Date(2026, 8, 8, 11, 0), href: "/documents/f1" }],
-      customFields: [{ name: "Region", slug: "region", value: "West Africa" }],
     }));
 
     expect(dossier.reminders.rows[0]).toMatchObject({ id: "rem-1", status: "UPCOMING" });
     expect(dossier.notes.rows[0]).toMatchObject({ id: "note-1", audioRecordingId: "audio-1" });
     expect(dossier.files.rows[0].href).toBe("/documents/f1");
-    expect(dossier.settings.fields).toContainEqual({ label: "REGION", value: "West Africa" });
+    // Custom CRM field values are out of scope: `crm_custom_field_values` has no
+    // route, so the Dossier shows no custom field rather than an empty pretence.
+    expect(pageSource).not.toContain("modules/projects/fields");
     expect(pageSource).toContain("/api/audio/upload");
     expect(pageSource).toContain("/reminders`");
     expect(pageSource).toContain("/notes`");
@@ -527,6 +527,25 @@ function reducedMotionCss(): string {
     .map((match) => match[1])
     .join("\n");
 }
+
+describe("Dossier voice notes stay in the v2 visual system (#213)", () => {
+  it("does not pull the discarded v1 audio components into v2 chrome", () => {
+    // ADR-0003: v2 must not mix in the discarded visual system.
+    expect(pageSource).not.toContain("@/components/editor/AudioRecorder");
+    expect(pageSource).not.toContain("@/components/NoteAudioPlayer");
+    expect(pageSource).toContain("./V2NoteAudio");
+
+    const audioSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2NoteAudio.tsx"),
+      "utf8",
+    );
+    // No Tailwind utility classes, and the transcript poll is kept.
+    expect(audioSource).not.toMatch(/className="[^"]*\b(flex|gap-\d|p-\d|bg-muted|rounded-lg)\b/);
+    expect(audioSource).toContain("/api/audio/");
+    // Recording is a state, not a celebration.
+    expect(rule(".df-audio-clock")).toMatch(/animation:\s*none/);
+  });
+});
 
 describe("Dossier Reminders are editable, not just completable (#213)", () => {
   it("carries the raw fields an edit needs, and says when a Reminder can reopen", () => {
