@@ -10,6 +10,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   varchar,
@@ -1619,8 +1620,13 @@ export const DEFAULT_ALLOWED_TIMEZONES: string[] = [];
 /** Public object paths for Help Center article images (`/public-objects/…`). Keyed by slot id. */
 export type HelpCenterScreenshotsMap = Partial<Record<string, string>>;
 
+/**
+ * One row per Workspace. `id` stays "default" as the single settings row inside
+ * a Workspace, so the key is the pair — before that, every Workspace shared one
+ * row and the second one to save overwrote the first (ADR-0006).
+ */
 export const orgSettings = pgTable("org_settings", {
-  id: varchar("id").primaryKey().default("default"),
+  id: varchar("id").notNull().default("default"),
   screenshotPolicy: jsonb("screenshot_policy").$type<ScreenshotPolicy>(),
   /** Admin-curated list of IANA timezone strings for the Screencasts dropdown.
    *  Null / empty = no dropdown shown; browser local timezone is used. */
@@ -1629,7 +1635,9 @@ export const orgSettings = pgTable("org_settings", {
   helpCenterScreenshots: jsonb("help_center_screenshots").$type<HelpCenterScreenshotsMap>(),
   updatedAt: timestamp("updated_at").defaultNow(),
   workspaceId: workspaceIdColumn(),
-});
+}, (table) => [
+  primaryKey({ columns: [table.workspaceId, table.id] }),
+]);
 
 /**
  * The one Workspace this installation seeds (#93, ADR-0004, ADR-0006). The id is
