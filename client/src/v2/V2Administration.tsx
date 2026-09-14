@@ -39,6 +39,7 @@ import {
   type AnalyticsCoverageInput,
   type AnalyticsDeviceInput,
   type AnalyticsFigure,
+  type AnalyticsModel,
   type AnalyticsOverviewInput,
   type AnalyticsRangePreset,
   type BillingInput,
@@ -527,101 +528,13 @@ export function V2AdministrationPage() {
 
       {shownRefusal ? <p className="df-refusal">{shownRefusal}</p> : null}
 
-      <section className="df-card df-analytics-register" data-testid="v2-administration-analytics">
-        <div className="df-card-head">
-          <h2 className="df-card-title">Analytics</h2>
-          {analytics.kind === "ready" ? (
-            <span className="df-mono df-meta">{analytics.rangeLabel}</span>
-          ) : null}
-        </div>
-        {analytics.kind === "refusal" ? (
-          <p className="df-refusal" data-testid="v2-administration-analytics-refusal">
-            {analytics.refusal}
-          </p>
-        ) : analytics.kind === "unreadable" ? (
-          <p className="df-refusal" data-testid="v2-administration-analytics-unreadable">
-            {analytics.note}
-          </p>
-        ) : (
-          <>
-            <div className="df-filter-bar df-analytics-range">
-              <label className="df-filter-chip" data-active={rangePreset !== "7d" ? "true" : "false"}>
-                RANGE
-                <select
-                  value={rangePreset}
-                  aria-label="Analytics range"
-                  onChange={(event) => setRangePreset(event.target.value as AnalyticsRangePreset)}
-                >
-                  {ANALYTICS_RANGE_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <a
-                className="df-ghost-btn"
-                href={analytics.export.href}
-                download={analytics.export.filename}
-                data-testid="v2-administration-analytics-export"
-              >
-                {analytics.export.label}
-              </a>
-            </div>
-
-            {analyticsLoading ? (
-              <p className="df-empty">Reading analytics for this range…</p>
-            ) : (
-              <>
-            <FigureGrid figures={analytics.overview} testId="v2-administration-overview" />
-
-            <h3 className="df-card-title">Activity</h3>
-            <p className="df-empty" style={{ padding: 0 }}>
-              {analytics.activity.footnote}
-            </p>
-            <AnalyticsRegister
-              stacked={layout.stackedRegister}
-              head={["MEMBER", "TRACKED", "IDLE", "IDLE EVENTS"]}
-              rows={analytics.activity.rows.map((row) => ({
-                id: row.userId,
-                cells: [row.who, row.tracked, row.idle, row.idleEvents],
-              }))}
-              empty={analytics.activity.empty}
-              emptyCopy={analytics.activity.emptyCopy}
-              testId="v2-administration-activity"
-            />
-
-            <h3 className="df-card-title">Evidence coverage</h3>
-            <FigureGrid figures={analytics.coverage.summary} testId="v2-administration-coverage" />
-            <AnalyticsRegister
-              stacked={layout.stackedRegister}
-              head={["MEMBER", "TRACKED", "ENTRIES", "EVIDENCE", "COVERAGE"]}
-              rows={analytics.coverage.rows.map((row) => ({
-                id: row.userId,
-                cells: [row.who, row.tracked, row.entries, row.evidence, row.coverage],
-              }))}
-              empty={analytics.coverage.empty}
-              emptyCopy={analytics.coverage.emptyCopy}
-              testId="v2-administration-coverage-row"
-            />
-
-            <h3 className="df-card-title">Workspace Devices</h3>
-            <AnalyticsRegister
-              stacked={layout.stackedRegister}
-              head={["DEVICE", "MEMBER", "PLATFORM", "LAST SEEN", "STATUS"]}
-              rows={analytics.devices.rows.map((row) => ({
-                id: row.id,
-                cells: [row.name, row.who, row.platform, row.lastSeen, row.status],
-              }))}
-              empty={analytics.devices.empty}
-              emptyCopy={analytics.devices.emptyCopy}
-              testId="v2-administration-device"
-            />
-              </>
-            )}
-          </>
-        )}
-      </section>
+      <AdministrationAnalytics
+        analytics={analytics}
+        loading={analyticsLoading}
+        stacked={layout.stackedRegister}
+        rangePreset={rangePreset}
+        onRangeChange={setRangePreset}
+      />
 
       <section className="df-card" data-testid="v2-administration-billing">
         <div className="df-card-head">
@@ -782,9 +695,22 @@ export function V2AdministrationPage() {
                 </label>
               ))}
             </fieldset>
-            <button type="submit" className="df-ink-btn" disabled={createAccount.isPending || !accountName.trim()}>
-              Create
-            </button>
+            <div className="df-form-actions">
+              <button
+                type="button"
+                className="df-ghost-btn"
+                onClick={() => setCreatingAccount(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="df-ink-btn"
+                disabled={createAccount.isPending || !accountName.trim()}
+              >
+                {createAccount.isPending ? "Creating…" : "Create Service Account"}
+              </button>
+            </div>
           </form>
         ) : null}
         {layout.stackedRegister ? null : (
@@ -869,13 +795,22 @@ export function V2AdministrationPage() {
                 </label>
               ))}
             </fieldset>
-            <button
-              type="submit"
-              className="df-ink-btn"
-              disabled={createEndpoint.isPending || !endpointUrl.trim() || eventTypes.length === 0}
-            >
-              Create
-            </button>
+            <div className="df-form-actions">
+              <button
+                type="button"
+                className="df-ghost-btn"
+                onClick={() => setCreatingEndpoint(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="df-ink-btn"
+                disabled={createEndpoint.isPending || !endpointUrl.trim() || eventTypes.length === 0}
+              >
+                {createEndpoint.isPending ? "Creating…" : "Create Webhook Endpoint"}
+              </button>
+            </div>
           </form>
         ) : null}
         {layout.stackedRegister ? null : (
@@ -939,22 +874,12 @@ export function V2AdministrationPage() {
         <>
           <section className="df-card df-policy-form" data-testid="v2-administration-tracking-policy">
             <div className="df-card-head">
-              <h2 className="df-card-title">Tracking Policy</h2>
-              {trackingPolicy.savedNote ? (
-                <span
-                  className="df-mono df-meta df-policy-saved"
-                  data-motion={POLICY_SAVED_MOTION}
-                  role="status"
-                  data-testid="v2-administration-policy-saved"
-                >
-                  {trackingPolicy.savedNote}
-                </span>
-              ) : null}
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Tracking Policy</h2>
+                <p className="df-card-sub">{trackingPolicy.footnote}</p>
+              </div>
             </div>
             <div className="df-daily-form">
-              <p className="df-empty" style={{ padding: 0 }}>
-                {trackingPolicy.footnote}
-              </p>
               {trackingPolicy.writeRefusal ? (
                 <p className="df-refusal">{trackingPolicy.writeRefusal}</p>
               ) : null}
@@ -967,7 +892,12 @@ export function V2AdministrationPage() {
                 />
                 Capture Activity Evidence
               </label>
-              <div className="df-policy-grid">
+              {policyDraft.screenshotsEnabled ? (
+                <div className="df-policy-group">
+                  <p className="df-policy-hint">
+                    A capture lands at a random moment between these two intervals.
+                  </p>
+                  <div className="df-policy-grid">
                 <label className="df-daily-field">
                   Minimum interval (minutes)
                   <input
@@ -1006,7 +936,9 @@ export function V2AdministrationPage() {
                     }
                   />
                 </label>
-              </div>
+                  </div>
+                </div>
+              ) : null}
               <label className="df-daily-field df-daily-check">
                 <input
                   type="checkbox"
@@ -1017,7 +949,8 @@ export function V2AdministrationPage() {
                 Restrict captures to active hours
               </label>
               {policyDraft.activeHoursEnabled ? (
-                <div className="df-policy-grid">
+                <div className="df-policy-group">
+                  <div className="df-policy-grid">
                   <label className="df-daily-field">
                     Start
                     <input
@@ -1038,6 +971,7 @@ export function V2AdministrationPage() {
                       onChange={(event) => editPolicy({ activeHoursEnd: event.target.value })}
                     />
                   </label>
+                  </div>
                 </div>
               ) : null}
               <label className="df-daily-field df-daily-check">
@@ -1050,7 +984,8 @@ export function V2AdministrationPage() {
                 Prompt on idle
               </label>
               {policyDraft.idlePromptEnabled ? (
-                <div className="df-policy-grid">
+                <div className="df-policy-group">
+                  <div className="df-policy-grid">
                   <label className="df-daily-field">
                     Idle timeout (minutes)
                     <input
@@ -1089,9 +1024,27 @@ export function V2AdministrationPage() {
                       }
                     />
                   </label>
+                  </div>
                 </div>
               ) : null}
-              {trackingPolicy.issue ? <p className="df-refusal">{trackingPolicy.issue}</p> : null}
+            </div>
+            <div className="df-form-actions">
+              {trackingPolicy.issue ? (
+                <p className="df-form-note df-refusal-inline">{trackingPolicy.issue}</p>
+              ) : trackingPolicy.savedNote ? (
+                <p
+                  className="df-form-note df-policy-saved"
+                  data-motion={POLICY_SAVED_MOTION}
+                  role="status"
+                  data-testid="v2-administration-policy-saved"
+                >
+                  {trackingPolicy.savedNote}
+                </p>
+              ) : (
+                <p className="df-form-note">
+                  {trackingPolicy.dirty ? "Unsaved changes." : "No change to save."}
+                </p>
+              )}
               <button
                 type="button"
                 className="df-ink-btn"
@@ -1101,21 +1054,23 @@ export function V2AdministrationPage() {
                   saveTrackingPolicy.mutate();
                 }}
               >
-                Save Tracking Policy
+                {saveTrackingPolicy.isPending ? "Saving…" : "Save Tracking Policy"}
               </button>
             </div>
           </section>
 
           <section className="df-card df-policy-form" data-testid="v2-administration-timezones">
             <div className="df-card-head">
-              <h2 className="df-card-title">Screencasts timezones</h2>
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Screencasts timezones</h2>
+                <p className="df-card-sub">
+                  Curate the timezones the Screencasts selector offers.
+                </p>
+              </div>
             </div>
             <div className="df-daily-form">
-              <p className="df-empty" style={{ padding: 0 }}>
-                Curate the timezones the Screencasts selector offers.
-              </p>
               <form
-                className="df-admin-form"
+                className="df-admin-form df-inline-form"
                 onSubmit={(event) => {
                   event.preventDefault();
                   onAddTimezone();
@@ -1161,6 +1116,13 @@ export function V2AdministrationPage() {
                   </div>
                 ))
               )}
+            </div>
+            <div className="df-form-actions">
+              <p className="df-form-note">
+                {trackingPolicy.timezones.dirty
+                  ? "Unsaved changes."
+                  : "No change to save."}
+              </p>
               <button
                 type="button"
                 className="df-ink-btn"
@@ -1170,7 +1132,7 @@ export function V2AdministrationPage() {
                   saveTimezones.mutate();
                 }}
               >
-                Save timezones
+                {saveTimezones.isPending ? "Saving…" : "Save timezones"}
               </button>
             </div>
           </section>
@@ -1180,10 +1142,161 @@ export function V2AdministrationPage() {
   );
 }
 
-function FigureGrid({ figures, testId }: { figures: AnalyticsFigure[]; testId: string }) {
+/**
+ * One card per section, the way every other register in v2 reads: the card head
+ * owns the title and its one line of context, a toolbar sits above the data
+ * rather than inside it, and figures get their own padded band. A card carries
+ * no padding of its own, so each band brings the house 18px gutter.
+ */
+function AdministrationAnalytics({
+  analytics,
+  loading,
+  stacked,
+  rangePreset,
+  onRangeChange,
+}: {
+  analytics: AnalyticsModel;
+  loading: boolean;
+  stacked: boolean;
+  rangePreset: AnalyticsRangePreset;
+  onRangeChange: (preset: AnalyticsRangePreset) => void;
+}) {
+  if (analytics.kind !== "ready") {
+    return (
+      <section className="df-card" data-testid="v2-administration-analytics">
+        <div className="df-card-head">
+          <div className="df-card-head-text">
+            <h2 className="df-card-title">Analytics</h2>
+          </div>
+        </div>
+        <p
+          className="df-refusal"
+          data-testid={
+            analytics.kind === "refusal"
+              ? "v2-administration-analytics-refusal"
+              : "v2-administration-analytics-unreadable"
+          }
+        >
+          {analytics.kind === "refusal" ? analytics.refusal : analytics.note}
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <>
+      <section className="df-card" data-testid="v2-administration-analytics">
+        <div className="df-card-head">
+          <div className="df-card-head-text">
+            <h2 className="df-card-title">Analytics</h2>
+            <p className="df-card-sub">Recorded Workspace totals for {analytics.rangeLabel}.</p>
+          </div>
+        </div>
+        <div className="df-toolbar">
+          <label className="df-filter-chip" data-active={rangePreset !== "7d" ? "true" : "false"}>
+            RANGE
+            <select
+              value={rangePreset}
+              aria-label="Analytics range"
+              onChange={(event) => onRangeChange(event.target.value as AnalyticsRangePreset)}
+            >
+              {ANALYTICS_RANGE_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <a
+            className="df-ghost-btn"
+            href={analytics.export.href}
+            download={analytics.export.filename}
+            data-testid="v2-administration-analytics-export"
+          >
+            {analytics.export.label}
+          </a>
+        </div>
+        {loading ? (
+          <p className="df-empty">Reading analytics for this range…</p>
+        ) : (
+          <FigureBand figures={analytics.overview} testId="v2-administration-overview" />
+        )}
+      </section>
+
+      {loading ? null : (
+        <>
+          <section className="df-card df-analytics-register" data-testid="v2-administration-activity">
+            <div className="df-card-head">
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Activity</h2>
+                <p className="df-card-sub">{analytics.activity.footnote}</p>
+              </div>
+            </div>
+            <AnalyticsRegister
+              stacked={stacked}
+              head={["MEMBER", "TRACKED", "IDLE", "IDLE EVENTS"]}
+              rows={analytics.activity.rows.map((row) => ({
+                id: row.userId,
+                cells: [row.who, row.tracked, row.idle, row.idleEvents],
+              }))}
+              empty={analytics.activity.empty}
+              emptyCopy={analytics.activity.emptyCopy}
+              testId="v2-administration-activity"
+            />
+          </section>
+
+          <section className="df-card df-analytics-register" data-testid="v2-administration-coverage">
+            <div className="df-card-head">
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Evidence coverage</h2>
+                <p className="df-card-sub">
+                  How much of the tracked time carries Activity Evidence. Observational only.
+                </p>
+              </div>
+            </div>
+            <FigureBand figures={analytics.coverage.summary} testId="v2-administration-coverage" />
+            <AnalyticsRegister
+              stacked={stacked}
+              head={["MEMBER", "TRACKED", "ENTRIES", "EVIDENCE", "COVERAGE"]}
+              rows={analytics.coverage.rows.map((row) => ({
+                id: row.userId,
+                cells: [row.who, row.tracked, row.entries, row.evidence, row.coverage],
+              }))}
+              empty={analytics.coverage.empty}
+              emptyCopy={analytics.coverage.emptyCopy}
+              testId="v2-administration-coverage-row"
+            />
+          </section>
+
+          <section className="df-card df-analytics-register" data-testid="v2-administration-devices">
+            <div className="df-card-head">
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Workspace Devices</h2>
+                <p className="df-card-sub">Every Device paired in this Workspace.</p>
+              </div>
+            </div>
+            <AnalyticsRegister
+              stacked={stacked}
+              head={["DEVICE", "MEMBER", "PLATFORM", "LAST SEEN", "STATUS"]}
+              rows={analytics.devices.rows.map((row) => ({
+                id: row.id,
+                cells: [row.name, row.who, row.platform, row.lastSeen, row.status],
+              }))}
+              empty={analytics.devices.empty}
+              emptyCopy={analytics.devices.emptyCopy}
+              testId="v2-administration-device"
+            />
+          </section>
+        </>
+      )}
+    </>
+  );
+}
+
+function FigureBand({ figures, testId }: { figures: AnalyticsFigure[]; testId: string }) {
   if (figures.length === 0) return null;
   return (
-    <div className="df-analytics-figures" data-testid={testId}>
+    <div className="df-figure-band" data-testid={testId}>
       {figures.map((figure) => (
         <div key={figure.label} className="df-analytics-figure">
           <span className="df-analytics-figure-label">{figure.label}</span>

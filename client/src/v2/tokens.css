@@ -798,44 +798,162 @@ button.df-activity-row {
   }
 }
 
-/* Administration analytics (#212) — figures are read, never animated. */
-.df-analytics-figures {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+/* Administration (#212).
+   A card owns no padding, so every band inside one carries the house 18px gutter.
+   A section is head + optional toolbar + optional figure band + register.
+   Figures are read, never animated. */
+.df-card-head-text {
+  min-width: 0;
+}
+
+.df-card-sub {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+  max-width: 68ch;
+}
+
+.df-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--df-divider-light);
+}
+
+/* Four to a row, so eight figures read as two even rows and four as one. */
+.df-figure-band {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 18px;
+}
+
+.df-figure-band + .df-register-head {
+  border-top: 1px solid var(--df-divider-light);
 }
 
 .df-analytics-figure {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
+  gap: 7px;
+  padding: 12px 14px;
   border: 1px solid var(--df-divider);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--df-cold-stock);
   animation: none;
   transition: none;
 }
 
 .df-analytics-figure-label {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: var(--df-graphite);
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--df-archive-slate);
 }
 
 .df-analytics-figure-value {
   font-family: var(--df-font-mono);
-  font-size: 15px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--df-case-ink);
+}
+
+/* A primary action is sized to its label and sits in a footer, never a full-width slab. */
+.df-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--df-divider-light);
+}
+
+.df-form-actions > .df-form-note {
+  margin: 0;
+  margin-right: auto;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+  max-width: 64ch;
+}
+
+.df-form-actions > .df-refusal-inline {
+  color: var(--df-destructive);
+}
+
+/* A footer action row sits on the card edge, not inside the body gutter. */
+.df-daily-form > .df-form-actions {
+  margin: 4px -18px -18px;
+}
+
+/* A field is read at a comfortable measure; the card may be far wider. */
+.df-admin-form > .df-daily-field,
+.df-policy-form .df-daily-form > .df-daily-field {
+  max-width: 560px;
+}
+
+.df-admin-form > fieldset.df-daily-field {
+  display: block;
+  padding: 10px 14px 14px;
+  border: 1px solid var(--df-divider-light);
+  border-radius: 8px;
+  background: var(--df-cold-stock);
+}
+
+.df-admin-form > fieldset.df-daily-field > legend {
+  padding: 0 4px;
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--df-archive-slate);
+}
+
+.df-admin-form > fieldset.df-daily-field > .df-daily-check {
+  margin-top: 9px;
+}
+
+.df-inline-form {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 10px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.df-inline-form > .df-daily-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.df-inline-form > .df-ghost-btn {
+  padding: 9px 14px;
+}
+
+.df-v2[data-chrome="mobile"] .df-inline-form {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .df-analytics-register .df-register-head[data-columns="4"],
 .df-analytics-register .df-register-row[data-columns="4"] {
-  grid-template-columns: 1.4fr 0.9fr 0.9fr 0.9fr;
+  grid-template-columns: 1.7fr 0.9fr 0.9fr 0.9fr;
 }
 
 .df-analytics-register .df-register-head[data-columns="5"],
 .df-analytics-register .df-register-row[data-columns="5"] {
-  grid-template-columns: 1.4fr 0.8fr 0.8fr 0.8fr 0.8fr;
+  grid-template-columns: 1.7fr 0.8fr 0.8fr 0.9fr 0.8fr;
 }
 
 .df-analytics-register .df-register-row {
@@ -843,9 +961,12 @@ button.df-activity-row {
   animation: none;
 }
 
-.df-analytics-range {
-  align-items: center;
-  justify-content: space-between;
+/* Numbers read as a column, so they align on the same left edge as their head. */
+.df-analytics-register .df-register-row > .df-mono {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  text-transform: none;
+  color: var(--df-case-ink);
 }
 
 /* Tracking Policy (#212) — the form never animates on a keystroke. */
@@ -861,8 +982,28 @@ button.df-activity-row {
 
 .df-policy-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px 18px;
+  max-width: 560px;
+}
+
+/* A switched-off branch keeps its space but stops inviting input. */
+.df-policy-group {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--df-divider-light);
+  border-radius: 8px;
+  background: var(--df-cold-stock);
+}
+
+.df-policy-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+  max-width: 68ch;
 }
 
 .df-policy-timezone {
@@ -2677,6 +2818,38 @@ button.df-activity-row {
 
 .df-v2[data-chrome="mobile"] .df-card-head {
   padding: 10px 13px;
+}
+
+/* Administration bands follow the mobile card gutter (#212). */
+.df-v2[data-chrome="mobile"] .df-toolbar,
+.df-v2[data-chrome="mobile"] .df-figure-band,
+.df-v2[data-chrome="mobile"] .df-form-actions {
+  padding: 12px 13px;
+}
+
+.df-v2[data-chrome="mobile"] .df-daily-form > .df-form-actions {
+  margin: 4px -13px -13px;
+}
+
+.df-v2[data-chrome="mobile"] .df-figure-band {
+  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+}
+
+.df-v2[data-chrome="mobile"] .df-policy-grid {
+  grid-template-columns: 1fr;
+  max-width: none;
+}
+
+.df-v2[data-chrome="mobile"] .df-toolbar {
+  justify-content: flex-start;
+}
+
+.df-v2[data-chrome="mobile"] .df-form-actions > .df-form-note {
+  flex: 1 0 100%;
+}
+
+.df-v2[data-chrome="mobile"] .df-card-sub {
+  font-size: 12px;
 }
 
 .df-v2[data-chrome="mobile"] .df-card-title {
