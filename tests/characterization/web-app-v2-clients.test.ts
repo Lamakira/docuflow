@@ -38,6 +38,49 @@ const pageSource = readFileSync(
   "utf8",
 );
 
+describe("Client editor shows what it saved (#213)", () => {
+  const clientSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
+    "utf8",
+  );
+
+  it("reads the whole Client back, not only its notes", () => {
+    const record = composeClientRecord({
+      client: {
+        id: "c1",
+        name: "Harbor Co",
+        company: "TECHMA",
+        email: "techma@techma.ca",
+        phone: "0101010101",
+        phoneFormat: "us",
+        status: "lead",
+        source: "direct",
+        fiverrUsername: null,
+        notes: null,
+        contacts: [],
+      },
+      projects: [],
+      now: new Date(2026, 8, 14, 12, 0, 0),
+    });
+
+    // The editor writes company, email, phone and source, so the card has to
+    // show them; before this only `notes` came back and the rest was invisible
+    // until the editor was reopened.
+    expect(record.details).toEqual([
+      { label: "COMPANY", value: "TECHMA" },
+      { label: "EMAIL", value: "techma@techma.ca" },
+      { label: "PHONE", value: "0101010101" },
+      { label: "SOURCE", value: "DIRECT" },
+    ]);
+  });
+
+  it("names the card for what it edits, and signs off the save", () => {
+    // The card edits the whole Client; calling it "Notes" described one field.
+    expect(clientSource).toContain("Client details");
+    expect(clientSource).toContain('showToast("Client saved.")');
+  });
+});
+
 describe("Client record controls use the shadcn set (#213)", () => {
   const clientSource = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),

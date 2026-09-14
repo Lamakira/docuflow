@@ -300,7 +300,7 @@ export function V2ClientsPage() {
 }
 
 export function V2ClientRecordPage() {
-  const { memberships } = useV2Chrome();
+  const { memberships, showToast } = useV2Chrome();
   const [location] = useLocation();
   const match = matchV2Route(location);
   const clientId = match.kind === "client-record" ? match.clientId : "";
@@ -371,6 +371,7 @@ export function V2ClientRecordPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/clients"] });
       setEditing(false);
       setWriteRefusal(null);
+      showToast("Client saved.");
     },
     onError: (error: Error) => refuse(error),
   });
@@ -517,7 +518,7 @@ export function V2ClientRecordPage() {
 
               <section className="df-card">
                 <div className="df-card-head">
-                  <h2 className="df-card-title">Notes</h2>
+                  <h2 className="df-card-title">Client details</h2>
                   <button type="button" className="df-ghost-link" onClick={() => setEditing((open) => !open)}>Edit Client</button>
                 </div>
                 {editing ? (
@@ -546,12 +547,24 @@ export function V2ClientRecordPage() {
                     <label className="df-daily-field">NOTES<textarea value={draft.notes} onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))} /></label>
                     <button className="df-ink-btn" type="submit" disabled={updateClient.isPending}>Save Client</button>
                   </form>
-                ) : record.notes ? (
-                  <p className="df-prose" style={{ padding: "16px 18px" }}>
-                    {record.notes}
-                  </p>
                 ) : (
-                  <p className="df-empty">No notes filed yet.</p>
+                  <>
+                    <div className="df-figure-band">
+                      {record.details.map((row) => (
+                        <div key={row.label} className="df-analytics-figure">
+                          <span className="df-analytics-figure-label">{row.label}</span>
+                          <span className="df-analytics-figure-value">{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {record.notes ? (
+                      <p className="df-prose" style={{ padding: "16px 18px" }}>
+                        {record.notes}
+                      </p>
+                    ) : (
+                      <p className="df-empty">No notes filed yet.</p>
+                    )}
+                  </>
                 )}
               </section>
             </div>

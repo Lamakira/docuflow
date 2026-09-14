@@ -38,11 +38,14 @@ const V2ChromeContext = createContext<{
   layout: V2ChromeLayout;
   memberships: MembershipsResponse | undefined;
   switchWorkspace: (workspaceId: string) => Promise<void>;
+  /** A write that leaves no visible trace needs a sign-off (#213). */
+  showToast: (message: string, undo?: () => void) => void;
 }>({
   openPanel: () => {},
   layout: DESKTOP_LAYOUT,
   memberships: undefined,
   switchWorkspace: async () => {},
+  showToast: () => {},
 });
 
 export function useV2Chrome() {
@@ -136,6 +139,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
       layout,
       memberships,
       switchWorkspace,
+      showToast,
     }),
     [layout, memberships],
   );

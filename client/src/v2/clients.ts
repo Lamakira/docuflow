@@ -169,6 +169,8 @@ export type ClientRecordModel = {
   projects: Array<{ id: string; name: string; status: string; href: string }>;
   projectsEmptyCopy: string;
   notes: string | null;
+  /** What the editor just wrote, readable without reopening the editor (#213). */
+  details: Array<{ label: string; value: string }>;
 };
 
 const PROJECT_STATUS_LABEL: Record<string, string> = {
@@ -205,6 +207,7 @@ function emptyRecord(partial: Pick<ClientRecordModel, "missing" | "unavailable" 
     projects: [],
     projectsEmptyCopy: "",
     notes: null,
+    details: [],
     ...partial,
   };
 }
@@ -266,7 +269,26 @@ export function composeClientRecord(input: ClientRecordInput): ClientRecordModel
     projects,
     projectsEmptyCopy: projects.length === 0 ? "No Client Projects yet." : "",
     notes: input.client.notes,
+    details: clientDetails(identityFrom(input.client)),
   };
+}
+
+/**
+ * The editor writes the whole Client, so the card has to read the whole Client
+ * back. Before this the card showed only `notes`, and everything else the form
+ * saved was invisible until the editor was reopened (#213).
+ */
+function clientDetails(identity: ClientRecordIdentity): Array<{ label: string; value: string }> {
+  const rows: Array<{ label: string; value: string }> = [
+    { label: "COMPANY", value: identity.company },
+    { label: "EMAIL", value: identity.email ?? "—" },
+    { label: "PHONE", value: identity.phone ?? "—" },
+    { label: "SOURCE", value: identity.source },
+  ];
+  if (identity.fiverrUsername) {
+    rows.push({ label: "FIVERR", value: `@${identity.fiverrUsername}` });
+  }
+  return rows;
 }
 
 export function clientWriteRefusal(input: {
