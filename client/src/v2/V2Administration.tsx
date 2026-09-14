@@ -5,6 +5,15 @@ import {
   WEBHOOK_EVENT_TYPES,
   type ScreenshotPolicy,
 } from "@shared/schema";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   addAllowedTimezone,
@@ -486,17 +495,7 @@ export function V2AdministrationPage() {
     peopleLoading ||
     (canManage && (accountsLoading || endpointsLoading || billingLoading || workspaceSettingsLoading))
   ) {
-    return (
-      <div className="df-page" data-testid="v2-administration">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Administration</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 280 }} />
-      </div>
-    );
+    return <AdministrationSkeleton />;
   }
 
   if (page.kind === "refusal") {
@@ -536,89 +535,111 @@ export function V2AdministrationPage() {
         onRangeChange={setRangePreset}
       />
 
-      <section className="df-card" data-testid="v2-administration-billing">
+      <section className="df-card df-policy-form" data-testid="v2-administration-billing">
         <div className="df-card-head">
-          <h2 className="df-card-title">Billing</h2>
+          <div className="df-card-head-text">
+            <h2 className="df-card-title">Billing</h2>
+            <p className="df-card-sub">
+              Plan, Billable Seats, and the term for this Workspace. Card details stay with Stripe.
+            </p>
+          </div>
           {page.billing.condition ? (
             <span className="df-status" data-status={page.billing.condition}>
               {page.billing.condition}
             </span>
           ) : null}
         </div>
-        <div className="df-daily-form">
-          <div className="df-admin-billing-figure">{page.billing.plan}</div>
-          <div className="df-admin-billing-figure">{page.billing.seats}</div>
-          {page.billing.entitlements ? <p className="df-empty" style={{ padding: 0 }}>{page.billing.entitlements}</p> : null}
-          {page.billing.actions.some((action) => action.id === "seats") ? (
-            <form
-              className="df-admin-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!guardWrite()) return;
-                if (!seatQuantity) return;
-                changeSeats.mutate();
-              }}
+
+        {page.billing.available ? (
+          <div className="df-figure-band" data-testid="v2-administration-billing-figures">
+            {page.billing.figures.map((figure) => (
+              <div key={figure.label} className="df-analytics-figure">
+                <span className="df-analytics-figure-label">{figure.label}</span>
+                <span className="df-analytics-figure-value df-admin-billing-figure">
+                  {figure.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="df-empty">{page.billing.seats}</p>
+        )}
+
+        {page.billing.actions.some((action) => action.id === "seats") ? (
+          <form
+            className="df-admin-form df-inline-form df-daily-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!guardWrite()) return;
+              if (!seatQuantity) return;
+              changeSeats.mutate();
+            }}
+          >
+            <label className="df-daily-field">
+              Seat quantity
+              <input
+                type="number"
+                min={1}
+                value={seatQuantity}
+                aria-label="Seat quantity"
+                onChange={(event) => setSeatQuantity(event.target.value)}
+              />
+            </label>
+            <button
+              type="submit"
+              className="df-ghost-btn"
+              disabled={changeSeats.isPending || !seatQuantity}
             >
-              <label className="df-daily-field">
-                Seat quantity
-                <input
-                  type="number"
-                  min={1}
-                  value={seatQuantity}
-                  aria-label="Seat quantity"
-                  onChange={(event) => setSeatQuantity(event.target.value)}
-                />
-              </label>
-              <button type="submit" className="df-ink-btn" disabled={changeSeats.isPending || !seatQuantity}>
-                Change seats
-              </button>
-            </form>
-          ) : null}
-          <div className="df-library-actions">
-            {page.billing.actions.map((action) => {
-              if (action.id === "seats") return null;
-              if (action.id === "checkout") {
-                return (
-                  <button
-                    key={action.id}
-                    type="button"
-                    className="df-ink-btn"
-                    disabled={startCheckout.isPending}
-                    onClick={() => startCheckout.mutate()}
-                  >
-                    {action.label}
-                  </button>
-                );
-              }
-              if (action.id === "payment-method") {
-                return (
-                  <button
-                    key={action.id}
-                    type="button"
-                    className="df-ghost-btn"
-                    disabled={updatePaymentMethod.isPending}
-                    onClick={() => updatePaymentMethod.mutate()}
-                  >
-                    {action.label}
-                  </button>
-                );
-              }
+              {changeSeats.isPending ? "Changing…" : "Change seats"}
+            </button>
+          </form>
+        ) : null}
+
+        <div className="df-billing-actions">
+          <p className="df-form-note">{page.billing.entitlements}</p>
+          {page.billing.actions.map((action) => {
+            if (action.id === "seats") return null;
+            if (action.id === "checkout") {
+              return (
+                <button
+                  key={action.id}
+                  type="button"
+                  className="df-ink-btn"
+                  disabled={startCheckout.isPending}
+                  onClick={() => startCheckout.mutate()}
+                >
+                  {action.label}
+                </button>
+              );
+            }
+            if (action.id === "payment-method") {
               return (
                 <button
                   key={action.id}
                   type="button"
                   className="df-ghost-btn"
-                  disabled={cancelAtPeriodEnd.isPending}
-                  onClick={() => {
-                    if (!guardWrite()) return;
-                    cancelAtPeriodEnd.mutate();
-                  }}
+                  disabled={updatePaymentMethod.isPending}
+                  onClick={() => updatePaymentMethod.mutate()}
                 >
                   {action.label}
                 </button>
               );
-            })}
-          </div>
+            }
+            return (
+              <button
+                key={action.id}
+                type="button"
+                className="df-ghost-btn"
+                disabled={cancelAtPeriodEnd.isPending}
+                onClick={() => {
+                  if (!guardWrite()) return;
+                  cancelAtPeriodEnd.mutate();
+                }}
+              >
+                {action.label}
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -679,20 +700,19 @@ export function V2AdministrationPage() {
             <fieldset className="df-daily-field">
               <legend>Capabilities</legend>
               {PUBLIC_API_CAPABILITIES.map((capability) => (
-                <label key={capability.id} className="df-daily-field df-daily-check">
-                  <input
-                    type="checkbox"
-                    checked={accountCapabilities.includes(capability.id)}
-                    onChange={(event) => {
-                      setAccountCapabilities((currentCaps) =>
-                        event.target.checked
-                          ? [...currentCaps, capability.id]
-                          : currentCaps.filter((id) => id !== capability.id),
-                      );
-                    }}
-                  />
-                  {capability.name}
-                </label>
+                <CheckRow
+                  key={capability.id}
+                  id={`df-capability-${capability.id}`}
+                  label={capability.name}
+                  checked={accountCapabilities.includes(capability.id)}
+                  onChange={(next) => {
+                    setAccountCapabilities((currentCaps) =>
+                      next
+                        ? [...currentCaps, capability.id]
+                        : currentCaps.filter((id) => id !== capability.id),
+                    );
+                  }}
+                />
               ))}
             </fieldset>
             <div className="df-form-actions">
@@ -779,20 +799,19 @@ export function V2AdministrationPage() {
             <fieldset className="df-daily-field">
               <legend>Event types</legend>
               {WEBHOOK_EVENT_TYPES.map((type) => (
-                <label key={type} className="df-daily-field df-daily-check">
-                  <input
-                    type="checkbox"
-                    checked={eventTypes.includes(type)}
-                    onChange={(event) => {
-                      setEventTypes((currentTypes) =>
-                        event.target.checked
-                          ? [...currentTypes, type]
-                          : currentTypes.filter((value) => value !== type),
-                      );
-                    }}
-                  />
-                  {type}
-                </label>
+                <CheckRow
+                  key={type}
+                  id={`df-event-${type}`}
+                  label={type}
+                  checked={eventTypes.includes(type)}
+                  onChange={(next) => {
+                    setEventTypes((currentTypes) =>
+                      next
+                        ? [...currentTypes, type]
+                        : currentTypes.filter((value) => value !== type),
+                    );
+                  }}
+                />
               ))}
             </fieldset>
             <div className="df-form-actions">
@@ -883,15 +902,13 @@ export function V2AdministrationPage() {
               {trackingPolicy.writeRefusal ? (
                 <p className="df-refusal">{trackingPolicy.writeRefusal}</p>
               ) : null}
-              <label className="df-daily-field df-daily-check">
-                <input
-                  type="checkbox"
-                  checked={policyDraft.screenshotsEnabled}
-                  disabled={!trackingPolicy.editable}
-                  onChange={(event) => editPolicy({ screenshotsEnabled: event.target.checked })}
-                />
-                Capture Activity Evidence
-              </label>
+              <CheckRow
+                id="df-policy-capture"
+                label="Capture Activity Evidence"
+                checked={policyDraft.screenshotsEnabled}
+                disabled={!trackingPolicy.editable}
+                onChange={(next) => editPolicy({ screenshotsEnabled: next })}
+              />
               {policyDraft.screenshotsEnabled ? (
                 <div className="df-policy-group">
                   <p className="df-policy-hint">
@@ -939,15 +956,13 @@ export function V2AdministrationPage() {
                   </div>
                 </div>
               ) : null}
-              <label className="df-daily-field df-daily-check">
-                <input
-                  type="checkbox"
-                  checked={policyDraft.activeHoursEnabled}
-                  disabled={!trackingPolicy.editable}
-                  onChange={(event) => editPolicy({ activeHoursEnabled: event.target.checked })}
-                />
-                Restrict captures to active hours
-              </label>
+              <CheckRow
+                id="df-policy-active-hours"
+                label="Restrict captures to active hours"
+                checked={policyDraft.activeHoursEnabled}
+                disabled={!trackingPolicy.editable}
+                onChange={(next) => editPolicy({ activeHoursEnabled: next })}
+              />
               {policyDraft.activeHoursEnabled ? (
                 <div className="df-policy-group">
                   <div className="df-policy-grid">
@@ -974,15 +989,13 @@ export function V2AdministrationPage() {
                   </div>
                 </div>
               ) : null}
-              <label className="df-daily-field df-daily-check">
-                <input
-                  type="checkbox"
-                  checked={policyDraft.idlePromptEnabled}
-                  disabled={!trackingPolicy.editable}
-                  onChange={(event) => editPolicy({ idlePromptEnabled: event.target.checked })}
-                />
-                Prompt on idle
-              </label>
+              <CheckRow
+                id="df-policy-idle"
+                label="Prompt on idle"
+                checked={policyDraft.idlePromptEnabled}
+                disabled={!trackingPolicy.editable}
+                onChange={(next) => editPolicy({ idlePromptEnabled: next })}
+              />
               {policyDraft.idlePromptEnabled ? (
                 <div className="df-policy-group">
                   <div className="df-policy-grid">
@@ -1142,6 +1155,128 @@ export function V2AdministrationPage() {
   );
 }
 
+
+
+/**
+ * A destination's section titles are known before any fetch; only the values
+ * are not. So the wait shows the real geometry with the real titles and leaves
+ * only the values unexposed — when the data lands, nothing moves. That is the
+ * same spatial-consistency rule the rest of the v2 motion substrate follows.
+ */
+function Bar({ width, role }: { width?: "short" | "medium" | "long"; role?: "value" }) {
+  return <Skeleton className="df-skeleton" data-width={width} data-role={role} />;
+}
+
+function SkeletonBand({ tiles }: { tiles: number }) {
+  return (
+    <div className="df-figure-band">
+      {Array.from({ length: tiles }, (_, index) => (
+        <div key={index} className="df-analytics-figure">
+          <Bar width="short" />
+          <Bar role="value" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkeletonRows({ columns, rows }: { columns: number; rows: number }) {
+  return (
+    <>
+      {Array.from({ length: rows }, (_, row) => (
+        <div
+          key={row}
+          className="df-register-row"
+          data-columns={columns}
+          data-skeleton="true"
+        >
+          <Bar width="long" />
+          {Array.from({ length: columns - 1 }, (_, cell) => (
+            <Bar key={cell} width="short" />
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function SkeletonSection({
+  title,
+  tiles,
+  columns,
+  rows,
+}: {
+  title: string;
+  tiles?: number;
+  columns?: number;
+  rows?: number;
+}) {
+  return (
+    <section className="df-card df-analytics-register">
+      <div className="df-card-head">
+        <div className="df-card-head-text">
+          <h2 className="df-card-title">{title}</h2>
+          <div className="df-card-sub" data-skeleton="true">
+            <Bar width="long" />
+          </div>
+        </div>
+      </div>
+      {tiles ? <SkeletonBand tiles={tiles} /> : null}
+      {columns && rows ? <SkeletonRows columns={columns} rows={rows} /> : null}
+    </section>
+  );
+}
+
+function AdministrationSkeleton() {
+  return (
+    <div className="df-page" data-testid="v2-administration" aria-busy="true">
+      <header className="df-today-head">
+        <div style={{ minWidth: 0 }}>
+          <h1 className="df-title">Administration</h1>
+          <p className="df-subhead">Loading this Workspace…</p>
+        </div>
+      </header>
+      <p className="df-sr-only" role="status">
+        Loading Administration for this Workspace.
+      </p>
+      <SkeletonSection title="Analytics" tiles={8} />
+      <SkeletonSection title="Activity" columns={4} rows={3} />
+      <SkeletonSection title="Billing" tiles={4} />
+    </div>
+  );
+}
+
+/**
+ * The shadcn/Radix checkbox wearing v2 tokens (#212). Radix renders a button,
+ * which a <label> cannot implicitly label, so every row pairs an explicit id.
+ */
+function CheckRow({
+  id,
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="df-checkbox-row" data-disabled={disabled ? "true" : "false"}>
+      <Checkbox
+        id={id}
+        className="df-checkbox"
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(next) => onChange(next === true)}
+      />
+      <label htmlFor={id}>{label}</label>
+    </div>
+  );
+}
+
 /**
  * One card per section, the way every other register in v2 reads: the card head
  * owns the title and its one line of context, a toolbar sits above the data
@@ -1193,20 +1328,29 @@ function AdministrationAnalytics({
           </div>
         </div>
         <div className="df-toolbar">
-          <label className="df-filter-chip" data-active={rangePreset !== "7d" ? "true" : "false"}>
-            RANGE
-            <select
-              value={rangePreset}
+          <Select
+            value={rangePreset}
+            onValueChange={(next) => onRangeChange(next as AnalyticsRangePreset)}
+          >
+            <SelectTrigger
+              className="df-filter-chip df-select-trigger"
               aria-label="Analytics range"
-              onChange={(event) => onRangeChange(event.target.value as AnalyticsRangePreset)}
+              data-active={rangePreset !== "7d" ? "true" : "false"}
+              data-testid="v2-administration-range"
             >
+              <span className="df-select-prefix">RANGE</span>
+              <SelectValue />
+            </SelectTrigger>
+            {/* Radix portals to document.body, outside `.df-v2`, so the panel
+                carries the class itself or the --df-* tokens do not resolve. */}
+            <SelectContent className="df-v2 df-select-content">
               {ANALYTICS_RANGE_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
+                <SelectItem key={preset.id} value={preset.id} className="df-select-item">
                   {preset.label}
-                </option>
+                </SelectItem>
               ))}
-            </select>
-          </label>
+            </SelectContent>
+          </Select>
           <a
             className="df-ghost-btn"
             href={analytics.export.href}

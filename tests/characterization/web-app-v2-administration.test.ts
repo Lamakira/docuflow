@@ -898,6 +898,83 @@ describe("Tracking Policy editing (#212)", () => {
   });
 });
 
+describe("Administration controls (#212)", () => {
+  it("uses the shadcn checkbox rather than a bare input, and labels every one", () => {
+    expect(pageSource).toContain('from "@/components/ui/checkbox"');
+    expect(pageSource).not.toContain('type="checkbox"');
+    // Radix renders a button, which a <label> cannot implicitly label.
+    expect(pageSource).toContain("htmlFor={id}");
+    expect(rule(".df-v2 .df-checkbox")).toMatch(/border-radius/);
+    expect(rule('.df-v2 .df-checkbox[data-state="checked"]')).toMatch(/var\(--df-case-ink\)/);
+    // The tick must not inherit the ink it sits on.
+    expect(rule(".df-v2 .df-checkbox")).toMatch(/color:\s*var\(--df-card-white\)/);
+    // shadcn ships Tailwind state classes at equal weight; ours must outrank
+    // them so the control never depends on stylesheet order.
+    expect(css).toContain('.df-v2 .df-checkbox[data-state="checked"]');
+  });
+
+  it("waits with the destination's real geometry, not an empty box", () => {
+    expect(pageSource).toContain('from "@/components/ui/skeleton"');
+    // The old placeholder was a bare card with a hardcoded height.
+    expect(pageSource).not.toContain("minHeight: 280");
+    // Section titles are known before any fetch, so the wait states them.
+    expect(pageSource).toContain('<SkeletonSection title="Analytics"');
+    expect(pageSource).toContain('<SkeletonSection title="Billing"');
+    // The wait reuses the real bands and rows, so nothing moves on arrival.
+    expect(pageSource).toContain('className="df-figure-band"');
+    expect(pageSource).toContain('className="df-register-row"');
+    expect(pageSource).toContain('aria-busy="true"');
+    expect(pageSource).toContain('role="status"');
+  });
+
+  it("breathes on opacity only and stops entirely under reduced motion", () => {
+    const recipe = motionForSurface("skeleton");
+    expect(recipe.movement).toBe("none");
+    expect(recipe.enterExit).toBe("instant");
+    expect(recipe.keepOpacity).toBe(true);
+
+    expect(rule(".df-v2 .df-skeleton")).toMatch(/animation:\s*df-skeleton-breathe/);
+    // A breathe that moved anything would fight the geometry it is holding.
+    expect(css).toMatch(/@keyframes df-skeleton-breathe[^}]*\{[^}]*opacity/);
+    expect(rule(".df-v2 .df-skeleton")).not.toMatch(/transform/);
+    expect(reducedMotionCss()).toMatch(
+      /\.df-v2 \.df-skeleton[^{]*\{[^}]*animation:\s*none/,
+    );
+  });
+
+  it("uses the shadcn select for the range, not a native one", () => {
+    expect(pageSource).toContain('from "@/components/ui/select"');
+    expect(pageSource).not.toContain("<select");
+    expect(pageSource).not.toContain("<option");
+    // Radix portals the panel to document.body, outside `.df-v2`, so it must
+    // carry the class itself or every --df-* token stops resolving.
+    expect(pageSource).toContain('className="df-v2 df-select-content"');
+    expect(rule(".df-v2.df-select-content")).toMatch(/var\(--df-card-white\)/);
+    // shadcn's own `h-9 w-full border-input` must lose to the chip.
+    expect(rule(".df-v2 .df-select-trigger")).toMatch(/width:\s*auto/);
+    expect(rule(".df-v2 .df-select-item\[data-highlighted\]")).toMatch(/var\(--df-hover\)/);
+  });
+
+  it("gives a field and the button beside it one shared control height", () => {
+    expect(css).toMatch(/--df-control-h:\s*\d+px/);
+    const shared = css.match(/([^}]*)\{\s*height:\s*var\(--df-control-h\);\s*\}/);
+    expect(shared).not.toBeNull();
+    const selectors = shared![1];
+    for (const control of [
+      ".df-toolbar .df-ghost-btn",
+      ".df-form-actions .df-ink-btn",
+      ".df-inline-form .df-ghost-btn",
+    ]) {
+      expect(selectors).toContain(control);
+    }
+  });
+
+  it("scrolls the chrome without drawing a scrollbar", () => {
+    expect(rule(".df-main,\n.df-rail-body")).toMatch(/scrollbar-width:\s*none/);
+    expect(css).toMatch(/\.df-main::-webkit-scrollbar[^{]*\{[^}]*display:\s*none/);
+  });
+});
+
 describe("Tracking Policy save motion (#212)", () => {
   it("treats the save as occasional state indication and keeps reduced motion on opacity", () => {
     const recipe = motionForSurface("tracking-policy-save");
@@ -940,6 +1017,76 @@ describe("Administration billing remainder (#212)", () => {
     expect(legacy.billing.actions.map((action) => action.id)).toEqual(["cancel"]);
     expect(legacy.billing.actions.map((action) => action.id)).not.toContain("checkout");
     expect(legacy.billing.actions.map((action) => action.id)).not.toContain("seats");
+  });
+
+  it("reads the subscription as discrete facts, including the term the BFF already returns", () => {
+    const trial = composeAdministration(
+      emptyAdmin({
+        billing: {
+          planKey: "trial",
+          billingState: "Trialing",
+          purchasedSeatCapacity: 1,
+          consumedSeatCount: 1,
+          trialEndsAt: "2026-09-20T00:00:00.000Z",
+          periodEndsAt: null,
+          cancelAtPeriodEnd: false,
+          stripeCustomerId: null,
+        },
+      }),
+    );
+    expect(trial.kind).toBe("ready");
+    if (trial.kind !== "ready") return;
+    expect(trial.billing.figures).toEqual([
+      { label: "PLAN", value: "Trial" },
+      { label: "CONDITION", value: "Trial" },
+      { label: "BILLABLE SEATS", value: "1 of 1" },
+      { label: "TRIAL ENDS", value: "20 SEP 2026" },
+    ]);
+
+    const cancelling = composeAdministration(
+      emptyAdmin({
+        billing: {
+          planKey: "pro",
+          billingState: "Active",
+          purchasedSeatCapacity: 8,
+          consumedSeatCount: 3,
+          trialEndsAt: null,
+          periodEndsAt: "2026-10-01T00:00:00.000Z",
+          cancelAtPeriodEnd: true,
+          stripeCustomerId: "cus_123",
+        },
+      }),
+    );
+    expect(cancelling.kind).toBe("ready");
+    if (cancelling.kind !== "ready") return;
+    expect(cancelling.billing.figures[3]).toEqual({
+      label: "ACCESS ENDS",
+      value: "1 OCT 2026",
+    });
+
+    const renewing = composeAdministration(
+      emptyAdmin({
+        billing: {
+          planKey: "pro",
+          billingState: "Active",
+          purchasedSeatCapacity: 8,
+          consumedSeatCount: 3,
+          trialEndsAt: null,
+          periodEndsAt: "2026-10-01T00:00:00.000Z",
+          cancelAtPeriodEnd: false,
+          stripeCustomerId: "cus_123",
+        },
+      }),
+    );
+    expect(renewing.kind).toBe("ready");
+    if (renewing.kind !== "ready") return;
+    expect(renewing.billing.figures[3]).toEqual({ label: "RENEWS", value: "1 OCT 2026" });
+
+    const none = composeAdministration(emptyAdmin());
+    expect(none.kind).toBe("ready");
+    if (none.kind !== "ready") return;
+    expect(none.billing.available).toBe(false);
+    expect(none.billing.figures).toEqual([]);
   });
 
   it("names the refusal when Checkout is refused for a seeded Workspace", () => {

@@ -22,6 +22,12 @@ export const ADMINISTRATION_CAPABILITY = "Administration";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
+function formatFullDay(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+}
+
 const CAPABILITY_LABELS = new Map<string, string>([
   [VIEW_DAILY_UPDATES_CAPABILITY_ID, "View daily updates"],
   ...PUBLIC_API_CAPABILITIES.map((row) => [row.id, row.name] as const),
@@ -102,6 +108,8 @@ export type BillingModel = {
   condition: "Trial" | "Active" | "Past due" | "Read-only" | null;
   seats: string;
   entitlements: string;
+  /** The subscription read as discrete facts, so the card is not three loose lines. */
+  figures: AnalyticsFigure[];
   actions: BillingAction[];
   checkout: "redirect";
 };
@@ -251,6 +259,20 @@ function billingCondition(
   return null;
 }
 
+/** Whichever date actually governs the subscription next. */
+function billingTermFigure(pin: BillingInput): AnalyticsFigure {
+  if (pin.planKey === "trial" && pin.trialEndsAt) {
+    return { label: "TRIAL ENDS", value: formatFullDay(pin.trialEndsAt) };
+  }
+  if (pin.cancelAtPeriodEnd && pin.periodEndsAt) {
+    return { label: "ACCESS ENDS", value: formatFullDay(pin.periodEndsAt) };
+  }
+  if (pin.periodEndsAt) {
+    return { label: "RENEWS", value: formatFullDay(pin.periodEndsAt) };
+  }
+  return { label: "RENEWS", value: "—" };
+}
+
 function composeBilling(input: AdministrationInput): BillingModel {
   const pin = input.billing;
   if (!pin) {
@@ -262,6 +284,7 @@ function composeBilling(input: AdministrationInput): BillingModel {
         : null,
       seats: "Seat counts are not available.",
       entitlements: "",
+      figures: [],
       actions: [],
       checkout: "redirect",
     };
@@ -291,6 +314,15 @@ function composeBilling(input: AdministrationInput): BillingModel {
     entitlements: readOnly
       ? "Writes blocked. Viewing, export, and recovery stay available."
       : "Writes allowed.",
+    figures: [
+      { label: "PLAN", value: planLabel(pin.planKey) },
+      { label: "CONDITION", value: condition ?? "—" },
+      {
+        label: "BILLABLE SEATS",
+        value: `${pin.consumedSeatCount} of ${pin.purchasedSeatCapacity}`,
+      },
+      billingTermFigure(pin),
+    ],
     actions,
     checkout: "redirect",
   };
