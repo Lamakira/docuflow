@@ -451,7 +451,7 @@ function TimeEntriesPane() {
                   </span>
                   <span className="df-mono df-time-clock">{row.duration}</span>
                   {row.canDelete ? (
-                    <button type="button" className="df-ghost-link" onClick={() => onDelete(row.id)}>
+                    <button type="button" className="df-ghost-btn" onClick={() => onDelete(row.id)}>
                       Remove
                     </button>
                   ) : null}
@@ -468,7 +468,7 @@ function TimeEntriesPane() {
                   </span>
                   <span style={{ textAlign: "right" }}>
                     {row.canDelete ? (
-                      <button type="button" className="df-ghost-link" onClick={() => onDelete(row.id)}>
+                      <button type="button" className="df-ghost-btn" onClick={() => onDelete(row.id)}>
                         Remove
                       </button>
                     ) : null}

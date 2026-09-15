@@ -594,12 +594,12 @@ export function V2AdministrationPage() {
         </form>
         {crmModules.length === 0 ? <p className="df-empty">No CRM modules configured.</p> : crmModules.map((module) => (
           <div key={module.id} className="df-register-row" data-testid={`v2-crm-module-${module.id}`}>
-            <span><button type="button" className="df-ghost-link" onClick={() => setSelectedModuleId(module.id)}>Open</button><input aria-label={`Module name for ${module.name}`} defaultValue={module.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === module.name || !guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { name } }); }} /></span>
+            <span><button type="button" className="df-ghost-btn" onClick={() => setSelectedModuleId(module.id)}>Open</button><input aria-label={`Module name for ${module.name}`} defaultValue={module.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === module.name || !guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { name } }); }} /></span>
             <span className="df-mono df-meta">{module.slug}</span>
             <span className="df-status">{module.isEnabled ? "ACTIVE" : "INACTIVE"}</span>
             <span className="df-people-action">
-              <button type="button" className="df-ghost-link" onClick={() => { if (!guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { isEnabled: module.isEnabled ? 0 : 1 } }); }}>{module.isEnabled ? "Disable" : "Enable"}</button>
-              {module.isSystem !== 1 ? <button type="button" className="df-ghost-link" onClick={() => { if (!guardWrite()) return; deleteCrmModule.mutate(module.id); }}>Delete</button> : null}
+              <button type="button" className="df-ghost-btn" onClick={() => { if (!guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { isEnabled: module.isEnabled ? 0 : 1 } }); }}>{module.isEnabled ? "Disable" : "Enable"}</button>
+              {module.isSystem !== 1 ? <button type="button" className="df-ghost-btn" onClick={() => { if (!guardWrite()) return; deleteCrmModule.mutate(module.id); }}>Delete</button> : null}
             </span>
           </div>
         ))}
@@ -614,7 +614,7 @@ export function V2AdministrationPage() {
             {(selectedModule.fields ?? []).map((field) => (
               <div key={field.id} className="df-register-row" data-testid={`v2-crm-field-${field.id}`}>
                 <span><input aria-label={`Field name for ${field.name}`} defaultValue={field.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === field.name || !guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { name } }); }} />{field.fieldType === "select" || field.fieldType === "multiselect" ? <textarea aria-label={`Options for ${field.name}`} defaultValue={(field.options ?? []).join("\n")} onBlur={(event) => { const options = event.target.value.split("\n").map((option) => option.trim()).filter(Boolean); if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { options } }); }} /> : null}</span><span className="df-mono df-meta">{field.fieldType} · {field.slug}</span><span className="df-status">{field.isEnabled ? "ACTIVE" : "INACTIVE"}</span>
-                <span className="df-people-action"><button type="button" className="df-ghost-link" onClick={() => { if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { isEnabled: field.isEnabled ? 0 : 1 } }); }}>{field.isEnabled ? "Disable" : "Enable"}</button>{field.isSystem !== 1 ? <button type="button" className="df-ghost-link" onClick={() => { if (!guardWrite()) return; deleteCrmField.mutate(field.id); }}>Delete</button> : null}</span>
+                <span className="df-people-action"><button type="button" className="df-ghost-btn" onClick={() => { if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { isEnabled: field.isEnabled ? 0 : 1 } }); }}>{field.isEnabled ? "Disable" : "Enable"}</button>{field.isSystem !== 1 ? <button type="button" className="df-ghost-btn" onClick={() => { if (!guardWrite()) return; deleteCrmField.mutate(field.id); }}>Delete</button> : null}</span>
               </div>
             ))}
           </div>
@@ -738,7 +738,7 @@ export function V2AdministrationPage() {
         >
           <div className="df-card-head">
             <h2 className="df-card-title">Secret</h2>
-            <button type="button" className="df-ghost-link" onClick={() => setRevealedSecret(null)}>
+            <button type="button" className="df-ghost-btn" onClick={() => setRevealedSecret(null)}>
               Dismiss
             </button>
           </div>
@@ -1206,7 +1206,7 @@ export function V2AdministrationPage() {
                     <span>{timezone}</span>
                     <button
                       type="button"
-                      className="df-ghost-link"
+                      className="df-ghost-btn"
                       disabled={!trackingPolicy.editable}
                       onClick={() => setTimezoneDraft((current) => removeAllowedTimezone(current, timezone))}
                     >
@@ -1604,12 +1604,12 @@ function AccountActions({
   return (
     <span className="df-people-action">
       {row.rotate ? (
-        <button type="button" className="df-ghost-link" onClick={() => onRotate(row.id, row.name)}>
+        <button type="button" className="df-ghost-btn" onClick={() => onRotate(row.id, row.name)}>
           Rotate
         </button>
       ) : null}
       {row.revoke ? (
-        <button type="button" className="df-ghost-link" onClick={() => onRevoke(row.id)}>
+        <button type="button" className="df-ghost-btn" onClick={() => onRevoke(row.id)}>
           Revoke
         </button>
       ) : null}
@@ -1631,17 +1631,17 @@ function EndpointActions({
   return (
     <span className="df-people-action">
       {row.rotate ? (
-        <button type="button" className="df-ghost-link" onClick={() => onRotate(row.id, row.url)}>
+        <button type="button" className="df-ghost-btn" onClick={() => onRotate(row.id, row.url)}>
           Rotate
         </button>
       ) : null}
       {row.disable ? (
-        <button type="button" className="df-ghost-link" onClick={() => onDisable(row.id)}>
+        <button type="button" className="df-ghost-btn" onClick={() => onDisable(row.id)}>
           Disable
         </button>
       ) : null}
       {row.enable ? (
-        <button type="button" className="df-ghost-link" onClick={() => onEnable(row.id)}>
+        <button type="button" className="df-ghost-btn" onClick={() => onEnable(row.id)}>
           Enable
         </button>
       ) : null}

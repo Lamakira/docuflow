@@ -434,7 +434,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
                 INCLUDE ARCHIVED MEMBERS
               </label>
             ) : null}
-            <button type="button" className="df-ghost-link" onClick={onClearFilters}>
+            <button type="button" className="df-ghost-btn" onClick={onClearFilters}>
               Clear filters
             </button>
           </>
@@ -563,7 +563,7 @@ function ActivityGallery({
       <div className="df-card-head">
         <h2 className="df-card-title">{gallery.countCopy}</h2>
         <span className="df-gallery-actions">
-          <button type="button" className="df-ghost-link" onClick={onSelectShown}>
+          <button type="button" className="df-ghost-btn" onClick={onSelectShown}>
             {gallery.selectedCount === gallery.count && gallery.count > 0 ? "Clear selection" : "Select all"}
           </button>
           <button
@@ -620,7 +620,7 @@ function ActivityGallery({
                       </span>
                     </span>
                     {tile.identical ? <span className="df-status-word">Identical</span> : null}
-                    <button type="button" className="df-ghost-link" onClick={() => onSave(tile)}>
+                    <button type="button" className="df-ghost-btn" onClick={() => onSave(tile)}>
                       Download
                     </button>
                   </span>
@@ -657,7 +657,7 @@ function ActivityGallery({
           <span className="df-gallery-actions">
             <button
               type="button"
-              className="df-ghost-link"
+              className="df-ghost-btn"
               disabled={!gallery.paging.hasPrevious}
               onClick={() => onPage(-1)}
             >
@@ -665,7 +665,7 @@ function ActivityGallery({
             </button>
             <button
               type="button"
-              className="df-ghost-link"
+              className="df-ghost-btn"
               disabled={!gallery.paging.hasNext}
               onClick={() => onPage(1)}
             >

@@ -133,7 +133,7 @@ export function V2DevicesPage() {
         <section className="df-card" data-testid="v2-devices-pairing">
           <div className="df-card-head">
             <h2 className="df-card-title">Pairing code</h2>
-            <button type="button" className="df-ghost-link" onClick={() => setPairingOpen(false)}>
+            <button type="button" className="df-ghost-btn" onClick={() => setPairingOpen(false)}>
               Close
             </button>
           </div>
@@ -265,14 +265,14 @@ function RevokeControl({
         </span>
         <button
           type="button"
-          className="df-ghost-link"
+          className="df-ghost-btn"
           disabled={pending}
           data-testid={`v2-devices-revoke-${row.key}`}
           onClick={() => onRevoke(row)}
         >
           Revoke
         </button>
-        <button type="button" className="df-ghost-link" onClick={onCancel}>
+        <button type="button" className="df-ghost-btn" onClick={onCancel}>
           Cancel
         </button>
       </span>
@@ -281,7 +281,7 @@ function RevokeControl({
   return (
     <button
       type="button"
-      className="df-ghost-link"
+      className="df-ghost-btn"
       disabled={pending}
       data-testid={`v2-devices-revoke-${row.key}`}
       onClick={() => onRevoke(row)}

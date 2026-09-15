@@ -485,7 +485,7 @@ export function V2ClientRecordPage() {
                 <div className="df-card-head">
                   <h2 className="df-card-title">On this Client</h2>
                   <span className="df-mono df-meta">{record.contacts.length}</span>
-                  <button type="button" className="df-ghost-link" onClick={() => setAddingContact((open) => !open)}>Add contact</button>
+                  <button type="button" className="df-ghost-btn" onClick={() => setAddingContact((open) => !open)}>Add contact</button>
                 </div>
                 {addingContact ? (
                   <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); if (contactDraft.name.trim()) createContact.mutate(); }}>
@@ -562,7 +562,7 @@ export function V2ClientRecordPage() {
               <section className="df-card">
                 <div className="df-card-head">
                   <h2 className="df-card-title">Client details</h2>
-                  <button type="button" className="df-ghost-link" onClick={() => setEditing((open) => !open)}>Edit Client</button>
+                  <button type="button" className="df-ghost-btn" onClick={() => setEditing((open) => !open)}>Edit Client</button>
                 </div>
                 {editing ? (
                   <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); updateClient.mutate(); }}>

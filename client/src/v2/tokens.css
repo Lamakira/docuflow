@@ -2210,8 +2210,16 @@ button.df-activity-row {
   gap: 8px;
 }
 
+/* A control that acts on a record wears the one control height wherever it
+   sits — a register row, an action cluster, a card head or a refusal. */
 .df-row-actions .df-ghost-btn,
-.df-row-actions .df-ink-btn {
+.df-row-actions .df-ink-btn,
+.df-register-row .df-ghost-btn,
+.df-people-action .df-ghost-btn,
+.df-devices-confirm .df-ghost-btn,
+.df-policy-timezone .df-ghost-btn,
+.df-refusal-pop .df-ghost-btn,
+.df-card-head .df-ghost-btn {
   height: var(--df-control-h);
   padding-top: 0;
   padding-bottom: 0;
