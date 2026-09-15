@@ -81,6 +81,61 @@ export type DossierTabId = (typeof DOSSIER_TAB_IDS)[number];
 
 const DOSSIER_TAB_SET = new Set<string>(DOSSIER_TAB_IDS);
 
+/**
+ * Time Tracking holds three views of one domain (#214): the Time Entry
+ * register, the Workday totals the v1 dashboard showed, and the Projects &
+ * Tasks manager. Entries stays the destination itself, so `/time` is the
+ * register and the other two are named tabs under it.
+ */
+export const TIME_TAB_IDS = ["entries", "stats", "projects"] as const;
+
+export type TimeTabId = (typeof TIME_TAB_IDS)[number];
+
+const TIME_TAB_SET = new Set<string>(TIME_TAB_IDS);
+
+/** Activity keeps its evidence register and adds the v1 capture gallery (#214). */
+export const ACTIVITY_TAB_IDS = ["register", "gallery"] as const;
+
+export type ActivityTabId = (typeof ACTIVITY_TAB_IDS)[number];
+
+const ACTIVITY_TAB_SET = new Set<string>(ACTIVITY_TAB_IDS);
+
+const TIME_TAB_CRUMB: Record<TimeTabId, string> = {
+  entries: "TIME ENTRIES",
+  stats: "TIME STATS",
+  projects: "PROJECTS & TASKS",
+};
+
+/**
+ * A tabbed destination keeps its own path: the default tab IS the destination,
+ * every other tab is a segment under it. One rule, so Time and Activity cannot
+ * drift into two URL shapes.
+ */
+function tabHref(base: string, tab: string, defaultTab: string): string {
+  return tab === defaultTab ? base : `${base}/${tab}`;
+}
+
+function parseTabPath(
+  pathname: string,
+  segment: string,
+  known: Set<string>,
+  defaultTab: string,
+): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] !== segment) return null;
+  if (parts.length === 1) return defaultTab;
+  if (parts.length === 2 && known.has(parts[1])) return parts[1];
+  return null;
+}
+
+export function timeTabHref(tab: TimeTabId): string {
+  return tabHref("/time", tab, "entries");
+}
+
+export function activityTabHref(tab: ActivityTabId): string {
+  return tabHref("/activity", tab, "register");
+}
+
 export type V2Match =
   | { kind: "today"; title: "Today"; href: "/" }
   | { kind: "auth-redirect"; title: "Today"; href: "/" }
@@ -94,10 +149,10 @@ export type V2Match =
   | { kind: "client-record"; title: string; href: "/clients"; clientId: string }
   | { kind: "opportunities"; title: "Opportunities"; href: "/opportunities" }
   | { kind: "opportunity-record"; title: "Opportunity"; href: "/opportunities"; opportunityId: string }
-  | { kind: "time"; title: "Time Tracking"; href: "/time" }
+  | { kind: "time"; title: "Time Tracking"; href: string; tab: TimeTabId }
   | { kind: "daily-update"; title: "Daily Update"; href: "/daily-update" }
   | { kind: "daily-updates"; title: "Daily Updates"; href: "/daily-updates" }
-  | { kind: "activity"; title: "Activity"; href: "/activity" }
+  | { kind: "activity"; title: "Activity"; href: string; tab: ActivityTabId }
   | { kind: "people"; title: "People"; href: "/people" }
   | { kind: "invitation-accept"; title: "Invitation"; href: string }
   | { kind: "administration"; title: "Administration"; href: "/administration" }
@@ -229,6 +284,27 @@ function isTimeTrackingRewrite(pathname: string): boolean {
   return pathname === "/time-tracking" || pathname.startsWith("/time-tracking/");
 }
 
+/** The v1 Time pages land on the v2 tab that does their job, not on the register. */
+const V1_TIME_TAB: Record<string, TimeTabId> = {
+  dashboard: "stats",
+  stats: "stats",
+  projects: "projects",
+  tasks: "projects",
+};
+
+function timeTabForRewrite(pathname: string): TimeTabId {
+  const parts = pathname.split("/").filter(Boolean);
+  return V1_TIME_TAB[parts[1] ?? ""] ?? "entries";
+}
+
+function parseTimePath(pathname: string): TimeTabId | null {
+  return parseTabPath(pathname, "time", TIME_TAB_SET, "entries") as TimeTabId | null;
+}
+
+function parseActivityPath(pathname: string): ActivityTabId | null {
+  return parseTabPath(pathname, "activity", ACTIVITY_TAB_SET, "register") as ActivityTabId | null;
+}
+
 export function parseDossierPath(pathname: string): { projectId: string; tab: DossierTabId } | null {
   const parts = pathname.split("/").filter(Boolean);
   if (parts[0] !== "projects" || parts.length < 2) return null;
@@ -292,12 +368,15 @@ export function matchV2Route(path: string): V2Match {
     }
   }
 
-  if (pathname === "/time") {
-    return { kind: "time", title: "Time Tracking", href: "/time" };
+  const timeTab = parseTimePath(pathname);
+  if (timeTab) {
+    return { kind: "time", title: "Time Tracking", href: timeTabHref(timeTab), tab: timeTab };
   }
 
-  if (pathname === "/activity" || isScreencastsRewrite(pathname)) {
-    return { kind: "activity", title: "Activity", href: "/activity" };
+  const activityTab = parseActivityPath(pathname);
+  if (activityTab || isScreencastsRewrite(pathname)) {
+    const tab = activityTab ?? "register";
+    return { kind: "activity", title: "Activity", href: activityTabHref(tab), tab };
   }
 
   if (pathname === "/people") {
@@ -328,7 +407,8 @@ export function matchV2Route(path: string): V2Match {
   }
 
   if (isTimeTrackingRewrite(pathname)) {
-    return { kind: "time", title: "Time Tracking", href: "/time" };
+    const tab = timeTabForRewrite(pathname);
+    return { kind: "time", title: "Time Tracking", href: timeTabHref(tab), tab };
   }
 
   if (pathname === "/daily-update" || pathname.startsWith("/daily-update/")) {
@@ -474,15 +554,29 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     ];
   }
   if (match.kind === "time") {
+    if (match.tab === "entries") {
+      return [
+        { label: workspace, href: "/" },
+        { label: "TIME TRACKING" },
+      ];
+    }
     return [
       { label: workspace, href: "/" },
-      { label: "TIME TRACKING" },
+      { label: "TIME TRACKING", href: "/time" },
+      { label: TIME_TAB_CRUMB[match.tab] },
     ];
   }
   if (match.kind === "activity") {
+    if (match.tab === "register") {
+      return [
+        { label: workspace, href: "/" },
+        { label: "ACTIVITY" },
+      ];
+    }
     return [
       { label: workspace, href: "/" },
-      { label: "ACTIVITY" },
+      { label: "ACTIVITY", href: "/activity" },
+      { label: "GALLERY" },
     ];
   }
   if (match.kind === "people") {

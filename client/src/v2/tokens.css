@@ -1091,7 +1091,9 @@ button.df-activity-row {
 .df-policy-form .df-daily-field > input,
 .df-policy-form .df-daily-field > select,
 .df-toolbar .df-filter-chip,
+.df-toolbar .df-filter-input,
 .df-toolbar .df-ghost-btn,
+.df-toolbar .df-ink-btn,
 .df-inline-form .df-ghost-btn,
 .df-form-actions .df-ink-btn,
 .df-form-actions .df-ghost-btn,
@@ -1101,7 +1103,9 @@ button.df-activity-row {
 }
 
 .df-toolbar .df-filter-chip,
+.df-toolbar .df-filter-input,
 .df-toolbar .df-ghost-btn,
+.df-toolbar .df-ink-btn,
 .df-inline-form .df-ghost-btn,
 .df-form-actions .df-ink-btn,
 .df-form-actions .df-ghost-btn,
@@ -2094,6 +2098,383 @@ button.df-activity-row {
   transform: scale(0.97);
 }
 
+/* Time stats, Projects & Tasks, and the Activity Evidence gallery (#214).
+   The one novelty is the Time stats period change: the figures crossfade on
+   opacity so nothing under them moves. The histogram bars, the elapsed clock
+   and the capture thumbnails hold still. */
+
+.df-time-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.df-time-stats[data-motion="standard"] {
+  opacity: 1;
+  transition: opacity var(--duration-ui) var(--ease-out);
+}
+
+@starting-style {
+  .df-time-stats[data-motion="standard"] {
+    opacity: 0;
+  }
+}
+
+/* A ruled band of figures, not floating KPI cards: the handoff rejects the
+   card-grid composition, so these read like the Dossier's identity figures. */
+.df-stat-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 24px;
+  padding: 14px 18px 18px;
+}
+
+.df-stat-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 18px 18px;
+}
+
+.df-stat-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.df-stat-bar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* A bar is a figure, not a parade: it is drawn at its width, never grown into it. */
+.df-stat-bar-fill {
+  background: var(--df-case-ink);
+  transition: none;
+  animation: none;
+}
+
+.df-task-manager {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* The Project list is a ruled register, and a chosen Project is marked the way
+   the Projects and Clients registers already mark a chosen record. */
+.df-task-projects .df-register-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.df-task-project {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--df-divider-light);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.df-task-projects .df-task-project[data-selected="true"] {
+  background: var(--df-cold-stock);
+  border-left: 2px solid var(--df-case-ink);
+}
+
+/* Controls that act on one record sit together, so they read as a group of
+   buttons rather than a sentence trailing off the end of the row. */
+.df-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A control that acts on a record wears the one control height wherever it
+   sits — a register row, an action cluster, a card head or a refusal. */
+.df-row-actions .df-ghost-btn,
+.df-row-actions .df-ink-btn,
+.df-register-row .df-ghost-btn,
+.df-people-action .df-ghost-btn,
+.df-devices-confirm .df-ghost-btn,
+.df-policy-timezone .df-ghost-btn,
+.df-refusal-pop .df-ghost-btn,
+.df-card-head .df-ghost-btn {
+  height: var(--df-control-h);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.df-ghost-btn[data-danger="true"] {
+  border-color: var(--df-case-ink);
+  color: var(--df-case-ink);
+  font-weight: 600;
+}
+
+.df-task-rename {
+  min-width: 0;
+  height: var(--df-control-h);
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  padding: 0 10px;
+  font-family: var(--df-font-ui);
+  font-size: 13px;
+}
+
+/* Tasks table — TanStack Table's model in the shadcn Table markup, wearing
+   the register texture: hairline rules, the 18px gutter, no resting shadow.
+   The handoff prefers ruled registers, and a table is one. */
+.df-v2 .df-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.df-v2 .df-table-head {
+  height: auto;
+  padding: 10px 18px;
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--df-archive-slate);
+  text-align: left;
+  border-bottom: 1px solid var(--df-divider);
+}
+
+.df-v2 .df-table-head[data-column="actions"] {
+  text-align: right;
+}
+
+/* Sorting is a keyboard-frequency act: it re-renders, it does not animate. */
+.df-v2 .df-table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  transition: none;
+  animation: none;
+}
+
+.df-v2 .df-table-sort[data-sorted="asc"],
+.df-v2 .df-table-sort[data-sorted="desc"] {
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-table-row {
+  border-bottom: 1px solid var(--df-divider-light);
+}
+
+.df-v2 .df-table-row:last-child {
+  border-bottom: 0;
+}
+
+.df-v2 .df-table-row:hover {
+  background: var(--df-cold-stock);
+}
+
+.df-v2 .df-table-row[data-archived="true"] .df-row-title {
+  color: var(--df-archive-slate);
+  text-decoration: line-through;
+}
+
+.df-v2 .df-table-cell {
+  padding: 15px 18px;
+  vertical-align: middle;
+}
+
+.df-v2 .df-table-cell[data-column="statusValue"] {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.df-v2 .df-table-cell[data-column="actions"] {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.df-v2 .df-table-cell[data-column="actions"] .df-row-actions {
+  justify-content: flex-end;
+}
+
+/* Overflow menu — the shadcn DropdownMenu wearing the v2 menu panel. Radix
+   portals it to the body, so the panel carries `.df-v2` itself. */
+.df-v2 .df-row-menu-trigger {
+  flex: none;
+  padding: 0;
+}
+
+.df-v2.df-row-menu {
+  min-width: 168px;
+  padding: 0;
+  /* The v2 menus do not animate open; this one matches them. */
+  animation: none;
+  transition: none;
+}
+
+.df-v2 .df-row-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--df-divider-light);
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  font-family: var(--df-font-ui);
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-row-menu-item:last-child {
+  border-bottom: 0;
+}
+
+.df-v2 .df-row-menu-item[data-highlighted] {
+  background: var(--df-hover);
+}
+
+/* A permanent action is named, not coloured like an alarm: it still asks for
+   a confirm on the row before anything is destroyed. */
+.df-v2 .df-row-menu-item[data-danger="true"] {
+  font-weight: 600;
+}
+
+.df-v2 .df-row-menu-item[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* A band of controls that belong to the card below it, not a split header. */
+.df-toolbar[data-align="start"] {
+  justify-content: flex-start;
+}
+
+.df-gallery-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.df-gallery-filter {
+  display: inline-flex;
+  align-items: center;
+}
+
+.df-gallery-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.df-gallery-hour {
+  display: block;
+}
+
+/* Applying a filter is tens a day: the grid re-renders, it does not animate. */
+.df-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+  padding: 12px 18px 18px;
+  transition: none;
+  animation: none;
+}
+
+.df-gallery-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--df-card-white);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.df-gallery-tile[data-selected="true"] {
+  border-color: var(--df-case-ink);
+}
+
+.df-gallery-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+/* A fixed frame: the thumbnail cannot shift the row as it decodes. */
+.df-gallery-tile img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: var(--df-divider-light);
+  transition: none;
+  animation: none;
+}
+
+.df-gallery-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 10px 10px;
+  min-width: 0;
+}
+
+.df-gallery-provenance {
+  display: block;
+  font-size: 12px;
+  color: var(--df-archive-slate);
+  overflow-wrap: anywhere;
+}
+
+.df-gallery-full {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 18px 18px;
+}
+
+.df-gallery-full img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  transition: none;
+  animation: none;
+}
+
+.df-gallery-paging {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--df-divider-light);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .df-rail {
     transition: none;
@@ -2741,6 +3122,19 @@ button.df-activity-row {
   color: var(--df-muted-ink);
 }
 
+/* The visible field is this wrapper: it carries the border and the padding,
+   while the focusable element is the bare input inside it. Ringing the input
+   draws the amber inside the field, so the ring moves to the wrapper and keeps
+   the offset the handoff asks for. */
+.df-filter-input:has(input:focus-visible) {
+  outline: 2px solid var(--df-amber);
+  outline-offset: 2px;
+}
+
+.df-filter-input input:focus-visible {
+  outline: none;
+}
+
 .df-filter-chip {
   font-family: var(--df-font-mono);
   font-weight: 500;
@@ -2751,6 +3145,21 @@ button.df-activity-row {
   color: var(--df-archive-slate);
   background: var(--df-card-white);
   white-space: nowrap;
+}
+
+/* One control height across a filter row, as `.df-toolbar` already does for a
+   form row: a chip, a Select trigger and the button beside them share a top
+   edge. Without this the shadcn trigger keeps its own `h-9` and stands proud
+   of the ink button next to it. */
+.df-filter-bar .df-filter-chip,
+.df-filter-bar .df-filter-input,
+.df-filter-bar .df-ghost-btn,
+.df-filter-bar .df-ink-btn {
+  display: inline-flex;
+  align-items: center;
+  height: var(--df-control-h);
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .df-filter-chip input[type="checkbox"] {
@@ -3253,6 +3662,38 @@ button.df-activity-row {
 
 .df-v2[data-chrome="mobile"] .df-figure-band {
   grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+}
+
+/* Narrow viewport (#214): the Projects & Tasks split stacks, and the stats
+   figures and capture thumbnails follow the mobile card gutter. */
+.df-v2[data-chrome="mobile"] .df-task-manager {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.df-v2[data-chrome="mobile"] .df-stat-band {
+  gap: 18px;
+  padding: 12px 13px 14px;
+}
+
+.df-v2[data-chrome="mobile"] .df-stat-bars {
+  padding: 12px 13px 14px;
+}
+
+.df-v2[data-chrome="mobile"] .df-gallery-grid {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  padding: 10px 13px 14px;
+}
+
+.df-v2[data-chrome="mobile"] .df-gallery-full,
+.df-v2[data-chrome="mobile"] .df-gallery-paging {
+  padding-left: 13px;
+  padding-right: 13px;
+}
+
+.df-v2[data-chrome="mobile"] .df-table-cell,
+.df-v2[data-chrome="mobile"] .df-table-head {
+  padding-left: 13px;
+  padding-right: 13px;
 }
 
 .df-v2[data-chrome="mobile"] .df-policy-grid {

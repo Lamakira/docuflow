@@ -1,32 +1,45 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { SafeUser, TimeEntryWithDetails } from "@shared/schema";
+import type { CrmProjectWithDetails, SafeUser, TimeEntryWithDetails } from "@shared/schema";
 import { chromeRefusal } from "./chrome";
 import { motionForSurface } from "./motion";
 import { memberName } from "./today";
+import { TIME_TAB_IDS, type TimeTabId } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
+import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
+import { V2TaskTable } from "./V2TaskTable";
 import {
+  composeProjectTasks,
+  taskPath,
+  tasksPath,
+  type ProjectTask,
+} from "./tasks";
+import {
+  composeTimeStats,
   composeTimeTracking,
   timeEntriesPath,
+  timePeriodLabel,
+  timePeriodRange,
   timeStatsPath,
+  timeTabs,
+  endOfDayLocal as endOfDay,
+  startOfDayLocal as startOfDay,
+  TIME_PERIODS,
   type TimeEntryRowInput,
+  type TimePeriod,
+  type TimeStatsResponse,
 } from "./time";
 
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
 type TimeStats = { totalDuration: number };
+type TasksResponse = { data: ProjectTask[] };
 
 const ENTRY_MOTION = motionForSurface("time-entry").enterExit;
-
-function startOfDay(value: Date): Date {
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
-}
-
-function endOfDay(value: Date): Date {
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 23, 59, 59, 999);
-}
+const STATS_MOTION = motionForSurface("time-stats-period").enterExit;
 
 function startOfWeek(value: Date): Date {
   const start = startOfDay(value);
@@ -52,10 +65,51 @@ function toRow(entry: TimeEntryWithDetails): TimeEntryRowInput {
   };
 }
 
+/** The Workspace a Member is reading, and whether it accepts writes. */
+function useWorkspaceCondition() {
+  const { memberships } = useV2Chrome();
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  return {
+    workspaceName: current?.workspaceName ?? "this Workspace",
+    readOnly: current?.condition === "Read-only",
+  };
+}
+
 export function V2TimePage() {
+  const params = useParams<{ tab?: string }>();
+  const requested = params.tab ?? "entries";
+  const tab: TimeTabId = (TIME_TAB_IDS as readonly string[]).includes(requested)
+    ? (requested as TimeTabId)
+    : "entries";
+  const tabs = timeTabs(tab);
+
+  return (
+    <div className="df-page" data-testid="v2-time">
+      <nav className="df-tabs" aria-label="Time Tracking">
+        {tabs.map((item) => (
+          <Link
+            key={item.id}
+            href={item.href}
+            className="df-tab"
+            data-active={item.active ? "true" : "false"}
+            data-testid={`v2-time-tab-${item.id}`}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+      {tab === "stats" ? <TimeStatsPane /> : null}
+      {tab === "projects" ? <ProjectTasksPane /> : null}
+      {tab === "entries" ? <TimeEntriesPane /> : null}
+    </div>
+  );
+}
+
+function TimeEntriesPane() {
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
-  const { layout, memberships } = useV2Chrome();
+  const { layout } = useV2Chrome();
+  const { workspaceName, readOnly } = useWorkspaceCondition();
   const {
     projects,
     tasks,
@@ -83,9 +137,6 @@ export function V2TimePage() {
   const [leavingIds, setLeavingIds] = useState<string[]>([]);
   const knownIds = useRef<Set<string> | null>(null);
 
-  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
-  const workspaceName = current?.workspaceName ?? "this Workspace";
-  const readOnly = current?.condition === "Read-only";
   const isAdmin = user?.role === "admin";
 
   const rangeDates = useMemo(() => {
@@ -102,6 +153,7 @@ export function V2TimePage() {
     userId: isAdmin && userFilter !== "all" ? userFilter : null,
   };
   const entriesUrl = timeEntriesPath(filters);
+  // The Workday chip counts today, whatever range the register is filtered to.
   const statsUrl = timeStatsPath({
     startDate: startOfDay(now),
     endDate: endOfDay(now),
@@ -215,7 +267,7 @@ export function V2TimePage() {
 
   if (isLoading) {
     return (
-      <div className="df-page" data-testid="v2-time">
+      <>
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Time Tracking</h1>
@@ -223,13 +275,13 @@ export function V2TimePage() {
           </div>
         </header>
         <div className="df-card" style={{ minHeight: 280 }} />
-      </div>
+      </>
     );
   }
 
   if (isError) {
     return (
-      <div className="df-page" data-testid="v2-time">
+      <>
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Time Tracking</h1>
@@ -237,12 +289,12 @@ export function V2TimePage() {
           </div>
         </header>
         <p className="df-empty">Time Entries in this Workspace could not be loaded.</p>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="df-page" data-testid="v2-time">
+    <>
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Time Tracking</h1>
@@ -256,43 +308,36 @@ export function V2TimePage() {
           <h2 className="df-card-title">Timer</h2>
           <span className="df-mono df-meta">{isRunning ? "RUNNING" : isPaused ? "PAUSED" : "IDLE"}</span>
         </div>
-        <div className="df-filter-bar" style={{ padding: "14px 18px 16px" }}>
-          <label className="df-filter-chip">
-            PROJECT
-            <select
-              value={selectedProjectId}
-              disabled={readOnly || busy}
-              aria-label="Project"
-              onChange={(event) => setSelectedProjectId(event.target.value)}
-            >
-              <option value="">Choose a Project</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.client?.name
-                    ? `${project.client.name} · ${project.project?.name || "Untitled Project"}`
-                    : project.project?.name || "Untitled Project"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="df-filter-chip">
-            TASK
-            <select
-              value={selectedTaskId}
-              disabled={readOnly || busy || !selectedProjectId}
-              aria-label="Task"
-              onChange={(event) => setSelectedTaskId(event.target.value)}
-            >
-              <option value="">Choose a Task</option>
-              {tasks
+        <div className="df-toolbar" data-align="start">
+          <V2FilterSelect
+            label="PROJECT"
+            ariaLabel="Project"
+            value={selectedProjectId || V2_SELECT_NONE}
+            disabled={readOnly || busy}
+            onChange={(next) => setSelectedProjectId(next === V2_SELECT_NONE ? "" : next)}
+            options={[
+              { value: V2_SELECT_NONE, label: "Choose a Project" },
+              ...projects.map((project) => ({
+                value: project.id,
+                label: project.client?.name
+                  ? `${project.client.name} · ${project.project?.name || "Untitled Project"}`
+                  : project.project?.name || "Untitled Project",
+              })),
+            ]}
+          />
+          <V2FilterSelect
+            label="TASK"
+            ariaLabel="Task"
+            value={selectedTaskId || V2_SELECT_NONE}
+            disabled={readOnly || busy || !selectedProjectId}
+            onChange={(next) => setSelectedTaskId(next === V2_SELECT_NONE ? "" : next)}
+            options={[
+              { value: V2_SELECT_NONE, label: "Choose a Task" },
+              ...tasks
                 .filter((task) => task.status !== "archived")
-                .map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.name}
-                  </option>
-                ))}
-            </select>
-          </label>
+                .map((task) => ({ value: task.id, label: task.name })),
+            ]}
+          />
           <button
             type="button"
             className="df-ink-btn"
@@ -311,58 +356,54 @@ export function V2TimePage() {
       </section>
 
       <div className="df-filter-bar">
-        <label className="df-filter-chip" data-active={range === "today" ? "true" : "false"}>
-          RANGE
-          <select value={range} aria-label="Range" onChange={(event) => setRange(event.target.value as typeof range)}>
-            <option value="today">Today</option>
-            <option value="week">This week</option>
-            <option value="all">All</option>
-          </select>
-        </label>
-        <label className="df-filter-chip">
-          PROJECT
-          <select
-            value={projectFilter}
-            aria-label="Filter by Project"
-            onChange={(event) => setProjectFilter(event.target.value)}
-          >
-            <option value="all">All</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.project?.name || "Untitled Project"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="df-filter-chip">
-          STATUS
-          <select
-            value={statusFilter}
-            aria-label="Filter by status"
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="all">All</option>
-            <option value="running">Running</option>
-            <option value="paused">Paused</option>
-            <option value="stopped">Stopped</option>
-          </select>
-        </label>
+        <V2FilterSelect
+          label="RANGE"
+          ariaLabel="Range"
+          value={range}
+          active={range === "today"}
+          onChange={(next) => setRange(next as typeof range)}
+          options={[
+            { value: "today", label: "Today" },
+            { value: "week", label: "This week" },
+            { value: "all", label: "All" },
+          ]}
+        />
+        <V2FilterSelect
+          label="PROJECT"
+          ariaLabel="Filter by Project"
+          value={projectFilter}
+          onChange={setProjectFilter}
+          options={[
+            { value: "all", label: "All" },
+            ...projects.map((project) => ({
+              value: project.id,
+              label: project.project?.name || "Untitled Project",
+            })),
+          ]}
+        />
+        <V2FilterSelect
+          label="STATUS"
+          ariaLabel="Filter by status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "all", label: "All" },
+            { value: "running", label: "Running" },
+            { value: "paused", label: "Paused" },
+            { value: "stopped", label: "Stopped" },
+          ]}
+        />
         {isAdmin ? (
-          <label className="df-filter-chip">
-            MEMBER
-            <select
-              value={userFilter}
-              aria-label="Filter by Member"
-              onChange={(event) => setUserFilter(event.target.value)}
-            >
-              <option value="all">All</option>
-              {users.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {memberName(member)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <V2FilterSelect
+            label="MEMBER"
+            ariaLabel="Filter by Member"
+            value={userFilter}
+            onChange={setUserFilter}
+            options={[
+              { value: "all", label: "All" },
+              ...users.map((member) => ({ value: member.id, label: memberName(member) })),
+            ]}
+          />
         ) : null}
       </div>
 
@@ -411,7 +452,7 @@ export function V2TimePage() {
                   </span>
                   <span className="df-mono df-time-clock">{row.duration}</span>
                   {row.canDelete ? (
-                    <button type="button" className="df-ghost-link" onClick={() => onDelete(row.id)}>
+                    <button type="button" className="df-ghost-btn" onClick={() => onDelete(row.id)}>
                       Remove
                     </button>
                   ) : null}
@@ -428,7 +469,7 @@ export function V2TimePage() {
                   </span>
                   <span style={{ textAlign: "right" }}>
                     {row.canDelete ? (
-                      <button type="button" className="df-ghost-link" onClick={() => onDelete(row.id)}>
+                      <button type="button" className="df-ghost-btn" onClick={() => onDelete(row.id)}>
                         Remove
                       </button>
                     ) : null}
@@ -439,6 +480,363 @@ export function V2TimePage() {
           ))
         )}
       </section>
-    </div>
+    </>
+  );
+}
+
+/**
+ * Time stats — the Workday totals the v1 `/time-tracking/dashboard` reported.
+ * Changing the period is the one novelty on this ticket: the figures crossfade
+ * on opacity so the numbers do not jump, and the bars never parade in.
+ */
+function TimeStatsPane() {
+  const now = useMemo(() => new Date(), []);
+  const { user } = useAuth();
+  const { workspaceName } = useWorkspaceCondition();
+  const [period, setPeriod] = useState<TimePeriod>("week");
+
+  const canSeeEveryone = user?.role === "admin";
+  const periodRange = useMemo(() => timePeriodRange(period, now), [period, now]);
+  const statsUrl = timeStatsPath({
+    startDate: periodRange.startDate,
+    endDate: periodRange.endDate,
+  });
+
+  const { data, isLoading, isError } = useQuery<TimeStatsResponse>({
+    queryKey: ["/api/time-tracking/stats", statsUrl],
+    queryFn: async () => {
+      const res = await fetch(statsUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Time stats");
+      return res.json();
+    },
+  });
+
+  const page = composeTimeStats({
+    period,
+    workspaceName,
+    canSeeEveryone,
+    stats: data ?? null,
+  });
+
+  return (
+    <>
+      <header className="df-today-head">
+        <div style={{ minWidth: 0 }}>
+          <h1 className="df-title">Time stats</h1>
+          <p className="df-subhead">{page.subhead}</p>
+        </div>
+        <V2FilterSelect
+          label="PERIOD"
+          ariaLabel="Period"
+          value={period}
+          onChange={(next) => setPeriod(next as TimePeriod)}
+          options={TIME_PERIODS.map((option) => ({
+            value: option,
+            label: timePeriodLabel(option),
+          }))}
+          testId="v2-time-stats-period"
+        />
+      </header>
+
+      {isError ? (
+        <p className="df-empty">Time stats for this Workspace could not be loaded.</p>
+      ) : (
+        <div
+          key={period}
+          className="df-time-stats"
+          data-motion={STATS_MOTION}
+          data-testid="v2-time-stats"
+        >
+          <section className="df-card">
+            <div className="df-card-head">
+              <h2 className="df-card-title">{page.periodLabel}</h2>
+            </div>
+            <div className="df-stat-band">
+              {page.figures.map((figure) => (
+                <div key={figure.label} className="df-stat">
+                  <div className="df-mono df-meta">{figure.label}</div>
+                  <div className="df-stat-value">{isLoading ? "—" : figure.value}</div>
+                  <div className="df-mono df-meta">{figure.meta}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="df-card" data-testid="v2-time-stats-projects">
+            <div className="df-card-head">
+              <h2 className="df-card-title">By Project</h2>
+            </div>
+            {page.byProject.empty ? (
+              <p className="df-empty">{isLoading ? "Loading…" : page.byProject.emptyCopy}</p>
+            ) : (
+              <div className="df-stat-bars">
+                {page.byProject.rows.map((row) => (
+                  <div key={row.id} className="df-stat-bar">
+                    <div className="df-stat-bar-head">
+                      <span className="df-row-title">{row.name}</span>
+                      <span className="df-mono df-meta">
+                        {row.hours} · {row.share}%
+                      </span>
+                    </div>
+                    <span className="df-meter df-meter-wide">
+                      <span
+                        className="df-stat-bar-fill df-meter-fill"
+                        style={{ width: `${Math.min(100, row.share ?? 0)}%` }}
+                      />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {page.showMembers ? (
+            <section className="df-card" data-testid="v2-time-stats-members">
+              <div className="df-card-head">
+                <h2 className="df-card-title">By Member</h2>
+              </div>
+              {page.byMember.empty ? (
+                <p className="df-empty">{isLoading ? "Loading…" : page.byMember.emptyCopy}</p>
+              ) : (
+                <div className="df-stat-bars">
+                  {page.byMember.rows.map((row) => (
+                    <div key={row.id} className="df-kv">
+                      <span>{row.name}</span>
+                      <span className="df-mono">{row.hours}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Projects & Tasks — the v1 `/time-tracking/projects` manager. It writes the
+ * same `/api/tasks` records the Dossier Tasks list reads, so a Task created
+ * here is the same Task there.
+ */
+function ProjectTasksPane() {
+  const { workspaceName, readOnly } = useWorkspaceCondition();
+  const [search, setSearch] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [taskName, setTaskName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
+
+  const { data: projectsResponse, isLoading: projectsLoading } = useQuery<{ data: CrmProjectWithDetails[] }>({
+    queryKey: ["/api/crm/projects", { pageSize: 500 }],
+    queryFn: () => fetch("/api/crm/projects?pageSize=500", { credentials: "include" }).then((res) => res.json()),
+  });
+
+  const tasksUrl = selectedProjectId ? tasksPath(selectedProjectId, { includeArchived: true }) : null;
+  const { data: tasksResponse, isLoading: tasksLoading } = useQuery<TasksResponse>({
+    queryKey: ["/api/tasks", tasksUrl],
+    enabled: Boolean(tasksUrl),
+    queryFn: async () => {
+      const res = await fetch(tasksUrl as string, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Tasks");
+      return res.json();
+    },
+  });
+
+  const page = composeProjectTasks({
+    workspaceName,
+    readOnly,
+    search,
+    selectedProjectId,
+    projects: projectsResponse?.data ?? [],
+    tasks: tasksResponse?.data ?? [],
+  });
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+  }
+
+  function onWriteError(error: Error) {
+    setWriteRefusal(
+      readOnly
+        ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" })
+        : chromeRefusal({ kind: "generic", message: error.message }),
+    );
+  }
+
+  const createTask = useMutation({
+    mutationFn: (name: string) =>
+      apiRequest("POST", "/api/tasks", { crmProjectId: selectedProjectId, name }),
+    onSuccess: () => {
+      invalidate();
+      setTaskName("");
+      setWriteRefusal(null);
+    },
+    onError: onWriteError,
+  });
+
+  const updateTask = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<ProjectTask> }) =>
+      apiRequest("PATCH", taskPath(id), data),
+    onSuccess: () => {
+      invalidate();
+      setEditingId(null);
+      setWriteRefusal(null);
+    },
+    onError: onWriteError,
+  });
+
+  const deleteTask = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", taskPath(id)),
+    onSuccess: () => {
+      invalidate();
+      setConfirmDeleteId(null);
+      setWriteRefusal(null);
+    },
+    onError: onWriteError,
+  });
+
+  /** Shows the refusal and reports that the write must not proceed. */
+  function showRefusalIfReadOnly(): boolean {
+    if (!readOnly) return false;
+    setWriteRefusal(page.refusal);
+    return true;
+  }
+
+  function onCreate() {
+    const name = taskName.trim();
+    if (!name || !selectedProjectId || showRefusalIfReadOnly()) return;
+    createTask.mutate(name);
+  }
+
+  function onRename(id: string) {
+    const name = editingName.trim();
+    if (!name || showRefusalIfReadOnly()) return;
+    updateTask.mutate({ id, data: { name } });
+  }
+
+  function onSetStatus(id: string, status: string) {
+    if (showRefusalIfReadOnly()) return;
+    updateTask.mutate({ id, data: { status } });
+  }
+
+  function onDelete(id: string) {
+    if (showRefusalIfReadOnly()) return;
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      return;
+    }
+    deleteTask.mutate(id);
+  }
+
+  return (
+    <>
+      <header className="df-today-head">
+        <div style={{ minWidth: 0 }}>
+          <h1 className="df-title">Projects &amp; Tasks</h1>
+          <p className="df-subhead">{page.subhead}</p>
+        </div>
+      </header>
+
+      {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
+
+      <div className="df-task-manager">
+        <section className="df-card" data-testid="v2-time-projects">
+          <div className="df-card-head">
+            <h2 className="df-card-title">Projects</h2>
+          </div>
+          <div className="df-toolbar" data-align="start">
+            <label className="df-filter-input">
+              <input
+                type="search"
+                value={search}
+                placeholder="Search Projects…"
+                aria-label="Search Projects"
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
+          </div>
+          {page.projectsEmpty ? (
+            <p className="df-empty">{projectsLoading ? "Loading…" : page.projectsEmptyCopy}</p>
+          ) : (
+            <div className="df-task-projects">
+              {page.projects.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  className="df-register-row df-task-project"
+                  data-selected={project.selected ? "true" : "false"}
+                  data-testid={`v2-time-project-${project.id}`}
+                  onClick={() => {
+                    setSelectedProjectId(project.id);
+                    setEditingId(null);
+                    setConfirmDeleteId(null);
+                  }}
+                >
+                  <span className="df-row-title">{project.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="df-card" data-testid="v2-time-tasks">
+          {page.selectedProjectName === null ? (
+            <p className="df-empty">{page.chooseCopy}</p>
+          ) : (
+            <>
+              <div className="df-card-head">
+                <h2 className="df-card-title">{page.selectedProjectName}</h2>
+                <span className="df-mono df-meta">{page.active.rows.length} OPEN</span>
+              </div>
+              <div className="df-toolbar" data-align="start">
+                <label className="df-filter-input">
+                  <input
+                    value={taskName}
+                    placeholder="New Task name…"
+                    aria-label="New Task name"
+                    disabled={!page.canWrite}
+                    onChange={(event) => setTaskName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") onCreate();
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="df-ink-btn"
+                  disabled={!taskName.trim() || createTask.isPending}
+                  onClick={onCreate}
+                >
+                  Add Task
+                </button>
+              </div>
+
+              <V2TaskTable
+                rows={page.rows}
+                canWrite={page.canWrite}
+                emptyCopy={tasksLoading ? "Loading…" : page.active.emptyCopy}
+                editingId={editingId}
+                editingName={editingName}
+                confirmDeleteId={confirmDeleteId}
+                setEditingName={setEditingName}
+                onStartRename={(row) => {
+                  setEditingId(row.id);
+                  setEditingName(row.name);
+                }}
+                onRename={onRename}
+                onCancelRename={() => setEditingId(null)}
+                onSetStatus={onSetStatus}
+                onDelete={onDelete}
+                onCancelDelete={() => setConfirmDeleteId(null)}
+              />
+            </>
+          )}
+        </section>
+      </div>
+    </>
   );
 }

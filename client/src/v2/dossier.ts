@@ -1,5 +1,6 @@
 import { formatHours, memberInitials, memberName, projectHref } from "./today";
 import { DOSSIER_TAB_IDS, type DossierTabId } from "./presentation";
+import { taskStatusLabel } from "./tasks";
 
 export type DossierPerson = {
   id?: string;
@@ -299,13 +300,6 @@ const TAB_LABEL: Record<DossierTabId, string> = {
   settings: "Settings",
 };
 
-const TASK_STATUS_LABEL: Record<string, string> = {
-  open: "TO DO",
-  in_progress: "IN PROGRESS",
-  done: "DONE",
-  archived: "ARCHIVED",
-};
-
 const VIEW_DAILY_UPDATES_CAPABILITY = "View Daily Updates";
 
 function parseDate(value: Date | string | null | undefined): Date | null {
@@ -419,7 +413,7 @@ function composeNextActions(input: DossierInput): DossierModel["nextActions"] {
       done,
       flag: !done && input.trackingTaskId === task.id ? ("TIMER RUNNING" as const) : null,
       meta: done ? `DONE${doneAt ? ` ${formatDayStamp(doneAt)}` : ""}` : "",
-      status: TASK_STATUS_LABEL[task.status] ?? task.status.replace(/_/g, " ").toUpperCase(),
+      status: taskStatusLabel(task.status),
       statusValue: task.status,
     };
   });

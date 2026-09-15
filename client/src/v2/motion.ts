@@ -32,6 +32,9 @@
  * Help article open is tens/day — opacity only, no page-slide.
  * Do not animate: Help search keystrokes, pairing spinner as decoration, article TOC highlight chasing scroll,
  * register filter typing, role dropdown as decoration, seat digits counting.
+ * Changing the Time stats period is occasional (preventing a jarring change) — opacity only, no movement.
+ * Do not animate: ticking elapsed seconds, by-Project histogram bars as a parade,
+ * Activity Evidence thumbnail layout shift, gallery filter applying.
  */
 
 export const V2_MOTION_TOKENS = {
@@ -55,7 +58,9 @@ export type MotionSurface =
   | "dossier-tab-swap"
   | "opportunity-stage-change"
   | "time-entry"
+  | "time-stats-period"
   | "activity-evidence-expand"
+  | "activity-gallery-filter"
   | "dossier-file-open"
   | "capability-refusal"
   | "secret-once"
@@ -102,7 +107,9 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "dossier-tab-swap": "occasional",
   "opportunity-stage-change": "occasional",
   "time-entry": "occasional",
+  "time-stats-period": "occasional",
   "activity-evidence-expand": "occasional",
+  "activity-gallery-filter": "tens",
   "dossier-file-open": "occasional",
   "capability-refusal": "occasional",
   "secret-once": "occasional",
@@ -130,6 +137,8 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "people-seats": "keyboard-or-100+",
 };
 
+const OPACITY_ONLY = new Set<MotionSurface>(["help-article", "editor-save", "time-stats-period"]);
+
 export function motionForSurface(
   surface: MotionSurface,
   prefs: { reducedMotion?: boolean } = {},
@@ -140,7 +149,10 @@ export function motionForSurface(
     return { enterExit: "instant", press: "none", movement: "none", keepOpacity: true };
   }
 
-  if (surface === "help-article") {
+  // Surfaces that may bridge but must not move: opacity carries the change.
+  // A Help article must not page-slide; a save state must not celebrate; the
+  // Time stats figures must not slide under a new period.
+  if (OPACITY_ONLY.has(surface)) {
     return { enterExit: "standard", press: "none", movement: "none", keepOpacity: true };
   }
 
@@ -156,10 +168,6 @@ export function motionForSurface(
 
   if (frequency === "tens") {
     return { enterExit: "none", press: "scale", movement: "none", keepOpacity: true };
-  }
-
-  if (surface === "editor-save") {
-    return { enterExit: "standard", press: "none", movement: "none", keepOpacity: true };
   }
 
   return { enterExit: "standard", press: "none", movement: "allowed", keepOpacity: true };

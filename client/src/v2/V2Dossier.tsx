@@ -1147,7 +1147,7 @@ function DossierNotes({
           <div className="df-mono df-meta">{note.meta}</div>
           <p className="df-prose">{note.content}</p>
           {note.audioUrl ? <V2NoteAudioPlayer audioUrl={note.audioUrl} audioRecordingId={note.audioRecordingId ?? undefined} transcriptStatus={note.transcriptStatus ?? undefined} audioTranscript={note.audioTranscript ?? undefined} /> : null}
-          <button type="button" className="df-ghost-link" onClick={() => onDeleteNote(note.id)}>Delete</button>
+          <button type="button" className="df-ghost-btn" onClick={() => onDeleteNote(note.id)}>Delete</button>
         </article>
       ))}
     </section>
@@ -1240,19 +1240,19 @@ function ReminderRow({
       <span className="df-status">{reminder.status}</span>
       <span className="df-people-action">
         {reminder.canComplete ? (
-          <button type="button" className="df-ghost-link" onClick={() => onSetStatus(reminder.id, "done")}>
+          <button type="button" className="df-ghost-btn" onClick={() => onSetStatus(reminder.id, "done")}>
             Done
           </button>
         ) : null}
         {reminder.canReopen ? (
-          <button type="button" className="df-ghost-link" onClick={() => onSetStatus(reminder.id, "upcoming")}>
+          <button type="button" className="df-ghost-btn" onClick={() => onSetStatus(reminder.id, "upcoming")}>
             Reopen
           </button>
         ) : null}
-        <button type="button" className="df-ghost-link" onClick={open}>
+        <button type="button" className="df-ghost-btn" onClick={open}>
           Edit
         </button>
-        <button type="button" className="df-ghost-link" onClick={() => onDelete(reminder.id)}>
+        <button type="button" className="df-ghost-btn" onClick={() => onDelete(reminder.id)}>
           Delete
         </button>
       </span>

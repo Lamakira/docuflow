@@ -295,7 +295,7 @@ export function V2PeoplePage() {
       {refusal?.id === "invite" ? (
         <div className="df-refusal-pop" data-motion={REFUSAL_MOTION} role="status" data-testid="v2-people-refusal-invite">
           <p className="df-refusal">{refusal.message}</p>
-          <button type="button" className="df-ghost-link" onClick={() => setRefusal(null)}>
+          <button type="button" className="df-ghost-btn" onClick={() => setRefusal(null)}>
             Close
           </button>
         </div>
@@ -504,13 +504,13 @@ function RefusalAnchor({
   const open = refusal?.id === id;
   return (
     <span className="df-refusal-anchor">
-      <button type="button" className="df-ghost-link" disabled={pending} data-testid={testId} onClick={onClick}>
+      <button type="button" className="df-ghost-btn" disabled={pending} data-testid={testId} onClick={onClick}>
         {label}
       </button>
       {open ? (
         <div className="df-refusal-pop" data-motion={REFUSAL_MOTION} role="status" data-testid={`v2-people-refusal-${id}`}>
           <p className="df-refusal">{refusal.message}</p>
-          <button type="button" className="df-ghost-link" onClick={onDismiss}>
+          <button type="button" className="df-ghost-btn" onClick={onDismiss}>
             Close
           </button>
         </div>

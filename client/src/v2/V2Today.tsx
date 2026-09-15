@@ -288,7 +288,7 @@ export function V2TodayPage() {
                       data-testid="v2-today-remind-refusal"
                     >
                       <p className="df-refusal">{remindRefusal}</p>
-                      <button type="button" className="df-ghost-link" onClick={() => setRemindRefusal(null)}>
+                      <button type="button" className="df-ghost-btn" onClick={() => setRemindRefusal(null)}>
                         Close
                       </button>
                     </div>
