@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import type { HelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
 import { Loader2, ImagePlus } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { docBlockClass } from "@/v2/helpArticle";
+import { useHelpSurface } from "./helpSurface";
 
 type ScreenshotMap = Record<string, string | null>;
 
@@ -24,6 +25,7 @@ interface HelpScreenshotProps {
 }
 
 export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreenshotProps) {
+  const surface = useHelpSurface();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const { toast } = useToast();
@@ -78,7 +80,7 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+      <div className={docBlockClass("figureLoading", surface)}>
         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
         Loading…
       </div>
@@ -92,9 +94,9 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
 
   if (url) {
     return (
-      <figure className="my-8 space-y-3 not-prose">
-        <div className="relative overflow-hidden rounded-xl border border-border/70 bg-muted/30 shadow-inner ring-1 ring-border/30">
-          <img src={url} alt={caption} className="w-full max-h-[min(70vh,520px)] object-contain bg-background/80" loading="lazy" />
+      <figure className={docBlockClass("figure", surface)}>
+        <div className={docBlockClass("figureFrame", surface)}>
+          <img src={url} alt={caption} className={docBlockClass("figureImage", surface)} loading="lazy" />
           {isAdmin ? (
             <div className="absolute bottom-2 right-2 flex items-center gap-1">
               <input
@@ -108,7 +110,7 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
                 type="button"
                 size="sm"
                 variant="secondary"
-                className="h-7 text-xs shadow-sm"
+                className={docBlockClass("figureAction", surface)}
                 disabled={uploading || saveMutation.isPending}
                 onClick={() => fileRef.current?.click()}
               >
@@ -121,9 +123,9 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
             </div>
           ) : null}
         </div>
-        <figcaption className="text-xs text-muted-foreground px-1 leading-relaxed">{caption}</figcaption>
+        <figcaption className={docBlockClass("figureCaption", surface)}>{caption}</figcaption>
         {isAdmin ? (
-          <p className="text-[11px] text-muted-foreground font-mono" data-testid={`help-screenshot-slot-${slotId}`}>
+          <p className={docBlockClass("figureSlot", surface)} data-testid={`help-screenshot-slot-${slotId}`}>
             Slot: {slotId}
           </p>
         ) : null}
@@ -133,20 +135,13 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
 
   // Admin + missing asset
   return (
-    <div
-      className={cn(
-        "my-8 rounded-xl border-2 border-dashed border-violet-500/45 bg-violet-500/[0.07] p-5 space-y-3 shadow-sm ring-1 ring-violet-500/10",
-        "text-sm text-foreground/90",
-      )}
-    >
+    <div className={docBlockClass("figureEmpty", surface)}>
       <div className="flex items-start gap-2">
-        <ImagePlus className="h-4 w-4 text-violet-600 dark:text-violet-400 shrink-0 mt-0.5" aria-hidden />
+        <ImagePlus className={`h-4 w-4 shrink-0 mt-0.5 ${docBlockClass("figureEmptyIcon", surface)}`} aria-hidden />
         <div className="min-w-0 space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200">
-            Screenshot required (admin only)
-          </p>
-          <p className="text-xs text-muted-foreground leading-relaxed">{expectedLabel}</p>
-          <p className="text-[11px] font-mono text-muted-foreground">Slot: {slotId}</p>
+          <p className={docBlockClass("figureEmptyLabel", surface)}>Screenshot required (admin only)</p>
+          <p className={docBlockClass("figureEmptyText", surface)}>{expectedLabel}</p>
+          <p className={docBlockClass("figureSlot", surface)}>Slot: {slotId}</p>
         </div>
       </div>
       <input
@@ -175,7 +170,7 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
           </>
         )}
       </Button>
-      <p className="text-[11px] text-muted-foreground leading-relaxed">
+      <p className={docBlockClass("figureNote", surface)}>
         Images are stored in organisation public object storage and linked to this help slot. Users will see the image
         once uploaded; until then they see no placeholder.
       </p>

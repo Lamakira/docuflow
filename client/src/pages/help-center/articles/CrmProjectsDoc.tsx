@@ -1,12 +1,20 @@
-import { DocH3, DocLi, DocList, DocP, DocSection } from "@/components/help-center/DocBlocks";
+import {
+  DocArticle,
+  DocSection,
+  DocH3,
+  DocList,
+  DocLi,
+  DocP,
+  DocStrong,
+} from "@/components/help-center/DocBlocks";
 
 export function CrmProjectsDoc() {
   return (
-    <div className="space-y-8">
+    <DocArticle>
       <DocSection title="Projects in Project Management">
         <DocP>
           Projects represent billable or trackable units of work — often a client engagement, internal initiative, or
-          deliverable. Open <strong className="text-foreground">Project Management</strong> from the sidebar, then use the pipeline or list views
+          deliverable. Open <DocStrong>Project Management</DocStrong> from the sidebar, then use the pipeline or list views
           your team adopted.
         </DocP>
         <DocList>
@@ -32,13 +40,13 @@ export function CrmProjectsDoc() {
       <DocSection title="Naming and hygiene">
         <DocList>
           <DocLi>
-            Prefer <strong className="text-foreground">clear, unique project names</strong> — avoid “Misc” or duplicate “Client A” without a
+            Prefer <DocStrong>clear, unique project names</DocStrong> — avoid “Misc” or duplicate “Client A” without a
             qualifier.
           </DocLi>
           <DocLi>Align task names with how you describe work in timesheet descriptions to simplify audits.</DocLi>
           <DocLi>Use consistent casing (sentence case or title case) across the portfolio for readability.</DocLi>
         </DocList>
       </DocSection>
-    </div>
+    </DocArticle>
   );
 }

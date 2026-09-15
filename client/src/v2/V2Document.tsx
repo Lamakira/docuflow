@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useDebouncedCallback } from "@/hooks/useDebounce";
 import { useAuth } from "@/hooks/useAuth";
 import { chromeRefusal } from "./chrome";
+import { composeFileViewer } from "./fileViewer";
 import {
   composeDocumentEditor,
   type DocumentEditorRecord,
@@ -14,6 +15,7 @@ import {
   type DocumentEditorSource,
 } from "./documentEditor";
 import { matchV2Route } from "./presentation";
+import { V2FileViewer } from "./V2FileViewer";
 import { projectVisibleTo } from "./projects";
 import { memberName } from "./today";
 import { useV2Chrome } from "./V2Shell";
@@ -33,6 +35,7 @@ function toWorkspaceRecord(document: CompanyDocumentWithUploader): DocumentEdito
     content: document.content,
     storagePath: document.storagePath,
     fileName: document.fileName,
+    fileSize: document.fileSize,
     mimeType: document.mimeType,
     access: document.access,
   };
@@ -274,36 +277,25 @@ export function V2DocumentPage() {
     );
   }
 
+  // An uploaded File is Knowledge, not a page to edit: it opens in the viewer (#216).
+  // Only a Workspace Document has the stream and conversion routes; anything
+  // else is read from the object it was stored as.
   if (editor.mode === "viewer") {
-    const mimeType = data?.record?.mimeType ?? "";
-    const streamHref = editor.streamHref;
+    const record = data?.record;
     return (
-      <div className="df-editor-page" data-testid="v2-document-editor">
-        <header className="df-editor-head">
-          <Link href={editor.backHref} className="df-ghost-btn">
-            Back to {editor.backLabel}
-          </Link>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <h1 className="df-title" style={{ fontSize: 22 }}>
-              {editor.title}
-            </h1>
-          </div>
-          {editor.downloadHref ? (
-            <a href={editor.downloadHref} className="df-ink-btn">
-              Download
-            </a>
-          ) : null}
-        </header>
-        <div className="df-editor">
-          {mimeType.startsWith("image/") && streamHref ? (
-            <img src={streamHref} alt={editor.title ?? ""} style={{ maxWidth: "100%" }} />
-          ) : streamHref ? (
-            <iframe title={editor.title ?? "File"} src={streamHref} style={{ width: "100%", minHeight: 640, border: 0 }} />
-          ) : (
-            <p className="df-empty">Preview is not available for this File.</p>
-          )}
-        </div>
-      </div>
+      <V2FileViewer
+        viewer={composeFileViewer({
+          source: source === "project" ? "object" : "workspace",
+          documentId,
+          objectPath: record?.storagePath ?? null,
+          name: editor.title ?? "File",
+          fileName: record?.fileName ?? null,
+          fileSize: record?.fileSize ?? null,
+          mimeType: record?.mimeType ?? null,
+          access: record?.access ?? null,
+          backHref: editor.backHref,
+        })}
+      />
     );
   }
 

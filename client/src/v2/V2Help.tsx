@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { HELP_HUB_ITEMS } from "../content/help-center/helpCenterConfig";
+import { HelpSurfaceProvider } from "../components/help-center/helpSurface";
 import { HELP_ARTICLE_COMPONENTS } from "../pages/help-center/articleRegistry";
 import { composeHelp } from "./help";
 import { motionForSurface } from "./motion";
@@ -68,7 +69,10 @@ export function V2HelpPage() {
           data-motion={ARTICLE_MOTION}
           data-testid="v2-help-article"
         >
-          <Article />
+          {/* The body renders on v2 tokens, not the discarded v1 system (ADR-0003). */}
+          <HelpSurfaceProvider surface="v2">
+            <Article />
+          </HelpSurfaceProvider>
         </article>
       </div>
     );

@@ -1,3 +1,4 @@
+import { dossierFileDestination } from "./fileViewer";
 import { formatHours, memberInitials, memberName, projectHref } from "./today";
 import { DOSSIER_TAB_IDS, type DossierTabId } from "./presentation";
 import { taskStatusLabel } from "./tasks";
@@ -509,29 +510,28 @@ function composeUpdates(input: DossierInput): DossierModel["updates"] {
 
 /**
  * A Dossier File comes from a note attachment, so its href is an object path
- * the backend serves — not a v2 route. Client-side routing one lands on the
- * placeholder, which is the dead name #213 forbids, so the row says which kind
- * of destination it has and the page opens it accordingly. The viewer itself
- * belongs to the Knowledge ticket; this only has to reach the File.
+ * the backend serves — not a v2 route. The row says which kind of destination
+ * it has and the page opens it accordingly (#213); the object path itself now
+ * goes to the v2 File viewer rather than a bare browser tab (#216).
  */
-function fileTarget(href: string | undefined): DossierFileRow["target"] {
-  if (!href) return "none";
-  if (/^https?:\/\//i.test(href) || href.startsWith("/public-objects/") || href.startsWith("/objects/")) {
-    return "file";
-  }
-  return "app";
-}
-
 function composeFiles(input: DossierInput): DossierModel["files"] {
   const files = visibleRecords(input.files);
+  const backHref = input.project ? `${projectHref(input.project.id)}/files` : "/projects";
   return {
-    rows: files.map((file) => ({
-      id: file.id,
-      title: file.title,
-      meta: formatWhen(file.updatedAt, input.now),
-      href: file.href ?? "",
-      target: fileTarget(file.href),
-    })),
+    rows: files.map((file) => {
+      const destination = dossierFileDestination({
+        href: file.href,
+        name: file.title,
+        backHref,
+      });
+      return {
+        id: file.id,
+        title: file.title,
+        meta: formatWhen(file.updatedAt, input.now),
+        href: destination.href,
+        target: destination.target,
+      };
+    }),
     empty: files.length === 0,
     emptyCopy: "No Files on this Project you can access.",
   };
