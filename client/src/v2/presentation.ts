@@ -221,12 +221,18 @@ export const V2_NAV: V2NavSection[] = [
   },
 ];
 
+/** Devices owns the installer (#215), so the v1 download page lands there too. */
+function isDownloadRewrite(pathname: string): boolean {
+  return pathname === "/time-tracking/download" || pathname.startsWith("/time-tracking/download/");
+}
+
 function isDevicesPath(pathname: string): boolean {
   return (
     pathname === "/devices" ||
     pathname.startsWith("/devices/") ||
     pathname === "/time-tracking/devices" ||
-    pathname.startsWith("/time-tracking/devices/")
+    pathname.startsWith("/time-tracking/devices/") ||
+    isDownloadRewrite(pathname)
   );
 }
 
@@ -280,6 +286,7 @@ function isScreencastsRewrite(pathname: string): boolean {
 
 function isTimeTrackingRewrite(pathname: string): boolean {
   if (pathname === "/time-tracking/devices" || pathname.startsWith("/time-tracking/devices/")) return false;
+  if (isDownloadRewrite(pathname)) return false;
   if (isScreencastsRewrite(pathname)) return false;
   return pathname === "/time-tracking" || pathname.startsWith("/time-tracking/");
 }

@@ -1,7 +1,9 @@
 /**
- * Devices destination (#194).
- * Novelty: the pairing code appears (rare explanation / state).
- * Do not animate: the pairing spinner as decoration.
+ * Devices destination (#194) and the desktop-agent installer it needs (#215).
+ * Novelty: the pairing code appears (rare explanation / state). The installer
+ * rows carry none — a platform is offered or honestly unavailable.
+ * Do not animate: the pairing spinner as decoration, "Coming soon" as a
+ * spinner, the download control on becoming ready.
  */
 
 import { chromeRefusal } from "./chrome";
@@ -173,3 +175,127 @@ export function devicesWriteRefusal(input: DevicesWriteRefusal): string {
   }
   return chromeRefusal({ kind: "generic", message });
 }
+
+/**
+ * The installer the User needs before pairing (#215). Composed from the
+ * existing `/downloads/availability` and `/downloads/{platform}` routes — the
+ * desktop agent itself is not redesigned here. A platform reads ready only
+ * once the server has said the file exists, so nothing flashes ready first.
+ */
+
+export type InstallerPlatform = "windows" | "macos" | "linux";
+
+export type InstallerAvailability = Record<InstallerPlatform, boolean>;
+
+export type InstallersInput = {
+  availability: InstallerAvailability | null;
+  loading: boolean;
+  failed: boolean;
+};
+
+export type InstallerRow = {
+  platform: InstallerPlatform;
+  label: string;
+  requirement: string;
+  ready: boolean;
+  href: string | null;
+  action: string;
+  note: string | null;
+};
+
+export type InstallersModel = {
+  heading: string;
+  blurb: string;
+  rows: InstallerRow[];
+  unavailableCopy: string | null;
+};
+
+type InstallerPlatformCopy = {
+  platform: InstallerPlatform;
+  label: string;
+  requirement: string;
+  artifact: string;
+  note: string;
+};
+
+const INSTALLER_PLATFORMS: InstallerPlatformCopy[] = [
+  {
+    platform: "windows",
+    label: "Windows",
+    requirement: "Windows 10 / 11 (x64)",
+    artifact: ".exe",
+    note: "SmartScreen may prompt — choose More info, then Run anyway.",
+  },
+  {
+    platform: "macos",
+    label: "macOS",
+    requirement: "macOS 12+ (Apple Silicon / Intel)",
+    artifact: ".dmg",
+    note: "First launch: right-click the app and choose Open (unsigned build).",
+  },
+  {
+    platform: "linux",
+    label: "Linux",
+    requirement: "Ubuntu 20.04+ (x64)",
+    artifact: ".deb",
+    note: "Install with sudo dpkg -i DocuFlow-Agent-*.deb.",
+  },
+];
+
+/** What the availability check has told us so far. Ready is the server's word. */
+type InstallerState = "ready" | "checking" | "uncheckable" | "unpublished";
+
+export function downloadAvailabilityPath(): string {
+  return "/downloads/availability";
+}
+
+export function installerHref(platform: InstallerPlatform): string {
+  return `/downloads/${platform}`;
+}
+
+function stateFor(input: InstallersInput, platform: InstallerPlatform): InstallerState {
+  // An answer already given outlives a later failed re-check: a Download that
+  // works must not read Unavailable because a background refresh dropped.
+  if (input.availability) return input.availability[platform] === true ? "ready" : "unpublished";
+  if (input.loading) return "checking";
+  if (input.failed) return "uncheckable";
+  return "unpublished";
+}
+
+export function composeInstallers(input: InstallersInput): InstallersModel {
+  const rows = INSTALLER_PLATFORMS.map<InstallerRow>((copy) => {
+    const state = stateFor(input, copy.platform);
+    const ready = state === "ready";
+    return {
+      platform: copy.platform,
+      label: copy.label,
+      requirement: copy.requirement,
+      ready,
+      href: ready ? installerHref(copy.platform) : null,
+      action: ROW_ACTION[state](copy.artifact),
+      note: ready ? copy.note : null,
+    };
+  });
+
+  return {
+    heading: "Install the desktop agent",
+    blurb: "Install the agent, then pair it with a code from this page.",
+    rows,
+    unavailableCopy: rows.some((row) => row.ready) ? null : SECTION_COPY[stateFor(input, "windows")],
+  };
+}
+
+const ROW_ACTION: Record<InstallerState, (artifact: string) => string> = {
+  ready: (artifact) => `Download ${artifact}`,
+  checking: () => "Checking\u2026",
+  uncheckable: () => "Unavailable",
+  unpublished: () => "Not published yet",
+};
+
+/** Read only when no platform is ready, so the ready case never speaks here. */
+const SECTION_COPY: Record<InstallerState, string> = {
+  ready: "",
+  checking: "Checking which installers are published\u2026",
+  uncheckable: "Installer availability could not be checked. Try again shortly.",
+  unpublished: "Not published yet for any platform. This page offers an installer as soon as one is.",
+};

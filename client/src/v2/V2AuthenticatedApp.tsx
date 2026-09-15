@@ -112,6 +112,12 @@ export function V2AuthenticatedApp() {
           <Route path="/time-tracking/devices">
             <Redirect to="/devices" />
           </Route>
+          <Route path="/time-tracking/download/:rest">
+            <Redirect to="/devices" />
+          </Route>
+          <Route path="/time-tracking/download">
+            <Redirect to="/devices" />
+          </Route>
           <Route path="/time-tracking/dashboard">
             <Redirect to="/time/stats" />
           </Route>
