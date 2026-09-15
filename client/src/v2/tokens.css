@@ -3000,6 +3000,19 @@ button.df-activity-row {
   color: var(--df-muted-ink);
 }
 
+/* The visible field is this wrapper: it carries the border and the padding,
+   while the focusable element is the bare input inside it. Ringing the input
+   draws the amber inside the field, so the ring moves to the wrapper and keeps
+   the offset the handoff asks for. */
+.df-filter-input:has(input:focus-visible) {
+  outline: 2px solid var(--df-amber);
+  outline-offset: 2px;
+}
+
+.df-filter-input input:focus-visible {
+  outline: none;
+}
+
 .df-filter-chip {
   font-family: var(--df-font-mono);
   font-weight: 500;

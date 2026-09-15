@@ -667,6 +667,19 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     );
   });
 
+  it("rings the field, not the bare input sitting inside it", () => {
+    // CLAUDE-DESIGN-HANDOFF.md: visible 2px amber focus ring with offset.
+    // .df-filter-input is a wrapper carrying the border, so ringing the input
+    // draws the amber inside the field. Verified with a real Tab in Chrome.
+    const ring = topLevelRule('.df-filter-input:has(input:focus-visible)');
+    expect(ring).toMatch(/outline:\s*2px solid var\(--df-amber\)/);
+    expect(ring).toMatch(/outline-offset:\s*2px/);
+    expect(topLevelRule(".df-filter-input input:focus-visible")).toMatch(/outline:\s*none/);
+
+    // The global ring still stands for every control that is its own field.
+    expect(topLevelRule(".df-v2 :focus-visible")).toMatch(/outline-offset:\s*2px/);
+  });
+
   it("keeps a selection honest when the filters underneath it change", () => {
     expect(activitySource).toMatch(/useEffect\(\(\) => \{\s*setSelectedIds\(\[\]\);/);
   });
