@@ -1453,6 +1453,41 @@ button.df-activity-row {
   text-align: right;
 }
 
+/* Installer rows (#215). A platform becoming ready is a state, not an event:
+   the row holds still, and the unavailable state never spins. */
+.df-installer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-top: 1px solid var(--df-divider);
+  transition: none;
+  animation: none;
+}
+
+.df-installer-text {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+/* Wrapped or not, the control keeps the right edge, so the three rows read as
+   one column of states rather than three ragged ones. */
+.df-installer-get {
+  flex: none;
+  margin-left: auto;
+}
+
+.df-installer-state {
+  flex: none;
+  margin-left: auto;
+  color: var(--df-archive-slate);
+  font-size: 12.5px;
+  transition: none;
+  animation: none;
+}
+
 .df-pairing-pending {
   animation: none;
   color: var(--df-archive-slate);

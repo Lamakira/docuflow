@@ -4,10 +4,14 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   agentDevicesPath,
   composeDevices,
+  composeInstallers,
   devicesWriteRefusal,
+  downloadAvailabilityPath,
   pairingStartPath,
   revokeMachinePath,
   type DeviceInput,
+  type InstallerAvailability,
+  type InstallerRow,
 } from "./devices";
 import { motionForSurface } from "./motion";
 import { useV2Chrome } from "./V2Shell";
@@ -34,6 +38,17 @@ export function V2DevicesPage() {
   const { data, isLoading, isError } = useQuery<DevicesResponse>({
     queryKey: [agentDevicesPath()],
     refetchInterval: 15_000,
+  });
+
+  const availability = useQuery<InstallerAvailability>({
+    queryKey: [downloadAvailabilityPath()],
+    staleTime: 60_000,
+  });
+
+  const installers = composeInstallers({
+    availability: availability.data ?? null,
+    loading: availability.isPending,
+    failed: availability.isError,
   });
 
   const page = composeDevices({
@@ -239,6 +254,44 @@ export function V2DevicesPage() {
             ))
           )}
         </section>
+      )}
+
+      <section className="df-card" data-testid="v2-devices-installers">
+        <div className="df-card-head">
+          <div className="df-card-head-text">
+            <h2 className="df-card-title">{installers.heading}</h2>
+            <p className="df-card-sub">{installers.blurb}</p>
+          </div>
+        </div>
+        {installers.rows.map((row) => (
+          <InstallerRowView key={row.platform} row={row} />
+        ))}
+        {installers.unavailableCopy ? <p className="df-empty">{installers.unavailableCopy}</p> : null}
+      </section>
+    </div>
+  );
+}
+
+function InstallerRowView({ row }: { row: InstallerRow }) {
+  return (
+    <div className="df-installer-row" data-testid={`v2-devices-installer-${row.platform}`}>
+      <div className="df-installer-text">
+        <div className="df-row-title">{row.label}</div>
+        <p className="df-card-sub">{row.requirement}</p>
+        {row.note ? <p className="df-card-sub">{row.note}</p> : null}
+      </div>
+      {row.ready && row.href ? (
+        <a
+          className="df-ghost-btn df-installer-get"
+          href={row.href}
+          data-testid={`v2-devices-installer-get-${row.platform}`}
+        >
+          {row.action}
+        </a>
+      ) : (
+        <span className="df-installer-state" data-testid={`v2-devices-installer-state-${row.platform}`}>
+          {row.action}
+        </span>
       )}
     </div>
   );
