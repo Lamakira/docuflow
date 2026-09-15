@@ -67,14 +67,15 @@ describe("Time Tracking and Daily Update routing (#190)", () => {
       "TIME TRACKING",
     ]);
     expect(appSource).toContain("V2TimePage");
-    expect(appSource).toMatch(/path="\/time"/);
+    expect(appSource).toMatch(/path="\/time\/:tab\?"/);
     expect(appSource).not.toContain('data-testid="v2-placeholder"');
   });
 
   it("rewrites v1 /time-tracking URLs here and leaves Devices on the Devices ticket", () => {
+    // The Time dashboard and Projects manager land on their own v2 tabs (#214).
     expect(matchV2Route("/time-tracking")).toMatchObject({ kind: "time", href: "/time" });
-    expect(matchV2Route("/time-tracking/dashboard")).toMatchObject({ kind: "time", href: "/time" });
-    expect(matchV2Route("/time-tracking/projects")).toMatchObject({ kind: "time", href: "/time" });
+    expect(matchV2Route("/time-tracking/dashboard")).toMatchObject({ kind: "time", href: "/time/stats" });
+    expect(matchV2Route("/time-tracking/projects")).toMatchObject({ kind: "time", href: "/time/projects" });
     expect(matchV2Route("/time-tracking/devices").kind).toBe("devices");
     expect(matchV2Route("/time-tracking/devices").href).toBe("/devices");
     expect(appSource).toMatch(/path="\/time-tracking"/);
@@ -187,8 +188,8 @@ describe("Time Tracking from live Time Entries (#190)", () => {
     expect(pageSource).toContain("useTimeTracker");
     expect(pageSource).not.toMatch(/timesheet/i);
     expect(pageSource).toMatch(/function onPrimary\([\s\S]*readOnly/);
-    expect(pageSource).toMatch(/timeStatsPath\(\{[\s\S]*startDate: startOfDay\(now\)/);
-    expect(pageSource).not.toMatch(/timeStatsPath\([\s\S]*rangeDates/);
+    expect(pageSource).toMatch(/timeStatsPath\(\{[\s\S]*?startDate: startOfDay\(now\)/);
+    expect(pageSource).not.toMatch(/timeStatsPath\(\{[^}]*rangeDates/);
   });
 
   it("keeps Remove on the stacked Time Entry row", () => {

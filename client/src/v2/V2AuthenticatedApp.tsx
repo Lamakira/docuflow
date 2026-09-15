@@ -76,8 +76,8 @@ export function V2AuthenticatedApp() {
             <Redirect to="/projects" />
           </Route>
           <Route path="/project/:id" component={V2LegacyProjectPage} />
-          <Route path="/time" component={V2TimePage} />
-          <Route path="/activity" component={V2ActivityPage} />
+          <Route path="/time/:tab?" component={V2TimePage} />
+          <Route path="/activity/:tab?" component={V2ActivityPage} />
           <Route path="/people" component={V2PeoplePage} />
           <Route path="/invitations/:token" component={V2InvitationAcceptPage} />
           <Route path="/administration" component={V2AdministrationPage} />
@@ -111,6 +111,12 @@ export function V2AuthenticatedApp() {
           </Route>
           <Route path="/time-tracking/devices">
             <Redirect to="/devices" />
+          </Route>
+          <Route path="/time-tracking/dashboard">
+            <Redirect to="/time/stats" />
+          </Route>
+          <Route path="/time-tracking/projects">
+            <Redirect to="/time/projects" />
           </Route>
           <Route path="/time-tracking/:rest">
             <Redirect to="/time" />

@@ -1,24 +1,39 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { SafeUser, TimeEntryWithDetails } from "@shared/schema";
+import type { CrmProjectWithDetails, SafeUser, TimeEntryWithDetails } from "@shared/schema";
 import { chromeRefusal } from "./chrome";
 import { motionForSurface } from "./motion";
 import { memberName } from "./today";
+import { TIME_TAB_IDS, type TimeTabId } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
 import {
+  composeProjectTasks,
+  composeTimeStats,
   composeTimeTracking,
+  taskPath,
+  tasksPath,
   timeEntriesPath,
+  timePeriodLabel,
+  timePeriodRange,
   timeStatsPath,
+  timeTabs,
+  TIME_PERIODS,
+  type ProjectTask,
   type TimeEntryRowInput,
+  type TimePeriod,
+  type TimeStatsResponse,
 } from "./time";
 
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
 type TimeStats = { totalDuration: number };
+type TasksResponse = { data: ProjectTask[] };
 
 const ENTRY_MOTION = motionForSurface("time-entry").enterExit;
+const STATS_MOTION = motionForSurface("time-stats-period").enterExit;
 
 function startOfDay(value: Date): Date {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -52,10 +67,51 @@ function toRow(entry: TimeEntryWithDetails): TimeEntryRowInput {
   };
 }
 
+/** The Workspace a Member is reading, and whether it accepts writes. */
+function useWorkspaceCondition() {
+  const { memberships } = useV2Chrome();
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  return {
+    workspaceName: current?.workspaceName ?? "this Workspace",
+    readOnly: current?.condition === "Read-only",
+  };
+}
+
 export function V2TimePage() {
+  const params = useParams<{ tab?: string }>();
+  const requested = params.tab ?? "entries";
+  const tab: TimeTabId = (TIME_TAB_IDS as readonly string[]).includes(requested)
+    ? (requested as TimeTabId)
+    : "entries";
+  const tabs = timeTabs(tab);
+
+  return (
+    <div className="df-page" data-testid="v2-time">
+      <nav className="df-tabs" aria-label="Time Tracking">
+        {tabs.map((item) => (
+          <Link
+            key={item.id}
+            href={item.href}
+            className="df-tab"
+            data-active={item.active ? "true" : "false"}
+            data-testid={`v2-time-tab-${item.id}`}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+      {tab === "stats" ? <TimeStatsPane /> : null}
+      {tab === "projects" ? <ProjectTasksPane /> : null}
+      {tab === "entries" ? <TimeEntriesPane /> : null}
+    </div>
+  );
+}
+
+function TimeEntriesPane() {
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
-  const { layout, memberships } = useV2Chrome();
+  const { layout } = useV2Chrome();
+  const { workspaceName, readOnly } = useWorkspaceCondition();
   const {
     projects,
     tasks,
@@ -83,9 +139,6 @@ export function V2TimePage() {
   const [leavingIds, setLeavingIds] = useState<string[]>([]);
   const knownIds = useRef<Set<string> | null>(null);
 
-  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
-  const workspaceName = current?.workspaceName ?? "this Workspace";
-  const readOnly = current?.condition === "Read-only";
   const isAdmin = user?.role === "admin";
 
   const rangeDates = useMemo(() => {
@@ -102,6 +155,7 @@ export function V2TimePage() {
     userId: isAdmin && userFilter !== "all" ? userFilter : null,
   };
   const entriesUrl = timeEntriesPath(filters);
+  // The Workday chip counts today, whatever range the register is filtered to.
   const statsUrl = timeStatsPath({
     startDate: startOfDay(now),
     endDate: endOfDay(now),
@@ -215,7 +269,7 @@ export function V2TimePage() {
 
   if (isLoading) {
     return (
-      <div className="df-page" data-testid="v2-time">
+      <>
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Time Tracking</h1>
@@ -223,13 +277,13 @@ export function V2TimePage() {
           </div>
         </header>
         <div className="df-card" style={{ minHeight: 280 }} />
-      </div>
+      </>
     );
   }
 
   if (isError) {
     return (
-      <div className="df-page" data-testid="v2-time">
+      <>
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Time Tracking</h1>
@@ -237,12 +291,12 @@ export function V2TimePage() {
           </div>
         </header>
         <p className="df-empty">Time Entries in this Workspace could not be loaded.</p>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="df-page" data-testid="v2-time">
+    <>
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Time Tracking</h1>
@@ -439,6 +493,447 @@ export function V2TimePage() {
           ))
         )}
       </section>
-    </div>
+    </>
+  );
+}
+
+/**
+ * Time stats — the Workday totals the v1 `/time-tracking/dashboard` reported.
+ * Changing the period is the one novelty on this ticket: the figures crossfade
+ * on opacity so the numbers do not jump, and the bars never parade in.
+ */
+function TimeStatsPane() {
+  const now = useMemo(() => new Date(), []);
+  const { user } = useAuth();
+  const { workspaceName } = useWorkspaceCondition();
+  const [period, setPeriod] = useState<TimePeriod>("week");
+
+  const canSeeEveryone = user?.role === "admin";
+  const periodRange = useMemo(() => timePeriodRange(period, now), [period, now]);
+  const statsUrl = timeStatsPath({
+    startDate: periodRange.startDate,
+    endDate: periodRange.endDate,
+  });
+
+  const { data, isLoading, isError } = useQuery<TimeStatsResponse>({
+    queryKey: ["/api/time-tracking/stats", statsUrl],
+    queryFn: async () => {
+      const res = await fetch(statsUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Time stats");
+      return res.json();
+    },
+  });
+
+  const page = composeTimeStats({
+    period,
+    workspaceName,
+    canSeeEveryone,
+    stats: data ?? null,
+  });
+
+  return (
+    <>
+      <header className="df-today-head">
+        <div style={{ minWidth: 0 }}>
+          <h1 className="df-title">Time stats</h1>
+          <p className="df-subhead">{page.subhead}</p>
+        </div>
+        <label className="df-filter-chip">
+          PERIOD
+          <select
+            value={period}
+            aria-label="Period"
+            onChange={(event) => setPeriod(event.target.value as TimePeriod)}
+          >
+            {TIME_PERIODS.map((option) => (
+              <option key={option} value={option}>
+                {timePeriodLabel(option)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </header>
+
+      {isError ? (
+        <p className="df-empty">Time stats for this Workspace could not be loaded.</p>
+      ) : (
+        <div
+          key={period}
+          className="df-time-stats"
+          data-motion={STATS_MOTION}
+          data-testid="v2-time-stats"
+        >
+          <section className="df-card">
+            <div className="df-card-head">
+              <h2 className="df-card-title">{page.periodLabel}</h2>
+            </div>
+            <div className="df-stat-figures">
+              {page.figures.map((figure) => (
+                <div key={figure.label} className="df-stat">
+                  <div className="df-mono df-meta">{figure.label}</div>
+                  <div className="df-stat-value">{isLoading ? "—" : figure.value}</div>
+                  <div className="df-mono df-meta">{figure.meta}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="df-card" data-testid="v2-time-stats-projects">
+            <div className="df-card-head">
+              <h2 className="df-card-title">By Project</h2>
+            </div>
+            {page.byProject.empty ? (
+              <p className="df-empty">{isLoading ? "Loading…" : page.byProject.emptyCopy}</p>
+            ) : (
+              <div className="df-stat-bars">
+                {page.byProject.rows.map((row) => (
+                  <div key={row.id} className="df-stat-bar">
+                    <div className="df-stat-bar-head">
+                      <span className="df-row-title">{row.name}</span>
+                      <span className="df-mono df-meta">
+                        {row.hours} · {row.share}%
+                      </span>
+                    </div>
+                    <span className="df-meter df-meter-wide">
+                      <span
+                        className="df-stat-bar-fill df-meter-fill"
+                        style={{ width: `${Math.min(100, row.share ?? 0)}%` }}
+                      />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {page.showMembers ? (
+            <section className="df-card" data-testid="v2-time-stats-members">
+              <div className="df-card-head">
+                <h2 className="df-card-title">By Member</h2>
+              </div>
+              {page.byMember.empty ? (
+                <p className="df-empty">{isLoading ? "Loading…" : page.byMember.emptyCopy}</p>
+              ) : (
+                <div className="df-stat-bars">
+                  {page.byMember.rows.map((row) => (
+                    <div key={row.id} className="df-kv">
+                      <span>{row.name}</span>
+                      <span className="df-mono">{row.hours}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Projects & Tasks — the v1 `/time-tracking/projects` manager. It writes the
+ * same `/api/tasks` records the Dossier Tasks list reads, so a Task created
+ * here is the same Task there.
+ */
+function ProjectTasksPane() {
+  const { workspaceName, readOnly } = useWorkspaceCondition();
+  const [search, setSearch] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [taskName, setTaskName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
+
+  const { data: projectsResponse, isLoading: projectsLoading } = useQuery<{ data: CrmProjectWithDetails[] }>({
+    queryKey: ["/api/crm/projects", { pageSize: 500 }],
+    queryFn: () => fetch("/api/crm/projects?pageSize=500", { credentials: "include" }).then((res) => res.json()),
+  });
+
+  const tasksUrl = selectedProjectId ? tasksPath(selectedProjectId, { includeArchived: true }) : null;
+  const { data: tasksResponse, isLoading: tasksLoading } = useQuery<TasksResponse>({
+    queryKey: ["/api/tasks", tasksUrl],
+    enabled: Boolean(tasksUrl),
+    queryFn: async () => {
+      const res = await fetch(tasksUrl as string, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Tasks");
+      return res.json();
+    },
+  });
+
+  const page = composeProjectTasks({
+    workspaceName,
+    readOnly,
+    search,
+    selectedProjectId,
+    projects: projectsResponse?.data ?? [],
+    tasks: tasksResponse?.data ?? [],
+  });
+
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+  }
+
+  function onWriteError(error: Error) {
+    setWriteRefusal(
+      readOnly
+        ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" })
+        : chromeRefusal({ kind: "generic", message: error.message }),
+    );
+  }
+
+  const createTask = useMutation({
+    mutationFn: (name: string) =>
+      apiRequest("POST", "/api/tasks", { crmProjectId: selectedProjectId, name }),
+    onSuccess: () => {
+      invalidate();
+      setTaskName("");
+      setWriteRefusal(null);
+    },
+    onError: onWriteError,
+  });
+
+  const updateTask = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<ProjectTask> }) =>
+      apiRequest("PATCH", taskPath(id), data),
+    onSuccess: () => {
+      invalidate();
+      setEditingId(null);
+      setWriteRefusal(null);
+    },
+    onError: onWriteError,
+  });
+
+  const deleteTask = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", taskPath(id)),
+    onSuccess: () => {
+      invalidate();
+      setConfirmDeleteId(null);
+      setWriteRefusal(null);
+    },
+    onError: onWriteError,
+  });
+
+  /** True when the Workspace refuses the write and the refusal is now on screen. */
+  function refused(): boolean {
+    if (!readOnly) return false;
+    setWriteRefusal(page.refusal);
+    return true;
+  }
+
+  function onCreate() {
+    const name = taskName.trim();
+    if (!name || !selectedProjectId || refused()) return;
+    createTask.mutate(name);
+  }
+
+  function onRename(id: string) {
+    const name = editingName.trim();
+    if (!name || refused()) return;
+    updateTask.mutate({ id, data: { name } });
+  }
+
+  function onSetStatus(id: string, status: string) {
+    if (refused()) return;
+    updateTask.mutate({ id, data: { status } });
+  }
+
+  function onDelete(id: string) {
+    if (refused()) return;
+    if (confirmDeleteId !== id) {
+      setConfirmDeleteId(id);
+      return;
+    }
+    deleteTask.mutate(id);
+  }
+
+  return (
+    <>
+      <header className="df-today-head">
+        <div style={{ minWidth: 0 }}>
+          <h1 className="df-title">Projects &amp; Tasks</h1>
+          <p className="df-subhead">{page.subhead}</p>
+        </div>
+      </header>
+
+      {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
+
+      <div className="df-task-manager">
+        <section className="df-card df-task-projects" data-testid="v2-time-projects">
+          <div className="df-card-head">
+            <h2 className="df-card-title">Projects</h2>
+          </div>
+          <div className="df-filter-bar" style={{ padding: "0 18px 14px" }}>
+            <label className="df-filter-input">
+              <input
+                type="search"
+                value={search}
+                placeholder="Search Projects…"
+                aria-label="Search Projects"
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
+          </div>
+          {page.projectsEmpty ? (
+            <p className="df-empty">{projectsLoading ? "Loading…" : page.projectsEmptyCopy}</p>
+          ) : (
+            <div className="df-task-project-list">
+              {page.projects.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  className="df-task-project"
+                  data-active={project.selected ? "true" : "false"}
+                  data-testid={`v2-time-project-${project.id}`}
+                  onClick={() => {
+                    setSelectedProjectId(project.id);
+                    setEditingId(null);
+                    setConfirmDeleteId(null);
+                  }}
+                >
+                  {project.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="df-card df-task-list" data-testid="v2-time-tasks">
+          {page.selectedProjectName === null ? (
+            <p className="df-empty">{page.chooseCopy}</p>
+          ) : (
+            <>
+              <div className="df-card-head">
+                <h2 className="df-card-title">{page.selectedProjectName}</h2>
+                <span className="df-mono df-meta">{page.active.rows.length} OPEN</span>
+              </div>
+              <div className="df-filter-bar" style={{ padding: "0 18px 14px" }}>
+                <label className="df-filter-input">
+                  <input
+                    value={taskName}
+                    placeholder="New Task name…"
+                    aria-label="New Task name"
+                    disabled={!page.canWrite}
+                    onChange={(event) => setTaskName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") onCreate();
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="df-ink-btn"
+                  disabled={!taskName.trim() || createTask.isPending}
+                  onClick={onCreate}
+                >
+                  Add Task
+                </button>
+              </div>
+
+              {page.active.empty ? (
+                <p className="df-empty">{tasksLoading ? "Loading…" : page.active.emptyCopy}</p>
+              ) : (
+                page.active.rows.map((row) => (
+                  <div
+                    key={row.id}
+                    className="df-register-row df-task-row"
+                    data-testid={`v2-time-task-${row.id}`}
+                  >
+                    {editingId === row.id ? (
+                      <>
+                        <input
+                          className="df-task-rename"
+                          value={editingName}
+                          aria-label="Task name"
+                          autoFocus
+                          onChange={(event) => setEditingName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") onRename(row.id);
+                            if (event.key === "Escape") setEditingId(null);
+                          }}
+                        />
+                        <button type="button" className="df-ghost-link" onClick={() => onRename(row.id)}>
+                          Save
+                        </button>
+                        <button type="button" className="df-ghost-link" onClick={() => setEditingId(null)}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="df-row-title">{row.name}</span>
+                        <span className="df-status">{row.status}</span>
+                        {page.canWrite ? (
+                          <>
+                            <button
+                              type="button"
+                              className="df-ghost-link"
+                              onClick={() => {
+                                setEditingId(row.id);
+                                setEditingName(row.name);
+                              }}
+                            >
+                              Rename
+                            </button>
+                            <button
+                              type="button"
+                              className="df-ghost-link"
+                              onClick={() => onSetStatus(row.id, "archived")}
+                            >
+                              Archive
+                            </button>
+                            <button
+                              type="button"
+                              className="df-ghost-link"
+                              onClick={() => onDelete(row.id)}
+                            >
+                              {confirmDeleteId === row.id ? "Confirm delete" : "Delete"}
+                            </button>
+                          </>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                ))
+              )}
+
+              {page.archived.count > 0 ? (
+                <>
+                  <div className="df-register-head df-task-archived-head">
+                    <span>ARCHIVED ({page.archived.count})</span>
+                  </div>
+                  {page.archived.rows.map((row) => (
+                    <div
+                      key={row.id}
+                      className="df-register-row df-task-row"
+                      data-archived="true"
+                      data-testid={`v2-time-task-${row.id}`}
+                    >
+                      <span className="df-row-title">{row.name}</span>
+                      <span className="df-status">{row.status}</span>
+                      {page.canWrite ? (
+                        <>
+                          <button
+                            type="button"
+                            className="df-ghost-link"
+                            onClick={() => onSetStatus(row.id, "open")}
+                          >
+                            Restore
+                          </button>
+                          <button type="button" className="df-ghost-link" onClick={() => onDelete(row.id)}>
+                            {confirmDeleteId === row.id ? "Confirm delete" : "Delete"}
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  ))}
+                </>
+              ) : null}
+            </>
+          )}
+        </section>
+      </div>
+    </>
   );
 }

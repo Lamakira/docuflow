@@ -32,6 +32,9 @@
  * Help article open is tens/day — opacity only, no page-slide.
  * Do not animate: Help search keystrokes, pairing spinner as decoration, article TOC highlight chasing scroll,
  * register filter typing, role dropdown as decoration, seat digits counting.
+ * Changing the Time stats period is occasional (preventing a jarring change) — opacity only, no movement.
+ * Do not animate: ticking elapsed seconds, by-Project histogram bars as a parade,
+ * Activity Evidence thumbnail layout shift, gallery filter applying.
  */
 
 export const V2_MOTION_TOKENS = {
@@ -55,7 +58,9 @@ export type MotionSurface =
   | "dossier-tab-swap"
   | "opportunity-stage-change"
   | "time-entry"
+  | "time-stats-period"
   | "activity-evidence-expand"
+  | "activity-gallery-filter"
   | "dossier-file-open"
   | "capability-refusal"
   | "secret-once"
@@ -102,7 +107,9 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "dossier-tab-swap": "occasional",
   "opportunity-stage-change": "occasional",
   "time-entry": "occasional",
+  "time-stats-period": "occasional",
   "activity-evidence-expand": "occasional",
+  "activity-gallery-filter": "tens",
   "dossier-file-open": "occasional",
   "capability-refusal": "occasional",
   "secret-once": "occasional",
@@ -141,6 +148,11 @@ export function motionForSurface(
   }
 
   if (surface === "help-article") {
+    return { enterExit: "standard", press: "none", movement: "none", keepOpacity: true };
+  }
+
+  // Occasional, but the figures underneath must not slide: opacity carries it.
+  if (surface === "time-stats-period") {
     return { enterExit: "standard", press: "none", movement: "none", keepOpacity: true };
   }
 

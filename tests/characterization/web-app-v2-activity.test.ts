@@ -63,7 +63,7 @@ describe("Activity routing (#191)", () => {
       "ACTIVITY",
     ]);
     expect(appSource).toContain("V2ActivityPage");
-    expect(appSource).toMatch(/path="\/activity"/);
+    expect(appSource).toMatch(/path="\/activity\/:tab\?"/);
     expect(appSource).not.toContain('data-testid="v2-placeholder"');
   });
 

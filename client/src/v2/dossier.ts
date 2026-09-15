@@ -306,6 +306,15 @@ const TASK_STATUS_LABEL: Record<string, string> = {
   archived: "ARCHIVED",
 };
 
+/**
+ * One Task protocol (#214). The Projects & Tasks manager under Time Tracking
+ * reads the same `/api/tasks` statuses as the Dossier Tasks list, so a Task
+ * never reads one way here and another way there.
+ */
+export function taskStatusLabel(status: string): string {
+  return TASK_STATUS_LABEL[status] ?? status.replace(/_/g, " ").toUpperCase();
+}
+
 const VIEW_DAILY_UPDATES_CAPABILITY = "View Daily Updates";
 
 function parseDate(value: Date | string | null | undefined): Date | null {
@@ -419,7 +428,7 @@ function composeNextActions(input: DossierInput): DossierModel["nextActions"] {
       done,
       flag: !done && input.trackingTaskId === task.id ? ("TIMER RUNNING" as const) : null,
       meta: done ? `DONE${doneAt ? ` ${formatDayStamp(doneAt)}` : ""}` : "",
-      status: TASK_STATUS_LABEL[task.status] ?? task.status.replace(/_/g, " ").toUpperCase(),
+      status: taskStatusLabel(task.status),
       statusValue: task.status,
     };
   });
