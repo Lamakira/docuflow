@@ -2986,6 +2986,21 @@ button.df-activity-row {
   white-space: nowrap;
 }
 
+/* One control height across a filter row, as `.df-toolbar` already does for a
+   form row: a chip, a Select trigger and the button beside them share a top
+   edge. Without this the shadcn trigger keeps its own `h-9` and stands proud
+   of the ink button next to it. */
+.df-filter-bar .df-filter-chip,
+.df-filter-bar .df-filter-input,
+.df-filter-bar .df-ghost-btn,
+.df-filter-bar .df-ink-btn {
+  display: inline-flex;
+  align-items: center;
+  height: var(--df-control-h);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 .df-filter-chip input[type="checkbox"] {
   margin-right: 6px;
 }

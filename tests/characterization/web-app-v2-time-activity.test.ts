@@ -614,6 +614,19 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     expect(rule(".df-v2 .df-select-trigger")).toMatch(/var\(--df-divider\)/);
   });
 
+  it("gives every control in a filter row the same height", () => {
+    // shadcn's trigger carries its own h-9; without this it stands proud of
+    // the ink button beside it. Measured at 34px for chip, trigger and button.
+    const at = css.indexOf(".df-filter-bar .df-filter-chip");
+    expect(at).toBeGreaterThan(-1);
+    const block = css.slice(at, css.indexOf("}", at) + 1);
+    for (const control of [".df-filter-chip", ".df-filter-input", ".df-ghost-btn", ".df-ink-btn"]) {
+      expect(block).toContain(`.df-filter-bar ${control}`);
+    }
+    expect(block).toMatch(/height:\s*var\(--df-control-h\)/);
+    expect(block).toMatch(/align-items:\s*center/);
+  });
+
   it("keeps a selection honest when the filters underneath it change", () => {
     expect(activitySource).toMatch(/useEffect\(\(\) => \{\s*setSelectedIds\(\[\]\);/);
   });

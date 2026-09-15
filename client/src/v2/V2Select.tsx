@@ -51,6 +51,10 @@ export function V2FilterSelect({
   active,
   testId,
 }: V2FilterSelectProps) {
+  // Radix renders the closed panel into a detached fragment and portals the
+  // selected item's text into the trigger. Passing the label outright removes
+  // that dependency, so a disabled chip still reads what is chosen.
+  const chosen = options.find((option) => option.value === value);
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger
@@ -60,7 +64,7 @@ export function V2FilterSelect({
         data-testid={testId}
       >
         <span className="df-select-prefix">{label}</span>
-        <SelectValue />
+        <SelectValue>{chosen?.label ?? ""}</SelectValue>
       </SelectTrigger>
       {/* Radix portals to document.body, outside `.df-v2`, so the panel
           carries the class itself or the --df-* tokens do not resolve. */}
