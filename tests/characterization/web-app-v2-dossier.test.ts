@@ -615,7 +615,7 @@ describe("Dossier Files open the File (#213)", () => {
     expect(reducedMotionCss()).toMatch(/\.df-file-row\[data-motion="standard"\]/);
   });
 
-  it("marks an object URL as a File to open, not an in-app route", () => {
+  it("carries an object URL into the File viewer instead of the placeholder", () => {
     const dossier = composeDossier(
       emptyInput({
         tab: "files",
@@ -635,10 +635,12 @@ describe("Dossier Files open the File (#213)", () => {
 
     expect(dossier.files.rows).toHaveLength(1);
     const row = dossier.files.rows[0];
-    expect(row.href).toBe("/public-objects/uploads/kickoff.pdf");
-    // Client-side routing an object path lands on the v2 placeholder, which is
-    // the dead name the ticket forbids.
-    expect(row.target).toBe("file");
+    // The object path is carried into the v2 File viewer (#216) rather than
+    // client-routed as itself, which would land on the placeholder — the dead
+    // name this ticket forbids.
+    expect(row.href).toContain("/files?");
+    expect(row.href).toContain(encodeURIComponent("/public-objects/uploads/kickoff.pdf"));
+    expect(row.target).toBe("app");
   });
 
   it("never invents a Document route for a File that has no href", () => {

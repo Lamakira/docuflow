@@ -1,5 +1,16 @@
 import { useAuth } from "@/hooks/useAuth";
-import { DocH3, DocLeadSummary, DocLi, DocList, DocP, DocSection, DocCalloutAdmin } from "@/components/help-center/DocBlocks";
+import {
+  DocArticle,
+  DocSection,
+  DocH3,
+  DocList,
+  DocLi,
+  DocP,
+  DocStrong,
+  DocCode,
+  DocLeadSummary,
+  DocCalloutAdmin,
+} from "@/components/help-center/DocBlocks";
 import { HelpScreenshot } from "@/components/help-center/HelpScreenshot";
 
 export function AdministrationDoc() {
@@ -7,18 +18,18 @@ export function AdministrationDoc() {
   const isAdmin = user?.role === "admin";
 
   return (
-    <div className="space-y-8">
+    <DocArticle>
       {!isAdmin ? (
         <DocLeadSummary title="Admin access" variant="neutral">
-          <p>
-            The <strong className="text-foreground">Administration</strong> sidebar entry is only shown for accounts with
-            the <code className="text-xs bg-muted px-1 py-0.5 rounded">admin</code> role. The sections below describe what
+          <DocP>
+            The <DocStrong>Administration</DocStrong> sidebar entry is only shown for accounts with
+            the <DocCode>admin</DocCode> role. The sections below describe what
             administrators configure so you know why desktop behaviour or screenshots change organisation-wide.
-          </p>
+          </DocP>
         </DocLeadSummary>
       ) : (
         <DocCalloutAdmin>
-          <DocP className="m-0 text-muted-foreground">
+          <DocP>
             Signed in as admin: empty Help Center screenshot slots show an upload control here; other users never see
             those placeholders.
           </DocP>
@@ -30,33 +41,33 @@ export function AdministrationDoc() {
           Several settings are stored as organisation configuration and applied to users through the web app and, for
           desktop-specific behaviour, through the agent after sync. Saving a policy in the web admin UI updates the
           server immediately; connected desktop agents typically receive the updated policy on their{" "}
-          <strong className="text-foreground">next heartbeat</strong> (heartbeat runs on a fixed interval on the order of{" "}
-          <strong className="text-foreground">one minute</strong>), so allow up to about one minute before assuming a
+          <DocStrong>next heartbeat</DocStrong> (heartbeat runs on a fixed interval on the order of{" "}
+          <DocStrong>one minute</DocStrong>), so allow up to about one minute before assuming a
           change failed. This is current application behaviour.
         </DocP>
       </DocSection>
 
       <DocSection title="Screenshot capture policy (stable fields)" sectionId="section-screenshot-policy">
         <DocP>
-          Administrators edit screenshot-related settings under <strong className="text-foreground">Administration</strong>{" "}
+          Administrators edit screenshot-related settings under <DocStrong>Administration</DocStrong>{" "}
           in the web app. The stored policy includes the fields below (names reflect the product schema). Actual capture
           still requires the desktop agent to be running and permitted by OS settings.
         </DocP>
         <DocList>
           <DocLi>
-            <strong className="text-foreground">screenshotsEnabled</strong> — master switch for periodic capture when the
+            <DocStrong>screenshotsEnabled</DocStrong> — master switch for periodic capture when the
             agent implements capture.
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">captureIntervalMinMin / captureIntervalMaxMin</strong> — bounds (in
+            <DocStrong>captureIntervalMinMin / captureIntervalMaxMin</DocStrong> — bounds (in
             minutes) between which the agent picks capture timing; minimum is constrained (for example at least a few
             minutes), maximum capped (for example up to a quarter hour) per the admin form validation.
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">activeHoursEnabled</strong> with{" "}
-            <strong className="text-foreground">activeHoursStart</strong> and{" "}
-            <strong className="text-foreground">activeHoursEnd</strong> — when enabled, restricts capture to a daily time
-            window using 24-hour <code className="text-xs bg-muted px-1 py-0.5 rounded">HH:mm</code> values.
+            <DocStrong>activeHoursEnabled</DocStrong> with{" "}
+            <DocStrong>activeHoursStart</DocStrong> and{" "}
+            <DocStrong>activeHoursEnd</DocStrong> — when enabled, restricts capture to a daily time
+            window using 24-hour <DocCode>HH:mm</DocCode> values.
           </DocLi>
         </DocList>
         <HelpScreenshot
@@ -73,14 +84,14 @@ export function AdministrationDoc() {
         </DocP>
         <DocList>
           <DocLi>
-            <strong className="text-foreground">idlePromptEnabled</strong> — whether the idle overlay can appear.
+            <DocStrong>idlePromptEnabled</DocStrong> — whether the idle overlay can appear.
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">idleTimeoutMinutes</strong> — minutes without qualifying activity before a
+            <DocStrong>idleTimeoutMinutes</DocStrong> — minutes without qualifying activity before a
             prompt (allowed range in the admin form: 1–60).
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">idleCountdownSeconds</strong> — countdown length before automatic stop when
+            <DocStrong>idleCountdownSeconds</DocStrong> — countdown length before automatic stop when
             the flow uses it (allowed range in the admin form: 15–120 seconds).
           </DocLi>
         </DocList>
@@ -90,8 +101,8 @@ export function AdministrationDoc() {
           expectedLabel="Admin web — Idle behaviour card with enable switch, timeout, and countdown fields."
         />
         <DocP>
-          Saving uses <code className="text-xs bg-muted px-1 py-0.5 rounded">PATCH /api/admin/org-settings</code> with
-          the <code className="text-xs bg-muted px-1 py-0.5 rounded">screenshotPolicy</code> payload. The UI states that
+          Saving uses <DocCode>PATCH /api/admin/org-settings</DocCode> with
+          the <DocCode>screenshotPolicy</DocCode> payload. The UI states that
           policy is pushed to connected agents on the next heartbeat — plan communication to users accordingly.
         </DocP>
       </DocSection>
@@ -126,7 +137,7 @@ export function AdministrationDoc() {
             <DocH3>Roles</DocH3>
             <DocP>
               Admins invite or manage users and assign the{" "}
-              <code className="text-xs bg-muted px-1 py-0.5 rounded">admin</code> role where appropriate. Detailed invite
+              <DocCode>admin</DocCode> role where appropriate. Detailed invite
               flows stay in the Administration UI; this Help Center article does not replace your organisation&apos;s
               access policy.
             </DocP>
@@ -138,6 +149,6 @@ export function AdministrationDoc() {
           </DocP>
         )}
       </DocSection>
-    </div>
+    </DocArticle>
   );
 }

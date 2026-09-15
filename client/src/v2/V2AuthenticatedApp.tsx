@@ -17,6 +17,7 @@ import {
   V2HelpPage,
 } from "./V2Pages";
 import { V2ClientRecordPage, V2ClientRecordRedirect, V2ClientsPage } from "./V2Clients";
+import { V2FilePage } from "./V2FileViewer";
 import { V2InvitationAcceptPage } from "./V2InvitationAccept";
 import { V2OpportunitiesPage, V2OpportunityRecordPage } from "./V2Opportunities";
 import { V2ProjectRecordRedirect, V2LegacyProjectPage, V2ProjectsPage } from "./V2Projects";
@@ -50,6 +51,7 @@ export function V2AuthenticatedApp() {
           <Route path="/company-documents">
             <Redirect to="/documents" />
           </Route>
+          <Route path="/files" component={V2FilePage} />
           <Route path="/project-documentation" component={V2ProjectDocumentationPage} />
           <Route path="/documentation">
             <Redirect to="/project-documentation" />

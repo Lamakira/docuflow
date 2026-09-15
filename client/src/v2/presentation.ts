@@ -157,6 +157,7 @@ export type V2Match =
   | { kind: "invitation-accept"; title: "Invitation"; href: string }
   | { kind: "administration"; title: "Administration"; href: "/administration" }
   | { kind: "devices"; title: "Devices"; href: "/devices" }
+  | { kind: "file-viewer"; title: "File"; href: "/files" }
   | { kind: "help"; title: "Help Center"; href: "/help"; slug?: string }
   | { kind: "placeholder"; title: string; href: string };
 
@@ -350,6 +351,10 @@ export function matchV2Route(path: string): V2Match {
     };
   }
 
+  if (pathname === "/files") {
+    return { kind: "file-viewer", title: "File", href: "/files" };
+  }
+
   const projectDocumentId = parseProjectDocumentPath(pathname);
   if (projectDocumentId) {
     return {
@@ -493,6 +498,8 @@ export function navIdForPath(path: string): V2NavId | null {
   if (match.kind === "administration") return "administration";
   if (match.kind === "devices") return "devices";
   if (match.kind === "help") return "help";
+  // A File reached from a Dossier is not the Workspace Documents destination.
+  if (match.kind === "file-viewer") return null;
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -602,6 +609,12 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "DEVICES" },
+    ];
+  }
+  if (match.kind === "file-viewer") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "FILE" },
     ];
   }
   if (match.kind === "help") {

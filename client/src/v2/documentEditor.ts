@@ -13,6 +13,7 @@ export type DocumentEditorRecord = {
   content?: unknown;
   storagePath?: string | null;
   fileName?: string | null;
+  fileSize?: number | null;
   mimeType?: string | null;
   access?: string | null;
   projectId?: string | null;
@@ -40,8 +41,6 @@ export type DocumentEditorModel = {
   emptyCopy: string;
   backHref: string;
   backLabel: string;
-  downloadHref: string | null;
-  streamHref: string | null;
 };
 
 const VIEW_WORKSPACE_DOCUMENTS_CAPABILITY = "View Workspace Documents";
@@ -68,8 +67,6 @@ export function composeDocumentEditor(input: DocumentEditorInput): DocumentEdito
       emptyCopy: "This Document is not in this Workspace, or you cannot access it.",
       backHref,
       backLabel,
-      downloadHref: null,
-      streamHref: null,
     };
   }
 
@@ -84,8 +81,6 @@ export function composeDocumentEditor(input: DocumentEditorInput): DocumentEdito
       emptyCopy: "",
       backHref,
       backLabel,
-      downloadHref: null,
-      streamHref: null,
     };
   }
 
@@ -101,8 +96,6 @@ export function composeDocumentEditor(input: DocumentEditorInput): DocumentEdito
       emptyCopy: "This Document is not in this Workspace, or you cannot access it.",
       backHref,
       backLabel,
-      downloadHref: null,
-      streamHref: null,
     };
   }
 
@@ -117,8 +110,6 @@ export function composeDocumentEditor(input: DocumentEditorInput): DocumentEdito
     emptyCopy: "",
     backHref,
     backLabel,
-    downloadHref: viewer && input.source === "workspace" ? `/api/company-documents/${record.id}/download` : null,
-    streamHref: viewer && input.source === "workspace" ? `/api/company-documents/${record.id}/stream` : null,
   };
 }
 

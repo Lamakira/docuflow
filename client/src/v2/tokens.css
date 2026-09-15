@@ -3934,3 +3934,466 @@ button.df-activity-row {
 }
 
 
+
+/**
+ * Help article bodies (#216, ADR-0003). The Help Center copy is one set of
+ * components; under v2 chrome every block wears these classes instead of the
+ * discarded v1 system. Article open stays opacity only (#194) — nothing here
+ * animates.
+ */
+
+.df-doc-article {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.df-doc-section {
+  border-top: 1px solid var(--df-divider-light);
+  padding-top: 20px;
+  scroll-margin-top: 96px;
+}
+
+.df-doc-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.df-doc-section-title {
+  margin: 0 0 12px;
+  font-family: var(--df-font-display);
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--df-case-ink);
+}
+
+.df-doc-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 72ch;
+  color: var(--df-archive-slate);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.df-doc-h3 {
+  margin: 14px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--df-divider);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--df-case-ink);
+}
+
+.df-doc-p {
+  margin: 0;
+}
+
+.df-doc-list,
+.df-doc-ordered-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.df-doc-list {
+  list-style: disc;
+}
+
+.df-doc-ordered-list {
+  list-style: decimal;
+}
+
+.df-doc-item {
+  margin: 0;
+}
+
+.df-doc-lead {
+  border: 1px solid var(--df-divider);
+  border-left: 3px solid var(--df-archive-slate);
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: var(--df-cold-stock);
+}
+
+.df-doc-lead-intro {
+  border-left-color: var(--df-signed-off);
+}
+
+.df-doc-lead-caution {
+  border-left-color: var(--df-amber);
+  background: var(--df-amber-wash);
+}
+
+.df-doc-lead-neutral {
+  border-left-color: var(--df-muted-ink);
+}
+
+.df-doc-lead-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--df-case-ink);
+}
+
+.df-doc-lead-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--df-archive-slate);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.df-doc-callout {
+  display: flex;
+  gap: 10px;
+  border: 1px solid var(--df-divider);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--df-card-white);
+  color: var(--df-archive-slate);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.df-doc-callout-important {
+  border-color: #f0dcb8;
+  background: var(--df-amber-wash);
+}
+
+.df-doc-callout-admin {
+  background: var(--df-cold-stock);
+}
+
+.df-doc-callout-next {
+  border-left: 3px solid var(--df-case-ink);
+}
+
+.df-doc-callout-note {
+  border-color: var(--df-divider-light);
+  background: var(--df-cold-stock);
+}
+
+.df-doc-callout-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--df-archive-slate);
+}
+
+.df-doc-callout-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.df-doc-callout-label {
+  margin: 0;
+  font-family: var(--df-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--df-muted-ink);
+}
+
+.df-doc-strong {
+  font-weight: 600;
+  color: var(--df-case-ink);
+}
+
+.df-doc-code {
+  font-family: var(--df-font-mono);
+  font-size: 12px;
+  padding: 1px 5px;
+  border: 1px solid var(--df-divider-light);
+  border-radius: 4px;
+  background: var(--df-cold-stock);
+  color: var(--df-case-ink);
+}
+
+.df-doc-figure {
+  margin: 18px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.df-doc-figure-frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--df-divider);
+  border-radius: 8px;
+  background: var(--df-cold-stock);
+}
+
+.df-doc-figure-image {
+  display: block;
+  width: 100%;
+  max-height: min(70vh, 520px);
+  object-fit: contain;
+  background: var(--df-card-white);
+}
+
+.df-doc-figure-caption {
+  color: var(--df-archive-slate);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.df-doc-figure-slot {
+  margin: 0;
+  font-family: var(--df-font-mono);
+  font-size: 11px;
+  color: var(--df-muted-ink);
+}
+
+.df-doc-figure-empty {
+  margin: 18px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px dashed var(--df-divider);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--df-cold-stock);
+  color: var(--df-archive-slate);
+  font-size: 13px;
+}
+
+.df-doc-figure-empty-label {
+  margin: 0;
+  font-family: var(--df-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--df-muted-ink);
+}
+
+.df-doc-figure-empty-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.df-doc-figure-empty-icon {
+  color: var(--df-archive-slate);
+}
+
+.df-doc-figure-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--df-muted-ink);
+}
+
+.df-doc-figure-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  color: var(--df-muted-ink);
+  font-size: 12px;
+}
+
+.df-doc-figure-action {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+/* shadcn ships its own state classes at this specificity (see V2Select). */
+.df-v2 .df-doc-figure-action {
+  background: var(--df-case-ink);
+  color: #fff;
+  border: 0;
+}
+
+/**
+ * File viewer (#216). A File opens here with the depth v1 had. Zoom is a
+ * control at tens/day: the page under it does not animate.
+ */
+
+.df-file-viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.df-file-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--df-divider);
+  background: var(--df-card-white);
+}
+
+.df-file-identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.df-file-meta {
+  font-family: var(--df-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--df-muted-ink);
+}
+
+.df-file-body {
+  padding: 18px 22px 28px;
+  overflow: auto;
+}
+
+/* Narrow: the File's identity takes the row, the controls sit under it. */
+@media (max-width: 720px) {
+  .df-file-head {
+    align-items: flex-start;
+  }
+
+  .df-file-identity {
+    flex: 1 1 100%;
+    order: -1;
+  }
+}
+
+.df-file-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.df-file-zoom-btn {
+  border-radius: 6px;
+}
+
+/* shadcn sizes its icon button with utilities at this specificity (see V2Select). */
+.df-v2 .df-file-zoom-btn {
+  width: var(--df-control-h);
+  height: var(--df-control-h);
+  padding: 0;
+  border: 1px solid var(--df-divider);
+  background: transparent;
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-file-zoom-btn:disabled {
+  color: var(--df-placeholder);
+}
+
+.df-file-zoom-level {
+  min-width: 54px;
+  text-align: center;
+  font-family: var(--df-font-mono);
+  font-size: 12px;
+  color: var(--df-archive-slate);
+}
+
+.df-file-page {
+  display: block;
+  margin: 0 auto 14px;
+  border: 1px solid var(--df-divider);
+  background: #fff;
+  animation: none;
+}
+
+.df-file-image {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+  border: 1px solid var(--df-divider-light);
+  border-radius: 8px;
+}
+
+.df-file-word {
+  max-width: 76ch;
+  margin: 0 auto;
+  color: var(--df-archive-slate);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.df-file-word h2,
+.df-file-word h3,
+.df-file-word h4 {
+  font-family: var(--df-font-display);
+  color: var(--df-case-ink);
+  margin: 18px 0 8px;
+}
+
+.df-file-word h2 {
+  font-size: 17px;
+}
+
+.df-file-word h3 {
+  font-size: 15px;
+}
+
+.df-file-word h4 {
+  font-size: 13.5px;
+}
+
+.df-file-word p {
+  margin: 0 0 10px;
+}
+
+.df-file-word ul,
+.df-file-word ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.df-file-word ul {
+  list-style: disc;
+}
+
+.df-file-word ol {
+  list-style: decimal;
+}
+
+.df-file-word a {
+  color: var(--df-case-ink);
+  text-decoration: underline;
+}
+
+.df-file-word table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 12px;
+}
+
+.df-file-word td,
+.df-file-word th {
+  border: 1px solid var(--df-divider-light);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.df-file-word blockquote {
+  margin: 0 0 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--df-divider);
+}
+
+.df-file-text {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--df-divider-light);
+  border-radius: 8px;
+  background: var(--df-cold-stock);
+  font-family: var(--df-font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

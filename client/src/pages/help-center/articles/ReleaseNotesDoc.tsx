@@ -1,8 +1,8 @@
-import { DocLi, DocList, DocP, DocSection } from "@/components/help-center/DocBlocks";
+import { DocArticle, DocSection, DocList, DocLi, DocP, DocStrong } from "@/components/help-center/DocBlocks";
 
 export function ReleaseNotesDoc() {
   return (
-    <div className="space-y-8">
+    <DocArticle>
       <DocSection title="How we publish updates">
         <DocP>
           DocuFlow ships the web app and desktop agent on independent cadences. Web changes appear after your browser
@@ -17,14 +17,14 @@ export function ReleaseNotesDoc() {
         </DocP>
         <DocList>
           <DocLi>
-            <strong className="text-foreground">Time tracking &amp; idle</strong> — ongoing refinements to idle prompts, Worked Today accuracy, and
+            <DocStrong>Time tracking &amp; idle</DocStrong> — ongoing refinements to idle prompts, Worked Today accuracy, and
             desktop/web parity.
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">Desktop agent</strong> — packaging, signing, and activity capture improvements per platform.
+            <DocStrong>Desktop agent</DocStrong> — packaging, signing, and activity capture improvements per platform.
           </DocLi>
           <DocLi>
-            <strong className="text-foreground">CRM &amp; documentation</strong> — incremental UX polish and module field controls for admins.
+            <DocStrong>CRM &amp; documentation</DocStrong> — incremental UX polish and module field controls for admins.
           </DocLi>
         </DocList>
       </DocSection>
@@ -35,6 +35,6 @@ export function ReleaseNotesDoc() {
           exhaustive source of truth between formal release notes.
         </DocP>
       </DocSection>
-    </div>
+    </DocArticle>
   );
 }
