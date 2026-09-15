@@ -11,7 +11,7 @@ import { memberName } from "./today";
 import { TIME_TAB_IDS, type TimeTabId } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
-import { V2RowMenu } from "./V2RowMenu";
+import { V2TaskTable } from "./V2TaskTable";
 import {
   composeProjectTasks,
   taskPath,
@@ -815,136 +815,24 @@ function ProjectTasksPane() {
                 </button>
               </div>
 
-              {page.active.empty ? (
-                <p className="df-empty">{tasksLoading ? "Loading…" : page.active.emptyCopy}</p>
-              ) : (
-                page.active.rows.map((row) => (
-                  <div
-                    key={row.id}
-                    className="df-register-row df-task-row"
-                    data-testid={`v2-time-task-${row.id}`}
-                  >
-                    {editingId === row.id ? (
-                      <>
-                        <input
-                          className="df-task-rename"
-                          value={editingName}
-                          aria-label="Task name"
-                          autoFocus
-                          onChange={(event) => setEditingName(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") onRename(row.id);
-                            if (event.key === "Escape") setEditingId(null);
-                          }}
-                        />
-                        <span className="df-row-actions">
-                          <button type="button" className="df-ink-btn" onClick={() => onRename(row.id)}>
-                            Save
-                          </button>
-                          <button type="button" className="df-ghost-btn" onClick={() => setEditingId(null)}>
-                            Cancel
-                          </button>
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="df-row-title">{row.name}</span>
-                        <span className="df-status-word">{row.status}</span>
-                        {page.canWrite ? (
-                          <span className="df-row-actions">
-                            {confirmDeleteId === row.id ? (
-                              <>
-                                <button
-                                  type="button"
-                                  className="df-ghost-btn"
-                                  data-danger="true"
-                                  onClick={() => onDelete(row.id)}
-                                >
-                                  Confirm delete
-                                </button>
-                                <button
-                                  type="button"
-                                  className="df-ghost-btn"
-                                  onClick={() => setConfirmDeleteId(null)}
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            ) : (
-                              <V2RowMenu
-                                ariaLabel={`Actions on ${row.name}`}
-                                testId={`v2-time-task-menu-${row.id}`}
-                                items={[
-                                  {
-                                    label: "Rename",
-                                    onSelect: () => {
-                                      setEditingId(row.id);
-                                      setEditingName(row.name);
-                                    },
-                                  },
-                                  { label: "Archive", onSelect: () => onSetStatus(row.id, "archived") },
-                                  { label: "Delete", danger: true, onSelect: () => onDelete(row.id) },
-                                ]}
-                              />
-                            )}
-                          </span>
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                ))
-              )}
-
-              {page.archived.count > 0 ? (
-                <>
-                  <div className="df-register-head df-task-archived-head">
-                    <span>ARCHIVED ({page.archived.count})</span>
-                  </div>
-                  {page.archived.rows.map((row) => (
-                    <div
-                      key={row.id}
-                      className="df-register-row df-task-row"
-                      data-archived="true"
-                      data-testid={`v2-time-task-${row.id}`}
-                    >
-                      <span className="df-row-title">{row.name}</span>
-                      <span className="df-status-word">{row.status}</span>
-                      {page.canWrite ? (
-                        <span className="df-row-actions">
-                          {confirmDeleteId === row.id ? (
-                            <>
-                              <button
-                                type="button"
-                                className="df-ghost-btn"
-                                data-danger="true"
-                                onClick={() => onDelete(row.id)}
-                              >
-                                Confirm delete
-                              </button>
-                              <button
-                                type="button"
-                                className="df-ghost-btn"
-                                onClick={() => setConfirmDeleteId(null)}
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <V2RowMenu
-                              ariaLabel={`Actions on ${row.name}`}
-                              testId={`v2-time-task-menu-${row.id}`}
-                              items={[
-                                { label: "Restore", onSelect: () => onSetStatus(row.id, "open") },
-                                { label: "Delete", danger: true, onSelect: () => onDelete(row.id) },
-                              ]}
-                            />
-                          )}
-                        </span>
-                      ) : null}
-                    </div>
-                  ))}
-                </>
-              ) : null}
+              <V2TaskTable
+                rows={page.rows}
+                canWrite={page.canWrite}
+                emptyCopy={tasksLoading ? "Loading…" : page.active.emptyCopy}
+                editingId={editingId}
+                editingName={editingName}
+                confirmDeleteId={confirmDeleteId}
+                setEditingName={setEditingName}
+                onStartRename={(row) => {
+                  setEditingId(row.id);
+                  setEditingName(row.name);
+                }}
+                onRename={onRename}
+                onCancelRename={() => setEditingId(null)}
+                onSetStatus={onSetStatus}
+                onDelete={onDelete}
+                onCancelDelete={() => setConfirmDeleteId(null)}
+              />
             </>
           )}
         </section>

@@ -44,6 +44,7 @@ function read(relative: string): string {
 const appSource = read("client/src/v2/V2AuthenticatedApp.tsx");
 const timeSource = read("client/src/v2/V2Time.tsx");
 const tasksSource = read("client/src/v2/tasks.ts");
+const tableSource = read("client/src/v2/V2TaskTable.tsx");
 const activitySource = read("client/src/v2/V2Activity.tsx");
 const css = read("client/src/v2/tokens.css").replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -589,9 +590,8 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     // AMENDMENTS.md Amendment 1: stages, statuses, badges and category labels move to Switzer.
     expect(rule(".df-status-word")).toMatch(/var\(--df-font-ui\)/);
     // The new Task Status and Identical badges are vocabulary, so Switzer.
-    const taskRows = timeSource.slice(timeSource.indexOf("df-task-row"));
-    expect(taskRows).toContain('className="df-status-word"');
-    expect(taskRows).not.toContain('className="df-status"');
+    expect(tableSource).toContain('className="df-status-word"');
+    expect(tableSource).not.toContain('className="df-status"');
     expect(activitySource).toContain('className="df-status-word">Identical<');
     expect(activitySource).not.toMatch(/df-mono df-meta">IDENTICAL/);
   });
@@ -652,19 +652,62 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     }
   });
 
+  it("renders Tasks as a sortable table on TanStack Table v9", () => {
+    // v9 is not v8: features are opted into, useTable replaces useReactTable,
+    // the core row model is automatic, and cells render through FlexRender.
+    expect(tableSource).toContain('from "@tanstack/react-table"');
+    expect(tableSource).toContain("tableFeatures(");
+    expect(tableSource).toContain("useTable(");
+    expect(tableSource).toContain("rowSortingFeature");
+    expect(tableSource).toContain("createSortedRowModel()");
+    expect(tableSource).toContain("table.FlexRender");
+    // The comment in that file names the v8 API to explain the difference, so
+    // the negative check reads the code rather than the prose above it.
+    const tableCode = tableSource.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(tableCode).not.toContain("useReactTable");
+    expect(tableCode).not.toContain("getCoreRowModel");
+
+    // Markup is the shadcn Table, wearing the register texture.
+    expect(tableSource).toContain('from "@/components/ui/table"');
+    expect(rule(".df-v2 .df-table-cell")).toMatch(/padding:\s*15px 18px/);
+    expect(rule(".df-v2 .df-table-head")).toMatch(/var\(--df-font-mono\)/);
+
+    // Sorting is keyboard-frequency: it re-renders, it does not animate.
+    expect(rule(".df-v2 .df-table-sort")).toMatch(/transition:\s*none/);
+    expect(rule(".df-v2 .df-table-sort")).toMatch(/animation:\s*none/);
+  });
+
+  it("puts Archived Tasks in the same table, since Task Status already says so", () => {
+    const page = composeProjectTasks(
+      emptyTasks({
+        selectedProjectId: "prj-1",
+        projects: [{ id: "prj-1", project: { name: "Harbour rebuild" } }],
+        tasks: [
+          { id: "t-3", crmProjectId: "prj-1", name: "Old survey", status: "archived" },
+          { id: "t-1", crmProjectId: "prj-1", name: "Reconcile import", status: "open" },
+        ],
+      }),
+    );
+    // Open work sorts before Archived until a User sorts the table otherwise.
+    expect(page.rows.map((row) => row.id)).toEqual(["t-1", "t-3"]);
+    expect(page.rows.map((row) => row.archived)).toEqual([false, true]);
+    expect(rule('.df-v2 .df-table-row[data-archived="true"] .df-row-title')).toMatch(
+      /line-through/,
+    );
+  });
+
   it("collapses a Task's secondary actions into one control, not three per row", () => {
     // Three bordered buttons repeated down a register is a wall of controls.
     const menuSource = read("client/src/v2/V2RowMenu.tsx");
     expect(menuSource).toContain('from "@/components/ui/dropdown-menu"');
-    expect(timeSource).toContain("V2RowMenu");
-    const taskRows = timeSource.slice(timeSource.indexOf("df-task-row"));
-    expect(taskRows).toContain('label: "Rename"');
-    expect(taskRows).toContain('label: "Archive"');
-    expect(taskRows).toContain('label: "Delete", danger: true');
+    expect(tableSource).toContain("V2RowMenu");
+    expect(tableSource).toContain('label: "Rename"');
+    expect(tableSource).toContain('label: "Archive"');
+    expect(tableSource).toContain('label: "Delete", danger: true');
 
     // Deleting still asks once on the row, so the menu cannot destroy in one click.
-    expect(taskRows).toContain("Confirm delete");
-    expect(taskRows).toContain("setConfirmDeleteId(null)");
+    expect(tableSource).toContain("Confirm delete");
+    expect(timeSource).toContain("setConfirmDeleteId(null)");
 
     // Verified in Chrome against the real component: the panel renders on v2
     // tokens (white, 8px radius, no padding, no animation) and its items in
@@ -676,10 +719,9 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
   it("gives a Task row real controls, not three quiet annotations", () => {
     // df-ghost-link is mono 10px archive-slate — an annotation, not a control.
     expect(topLevelRule(".df-ghost-link")).toMatch(/font-size:\s*10px/);
-    const taskRows = timeSource.slice(timeSource.indexOf("df-task-row"));
-    expect(taskRows).toContain('className="df-row-actions"');
-    expect(taskRows).toContain('className="df-ghost-btn"');
-    expect(taskRows).not.toContain('className="df-ghost-link"');
+    expect(tableSource).toContain('className="df-row-actions"');
+    expect(tableSource).toContain('className="df-ghost-btn"');
+    expect(tableSource).not.toContain('className="df-ghost-link"');
     expect(rule(".df-v2 .df-row-menu-trigger")).toMatch(/flex:\s*none/);
     expect(rule(".df-row-actions")).toMatch(/display:\s*flex/);
     const actionsAt = css.indexOf(".df-row-actions .df-ghost-btn");
@@ -712,7 +754,9 @@ describe("Time and Activity on a narrow viewport (#214)", () => {
     expect(mobileRule(".df-task-manager")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
     expect(mobileRule(".df-stat-band")).toMatch(/padding/);
     expect(mobileRule(".df-gallery-grid")).toMatch(/grid-template-columns/);
-    expect(mobileRule(".df-task-row")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
+    const at = css.indexOf('.df-v2[data-chrome="mobile"] .df-table-cell');
+    expect(at).toBeGreaterThan(-1);
+    expect(css.slice(at, css.indexOf("}", at))).toMatch(/padding-left:\s*13px/);
   });
 });
 

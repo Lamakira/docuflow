@@ -2188,20 +2188,6 @@ button.df-activity-row {
   border-left: 2px solid var(--df-case-ink);
 }
 
-.df-task-row {
-  grid-template-columns: minmax(0, 1fr) auto auto;
-}
-
-.df-task-row[data-archived="true"] .df-row-title {
-  color: var(--df-archive-slate);
-  text-decoration: line-through;
-}
-
-.df-task-row .df-row-title {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 /* Controls that act on one record sit together, so they read as a group of
    buttons rather than a sentence trailing off the end of the row. */
 .df-row-actions {
@@ -2241,8 +2227,87 @@ button.df-activity-row {
   font-size: 13px;
 }
 
-.df-task-archived-head {
-  display: block;
+/* Tasks table — TanStack Table's model in the shadcn Table markup, wearing
+   the register texture: hairline rules, the 18px gutter, no resting shadow.
+   The handoff prefers ruled registers, and a table is one. */
+.df-v2 .df-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.df-v2 .df-table-head {
+  height: auto;
+  padding: 10px 18px;
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--df-archive-slate);
+  text-align: left;
+  border-bottom: 1px solid var(--df-divider);
+}
+
+.df-v2 .df-table-head[data-column="actions"] {
+  text-align: right;
+}
+
+/* Sorting is a keyboard-frequency act: it re-renders, it does not animate. */
+.df-v2 .df-table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  transition: none;
+  animation: none;
+}
+
+.df-v2 .df-table-sort[data-sorted="asc"],
+.df-v2 .df-table-sort[data-sorted="desc"] {
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-table-row {
+  border-bottom: 1px solid var(--df-divider-light);
+}
+
+.df-v2 .df-table-row:last-child {
+  border-bottom: 0;
+}
+
+.df-v2 .df-table-row:hover {
+  background: var(--df-cold-stock);
+}
+
+.df-v2 .df-table-row[data-archived="true"] .df-row-title {
+  color: var(--df-archive-slate);
+  text-decoration: line-through;
+}
+
+.df-v2 .df-table-cell {
+  padding: 15px 18px;
+  vertical-align: middle;
+}
+
+.df-v2 .df-table-cell[data-column="statusValue"] {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.df-v2 .df-table-cell[data-column="actions"] {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.df-v2 .df-table-cell[data-column="actions"] .df-row-actions {
+  justify-content: flex-end;
 }
 
 /* Overflow menu — the shadcn DropdownMenu wearing the v2 menu panel. Radix
@@ -3625,9 +3690,10 @@ button.df-activity-row {
   padding-right: 13px;
 }
 
-.df-v2[data-chrome="mobile"] .df-task-row {
-  grid-template-columns: minmax(0, 1fr);
-  row-gap: 10px;
+.df-v2[data-chrome="mobile"] .df-table-cell,
+.df-v2[data-chrome="mobile"] .df-table-head {
+  padding-left: 13px;
+  padding-right: 13px;
 }
 
 .df-v2[data-chrome="mobile"] .df-policy-grid {

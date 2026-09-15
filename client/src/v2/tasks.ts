@@ -69,6 +69,8 @@ export type ProjectTasksModel = {
   refusal: string | null;
   active: { rows: TaskManagerRow[]; empty: boolean; emptyCopy: string };
   archived: { rows: TaskManagerRow[]; count: number };
+  /** Every Task on the Project, open work first — what the table sorts over. */
+  rows: TaskManagerRow[];
 };
 
 function toTaskRow(task: ProjectTask): TaskManagerRow {
@@ -122,6 +124,7 @@ export function composeProjectTasks(input: ProjectTasksInput): ProjectTasksModel
       emptyCopy: "No Task on this Project yet.",
     },
     archived: { rows: archived, count: archived.length },
+    rows: [...active, ...archived],
   };
 }
 
