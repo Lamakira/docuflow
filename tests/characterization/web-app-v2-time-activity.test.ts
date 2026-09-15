@@ -596,6 +596,24 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     expect(activitySource).not.toMatch(/df-mono df-meta">IDENTICAL/);
   });
 
+  it("builds every filter on the shadcn Select, not a bare browser control", () => {
+    // v2 reaches for client/src/components/ui/ before any custom control.
+    const selectSource = read("client/src/v2/V2Select.tsx");
+    expect(selectSource).toContain('from "@/components/ui/select"');
+    expect(timeSource).toContain("V2FilterSelect");
+    expect(activitySource).toContain("V2FilterSelect");
+    expect(timeSource).not.toContain("<select");
+    expect(activitySource).not.toContain("<select");
+
+    // Radix refuses an empty option value, so "nothing chosen" is a sentinel.
+    expect(selectSource).toContain('export const V2_SELECT_NONE = "none"');
+    expect(timeSource).toContain("V2_SELECT_NONE");
+
+    // Radix portals the panel outside .df-v2, so it carries the class itself.
+    expect(selectSource).toContain('className="df-v2 df-select-content"');
+    expect(rule(".df-v2 .df-select-trigger")).toMatch(/var\(--df-divider\)/);
+  });
+
   it("keeps a selection honest when the filters underneath it change", () => {
     expect(activitySource).toMatch(/useEffect\(\(\) => \{\s*setSelectedIds\(\[\]\);/);
   });

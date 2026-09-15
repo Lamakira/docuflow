@@ -10,6 +10,7 @@ import { motionForSurface } from "./motion";
 import { memberName } from "./today";
 import { TIME_TAB_IDS, type TimeTabId } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
+import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import {
   composeProjectTasks,
   taskPath,
@@ -307,42 +308,35 @@ function TimeEntriesPane() {
           <span className="df-mono df-meta">{isRunning ? "RUNNING" : isPaused ? "PAUSED" : "IDLE"}</span>
         </div>
         <div className="df-filter-bar" style={{ padding: "14px 18px 16px" }}>
-          <label className="df-filter-chip">
-            PROJECT
-            <select
-              value={selectedProjectId}
-              disabled={readOnly || busy}
-              aria-label="Project"
-              onChange={(event) => setSelectedProjectId(event.target.value)}
-            >
-              <option value="">Choose a Project</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.client?.name
-                    ? `${project.client.name} · ${project.project?.name || "Untitled Project"}`
-                    : project.project?.name || "Untitled Project"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="df-filter-chip">
-            TASK
-            <select
-              value={selectedTaskId}
-              disabled={readOnly || busy || !selectedProjectId}
-              aria-label="Task"
-              onChange={(event) => setSelectedTaskId(event.target.value)}
-            >
-              <option value="">Choose a Task</option>
-              {tasks
+          <V2FilterSelect
+            label="PROJECT"
+            ariaLabel="Project"
+            value={selectedProjectId || V2_SELECT_NONE}
+            disabled={readOnly || busy}
+            onChange={(next) => setSelectedProjectId(next === V2_SELECT_NONE ? "" : next)}
+            options={[
+              { value: V2_SELECT_NONE, label: "Choose a Project" },
+              ...projects.map((project) => ({
+                value: project.id,
+                label: project.client?.name
+                  ? `${project.client.name} · ${project.project?.name || "Untitled Project"}`
+                  : project.project?.name || "Untitled Project",
+              })),
+            ]}
+          />
+          <V2FilterSelect
+            label="TASK"
+            ariaLabel="Task"
+            value={selectedTaskId || V2_SELECT_NONE}
+            disabled={readOnly || busy || !selectedProjectId}
+            onChange={(next) => setSelectedTaskId(next === V2_SELECT_NONE ? "" : next)}
+            options={[
+              { value: V2_SELECT_NONE, label: "Choose a Task" },
+              ...tasks
                 .filter((task) => task.status !== "archived")
-                .map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.name}
-                  </option>
-                ))}
-            </select>
-          </label>
+                .map((task) => ({ value: task.id, label: task.name })),
+            ]}
+          />
           <button
             type="button"
             className="df-ink-btn"
@@ -361,58 +355,54 @@ function TimeEntriesPane() {
       </section>
 
       <div className="df-filter-bar">
-        <label className="df-filter-chip" data-active={range === "today" ? "true" : "false"}>
-          RANGE
-          <select value={range} aria-label="Range" onChange={(event) => setRange(event.target.value as typeof range)}>
-            <option value="today">Today</option>
-            <option value="week">This week</option>
-            <option value="all">All</option>
-          </select>
-        </label>
-        <label className="df-filter-chip">
-          PROJECT
-          <select
-            value={projectFilter}
-            aria-label="Filter by Project"
-            onChange={(event) => setProjectFilter(event.target.value)}
-          >
-            <option value="all">All</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.project?.name || "Untitled Project"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="df-filter-chip">
-          STATUS
-          <select
-            value={statusFilter}
-            aria-label="Filter by status"
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="all">All</option>
-            <option value="running">Running</option>
-            <option value="paused">Paused</option>
-            <option value="stopped">Stopped</option>
-          </select>
-        </label>
+        <V2FilterSelect
+          label="RANGE"
+          ariaLabel="Range"
+          value={range}
+          active={range === "today"}
+          onChange={(next) => setRange(next as typeof range)}
+          options={[
+            { value: "today", label: "Today" },
+            { value: "week", label: "This week" },
+            { value: "all", label: "All" },
+          ]}
+        />
+        <V2FilterSelect
+          label="PROJECT"
+          ariaLabel="Filter by Project"
+          value={projectFilter}
+          onChange={setProjectFilter}
+          options={[
+            { value: "all", label: "All" },
+            ...projects.map((project) => ({
+              value: project.id,
+              label: project.project?.name || "Untitled Project",
+            })),
+          ]}
+        />
+        <V2FilterSelect
+          label="STATUS"
+          ariaLabel="Filter by status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "all", label: "All" },
+            { value: "running", label: "Running" },
+            { value: "paused", label: "Paused" },
+            { value: "stopped", label: "Stopped" },
+          ]}
+        />
         {isAdmin ? (
-          <label className="df-filter-chip">
-            MEMBER
-            <select
-              value={userFilter}
-              aria-label="Filter by Member"
-              onChange={(event) => setUserFilter(event.target.value)}
-            >
-              <option value="all">All</option>
-              {users.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {memberName(member)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <V2FilterSelect
+            label="MEMBER"
+            ariaLabel="Filter by Member"
+            value={userFilter}
+            onChange={setUserFilter}
+            options={[
+              { value: "all", label: "All" },
+              ...users.map((member) => ({ value: member.id, label: memberName(member) })),
+            ]}
+          />
         ) : null}
       </div>
 
@@ -534,20 +524,17 @@ function TimeStatsPane() {
           <h1 className="df-title">Time stats</h1>
           <p className="df-subhead">{page.subhead}</p>
         </div>
-        <label className="df-filter-chip">
-          PERIOD
-          <select
-            value={period}
-            aria-label="Period"
-            onChange={(event) => setPeriod(event.target.value as TimePeriod)}
-          >
-            {TIME_PERIODS.map((option) => (
-              <option key={option} value={option}>
-                {timePeriodLabel(option)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <V2FilterSelect
+          label="PERIOD"
+          ariaLabel="Period"
+          value={period}
+          onChange={(next) => setPeriod(next as TimePeriod)}
+          options={TIME_PERIODS.map((option) => ({
+            value: option,
+            label: timePeriodLabel(option),
+          }))}
+          testId="v2-time-stats-period"
+        />
       </header>
 
       {isError ? (

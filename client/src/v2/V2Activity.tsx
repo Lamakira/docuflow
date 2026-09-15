@@ -8,6 +8,7 @@ import { memberName } from "./today";
 import { timeEntriesPath } from "./time";
 import { ACTIVITY_TAB_IDS, type ActivityTabId } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
+import { V2FilterSelect } from "./V2Select";
 import {
   activityEvidencePath,
   activityTabs,
@@ -317,54 +318,44 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
       </section>
 
       <div className="df-filter-bar">
-        <label className="df-filter-chip" data-active={range === "today" ? "true" : "false"}>
-          DATE
-          <select
-            value={range}
-            aria-label="Date"
-            onChange={(event) => {
-              setRange(event.target.value as EvidenceDateMode);
-              setGalleryPage(1);
-            }}
-          >
-            {EVIDENCE_DATE_MODES.map((option) => (
-              <option key={option} value={option}>
-                {evidenceDateLabel(option)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="df-filter-chip">
-          PROJECT
-          <select
-            value={projectFilter}
-            aria-label="Filter by Project"
-            onChange={(event) => setProjectFilter(event.target.value)}
-          >
-            <option value="all">All</option>
-            {(projectsResponse?.data ?? []).map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.project?.name || "Untitled Project"}
-              </option>
-            ))}
-          </select>
-        </label>
+        <V2FilterSelect
+          label="DATE"
+          ariaLabel="Date"
+          value={range}
+          active={range === "today"}
+          onChange={(next) => {
+            setRange(next as EvidenceDateMode);
+            setGalleryPage(1);
+          }}
+          options={EVIDENCE_DATE_MODES.map((option) => ({
+            value: option,
+            label: evidenceDateLabel(option),
+          }))}
+        />
+        <V2FilterSelect
+          label="PROJECT"
+          ariaLabel="Filter by Project"
+          value={projectFilter}
+          onChange={setProjectFilter}
+          options={[
+            { value: "all", label: "All" },
+            ...(projectsResponse?.data ?? []).map((project) => ({
+              value: project.id,
+              label: project.project?.name || "Untitled Project",
+            })),
+          ]}
+        />
         {canReview ? (
-          <label className="df-filter-chip">
-            MEMBER
-            <select
-              value={userFilter}
-              aria-label="Filter by Member"
-              onChange={(event) => setUserFilter(event.target.value)}
-            >
-              <option value="all">All</option>
-              {users.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {memberName(member)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <V2FilterSelect
+            label="MEMBER"
+            ariaLabel="Filter by Member"
+            value={userFilter}
+            onChange={setUserFilter}
+            options={[
+              { value: "all", label: "All" },
+              ...users.map((member) => ({ value: member.id, label: memberName(member) })),
+            ]}
+          />
         ) : null}
         {range === "day" ? (
           <label className="df-filter-chip">
