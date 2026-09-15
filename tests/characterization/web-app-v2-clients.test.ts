@@ -33,6 +33,138 @@ const appSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2AuthenticatedApp.tsx"),
   "utf8",
 );
+const pageSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
+  "utf8",
+);
+
+describe("Client editor shows what it saved (#213)", () => {
+  const clientSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
+    "utf8",
+  );
+
+  it("reads the whole Client back, not only its notes", () => {
+    const record = composeClientRecord({
+      client: {
+        id: "c1",
+        name: "Harbor Co",
+        company: "TECHMA",
+        email: "techma@techma.ca",
+        phone: "0101010101",
+        phoneFormat: "us",
+        status: "lead",
+        source: "direct",
+        fiverrUsername: null,
+        notes: null,
+        contacts: [],
+      },
+      projects: [],
+      now: new Date(2026, 8, 14, 12, 0, 0),
+    });
+
+    // The editor writes company, email, phone and source, so the card has to
+    // show them; before this only `notes` came back and the rest was invisible
+    // until the editor was reopened.
+    expect(record.details).toEqual([
+      { label: "COMPANY", value: "TECHMA" },
+      { label: "EMAIL", value: "techma@techma.ca" },
+      { label: "PHONE", value: "0101010101" },
+      { label: "SOURCE", value: "DIRECT" },
+      // Notes join the same block: a separate paragraph below stacked two
+      // gutters and left a band of empty card between them.
+      { label: "NOTES", value: "—", wide: true },
+    ]);
+  });
+
+  it("reads a Contact like a person, the way a Membership reads on People", () => {
+    const record = composeClientRecord({
+      client: {
+        id: "c1",
+        name: "Harbor Co",
+        company: null,
+        email: null,
+        phone: null,
+        phoneFormat: null,
+        status: "lead",
+        source: null,
+        fiverrUsername: null,
+        notes: null,
+        contacts: [
+          { id: "k1", name: "Said Arikama", role: "Directeur", email: "said@harbor.co", phone: "0101", isPrimary: 1 },
+          { id: "k2", name: "Ada", role: null, email: null, phone: null, isPrimary: 0 },
+        ],
+      },
+      projects: [],
+      now: new Date(2026, 8, 14, 12, 0, 0),
+    });
+
+    expect(record.contacts[0]).toMatchObject({ name: "Said Arikama", initials: "SA", primary: true });
+    // One word gives two letters rather than one lonely capital.
+    expect(record.contacts[1].initials).toBe("AD");
+
+    // Identity, then the reachable detail, then badges — not one joined string.
+    expect(clientSource).toContain("df-people-member");
+    expect(clientSource).toContain("df-contact-badges");
+    // Columns say nothing without a head; the desktop register names each one.
+    expect(clientSource).toMatch(/<span>CONTACT<\/span>/);
+    expect(clientSource).toMatch(/<span>PHONE<\/span>/);
+    expect(clientSource).toMatch(/<span>ROLE<\/span>/);
+    // A role is free text, so it is read as text — a status pill would claim it
+    // came from a closed set.
+    expect(clientSource).toContain("df-contact-role");
+    // `.df-contact-row` is the Dossier's flex contact line: reusing that name
+    // let its display:flex win and the columns drifted off their own headers.
+    expect(clientSource).toContain("df-client-contact-row");
+    expect(clientSource).toContain("df-client-contacts");
+    // `.df-client-record-body .df-register-row` sets two tracks at the same
+    // weight, so this rule only wins by coming after it — a harness without that
+    // ancestor renders correctly while the real record wraps its last columns.
+    const twoTrack = css.indexOf(".df-client-record-body .df-register-row");
+    const fourTrack = css.indexOf(".df-client-record-body .df-client-contact-row");
+    expect(twoTrack).toBeGreaterThan(-1);
+    expect(fourTrack).toBeGreaterThan(twoTrack);
+    expect(clientSource).not.toMatch(/df-status">\{contact\.role\}/);
+    // An email is a literal identifier; uppercasing it changes what it looks like.
+    expect(clientSource).toContain('data-case="preserve"');
+    expect(rule('.df-meta[data-case="preserve"]')).toMatch(/text-transform:\s*none/);
+  });
+
+  it("reads record attributes as stacked pairs, not as metric tiles", () => {
+    // A boxed tile is for a metric. Forcing record attributes into equal-width
+    // tiles truncated the email; after Resend's contact metadata grid and Rox,
+    // whose property rows are explicitly not carded individually.
+    expect(clientSource).toContain("df-record-fields");
+    expect(clientSource).not.toContain("df-analytics-figure");
+    // An email is prose, so the value is UI text rather than the mono a figure uses.
+    expect(rule(".df-record-field-value")).not.toMatch(/font-family/);
+    expect(rule(".df-record-field")).not.toMatch(/border:/);
+  });
+
+  it("names the card for what it edits, and signs off the save", () => {
+    // The card edits the whole Client; calling it "Notes" described one field.
+    expect(clientSource).toContain("Client details");
+    expect(clientSource).toContain('showToast("Client saved.")');
+  });
+});
+
+describe("Client record controls use the shadcn set (#213)", () => {
+  const clientSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
+    "utf8",
+  );
+
+  it("has no bare checkbox or native select left on the record", () => {
+    expect(clientSource).not.toContain('type="checkbox"');
+    expect(clientSource).not.toContain("<select");
+    expect(clientSource).toContain('from "@/components/ui/checkbox"');
+    expect(clientSource).toContain('from "@/components/ui/select"');
+    // Radix renders a button, which a wrapping <label> cannot implicitly label.
+    expect(clientSource).toContain('htmlFor="df-contact-primary"');
+    // The select panel portals out of `.df-v2` and must carry the class itself.
+    expect(clientSource).toContain('className="df-v2 df-select-content"');
+  });
+});
 
 describe("Clients routing (#186)", () => {
   it("shows a live register on the rail Clients destination", () => {
@@ -188,6 +320,44 @@ describe("Client record from live Client reads (#186)", () => {
     expect(record.notes).toBe("Pier contract.");
     expect(JSON.stringify(record)).not.toContain("Keystone");
     expect(JSON.stringify(record)).not.toContain("v1");
+  });
+
+  it("shows the v1 Client fields and related-contact details (#213)", () => {
+    const record = composeClientRecord({
+      client: {
+        id: "cli-1",
+        name: "Harbor Co",
+        company: "Harbor Co Ltd",
+        email: "work@harbor.test",
+        phone: "+229 01 02 03 04",
+        phoneFormat: "international",
+        status: "client",
+        source: "fiverr",
+        fiverrUsername: "harbor_ops",
+        notes: "Prefers written updates.",
+        contacts: [{
+          id: "contact-1",
+          name: "Pat Ng",
+          role: "Approver",
+          email: "pat@harbor.test",
+          phone: "+229 05 06 07 08",
+          isPrimary: 1,
+        }],
+      },
+      projects: [],
+    });
+
+    expect(record.identity).toMatchObject({
+      phone: "+229 01 02 03 04",
+      fiverrUsername: "harbor_ops",
+    });
+    expect(record.contacts[0]).toMatchObject({
+      email: "pat@harbor.test",
+      phone: "+229 05 06 07 08",
+      primary: true,
+    });
+    expect(pageSource).toContain("/contacts`");
+    expect(pageSource).toContain('apiRequest("PATCH", `/api/crm/clients/${clientId}`');
   });
 
   it("empty and missing records are honest", () => {

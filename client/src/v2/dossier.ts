@@ -80,6 +80,50 @@ export type DossierFile = {
   title: string;
   updatedAt: Date | string | null;
   access?: string | null;
+  href?: string;
+};
+
+/** `file` leaves the app to open the object; `app` is a v2 route; `none` has no destination. */
+export type DossierReminderRow = {
+  id: string;
+  title: string;
+  note: string | null;
+  due: string;
+  status: string;
+  done: boolean;
+  canComplete: boolean;
+  canReopen: boolean;
+  draft: { title: string; note: string; dueAt: string };
+};
+
+export type DossierFileRow = {
+  id: string;
+  title: string;
+  meta: string;
+  href: string;
+  target: "file" | "app" | "none";
+};
+
+export type DossierReminder = {
+  id: string;
+  title: string;
+  note?: string | null;
+  dueAt: Date | string;
+  status: string;
+  notified?: number | null;
+  taskId?: string | null;
+};
+
+export type DossierNote = {
+  id: string;
+  content: string;
+  createdAt?: Date | string | null;
+  audioUrl?: string | null;
+  audioRecordingId?: string | null;
+  transcriptStatus?: string | null;
+  audioTranscript?: string | null;
+  attachments?: string | null;
+  createdBy?: DossierPerson | null;
 };
 
 export type DossierInput = {
@@ -100,6 +144,8 @@ export type DossierInput = {
   timeEntries: DossierTimeEntry[];
   dailyUpdates: DossierDailyUpdate[];
   files: DossierFile[];
+  reminders: DossierReminder[];
+  notes: DossierNote[];
 };
 
 export type DossierTab = {
@@ -176,7 +222,17 @@ export type DossierModel = {
     }>;
   };
   files: {
-    rows: Array<{ id: string; title: string; meta: string }>;
+    rows: DossierFileRow[];
+    empty: boolean;
+    emptyCopy: string;
+  };
+  reminders: {
+    rows: DossierReminderRow[];
+    empty: boolean;
+    emptyCopy: string;
+  };
+  notes: {
+    rows: Array<{ id: string; content: string; meta: string; audioUrl: string | null; audioRecordingId: string | null; transcriptStatus: string | null; audioTranscript: string | null }>;
     empty: boolean;
     emptyCopy: string;
   };
@@ -236,6 +292,8 @@ const TAB_LABEL: Record<DossierTabId, string> = {
   time: "Time",
   activity: "Activity",
   updates: "Updates",
+  notes: "Notes",
+  reminders: "Reminders",
   documents: "Documents",
   files: "Files",
   settings: "Settings",
@@ -455,6 +513,21 @@ function composeUpdates(input: DossierInput): DossierModel["updates"] {
   };
 }
 
+/**
+ * A Dossier File comes from a note attachment, so its href is an object path
+ * the backend serves — not a v2 route. Client-side routing one lands on the
+ * placeholder, which is the dead name #213 forbids, so the row says which kind
+ * of destination it has and the page opens it accordingly. The viewer itself
+ * belongs to the Knowledge ticket; this only has to reach the File.
+ */
+function fileTarget(href: string | undefined): DossierFileRow["target"] {
+  if (!href) return "none";
+  if (/^https?:\/\//i.test(href) || href.startsWith("/public-objects/") || href.startsWith("/objects/")) {
+    return "file";
+  }
+  return "app";
+}
+
 function composeFiles(input: DossierInput): DossierModel["files"] {
   const files = visibleRecords(input.files);
   return {
@@ -462,10 +535,57 @@ function composeFiles(input: DossierInput): DossierModel["files"] {
       id: file.id,
       title: file.title,
       meta: formatWhen(file.updatedAt, input.now),
+      href: file.href ?? "",
+      target: fileTarget(file.href),
     })),
     empty: files.length === 0,
     emptyCopy: "No Files on this Project you can access.",
   };
+}
+
+/** `<input type="datetime-local">` wants local wall-clock, not an ISO instant. */
+function datetimeLocalValue(value: Date | string | null | undefined): string {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part: number) => part.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function composeReminders(input: DossierInput): DossierModel["reminders"] {
+  const rows = input.reminders.map((reminder) => {
+    const done = reminder.status === "done";
+    return {
+      id: reminder.id,
+      title: reminder.title,
+      note: reminder.note ?? null,
+      due: formatWhen(reminder.dueAt, input.now),
+      status: reminder.status.replace(/_/g, " ").toUpperCase(),
+      done,
+      canComplete: !done,
+      canReopen: done,
+      // The edit form needs the values back, not the formatted ones.
+      draft: {
+        title: reminder.title,
+        note: reminder.note ?? "",
+        dueAt: datetimeLocalValue(reminder.dueAt),
+      },
+    };
+  });
+  return { rows, empty: rows.length === 0, emptyCopy: "No Reminders on this Project yet." };
+}
+
+function composeNotes(input: DossierInput): DossierModel["notes"] {
+  const rows = input.notes.map((note) => ({
+    id: note.id,
+    content: note.content,
+    meta: [note.createdAt ? formatWhen(note.createdAt, input.now) : null, note.createdBy ? memberName(note.createdBy).toUpperCase() : null].filter(Boolean).join(" · "),
+    audioUrl: note.audioUrl ?? null,
+    audioRecordingId: note.audioRecordingId ?? null,
+    transcriptStatus: note.transcriptStatus ?? null,
+    audioTranscript: note.audioTranscript ?? null,
+  }));
+  return { rows, empty: rows.length === 0, emptyCopy: "No notes on this Project yet." };
 }
 
 function composeSettings(input: DossierInput): DossierModel["settings"] {
@@ -490,6 +610,9 @@ function composeSettings(input: DossierInput): DossierModel["settings"] {
     { label: "DUE", value: due ? formatDayStamp(due) : "—" },
     { label: "DOCUMENTATION", value: project.documentationEnabled ? "ON" : "OFF" },
   ];
+  // Custom CRM field values are not shown here: `crm_custom_field_values`
+  // holds them but no route exposes it, so there is nothing honest to render.
+  // Composing one needs a BFF route, which #213 does not carry.
   return { fields, lead, members };
 }
 
@@ -501,6 +624,8 @@ export function composeDossier(input: DossierInput): DossierModel {
   const time = composeTime(input);
   const updates = composeUpdates(input);
   const files = composeFiles(input);
+  const reminders = composeReminders(input);
+  const notes = composeNotes(input);
   const settings = composeSettings(input);
   const assignees = projectAssignees(project);
   const trackedMtd = formatHours(input.monthSeconds);
@@ -530,6 +655,10 @@ export function composeDossier(input: DossierInput): DossierModel {
                     ? String(documents.length)
                     : id === "files"
                       ? String(files.rows.length)
+                      : id === "notes"
+                        ? String(notes.rows.length)
+                        : id === "reminders"
+                          ? String(reminders.rows.length)
                       : null,
         active: id === input.tab,
       }))
@@ -612,6 +741,8 @@ export function composeDossier(input: DossierInput): DossierModel {
     time,
     updates,
     files,
+    reminders,
+    notes,
     settings,
     dailyUpdate: composeDailyUpdate(input),
     evidence: {

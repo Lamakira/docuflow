@@ -45,8 +45,42 @@ export type OpportunityCard = {
   terminal: boolean;
   canChangeStage: boolean;
   projectHref: string | null;
+  recordHref: string;
   changing: boolean;
 };
+
+export type OpportunityRecordInput = OpportunityPipelineRowInput & {
+};
+
+export type OpportunityRecordModel = {
+  id: string;
+  title: string;
+  clientLabel: string;
+  stage: string;
+  terminal: boolean;
+};
+
+export function opportunityHref(id: string): string {
+  return `/opportunities/${id}`;
+}
+
+/**
+ * No linked-Client-Project link here. An Opportunity and the Client Project a
+ * win may create are distinct records (CONTEXT: "is not itself delivery work"),
+ * and nothing in the data says which Project a won Opportunity produced — the
+ * legacy rows share one `crm_projects` id, so linking on it would point the
+ * Opportunity back at itself. #213 does not ask for the link either.
+ */
+export function composeOpportunityRecord(input: OpportunityRecordInput): OpportunityRecordModel {
+  const stage = opportunityStageFromCombined(input.combinedStatus);
+  return {
+    id: input.id,
+    title: input.name || "Untitled Opportunity",
+    clientLabel: input.clientName?.trim() || "—",
+    stage: stageLabel(stage).toUpperCase(),
+    terminal: isOpportunityTerminal(stage),
+  };
+}
 
 export type OpportunityColumn = {
   id: string;
@@ -195,6 +229,7 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
       terminal,
       canChangeStage: !terminal,
       projectHref: projectHref(row.id),
+      recordHref: opportunityHref(row.id),
       changing: row.id === input.changingId,
     });
   }

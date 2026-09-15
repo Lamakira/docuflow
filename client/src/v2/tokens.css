@@ -651,6 +651,143 @@ button.df-activity-row {
   grid-template-rows: 1fr;
 }
 
+/* A Contact row reads like a person (#213): identity, then the reachable
+   detail, then its badges — not one joined string pushed to the far edge. */
+.df-contact-role {
+  font-size: 13px;
+  color: var(--df-case-ink);
+  overflow-wrap: anywhere;
+}
+
+.df-contact-badges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* An email is a literal identifier; uppercasing it changes what it looks like. */
+.df-meta[data-case="preserve"] {
+  text-transform: none;
+}
+
+/* Record attributes (#213). A boxed tile is for a metric, where the figure is
+   the subject. On a record the subject is the label-to-value relation, so the
+   pair is stacked and uncarded, and the value is UI text rather than mono — an
+   email is prose, not a figure, and a fixed tile width truncated it.
+   After Resend's contact metadata grid and Rox, whose property rows are
+   explicitly not carded individually. */
+.df-record-fields {
+  display: grid;
+  /* 150px keeps four short attributes on one row in a card of this width;
+     190px fitted only three and left the fourth orphaned on a second row. */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px 28px;
+  padding: 16px 18px;
+}
+
+/* Notes are prose, so they take the full row rather than a narrow column. */
+.df-record-field[data-wide="true"] {
+  grid-column: 1 / -1;
+}
+
+.df-record-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.df-record-field-label {
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--df-archive-slate);
+}
+
+.df-record-field-value {
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  line-height: 1.4;
+  color: var(--df-case-ink);
+  overflow-wrap: anywhere;
+}
+
+.df-record-field-value[data-empty="true"] {
+  color: var(--df-muted-ink);
+}
+
+.df-v2[data-chrome="mobile"] .df-record-fields {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  padding: 12px 13px;
+  gap: 14px 18px;
+}
+
+/* Voice notes on the Dossier (#213). Recording is a state, so the elapsed
+   counter does not animate and the composer does not react to a keystroke. */
+.df-audio-recorder {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 18px;
+  border: 1px solid var(--df-divider-light);
+  border-radius: 8px;
+  background: var(--df-cold-stock);
+}
+
+.df-audio-clock {
+  font-family: var(--df-font-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--df-case-ink);
+  animation: none;
+  transition: none;
+}
+
+.df-audio-note {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.df-audio-player {
+  width: 100%;
+  max-width: 420px;
+  height: 32px;
+}
+
+.df-audio-transcript {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--df-archive-slate);
+  max-width: 68ch;
+}
+
+/* A File opens from its Dossier row (#213), so the row itself is the origin:
+   it lifts under the pointer rather than the page announcing the change. */
+.df-file-row[data-motion="standard"] {
+  transition:
+    background-color var(--duration-press) var(--ease-out),
+    box-shadow var(--duration-press) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .df-file-row[data-motion="standard"]:hover {
+    background: var(--df-cold-stock);
+    box-shadow: inset 2px 0 0 var(--df-case-ink);
+  }
+}
+
+.df-file-row[data-motion="standard"]:active {
+  background: var(--df-hover);
+}
+
 .df-activity-expand[data-motion="instant"] {
   transition: none;
 }
@@ -1611,6 +1748,16 @@ button.df-activity-row {
 
 .df-client-record-body .df-register-row {
   grid-template-columns: 1.6fr 1fr;
+}
+
+/* The Contact register carries four columns, so it overrides the two-column
+   default above — same weight, so it has to come after it. Distinct from
+   `.df-contact-row`, which is the Dossier's flex contact line. Head and row
+   share one track list, or a column does not sit under its own name. */
+.df-client-contacts .df-register-head,
+.df-client-record-body .df-client-contact-row {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 0.9fr) minmax(0, 0.9fr) auto;
+  gap: 18px;
 }
 
 .df-status-word {
@@ -3212,6 +3359,10 @@ button.df-activity-row {
   .df-activity-expand[data-motion="standard"] {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
+  }
+
+  .df-file-row[data-motion="standard"] {
+    transition: background-color var(--duration-press) var(--ease-out);
   }
 
   .df-refusal-pop[data-motion="standard"] {

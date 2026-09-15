@@ -33,6 +33,8 @@ function emptyInput(overrides: Partial<DossierInput> = {}): DossierInput {
     timeEntries: [],
     dailyUpdates: [],
     files: [],
+    reminders: [],
+    notes: [],
     ...overrides,
   };
 }
@@ -81,7 +83,7 @@ describe("Project Dossier routing (#173)", () => {
   });
 
   it("keeps remaining Dossier tabs in the same chrome, not v1 screens", () => {
-    for (const tab of ["tasks", "time", "activity", "updates", "documents", "files", "settings"] as const) {
+    for (const tab of ["tasks", "time", "activity", "updates", "notes", "reminders", "documents", "files", "settings"] as const) {
       const match = matchV2Route(`/projects/prj-live/${tab}`);
       expect(match.kind, tab).toBe("dossier");
       if (match.kind !== "dossier") continue;
@@ -91,6 +93,43 @@ describe("Project Dossier routing (#173)", () => {
     expect(matchV2Route("/projects").kind).toBe("projects");
     expect(matchV2Route("/project/prj-live").kind).not.toBe("placeholder");
     expect(matchV2Route("/crm/project/1").kind).toBe("dossier");
+  });
+
+  it("composes Reminders CRUD, notes with audio, and openable File rows (#213)", () => {
+    const dossier = composeDossier(emptyInput({
+      tab: "notes",
+      project: liveProject(),
+      reminders: [{
+        id: "rem-1",
+        title: "Call Client",
+        note: "Confirm approval",
+        dueAt: new Date(2026, 8, 15, 9, 0),
+        status: "upcoming",
+        notified: 0,
+      }],
+      notes: [{
+        id: "note-1",
+        content: "Voice update",
+        createdAt: new Date(2026, 8, 14, 10, 0),
+        audioUrl: "/objects/audio.webm",
+        audioRecordingId: "audio-1",
+        transcriptStatus: "processing",
+        audioTranscript: null,
+        attachments: JSON.stringify([{ url: "/public-objects/scope.pdf", filename: "scope.pdf", filesize: 12, filetype: "application/pdf" }]),
+        createdBy: { id: "user-1", firstName: "Sam", lastName: "Lee" },
+      }],
+      files: [{ id: "f1", title: "Kickoff deck.pdf", updatedAt: new Date(2026, 8, 8, 11, 0), href: "/documents/f1" }],
+    }));
+
+    expect(dossier.reminders.rows[0]).toMatchObject({ id: "rem-1", status: "UPCOMING" });
+    expect(dossier.notes.rows[0]).toMatchObject({ id: "note-1", audioRecordingId: "audio-1" });
+    expect(dossier.files.rows[0].href).toBe("/documents/f1");
+    // Custom CRM field values are out of scope: `crm_custom_field_values` has no
+    // route, so the Dossier shows no custom field rather than an empty pretence.
+    expect(pageSource).not.toContain("modules/projects/fields");
+    expect(pageSource).toContain("/api/audio/upload");
+    expect(pageSource).toContain("/reminders`");
+    expect(pageSource).toContain("/notes`");
   });
 });
 
@@ -413,7 +452,10 @@ describe("Project Dossier remaining tabs from live records (#188)", () => {
       }),
     );
     expect(dossier.documents.rows[0].title).toBe("Scope notes");
-    expect(dossier.files.rows).toEqual([{ id: "f1", title: "Kickoff deck.pdf", meta: "11:00" }]);
+    // No href means no destination: the row is listed but is not a link to nowhere.
+    expect(dossier.files.rows).toEqual([
+      { id: "f1", title: "Kickoff deck.pdf", meta: "11:00", href: "", target: "none" },
+    ]);
     expect(dossier.files.empty).toBe(false);
   });
 
@@ -485,3 +527,133 @@ function reducedMotionCss(): string {
     .map((match) => match[1])
     .join("\n");
 }
+
+describe("Dossier voice notes stay in the v2 visual system (#213)", () => {
+  it("does not pull the discarded v1 audio components into v2 chrome", () => {
+    // ADR-0003: v2 must not mix in the discarded visual system.
+    expect(pageSource).not.toContain("@/components/editor/AudioRecorder");
+    expect(pageSource).not.toContain("@/components/NoteAudioPlayer");
+    expect(pageSource).toContain("./V2NoteAudio");
+
+    const audioSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2NoteAudio.tsx"),
+      "utf8",
+    );
+    // No Tailwind utility classes, and the transcript poll is kept.
+    expect(audioSource).not.toMatch(/className="[^"]*\b(flex|gap-\d|p-\d|bg-muted|rounded-lg)\b/);
+    expect(audioSource).toContain("/api/audio/");
+    // Recording is a state, not a celebration.
+    expect(rule(".df-audio-clock")).toMatch(/animation:\s*none/);
+  });
+});
+
+describe("Dossier Reminders are editable, not just completable (#213)", () => {
+  it("carries the raw fields an edit needs, and says when a Reminder can reopen", () => {
+    const dossier = composeDossier(
+      emptyInput({
+        tab: "reminders",
+        project: liveProject(),
+        reminders: [
+          {
+            id: "rem-1",
+            title: "Chase signature",
+            note: "Before the review",
+            dueAt: new Date(2026, 8, 10, 9, 0, 0),
+            status: "upcoming",
+          },
+          {
+            id: "rem-2",
+            title: "Send invoice",
+            note: null,
+            dueAt: new Date(2026, 8, 9, 9, 0, 0),
+            status: "done",
+          },
+        ],
+      }),
+    );
+
+    const [open, done] = dossier.reminders.rows;
+    expect(open).toMatchObject({ id: "rem-1", done: false, canComplete: true, canReopen: false });
+    expect(done).toMatchObject({ id: "rem-2", done: true, canComplete: false, canReopen: true });
+
+    // An edit form needs the values back, not the formatted ones.
+    expect(open.draft).toEqual({
+      title: "Chase signature",
+      note: "Before the review",
+      dueAt: "2026-09-10T09:00",
+    });
+    expect(done.draft.note).toBe("");
+  });
+
+  it("edits a Reminder through the route that already takes those fields", () => {
+    expect(pageSource).toMatch(/PATCH", `\/api\/reminders\/\$\{[^}]+\}`, \{ title/);
+    expect(pageSource).toContain("canReopen");
+  });
+});
+
+describe("Dossier Files open the File (#213)", () => {
+  it("renders an object path as a real link out, never client-routed into the placeholder", () => {
+    // wouter <Link> would client-route /public-objects/... and fall through to
+    // V2PlaceholderPage — the dead name the ticket forbids.
+    expect(pageSource).toContain('row.target === "file"');
+    expect(pageSource).toMatch(/<a\s[^>]*href=\{row\.href\}/);
+    expect(pageSource).toContain('rel="noreferrer"');
+  });
+
+  it("opens the File from its row, which is this ticket's one novelty", () => {
+    const recipe = motionForSurface("dossier-file-open");
+    expect(recipe.enterExit).toBe("standard");
+    expect(recipe.keepOpacity).toBe(true);
+
+    const reduced = motionForSurface("dossier-file-open", { reducedMotion: true });
+    expect(reduced.movement).toBe("none");
+
+    // The row is the origin, so the row itself carries the motion.
+    expect(pageSource).toContain("FILE_OPEN_MOTION");
+    expect(rule('.df-file-row[data-motion="standard"]')).toMatch(/var\(--ease-out\)/);
+    expect(rule('.df-file-row[data-motion="standard"]')).not.toMatch(/transition\s*:\s*all\b/);
+    expect(reducedMotionCss()).toMatch(/\.df-file-row\[data-motion="standard"\]/);
+  });
+
+  it("marks an object URL as a File to open, not an in-app route", () => {
+    const dossier = composeDossier(
+      emptyInput({
+        tab: "files",
+        project: liveProject(),
+        // The only source of Dossier Files is a note attachment, whose href is
+        // an object path served by the backend — not a v2 route.
+        files: [
+          {
+            id: "note-1-0",
+            title: "Kickoff deck.pdf",
+            updatedAt: new Date(2026, 8, 8, 11, 0, 0),
+            href: "/public-objects/uploads/kickoff.pdf",
+          },
+        ],
+      }),
+    );
+
+    expect(dossier.files.rows).toHaveLength(1);
+    const row = dossier.files.rows[0];
+    expect(row.href).toBe("/public-objects/uploads/kickoff.pdf");
+    // Client-side routing an object path lands on the v2 placeholder, which is
+    // the dead name the ticket forbids.
+    expect(row.target).toBe("file");
+  });
+
+  it("never invents a Document route for a File that has no href", () => {
+    const dossier = composeDossier(
+      emptyInput({
+        tab: "files",
+        project: liveProject(),
+        files: [{ id: "note-9-2", title: "Orphan.pdf", updatedAt: null }],
+      }),
+    );
+
+    const row = dossier.files.rows[0];
+    // "note-9-2" is a note-attachment id, never a Document id.
+    expect(row.href).not.toContain("/documents/");
+    expect(row.target).toBe("none");
+  });
+});
+

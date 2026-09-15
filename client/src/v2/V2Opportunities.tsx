@@ -9,14 +9,17 @@ import {
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { CrmClient, CrmProjectWithDetails, SafeUser } from "@shared/schema";
+import { opportunityStageFromCombined } from "@shared/projectLifecycle";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
+import { matchV2Route } from "./presentation";
 import { memberName } from "./today";
 import { useV2Chrome } from "./V2Shell";
 import {
   canChangeOpportunityStage,
   combinedStatusForStage,
   composeOpportunityPipeline,
+  composeOpportunityRecord,
   composeOpportunityStages,
   opportunityWriteRefusal,
   stageOptionsFromFieldOptions,
@@ -90,7 +93,7 @@ function OpportunityCardView({
 }) {
   const origin = useRef<{ x: number; y: number } | null>(null);
   const cardRef = useRef<HTMLElement | null>(null);
-  const href = card.projectHref;
+  const recordHref = card.recordHref;
 
   useEffect(() => {
     const clearPress = () => cardRef.current?.setAttribute("data-pressing", "false");
@@ -109,15 +112,15 @@ function OpportunityCardView({
   }
 
   function onClick(event: MouseEvent<HTMLElement>) {
-    if (!href || dragging) return;
+    if (dragging) return;
     if (!isOpportunityCardClick(event, origin.current)) return;
     origin.current = null;
     event.preventDefault();
     if (event.metaKey || event.ctrlKey) {
-      window.open(href, "_blank", "noopener,noreferrer");
+      window.open(recordHref, "_blank", "noopener,noreferrer");
       return;
     }
-    onOpen(href);
+    onOpen(recordHref);
   }
 
   return (
@@ -132,7 +135,7 @@ function OpportunityCardView({
       data-dragging={dragging ? "true" : "false"}
       data-pressing="false"
       data-locked={locked ? "true" : "false"}
-      data-href={href ?? undefined}
+      data-href={recordHref}
       data-testid={`v2-opportunity-card-${card.id}`}
       onPointerDown={onPointerDown}
       onClick={onClick}
@@ -140,6 +143,56 @@ function OpportunityCardView({
       <div className="df-row-title">{card.name}</div>
       {card.clientLabel ? <div className="df-opportunity-card-client">{card.clientLabel}</div> : null}
     </article>
+  );
+}
+
+export function V2OpportunityRecordPage() {
+  const [location] = useLocation();
+  const match = matchV2Route(location);
+  const opportunityId = match.kind === "opportunity-record" ? match.opportunityId : "";
+  const { data: row, isLoading, isError } = useQuery<CrmProjectWithDetails | null>({
+    queryKey: ["/api/crm/projects", opportunityId],
+    enabled: Boolean(opportunityId),
+    queryFn: async () => {
+      const response = await fetch(`/api/crm/projects/${opportunityId}`, { credentials: "include" });
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error("Failed to fetch Opportunity");
+      return response.json();
+    },
+  });
+
+  if (match.kind !== "opportunity-record") return null;
+  if (isLoading) return <div className="df-page"><div className="df-card" style={{ minHeight: 240 }} /></div>;
+  if (isError || !row) {
+    return <div className="df-page"><p className="df-empty">This Opportunity could not be loaded.</p></div>;
+  }
+
+  const record = composeOpportunityRecord(toPipelineRow(row));
+  return (
+    <div className="df-page" data-testid="v2-opportunity-record">
+      <header className="df-dossier-head">
+        <div className="df-dossier-identity">
+          <div className="df-dossier-copy">
+            <div className="df-dossier-meta">
+              <span className="df-status">OPPORTUNITY</span>
+              <span className="df-status" data-status={record.stage}>{record.stage}</span>
+            </div>
+            <h1 className="df-record-title">{record.title}</h1>
+            <div className="df-dossier-provenance">
+              <span className="df-mono df-meta">{record.clientLabel}</span>
+              <span className="df-mono df-meta">{record.terminal ? "TERMINAL" : "OPEN"}</span>
+            </div>
+          </div>
+        </div>
+      </header>
+      <section className="df-card">
+        <div className="df-card-head"><h2 className="df-card-title">Opportunity record</h2></div>
+        <div style={{ padding: "16px 18px" }}>
+          <div className="df-kv"><span>CLIENT</span><span>{record.clientLabel}</span></div>
+          <div className="df-kv"><span>STAGE</span><span>{record.stage}</span></div>
+        </div>
+      </section>
+    </div>
   );
 }
 

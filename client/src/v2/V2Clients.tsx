@@ -1,7 +1,15 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { CrmClient, CrmContact, CrmProjectWithDetails, SafeUser } from "@shared/schema";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   clientHref,
@@ -75,6 +83,13 @@ export function V2ClientRecordRedirect() {
   if (match.kind === "client-record") return <Redirect to={clientHref(match.clientId)} />;
   return <Redirect to="/clients" />;
 }
+
+const CLIENT_SOURCES = [
+  { id: "none", label: "NONE" },
+  { id: "direct", label: "DIRECT" },
+  { id: "zoho", label: "ZOHO" },
+  { id: "fiverr", label: "FIVERR" },
+] as const;
 
 export function V2ClientsPage() {
   const { layout, memberships } = useV2Chrome();
@@ -285,9 +300,18 @@ export function V2ClientsPage() {
 }
 
 export function V2ClientRecordPage() {
+  const { layout, memberships, showToast } = useV2Chrome();
   const [location] = useLocation();
   const match = matchV2Route(location);
   const clientId = match.kind === "client-record" ? match.clientId : "";
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  const workspaceName = current?.workspaceName ?? "this Workspace";
+  const readOnly = current?.condition === "Read-only";
+  const [editing, setEditing] = useState(false);
+  const [addingContact, setAddingContact] = useState(false);
+  const [draft, setDraft] = useState({ email: "", phone: "", company: "", notes: "", source: "", fiverrUsername: "" });
+  const [contactDraft, setContactDraft] = useState({ name: "", role: "", email: "", phone: "", isPrimary: false });
+  const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
   const seed = (queryClient.getQueryData<CrmClient[]>(["/api/crm/clients", "register"]) ?? []).find(
     (row) => row.id === clientId,
@@ -317,6 +341,58 @@ export function V2ClientRecordPage() {
     [projectsResponse, clientId],
   );
 
+  useEffect(() => {
+    if (!client) return;
+    setDraft({
+      email: client.email ?? "",
+      phone: client.phone ?? "",
+      company: client.company ?? "",
+      notes: client.notes ?? "",
+      source: client.source ?? "",
+      fiverrUsername: client.fiverrUsername ?? "",
+    });
+  }, [client]);
+
+  function refuse(error?: Error) {
+    setWriteRefusal(clientWriteRefusal({ readOnly, workspaceName, errorMessage: error?.message }));
+  }
+
+  const updateClient = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/crm/clients/${clientId}`, {
+      email: draft.email || null,
+      phone: draft.phone || null,
+      company: draft.company || null,
+      notes: draft.notes || null,
+      source: draft.source || null,
+      fiverrUsername: draft.source === "fiverr" ? draft.fiverrUsername || null : null,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/clients", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/clients"] });
+      setEditing(false);
+      setWriteRefusal(null);
+      showToast("Client saved.");
+    },
+    onError: (error: Error) => refuse(error),
+  });
+
+  const createContact = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/crm/clients/${clientId}/contacts`, {
+      name: contactDraft.name.trim(),
+      role: contactDraft.role || null,
+      email: contactDraft.email || null,
+      phone: contactDraft.phone || null,
+      isPrimary: contactDraft.isPrimary ? 1 : 0,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/clients", clientId] });
+      setContactDraft({ name: "", role: "", email: "", phone: "", isPrimary: false });
+      setAddingContact(false);
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuse(error),
+  });
+
   const record = composeClientRecord({
     client: client
       ? {
@@ -324,13 +400,19 @@ export function V2ClientRecordPage() {
           name: client.name,
           company: client.company,
           email: client.email,
+          phone: client.phone,
+          phoneFormat: client.phoneFormat,
           status: client.status,
           source: client.source,
+          fiverrUsername: client.fiverrUsername,
           notes: client.notes,
           contacts: (client.contacts ?? []).map((contact) => ({
             id: contact.id,
             name: contact.name,
             role: contact.role ?? null,
+            email: contact.email ?? null,
+            phone: contact.phone ?? null,
+            isPrimary: contact.isPrimary ?? 0,
           })),
         }
       : null,
@@ -376,6 +458,8 @@ export function V2ClientRecordPage() {
                     <span className="df-mono df-meta">{record.identity.email}</span>
                   ) : null}
                   <span className="df-mono df-meta">{record.identity.source}</span>
+                  {record.identity.phone ? <span className="df-mono df-meta">{record.identity.phone}</span> : null}
+                  {record.identity.fiverrUsername ? <span className="df-mono df-meta">FIVERR @{record.identity.fiverrUsername}</span> : null}
                 </div>
               </>
             ) : (
@@ -389,6 +473,7 @@ export function V2ClientRecordPage() {
       </header>
 
       <div className="df-dossier-body df-client-record-body" data-motion={RECORD_MOTION}>
+        {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
         {isLoading ? (
           <div className="df-card" style={{ minHeight: 240 }} />
         ) : record.missing || record.unavailable ? (
@@ -396,33 +481,132 @@ export function V2ClientRecordPage() {
         ) : (
           <div className="df-overview">
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <section className="df-card">
+              <section className="df-card df-client-contacts">
                 <div className="df-card-head">
                   <h2 className="df-card-title">On this Client</h2>
                   <span className="df-mono df-meta">{record.contacts.length}</span>
+                  <button type="button" className="df-ghost-link" onClick={() => setAddingContact((open) => !open)}>Add contact</button>
                 </div>
+                {addingContact ? (
+                  <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); if (contactDraft.name.trim()) createContact.mutate(); }}>
+                    {(["name", "role", "email", "phone"] as const).map((field) => (
+                      <label key={field} className="df-daily-field">{field.toUpperCase()}<input value={contactDraft[field]} onChange={(event) => setContactDraft((value) => ({ ...value, [field]: event.target.value }))} /></label>
+                    ))}
+                    <div className="df-checkbox-row">
+                      <Checkbox
+                        id="df-contact-primary"
+                        className="df-checkbox"
+                        checked={contactDraft.isPrimary}
+                        onCheckedChange={(next) => setContactDraft((value) => ({ ...value, isPrimary: next === true }))}
+                      />
+                      <label htmlFor="df-contact-primary">Primary contact</label>
+                    </div>
+                    <button className="df-ink-btn" type="submit" disabled={!contactDraft.name.trim() || createContact.isPending}>Create contact</button>
+                  </form>
+                ) : null}
                 {record.contacts.length === 0 ? (
                   <p className="df-empty">{record.contactsEmptyCopy}</p>
-                ) : (
+                ) : layout.stackedRegister ? (
                   record.contacts.map((contact) => (
                     <div key={contact.id} className="df-register-row">
-                      <span className="df-row-title">{contact.name}</span>
-                      <span className="df-mono df-meta">{contact.role || "—"}</span>
+                      <span className="df-people-member">
+                        <span className="df-avatar">{contact.initials}</span>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <div className="df-row-title">
+                            {contact.name}
+                            {contact.primary ? <span className="df-flag">PRIMARY</span> : null}
+                          </div>
+                          <div className="df-mono df-meta" data-case="preserve">
+                            {[contact.role, contact.email, contact.phone].filter(Boolean).join(" · ") || "—"}
+                          </div>
+                        </span>
+                      </span>
                     </div>
                   ))
+                ) : (
+                  <>
+                  <div className="df-register-head df-desktop-only">
+                    <span>CONTACT</span>
+                    <span>PHONE</span>
+                    <span>ROLE</span>
+                    <span />
+                  </div>
+                  {record.contacts.map((contact) => (
+                    <div key={contact.id} className="df-register-row df-client-contact-row">
+                      {/* A Contact is a person, so it reads like one: the People
+                          row shape, not a name with every field joined beside it. */}
+                      <span className="df-people-member">
+                        <span className="df-avatar">{contact.initials}</span>
+                        <span style={{ minWidth: 0 }}>
+                          <div className="df-row-title">{contact.name}</div>
+                          {contact.email ? (
+                            <div className="df-mono df-meta" data-case="preserve">
+                              {contact.email}
+                            </div>
+                          ) : null}
+                        </span>
+                      </span>
+                      <span className="df-mono df-meta">{contact.phone ?? "—"}</span>
+                      {/* A role is free text, not a state from a closed set, so
+                          it is read as text; PRIMARY is a boolean, so it is a flag. */}
+                      <span className="df-contact-role">{contact.role ?? "—"}</span>
+                      <span className="df-contact-badges">
+                        {contact.primary ? <span className="df-flag">PRIMARY</span> : null}
+                      </span>
+                    </div>
+                  ))}
+                  </>
                 )}
               </section>
 
               <section className="df-card">
                 <div className="df-card-head">
-                  <h2 className="df-card-title">Notes</h2>
+                  <h2 className="df-card-title">Client details</h2>
+                  <button type="button" className="df-ghost-link" onClick={() => setEditing((open) => !open)}>Edit Client</button>
                 </div>
-                {record.notes ? (
-                  <p className="df-prose" style={{ padding: "16px 18px" }}>
-                    {record.notes}
-                  </p>
+                {editing ? (
+                  <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); updateClient.mutate(); }}>
+                    {(["company", "email", "phone"] as const).map((field) => <label key={field} className="df-daily-field">{field.toUpperCase()}<input value={draft[field]} onChange={(event) => setDraft((value) => ({ ...value, [field]: event.target.value }))} /></label>)}
+                    <div className="df-daily-field">
+                      SOURCE
+                      <Select
+                        value={draft.source || "none"}
+                        onValueChange={(next) => setDraft((value) => ({ ...value, source: next === "none" ? "" : next }))}
+                      >
+                        <SelectTrigger className="df-filter-chip df-select-trigger" aria-label="Client source">
+                          <SelectValue />
+                        </SelectTrigger>
+                        {/* Radix portals outside `.df-v2`, so the panel carries the class itself. */}
+                        <SelectContent className="df-v2 df-select-content">
+                          {CLIENT_SOURCES.map((source) => (
+                            <SelectItem key={source.id} value={source.id} className="df-select-item">
+                              {source.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {draft.source === "fiverr" ? <label className="df-daily-field">FIVERR USERNAME<input value={draft.fiverrUsername} onChange={(event) => setDraft((value) => ({ ...value, fiverrUsername: event.target.value }))} /></label> : null}
+                    <label className="df-daily-field">NOTES<textarea value={draft.notes} onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))} /></label>
+                    <button className="df-ink-btn" type="submit" disabled={updateClient.isPending}>Save Client</button>
+                  </form>
                 ) : (
-                  <p className="df-empty">No notes filed yet.</p>
+                  <>
+                    <div className="df-record-fields">
+                      {record.details.map((row) => (
+                        <div
+                          key={row.label}
+                          className="df-record-field"
+                          data-wide={row.wide ? "true" : "false"}
+                        >
+                          <span className="df-record-field-label">{row.label}</span>
+                          <span className="df-record-field-value" data-empty={row.value === "—" ? "true" : "false"}>
+                            {row.value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </section>
             </div>

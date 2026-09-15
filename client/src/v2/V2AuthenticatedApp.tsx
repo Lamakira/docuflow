@@ -18,7 +18,7 @@ import {
 } from "./V2Pages";
 import { V2ClientRecordPage, V2ClientRecordRedirect, V2ClientsPage } from "./V2Clients";
 import { V2InvitationAcceptPage } from "./V2InvitationAccept";
-import { V2OpportunitiesPage } from "./V2Opportunities";
+import { V2OpportunitiesPage, V2OpportunityRecordPage } from "./V2Opportunities";
 import { V2ProjectRecordRedirect, V2LegacyProjectPage, V2ProjectsPage } from "./V2Projects";
 import { V2Shell } from "./V2Shell";
 
@@ -59,6 +59,7 @@ export function V2AuthenticatedApp() {
           </Route>
           <Route path="/document/:id" component={V2DocumentPage} />
           <Route path="/opportunities" component={V2OpportunitiesPage} />
+          <Route path="/opportunities/:id" component={V2OpportunityRecordPage} />
           <Route path="/clients" component={V2ClientsPage} />
           <Route path="/clients/:id" component={V2ClientRecordPage} />
           <Route path="/crm/client/new">
