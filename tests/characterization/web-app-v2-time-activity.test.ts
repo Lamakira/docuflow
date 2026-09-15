@@ -614,6 +614,17 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     expect(rule(".df-v2 .df-select-trigger")).toMatch(/var\(--df-divider\)/);
   });
 
+  it("gives every control in a band the same height", () => {
+    // Measured: the search box, Add Task and the row buttons all render 34px.
+    const at = css.indexOf(".df-toolbar .df-filter-chip");
+    expect(at).toBeGreaterThan(-1);
+    const block = css.slice(at, css.indexOf("}", at) + 1);
+    for (const control of [".df-filter-chip", ".df-filter-input", ".df-ghost-btn", ".df-ink-btn"]) {
+      expect(block).toContain(`.df-toolbar ${control}`);
+    }
+    expect(block).toMatch(/height:\s*var\(--df-control-h\)/);
+  });
+
   it("gives every control in a filter row the same height", () => {
     // shadcn's trigger carries its own h-9; without this it stands proud of
     // the ink button beside it. Measured at 34px for chip, trigger and button.
@@ -627,6 +638,35 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     expect(block).toMatch(/align-items:\s*center/);
   });
 
+  it("keeps the system's gutter and radii instead of hand-rolled spacing", () => {
+    // The card head and every register row inset at 18px; a band is .df-toolbar.
+    expect(rule(".df-card-head")).toMatch(/padding:\s*15px 18px/);
+    expect(rule(".df-toolbar")).toMatch(/padding:\s*12px 18px/);
+    expect(timeSource).not.toMatch(/style=\{\{ padding/);
+    expect(timeSource).toContain('className="df-toolbar" data-align="start"');
+
+    // Radii are 3 / 6 / 8 — nothing off that scale.
+    for (const selector of [".df-task-rename"]) {
+      const radius = rule(selector).match(/border-radius:\s*(\d+)px/)?.[1];
+      expect(["3", "6", "8"]).toContain(radius);
+    }
+  });
+
+  it("gives a Task row real controls, not three quiet annotations", () => {
+    // df-ghost-link is mono 10px archive-slate — an annotation, not a control.
+    expect(topLevelRule(".df-ghost-link")).toMatch(/font-size:\s*10px/);
+    const taskRows = timeSource.slice(timeSource.indexOf("df-task-row"));
+    expect(taskRows).toContain('className="df-row-actions"');
+    expect(taskRows).toContain('className="df-ghost-btn"');
+    expect(taskRows).not.toContain('className="df-ghost-link"');
+    expect(rule(".df-row-actions")).toMatch(/display:\s*flex/);
+    const actionsAt = css.indexOf(".df-row-actions .df-ghost-btn");
+    expect(actionsAt).toBeGreaterThan(-1);
+    expect(css.slice(actionsAt, css.indexOf("}", actionsAt))).toMatch(
+      /height:\s*var\(--df-control-h\)/,
+    );
+  });
+
   it("keeps a selection honest when the filters underneath it change", () => {
     expect(activitySource).toMatch(/useEffect\(\(\) => \{\s*setSelectedIds\(\[\]\);/);
   });
@@ -637,7 +677,7 @@ describe("Time and Activity on a narrow viewport (#214)", () => {
     expect(mobileRule(".df-task-manager")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
     expect(mobileRule(".df-stat-band")).toMatch(/padding/);
     expect(mobileRule(".df-gallery-grid")).toMatch(/grid-template-columns/);
-    expect(mobileRule(".df-task-row")).toMatch(/flex-wrap:\s*wrap/);
+    expect(mobileRule(".df-task-row")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
   });
 });
 
@@ -672,6 +712,14 @@ describe("Time and Activity motion gate (#214)", () => {
     expect(timeSource).not.toMatch(/setInterval/);
   });
 });
+
+/** A rule whose selector starts a line, so a compound rule cannot match first. */
+function topLevelRule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = css.match(new RegExp(`\n${escaped}\\s*\\{([^}]*)\\}`));
+  if (!match) throw new Error(`missing top-level rule ${selector}`);
+  return match[1];
+}
 
 function mobileRule(selector: string): string {
   return rule(`.df-v2[data-chrome="mobile"] ${selector}`);

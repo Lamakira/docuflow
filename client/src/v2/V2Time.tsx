@@ -307,7 +307,7 @@ function TimeEntriesPane() {
           <h2 className="df-card-title">Timer</h2>
           <span className="df-mono df-meta">{isRunning ? "RUNNING" : isPaused ? "PAUSED" : "IDLE"}</span>
         </div>
-        <div className="df-filter-bar" style={{ padding: "14px 18px 16px" }}>
+        <div className="df-toolbar" data-align="start">
           <V2FilterSelect
             label="PROJECT"
             ariaLabel="Project"
@@ -747,7 +747,7 @@ function ProjectTasksPane() {
           <div className="df-card-head">
             <h2 className="df-card-title">Projects</h2>
           </div>
-          <div className="df-filter-bar" style={{ padding: "0 18px 14px" }}>
+          <div className="df-toolbar" data-align="start">
             <label className="df-filter-input">
               <input
                 type="search"
@@ -761,13 +761,13 @@ function ProjectTasksPane() {
           {page.projectsEmpty ? (
             <p className="df-empty">{projectsLoading ? "Loading…" : page.projectsEmptyCopy}</p>
           ) : (
-            <div className="df-task-project-list">
+            <div className="df-task-projects">
               {page.projects.map((project) => (
                 <button
                   key={project.id}
                   type="button"
-                  className="df-task-project"
-                  data-active={project.selected ? "true" : "false"}
+                  className="df-register-row df-task-project"
+                  data-selected={project.selected ? "true" : "false"}
                   data-testid={`v2-time-project-${project.id}`}
                   onClick={() => {
                     setSelectedProjectId(project.id);
@@ -775,7 +775,7 @@ function ProjectTasksPane() {
                     setConfirmDeleteId(null);
                   }}
                 >
-                  {project.name}
+                  <span className="df-row-title">{project.name}</span>
                 </button>
               ))}
             </div>
@@ -791,7 +791,7 @@ function ProjectTasksPane() {
                 <h2 className="df-card-title">{page.selectedProjectName}</h2>
                 <span className="df-mono df-meta">{page.active.rows.length} OPEN</span>
               </div>
-              <div className="df-filter-bar" style={{ padding: "0 18px 14px" }}>
+              <div className="df-toolbar" data-align="start">
                 <label className="df-filter-input">
                   <input
                     value={taskName}
@@ -836,22 +836,24 @@ function ProjectTasksPane() {
                             if (event.key === "Escape") setEditingId(null);
                           }}
                         />
-                        <button type="button" className="df-ghost-link" onClick={() => onRename(row.id)}>
-                          Save
-                        </button>
-                        <button type="button" className="df-ghost-link" onClick={() => setEditingId(null)}>
-                          Cancel
-                        </button>
+                        <span className="df-row-actions">
+                          <button type="button" className="df-ink-btn" onClick={() => onRename(row.id)}>
+                            Save
+                          </button>
+                          <button type="button" className="df-ghost-btn" onClick={() => setEditingId(null)}>
+                            Cancel
+                          </button>
+                        </span>
                       </>
                     ) : (
                       <>
                         <span className="df-row-title">{row.name}</span>
                         <span className="df-status-word">{row.status}</span>
                         {page.canWrite ? (
-                          <>
+                          <span className="df-row-actions">
                             <button
                               type="button"
-                              className="df-ghost-link"
+                              className="df-ghost-btn"
                               onClick={() => {
                                 setEditingId(row.id);
                                 setEditingName(row.name);
@@ -861,19 +863,20 @@ function ProjectTasksPane() {
                             </button>
                             <button
                               type="button"
-                              className="df-ghost-link"
+                              className="df-ghost-btn"
                               onClick={() => onSetStatus(row.id, "archived")}
                             >
                               Archive
                             </button>
                             <button
                               type="button"
-                              className="df-ghost-link"
+                              className="df-ghost-btn"
+                              data-danger={confirmDeleteId === row.id ? "true" : "false"}
                               onClick={() => onDelete(row.id)}
                             >
                               {confirmDeleteId === row.id ? "Confirm delete" : "Delete"}
                             </button>
-                          </>
+                          </span>
                         ) : null}
                       </>
                     )}
@@ -896,18 +899,23 @@ function ProjectTasksPane() {
                       <span className="df-row-title">{row.name}</span>
                       <span className="df-status-word">{row.status}</span>
                       {page.canWrite ? (
-                        <>
+                        <span className="df-row-actions">
                           <button
                             type="button"
-                            className="df-ghost-link"
+                            className="df-ghost-btn"
                             onClick={() => onSetStatus(row.id, "open")}
                           >
                             Restore
                           </button>
-                          <button type="button" className="df-ghost-link" onClick={() => onDelete(row.id)}>
+                          <button
+                            type="button"
+                            className="df-ghost-btn"
+                            data-danger={confirmDeleteId === row.id ? "true" : "false"}
+                            onClick={() => onDelete(row.id)}
+                          >
                             {confirmDeleteId === row.id ? "Confirm delete" : "Delete"}
                           </button>
-                        </>
+                        </span>
                       ) : null}
                     </div>
                   ))}

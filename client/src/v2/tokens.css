@@ -1091,7 +1091,9 @@ button.df-activity-row {
 .df-policy-form .df-daily-field > input,
 .df-policy-form .df-daily-field > select,
 .df-toolbar .df-filter-chip,
+.df-toolbar .df-filter-input,
 .df-toolbar .df-ghost-btn,
+.df-toolbar .df-ink-btn,
 .df-inline-form .df-ghost-btn,
 .df-form-actions .df-ink-btn,
 .df-form-actions .df-ghost-btn,
@@ -1101,7 +1103,9 @@ button.df-activity-row {
 }
 
 .df-toolbar .df-filter-chip,
+.df-toolbar .df-filter-input,
 .df-toolbar .df-ghost-btn,
+.df-toolbar .df-ink-btn,
 .df-inline-form .df-ghost-btn,
 .df-form-actions .df-ink-btn,
 .df-form-actions .df-ghost-btn,
@@ -2162,34 +2166,30 @@ button.df-activity-row {
   align-items: start;
 }
 
-.df-task-project-list {
-  display: flex;
-  flex-direction: column;
-  padding: 0 10px 14px;
+/* The Project list is a ruled register, and a chosen Project is marked the way
+   the Projects and Clients registers already mark a chosen record. */
+.df-task-projects .df-register-row {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .df-task-project {
+  width: 100%;
   border: 0;
+  border-bottom: 1px solid var(--df-divider-light);
   background: transparent;
   text-align: left;
   font: inherit;
-  color: var(--df-case-ink);
-  padding: 8px 10px;
-  border-radius: 4px;
+  color: inherit;
   cursor: pointer;
-  overflow-wrap: anywhere;
 }
 
-.df-task-project[data-active="true"] {
-  background: var(--df-case-ink);
-  color: #fff;
-  font-weight: 600;
+.df-task-projects .df-task-project[data-selected="true"] {
+  background: var(--df-cold-stock);
+  border-left: 2px solid var(--df-case-ink);
 }
 
 .df-task-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .df-task-row[data-archived="true"] .df-row-title {
@@ -2198,22 +2198,48 @@ button.df-activity-row {
 }
 
 .df-task-row .df-row-title {
-  flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
+/* Controls that act on one record sit together, so they read as a group of
+   buttons rather than a sentence trailing off the end of the row. */
+.df-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.df-row-actions .df-ghost-btn,
+.df-row-actions .df-ink-btn {
+  height: var(--df-control-h);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.df-ghost-btn[data-danger="true"] {
+  border-color: var(--df-case-ink);
+  color: var(--df-case-ink);
+  font-weight: 600;
+}
+
 .df-task-rename {
-  flex: 1;
   min-width: 0;
+  height: var(--df-control-h);
   border: 1px solid var(--df-divider);
-  border-radius: 4px;
-  padding: 6px 8px;
-  font: inherit;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-family: var(--df-font-ui);
+  font-size: 13px;
 }
 
 .df-task-archived-head {
   display: block;
+}
+
+/* A band of controls that belong to the card below it, not a split header. */
+.df-toolbar[data-align="start"] {
+  justify-content: flex-start;
 }
 
 .df-gallery-actions {
@@ -3530,7 +3556,8 @@ button.df-activity-row {
 }
 
 .df-v2[data-chrome="mobile"] .df-task-row {
-  flex-wrap: wrap;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 10px;
 }
 
 .df-v2[data-chrome="mobile"] .df-policy-grid {
