@@ -652,6 +652,27 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     }
   });
 
+  it("collapses a Task's secondary actions into one control, not three per row", () => {
+    // Three bordered buttons repeated down a register is a wall of controls.
+    const menuSource = read("client/src/v2/V2RowMenu.tsx");
+    expect(menuSource).toContain('from "@/components/ui/dropdown-menu"');
+    expect(timeSource).toContain("V2RowMenu");
+    const taskRows = timeSource.slice(timeSource.indexOf("df-task-row"));
+    expect(taskRows).toContain('label: "Rename"');
+    expect(taskRows).toContain('label: "Archive"');
+    expect(taskRows).toContain('label: "Delete", danger: true');
+
+    // Deleting still asks once on the row, so the menu cannot destroy in one click.
+    expect(taskRows).toContain("Confirm delete");
+    expect(taskRows).toContain("setConfirmDeleteId(null)");
+
+    // Verified in Chrome against the real component: the panel renders on v2
+    // tokens (white, 8px radius, no padding, no animation) and its items in
+    // Switzer 12.5px, with shadcn's own classes overridden.
+    expect(rule(".df-v2.df-row-menu")).toMatch(/animation:\s*none/);
+    expect(rule(".df-v2 .df-row-menu-item")).toMatch(/var\(--df-font-ui\)/);
+  });
+
   it("gives a Task row real controls, not three quiet annotations", () => {
     // df-ghost-link is mono 10px archive-slate — an annotation, not a control.
     expect(topLevelRule(".df-ghost-link")).toMatch(/font-size:\s*10px/);
@@ -659,6 +680,7 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     expect(taskRows).toContain('className="df-row-actions"');
     expect(taskRows).toContain('className="df-ghost-btn"');
     expect(taskRows).not.toContain('className="df-ghost-link"');
+    expect(rule(".df-v2 .df-row-menu-trigger")).toMatch(/flex:\s*none/);
     expect(rule(".df-row-actions")).toMatch(/display:\s*flex/);
     const actionsAt = css.indexOf(".df-row-actions .df-ghost-btn");
     expect(actionsAt).toBeGreaterThan(-1);

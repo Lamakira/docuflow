@@ -2245,6 +2245,55 @@ button.df-activity-row {
   display: block;
 }
 
+/* Overflow menu — the shadcn DropdownMenu wearing the v2 menu panel. Radix
+   portals it to the body, so the panel carries `.df-v2` itself. */
+.df-v2 .df-row-menu-trigger {
+  flex: none;
+  padding: 0;
+}
+
+.df-v2.df-row-menu {
+  min-width: 168px;
+  padding: 0;
+  /* The v2 menus do not animate open; this one matches them. */
+  animation: none;
+  transition: none;
+}
+
+.df-v2 .df-row-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--df-divider-light);
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  font-family: var(--df-font-ui);
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-row-menu-item:last-child {
+  border-bottom: 0;
+}
+
+.df-v2 .df-row-menu-item[data-highlighted] {
+  background: var(--df-hover);
+}
+
+/* A permanent action is named, not coloured like an alarm: it still asks for
+   a confirm on the row before anything is destroyed. */
+.df-v2 .df-row-menu-item[data-danger="true"] {
+  font-weight: 600;
+}
+
+.df-v2 .df-row-menu-item[data-disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* A band of controls that belong to the card below it, not a split header. */
 .df-toolbar[data-align="start"] {
   justify-content: flex-start;

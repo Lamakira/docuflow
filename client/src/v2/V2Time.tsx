@@ -11,6 +11,7 @@ import { memberName } from "./today";
 import { TIME_TAB_IDS, type TimeTabId } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
+import { V2RowMenu } from "./V2RowMenu";
 import {
   composeProjectTasks,
   taskPath,
@@ -851,31 +852,41 @@ function ProjectTasksPane() {
                         <span className="df-status-word">{row.status}</span>
                         {page.canWrite ? (
                           <span className="df-row-actions">
-                            <button
-                              type="button"
-                              className="df-ghost-btn"
-                              onClick={() => {
-                                setEditingId(row.id);
-                                setEditingName(row.name);
-                              }}
-                            >
-                              Rename
-                            </button>
-                            <button
-                              type="button"
-                              className="df-ghost-btn"
-                              onClick={() => onSetStatus(row.id, "archived")}
-                            >
-                              Archive
-                            </button>
-                            <button
-                              type="button"
-                              className="df-ghost-btn"
-                              data-danger={confirmDeleteId === row.id ? "true" : "false"}
-                              onClick={() => onDelete(row.id)}
-                            >
-                              {confirmDeleteId === row.id ? "Confirm delete" : "Delete"}
-                            </button>
+                            {confirmDeleteId === row.id ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="df-ghost-btn"
+                                  data-danger="true"
+                                  onClick={() => onDelete(row.id)}
+                                >
+                                  Confirm delete
+                                </button>
+                                <button
+                                  type="button"
+                                  className="df-ghost-btn"
+                                  onClick={() => setConfirmDeleteId(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <V2RowMenu
+                                ariaLabel={`Actions on ${row.name}`}
+                                testId={`v2-time-task-menu-${row.id}`}
+                                items={[
+                                  {
+                                    label: "Rename",
+                                    onSelect: () => {
+                                      setEditingId(row.id);
+                                      setEditingName(row.name);
+                                    },
+                                  },
+                                  { label: "Archive", onSelect: () => onSetStatus(row.id, "archived") },
+                                  { label: "Delete", danger: true, onSelect: () => onDelete(row.id) },
+                                ]}
+                              />
+                            )}
                           </span>
                         ) : null}
                       </>
@@ -900,21 +911,34 @@ function ProjectTasksPane() {
                       <span className="df-status-word">{row.status}</span>
                       {page.canWrite ? (
                         <span className="df-row-actions">
-                          <button
-                            type="button"
-                            className="df-ghost-btn"
-                            onClick={() => onSetStatus(row.id, "open")}
-                          >
-                            Restore
-                          </button>
-                          <button
-                            type="button"
-                            className="df-ghost-btn"
-                            data-danger={confirmDeleteId === row.id ? "true" : "false"}
-                            onClick={() => onDelete(row.id)}
-                          >
-                            {confirmDeleteId === row.id ? "Confirm delete" : "Delete"}
-                          </button>
+                          {confirmDeleteId === row.id ? (
+                            <>
+                              <button
+                                type="button"
+                                className="df-ghost-btn"
+                                data-danger="true"
+                                onClick={() => onDelete(row.id)}
+                              >
+                                Confirm delete
+                              </button>
+                              <button
+                                type="button"
+                                className="df-ghost-btn"
+                                onClick={() => setConfirmDeleteId(null)}
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <V2RowMenu
+                              ariaLabel={`Actions on ${row.name}`}
+                              testId={`v2-time-task-menu-${row.id}`}
+                              items={[
+                                { label: "Restore", onSelect: () => onSetStatus(row.id, "open") },
+                                { label: "Delete", danger: true, onSelect: () => onDelete(row.id) },
+                              ]}
+                            />
+                          )}
                         </span>
                       ) : null}
                     </div>
