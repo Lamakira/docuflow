@@ -5,21 +5,25 @@ import { describe, expect, it } from "vitest";
 import { motionForSurface } from "../../client/src/v2/motion";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
 import {
-  composeProjectTasks,
   composeTimeStats,
-  taskPath,
-  tasksPath,
   timePeriodRange,
   timeStatsPath,
   timeTabs,
   TIME_PERIODS,
-  type ProjectTasksInput,
   type TimeStatsInput,
 } from "../../client/src/v2/time";
 import {
+  composeProjectTasks,
+  taskPath,
+  tasksPath,
+  type ProjectTasksInput,
+} from "../../client/src/v2/tasks";
+import {
   activityTabs,
   composeActivityGallery,
+  evidenceDateRange,
   evidenceFileName,
+  EVIDENCE_DATE_MODES,
   type ActivityGalleryInput,
 } from "../../client/src/v2/activity";
 
@@ -39,6 +43,7 @@ function read(relative: string): string {
 
 const appSource = read("client/src/v2/V2AuthenticatedApp.tsx");
 const timeSource = read("client/src/v2/V2Time.tsx");
+const tasksSource = read("client/src/v2/tasks.ts");
 const activitySource = read("client/src/v2/V2Activity.tsx");
 const css = read("client/src/v2/tokens.css").replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -72,6 +77,10 @@ function emptyGallery(overrides: Partial<ActivityGalleryInput> = {}): ActivityGa
     lowActivityOnly: false,
     identicalOnly: false,
     selectedIds: [],
+    expandedId: null,
+    page: 1,
+    pageSize: 50,
+    total: 0,
     projects: [],
     entries: [],
     users: [],
@@ -143,7 +152,7 @@ describe("Time stats from /api/time-tracking/stats (#214)", () => {
     expect(page.byProject.empty).toBe(true);
     expect(page.byMember.empty).toBe(true);
     expect(page.byProject.emptyCopy.toLowerCase()).toContain("today");
-    expect(page.figures.map((figure) => figure.value)).toEqual(["0.0 h", "0", "0.0 h", "0.0 h", "0"]);
+    expect(page.figures.map((figure) => figure.value)).toEqual(["0m", "0", "0m", "0m", "0"]);
     for (const name of SAMPLE_NAMES) expect(blob).not.toContain(name);
     expect(blob.toLowerCase()).not.toContain("timesheet");
   });
@@ -172,24 +181,25 @@ describe("Time stats from /api/time-tracking/stats (#214)", () => {
     const blob = JSON.stringify(page).toLowerCase();
 
     expect(page.periodLabel).toBe("This week");
+    // A 45-minute average reads as 45m, not as "0.8 h" — the v1 dashboard's resolution.
     expect(page.figures).toEqual([
-      { label: "TRACKED", value: "3.0 h", meta: "Active time, idle excluded" },
+      { label: "TRACKED", value: "3h 0m", meta: "Active time, idle excluded" },
       { label: "TIME ENTRIES", value: "4", meta: "Recorded intervals" },
-      { label: "AVERAGE ENTRY", value: "0.8 h", meta: "Per Time Entry" },
-      { label: "IDLE", value: "1.0 h", meta: "Detected idle time" },
+      { label: "AVERAGE ENTRY", value: "45m", meta: "Per Time Entry" },
+      { label: "IDLE", value: "1h 0m", meta: "Detected idle time" },
       { label: "ACTIVITY EVIDENCE", value: "12", meta: "Captures in this period" },
     ]);
 
     // Projects carry a share of the period; the leader sorts first.
     expect(page.byProject.rows).toEqual([
-      { id: "prj-1", name: "Harbour rebuild", hours: "2.0 h", share: 67 },
-      { id: "prj-2", name: "Pier survey", hours: "1.0 h", share: 33 },
+      { id: "prj-1", name: "Harbour rebuild", hours: "2h 0m", share: 67 },
+      { id: "prj-2", name: "Pier survey", hours: "1h 0m", share: 33 },
     ]);
 
     // Members are people: alphabetical, hours only, no share and no rank.
     expect(page.byMember.rows).toEqual([
-      { id: "u-1", name: "Ada Okoro", hours: "1.0 h", share: null },
-      { id: "u-2", name: "Sam Lee", hours: "2.0 h", share: null },
+      { id: "u-1", name: "Ada Okoro", hours: "1h 0m", share: null },
+      { id: "u-2", name: "Sam Lee", hours: "2h 0m", share: null },
     ]);
 
     expect(blob).not.toContain("productivity");
@@ -305,6 +315,9 @@ describe("Projects & Tasks over /api/tasks (#214)", () => {
     expect(taskPath("t-1")).toBe("/api/tasks/t-1");
     expect(timeSource).toContain("/api/tasks");
     expect(timeSource).not.toMatch(/\/api\/time-tracking\/tasks/);
+    // One Task protocol: the Dossier reads its Task Status words from here too.
+    expect(tasksSource).toContain("export function taskStatusLabel");
+    expect(read("client/src/v2/dossier.ts")).toContain('from "./tasks"');
   });
 });
 
@@ -467,17 +480,131 @@ describe("Activity Evidence gallery (#214)", () => {
     expect(activitySource).not.toMatch(/\/api\/v2\//);
   });
 
-  it("filters captures by the same periods Time stats offer, so a date means one thing", () => {
-    expect(activitySource).toContain("timePeriodRange");
-    expect(activitySource).toContain("TIME_PERIODS");
-    expect(activitySource).not.toMatch(/<option value="week">This week<\/option>/);
+  it("keeps v1's date filters: the shared periods, one named day, and a custom span", () => {
+    const now = new Date(2026, 8, 10, 15, 0, 0);
+    expect(EVIDENCE_DATE_MODES).toEqual(["today", "week", "month", "30d", "all", "day", "custom"]);
+
+    // The five shared periods mean exactly what they mean on Time stats.
+    expect(evidenceDateRange("all", now, {})).toEqual({ startDate: null, endDate: null });
+    expect(evidenceDateRange("today", now, {}).startDate?.getDate()).toBe(10);
+
+    const day = evidenceDateRange("day", now, { day: "2026-03-24" });
+    expect(day.startDate?.getFullYear()).toBe(2026);
+    expect(day.startDate?.getMonth()).toBe(2);
+    expect(day.startDate?.getDate()).toBe(24);
+    expect(day.startDate?.getHours()).toBe(0);
+    expect(day.endDate?.getDate()).toBe(24);
+    expect(day.endDate?.getHours()).toBe(23);
+
+    const span = evidenceDateRange("custom", now, { from: "2026-03-01", to: "2026-03-31" });
+    expect(span.startDate?.getDate()).toBe(1);
+    expect(span.endDate?.getDate()).toBe(31);
+
+    // An incomplete span asks for nothing rather than guessing a boundary.
+    expect(evidenceDateRange("custom", now, { from: "2026-03-01" })).toEqual({
+      startDate: null,
+      endDate: null,
+    });
+    expect(evidenceDateRange("day", now, {})).toEqual({ startDate: null, endDate: null });
+  });
+
+  it("says how much of the capture set it is showing instead of silently truncating", () => {
+    const evidence = Array.from({ length: 50 }, (_, index) => ({
+      id: `s-${index}`,
+      capturedAt: new Date(2026, 8, 10, 9, 0, index),
+      userId: "me",
+      crmProjectId: "prj-1",
+      timeEntryId: "te-1",
+      storageKey: "agent-screenshots/s.png",
+    }));
+
+    const first = composeActivityGallery(emptyGallery({ evidence, total: 214, page: 1, pageSize: 50 }));
+    expect(first.paging.label).toBe("Showing 1–50 of 214 captures");
+    expect(first.paging.hasPrevious).toBe(false);
+    expect(first.paging.hasNext).toBe(true);
+    expect(first.paging.pageCount).toBe(5);
+
+    const last = composeActivityGallery(emptyGallery({ evidence, total: 214, page: 5, pageSize: 50 }));
+    expect(last.paging.label).toBe("Showing 201–214 of 214 captures");
+    expect(last.paging.hasNext).toBe(false);
+    expect(last.paging.hasPrevious).toBe(true);
+
+    // One page of captures needs no paging chrome at all.
+    const single = composeActivityGallery(emptyGallery({ evidence, total: 50, page: 1, pageSize: 50 }));
+    expect(single.paging.pageCount).toBe(1);
+    expect(single.paging.hasNext).toBe(false);
+  });
+
+  it("opens one capture at full size without leaving the gallery", () => {
+    const evidence = [
+      {
+        id: "s-1",
+        capturedAt: new Date(2026, 8, 10, 9, 0, 0),
+        userId: "me",
+        crmProjectId: "prj-1",
+        timeEntryId: "te-1",
+        storageKey: "agent-screenshots/s-1.png",
+      },
+    ];
+    const closed = composeActivityGallery(emptyGallery({ evidence }));
+    expect(closed.groups[0].tiles[0].expanded).toBe(false);
+
+    const open = composeActivityGallery(emptyGallery({ evidence, expandedId: "s-1" }));
+    expect(open.groups[0].tiles[0].expanded).toBe(true);
+    expect(activitySource).toContain("setExpandedCaptureId");
+  });
+
+  it("never labels one capture as low activity — the filter is a lens, not a verdict", () => {
+    const page = composeActivityGallery(
+      emptyGallery({
+        evidence: [
+          {
+            id: "s-idle",
+            capturedAt: new Date(2026, 8, 10, 9, 0, 0),
+            userId: "me",
+            crmProjectId: "prj-1",
+            timeEntryId: "te-1",
+            storageKey: "agent-screenshots/s-idle.png",
+            entryDuration: 600,
+            entryIdleTime: 3600,
+          },
+        ],
+      }),
+    );
+    expect(JSON.stringify(page)).not.toMatch(/lowActivity"?\s*:/);
+    expect(activitySource).not.toMatch(/>LOW ACTIVITY</);
+  });
+});
+
+describe("Time and Activity under the v2 visual system (#214)", () => {
+  it("bands the stats figures instead of building a KPI card grid", () => {
+    // CLAUDE-DESIGN-HANDOFF.md: reject floating KPI cards; no universal card grid.
+    expect(rule(".df-stat-band")).toMatch(/flex-wrap:\s*wrap/);
+    expect(rule(".df-stat-band")).not.toMatch(/grid-template-columns/);
+    expect(timeSource).toContain("df-stat-band");
+    expect(timeSource).not.toContain("df-stat-figures");
+  });
+
+  it("writes badges in Switzer, keeping mono for what the system recorded", () => {
+    // AMENDMENTS.md Amendment 1: stages, statuses, badges and category labels move to Switzer.
+    expect(rule(".df-status-word")).toMatch(/var\(--df-font-ui\)/);
+    // The new Task Status and Identical badges are vocabulary, so Switzer.
+    const taskRows = timeSource.slice(timeSource.indexOf("df-task-row"));
+    expect(taskRows).toContain('className="df-status-word"');
+    expect(taskRows).not.toContain('className="df-status"');
+    expect(activitySource).toContain('className="df-status-word">Identical<');
+    expect(activitySource).not.toMatch(/df-mono df-meta">IDENTICAL/);
+  });
+
+  it("keeps a selection honest when the filters underneath it change", () => {
+    expect(activitySource).toMatch(/useEffect\(\(\) => \{\s*setSelectedIds\(\[\]\);/);
   });
 });
 
 describe("Time and Activity on a narrow viewport (#214)", () => {
   it("stacks the Projects & Tasks split and narrows the stats and capture grids", () => {
     expect(mobileRule(".df-task-manager")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
-    expect(mobileRule(".df-stat-figures")).toMatch(/grid-template-columns/);
+    expect(mobileRule(".df-stat-band")).toMatch(/padding/);
     expect(mobileRule(".df-gallery-grid")).toMatch(/grid-template-columns/);
     expect(mobileRule(".df-task-row")).toMatch(/flex-wrap:\s*wrap/);
   });

@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import type { CrmProjectWithDetails, SafeUser, ScreenshotPolicy, TimeEntryWithDetails } from "@shared/schema";
 import { motionForSurface } from "./motion";
 import { memberName } from "./today";
-import { timeEntriesPath, timePeriodLabel, timePeriodRange, TIME_PERIODS, type TimePeriod } from "./time";
+import { timeEntriesPath } from "./time";
 import { ACTIVITY_TAB_IDS, type ActivityTabId } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
 import {
@@ -13,19 +13,24 @@ import {
   activityTabs,
   composeActivity,
   composeActivityGallery,
+  evidenceDateLabel,
+  evidenceDateRange,
   trackingPolicyPath,
+  EVIDENCE_DATE_MODES,
+  type EvidenceDateMode,
   type ActivityEntryInput,
   type ActivityProjectInput,
   type GalleryEvidenceInput,
   type GalleryTile,
 } from "./activity";
 
-type ScreenshotsResponse = { data: GalleryEvidenceInput[] };
+type ScreenshotsResponse = { data: GalleryEvidenceInput[]; total?: number };
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
 type TrackingPolicyResponse = { screenshotPolicy: ScreenshotPolicy };
 
 const EXPAND_MOTION = motionForSurface("activity-evidence-expand").enterExit;
-const GALLERY_FILTER_MOTION = motionForSurface("activity-gallery-filter").enterExit;
+/** The BFF caps a screenshot page at 100; 50 keeps a page readable. */
+const GALLERY_PAGE_SIZE = 50;
 
 function toProject(project: CrmProjectWithDetails): ActivityProjectInput {
   return {
@@ -72,21 +77,30 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   const { user } = useAuth();
   const { layout, memberships } = useV2Chrome();
 
-  // The same periods the Time stats offer, so a date filter means one thing (#214).
-  const [range, setRange] = useState<TimePeriod>("today");
+  // The periods the Time stats offer, plus v1's named day and span (#214).
+  const [range, setRange] = useState<EvidenceDateMode>("today");
+  const [typedDay, setTypedDay] = useState("");
+  const [typedFrom, setTypedFrom] = useState("");
+  const [typedTo, setTypedTo] = useState("");
   const [projectFilter, setProjectFilter] = useState("all");
   const [userFilter, setUserFilter] = useState("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [lowActivityOnly, setLowActivityOnly] = useState(false);
   const [identicalOnly, setIdenticalOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [expandedCaptureId, setExpandedCaptureId] = useState<string | null>(null);
+  const [galleryPage, setGalleryPage] = useState(1);
+  const [includeArchivedUsers, setIncludeArchivedUsers] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const canReview = user?.role === "admin";
 
-  const rangeDates = useMemo(() => timePeriodRange(range, now), [now, range]);
+  const rangeDates = useMemo(
+    () => evidenceDateRange(range, now, { day: typedDay, from: typedFrom, to: typedTo }),
+    [now, range, typedDay, typedFrom, typedTo],
+  );
 
   const requestedUserId = canReview && userFilter !== "all" ? userFilter : null;
   const filters = {
@@ -95,7 +109,11 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     crmProjectId: projectFilter === "all" ? null : projectFilter,
     userId: requestedUserId,
   };
-  const evidenceUrl = activityEvidencePath({ ...filters, limit: tab === "gallery" ? 100 : null });
+  const evidenceUrl = activityEvidencePath(
+    tab === "gallery"
+      ? { ...filters, limit: GALLERY_PAGE_SIZE, offset: (galleryPage - 1) * GALLERY_PAGE_SIZE }
+      : filters,
+  );
   const entriesUrl = timeEntriesPath({
     startDate: rangeDates.startDate,
     endDate: rangeDates.endDate,
@@ -103,7 +121,15 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     userId: filters.userId,
   });
 
-  const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
+  const usersUrl = includeArchivedUsers ? "/api/users?includeArchived=true" : "/api/users";
+  const { data: users = [] } = useQuery<SafeUser[]>({
+    queryKey: ["/api/users", usersUrl],
+    queryFn: async () => {
+      const res = await fetch(usersUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Members");
+      return res.json();
+    },
+  });
   const owner = users.find((member) => member.isMainAdmin === 1);
   const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
     queryKey: ["/api/crm/projects", { pageSize: 500 }],
@@ -156,6 +182,10 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     lowActivityOnly,
     identicalOnly,
     selectedIds,
+    expandedId: expandedCaptureId,
+    page: galleryPage,
+    pageSize: GALLERY_PAGE_SIZE,
+    total: evidenceResponse?.total ?? evidenceResponse?.data?.length ?? 0,
     projects: (projectsResponse?.data ?? []).map(toProject),
     entries: (entriesResponse?.data ?? []).map(toEntry),
     users,
@@ -168,6 +198,13 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   function onToggle(id: string) {
     setExpandedId((currentId) => (currentId === id ? null : id));
   }
+
+  // A selection only means anything against the captures on screen: when the
+  // filters underneath it change, the old ids are no longer what the User picked.
+  useEffect(() => {
+    setSelectedIds([]);
+    setExpandedCaptureId(null);
+  }, [range, typedDay, typedFrom, typedTo, projectFilter, userFilter, lowActivityOnly, identicalOnly, galleryPage, tab]);
 
   function onSelect(id: string) {
     setSelectedIds((current) =>
@@ -182,11 +219,14 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
 
   function onClearFilters() {
     setRange("today");
+    setTypedDay("");
+    setTypedFrom("");
+    setTypedTo("");
     setProjectFilter("all");
     setUserFilter("all");
     setLowActivityOnly(false);
     setIdenticalOnly(false);
-    setSelectedIds([]);
+    setGalleryPage(1);
   }
 
   /**
@@ -279,10 +319,17 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
       <div className="df-filter-bar">
         <label className="df-filter-chip" data-active={range === "today" ? "true" : "false"}>
           DATE
-          <select value={range} aria-label="Date" onChange={(event) => setRange(event.target.value as TimePeriod)}>
-            {TIME_PERIODS.map((option) => (
+          <select
+            value={range}
+            aria-label="Date"
+            onChange={(event) => {
+              setRange(event.target.value as EvidenceDateMode);
+              setGalleryPage(1);
+            }}
+          >
+            {EVIDENCE_DATE_MODES.map((option) => (
               <option key={option} value={option}>
-                {timePeriodLabel(option)}
+                {evidenceDateLabel(option)}
               </option>
             ))}
           </select>
@@ -319,6 +366,48 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
             </select>
           </label>
         ) : null}
+        {range === "day" ? (
+          <label className="df-filter-chip">
+            DAY
+            <input
+              type="date"
+              value={typedDay}
+              aria-label="Day"
+              onChange={(event) => {
+                setTypedDay(event.target.value);
+                setGalleryPage(1);
+              }}
+            />
+          </label>
+        ) : null}
+        {range === "custom" ? (
+          <>
+            <label className="df-filter-chip">
+              FROM
+              <input
+                type="date"
+                value={typedFrom}
+                aria-label="From"
+                onChange={(event) => {
+                  setTypedFrom(event.target.value);
+                  setGalleryPage(1);
+                }}
+              />
+            </label>
+            <label className="df-filter-chip">
+              TO
+              <input
+                type="date"
+                value={typedTo}
+                aria-label="To"
+                onChange={(event) => {
+                  setTypedTo(event.target.value);
+                  setGalleryPage(1);
+                }}
+              />
+            </label>
+          </>
+        ) : null}
         {tab === "gallery" ? (
           <>
             <label className="df-filter-chip df-gallery-filter" data-active={lowActivityOnly ? "true" : "false"}>
@@ -327,7 +416,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
                 checked={lowActivityOnly}
                 onChange={(event) => {
                   setLowActivityOnly(event.target.checked);
-                  setSelectedIds([]);
+                  setGalleryPage(1);
                 }}
               />
               LOW ACTIVITY
@@ -339,11 +428,21 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
                 disabled={gallery.identicalCount === 0}
                 onChange={(event) => {
                   setIdenticalOnly(event.target.checked);
-                  setSelectedIds([]);
+                  setGalleryPage(1);
                 }}
               />
               IDENTICAL{gallery.identicalCount > 0 ? ` (${gallery.identicalCount})` : ""}
             </label>
+            {canReview ? (
+              <label className="df-filter-chip df-gallery-filter" data-active={includeArchivedUsers ? "true" : "false"}>
+                <input
+                  type="checkbox"
+                  checked={includeArchivedUsers}
+                  onChange={(event) => setIncludeArchivedUsers(event.target.checked)}
+                />
+                INCLUDE ARCHIVED MEMBERS
+              </label>
+            ) : null}
             <button type="button" className="df-ghost-link" onClick={onClearFilters}>
               Clear filters
             </button>
@@ -433,6 +532,9 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           onSelect={onSelect}
           onSelectShown={onSelectShown}
           onBatchDownload={onBatchDownload}
+          onExpand={(id) => setExpandedCaptureId((current) => (current === id ? null : id))}
+          onSave={saveCapture}
+          onPage={(step) => setGalleryPage((current) => Math.max(1, current + step))}
         />
       )}
     </div>
@@ -445,6 +547,9 @@ type ActivityGalleryProps = {
   onSelect: (id: string) => void;
   onSelectShown: () => void;
   onBatchDownload: () => void;
+  onExpand: (id: string) => void;
+  onSave: (tile: GalleryTile) => void;
+  onPage: (step: number) => void;
 };
 
 /**
@@ -457,7 +562,11 @@ function ActivityGallery({
   onSelect,
   onSelectShown,
   onBatchDownload,
+  onExpand,
+  onSave,
+  onPage,
 }: ActivityGalleryProps) {
+  const expanded = gallery.groups.flatMap((group) => group.tiles).find((tile) => tile.expanded) ?? null;
   return (
     <section className="df-card df-gallery" data-testid="v2-activity-gallery">
       <div className="df-card-head">
@@ -486,15 +595,24 @@ function ActivityGallery({
                 {group.dateLabel} · {group.hourLabel}
               </span>
             </div>
-            <div className="df-gallery-grid" data-motion={GALLERY_FILTER_MOTION}>
+            <div className="df-gallery-grid">
               {group.tiles.map((tile) => (
-                <label
+                <div
                   key={tile.id}
                   className="df-gallery-tile"
                   data-selected={tile.selected ? "true" : "false"}
+                  data-expanded={tile.expanded ? "true" : "false"}
                   data-testid={`v2-activity-capture-${tile.id}`}
                 >
-                  <img src={tile.imageSrc} alt="" loading="lazy" />
+                  <button
+                    type="button"
+                    className="df-gallery-open"
+                    aria-expanded={tile.expanded}
+                    aria-label={`Open the capture from ${tile.when} at full size`}
+                    onClick={() => onExpand(tile.id)}
+                  >
+                    <img src={tile.imageSrc} alt="" loading="lazy" />
+                  </button>
                   <span className="df-gallery-meta">
                     <input
                       type="checkbox"
@@ -510,15 +628,61 @@ function ActivityGallery({
                         {tile.project} · {tile.task} · {tile.source}
                       </span>
                     </span>
-                    {tile.identical ? <span className="df-mono df-meta">IDENTICAL</span> : null}
-                    {tile.lowActivity ? <span className="df-mono df-meta">LOW ACTIVITY</span> : null}
+                    {tile.identical ? <span className="df-status-word">Identical</span> : null}
+                    <button type="button" className="df-ghost-link" onClick={() => onSave(tile)}>
+                      Download
+                    </button>
                   </span>
-                </label>
+                </div>
               ))}
             </div>
           </div>
         ))
       )}
+      {expanded ? (
+        <div className="df-gallery-full" data-testid="v2-activity-capture-full">
+          <img src={expanded.imageSrc} alt="" />
+          <div className="df-kv">
+            <span>WHEN</span>
+            <span>{expanded.when}</span>
+          </div>
+          <div className="df-kv">
+            <span>PROJECT</span>
+            <span>{expanded.project}</span>
+          </div>
+          <div className="df-kv">
+            <span>TASK</span>
+            <span>{expanded.task}</span>
+          </div>
+          <div className="df-kv">
+            <span>SOURCE</span>
+            <span>{expanded.source}</span>
+          </div>
+        </div>
+      ) : null}
+      {gallery.paging.pageCount > 1 ? (
+        <div className="df-gallery-paging">
+          <span className="df-mono df-meta">{gallery.paging.label}</span>
+          <span className="df-gallery-actions">
+            <button
+              type="button"
+              className="df-ghost-link"
+              disabled={!gallery.paging.hasPrevious}
+              onClick={() => onPage(-1)}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className="df-ghost-link"
+              disabled={!gallery.paging.hasNext}
+              onClick={() => onPage(1)}
+            >
+              Next
+            </button>
+          </span>
+        </div>
+      ) : null}
     </section>
   );
 }

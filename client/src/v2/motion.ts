@@ -137,6 +137,8 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "people-seats": "keyboard-or-100+",
 };
 
+const OPACITY_ONLY = new Set<MotionSurface>(["help-article", "editor-save", "time-stats-period"]);
+
 export function motionForSurface(
   surface: MotionSurface,
   prefs: { reducedMotion?: boolean } = {},
@@ -147,12 +149,10 @@ export function motionForSurface(
     return { enterExit: "instant", press: "none", movement: "none", keepOpacity: true };
   }
 
-  if (surface === "help-article") {
-    return { enterExit: "standard", press: "none", movement: "none", keepOpacity: true };
-  }
-
-  // Occasional, but the figures underneath must not slide: opacity carries it.
-  if (surface === "time-stats-period") {
+  // Surfaces that may bridge but must not move: opacity carries the change.
+  // A Help article must not page-slide; a save state must not celebrate; the
+  // Time stats figures must not slide under a new period.
+  if (OPACITY_ONLY.has(surface)) {
     return { enterExit: "standard", press: "none", movement: "none", keepOpacity: true };
   }
 
@@ -168,10 +168,6 @@ export function motionForSurface(
 
   if (frequency === "tens") {
     return { enterExit: "none", press: "scale", movement: "none", keepOpacity: true };
-  }
-
-  if (surface === "editor-save") {
-    return { enterExit: "standard", press: "none", movement: "none", keepOpacity: true };
   }
 
   return { enterExit: "standard", press: "none", movement: "allowed", keepOpacity: true };

@@ -2116,10 +2116,13 @@ button.df-activity-row {
   }
 }
 
-.df-stat-figures {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 18px;
+/* A ruled band of figures, not floating KPI cards: the handoff rejects the
+   card-grid composition, so these read like the Dossier's identity figures. */
+.df-stat-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 24px;
   padding: 14px 18px 18px;
 }
 
@@ -2259,6 +2262,17 @@ button.df-activity-row {
   border-color: var(--df-case-ink);
 }
 
+.df-gallery-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
 /* A fixed frame: the thumbnail cannot shift the row as it decodes. */
 .df-gallery-tile img {
   display: block;
@@ -2284,6 +2298,33 @@ button.df-activity-row {
   font-size: 12px;
   color: var(--df-archive-slate);
   overflow-wrap: anywhere;
+}
+
+.df-gallery-full {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 18px 18px;
+}
+
+.df-gallery-full img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  transition: none;
+  animation: none;
+}
+
+.df-gallery-paging {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--df-divider-light);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3453,8 +3494,8 @@ button.df-activity-row {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.df-v2[data-chrome="mobile"] .df-stat-figures {
-  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+.df-v2[data-chrome="mobile"] .df-stat-band {
+  gap: 18px;
   padding: 12px 13px 14px;
 }
 
@@ -3465,6 +3506,12 @@ button.df-activity-row {
 .df-v2[data-chrome="mobile"] .df-gallery-grid {
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   padding: 10px 13px 14px;
+}
+
+.df-v2[data-chrome="mobile"] .df-gallery-full,
+.df-v2[data-chrome="mobile"] .df-gallery-paging {
+  padding-left: 13px;
+  padding-right: 13px;
 }
 
 .df-v2[data-chrome="mobile"] .df-task-row {

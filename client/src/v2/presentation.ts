@@ -106,12 +106,34 @@ const TIME_TAB_CRUMB: Record<TimeTabId, string> = {
   projects: "PROJECTS & TASKS",
 };
 
+/**
+ * A tabbed destination keeps its own path: the default tab IS the destination,
+ * every other tab is a segment under it. One rule, so Time and Activity cannot
+ * drift into two URL shapes.
+ */
+function tabHref(base: string, tab: string, defaultTab: string): string {
+  return tab === defaultTab ? base : `${base}/${tab}`;
+}
+
+function parseTabPath(
+  pathname: string,
+  segment: string,
+  known: Set<string>,
+  defaultTab: string,
+): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] !== segment) return null;
+  if (parts.length === 1) return defaultTab;
+  if (parts.length === 2 && known.has(parts[1])) return parts[1];
+  return null;
+}
+
 export function timeTabHref(tab: TimeTabId): string {
-  return tab === "entries" ? "/time" : `/time/${tab}`;
+  return tabHref("/time", tab, "entries");
 }
 
 export function activityTabHref(tab: ActivityTabId): string {
-  return tab === "register" ? "/activity" : `/activity/${tab}`;
+  return tabHref("/activity", tab, "register");
 }
 
 export type V2Match =
@@ -276,19 +298,11 @@ function timeTabForRewrite(pathname: string): TimeTabId {
 }
 
 function parseTimePath(pathname: string): TimeTabId | null {
-  const parts = pathname.split("/").filter(Boolean);
-  if (parts[0] !== "time") return null;
-  if (parts.length === 1) return "entries";
-  if (parts.length === 2 && TIME_TAB_SET.has(parts[1])) return parts[1] as TimeTabId;
-  return null;
+  return parseTabPath(pathname, "time", TIME_TAB_SET, "entries") as TimeTabId | null;
 }
 
 function parseActivityPath(pathname: string): ActivityTabId | null {
-  const parts = pathname.split("/").filter(Boolean);
-  if (parts[0] !== "activity") return null;
-  if (parts.length === 1) return "register";
-  if (parts.length === 2 && ACTIVITY_TAB_SET.has(parts[1])) return parts[1] as ActivityTabId;
-  return null;
+  return parseTabPath(pathname, "activity", ACTIVITY_TAB_SET, "register") as ActivityTabId | null;
 }
 
 export function parseDossierPath(pathname: string): { projectId: string; tab: DossierTabId } | null {

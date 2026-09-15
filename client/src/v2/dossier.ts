@@ -1,5 +1,6 @@
 import { formatHours, memberInitials, memberName, projectHref } from "./today";
 import { DOSSIER_TAB_IDS, type DossierTabId } from "./presentation";
+import { taskStatusLabel } from "./tasks";
 
 export type DossierPerson = {
   id?: string;
@@ -298,22 +299,6 @@ const TAB_LABEL: Record<DossierTabId, string> = {
   files: "Files",
   settings: "Settings",
 };
-
-const TASK_STATUS_LABEL: Record<string, string> = {
-  open: "TO DO",
-  in_progress: "IN PROGRESS",
-  done: "DONE",
-  archived: "ARCHIVED",
-};
-
-/**
- * One Task protocol (#214). The Projects & Tasks manager under Time Tracking
- * reads the same `/api/tasks` statuses as the Dossier Tasks list, so a Task
- * never reads one way here and another way there.
- */
-export function taskStatusLabel(status: string): string {
-  return TASK_STATUS_LABEL[status] ?? status.replace(/_/g, " ").toUpperCase();
-}
 
 const VIEW_DAILY_UPDATES_CAPABILITY = "View Daily Updates";
 

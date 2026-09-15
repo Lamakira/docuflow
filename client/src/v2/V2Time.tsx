@@ -12,17 +12,21 @@ import { TIME_TAB_IDS, type TimeTabId } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
 import {
   composeProjectTasks,
-  composeTimeStats,
-  composeTimeTracking,
   taskPath,
   tasksPath,
+  type ProjectTask,
+} from "./tasks";
+import {
+  composeTimeStats,
+  composeTimeTracking,
   timeEntriesPath,
   timePeriodLabel,
   timePeriodRange,
   timeStatsPath,
   timeTabs,
+  endOfDayLocal as endOfDay,
+  startOfDayLocal as startOfDay,
   TIME_PERIODS,
-  type ProjectTask,
   type TimeEntryRowInput,
   type TimePeriod,
   type TimeStatsResponse,
@@ -34,14 +38,6 @@ type TasksResponse = { data: ProjectTask[] };
 
 const ENTRY_MOTION = motionForSurface("time-entry").enterExit;
 const STATS_MOTION = motionForSurface("time-stats-period").enterExit;
-
-function startOfDay(value: Date): Date {
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
-}
-
-function endOfDay(value: Date): Date {
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 23, 59, 59, 999);
-}
 
 function startOfWeek(value: Date): Date {
   const start = startOfDay(value);
@@ -567,7 +563,7 @@ function TimeStatsPane() {
             <div className="df-card-head">
               <h2 className="df-card-title">{page.periodLabel}</h2>
             </div>
-            <div className="df-stat-figures">
+            <div className="df-stat-band">
               {page.figures.map((figure) => (
                 <div key={figure.label} className="df-stat">
                   <div className="df-mono df-meta">{figure.label}</div>
@@ -715,8 +711,8 @@ function ProjectTasksPane() {
     onError: onWriteError,
   });
 
-  /** True when the Workspace refuses the write and the refusal is now on screen. */
-  function refused(): boolean {
+  /** Shows the refusal and reports that the write must not proceed. */
+  function showRefusalIfReadOnly(): boolean {
     if (!readOnly) return false;
     setWriteRefusal(page.refusal);
     return true;
@@ -724,23 +720,23 @@ function ProjectTasksPane() {
 
   function onCreate() {
     const name = taskName.trim();
-    if (!name || !selectedProjectId || refused()) return;
+    if (!name || !selectedProjectId || showRefusalIfReadOnly()) return;
     createTask.mutate(name);
   }
 
   function onRename(id: string) {
     const name = editingName.trim();
-    if (!name || refused()) return;
+    if (!name || showRefusalIfReadOnly()) return;
     updateTask.mutate({ id, data: { name } });
   }
 
   function onSetStatus(id: string, status: string) {
-    if (refused()) return;
+    if (showRefusalIfReadOnly()) return;
     updateTask.mutate({ id, data: { status } });
   }
 
   function onDelete(id: string) {
-    if (refused()) return;
+    if (showRefusalIfReadOnly()) return;
     if (confirmDeleteId !== id) {
       setConfirmDeleteId(id);
       return;
@@ -760,7 +756,7 @@ function ProjectTasksPane() {
       {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
 
       <div className="df-task-manager">
-        <section className="df-card df-task-projects" data-testid="v2-time-projects">
+        <section className="df-card" data-testid="v2-time-projects">
           <div className="df-card-head">
             <h2 className="df-card-title">Projects</h2>
           </div>
@@ -799,7 +795,7 @@ function ProjectTasksPane() {
           )}
         </section>
 
-        <section className="df-card df-task-list" data-testid="v2-time-tasks">
+        <section className="df-card" data-testid="v2-time-tasks">
           {page.selectedProjectName === null ? (
             <p className="df-empty">{page.chooseCopy}</p>
           ) : (
@@ -863,7 +859,7 @@ function ProjectTasksPane() {
                     ) : (
                       <>
                         <span className="df-row-title">{row.name}</span>
-                        <span className="df-status">{row.status}</span>
+                        <span className="df-status-word">{row.status}</span>
                         {page.canWrite ? (
                           <>
                             <button
@@ -911,7 +907,7 @@ function ProjectTasksPane() {
                       data-testid={`v2-time-task-${row.id}`}
                     >
                       <span className="df-row-title">{row.name}</span>
-                      <span className="df-status">{row.status}</span>
+                      <span className="df-status-word">{row.status}</span>
                       {page.canWrite ? (
                         <>
                           <button
