@@ -35,6 +35,7 @@ const shellSource = source("client/src/v2/V2Shell.tsx");
 const railSource = source("client/src/v2/V2Rail.tsx");
 const firstWorkspaceSource = source("client/src/v2/V2FirstWorkspace.tsx");
 const accountSource = source("client/src/v2/V2Account.tsx");
+const chooserSource = source("client/src/v2/V2WorkspaceChooser.tsx");
 const v2AppSource = source("client/src/v2/V2AuthenticatedApp.tsx");
 const css = source("client/src/v2/tokens.css").replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -112,6 +113,37 @@ describe("the first Workspace is named, not configured (#217, Flow 1)", () => {
     // Confirmation keystrokes are on the do-not-animate list.
     expect(motionForSurface("account-confirm-typing").enterExit).toBe("instant");
     expect(motionForSurface("account-confirm-typing").movement).toBe("none");
+  });
+
+  it("states the condition when every Membership was archived, without calling it an error", () => {
+    // Flow 2: the account is valid, it just belongs nowhere. Two ways out, and
+    // the same one field and one action.
+    const page = composeFirstWorkspace({ name: "Keystone", status: "ready", belongedBefore: true });
+
+    expect(page.title).toMatch(/belong to no Workspace/i);
+    expect(page.copy).toMatch(/account is fine/i);
+    expect(page.invitationNote).toMatch(/Invitation/);
+    expect(page.canSubmit).toBe(true);
+    expect(page.error).toBeNull();
+    expect(`${page.title} ${page.copy}`.toLowerCase()).not.toMatch(/error|failed|sorry|problem/);
+  });
+
+  it("is reachable as a secondary action once the User already belongs somewhere", () => {
+    // Flow 4: "create a new Workspace" is offered beside the chooser and the
+    // rail switcher — never as the thing a Member is pushed through.
+    expect(matchV2Route("/workspaces/new")).toMatchObject({
+      kind: "new-workspace",
+      href: "/workspaces/new",
+    });
+    expect(navIdForPath("/workspaces/new")).toBeNull();
+    expect(chooserSource).toContain("newWorkspaceHref");
+    expect(chooserSource).toMatch(/Create a Workspace/);
+    // Amendment 1: mono is for what the system recorded. An action label is
+    // authored prose, so it reads as prose.
+    expect(ruleFor(".df-chooser-new")).toContain("--df-font-ui");
+    expect(railSource).toMatch(/href="\/workspaces\/new"/);
+    expect(shellSource).toMatch(/onNewWorkspace/);
+    expect(v2AppSource).not.toMatch(/path="\/workspaces\/new"/);
   });
 
   it("asks the Workspace BFF, not a Clerk surface", () => {
@@ -214,6 +246,10 @@ describe("account deletion states its precondition (#217, Flow 10)", () => {
     expect(railSource).toContain("/account");
     expect(railSource).toMatch(/Account/);
     expect(accountSource).toContain("accountDeletionPath");
+    // Sign out already lives in the account menu (#210); this page does not
+    // grow a second copy of it, nor any credential control (ADR-0007).
+    expect(accountSource).not.toContain("signOutOfIdentityProvider");
+    expect(accountSource).not.toMatch(/type="password"|<SignIn/);
   });
 
   it("is a v2 destination, not a placeholder, and owns no rail entry", () => {

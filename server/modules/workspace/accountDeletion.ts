@@ -20,7 +20,7 @@ import {
   workspaces,
 } from "@shared/schema";
 import { db } from "../../db";
-import { runWithWorkspaceContext } from "../../workspaceContext";
+import { runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 
 /** `[Grace duration is a product decision — 30 days is the value in use.]` */
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
@@ -38,6 +38,19 @@ export class AccountDeletionPendingError extends Error {
   constructor() {
     super("Your account is already scheduled for deletion");
     this.name = "AccountDeletionPendingError";
+  }
+}
+
+/**
+ * A scheduled deletion is a standing intent to leave. Taking on a Workspace
+ * inside the window would quietly re-arm the precondition that was cleared to
+ * start it, so the two are mutually exclusive until one is resolved.
+ */
+export class AccountDeletionScheduledError extends Error {
+  readonly statusCode = 409;
+  constructor() {
+    super("Cancel your scheduled account deletion before taking on a Workspace");
+    this.name = "AccountDeletionScheduledError";
   }
 }
 
@@ -127,6 +140,10 @@ async function pendingDeletion(userId: string) {
   return row;
 }
 
+export async function assertNoPendingAccountDeletion(userId: string): Promise<void> {
+  if (await pendingDeletion(userId)) throw new AccountDeletionScheduledError();
+}
+
 export async function accountDeletionState(userId: string): Promise<AccountDeletionView> {
   const pending = await pendingDeletion(userId);
   return {
@@ -189,28 +206,38 @@ async function recordAcrossWorkspaces(
   action: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  const rows = await db
-    .select({ workspaceId: memberships.workspaceId })
-    .from(memberships)
-    .where(eq(memberships.userId, userId));
-  const workspaceIds = [...new Set(rows.map((row) => row.workspaceId))];
+  const workspaceIds = await activeWorkspaceIds(userId);
 
   // One write per Workspace, inside that Workspace's context: `audit_events` is
   // RLS-scoped, and a write with no `app.workspace_id` fails closed once the
   // application role is in use (migration 0010).
   for (const workspaceId of workspaceIds) {
     await runWithWorkspaceContext({ workspaceId }, () =>
-      db.insert(auditEvents).values({
-        workspaceId,
-        actorKind: "user" as const,
-        actorId: userId,
-        action,
-        resourceType: "users",
-        resourceId: userId,
-        payload,
-      }),
+      db.insert(auditEvents).values(
+        stampWorkspace({
+          actorKind: "user" as const,
+          actorId: userId,
+          action,
+          resourceType: "users",
+          resourceId: userId,
+          payload,
+        }),
+      ),
     );
   }
+}
+
+/**
+ * The Workspaces this User currently belongs to. An Archived Membership is a
+ * Workspace they already left: it is not told about their account, and it
+ * collects no evidence of it.
+ */
+async function activeWorkspaceIds(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ workspaceId: memberships.workspaceId })
+    .from(memberships)
+    .where(and(eq(memberships.userId, userId), isNull(memberships.archivedAt)));
+  return [...new Set(rows.map((row) => row.workspaceId))];
 }
 
 /** The address a pseudonymized User keeps — unique, unroutable, and obvious. */
@@ -231,6 +258,11 @@ export async function completeDueAccountDeletions(now: Date = new Date()): Promi
 
   let completed = 0;
   for (const request of due) {
+    // The precondition is a precondition, not a one-time check at request. A
+    // User can be handed a Workspace back inside the window; erasing then would
+    // archive an Owner Membership and leave the Workspace without one. The
+    // request stays pending — the surface says so — until they clear it again.
+    if ((await ownedWorkspaces(request.userId)).length > 0) continue;
     await eraseAccount(request.userId, request.id, now);
     completed += 1;
   }
@@ -238,11 +270,7 @@ export async function completeDueAccountDeletions(now: Date = new Date()): Promi
 }
 
 async function eraseAccount(userId: string, requestId: string, now: Date): Promise<void> {
-  const held = await db
-    .select({ workspaceId: memberships.workspaceId })
-    .from(memberships)
-    .where(eq(memberships.userId, userId));
-  const workspaceIds = [...new Set(held.map((row) => row.workspaceId))];
+  const workspaceIds = await activeWorkspaceIds(userId);
 
   await db.transaction(async (tx) => {
     // Controller-side identity goes; the Membership rows stay so Workspace
@@ -282,15 +310,16 @@ async function eraseAccount(userId: string, requestId: string, now: Date): Promi
             isNull(memberships.archivedAt),
           ),
         );
-      await db.insert(auditEvents).values({
-        workspaceId,
-        actorKind: "system" as const,
-        actorId: null,
-        action: "account.erased",
-        resourceType: "users",
-        resourceId: userId,
-        payload: { pseudonymized: true },
-      });
+      await db.insert(auditEvents).values(
+        stampWorkspace({
+          actorKind: "system" as const,
+          actorId: null,
+          action: "account.erased",
+          resourceType: "users",
+          resourceId: userId,
+          payload: { pseudonymized: true },
+        }),
+      );
     });
   }
 
@@ -325,9 +354,8 @@ async function notifyAffectedWorkspaces(userId: string, workspaceIds: string[]):
     await runWithWorkspaceContext({ workspaceId }, () =>
       db.insert(notifications).values(
         recipients.map((row) => ({
+          ...stampWorkspace({ type: "account_deleted" }),
           userId: row.userId,
-          workspaceId,
-          type: "account_deleted",
           message:
             "A Member deleted their DocuFlow account. Their recorded time, Activity Evidence, and Daily Updates stay in this Workspace under a pseudonym.",
         })),

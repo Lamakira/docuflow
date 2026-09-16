@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { signOutOfIdentityProvider } from "@/lib/identitySession";
 import { motionForSurface } from "./motion";
 import { V2FilterSelect } from "./V2Select";
 import {
@@ -38,7 +37,10 @@ export function V2AccountPage() {
   const page = composeAccountDeletion({ state, confirmation });
 
   async function refresh() {
-    await queryClient.invalidateQueries();
+    // Transferring or deleting a Workspace changes what this User belongs to,
+    // so the chrome's Membership read is stale alongside the deletion state.
+    await queryClient.invalidateQueries({ queryKey: [accountDeletionPath()] });
+    await queryClient.invalidateQueries({ queryKey: ["/api/memberships"] });
   }
 
   const start = useMutation({
@@ -168,25 +170,16 @@ export function V2AccountPage() {
         )}
       </section>
 
+      {/* Credentials are Clerk's (ADR-0007), so this page says where they live
+          rather than offering a second set of controls for them. Sign out stays
+          in the account menu, which already owns it. */}
       <section className="df-card df-account-session" data-testid="v2-account-session">
         <div className="df-card-head">
-          <h2 className="df-card-title">Session</h2>
+          <h2 className="df-card-title">Credentials</h2>
         </div>
         <p className="df-card-sub">
           Your password, email address, and multi-factor settings are held by the identity provider, not here.
         </p>
-        <button
-          type="button"
-          className="df-ghost-btn"
-          data-testid="v2-account-sign-out"
-          onClick={() => {
-            void signOutOfIdentityProvider().finally(() => {
-              window.location.href = "/auth";
-            });
-          }}
-        >
-          Sign out
-        </button>
       </section>
     </div>
   );

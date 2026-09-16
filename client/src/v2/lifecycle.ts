@@ -1,3 +1,9 @@
+import {
+  WORKSPACE_NAME_MAX,
+  workspaceNameError,
+  type WorkspaceNameError,
+} from "@shared/workspaceName";
+
 /**
  * Workspace lifecycle presentation (#217, Flows 1, 5, 10).
  *
@@ -24,16 +30,8 @@ export function accountDeletionPath(): string {
   return "/api/account/deletion";
 }
 
-export const WORKSPACE_NAME_MAX = 255;
-
-export type WorkspaceNameError = "empty" | "too-long" | null;
-
-export function workspaceNameError(name: string): WorkspaceNameError {
-  const trimmed = name.trim();
-  if (trimmed.length === 0) return "empty";
-  if (trimmed.length > WORKSPACE_NAME_MAX) return "too-long";
-  return null;
-}
+/** The naming rule is shared with the BFF and the column — see the module. */
+export { WORKSPACE_NAME_MAX, workspaceNameError, type WorkspaceNameError };
 
 function capitalize(word: string): string {
   return word.charAt(0).toUpperCase() + word.slice(1);
@@ -59,7 +57,7 @@ export function suggestedWorkspaceName(
 export type FirstWorkspaceStatus = "ready" | "creating" | "created" | "error";
 
 export type FirstWorkspaceModel = {
-  kicker: "WORKSPACE";
+  kicker: "WORKSPACE" | "NO WORKSPACE";
   title: string;
   copy: string;
   fieldLabel: string;
@@ -82,6 +80,8 @@ export function composeFirstWorkspace(input: {
   name: string;
   status: FirstWorkspaceStatus;
   message?: string;
+  /** Flow 2: every Membership archived, rather than never having held one. */
+  belongedBefore?: boolean;
   reducedMotion?: boolean;
 }): FirstWorkspaceModel {
   const nameError = workspaceNameError(input.name);
@@ -92,10 +92,16 @@ export function composeFirstWorkspace(input: {
         ? NAME_REFUSAL["too-long"]
         : null;
 
+  // Flow 2's branch is a stated condition, not an error: the account is valid,
+  // it just belongs nowhere. Same one field and one action either way.
+  const belongedBefore = input.belongedBefore === true;
+
   return {
-    kicker: "WORKSPACE",
-    title: "Name your Workspace",
-    copy: "A Workspace holds your Clients, Projects, and recorded time. You will be its Owner.",
+    kicker: belongedBefore ? "NO WORKSPACE" : "WORKSPACE",
+    title: belongedBefore ? "You belong to no Workspace" : "Name your Workspace",
+    copy: belongedBefore
+      ? "Your account is fine. Every Membership you held has been archived, so there is nothing to open. Name a Workspace of your own to carry on."
+      : "A Workspace holds your Clients, Projects, and recorded time. You will be its Owner.",
     fieldLabel: "Workspace name",
     action: input.status === "creating" ? "Creating…" : "Create Workspace",
     canSubmit: nameError === null && input.status !== "creating",

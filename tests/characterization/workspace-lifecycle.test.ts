@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import {
   accountDeletions,
+  auditEvents,
   memberships,
+  SEEDED_WORKSPACE_ID,
   notifications,
   users,
   workspaceBilling,
@@ -47,6 +49,8 @@ describe("first Workspace creation (#217, Flow 1)", () => {
       activeWorkspaceId: null,
       preferredWorkspaceId: null,
       memberships: [],
+      // Never held one, as opposed to every Membership archived (Flow 2).
+      hasArchivedMemberships: false,
     });
 
     const created = await user.agent.post("/api/workspaces").send({ name: "  Keystone Studio  " });
@@ -105,6 +109,27 @@ describe("first Workspace creation (#217, Flow 1)", () => {
     expect(blank.status).toBe(400);
     expect(blank.body.message).toMatch(/name/i);
     expect(blank.body).not.toHaveProperty("type");
+  });
+
+  it("says whether the User belongs nowhere or has been archived out of everywhere", async () => {
+    const app = await makeApp();
+    const archived = await registerUser(app);
+    await db
+      .update(memberships)
+      .set({ archivedAt: new Date() })
+      .where(eq(memberships.userId, archived.id));
+
+    const listed = await archived.agent.get("/api/memberships");
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual({
+      activeWorkspaceId: null,
+      preferredWorkspaceId: null,
+      memberships: [],
+      hasArchivedMemberships: true,
+    });
+
+    // The account is fine — creating a Workspace is still open to them.
+    expect((await archived.agent.post("/api/workspaces").send({ name: "Fresh Start" })).status).toBe(201);
   });
 
   it("does not force a User who already holds a Membership through creation", async () => {
@@ -246,6 +271,67 @@ describe("account deletion is guided and reversible (#217, Flow 10)", () => {
   });
 });
 
+describe("the precondition holds for the whole window (#217, Flow 10)", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it("refuses to create or receive a Workspace while a deletion is scheduled", async () => {
+    const app = await makeApp();
+    const leaving = await registerUser(app, { firstName: "Sam" });
+    const owner = await registerUser(app, { firstName: "Dana" });
+    await setWorkspaceRole(owner.id, "owner");
+    const workspaceId = (await owner.agent.get("/api/memberships")).body.activeWorkspaceId;
+
+    expect((await leaving.agent.post("/api/account/deletion")).status).toBe(201);
+
+    const created = await leaving.agent.post("/api/workspaces").send({ name: "Late Arrival" });
+    expect(created.status).toBe(409);
+    expect(created.body.message).toMatch(/deletion/i);
+
+    const handed = await owner.agent
+      .post(`/api/workspaces/${workspaceId}/owner`)
+      .send({ userId: leaving.id });
+    expect(handed.status).toBe(409);
+    expect(handed.body.message).toMatch(/deletion/i);
+
+    // Cancelling reopens both.
+    expect((await leaving.agent.delete("/api/account/deletion")).status).toBe(200);
+    expect((await leaving.agent.post("/api/workspaces").send({ name: "Late Arrival" })).status).toBe(201);
+  });
+
+  it("does not complete while a Workspace is owned again, and leaves the request standing", async () => {
+    const app = await makeApp();
+    const leaving = await registerUser(app, { firstName: "Sam" });
+    const owner = await registerUser(app, { firstName: "Dana" });
+    await setWorkspaceRole(owner.id, "owner");
+    const workspaceId = (await owner.agent.get("/api/memberships")).body.activeWorkspaceId;
+
+    const started = await leaving.agent.post("/api/account/deletion");
+    expect(started.status).toBe(201);
+
+    // Ownership comes back by a route that does not consult the window — a
+    // direct write stands in for any such path.
+    await db
+      .update(memberships)
+      .set({ workspaceRoleId: "seeded-owner" })
+      .where(and(eq(memberships.userId, leaving.id), eq(memberships.workspaceId, workspaceId)));
+
+    const { completeDueAccountDeletions } = await import(
+      "../../server/modules/workspace/accountDeletion"
+    );
+    const due = new Date(new Date(started.body.completesAt).getTime() + 1000);
+    expect(await completeDueAccountDeletions(due)).toBe(0);
+
+    const [row] = await db.select().from(users).where(eq(users.id, leaving.id));
+    expect(row.email).toBe(leaving.email);
+
+    const state = await leaving.agent.get("/api/account/deletion");
+    expect(state.body.scheduled).not.toBeNull();
+    expect(state.body.ownedWorkspaces).toHaveLength(1);
+  });
+});
+
 describe("erasure completes without purging another controller's records (#217, ADR-0015)", () => {
   beforeEach(async () => {
     await resetDb();
@@ -302,5 +388,42 @@ describe("erasure completes without purging another controller's records (#217, 
       .where(eq(notifications.userId, owner.id));
     expect(told).toHaveLength(1);
     expect(told[0].message).toMatch(/account/i);
+  });
+
+  it("tells only the Workspaces the User still belonged to", async () => {
+    const app = await makeApp();
+    const leaving = await registerUser(app, { firstName: "Sam" });
+    const owner = await registerUser(app, { firstName: "Dana" });
+    await setWorkspaceRole(owner.id, "owner");
+    const parallelId = await plantParallelWorkspace();
+    await addWorkspaceMembership(leaving.id, parallelId, "member");
+    const parallelOwner = await registerUser(app);
+    await addWorkspaceMembership(parallelOwner.id, parallelId, "owner");
+
+    // A Workspace they left long ago is not told, and collects no evidence.
+    await db
+      .update(memberships)
+      .set({ archivedAt: new Date() })
+      .where(and(eq(memberships.userId, leaving.id), eq(memberships.workspaceId, parallelId)));
+
+    const started = await leaving.agent.post("/api/account/deletion");
+    expect(started.status).toBe(201);
+
+    const { completeDueAccountDeletions } = await import(
+      "../../server/modules/workspace/accountDeletion"
+    );
+    const due = new Date(new Date(started.body.completesAt).getTime() + 1000);
+    expect(await completeDueAccountDeletions(due)).toBe(1);
+
+    const told = await db
+      .select({ userId: notifications.userId, workspaceId: notifications.workspaceId })
+      .from(notifications);
+    expect(told.map((row) => row.workspaceId)).toEqual([SEEDED_WORKSPACE_ID]);
+
+    const evidence = await db
+      .select({ workspaceId: auditEvents.workspaceId })
+      .from(auditEvents)
+      .where(eq(auditEvents.resourceId, leaving.id));
+    expect([...new Set(evidence.map((row) => row.workspaceId))]).toEqual([SEEDED_WORKSPACE_ID]);
   });
 });

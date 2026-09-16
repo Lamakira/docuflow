@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { SafeUser } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
 import {
+  WORKSPACE_NAME_MAX,
   composeFirstWorkspace,
   suggestedWorkspaceName,
   workspacesPath,
@@ -18,7 +20,8 @@ const CREATED_MOTION = motionForSurface("first-workspace-created").enterExit;
  * The Trial starts with the Workspace (Flow 5) — there is no card step to show
  * and no plan to pick. Clerk owns everything before this screen (ADR-0007).
  */
-export function V2FirstWorkspace() {
+export function V2FirstWorkspace({ belongedBefore = false }: { belongedBefore?: boolean } = {}) {
+  const [, setLocation] = useLocation();
   const { data: user } = useQuery<SafeUser | null>({ queryKey: ["/api/auth/user"] });
   const [name, setName] = useState("");
   const [touched, setTouched] = useState(false);
@@ -31,7 +34,7 @@ export function V2FirstWorkspace() {
     setName(suggestedWorkspaceName(user));
   }, [user, touched]);
 
-  const page = composeFirstWorkspace({ name, status, message });
+  const page = composeFirstWorkspace({ name, status, message, belongedBefore });
 
   async function create() {
     if (!page.canSubmit) return;
@@ -40,7 +43,10 @@ export function V2FirstWorkspace() {
     try {
       await apiRequest("POST", workspacesPath(), { name: name.trim() });
       setStatus("created");
+      // The new Workspace is now the active one, so every Workspace-scoped read
+      // in the shell is stale — the same sweep a Workspace switch does.
       await queryClient.invalidateQueries();
+      setLocation("/");
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : undefined);
@@ -77,7 +83,7 @@ export function V2FirstWorkspace() {
             name="workspaceName"
             value={name}
             autoComplete="off"
-            maxLength={280}
+            maxLength={WORKSPACE_NAME_MAX}
             data-testid="v2-first-workspace-name"
             onChange={(event) => {
               setTouched(true);

@@ -1,14 +1,18 @@
+import { Link } from "wouter";
 import { workspaceInitials } from "./presentation";
 import type { ChooserInvitationRow, MembershipOption } from "./workspace";
 
 export function V2WorkspaceChooser({
   rows,
   invitations = [],
+  newWorkspaceHref,
   onChoose,
   onAccept,
 }: {
   rows: MembershipOption[];
   invitations?: ChooserInvitationRow[];
+  /** Flow 4: creating another Workspace is secondary here, never the default. */
+  newWorkspaceHref?: string;
   onChoose: (workspaceId: string) => void;
   onAccept?: (token: string) => void;
 }) {
@@ -74,6 +78,15 @@ export function V2WorkspaceChooser({
             </button>
           ))}
         </div>
+        {newWorkspaceHref ? (
+          <Link
+            href={newWorkspaceHref}
+            className="df-ghost-link df-chooser-new"
+            data-testid="v2-chooser-new-workspace"
+          >
+            Create a Workspace
+          </Link>
+        ) : null}
       </div>
     </div>
   );

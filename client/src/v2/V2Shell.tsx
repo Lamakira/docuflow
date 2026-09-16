@@ -159,6 +159,9 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
     invitations,
   });
   const onInvitation = location.startsWith("/invitations/");
+  // Flow 4's secondary action stands ahead of the chooser: a User with
+  // Memberships reaches Workspace creation without being sent into one first.
+  const onNewWorkspace = location === "/workspaces/new";
 
   function showToast(message: string, undo?: () => void) {
     setToast({ id: Date.now(), message, undo, state: "in" });
@@ -185,11 +188,19 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
     return <V2ChromeContext.Provider value={chrome}>{children}</V2ChromeContext.Provider>;
   }
 
+  if (onNewWorkspace) {
+    return (
+      <V2ChromeContext.Provider value={chrome}>
+        <V2FirstWorkspace />
+      </V2ChromeContext.Provider>
+    );
+  }
+
   // Flow 1: a User who belongs nowhere names a Workspace instead of entering one.
   if (memberships && entry.kind === "first-run") {
     return (
       <V2ChromeContext.Provider value={chrome}>
-        <V2FirstWorkspace />
+        <V2FirstWorkspace belongedBefore={memberships.hasArchivedMemberships === true} />
       </V2ChromeContext.Provider>
     );
   }
@@ -199,6 +210,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
       <V2ChromeContext.Provider value={chrome}>
         <V2WorkspaceChooser
           rows={entry.rows}
+          newWorkspaceHref="/workspaces/new"
           invitations={chooserInvitationRows(invitations)}
           onChoose={(id) => void switchWorkspace(id)}
           onAccept={(token) => void acceptPendingInvitation(token)}

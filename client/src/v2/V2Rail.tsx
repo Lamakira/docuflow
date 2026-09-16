@@ -300,6 +300,10 @@ function WorkspaceSelector({
             onSwitch={row.active ? undefined : onSwitchWorkspace}
           />
         ))}
+        {/* Flow 4: a secondary action, under the Workspaces it belongs beside. */}
+        <Link href="/workspaces/new" className="df-nav" data-testid="v2-new-workspace">
+          Create a Workspace
+        </Link>
       </div>
     </details>
   );

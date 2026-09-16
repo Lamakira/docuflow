@@ -18,6 +18,8 @@ export type MembershipsResponse = {
   activeWorkspaceId: string | null;
   preferredWorkspaceId: string | null;
   memberships: MembershipOption[];
+  /** Every Membership archived, rather than never having held one (Flow 2). */
+  hasArchivedMemberships?: boolean;
 };
 
 export type PendingInvitationOption = {

@@ -4557,3 +4557,13 @@ button.df-activity-row {
   align-items: center;
   gap: 8px;
 }
+
+/* Flow 4's secondary action. Under the list, in ghost weight, so choosing an
+   existing Workspace stays the obvious thing to do. Authored prose, not mono:
+   Amendment 1 keeps mono for what the system recorded (AMENDMENTS.md §1). */
+.df-chooser-new {
+  display: inline-block;
+  margin-top: 14px;
+  font-family: var(--df-font-ui);
+  font-size: 12.5px;
+}

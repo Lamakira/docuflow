@@ -22,12 +22,12 @@ import {
   workspaceRoles,
   workspaces,
 } from "@shared/schema";
+import { WORKSPACE_NAME_MAX, workspaceNameError } from "@shared/workspaceName";
 import { db } from "../../db";
 import { runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 import { startTrial } from "../billing/stateMachine";
+import { assertNoPendingAccountDeletion } from "./accountDeletion";
 import { membershipRoleLabel, workspaceCondition } from "./activeWorkspace";
-
-export const WORKSPACE_NAME_MAX = 255;
 
 /** The built-in Workspace Roles every Workspace has (ADR-0004). No custom Roles. */
 const BUILT_IN_ROLES = [
@@ -43,11 +43,11 @@ const ROLE_CAPABILITIES: Record<string, string[]> = {
   member: [],
 };
 
-export class WorkspaceNameError extends Error {
+export class InvalidWorkspaceNameError extends Error {
   readonly statusCode = 400;
   constructor(message = "Workspace name is required") {
     super(message);
-    this.name = "WorkspaceNameError";
+    this.name = "InvalidWorkspaceNameError";
   }
 }
 
@@ -93,10 +93,11 @@ export type CreatedWorkspace = {
 
 function cleanName(raw: unknown): string {
   const name = typeof raw === "string" ? raw.trim() : "";
-  if (name.length === 0) throw new WorkspaceNameError();
-  if (name.length > WORKSPACE_NAME_MAX) {
-    throw new WorkspaceNameError(`Workspace name is at most ${WORKSPACE_NAME_MAX} characters`);
+  const refusal = workspaceNameError(name);
+  if (refusal === "too-long") {
+    throw new InvalidWorkspaceNameError(`Workspace name is at most ${WORKSPACE_NAME_MAX} characters`);
   }
+  if (refusal) throw new InvalidWorkspaceNameError();
   return name;
 }
 
@@ -109,6 +110,9 @@ export async function createWorkspace(
   input: { name: unknown },
 ): Promise<CreatedWorkspace> {
   const name = cleanName(input.name);
+  // A standing intent to leave and a brand-new Workspace to own cannot both be
+  // true: the deletion would archive the Owner Membership it was just given.
+  await assertNoPendingAccountDeletion(userId);
 
   // The id is minted here rather than by the insert so the whole transaction can
   // run inside the new Workspace's context: `workspace_roles`, `memberships` and
@@ -228,6 +232,9 @@ export async function transferWorkspaceOwnership(
 ): Promise<{ workspaceId: string; ownerUserId: string }> {
   if (!(await isWorkspaceOwner(userId, workspaceId))) throw new WorkspaceNotOwnedError();
   if (successorUserId === userId) throw new WorkspaceSuccessorError();
+  // Handing a Workspace to someone on their way out would leave it ownerless
+  // the moment their window closes.
+  await assertNoPendingAccountDeletion(successorUserId);
 
   const [successor] = await db
     .select({ id: memberships.id })
@@ -256,15 +263,16 @@ export async function transferWorkspaceOwnership(
         .update(memberships)
         .set({ workspaceRoleId: ownerRoleId, updatedAt: now })
         .where(eq(memberships.id, successor.id));
-      await tx.insert(auditEvents).values({
-        workspaceId,
-        actorKind: "user",
-        actorId: userId,
-        action: "workspace.ownership_transferred",
-        resourceType: "workspaces",
-        resourceId: workspaceId,
-        payload: { from: userId, to: successorUserId },
-      });
+      await tx.insert(auditEvents).values(
+        stampWorkspace({
+          actorKind: "user" as const,
+          actorId: userId,
+          action: "workspace.ownership_transferred",
+          resourceType: "workspaces",
+          resourceId: workspaceId,
+          payload: { from: userId, to: successorUserId },
+        }),
+      );
     }),
   );
 
@@ -306,6 +314,12 @@ export async function deleteWorkspace(
     throw new WorkspaceConfirmationError();
   }
 
+  // No Audit Event: `audit_events.workspace_id` is NOT NULL and cascades with
+  // the Workspace, so evidence written here would be deleted along with what it
+  // is evidence of. ADR-0015 wants workspace and platform scopes in one log;
+  // the platform scope has no column yet, and inventing one is not this
+  // ticket's. The refusals above are what stands in for it: only the Owner, and
+  // only once they are the last Member.
   await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
   return { workspaceId, deleted: true };
 }
