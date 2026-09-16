@@ -6,6 +6,7 @@
 
 import type { Job, JobsPort } from "./jobs";
 import type { ProcessRole } from "./config";
+import { logWarn } from "./logger";
 import { MissingWorkspaceContextError, runWithWorkspaceContext } from "./workspaceContext";
 
 export type JobHandler = (job: Job) => Promise<void>;
@@ -25,6 +26,31 @@ export interface CreateJobRunnerOptions {
 export function createJobRunner(options: CreateJobRunnerOptions): JobRunner {
   const { role, jobs, handlers, claimerId } = options;
 
+  /**
+   * Record a failed Job without letting that recording kill the loop.
+   *
+   * `fail` refuses a claim that is no longer in flight, which is what a handler
+   * outrunning its `timeoutMs` leaves behind. That refusal is about this one
+   * Job, and the port already knows how to finish it: the expired lease makes
+   * it claimable again, and a claim past `maxAttempts` moves it to a Dead
+   * Letter. Rethrowing here instead stopped the whole Worker — every other
+   * Workspace's Jobs included — over one slow handler (#229).
+   */
+  async function recordFailure(job: Job, message: string): Promise<void> {
+    try {
+      await jobs.fail(job.id, claimerId, message);
+    } catch (error) {
+      logWarn("worker.fail_lost_claim", {
+        jobId: job.id,
+        type: job.type,
+        workspaceId: job.workspaceId,
+        claimerId,
+        handlerError: message,
+        failError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   return {
     async runOne() {
       if (role !== "worker") return null;
@@ -34,12 +60,12 @@ export function createJobRunner(options: CreateJobRunnerOptions): JobRunner {
 
       const handler = handlers[job.type];
       if (!handler) {
-        await jobs.fail(job.id, claimerId, `No handler registered for Job type "${job.type}".`);
+        await recordFailure(job, `No handler registered for Job type "${job.type}".`);
         return job;
       }
 
       if (!job.workspaceId) {
-        await jobs.fail(job.id, claimerId, new MissingWorkspaceContextError().message);
+        await recordFailure(job, new MissingWorkspaceContextError().message);
         return job;
       }
 
@@ -48,7 +74,7 @@ export function createJobRunner(options: CreateJobRunnerOptions): JobRunner {
         await jobs.complete(job.id, claimerId);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await jobs.fail(job.id, claimerId, message);
+        await recordFailure(job, message);
       }
       return job;
     },
