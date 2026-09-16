@@ -47,7 +47,7 @@ function BridgeToApi({ children }: { children: React.ReactNode }) {
   // Workspace-scoped query behind it. Clerk Organization selection is a session
   // task that finishes after the first `/api/auth/user` may already have run
   // without a token; that query is cached as null (and window-focus refetch is
-  // off), so a later active session would otherwise keep painting Landing.
+  // off), so a later active session would otherwise keep painting sign-in.
   const lastSignedIn = useRef<boolean | null>(null);
   const lastOrgId = useRef<string | null>(null);
   useEffect(() => {

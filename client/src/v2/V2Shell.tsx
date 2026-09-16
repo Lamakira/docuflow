@@ -10,6 +10,7 @@ import { V2ContextPanel } from "./V2ContextPanel";
 import { V2Rail } from "./V2Rail";
 import { V2TimerChip } from "./V2TimerChip";
 import { V2ToastHost, type V2Toast } from "./V2Toast";
+import { V2FirstWorkspace } from "./V2FirstWorkspace";
 import { V2WorkspaceChooser } from "./V2WorkspaceChooser";
 import { selectCommandPanel } from "./chrome";
 import {
@@ -182,6 +183,15 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
 
   if (onInvitation) {
     return <V2ChromeContext.Provider value={chrome}>{children}</V2ChromeContext.Provider>;
+  }
+
+  // Flow 1: a User who belongs nowhere names a Workspace instead of entering one.
+  if (memberships && entry.kind === "first-run") {
+    return (
+      <V2ChromeContext.Provider value={chrome}>
+        <V2FirstWorkspace />
+      </V2ChromeContext.Provider>
+    );
   }
 
   if (memberships && entry.kind === "chooser") {

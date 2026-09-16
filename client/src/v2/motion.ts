@@ -37,6 +37,9 @@
  * Changing the Time stats period is occasional (preventing a jarring change) — opacity only, no movement.
  * Do not animate: ticking elapsed seconds, by-Project histogram bars as a parade,
  * Activity Evidence thumbnail layout shift, gallery filter applying.
+ * The first Workspace appearing is rare state indication — the User lands in it, no fanfare.
+ * Do not animate: Clerk frames, legal copy, account-deletion confirmation keystrokes.
+ * Account-deletion grace is explanation, not delight — opacity only, nothing moves.
  */
 
 export const V2_MOTION_TOKENS = {
@@ -87,7 +90,10 @@ export type MotionSurface =
   | "invitation-accept"
   | "people-filter"
   | "people-role"
-  | "people-seats";
+  | "people-seats"
+  | "first-workspace-created"
+  | "account-deletion-grace"
+  | "account-confirm-typing";
 
 export type MotionRecipe = {
   enterExit: "instant" | "standard" | "none";
@@ -139,9 +145,19 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "people-filter": "keyboard-or-100+",
   "people-role": "keyboard-or-100+",
   "people-seats": "keyboard-or-100+",
+  "first-workspace-created": "occasional",
+  "account-deletion-grace": "occasional",
+  "account-confirm-typing": "keyboard-or-100+",
 };
 
-const OPACITY_ONLY = new Set<MotionSurface>(["help-article", "editor-save", "time-stats-period"]);
+const OPACITY_ONLY = new Set<MotionSurface>([
+  "help-article",
+  "editor-save",
+  "time-stats-period",
+  // Rare state indication and a legal explanation: neither may move or celebrate.
+  "first-workspace-created",
+  "account-deletion-grace",
+]);
 
 export function motionForSurface(
   surface: MotionSurface,

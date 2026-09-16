@@ -18,7 +18,12 @@ import { registerServiceAccountRoutes } from "./modules/identity/http";
 import { webAuthConfigRoute, identityProvider } from "./modules/identity";
 import { registerDeliveryPreferenceRoutes } from "./modules/notifications/http";
 import { emailEnabledForUser } from "./modules/notifications/deliveryPreference";
-import { registerActiveWorkspaceRoutes, registerInvitationRoutes, registerWebhookEndpointRoutes } from "./modules/workspace/http";
+import {
+  registerActiveWorkspaceRoutes,
+  registerInvitationRoutes,
+  registerWebhookEndpointRoutes,
+  registerWorkspaceLifecycleRoutes,
+} from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
 import { SeatExhaustedError } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
@@ -154,6 +159,7 @@ export async function registerRoutes(
   registerWebhookEndpointRoutes(app);
   registerActiveWorkspaceRoutes(app);
   registerInvitationRoutes(app);
+  registerWorkspaceLifecycleRoutes(app);
   registerDeliveryPreferenceRoutes(app);
 
   // Public `/api/v1` kernel. Service Account keys only (ADR-0011).

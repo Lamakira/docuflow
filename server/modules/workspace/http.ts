@@ -1,6 +1,30 @@
 import type { Express, RequestHandler } from "express";
 import { z } from "zod";
-import { isAuthenticated, getUserId } from "../../auth";
+import { isAuthenticated, isIdentified, getUserId } from "../../auth";
+import {
+  contextFromUser,
+  runWithWorkspaceContext,
+  ArchivedMembershipError,
+  NoActiveMembershipError,
+} from "../../workspaceContext";
+import {
+  AccountDeletionPendingError,
+  NoAccountDeletionError,
+  OwnedWorkspaceRemainsError,
+  accountDeletionState,
+  cancelAccountDeletion,
+  requestAccountDeletion,
+} from "./accountDeletion";
+import {
+  WorkspaceConfirmationError,
+  WorkspaceHasMembersError,
+  WorkspaceNameError,
+  WorkspaceNotOwnedError,
+  WorkspaceSuccessorError,
+  createWorkspace,
+  deleteWorkspace,
+  transferWorkspaceOwnership,
+} from "./firstWorkspace";
 import {
   canManageWebhookEndpoints,
   createWebhookEndpoint,
@@ -124,10 +148,20 @@ export function registerWebhookEndpointRoutes(app: Express): void {
  * Session cookies only. Errors stay `{ message }`.
  */
 export function registerActiveWorkspaceRoutes(app: Express): void {
-  app.get("/api/memberships", isAuthenticated, async (req, res) => {
+  // Identity-session only: a User with no Membership cannot enter a Workspace,
+  // and "you belong nowhere yet" is the answer Flow 1 and Flow 2 both need.
+  app.get("/api/memberships", isIdentified, async (req, res) => {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
-    res.json(await listMemberships(userId));
+    try {
+      const ctx = await contextFromUser(userId);
+      return res.json(await runWithWorkspaceContext(ctx, () => listMemberships(userId)));
+    } catch (error) {
+      if (error instanceof NoActiveMembershipError || error instanceof ArchivedMembershipError) {
+        return res.json({ activeWorkspaceId: null, preferredWorkspaceId: null, memberships: [] });
+      }
+      throw error;
+    }
   });
 
   app.get("/api/workspace/memberships", isAuthenticated, async (req, res) => {
@@ -251,6 +285,95 @@ export function registerInvitationRoutes(app: Express): void {
       res.json(await acceptInvitation({ token: parsed.data.token, authorization: req.headers.authorization }));
     } catch (error) {
       if (!invitationError(res, error)) throw error;
+    }
+  });
+}
+
+function lifecycleError(
+  res: { status: (code: number) => { json: (body: unknown) => void } },
+  error: unknown,
+): boolean {
+  if (
+    error instanceof WorkspaceNameError ||
+    error instanceof WorkspaceNotOwnedError ||
+    error instanceof WorkspaceSuccessorError ||
+    error instanceof WorkspaceHasMembersError ||
+    error instanceof WorkspaceConfirmationError ||
+    error instanceof OwnedWorkspaceRemainsError ||
+    error instanceof AccountDeletionPendingError ||
+    error instanceof NoAccountDeletionError
+  ) {
+    res.status(error.statusCode).json({ message: error.message });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Workspace lifecycle BFF (#217, Flows 1 and 10). Identity session only, not
+ * `isAuthenticated`: a User creating their first Workspace holds no Membership
+ * to enter, and one deleting their account may hold none either. Authorization
+ * is still DocuFlow's — each route below checks the Owner Membership itself.
+ * Errors stay `{ message }`.
+ */
+export function registerWorkspaceLifecycleRoutes(app: Express): void {
+  app.post("/api/workspaces", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      res.status(201).json(await createWorkspace(userId, { name: req.body?.name }));
+    } catch (error) {
+      if (!lifecycleError(res, error)) throw error;
+    }
+  });
+
+  app.post("/api/workspaces/:id/owner", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const parsed = z.object({ userId: z.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });
+    }
+    try {
+      res.json(await transferWorkspaceOwnership(userId, req.params.id, parsed.data.userId));
+    } catch (error) {
+      if (!lifecycleError(res, error)) throw error;
+    }
+  });
+
+  app.delete("/api/workspaces/:id", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      res.json(await deleteWorkspace(userId, req.params.id, { confirmName: req.body?.confirmName }));
+    } catch (error) {
+      if (!lifecycleError(res, error)) throw error;
+    }
+  });
+
+  app.get("/api/account/deletion", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    res.json(await accountDeletionState(userId));
+  });
+
+  app.post("/api/account/deletion", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      res.status(201).json(await requestAccountDeletion(userId));
+    } catch (error) {
+      if (!lifecycleError(res, error)) throw error;
+    }
+  });
+
+  app.delete("/api/account/deletion", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      res.json(await cancelAccountDeletion(userId));
+    } catch (error) {
+      if (!lifecycleError(res, error)) throw error;
     }
   });
 }

@@ -327,11 +327,14 @@ export type AccountTheme = "light" | "dark" | "system";
 
 export type AccountMenuModel = {
   themeOptions: Array<{ id: AccountTheme; label: string; selected: boolean }>;
+  /** The account destination itself — where deletion lives (#217, Flow 10). */
+  accountLabel: "Account";
   signOutLabel: "Sign out";
 };
 
 export function composeAccountMenu(input: { theme: AccountTheme }): AccountMenuModel {
   return {
+    accountLabel: "Account",
     signOutLabel: "Sign out",
     themeOptions: [
       { id: "light", label: "Light", selected: input.theme === "light" },

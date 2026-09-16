@@ -240,6 +240,9 @@ export function V2Rail({
                 {option.label}
               </button>
             ))}
+            <Link href="/account" className="df-nav" data-testid="v2-account-link">
+              {account.accountLabel}
+            </Link>
             <button type="button" onClick={handleSignOut} data-testid="v2-sign-out">
               {account.signOutLabel}
             </button>

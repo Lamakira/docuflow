@@ -61,3 +61,13 @@ export async function addWorkspaceMembership(
     archivedAt: archived ? new Date() : null,
   });
 }
+
+/**
+ * Strip every Membership from a User — the state Flow 1 starts from, and one
+ * `createUser` never leaves a User in, since it seeds a Membership.
+ */
+export async function removeAllMemberships(userId: string): Promise<void> {
+  const { db } = await import("../../server/db");
+  const { eq } = await import("drizzle-orm");
+  await db.delete(memberships).where(eq(memberships.userId, userId));
+}

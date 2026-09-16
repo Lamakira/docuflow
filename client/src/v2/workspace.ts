@@ -14,7 +14,8 @@ export type MembershipOption = {
 };
 
 export type MembershipsResponse = {
-  activeWorkspaceId: string;
+  /** Null for a User who belongs nowhere yet — Flow 1 starts from there. */
+  activeWorkspaceId: string | null;
   preferredWorkspaceId: string | null;
   memberships: MembershipOption[];
 };
@@ -42,7 +43,9 @@ export function chooserInvitationRows(invitations: PendingInvitationOption[]): C
 
 export type WorkspaceEntry =
   | { kind: "enter"; workspaceId: string }
-  | { kind: "chooser"; rows: MembershipOption[] };
+  | { kind: "chooser"; rows: MembershipOption[] }
+  /** No Membership anywhere: Flow 1 names the first Workspace, no list to pick from. */
+  | { kind: "first-run" };
 
 export function workspaceCondition(billingState: string | null | undefined): WorkspaceCondition {
   if (billingState === "Trialing") return "Trial";
@@ -73,6 +76,11 @@ export function workspaceEntry(input: {
   const rows = activeMemberships(input.memberships).sort(byName);
   if ((input.invitations?.length ?? 0) > 0) {
     return { kind: "chooser", rows };
+  }
+  // An Invitation takes precedence over creation (Flow 6, step 4), so this
+  // branch is reached only when nothing is waiting to be accepted either.
+  if (rows.length === 0) {
+    return { kind: "first-run" };
   }
   if (rows.length === 1) {
     return { kind: "enter", workspaceId: rows[0].workspaceId };
