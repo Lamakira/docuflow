@@ -1,8 +1,16 @@
-import { DocH3, DocLi, DocList, DocP, DocSection } from "@/components/help-center/DocBlocks";
+import {
+  DocArticle,
+  DocSection,
+  DocH3,
+  DocList,
+  DocLi,
+  DocP,
+  DocStrong,
+} from "@/components/help-center/DocBlocks";
 
 export function DevicesEntriesDoc() {
   return (
-    <div className="space-y-8">
+    <DocArticle>
       <DocSection title="Entries (Time Tracking → Entries)">
         <DocP>
           Entries are the chronological log of time sessions — start time, end time, project, task, and optional notes.
@@ -21,8 +29,8 @@ export function DevicesEntriesDoc() {
         </DocP>
         <DocH3>Interpreting status</DocH3>
         <DocList>
-          <DocLi><strong className="text-foreground">Online / recent heartbeat</strong> — agent is syncing normally.</DocLi>
-          <DocLi><strong className="text-foreground">Stale</strong> — user may be offline or the agent is not running.</DocLi>
+          <DocLi><DocStrong>Online / recent heartbeat</DocStrong> — agent is syncing normally.</DocLi>
+          <DocLi><DocStrong>Stale</DocStrong> — user may be offline or the agent is not running.</DocLi>
         </DocList>
       </DocSection>
 
@@ -39,6 +47,6 @@ export function DevicesEntriesDoc() {
           Pair dashboard review with raw entries when investigating anomalies.
         </DocP>
       </DocSection>
-    </div>
+    </DocArticle>
   );
 }

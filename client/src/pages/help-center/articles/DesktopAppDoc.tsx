@@ -1,13 +1,21 @@
-import { DocH3, DocLi, DocList, DocP, DocSection } from "@/components/help-center/DocBlocks";
+import {
+  DocArticle,
+  DocSection,
+  DocList,
+  DocLi,
+  DocP,
+  DocStrong,
+  DocCode,
+} from "@/components/help-center/DocBlocks";
 import { HelpScreenshot } from "@/components/help-center/HelpScreenshot";
 
 export function DesktopAppDoc() {
   return (
-    <div className="space-y-8">
+    <DocArticle>
       <DocSection title="Download and install" sectionId="section-download">
         <DocP>
-          In the web app, go to <strong className="text-foreground">Time Tracking → Download</strong> (
-          <code className="text-xs bg-muted px-1 py-0.5 rounded">/time-tracking/download</code>) and use the installer for
+          In the web app, go to <DocStrong>Time Tracking → Download</DocStrong> (
+          <DocCode>/time-tracking/download</DocCode>) and use the installer for
           your platform. The agent needs permission to run in the background if you expect continuous sync and idle
           detection while you work in other apps.
         </DocP>
@@ -32,7 +40,7 @@ export function DesktopAppDoc() {
           After pairing, the main window lists CRM projects and, once a project is selected, tasks for that project.
           Starting the timer is done by choosing a task row (the flow is task-centric from the picker). If the project
           has no tasks, create tasks from the web app under{" "}
-          <strong className="text-foreground">Time Tracking → Projects &amp; Tasks</strong> first.
+          <DocStrong>Time Tracking → Projects &amp; Tasks</DocStrong> first.
         </DocP>
         <HelpScreenshot
           slotId="desktop-picker-two-columns"
@@ -44,14 +52,14 @@ export function DesktopAppDoc() {
       <DocSection title="Persistent header and timer display" sectionId="section-header">
         <DocP>
           The agent keeps a compact header area with timer status, elapsed display for the current task context, project
-          and task names when known, and metrics such as <strong className="text-foreground">Worked Today</strong> and{" "}
-          <strong className="text-foreground">This session</strong> (see the Time Tracking article for what those labels
+          and task names when known, and metrics such as <DocStrong>Worked Today</DocStrong> and{" "}
+          <DocStrong>This session</DocStrong> (see the Time Tracking article for what those labels
           mean in current behaviour).
         </DocP>
         <DocP>
-          When the timer is <strong className="text-foreground">running</strong>, you can pause from the header; when{" "}
-          <strong className="text-foreground">paused</strong>, resume uses the same server entry as before pause (via
-          the agent&apos;s sync queue). When <strong className="text-foreground">stopped</strong>, the header reflects
+          When the timer is <DocStrong>running</DocStrong>, you can pause from the header; when{" "}
+          <DocStrong>paused</DocStrong>, resume uses the same server entry as before pause (via
+          the agent&apos;s sync queue). When <DocStrong>stopped</DocStrong>, the header reflects
           that no active entry is running on this client until you start again or sync picks up an entry started
           elsewhere.
         </DocP>
@@ -122,6 +130,6 @@ export function DesktopAppDoc() {
           changes in the web Administration area — not necessarily instant the moment Save is clicked.
         </DocP>
       </DocSection>
-    </div>
+    </DocArticle>
   );
 }

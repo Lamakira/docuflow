@@ -1,7 +1,17 @@
-/** Shared typography blocks for Help Center articles (additive, no prose plugin dependency). */
+/**
+ * Shared typography blocks for Help Center articles. An article body carries no
+ * class names of its own: every one comes from the surface map (#216), so the
+ * same copy renders on the flag-off system or on v2 tokens.
+ */
 
 import { AlertTriangle, Info, Shield, ArrowRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { docBlockClass, type HelpCalloutVariant, type HelpLeadVariant } from "@/v2/helpArticle";
+import { useHelpSurface } from "./helpSurface";
+
+export function DocArticle({ children }: { children: React.ReactNode }) {
+  const surface = useHelpSurface();
+  return <div className={docBlockClass("article", surface)}>{children}</div>;
+}
 
 export function DocSection({
   title,
@@ -13,41 +23,44 @@ export function DocSection({
   /** Anchor id for in-page TOC links (e.g. `section-sign-in`). */
   sectionId?: string;
 }) {
+  const surface = useHelpSurface();
   return (
-    <section className="mb-14 last:mb-0 scroll-mt-28 pt-2 first:pt-0 border-t border-border/40 first:border-t-0 first:mt-0 mt-2">
-      <h2
-        id={sectionId}
-        className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground pb-3 mb-5"
-      >
+    <section className={docBlockClass("section", surface)}>
+      <h2 id={sectionId} className={docBlockClass("sectionTitle", surface)}>
         {title}
       </h2>
-      <div className="space-y-4 text-sm sm:text-[15px] text-muted-foreground leading-relaxed">{children}</div>
+      <div className={docBlockClass("sectionBody", surface)}>{children}</div>
     </section>
   );
 }
 
 export function DocH3({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-[15px] sm:text-base font-semibold text-foreground mt-8 mb-2.5 pl-3 border-l-2 border-primary/40">
-      {children}
-    </h3>
-  );
+  return <h3 className={docBlockClass("h3", useHelpSurface())}>{children}</h3>;
 }
 
 export function DocList({ children }: { children: React.ReactNode }) {
-  return <ul className="list-disc pl-5 space-y-2 marker:text-muted-foreground/80">{children}</ul>;
+  return <ul className={docBlockClass("list", useHelpSurface())}>{children}</ul>;
 }
 
 export function DocOrderedList({ children }: { children: React.ReactNode }) {
-  return <ol className="list-decimal pl-5 space-y-2 marker:text-muted-foreground/80">{children}</ol>;
+  return <ol className={docBlockClass("orderedList", useHelpSurface())}>{children}</ol>;
 }
 
 export function DocLi({ children }: { children: React.ReactNode }) {
-  return <li>{children}</li>;
+  return <li className={docBlockClass("item", useHelpSurface())}>{children}</li>;
 }
 
-export function DocP({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <p className={cn(className)}>{children}</p>;
+export function DocP({ children }: { children: React.ReactNode }) {
+  return <p className={docBlockClass("p", useHelpSurface())}>{children}</p>;
+}
+
+/** Emphasis inside body copy — the ink is the surface's, not the article's. */
+export function DocStrong({ children }: { children: React.ReactNode }) {
+  return <strong className={docBlockClass("strong", useHelpSurface())}>{children}</strong>;
+}
+
+export function DocCode({ children }: { children: React.ReactNode }) {
+  return <code className={docBlockClass("code", useHelpSurface())}>{children}</code>;
 }
 
 /** Top-of-article summary block (editorial “at a glance” — same role as a TL;DR, without changing body copy). */
@@ -58,78 +71,74 @@ export function DocLeadSummary({
 }: {
   title: string;
   children: React.ReactNode;
-  variant?: "intro" | "caution" | "neutral";
+  variant?: HelpLeadVariant;
 }) {
-  const tone =
-    variant === "caution"
-      ? "border-l-amber-500/65 bg-amber-500/[0.07]"
-      : variant === "neutral"
-        ? "border-l-muted-foreground/45 bg-muted/40"
-        : "border-l-emerald-500/60 bg-emerald-500/[0.07]";
-
+  const surface = useHelpSurface();
   return (
-    <div
-      className={cn(
-        "mb-2 rounded-xl border border-border/60 py-4 pl-4 pr-4 shadow-sm ring-1 ring-black/5 dark:ring-white/10 sm:pl-5 sm:pr-5",
-        "border-l-[3px]",
-        tone,
-      )}
-    >
-      <p className="text-sm font-semibold tracking-tight text-foreground">{title}</p>
-      <div className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed space-y-2 [&_p]:m-0">
+    <div className={docBlockClass("lead", surface, variant)}>
+      <p className={docBlockClass("leadTitle", surface)}>{title}</p>
+      <div className={docBlockClass("leadBody", surface)}>{children}</div>
+    </div>
+  );
+}
+
+function DocCallout({
+  variant,
+  label,
+  children,
+}: {
+  variant: HelpCalloutVariant;
+  label: string;
+  children: React.ReactNode;
+}) {
+  const surface = useHelpSurface();
+  const Icon = CALLOUT_ICONS[variant];
+  return (
+    <div className={docBlockClass("callout", surface, variant)}>
+      <Icon className={docBlockClass("calloutIcon", surface, variant)} aria-hidden />
+      <div className={docBlockClass("calloutBody", surface)}>
+        <p className={docBlockClass("calloutLabel", surface, variant)}>{label}</p>
         {children}
       </div>
     </div>
   );
 }
 
-const calloutBase =
-  "rounded-xl border px-4 py-3.5 text-sm leading-relaxed flex gap-3 shadow-sm ring-1 ring-black/5 dark:ring-white/5 [&_svg]:shrink-0 [&_svg]:mt-0.5";
+const CALLOUT_ICONS: Record<HelpCalloutVariant, typeof Info> = {
+  important: AlertTriangle,
+  admin: Shield,
+  next: ArrowRight,
+  note: Info,
+};
 
 export function DocCalloutImportant({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn(calloutBase, "border-amber-500/40 bg-amber-500/[0.07] text-amber-950 dark:text-amber-100/95")}>
-      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden />
-      <div className="min-w-0 space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200/95">Important</p>
-        {children}
-      </div>
-    </div>
+    <DocCallout variant="important" label="Important">
+      {children}
+    </DocCallout>
   );
 }
 
 export function DocCalloutAdmin({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn(calloutBase, "border-violet-500/35 bg-violet-500/[0.08] text-foreground/90")}>
-      <Shield className="h-4 w-4 text-violet-600 dark:text-violet-400" aria-hidden />
-      <div className="min-w-0 space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-violet-800 dark:text-violet-200">Admin</p>
-        {children}
-      </div>
-    </div>
+    <DocCallout variant="admin" label="Admin">
+      {children}
+    </DocCallout>
   );
 }
 
 export function DocCalloutNext({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn(calloutBase, "border-primary/30 bg-primary/[0.06] text-foreground/90")}>
-      <ArrowRight className="h-4 w-4 text-primary" aria-hidden />
-      <div className="min-w-0 space-y-2">
-        <p className="text-xs font-semibold text-foreground">What happens next</p>
-        {children}
-      </div>
-    </div>
+    <DocCallout variant="next" label="What happens next">
+      {children}
+    </DocCallout>
   );
 }
 
 export function DocCalloutNote({ children }: { children: React.ReactNode }) {
   return (
-    <div className={cn(calloutBase, "border-border/60 bg-muted/50 text-muted-foreground")}>
-      <Info className="h-4 w-4 opacity-80" aria-hidden />
-      <div className="min-w-0 space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/90">Note</p>
-        {children}
-      </div>
-    </div>
+    <DocCallout variant="note" label="Note">
+      {children}
+    </DocCallout>
   );
 }

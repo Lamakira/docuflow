@@ -30,6 +30,8 @@
  * Do not animate: analytics charts or figures as decoration, billing figures counting up,
  * Tracking Policy keystrokes, timezone list typing.
  * Help article open is tens/day — opacity only, no page-slide.
+ * File viewer zoom is tens/day — the control may press, the page under it does not animate.
+ * Do not animate: PDF page flips as decoration.
  * Do not animate: Help search keystrokes, pairing spinner as decoration, article TOC highlight chasing scroll,
  * register filter typing, role dropdown as decoration, seat digits counting.
  * Changing the Time stats period is occasional (preventing a jarring change) — opacity only, no movement.
@@ -77,6 +79,7 @@ export type MotionSurface =
   | "pairing-code"
   | "help-article"
   | "help-search"
+  | "file-viewer-zoom"
   | "daily-update-remind"
   | "notification-inbox"
   | "ask-composer"
@@ -127,6 +130,7 @@ const FREQUENCY: Record<MotionSurface, Frequency> = {
   "pairing-code": "occasional",
   "help-article": "tens",
   "help-search": "keyboard-or-100+",
+  "file-viewer-zoom": "tens",
   "daily-update-remind": "occasional",
   "notification-inbox": "occasional",
   "ask-composer": "keyboard-or-100+",
