@@ -14,6 +14,7 @@ import {
 import { enqueueDailyUpdateNudgeJobs } from "./dailyUpdateNudge";
 import { enqueueStaleTimerJobs } from "./staleTimer";
 import { enqueueBillingDriftJobs } from "./modules/billing/projectionJobs";
+import { completeDueAccountDeletions } from "./modules/workspace/accountDeletion";
 import type { JobsPort } from "./jobs";
 import { workspaceOfCause } from "./jobs";
 import type { ProcessRole } from "./config";
@@ -24,6 +25,7 @@ const DUE_REMINDERS_LEASE = "due-reminders";
 const STALE_TIMER_LEASE = "stale-timer";
 const DAILY_UPDATE_NUDGE_LEASE = "daily-update-nudge";
 const BILLING_DRIFT_LEASE = "billing-drift";
+const ACCOUNT_ERASURE_LEASE = "account-erasure";
 const DEFAULT_LEASE_MS = 90_000;
 
 export interface SchedulerTick {
@@ -44,6 +46,7 @@ export type CreateDueReminderSchedulerOptions = CreateSchedulerOptions;
 export type StaleTimerScheduler = SchedulerTick;
 export type DailyUpdateNudgeScheduler = SchedulerTick;
 export type BillingDriftScheduler = SchedulerTick;
+export type AccountErasureScheduler = SchedulerTick;
 
 function createLeaseElectedTick(
   options: CreateSchedulerOptions,
@@ -111,6 +114,19 @@ export function createBillingDriftScheduler(
 ): BillingDriftScheduler {
   return createLeaseElectedTick(options, BILLING_DRIFT_LEASE, (at) =>
     enqueueBillingDriftJobs(options.jobs, at)
+  );
+}
+
+/**
+ * Completing an account deletion whose grace window has run out (#217,
+ * ADR-0015). It writes rather than enqueues, so the count it returns is
+ * accounts erased, not Jobs created. Idempotent: only `pending` rows are read.
+ */
+export function createAccountErasureScheduler(
+  options: CreateSchedulerOptions
+): AccountErasureScheduler {
+  return createLeaseElectedTick(options, ACCOUNT_ERASURE_LEASE, (at) =>
+    completeDueAccountDeletions(at)
   );
 }
 

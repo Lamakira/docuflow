@@ -18,7 +18,6 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { TimeTracker } from "@/components/TimeTracker";
 import { TimeTrackerProvider } from "@/contexts/TimeTrackerContext";
 import { FileText } from "lucide-react";
-import Landing from "@/pages/Landing";
 import AuthPage from "@/pages/AuthPage";
 import Home from "@/pages/Home";
 import ProjectPage from "@/pages/ProjectPage";
@@ -84,13 +83,18 @@ function isInvitationPath(path: string): boolean {
   return path.startsWith("/invitations/");
 }
 
+/**
+ * Signed out, the app presents authentication (#217). The in-app Notion
+ * marketing Landing is retired: marketing lives in its own site, and a visitor
+ * who reaches the app is here to sign in or to accept an Invitation.
+ */
 function SignedOutSwitch() {
   return (
     <Switch>
-      <Route path="/" component={Landing} />
+      <Route path="/" component={AuthPage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/invitations/:token" component={V2InvitationAcceptPage} />
-      <Route component={Landing} />
+      <Route component={AuthPage} />
     </Switch>
   );
 }
@@ -105,7 +109,8 @@ function ProviderSessionRouter() {
   }
 
   // After Clerk Organization selection the browser is on `/` with a session
-  // and a null `/api/auth/user`. Landing there looks like a failed sign-in.
+  // and a null `/api/auth/user`. Sending them back through sign-in there looks
+  // like a failed attempt, so AuthPage says what the state actually is.
   // Invitation acceptance is the exception: the invitee may have a Clerk
   // session and no User until they accept (Flow 6).
   if (isSignedIn && !isAuthenticated) {

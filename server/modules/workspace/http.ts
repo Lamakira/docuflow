@@ -1,6 +1,31 @@
 import type { Express, RequestHandler } from "express";
 import { z } from "zod";
-import { isAuthenticated, getUserId } from "../../auth";
+import { isAuthenticated, isIdentified, getUserId } from "../../auth";
+import {
+  contextFromUser,
+  runWithWorkspaceContext,
+  ArchivedMembershipError,
+  NoActiveMembershipError,
+} from "../../workspaceContext";
+import {
+  AccountDeletionPendingError,
+  AccountDeletionScheduledError,
+  NoAccountDeletionError,
+  OwnedWorkspaceRemainsError,
+  accountDeletionState,
+  cancelAccountDeletion,
+  requestAccountDeletion,
+} from "./accountDeletion";
+import {
+  InvalidWorkspaceNameError,
+  WorkspaceConfirmationError,
+  WorkspaceHasMembersError,
+  WorkspaceNotOwnedError,
+  WorkspaceSuccessorError,
+  createWorkspace,
+  deleteWorkspace,
+  transferWorkspaceOwnership,
+} from "./firstWorkspace";
 import {
   canManageWebhookEndpoints,
   createWebhookEndpoint,
@@ -124,10 +149,36 @@ export function registerWebhookEndpointRoutes(app: Express): void {
  * Session cookies only. Errors stay `{ message }`.
  */
 export function registerActiveWorkspaceRoutes(app: Express): void {
-  app.get("/api/memberships", isAuthenticated, async (req, res) => {
+  // Identity-session only: a User with no Membership cannot enter a Workspace,
+  // and "you belong nowhere yet" is the answer Flow 1 and Flow 2 both need.
+  app.get("/api/memberships", isIdentified, async (req, res) => {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
-    res.json(await listMemberships(userId));
+    try {
+      const ctx = await contextFromUser(userId);
+      return res.json(await runWithWorkspaceContext(ctx, () => listMemberships(userId)));
+    } catch (error) {
+      // Flow 2 branches on *why* there is no active Membership: a User whose
+      // every Membership was archived belongs nowhere but their account is
+      // fine, and the surface has to be able to say so.
+      if (error instanceof ArchivedMembershipError) {
+        return res.json({
+          activeWorkspaceId: null,
+          preferredWorkspaceId: null,
+          memberships: [],
+          hasArchivedMemberships: true,
+        });
+      }
+      if (error instanceof NoActiveMembershipError) {
+        return res.json({
+          activeWorkspaceId: null,
+          preferredWorkspaceId: null,
+          memberships: [],
+          hasArchivedMemberships: false,
+        });
+      }
+      throw error;
+    }
   });
 
   app.get("/api/workspace/memberships", isAuthenticated, async (req, res) => {
@@ -164,24 +215,41 @@ const profileBody = z.object({
   canViewDailyUpdates: z.union([z.literal(0), z.literal(1)]).optional(),
 });
 
-function invitationError(res: { status: (code: number) => { json: (body: unknown) => void } }, error: unknown): boolean {
-  if (
-    error instanceof InvitationNotFoundError ||
-    error instanceof InvitationRoleError ||
-    error instanceof InvitationDuplicateMembershipError ||
-    error instanceof InvitationAlreadyPendingError ||
-    error instanceof InvitationRevokedError ||
-    error instanceof InvitationExpiredError ||
-    error instanceof InvitationAlreadyAcceptedError ||
-    error instanceof InvitationEmailMismatchError ||
-    error instanceof InvitationUnauthorizedError ||
-    error instanceof MembershipNotFoundError ||
-    error instanceof SeatExhaustedError
-  ) {
-    res.status(error.statusCode).json({ message: error.message });
-    return true;
-  }
-  return false;
+type Responder = { status: (code: number) => { json: (body: unknown) => void } };
+
+type Refusal = Error & { readonly statusCode: number };
+
+type RefusalType = abstract new (...args: never[]) => Refusal;
+
+/**
+ * Answer a refusal this route knows how to make as `{ message }`, matching
+ * today's `/api/*`. The list is an allowlist on purpose: an error that merely
+ * happens to carry a `statusCode` is a fault, and its message is not the
+ * caller's to read.
+ */
+function refuse(res: Responder, error: unknown, known: readonly RefusalType[]): boolean {
+  if (!known.some((type) => error instanceof type)) return false;
+  const refusal = error as Refusal;
+  res.status(refusal.statusCode).json({ message: refusal.message });
+  return true;
+}
+
+const INVITATION_REFUSALS = [
+  InvitationNotFoundError,
+  InvitationRoleError,
+  InvitationDuplicateMembershipError,
+  InvitationAlreadyPendingError,
+  InvitationRevokedError,
+  InvitationExpiredError,
+  InvitationAlreadyAcceptedError,
+  InvitationEmailMismatchError,
+  InvitationUnauthorizedError,
+  MembershipNotFoundError,
+  SeatExhaustedError,
+] as const;
+
+function invitationError(res: Responder, error: unknown): boolean {
+  return refuse(res, error, INVITATION_REFUSALS);
 }
 
 /**
@@ -251,6 +319,101 @@ export function registerInvitationRoutes(app: Express): void {
       res.json(await acceptInvitation({ token: parsed.data.token, authorization: req.headers.authorization }));
     } catch (error) {
       if (!invitationError(res, error)) throw error;
+    }
+  });
+}
+
+const LIFECYCLE_REFUSALS = [
+  InvalidWorkspaceNameError,
+  WorkspaceNotOwnedError,
+  WorkspaceSuccessorError,
+  WorkspaceHasMembersError,
+  WorkspaceConfirmationError,
+  OwnedWorkspaceRemainsError,
+  AccountDeletionPendingError,
+  AccountDeletionScheduledError,
+  NoAccountDeletionError,
+] as const;
+
+function lifecycleError(res: Responder, error: unknown): boolean {
+  return refuse(res, error, LIFECYCLE_REFUSALS);
+}
+
+const createWorkspaceBody = z.object({ name: z.string() });
+const successorBody = z.object({ userId: z.string().min(1) });
+const deleteWorkspaceBody = z.object({ confirmName: z.string() });
+
+function badRequest(res: Responder, error: z.ZodError): void {
+  res.status(400).json({ message: error.errors[0]?.message ?? "Invalid request" });
+}
+
+/**
+ * Workspace lifecycle BFF (#217, Flows 1 and 10). Identity session only, not
+ * `isAuthenticated`: a User creating their first Workspace holds no Membership
+ * to enter, and one deleting their account may hold none either. Authorization
+ * is still DocuFlow's — each route below checks the Owner Membership itself.
+ * Errors stay `{ message }`.
+ */
+export function registerWorkspaceLifecycleRoutes(app: Express): void {
+  app.post("/api/workspaces", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const parsed = createWorkspaceBody.safeParse(req.body);
+    if (!parsed.success) return badRequest(res, parsed.error);
+    try {
+      res.status(201).json(await createWorkspace(userId, { name: parsed.data.name }));
+    } catch (error) {
+      if (!lifecycleError(res, error)) throw error;
+    }
+  });
+
+  app.post("/api/workspaces/:id/owner", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const parsed = successorBody.safeParse(req.body);
+    if (!parsed.success) return badRequest(res, parsed.error);
+    try {
+      res.json(await transferWorkspaceOwnership(userId, req.params.id, parsed.data.userId));
+    } catch (error) {
+      if (!lifecycleError(res, error)) throw error;
+    }
+  });
+
+  app.delete("/api/workspaces/:id", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const parsed = deleteWorkspaceBody.safeParse(req.body);
+    if (!parsed.success) return badRequest(res, parsed.error);
+    try {
+      res.json(await deleteWorkspace(userId, req.params.id, { confirmName: parsed.data.confirmName }));
+    } catch (error) {
+      if (!lifecycleError(res, error)) throw error;
+    }
+  });
+
+  app.get("/api/account/deletion", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    res.json(await accountDeletionState(userId));
+  });
+
+  app.post("/api/account/deletion", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      res.status(201).json(await requestAccountDeletion(userId));
+    } catch (error) {
+      if (!lifecycleError(res, error)) throw error;
+    }
+  });
+
+  app.delete("/api/account/deletion", isIdentified, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    try {
+      res.json(await cancelAccountDeletion(userId));
+    } catch (error) {
+      if (!lifecycleError(res, error)) throw error;
     }
   });
 }

@@ -1,8 +1,8 @@
-import { Redirect, useLocation } from "wouter";
+import { Redirect } from "wouter";
 import { SignIn, useAuth as useClerkAuth } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText, ArrowLeft } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useWebAuthConfig } from "@/lib/webAuthConfig";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -85,8 +85,6 @@ function AuthShell({
   children?: React.ReactNode;
   unconfigured?: boolean;
 }) {
-  const [, setLocation] = useLocation();
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
@@ -113,18 +111,6 @@ function AuthShell({
         ) : (
           children
         )}
-
-        <div className="mt-6 space-y-2">
-          <Button
-            variant="ghost"
-            onClick={() => setLocation("/")}
-            className="text-muted-foreground w-full"
-            data-testid="button-back-home"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to home
-          </Button>
-        </div>
       </div>
     </div>
   );

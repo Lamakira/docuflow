@@ -123,6 +123,7 @@ export function startWorkerLoop(options?: {
       createStaleTimerScheduler,
       createDailyUpdateNudgeScheduler,
       createBillingDriftScheduler,
+      createAccountErasureScheduler,
     } = await import("./scheduler");
 
     const jobs = createJobsPort({
@@ -158,6 +159,7 @@ export function startWorkerLoop(options?: {
       createStaleTimerScheduler({ role: "worker", jobs, holderId: claimerId }),
       createDailyUpdateNudgeScheduler({ role: "worker", jobs, holderId: claimerId }),
       createBillingDriftScheduler({ role: "worker", jobs, holderId: claimerId }),
+      createAccountErasureScheduler({ role: "worker", jobs, holderId: claimerId }),
     ];
 
     let lastTick = 0;

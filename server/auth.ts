@@ -68,6 +68,19 @@ async function recordProviderSessionLogin(userId: string): Promise<void> {
   }
 }
 
+/**
+ * An identity session, with no Workspace entered (#217). The routes a User who
+ * belongs nowhere must still reach — creating their first Workspace (Flow 1)
+ * and deleting their account (Flow 10) — cannot go through `isAuthenticated`,
+ * because that binds the request to a Membership they do not have. Everything
+ * else stays on `isAuthenticated`: this is not a way around authorization, it
+ * is the absence of a Workspace to authorize against.
+ */
+export const isIdentified: RequestHandler = (req, res, next) => {
+  if ((req as any).identitySessionUserId) return next();
+  return res.status(401).json({ message: "Unauthorized" });
+};
+
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   if ((req as any).identitySessionUserId) {
     return enterWorkspace(req, res, next);

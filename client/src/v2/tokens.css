@@ -4397,3 +4397,173 @@ button.df-activity-row {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Workspace lifecycle (#217). Two surfaces the rest of the app never shows at
+   the same time: naming the first Workspace, and deleting an account.
+
+   The first Workspace appearing is rare state indication — opacity only, and
+   no celebration; the User simply lands in what they made. The deletion grace
+   window is explanation, so it fades in and nothing moves. Both confirmation
+   inputs hold still while they are typed into. */
+
+.df-first-workspace {
+  background: var(--df-cold-stock);
+}
+
+.df-first-workspace-card {
+  margin: auto;
+  width: min(440px, calc(100% - 32px));
+  background: var(--df-card-white);
+  border: 1px solid var(--df-divider);
+  border-radius: 10px;
+  padding: 24px;
+  transition: none;
+  animation: none;
+}
+
+.df-first-workspace-card[data-motion="standard"] {
+  opacity: 1;
+  transform: none;
+  transition: opacity var(--duration-ui) var(--ease-out);
+}
+
+.df-first-workspace-kicker {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--df-muted-ink);
+}
+
+.df-first-workspace-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.df-first-workspace-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--df-muted-ink);
+}
+
+.df-first-workspace-form input {
+  font: inherit;
+  font-size: 14px;
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  padding: 9px 11px;
+  background: var(--df-card-white);
+  transition: none;
+  animation: none;
+}
+
+.df-first-workspace-error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--df-destructive);
+}
+
+.df-first-workspace-trial {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--df-muted-ink);
+}
+
+.df-account-kicker {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--df-muted-ink);
+}
+
+.df-account-precondition,
+.df-account-survives .df-card-sub,
+.df-account-grace .df-card-sub,
+.df-account-session .df-card-sub {
+  padding: 0 18px 4px;
+  max-width: 70ch;
+}
+
+.df-account-grace {
+  transition: none;
+  animation: none;
+}
+
+.df-account-grace[data-motion="standard"] {
+  opacity: 1;
+  transform: none;
+  transition: opacity var(--duration-ui) var(--ease-out);
+}
+
+.df-account-date {
+  padding: 0 18px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  /* A recorded date never truncates. */
+  white-space: nowrap;
+}
+
+.df-account-confirm,
+.df-account-session > button,
+.df-account-grace > button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 18px 18px;
+}
+
+.df-account-confirm-label {
+  font-size: 12.5px;
+  color: var(--df-muted-ink);
+}
+
+.df-account-confirm input,
+.df-account-workspace-action input {
+  font: inherit;
+  font-size: 13.5px;
+  border: 1px solid var(--df-divider);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--df-card-white);
+  min-width: min(280px, 100%);
+  transition: none;
+  animation: none;
+}
+
+.df-account-workspace {
+  padding: 14px 18px;
+  border-top: 1px solid var(--df-divider);
+}
+
+.df-account-workspace-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.df-account-workspace-count {
+  font-size: 12px;
+  color: var(--df-muted-ink);
+}
+
+.df-account-workspace .df-card-sub {
+  padding: 4px 0 10px;
+}
+
+.df-account-workspace-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Flow 4's secondary action. Under the list, in ghost weight, so choosing an
+   existing Workspace stays the obvious thing to do. Authored prose, not mono:
+   Amendment 1 keeps mono for what the system recorded (AMENDMENTS.md §1). */
+.df-chooser-new {
+  display: inline-block;
+  margin-top: 14px;
+  font-family: var(--df-font-ui);
+  font-size: 12.5px;
+}

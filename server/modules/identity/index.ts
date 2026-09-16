@@ -86,6 +86,7 @@ export const IDENTITY_TABLES = [
   "desktop_releases",
   "service_accounts",
   "service_account_capabilities",
+  "account_deletions",
 ] as const;
 
 export const identityPersistence: ServiceAccountPersistence = {

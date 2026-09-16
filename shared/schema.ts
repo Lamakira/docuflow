@@ -2313,6 +2313,38 @@ export const publicApiIdempotencyKeys = pgTable(
 
 export type PublicApiIdempotencyKey = typeof publicApiIdempotencyKeys.$inferSelect;
 
+export const accountDeletionStatusValues = ["pending", "canceled", "completed"] as const;
+export type AccountDeletionStatus = (typeof accountDeletionStatusValues)[number];
+
+/**
+ * Account deletion request (#217, Flow 10, ADR-0015). Platform-scoped, not
+ * Workspace-scoped: a User is global, and the request outlives every Membership
+ * it will archive. Deletion is never immediate — the row records the grace
+ * window, and a cancel closes it without touching the account.
+ */
+export const accountDeletions = pgTable(
+  "account_deletions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    requestedAt: timestamp("requested_at").notNull().defaultNow(),
+    completesAt: timestamp("completes_at").notNull(),
+    canceledAt: timestamp("canceled_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_account_deletions_user_status").on(table.userId, table.status),
+    index("idx_account_deletions_due").on(table.status, table.completesAt),
+  ]
+);
+
+export type AccountDeletion = typeof accountDeletions.$inferSelect;
+
 /**
  * Append-only Audit Event (#139). Evidence of a security-relevant action,
  * never an Outbox Event. Not updated or deleted in place.
