@@ -155,6 +155,7 @@ Proved without Stripe, against the harness's disposable Postgres with
 | Seat capacity follows the Plan Registry, and a stale provider quantity does not overwrite a local increase | **Verified** | `tests/smoke/billing-checkout.test.ts:361`, `tests/smoke/billable-seats.test.ts` |
 | `STRIPE_SECRET_KEY` refuses a non-test key, naming ADR-0018 | **Verified** | `tests/smoke/config.test.ts:729` |
 | The Worker survives a handler that outruns its lease and then throws | **Verified** | `tests/smoke/worker-runner.test.ts` — added by this ticket, see Defect B |
+| `fetchSubscription` finds the period end on the item, on the Subscription, and refuses when it is on neither | **Verified** | `tests/smoke/billing-provider.test.ts` — added by this ticket, see Defect A |
 | The same path against **real Stripe** | **Verified** | this run |
 
 ## Window
@@ -373,7 +374,7 @@ exercise stays **Open** — it is not downgraded for want of evidence.
 
 | Defect | Where | Fixed here? | Severity |
 | --- | --- | --- | --- |
-| A — `current_period_end` exists only on the Subscription **item** | `stripeAdapter.ts:98` | No — already handled, but nothing pins it | High if ever "simplified" |
+| A — `current_period_end` exists only on the Subscription **item** | `stripeAdapter.ts:98` | **Pinned by tests** | High if ever "simplified" |
 | B — a Job that outruns its lease kills the Worker | `server/worker.ts` | **Yes** | High — it stopped this run |
 | C — nothing checks that the webhook secret and the secret key belong to the same Stripe account | `server/config.ts`, `createBillingProvider.ts` | No | Medium |
 | D — a stale server answers `/health` exactly like a fresh one | `server/app.ts:99` | No | Low, but it cost this run the most time |
@@ -386,10 +387,20 @@ second (`stripeAdapter.ts:98`), so it worked — but had it read only the
 Subscription, `periodEndsAt` would have been null, `BillingProviderError:
 Subscription … has no current period end` would have failed the Job five times,
 and the Workspace would have stayed `Trialing` with a paid Subscription behind
-it. No test pins this, and `tests/fakes/billingProvider.ts` returns a
-`currentPeriodEnd` directly, so the fake cannot catch a regression here. The
-fallback looks like defensive clutter and is in fact the only thing that makes
-conversion work on a current API version.
+it. The fallback looks like defensive clutter and is in fact the only thing
+that makes conversion work on a current API version.
+
+Nothing pinned it: `tests/fakes/billingProvider.ts` hands back a
+`currentPeriodEnd` already built, so the port fake cannot see this at all.
+Three tests were added against the `stripe` fake instead
+(`tests/smoke/billing-provider.test.ts`, "Stripe adapter") — the item-only
+shape this run actually met, the Subscription-only shape an older API version
+returns, and neither, which must refuse. Each half of the fallback was then
+deleted in turn to check the tests fail: removing the item read fails two
+tests, removing the Subscription read fails the third. The behavior is
+unchanged; what changed is that deleting half of it now turns the suite red.
+`FakeSubscription` had to make `current_period_end` optional in both places to
+express the shapes at all.
 
 **B — a Job that outruns its lease killed the Worker.** Fixed in this ticket.
 `createJobRunner.runOne` caught the handler's error and called `jobs.fail`,
@@ -459,8 +470,9 @@ defects are written down.
 Two pre-run findings stay **Open** — 2 and 6 — because this run did not
 exercise them, and they are carried rather than closed. Findings 1, 4, 5 and 7
 are confirmed and unfixed by choice: each is a design change rather than a
-repair, and #229 asks for fixes only where the run breaks. Defects A, C and D
-are new and also unfixed. All of them belong on the ticket, and on their own
+repair, and #229 asks for fixes only where the run breaks. Defect A is new and now pinned by tests
+rather than fixed, since the behavior was already right. Defects C and D are
+new and unfixed. All of them belong on the ticket, and on their own
 tickets after that.
 
 The one thing this run cannot speak to is production: `webAppV2` is still off
