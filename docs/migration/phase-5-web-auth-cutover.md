@@ -46,6 +46,17 @@ admin list keeps working, at an hour's resolution, and most requests touch no ro
 
 ## Where new Users come from
 
+> **Reversed 2026-09-17 by [#230](https://github.com/Lamakira/docuflow/issues/230).**
+> Self-service registration is **open** again. (Sign-up on the Clerk instance
+> reads `public`; the disable this section asks for was never applied.) The
+> reason recorded below — that an account created at Clerk's sign-up would be a
+> dead end — stopped being true when
+> [#217](https://github.com/Lamakira/docuflow/issues/217) gave a User with no
+> Membership a first Workspace to name. The section is left as written, because
+> it is what this phase did; see
+> [`phase-8-self-service-registration.md`](phase-8-self-service-registration.md)
+> for what replaced it.
+
 Self-service registration is closed and the Workspace Invitation flow is not this
 phase ([#105](https://github.com/Lamakira/docuflow/issues/105)). Until it lands,
 an Administrator creates the account and the import links it:
@@ -65,6 +76,11 @@ The sign-in page hides Clerk's sign-up link for the same reason — an account
 created there would be a dead end. **Disable sign-up on the Clerk instance
 itself** ([#107](https://github.com/Lamakira/docuflow/issues/107)) so the hosted
 pages agree with the embedded one.
+
+*(Both instructions above were withdrawn on 2026-09-17 by #230. The link is
+shown and `/sign-up` serves Clerk's sign-up surface. The instance disable was
+never carried out — it reads `sign_up.mode: "public"` — so the two surfaces had
+in fact been disagreeing since the cutover, and now agree the other way.)*
 
 ## Rollback
 
@@ -120,3 +136,7 @@ Against the harness's disposable Postgres, with the Clerk SDK aliased to
 `dualAuthSession`, the flag, Replit OIDC, and `MCP_API_KEY` were removed together
 in [#111](https://github.com/Lamakira/docuflow/issues/111) — see
 [`phase-5-clerk-only.md`](phase-5-clerk-only.md).
+
+The registration closure this phase recorded was lifted separately in
+[#230](https://github.com/Lamakira/docuflow/issues/230) — see
+[`phase-8-self-service-registration.md`](phase-8-self-service-registration.md).
