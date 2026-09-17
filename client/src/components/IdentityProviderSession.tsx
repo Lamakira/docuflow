@@ -4,6 +4,7 @@ import { queryClient } from "@/lib/queryClient";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { setIdentitySignOut, setIdentityTokenProvider } from "@/lib/identitySession";
 import { useWebAuthConfig } from "@/lib/webAuthConfig";
+import { sessionTaskUrls } from "@/lib/sessionTask";
 
 /**
  * Mounts the IdentityProvider for the whole SPA (#110, ADR-0007).
@@ -92,7 +93,10 @@ export function IdentityProviderSession({ children }: { children: React.ReactNod
       // fallback rather than the force, so a sign-up that carries its own
       // destination — an Invitation's, above all — still reaches it.
       signUpFallbackRedirectUrl="/"
-      taskUrls={{ "choose-organization": "/auth" }}
+      // Every task key, not just the Organization one: an unrouted key goes to
+      // Clerk's hosted Account Portal, and a routed one has to reach a page
+      // that mounts a surface for it. `/auth` does both now.
+      taskUrls={sessionTaskUrls()}
     >
       <BridgeToApi>{children}</BridgeToApi>
     </ClerkProvider>
