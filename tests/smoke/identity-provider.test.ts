@@ -26,6 +26,8 @@ describe("IdentityProvider fake", () => {
     expect(imported).toEqual({
       providerSubjectId: "user_fake_1",
       email: "ada@example.com",
+      firstName: null,
+      lastName: null,
     });
     await expect(provider.authenticate("ada@example.com", PASSWORD)).resolves.toEqual(
       imported
@@ -65,6 +67,27 @@ describe("IdentityProvider fake", () => {
     await expect(provider.verifySessionToken(token)).resolves.toEqual({
       providerSubjectId: "user_fake_1",
     });
+  });
+
+  it("answers who a subject is, so registration can create a User from a session (#230)", async () => {
+    const provider = new FakeIdentityProvider();
+
+    const imported = await provider.importPasswordUser({
+      ...IMPORT,
+      firstName: "Ada",
+      lastName: "Lovelace",
+    });
+
+    await expect(
+      provider.findIdentityBySubjectId(imported.providerSubjectId)
+    ).resolves.toEqual({
+      providerSubjectId: imported.providerSubjectId,
+      email: "ada@example.com",
+      firstName: "Ada",
+      lastName: "Lovelace",
+    });
+    // A subject the provider does not hold is nobody, not an error to classify.
+    await expect(provider.findIdentityBySubjectId("user_nobody")).resolves.toBeUndefined();
   });
 
   it("invites an address to set a password, and a second invite is the first one", async () => {
@@ -133,6 +156,10 @@ describe("IdentityProvider without live credentials", () => {
     await expect(
       provider.sendPasswordSetInvite({ email: "oidc@example.com" })
     ).rejects.toBeInstanceOf(IdentityProviderClosedError);
+    // Registration cannot learn who a session belongs to either (#230).
+    await expect(provider.findIdentityBySubjectId("user_1")).rejects.toBeInstanceOf(
+      IdentityProviderClosedError
+    );
     await expect(provider.pendingPasswordSetInvites()).rejects.toBeInstanceOf(
       IdentityProviderClosedError
     );

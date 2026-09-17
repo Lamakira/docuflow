@@ -23,6 +23,8 @@ import {
 type ClerkUser = {
   id: string;
   emailAddresses?: Array<{ emailAddress: string }>;
+  firstName?: string | null;
+  lastName?: string | null;
 };
 
 type ClerkInvitation = {
@@ -39,7 +41,12 @@ function toIdentity(user: ClerkUser, fallbackEmail?: string): ProviderIdentity {
   if (!user.id || !email) {
     throw new IdentityProviderError("Clerk User is missing a subject id or email");
   }
-  return { providerSubjectId: user.id, email };
+  return {
+    providerSubjectId: user.id,
+    email,
+    firstName: user.firstName ?? null,
+    lastName: user.lastName ?? null,
+  };
 }
 
 /** @clerk/backend `verifyToken` returns `{ data }` or `{ errors }`, not a bare payload. */
@@ -157,6 +164,21 @@ export class ClerkIdentityProvider implements IdentityProvider {
   async findIdentityByEmail(email: string): Promise<ProviderIdentity | undefined> {
     const user = await this.findByEmail(email);
     return user ? toIdentity(user, email) : undefined;
+  }
+
+  /**
+   * A subject the provider will not vouch for is `undefined`, not a throw: the
+   * caller's answer to "who is this?" is "nobody", and registration refuses on
+   * that rather than on an exception it would have to classify.
+   */
+  async findIdentityBySubjectId(providerSubjectId: string): Promise<ProviderIdentity | undefined> {
+    let user: ClerkUser;
+    try {
+      user = await this.clerk.users.getUser(providerSubjectId);
+    } catch {
+      return undefined;
+    }
+    return toIdentity(user);
   }
 
   private async findByEmail(email: string): Promise<ClerkUser | null> {

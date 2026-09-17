@@ -27,6 +27,8 @@ type StoredUser = {
   email: string;
   passwordDigest: string;
   emailAddresses: Array<{ emailAddress: string }>;
+  firstName: string | null;
+  lastName: string | null;
 };
 
 type StoredInvitation = {
@@ -54,6 +56,8 @@ export function createClerkClient(_options: { secretKey?: string; publishableKey
           email,
           passwordDigest: params.passwordDigest ?? "",
           emailAddresses: [{ emailAddress: email }],
+          firstName: params.firstName ?? null,
+          lastName: params.lastName ?? null,
         };
         users.push(stored);
         return stored;
