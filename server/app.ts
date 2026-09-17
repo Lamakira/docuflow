@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { createServer, type Server } from "http";
+import { buildIdentity, PROCESS_STARTED_AT } from "./buildInfo";
 import { logError, logHttpRequest } from "./logger";
 import { registerRoutes } from "./routes";
 
@@ -96,8 +97,18 @@ export async function createApp(): Promise<{
   app.use("/api/agent/screenshots/", agentScreenshotLimiter);
 
   // ─── Health check (before auth, unauthenticated) ───
+  // Carries the build and the process start alongside liveness (#229): a stale
+  // server is otherwise indistinguishable from a current one here, and that is
+  // how the Phase 8 run lost its longest stretch.
   app.get("/health", (_req, res) => {
-    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+    const build = buildIdentity();
+    res.status(200).json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      commit: build.commit,
+      commitSource: build.source,
+      startedAt: PROCESS_STARTED_AT.toISOString(),
+    });
   });
 
   app.use(

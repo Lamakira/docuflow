@@ -13,6 +13,7 @@ import { build as esbuild } from "esbuild";
 import { readFile } from "fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readGitHeadSha } from "../server/buildInfo";
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -84,6 +85,17 @@ export async function externalDependencies(): Promise<string[]> {
  * build, it fails the first request that needed it. See
  * `tests/smoke/server-bundle.test.ts`.
  */
+/**
+ * The commit this image is built from. A CI runner usually hands one over in
+ * the environment; a local build reads the checkout. Neither is fatal — an
+ * unknown commit is reported as unknown rather than guessed (#229).
+ */
+function buildCommitSha(): string {
+  const injected = process.env.DOCUFLOW_COMMIT?.trim();
+  if (injected) return injected;
+  return readGitHeadSha(ROOT) ?? "unknown";
+}
+
 export async function buildServer(outfile: string) {
   return esbuild({
     entryPoints: [join(ROOT, "server/index.ts")],
@@ -93,6 +105,9 @@ export async function buildServer(outfile: string) {
     outfile,
     define: {
       "process.env.NODE_ENV": '"production"',
+      // The bundle ships without `.git`, so the commit has to be baked in here
+      // or `/health` can only ever say "unknown" in production (#229).
+      "process.env.DOCUFLOW_COMMIT": JSON.stringify(buildCommitSha()),
     },
     minify: true,
     external: await externalDependencies(),
