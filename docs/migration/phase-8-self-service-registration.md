@@ -60,7 +60,7 @@ recording, because it is not what the instruction expected:
 | Instance | DocuFlow-owned Clerk Hobby application (#107), `pk_test_…`, frontend API `allowing-termite-8045.clerk.accounts.dev` |
 | Setting, as read | **`sign_up.mode: "public"`** — open |
 | Read | 2026-09-17, from the live `userSettings` the SPA's Clerk instance loaded |
-| What changed today | The written instruction, not the dashboard |
+| What changed today | The written instruction, not this setting |
 | Reason | #217 removed the dead end the disable was protecting against |
 | Agreement | The embedded surface and the hosted pages both offer sign-up |
 
@@ -69,9 +69,51 @@ been done — the Phase 5 "Window" table is still blank and says so — and the
 instance is public today. So the disagreement #110 warned about has existed
 since the cutover, with the hosted pages open and the embedded link painted
 out. #230 ends it by opening the embedded surface, which is the direction #217
-made safe; no dashboard change was needed, and none was made.
+made safe; that setting needed no dashboard change, and got none.
 
-`docs/CONFIGURATION.md` carries the same record next to the credential names.
+### The instance setting that did change: Organization membership
+
+Walking the journey found a second setting, and this one blocked it outright.
+
+| | |
+| --- | --- |
+| Setting | Organizations → Membership options |
+| Was | **Membership required** — `organizationSettings.forceOrganizationSelection: true` |
+| Now | **Membership optional** — `forceOrganizationSelection: false` |
+| Changed | **2026-09-17**, in the Clerk dashboard, by the operator |
+| Where | Configure → Organizations → Settings → Membership options |
+
+**What it did.** With membership required, a completed sign-up produced a Clerk
+session in a *pending* state carrying a `choose-organization` task. Clerk
+navigated to the app's `taskUrls["choose-organization"]`, which is `/auth`.
+DocuFlow had no screen for that task, so the page painted nothing. The journey
+stopped there, after the account existed and before `POST /api/auth/user` ever
+ran.
+
+`/auth` now mounts Clerk's task surfaces, so a pending session states a
+condition and offers a sign-out instead of painting nothing. That is a separate
+change, and it does not make the setting right: a Clerk Organization is still
+not a `Workspace`, and requiring one still asks a question that does nothing.
+
+**Why the setting is wrong for this product.** A Clerk Organization is not a
+`Workspace`. ADR-0007 puts the boundary the other way round: Clerk owns the
+credential, DocuFlow owns authorization, and `Workspace`, `Membership` and
+`Workspace Role` are DocuFlow's. Nothing authorizes on a Clerk Organization —
+`useOrganization` is read in `IdentityProviderSession` only to invalidate the
+cached `User` when it changes. So requiring one asked the person to create a
+container that does nothing, *before* DocuFlow could create their `User`, and
+then asked them to name a `Workspace` anyway. The same question twice, once
+without effect.
+
+Organizations stay `enabled: true`. Only the forcing is off.
+
+**A session already created keeps its task.** Changing the setting does not
+clear the pending task from sessions that were minted under it, and the blank
+page offers no way to sign out. `await window.Clerk.signOut()` from the console,
+or clearing site data, is the way back; the next sign-in mints a session with no
+task.
+
+`docs/CONFIGURATION.md` carries both settings next to the credential names.
 
 ### Registration is a step, not a screen
 
@@ -222,9 +264,15 @@ viewport the pane gives (≈397px wide):
   Workspace". No DocuFlow field appears on either page.
 - The console carried no errors on either.
 
-Completing a sign-up is [#232](https://github.com/Lamakira/docuflow/issues/232)'s
-job, in the parallel environment, with a real address — not this repository's,
-and not against a developer's machine.
+The operator then walked the whole journey on the development server with a real
+address: Clerk sign-up, the registration step, **Name your Workspace**, and into
+the `Workspace` as its `Owner` on a `Trialing` subscription. That run is what
+turned up the Organization-membership setting above.
+
+Recording it in the parallel environment, with the Worker running and the
+projection observed, is still
+[#232](https://github.com/Lamakira/docuflow/issues/232)'s job — not this
+repository's, and not a developer machine's.
 
 ## Two departures, recorded rather than hidden
 

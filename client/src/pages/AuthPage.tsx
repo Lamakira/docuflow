@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Redirect } from "wouter";
-import { SignIn, SignUp, useAuth as useClerkAuth } from "@clerk/clerk-react";
+import {
+  SignIn,
+  SignUp,
+  TaskChooseOrganization,
+  TaskResetPassword,
+  TaskSetupMFA,
+  useAuth as useClerkAuth,
+  useSession,
+} from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText } from "lucide-react";
@@ -16,6 +24,7 @@ import {
   SIGN_UP_PATH,
   type RegistrationStatus,
 } from "@/lib/registration";
+import { composeSessionTask, SESSION_TASK_COMPLETE_PATH } from "@/lib/sessionTask";
 
 /**
  * Sign-in and sign-up (#110, #230, ADR-0007). Clerk renders both forms:
@@ -51,6 +60,7 @@ function ClerkFrame({ surface }: { surface: Surface }) {
 
 function ClerkAuthPage({ surface }: { surface: Surface }) {
   const { isLoaded, isSignedIn } = useClerkAuth();
+  const { session } = useSession();
   const { isAuthenticated, isLoading } = useAuth();
 
   if (!isLoaded || (isSignedIn && isLoading)) {
@@ -59,6 +69,17 @@ function ClerkAuthPage({ surface }: { surface: Surface }) {
 
   if (isAuthenticated) {
     return <Redirect to="/" />;
+  }
+
+  // Clerk is holding the session until one more step is done, so it reports
+  // nobody signed in and `<SignIn>` below would render an empty box. Checked
+  // ahead of every signed-out branch for that reason.
+  if (session?.status === "pending") {
+    return (
+      <AuthShell surface={surface}>
+        <PendingSessionTask taskKey={session.currentTask?.key} />
+      </AuthShell>
+    );
   }
 
   if (isLoaded && isSignedIn && !isLoading) {
@@ -95,6 +116,49 @@ function ClerkAuthPage({ surface }: { surface: Surface }) {
         </div>
       )}
     </AuthShell>
+  );
+}
+
+/**
+ * The step Clerk is waiting on, in DocuFlow's frame (ADR-0007).
+ *
+ * Every credential surface here is Clerk's own component — DocuFlow adds a line
+ * saying whose step this is, and nothing else. A key this build cannot name
+ * still states a condition and offers a sign-out, because a pending session
+ * that renders nothing is a white page the person cannot leave.
+ */
+function PendingSessionTask({ taskKey }: { taskKey?: string }) {
+  const page = composeSessionTask({ key: taskKey });
+
+  return (
+    <div data-testid="clerk-session-task" data-task={page.surface}>
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>{page.title}</CardTitle>
+          <CardDescription>{page.note}</CardDescription>
+        </CardHeader>
+        {page.action === "sign-out" ? (
+          <CardContent>
+            <Button
+              type="button"
+              onClick={() => void signOutOfIdentityProvider()}
+              data-testid="button-sign-out-task"
+            >
+              Sign out
+            </Button>
+          </CardContent>
+        ) : null}
+      </Card>
+      {page.surface === "choose-organization" ? (
+        <TaskChooseOrganization redirectUrlComplete={SESSION_TASK_COMPLETE_PATH} />
+      ) : null}
+      {page.surface === "reset-password" ? (
+        <TaskResetPassword redirectUrlComplete={SESSION_TASK_COMPLETE_PATH} />
+      ) : null}
+      {page.surface === "setup-mfa" ? (
+        <TaskSetupMFA redirectUrlComplete={SESSION_TASK_COMPLETE_PATH} />
+      ) : null}
+    </div>
   );
 }
 
