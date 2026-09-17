@@ -15,6 +15,7 @@
  */
 
 import { PG_VARS, resolveDatabaseUrl, type DatabaseUrlSource } from "../shared/databaseUrl";
+import { buildIdentity } from "./buildInfo";
 import { parseSigningKey, type SigningKey } from "./signingKeys";
 
 export type { SigningKey };
@@ -704,8 +705,10 @@ function telemetryDestination(): string {
  * config — which the test harness and any script does — stays silent.
  */
 export function logConfigSummary(): void {
+  const build = buildIdentity();
   console.log(
     `[config] ${config.nodeEnv} — role ${config.role}, ` +
+      `build ${build.commit} (${build.source}), ` +
       `database ${config.database.source} over ${config.database.driver} ` +
       `(${config.database.connectionString.replace(/:([^@/]+)@/, ":<hidden>@")}), ` +
       `object storage via ${storageCredentialMode()}, ` +

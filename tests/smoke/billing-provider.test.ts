@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { FakeBillingProvider } from "../fakes/billingProvider";
+import type { FakeSubscription } from "../fakes/stripe";
 import { resetDb } from "../helpers/db";
 import { inSeededWorkspace } from "../helpers/workspace";
 
@@ -205,6 +206,76 @@ describe("Stripe adapter", () => {
       cancelAtPeriodEnd: true,
       collectionState: "PastDue",
     });
+  });
+
+  /**
+   * Where the period end lives (#229, Defect A).
+   *
+   * Stripe moved `current_period_end` from the Subscription onto the
+   * Subscription item. The live run on API version `2026-08-26.dahlia` came
+   * back with `null` on the Subscription and the real value on the item, so
+   * the item-first read in `stripeAdapter` is the only reason a Checkout
+   * converts at all — without it `periodEndsAt` is null, the projection Job
+   * fails all five attempts, and a paying Workspace stays `Trialing`.
+   *
+   * It reads like defensive clutter. These three tests are what stop someone
+   * deleting half of it.
+   */
+  const PERIOD_END = new Date("2026-10-16T14:05:41.000Z");
+  const PERIOD_END_UNIX = PERIOD_END.getTime() / 1000;
+
+  function subscriptionWithout(
+    periodEnd: { onItem?: number; onSubscription?: number }
+  ): FakeSubscription {
+    return {
+      id: "sub_test_1",
+      customer: "cus_test_1",
+      status: "active",
+      cancel_at_period_end: false,
+      ...(periodEnd.onSubscription ? { current_period_end: periodEnd.onSubscription } : {}),
+      items: {
+        data: [
+          {
+            quantity: 1,
+            ...(periodEnd.onItem ? { current_period_end: periodEnd.onItem } : {}),
+            price: { id: "price_pro_test" },
+          },
+        ],
+      },
+    };
+  }
+
+  async function adapter() {
+    const { createBillingProvider } = await import("../../server/modules/billing");
+    return createBillingProvider({ secretKey: "sk_test_fake", priceIds: { pro: "price_pro_test" } });
+  }
+
+  it("reads the period end from the Subscription item when the Subscription has none", async () => {
+    const { setRetrievedSubscription } = await import("../fakes/stripe");
+    setRetrievedSubscription(subscriptionWithout({ onItem: PERIOD_END_UNIX }));
+
+    const subscription = await (await adapter()).fetchSubscription("sub_test_1");
+
+    expect(subscription.currentPeriodEnd).toEqual(PERIOD_END);
+  });
+
+  it("still reads it from the Subscription for an account on an older API version", async () => {
+    const { setRetrievedSubscription } = await import("../fakes/stripe");
+    setRetrievedSubscription(subscriptionWithout({ onSubscription: PERIOD_END_UNIX }));
+
+    const subscription = await (await adapter()).fetchSubscription("sub_test_1");
+
+    expect(subscription.currentPeriodEnd).toEqual(PERIOD_END);
+  });
+
+  it("refuses a Subscription that carries no period end in either place", async () => {
+    const { BillingProviderError } = await import("../../server/modules/billing");
+    const { setRetrievedSubscription } = await import("../fakes/stripe");
+    setRetrievedSubscription(subscriptionWithout({}));
+
+    await expect((await adapter()).fetchSubscription("sub_test_1")).rejects.toBeInstanceOf(
+      BillingProviderError
+    );
   });
 });
 

@@ -33,6 +33,11 @@ import { billingProviderFromAppConfig } from "./createBillingProvider";
 import { BillingPinMissingError, getBillingProjection } from "./entitlements";
 import { applyProviderSubscription, pinAgreesWithSubscription } from "./projection";
 import { applyPendingSeatDecrease } from "./seats";
+import {
+  recordRejectedSignature,
+  recordVerifiedSignature,
+  warnIfSecretLooksWrong,
+} from "./signatureHealth";
 
 export const BILLING_PROJECT_JOB = "billing.project-webhook";
 export const BILLING_DRIFT_JOB = "billing.reconcile-drift";
@@ -160,13 +165,14 @@ export async function ingestBillingWebhook(input: {
   let event: WebhookEvent;
   try {
     event = await input.provider.verifyWebhook(input.payload, input.signature);
+    recordVerifiedSignature();
   } catch (error) {
-    if (
-      error instanceof BillingWebhookSignatureError ||
-      error instanceof BillingProviderClosedError
-    ) {
-      throw error;
-    }
+    if (error instanceof BillingProviderClosedError) throw error;
+    // Credentials absent is a different fact from credentials wrong, and only
+    // the second one says anything about which account signed (#229).
+    recordRejectedSignature();
+    warnIfSecretLooksWrong();
+    if (error instanceof BillingWebhookSignatureError) throw error;
     throw new BillingWebhookSignatureError();
   }
   if (!PROJECTABLE_WEBHOOK_TYPES.has(event.type)) {

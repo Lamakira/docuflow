@@ -17,16 +17,23 @@ export type CheckoutCreateParams = {
   customer?: string;
 };
 
+/**
+ * `current_period_end` is optional in both places on purpose. Stripe moved it
+ * from the Subscription onto the Subscription item, and a live account on
+ * `2026-08-26.dahlia` returns it *only* on the item (#229). Tests need to be
+ * able to build either shape, and the one with neither.
+ */
 export type FakeSubscription = {
   id: string;
   customer: string;
   status: string;
   cancel_at_period_end: boolean;
+  current_period_end?: number;
   items: {
     data: Array<{
       id?: string;
       quantity: number;
-      current_period_end: number;
+      current_period_end?: number;
       price: { id: string };
     }>;
   };
