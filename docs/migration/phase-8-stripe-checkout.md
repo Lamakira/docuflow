@@ -5,9 +5,9 @@
 - **Verdict:** **run, and it converted.** A Workspace in `Trialing` reached
   `Active` through a real hosted Checkout Session, a real signed webhook, and
   the projection Job, observed in `workspace_billing` rather than inferred from
-  the redirect. Every cell below is filled from that run. Two defects were
-  found; one was fixed because it stopped the Worker, and the other six pre-run
-  findings are resolved in **Verdicts**.
+  the redirect. Every cell below is filled from that run. The seven pre-run
+  findings are given verdicts in **Verdicts**; the four defects the run itself
+  turned up are all closed.
 
 Checkout was built end to end — `POST /api/billing/checkout` to a hosted
 session, `POST /api/billing/webhooks` with signature verification, the
@@ -41,9 +41,9 @@ part missing, and the `stripe` CLI was installed for this run
 | 6 | `STRIPE_PRICE_PRO=price_…` in `.env` | The adapter maps `pro` to this id and back; a Subscription on any other Price fails `planKeyFor` |
 | 7 | The `stripe` CLI | `https://docs.stripe.com/stripe-cli` |
 | 8 | A Workspace created through [#217](https://github.com/Lamakira/docuflow/issues/217) | `SeededWorkspaceCheckoutError` refuses the seeded Workspace, and `plan_key = legacy` refuses it a second time (`checkout.ts:78`) |
-| 9 | **The CLI and `STRIPE_SECRET_KEY` on the same Stripe account** | Added after this run lost thirty minutes to it — Defect C |
+| 9 | **The CLI and `STRIPE_SECRET_KEY` on the same Stripe account** | Cost this run thirty minutes. Since Defect C, a run of rejected signatures with none ever accepted now logs `billing.webhook_secret_mismatch` and names both variables |
 | 10 | **Every pending migration applied** (`npm run db:migrate`) | The Worker calls `completeDueAccountDeletions` on its first tick and exits if `account_deletions` is absent |
-| 11 | **No stale server holding the port** | Defect D: a server from before the current commit answers `/health` with `200` exactly like a fresh one |
+| 11 | **No stale server holding the port** | Since Defect D, `/health` carries `commit` and `startedAt`, so check those rather than trusting `status: ok` |
 
 `DOCUFLOW_ROLE` is absent from `.env`, so passing it on the command line has
 nothing to collide with.
@@ -78,9 +78,14 @@ PORT=5001 npm run dev
 DOCUFLOW_ROLE=worker npm run dev
 ```
 
-Confirm the app you are talking to is the one you just started — `ss -ltnp |
-grep :5001`, then `ps -o lstart= -p <pid>`. A stale server answers `/health`
-identically (Defect D).
+Confirm the app you are talking to is the one you just started:
+
+```bash
+curl -s localhost:5001/health
+```
+
+`commit` and `startedAt` are the answer (Defect D). Before this ticket `/health`
+reported liveness only, and a four-hour-old server was indistinguishable.
 
 The Worker returns before it binds a port (`server/index.ts:24`), so the two
 `npm run dev` processes do not collide. That script sets
@@ -376,8 +381,8 @@ exercise stays **Open** — it is not downgraded for want of evidence.
 | --- | --- | --- | --- |
 | A — `current_period_end` exists only on the Subscription **item** | `stripeAdapter.ts:98` | **Pinned by tests** | High if ever "simplified" |
 | B — a Job that outruns its lease kills the Worker | `server/worker.ts` | **Yes** | High — it stopped this run |
-| C — nothing checks that the webhook secret and the secret key belong to the same Stripe account | `server/config.ts`, `createBillingProvider.ts` | No | Medium |
-| D — a stale server answers `/health` exactly like a fresh one | `server/app.ts:99` | No | Low, but it cost this run the most time |
+| C — nothing checks that the webhook secret and the secret key belong to the same Stripe account | `server/modules/billing/signatureHealth.ts` | **Yes** | Medium |
+| D — a stale server answers `/health` exactly like a fresh one | `server/buildInfo.ts`, `server/app.ts` | **Yes** | Low, but it cost this run the most time |
 
 **A — the period end has moved, and the fallback is load-bearing.**
 On API version `2026-08-26.dahlia`, the live Subscription came back with
@@ -422,9 +427,22 @@ The application created Sessions in one account while the forwarder relayed
 events from the other, so no webhook could ever match, and the `whsec_` in
 `.env` signed for the wrong account too. Nothing in DocuFlow noticed: Checkout
 returned a perfectly good hosted URL, and a mismatched secret presents as
-`invalid signature`, which is indistinguishable from a forged request. A boot-
-time check that the webhook secret and the secret key resolve to the same
-`acct_…` would have said so in one line.
+`invalid signature`, which is indistinguishable from a forged request.
+
+**Fixed.** The obvious repair — resolve both credentials to an account at boot
+and compare — is not available: a `whsec_…` cannot be resolved to an account by
+any API, and resolving the secret key needs a network call, which would make
+boot depend on Stripe being reachable. So the distinction is drawn from the
+shape of the failures instead. An attacker forging events does not stop the
+real ones arriving, so something verifies; a wrong secret rejects every single
+delivery. `server/modules/billing/signatureHealth.ts` tracks whether any
+signature has ever verified and how many have been rejected in a row, and once
+three have been rejected with none ever accepted it logs
+`billing.webhook_secret_mismatch` naming both variables. Once per process, so
+it cannot bury itself. The HTTP contract is unchanged — still `400`. Covered by
+`tests/smoke/webhook-signature-health.test.ts`, including the case that must
+stay quiet: a secret that has worked before and now sees rejections is the
+forged-request case, and must never be reported as configuration.
 
 **D — a stale server is invisible.** Port 5001 was held by a server started at
 09:46, four hours before the commit under test. It answered `/health` with
@@ -433,6 +451,20 @@ presented as the Vite catch-all returning `200 text/html` — which reads as "no
 such route", not as "wrong build". `/health` reports liveness and nothing about
 identity; a commit sha or a boot timestamp in that payload would have closed
 this in seconds.
+
+**Fixed.** `/health` now carries `commit`, `commitSource` and `startedAt`
+beside `status`, and the boot line prints the build too, so neither answer
+needs a request to find. `server/buildInfo.ts` resolves the commit offline and
+synchronously: `DOCUFLOW_COMMIT` if a build injected one, otherwise `.git/HEAD`
+read directly — no `git` subprocess — and `"unknown"` when neither is there,
+because a wrong sha is worse than no sha. The production bundle ships without
+`.git`, so `script/bundles.ts` bakes the sha in through esbuild's `define`;
+that only works because `buildInfo` reads `process.env.DOCUFLOW_COMMIT` as a
+static member expression, the same trick and the same reason as
+`process.env.NODE_ENV` in `server/config.ts`. Verified against a real build:
+the full sha appears in `dist/index.cjs`. Covered by
+`tests/smoke/build-identity.test.ts` and
+`tests/characterization/health-identity.test.ts`.
 
 **Not a defect, but worth the next operator's time:** `stripe listen` dropped
 its websocket mid-run with `ERROR websocket.Client.writePump: Error when writing
@@ -470,9 +502,12 @@ defects are written down.
 Two pre-run findings stay **Open** — 2 and 6 — because this run did not
 exercise them, and they are carried rather than closed. Findings 1, 4, 5 and 7
 are confirmed and unfixed by choice: each is a design change rather than a
-repair, and #229 asks for fixes only where the run breaks. Defect A is new and now pinned by tests
-rather than fixed, since the behavior was already right. Defects C and D are
-new and unfixed. All of them belong on the ticket, and on their own
+repair, and #229 asks for fixes only where the run breaks. All four defects the
+run itself turned up are now closed — B and D outright, C by making the
+misconfiguration say its own name, A by pinning behaviour that was already
+correct. Defect A is new and now pinned by tests
+rather than fixed, since the behavior was already right. Defects B, C and D are
+new and fixed. All of them belong on the ticket, and on their own
 tickets after that.
 
 The one thing this run cannot speak to is production: `webAppV2` is still off
