@@ -15,7 +15,7 @@ import { ObjectPermission } from "./objectAcl";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
-import { webAuthConfigRoute, identityProvider } from "./modules/identity";
+import { webAuthConfigRoute, identityProvider, selfServiceRegistrationRoute } from "./modules/identity";
 import { registerDeliveryPreferenceRoutes } from "./modules/notifications/http";
 import { emailEnabledForUser } from "./modules/notifications/deliveryPreference";
 import {
@@ -185,6 +185,12 @@ export async function registerRoutes(
       res.json(null);
     }
   });
+
+  // Flow 1, step 2 (#230). The visitor returns from Clerk's sign-up holding a
+  // session for a subject no `users` row names; this is where DocuFlow links or
+  // creates its own User and takes over. Outside `isAuthenticated` on purpose —
+  // there is no User yet, and no Membership to enter a Workspace with.
+  app.post("/api/auth/user", selfServiceRegistrationRoute);
 
   // What the SPA needs before it can offer a sign-in box: Clerk's publishable
   // key, read at runtime because one image serves every environment (ADR-0018).
