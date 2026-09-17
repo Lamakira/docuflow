@@ -175,3 +175,33 @@ export async function login(app: Express, email: string): Promise<Agent> {
   if (!user) throw new Error(`login: no User with email ${email}`);
   return signIn(app, user.id);
 }
+
+/**
+ * A visitor who signs up at the IdentityProvider and nowhere else (#230).
+ *
+ * This is the state self-service registration starts from: Clerk holds the
+ * credential and will vouch for the subject, and DocuFlow has no `users` row
+ * for it at all. The agent carries that session, so every DocuFlow route sees
+ * exactly what a browser returning from Clerk's sign-up presents.
+ */
+export async function signUpAtProvider(
+  app: Express,
+  overrides: { email?: string; firstName?: string; lastName?: string } = {}
+): Promise<{ email: string; providerSubjectId: string; agent: Agent }> {
+  const { identityProvider } = await import("../../server/modules/identity");
+  const { issueClerkSession } = await import("../fakes/clerk");
+
+  const email = overrides.email ?? uniqueEmail("visitor");
+  const identity = await identityProvider.importPasswordUser({
+    email,
+    passwordHash: PROVIDER_TEST_HASH,
+    firstName: overrides.firstName ?? null,
+    lastName: overrides.lastName ?? null,
+  });
+
+  return {
+    email,
+    providerSubjectId: identity.providerSubjectId,
+    agent: newAgent(app).set("Authorization", `Bearer ${issueClerkSession(identity.providerSubjectId)}`),
+  };
+}
