@@ -74,6 +74,14 @@ export type {
 export { planPasswordSetInvites, sendPasswordSetInvites } from "./passwordSetInvites";
 export type { WebAuthConfig } from "@shared/webAuth";
 export { webAuthConfig, webAuthConfigRoute } from "./webAuth";
+export type { RegistrationOutcome } from "./selfServiceRegistration";
+export {
+  registerIdentity,
+  RegistrationEmailTakenError,
+  RegistrationUnauthorizedError,
+  RegistrationUnverifiedEmailError,
+  selfServiceRegistrationRoute,
+} from "./selfServiceRegistration";
 
 /** Process-wide IdentityProvider. Missing Clerk credentials fail closed. HTTP still authenticates as today. */
 export const identityProvider = identityProviderFromAppConfig(config.identity);

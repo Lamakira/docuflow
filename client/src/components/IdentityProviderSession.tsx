@@ -87,6 +87,11 @@ export function IdentityProviderSession({ children }: { children: React.ReactNod
       afterSignOutUrl="/"
       signInForceRedirectUrl="/auth"
       signInFallbackRedirectUrl="/auth"
+      // A new account goes to the app, not back to the door: `/` is where
+      // Flow 1 step 3 waits with one field and one action (#230, #217). The
+      // fallback rather than the force, so a sign-up that carries its own
+      // destination — an Invitation's, above all — still reaches it.
+      signUpFallbackRedirectUrl="/"
       taskUrls={{ "choose-organization": "/auth" }}
     >
       <BridgeToApi>{children}</BridgeToApi>

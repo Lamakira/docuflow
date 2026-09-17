@@ -46,6 +46,15 @@ export type PasswordImportRequest = {
 export type ProviderIdentity = {
   providerSubjectId: string;
   email: string;
+  /** Present when the provider holds one — Clerk's sign-up may not ask (#230). */
+  firstName?: string | null;
+  lastName?: string | null;
+  /**
+   * Whether the provider says it has challenged this address and the person
+   * answered (#230). Reported, not judged: what to do about an unconfirmed
+   * address is DocuFlow's policy, and self-service registration refuses one.
+   */
+  emailVerified?: boolean;
 };
 
 /**
@@ -86,6 +95,12 @@ export interface IdentityProvider {
    * invite from an unanswered one.
    */
   findIdentityByEmail(email: string): Promise<ProviderIdentity | undefined>;
+  /**
+   * The identity behind a subject id (#230). A session token carries only the
+   * subject, and self-service registration needs the address to create the User
+   * with — so it is asked for once, at registration, and never again.
+   */
+  findIdentityBySubjectId(providerSubjectId: string): Promise<ProviderIdentity | undefined>;
 }
 
 /** bcrypt digest the IdentityProvider import accepts. The OIDC placeholder is not usable. */
@@ -117,6 +132,10 @@ export class UnconfiguredIdentityProvider implements IdentityProvider {
   }
 
   async findIdentityByEmail(): Promise<ProviderIdentity | undefined> {
+    this.closed();
+  }
+
+  async findIdentityBySubjectId(): Promise<ProviderIdentity | undefined> {
     this.closed();
   }
 

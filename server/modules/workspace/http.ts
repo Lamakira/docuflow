@@ -269,7 +269,14 @@ export function registerInvitationRoutes(app: Express): void {
     res.json(await listWorkspaceInvitations());
   });
 
-  app.get("/api/invitations", isAuthenticated, async (req, res) => {
+  /**
+   * The Invitations waiting for *this* address, across Workspaces. Read on the
+   * identity session rather than `isAuthenticated` (#230): since self-service
+   * registration reopened, an invitee can hold a User and no Membership at all,
+   * and they are exactly who needs this list — it is what puts acceptance ahead
+   * of creating a Workspace of their own (Flow 6, step 4).
+   */
+  app.get("/api/invitations", isIdentified, async (req, res) => {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
     res.json(await listInvitationsForUser(userId));

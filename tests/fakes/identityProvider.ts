@@ -24,6 +24,18 @@ import {
 
 type Stored = ProviderIdentity & { passwordHash: string };
 
+function identityOf(stored: Stored): ProviderIdentity {
+  return {
+    providerSubjectId: stored.providerSubjectId,
+    email: stored.email,
+    firstName: stored.firstName ?? null,
+    lastName: stored.lastName ?? null,
+    // This fake only ever holds addresses the provider vouched for: an import
+    // by digest and an answered password-set invite are both confirmations.
+    emailVerified: true,
+  };
+}
+
 export class FakeIdentityProvider implements IdentityProvider {
   readonly imports: PasswordImportRequest[] = [];
   readonly invites: PasswordSetInviteRequest[] = [];
@@ -41,17 +53,17 @@ export class FakeIdentityProvider implements IdentityProvider {
       );
     }
     const existing = this.byEmail.get(request.email);
-    if (existing) {
-      return { providerSubjectId: existing.providerSubjectId, email: existing.email };
-    }
+    if (existing) return identityOf(existing);
     this.seq += 1;
     const stored: Stored = {
       providerSubjectId: `user_fake_${this.seq}`,
       email: request.email,
       passwordHash: request.passwordHash,
+      firstName: request.firstName ?? null,
+      lastName: request.lastName ?? null,
     };
     this.byEmail.set(request.email, stored);
-    return { providerSubjectId: stored.providerSubjectId, email: stored.email };
+    return identityOf(stored);
   }
 
   async authenticate(email: string, password: string): Promise<ProviderIdentity> {
@@ -59,7 +71,7 @@ export class FakeIdentityProvider implements IdentityProvider {
     if (!stored || !(await bcrypt.compare(password, stored.passwordHash))) {
       throw new IdentityProviderError("Invalid email or password");
     }
-    return { providerSubjectId: stored.providerSubjectId, email: stored.email };
+    return identityOf(stored);
   }
 
   /** Test helper — not on the port. Maps a linked subject to a session token. */
@@ -99,7 +111,14 @@ export class FakeIdentityProvider implements IdentityProvider {
 
   async findIdentityByEmail(email: string): Promise<ProviderIdentity | undefined> {
     const stored = this.byEmail.get(email);
-    return stored ? { providerSubjectId: stored.providerSubjectId, email: stored.email } : undefined;
+    return stored ? identityOf(stored) : undefined;
+  }
+
+  async findIdentityBySubjectId(providerSubjectId: string): Promise<ProviderIdentity | undefined> {
+    const stored = [...this.byEmail.values()].find(
+      (identity) => identity.providerSubjectId === providerSubjectId
+    );
+    return stored ? identityOf(stored) : undefined;
   }
 
   /**

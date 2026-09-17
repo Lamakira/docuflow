@@ -98,6 +98,15 @@ DocuFlow-owned Hobby application, never Replit Auth.
 | `CLERK_PUBLISHABLE_KEY` | Frontend Clerk load. Development instance keys start `pk_test_` |
 | `CLERK_SECRET_KEY` | Backend API. Development instance keys start `sk_test_` |
 
+### Instance settings
+
+Not variables — settings on the Clerk application itself, recorded here because
+nothing in this repository can assert them.
+
+| Setting | Value | Changed | Why |
+| --- | --- | --- | --- |
+| Sign-up (`sign_up.mode`) | **`public`** — open. Read from the live instance on 2026-09-17, not assumed | Read 2026-09-17 ([#230](https://github.com/Lamakira/docuflow/issues/230)); no dashboard change was made | [#110](https://github.com/Lamakira/docuflow/issues/110) asked for it to be disabled, because an account created there reached no Workspace — **that was never applied**, and the instruction is withdrawn: [#217](https://github.com/Lamakira/docuflow/issues/217) removed the dead end. See [`phase-8-self-service-registration.md`](migration/phase-8-self-service-registration.md) |
+
 The publishable key is served to the browser at runtime by `GET /api/auth/config`
 rather than baked into the bundle: one image is built and deployed to every
 environment (ADR-0018), so a build-time constant would pin every deployment to

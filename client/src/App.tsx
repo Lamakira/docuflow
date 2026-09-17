@@ -12,13 +12,14 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { IdentityProviderSession } from "@/components/IdentityProviderSession";
 import { useWebAuthConfig, WebAuthConfigProvider } from "@/lib/webAuthConfig";
+import { SIGN_UP_PATH } from "@/lib/registration";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { TimeTracker } from "@/components/TimeTracker";
 import { TimeTrackerProvider } from "@/contexts/TimeTrackerContext";
 import { FileText } from "lucide-react";
-import AuthPage from "@/pages/AuthPage";
+import AuthPage, { SignUpPage } from "@/pages/AuthPage";
 import Home from "@/pages/Home";
 import ProjectPage from "@/pages/ProjectPage";
 import DocumentPage from "@/pages/DocumentPage";
@@ -86,13 +87,18 @@ function isInvitationPath(path: string): boolean {
 /**
  * Signed out, the app presents authentication (#217). The in-app Notion
  * marketing Landing is retired: marketing lives in its own site, and a visitor
- * who reaches the app is here to sign in or to accept an Invitation.
+ * who reaches the app is here to sign in, to sign up (#230), or to accept an
+ * Invitation.
  */
 function SignedOutSwitch() {
   return (
     <Switch>
       <Route path="/" component={AuthPage} />
       <Route path="/auth" component={AuthPage} />
+      <Route path={SIGN_UP_PATH} component={SignUpPage} />
+      {/* The spelling the marketing site's call-to-action uses (#231): a
+          visitor who follows it lands on sign-up, not on a fall-through. */}
+      <Route path="/signup" component={SignUpPage} />
       <Route path="/invitations/:token" component={V2InvitationAcceptPage} />
       <Route component={AuthPage} />
     </Switch>
@@ -108,11 +114,13 @@ function ProviderSessionRouter() {
     return <LoadingScreen />;
   }
 
-  // After Clerk Organization selection the browser is on `/` with a session
-  // and a null `/api/auth/user`. Sending them back through sign-in there looks
-  // like a failed attempt, so AuthPage says what the state actually is.
-  // Invitation acceptance is the exception: the invitee may have a Clerk
-  // session and no User until they accept (Flow 6).
+  // A Clerk session with a null `/api/auth/user` is where Flow 1 step 2 runs:
+  // AuthPage creates the DocuFlow User behind it and the app takes over (#230).
+  // It is also where the browser lands after Clerk Organization selection, and
+  // where a registration that could not complete says so — sending either back
+  // through sign-in would look like a failed attempt.
+  // Invitation acceptance is the exception, and takes precedence: the invitee
+  // may have a Clerk session and no User until they accept (Flow 6, step 4).
   if (isSignedIn && !isAuthenticated) {
     if (isFetching) return <LoadingScreen />;
     if (isInvitationPath(location)) return <V2InvitationAcceptPage />;

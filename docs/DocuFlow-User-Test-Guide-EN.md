@@ -36,10 +36,9 @@ Tasks are always tied to a **CRM project** (`crmProjectId`).
 
 ### 2. First login
 
-- **Logged out**: routes `/`, `/auth`, fallback → `Landing` or `AuthPage` (`App.tsx`).
-- **Landing** (`Landing.tsx`): hero, **Sign In** (header), **Get Started**, **Start for Free** → `/auth`.
-- **Auth** (`AuthPage.tsx`): Clerk **Sign In** (no email/password form, no Replit button), **Back to home**.
-- **Self-service signup**: **no signup form** in `AuthPage.tsx`. Server exposes `POST /api/auth/register` (`server/routes.ts`), not wired to this auth UI.
+- **Logged out**: routes `/`, `/auth`, `/sign-up`, `/signup`, `/invitations/:token`, fallback → `AuthPage`, `SignUpPage` or Invitation acceptance (`App.tsx`). The in-app marketing Landing is retired (#217); marketing is its own site.
+- **Auth** (`AuthPage.tsx`): Clerk **Sign In** (no email/password form, no Replit button), with Clerk's **Sign up** link.
+- **Self-service signup** (#230): Clerk's **Sign Up** at `/sign-up`, framed by `AuthPage.tsx`. There is still **no DocuFlow credential field** — Clerk owns every credential surface (ADR-0007). On return, `POST /api/auth/user` creates the DocuFlow User, and the visitor lands on **Name your Workspace**.
 - **After login**: redirect to `/` → **Home** = **ChatBotInline** only (`Home.tsx`).
 - **Main navigation** (`AppSidebar.tsx`): **Company Documents**, **Project Management**, **Documentation**, **Time Tracking**, and if admin **Administration**. Footer: sidebar toggle, notifications, chat, **Time Tracker** (clock), theme, user menu, **LogOut**.
 
