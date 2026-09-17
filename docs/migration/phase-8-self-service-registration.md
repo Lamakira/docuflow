@@ -86,9 +86,14 @@ Walking the journey found a second setting, and this one blocked it outright.
 **What it did.** With membership required, a completed sign-up produced a Clerk
 session in a *pending* state carrying a `choose-organization` task. Clerk
 navigated to the app's `taskUrls["choose-organization"]`, which is `/auth`.
-DocuFlow has no screen for that task, so the page painted nothing. The journey
+DocuFlow had no screen for that task, so the page painted nothing. The journey
 stopped there, after the account existed and before `POST /api/auth/user` ever
 ran.
+
+`/auth` now mounts Clerk's task surfaces, so a pending session states a
+condition and offers a sign-out instead of painting nothing. That is a separate
+change, and it does not make the setting right: a Clerk Organization is still
+not a `Workspace`, and requiring one still asks a question that does nothing.
 
 **Why the setting is wrong for this product.** A Clerk Organization is not a
 `Workspace`. ADR-0007 puts the boundary the other way round: Clerk owns the
