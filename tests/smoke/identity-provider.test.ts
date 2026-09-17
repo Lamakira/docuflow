@@ -28,6 +28,7 @@ describe("IdentityProvider fake", () => {
       email: "ada@example.com",
       firstName: null,
       lastName: null,
+      emailVerified: true,
     });
     await expect(provider.authenticate("ada@example.com", PASSWORD)).resolves.toEqual(
       imported
@@ -85,6 +86,7 @@ describe("IdentityProvider fake", () => {
       email: "ada@example.com",
       firstName: "Ada",
       lastName: "Lovelace",
+      emailVerified: true,
     });
     // A subject the provider does not hold is nobody, not an error to classify.
     await expect(provider.findIdentityBySubjectId("user_nobody")).resolves.toBeUndefined();
@@ -232,6 +234,54 @@ describe("Clerk adapter", () => {
     expect(second).toEqual({ ...first, alreadyPending: true });
     expect(clerkCreateInvitationCalls()).toEqual([{ emailAddress: "oidc@example.com" }]);
     await expect(provider.pendingPasswordSetInvites()).resolves.toEqual(["oidc@example.com"]);
+  });
+});
+
+describe("Clerk adapter reports which address it can be believed on (#230)", () => {
+  it("names the verified primary, not whichever address Clerk listed first", async () => {
+    const { createIdentityProvider } = await import("../../server/modules/identity");
+    const { plantClerkUser, resetClerk } = await import("../fakes/clerk");
+    resetClerk();
+    const provider = createIdentityProvider({ secretKey: "sk_test_x" });
+
+    // A secondary sitting ahead of the primary: taking `[0]` would build an
+    // identity on an address the person merely added, which is the address a
+    // DocuFlow `users` row — and every Invitation matched against it — hangs on.
+    const subject = plantClerkUser({
+      addresses: [
+        { email: "spare@example.com", verified: true },
+        { email: "ada@example.com", verified: true, primary: true },
+      ],
+    });
+
+    await expect(provider.findIdentityBySubjectId(subject)).resolves.toMatchObject({
+      email: "ada@example.com",
+      emailVerified: true,
+    });
+  });
+
+  it("does not vouch for an address nobody answered a challenge for", async () => {
+    const { createIdentityProvider } = await import("../../server/modules/identity");
+    const { plantClerkUser, resetClerk } = await import("../fakes/clerk");
+    resetClerk();
+    const provider = createIdentityProvider({ secretKey: "sk_test_x" });
+
+    const unconfirmed = plantClerkUser({
+      addresses: [{ email: "claimed@example.com", verified: false, primary: true }],
+    });
+    // And an address that is confirmed but is not the one being reported says
+    // nothing about the one that is.
+    const secondaryOnly = plantClerkUser({
+      addresses: [{ email: "other@example.com", verified: true }, { email: "b@example.com" }],
+    });
+
+    await expect(provider.findIdentityBySubjectId(unconfirmed)).resolves.toMatchObject({
+      email: "claimed@example.com",
+      emailVerified: false,
+    });
+    await expect(provider.findIdentityBySubjectId(secondaryOnly)).resolves.toMatchObject({
+      emailVerified: false,
+    });
   });
 });
 

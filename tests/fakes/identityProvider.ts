@@ -30,6 +30,9 @@ function identityOf(stored: Stored): ProviderIdentity {
     email: stored.email,
     firstName: stored.firstName ?? null,
     lastName: stored.lastName ?? null,
+    // This fake only ever holds addresses the provider vouched for: an import
+    // by digest and an answered password-set invite are both confirmations.
+    emailVerified: true,
   };
 }
 

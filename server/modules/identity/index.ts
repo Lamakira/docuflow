@@ -79,6 +79,7 @@ export {
   registerIdentity,
   RegistrationEmailTakenError,
   RegistrationUnauthorizedError,
+  RegistrationUnverifiedEmailError,
   selfServiceRegistrationRoute,
 } from "./selfServiceRegistration";
 

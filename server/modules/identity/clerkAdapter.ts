@@ -20,12 +20,34 @@ import {
   type ProviderIdentity,
 } from "./identityProvider";
 
+type ClerkEmailAddress = {
+  id?: string;
+  emailAddress: string;
+  verification?: { status?: string | null } | null;
+};
+
 type ClerkUser = {
   id: string;
-  emailAddresses?: Array<{ emailAddress: string }>;
+  emailAddresses?: ClerkEmailAddress[];
+  primaryEmailAddressId?: string | null;
   firstName?: string | null;
   lastName?: string | null;
 };
+
+/**
+ * The address Clerk calls primary, not merely the first one it listed. A Clerk
+ * User may hold several, in an order nothing promises, and the one this side
+ * builds an identity from decides which DocuFlow `users` row a session can
+ * become — so a secondary address that happened to sort first must not be it.
+ * With no primary named, a sole address is unambiguous and anything else is not.
+ */
+function primaryAddressOf(user: ClerkUser): ClerkEmailAddress | undefined {
+  const addresses = user.emailAddresses ?? [];
+  if (user.primaryEmailAddressId) {
+    return addresses.find((address) => address.id === user.primaryEmailAddressId);
+  }
+  return addresses.length === 1 ? addresses[0] : undefined;
+}
 
 type ClerkInvitation = {
   id: string;
@@ -33,7 +55,7 @@ type ClerkInvitation = {
 };
 
 function emailOf(user: ClerkUser, fallback?: string): string {
-  return user.emailAddresses?.[0]?.emailAddress ?? fallback ?? "";
+  return primaryAddressOf(user)?.emailAddress ?? user.emailAddresses?.[0]?.emailAddress ?? fallback ?? "";
 }
 
 function toIdentity(user: ClerkUser, fallbackEmail?: string): ProviderIdentity {
@@ -41,11 +63,16 @@ function toIdentity(user: ClerkUser, fallbackEmail?: string): ProviderIdentity {
   if (!user.id || !email) {
     throw new IdentityProviderError("Clerk User is missing a subject id or email");
   }
+  const primary = primaryAddressOf(user);
   return {
     providerSubjectId: user.id,
     email,
     firstName: user.firstName ?? null,
     lastName: user.lastName ?? null,
+    // Only the primary address can carry the verdict, and only when it is the
+    // address being reported: a confirmed secondary says nothing about this one.
+    emailVerified:
+      primary?.emailAddress === email && primary?.verification?.status === "verified",
   };
 }
 

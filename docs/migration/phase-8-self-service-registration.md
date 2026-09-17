@@ -96,8 +96,36 @@ gains nobody.
 | The session's subject | What happens |
 | --- | --- |
 | Already on a `users` row | `200` with that User. Nothing is written, and the provider is not asked — the `identitySession` middleware has already resolved it |
-| New, and the address is free | `201` with a new row and no Membership |
-| New, and the address is a `users` row — **linked or not** | `409` |
+| New, and the address is not a verified primary at the provider | `403` |
+| New, verified, and the address is free | `201` with a new row and no Membership |
+| New, verified, and the address is a `users` row — **linked or not** | `409` |
+
+### The address has to be one the provider challenged
+
+`users.email` is not just a display field. `listInvitationsForUser` finds
+Invitations by it, and `resolveInvitee` accepts a subject whose row carries the
+invited address. So a row written under an address nobody confirmed is a way
+into a Workspace, not a cosmetic error:
+
+1. Register at Clerk claiming `ada@acme.com` without confirming it.
+2. `POST /api/auth/user` writes a `users` row on that address — the 409 above
+   never fires, because nobody holds it here yet.
+3. An Owner later invites the real `ada@acme.com`.
+4. `GET /api/invitations` offers it to the squatter, and acceptance grants them
+   the Membership.
+
+The adapter therefore reports **the verified primary address**, not whichever
+one Clerk listed first: a Clerk User may hold several in an order nothing
+promises, and a confirmed secondary says nothing about the address being
+reported. `emailVerified` is reported by the port and judged by DocuFlow —
+registration refuses to create a row without it (`403`, "Confirm your email
+address with your sign-in provider"). A subject that *already* has a User is
+past the check; refusing there would lock somebody out of an account rather
+than prevent one.
+
+Clerk's own sign-up normally verifies before it issues a session, so this should
+rarely fire. It is not written on that assumption — the instance setting is one
+dashboard toggle away from making it fire every time.
 
 **An address this DocuFlow already holds is refused either way, and nothing is
 adopted.** The tempting behaviour is the one Invitation acceptance has: find an
@@ -168,6 +196,10 @@ Against the harness's disposable Postgres, with the Clerk SDK aliased to
   provider's name, and `role: "user"`.
 - An existing `users` row on the same address was `409` whether or not it was
   linked, the row was untouched, and the session stayed unknown.
+- A subject holding an unconfirmed address was `403` and wrote no row, and so
+  was one whose confirmed address was not the address being reported.
+- The adapter named the verified primary when a confirmed secondary sat ahead
+  of it in Clerk's list.
 - Two requests carrying the same session at once both answered with the same
   `users.id`, and one row was written.
 - A registrant's `/api/projects` and `/api/admin/users` were both `401`, and the

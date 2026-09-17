@@ -14,8 +14,15 @@
  * caller proves who they are with a session, and the session is the only thing
  * this route believes.
  *
- * Two rules keep that from being a way in to somebody else's Workspaces:
+ * Three rules keep that from being a way in to somebody else's Workspaces:
  *
+ *  - **The address must be a verified primary at the provider.** The `users`
+ *    row is found by address in more places than this one — `listInvitationsForUser`
+ *    matches on it, and `resolveInvitee` accepts a subject whose row carries the
+ *    invited address. So a row written under an address nobody challenged is not
+ *    a cosmetic error: register as `ada@acme.com` before anyone invites the real
+ *    Ada, and the Invitation meant for her is offered to, and accepted by, whoever
+ *    claimed it first. DocuFlow refuses to write the row instead.
  *  - **An address this DocuFlow already holds is refused, linked or not.** The
  *    tempting behaviour is to adopt an unlinked row on a matching address, the
  *    way Invitation acceptance does. Acceptance can: possession of the token
@@ -41,6 +48,16 @@ export class RegistrationUnauthorizedError extends Error {
   constructor() {
     super("Unauthorized");
     this.name = "RegistrationUnauthorizedError";
+  }
+}
+
+export class RegistrationUnverifiedEmailError extends Error {
+  readonly statusCode = 403;
+  constructor() {
+    super(
+      "Confirm your email address with your sign-in provider, then reload this page"
+    );
+    this.name = "RegistrationUnverifiedEmailError";
   }
 }
 
@@ -83,6 +100,13 @@ export async function registerIdentity(input: {
 
   const linked = await userBySubject(identity.providerSubjectId);
   if (linked) return { user: linked, created: false };
+
+  // Checked here rather than in the adapter, and only on the way to a new row:
+  // the port reports what the provider says, and what to do about an
+  // unconfirmed address is this side's decision. A subject that already has a
+  // User is past it — the row exists, and refusing now would lock them out of
+  // an account rather than prevent one.
+  if (identity.emailVerified !== true) throw new RegistrationUnverifiedEmailError();
 
   // Two first requests from the same browser — the second tab this route is
   // idempotent for — both miss the select above and both reach this insert.
@@ -173,6 +197,7 @@ export const selfServiceRegistrationRoute: RequestHandler = async (req, res) => 
   } catch (error) {
     if (
       error instanceof RegistrationUnauthorizedError ||
+      error instanceof RegistrationUnverifiedEmailError ||
       error instanceof RegistrationEmailTakenError
     ) {
       return res.status(error.statusCode).json({ message: error.message });

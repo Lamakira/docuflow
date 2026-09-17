@@ -49,6 +49,12 @@ export type ProviderIdentity = {
   /** Present when the provider holds one — Clerk's sign-up may not ask (#230). */
   firstName?: string | null;
   lastName?: string | null;
+  /**
+   * Whether the provider says it has challenged this address and the person
+   * answered (#230). Reported, not judged: what to do about an unconfirmed
+   * address is DocuFlow's policy, and self-service registration refuses one.
+   */
+  emailVerified?: boolean;
 };
 
 /**

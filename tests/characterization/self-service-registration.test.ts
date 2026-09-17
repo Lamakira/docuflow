@@ -173,6 +173,50 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
     }
   });
 
+  it("refuses to write a row under an address the provider never challenged", async () => {
+    const app = await makeApp();
+    const { plantClerkUser, issueClerkSession } = await import("../fakes/clerk");
+    const victimAddress = uniqueEmail("real-ada");
+
+    // The squat: claim somebody else's address at the provider without
+    // confirming it, and register before anyone invites them. The `users` row
+    // is what `listInvitationsForUser` matches on and what `resolveInvitee`
+    // accepts a subject by, so a row written here would collect an Invitation
+    // meant for its real owner.
+    const squatter = plantClerkUser({
+      addresses: [{ email: victimAddress, verified: false, primary: true }],
+    });
+    const agent = newAgent(app).set("Authorization", `Bearer ${issueClerkSession(squatter)}`);
+
+    const res = await agent.post("/api/auth/user").send({});
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toMatch(/confirm your email address/i);
+    expect(await db.select({ id: users.id }).from(users).where(eq(users.email, victimAddress))).toEqual(
+      [],
+    );
+    expect((await agent.get("/api/auth/user")).body).toBeNull();
+  });
+
+  it("refuses a confirmed address that is not the one the identity is reported on", async () => {
+    const app = await makeApp();
+    const { plantClerkUser, issueClerkSession } = await import("../fakes/clerk");
+    const claimed = uniqueEmail("claimed");
+
+    // Clerk names no primary and holds two addresses, so which one this is
+    // cannot be told — and one of them being confirmed says nothing about the
+    // other. Ambiguous is refused, not guessed.
+    const subject = plantClerkUser({
+      addresses: [{ email: uniqueEmail("confirmed"), verified: true }, { email: claimed }],
+    });
+    const agent = newAgent(app).set("Authorization", `Bearer ${issueClerkSession(subject)}`);
+
+    expect((await agent.post("/api/auth/user").send({})).status).toBe(403);
+    expect(await db.select({ id: users.id }).from(users)).not.toContainEqual(
+      expect.objectContaining({ email: claimed }),
+    );
+  });
+
   it("answers one row when the same session arrives twice at once", async () => {
     const app = await makeApp();
     const visitor = await signUpAtProvider(app);
