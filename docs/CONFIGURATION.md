@@ -106,6 +106,7 @@ nothing in this repository can assert them.
 | Setting | Value | Changed | Why |
 | --- | --- | --- | --- |
 | Sign-up (`sign_up.mode`) | **`public`** — open. Read from the live instance on 2026-09-17, not assumed | Read 2026-09-17 ([#230](https://github.com/Lamakira/docuflow/issues/230)); no dashboard change was made | [#110](https://github.com/Lamakira/docuflow/issues/110) asked for it to be disabled, because an account created there reached no Workspace — **that was never applied**, and the instruction is withdrawn: [#217](https://github.com/Lamakira/docuflow/issues/217) removed the dead end. See [`phase-8-self-service-registration.md`](migration/phase-8-self-service-registration.md) |
+| Organizations → Membership options | **Membership optional** (`forceOrganizationSelection: false`) | Changed 2026-09-17 ([#230](https://github.com/Lamakira/docuflow/issues/230)), from **Membership required** | Required put every completed sign-up into a pending `choose-organization` task. DocuFlow has no screen for it, so the page painted nothing and registration never ran. A Clerk Organization is not a Workspace and authorizes nothing here (ADR-0007). Organizations stay enabled; only the forcing is off |
 
 The publishable key is served to the browser at runtime by `GET /api/auth/config`
 rather than baked into the bundle: one image is built and deployed to every
