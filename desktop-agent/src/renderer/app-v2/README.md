@@ -72,7 +72,7 @@ hides exactly the cases the no-scrollbar rule exists for:
 | `?projects=20` | panel pager, page reset on search, drill-down from a later page |
 | `?entries=17` | activity table truncation and the "N more entries today" line |
 | `?shots=40` | capture grid paging |
-| `?source=file` | the DEV badge (staging server) |
+| `?source=file` | the DEV badge (staging server). The badge now means "not the release host", so it shows for every source except `build` — see #236 |
 
 Fire the idle prompt from the console: `__mockIdle(720)`.
 

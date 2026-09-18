@@ -30,8 +30,11 @@ export function ProjectTaskPicker() {
 
   // Project creation is handled in the web app. The desktop "+" button opens
   // the create-project page on the current API server so dev/staging/prod all
-  // route to the right place.
-  const CREATE_PROJECT_URL = apiBase ? `${apiBase}/crm/project/new` : 'https://docs.appvibed.com/crm/project/new';
+  // route to the right place — which is exactly what the old fallback broke:
+  // with no `apiBase` it opened production, from an agent that might be pointed
+  // anywhere (#236, ADR-0018). With no server known there is no right place to
+  // send anyone, so the button does nothing rather than guessing.
+  const CREATE_PROJECT_URL = apiBase ? `${apiBase}/crm/project/new` : null;
 
   // New-task inline form state
   const [showNewTask, setShowNewTask] = useState(false);
@@ -142,6 +145,7 @@ export function ProjectTaskPicker() {
 
   // Project creation lives in the web app — open the create-project page.
   function openWebProjectCreation() {
+    if (!CREATE_PROJECT_URL) return;
     bridge.openExternal(CREATE_PROJECT_URL);
   }
 

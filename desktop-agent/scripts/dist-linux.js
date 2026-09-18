@@ -16,6 +16,28 @@ const fs = require("fs");
 const ROOT = path.resolve(__dirname, "..");
 const pkg = require(path.join(ROOT, "package.json"));
 
+// ── Step -1: the release must name the host it ships (#236) ──────────────────
+//
+// A packaged agent has no DOCUFLOW_API_URL and no ~/.docuflow-url, so the only
+// host it can follow is the one baked in here. This used to be a production URL
+// committed in src/lib/config.ts, which ADR-0018 forbids and which sent a fresh
+// clone's `npm run dev:v2` straight at production. The URL now comes from the
+// build, and a build that does not name one would ship an installer pointing at
+// the customer's own localhost — so refuse rather than produce that.
+if (!process.env.DOCUFLOW_DEFAULT_API_URL) {
+  console.error(
+    "\n[%s] DOCUFLOW_DEFAULT_API_URL is not set.\n" +
+      "  Every packaged agent follows it; without it the installer would point at\n" +
+      "  http://localhost:5000 on whatever machine installs it.\n\n" +
+      "  DOCUFLOW_DEFAULT_API_URL=https://your-host npm run %s\n",
+    "dist-linux",
+    "dist:linux",
+  );
+  process.exit(1);
+}
+console.log(`[dist-linux] target host: ${process.env.DOCUFLOW_DEFAULT_API_URL}`);
+
+
 // ── Step 0: Clean release/ ────────────────────────────────────────────────────
 
 console.log("\n[dist-linux] Step 0: cleaning release/...");

@@ -26,7 +26,7 @@ export function Stage({ children }: { children: React.ReactNode }) {
         <span className="v2-stage__wordmark">DocuFlow</span>
         {/* Production is where the app runs, so labelling it says nothing; a
             build pointed at a dev server is what someone needs to notice. */}
-        {source && source !== 'default' && <span className="v2-stage__badge">DEV</span>}
+        {source && source !== 'build' && <span className="v2-stage__badge">DEV</span>}
         {/* Left of the bar, not right: the update strip is positioned top-right
             and would sit on top of it. */}
         {state.agentState?.isPaired && <span className="v2-stage__conn">Connected</span>}

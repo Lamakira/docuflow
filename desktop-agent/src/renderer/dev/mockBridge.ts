@@ -175,7 +175,7 @@ function seedTimer(scenario: Scenario): TimerState {
  * staging build. v2 badges only the latter, so `?source=file` is how that
  * badge gets reviewed.
  */
-let mockApiBaseSource: 'default' | 'file' | 'env' = 'default';
+let mockApiBaseSource: 'default' | 'file' | 'env' | 'build' = 'default';
 
 /** Toggled by the app-drawn maximise control so its icon can be reviewed. */
 let mockMaximized = false;
@@ -443,7 +443,7 @@ export function createMockWidgetBridge(scenario: Scenario = 'running') {
 export function installMockBridge(): Scenario {
   const params = new URLSearchParams(location.search);
   const src = params.get('source');
-  if (src === 'file' || src === 'env') mockApiBaseSource = src;
+  if (src === 'file' || src === 'env' || src === 'build') mockApiBaseSource = src;
 
   const param = params.get('scenario') as Scenario | null;
   const scenario: Scenario = param ?? 'running';
