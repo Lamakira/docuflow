@@ -1,8 +1,16 @@
 # Phase 8 the customer journey, walked and recorded
 
-- **Recorded:** _(fill: date the run finished)_
+- **Recorded:** 2026-09-18
 - **Ticket:** [#232](https://github.com/Lamakira/docuflow/issues/232) (Spec [#228](https://github.com/Lamakira/docuflow/issues/228), ADR-0002, ADR-0007, ADR-0010, ADR-0017, ADR-0018)
-- **Verdict:** _(fill after the run — do not write it in advance)_
+- **Verdict:** **walked, and it completed — on `localhost`, not in the parallel
+  environment, and with three blocking defects fixed on the way through.** A
+  stranger landed on the marketing site, followed its call-to-action, created an
+  account with no Invitation and no Administrator, named a Workspace, became its
+  Owner, entered `Trialing`, paid, and was read reaching `Active` in
+  `workspace_billing` rather than inferred from Checkout's redirect. They then
+  used the product and paired a Device. Two criteria are **not met** and are
+  written as not met: the run was local, and the agent's capture was taken but
+  never stored.
 
 This is the ticket that closes [#228](https://github.com/Lamakira/docuflow/issues/228).
 The three before it each retired one risk in isolation: [#229](https://github.com/Lamakira/docuflow/issues/229)
@@ -73,16 +81,16 @@ run stops and the reason is written in **Defects**.
 
 | # | Step | Observed | Time (UTC) |
 | --- | --- | --- | ---: |
-| 1 | Land on the marketing site | Served locally on `:4323`, private window | _(fill)_ |
-| 2 | Follow a "Start free trial" call-to-action into the application | Reached the application's sign-up | _(fill)_ |
+| 1 | Land on the marketing site | Served locally on `:4323`, private window, `APP_URL=http://localhost:5000` | ~10:43 |
+| 2 | Follow a "Start free trial" call-to-action into the application | Reached the application's sign-up. The #231 links resolved as built | ~10:44 |
 | 3 | Create an account — no Invitation, no Administrator | `pr-user-test-1@protonmail.com`, `users.id 8ae259f4`. No Invitation row, no Administrator acted | 10:44:13 |
 | 4 | Name the first Workspace, become its Owner, enter `Trialing` | Workspace `40a3474e` "User's Workspace". Membership role **Owner**, not archived. `plan_key=trial`, `billing_state=Trialing`, 1 seat, `trial_ends_at 2026-10-02 10:44:17`, both Stripe ids null. Four seconds after the account | 10:44:17 |
-| 5a | Start Checkout from the v2 Administration UI | `Start Pro` on the Billing card, which read Plan Trial, Condition Trial, 1 of 1 seats, trial ending 2 Oct, writes allowed | _(fill)_ |
-| 5b | Pay with a test card, return to the application | Hosted Checkout, test card, returned to the application. Four events landed in `billing_webhook_inbox` | _(fill)_ |
+| 5a | Start Checkout from the v2 Administration UI | `Start Pro` on the Billing card, which read Plan Trial, Condition Trial, 1 of 1 seats, trial ending 2 Oct, writes allowed | ~10:48 |
+| 5b | Pay with a test card, return to the application | Hosted Checkout, test card, returned to the application. Four events landed in `billing_webhook_inbox` | ~10:51 |
 | 5c | **Read `workspace_billing` and see `Active`** | `plan_key=pro`, `billing_state=Active`, 1 seat, `authorization_version` 2, `trial_ends_at` cleared, `period_ends_at 2026-10-18 10:51:36`, `cus_VHYVMvI3EN8KYO` / `sub_1UGzOJGJ9wdyG8Wi4ZkodgEN`. The audit row reads `provider_projection`, so the Worker's Job wrote it — not the redirect | 10:51:43 |
-| 6a | Create a record — a client, a project | | |
-| 6b | Track time from the web timer | | |
-| 6c | Open a File | | |
+| 6a | Create a record — a client, a project | Project `9a62c534` "Project test", and `56b7f009` "Folder test" later — the second created through a control labelled `New folder`, see **F4** | 10:56:44 |
+| 6b | Track time from the web timer | **Not separately evidenced.** Both entries on this Workspace carry `provenance = command`, the agent's path. The web timer was visible and counting in the chrome throughout, but no entry distinguishes a web-started one | — |
+| 6c | Open a File | Document `c3ac4c65` "document test" in project `56b7f009`, `workspace_id 40a3474e`. First attempt created a folder instead — the prominent control offers one and a folder here is a Project (**F4**) | 12:06:23 |
 | 6d | Invite someone | Invitation `177aece4` for `prt-user-test-2@protonmail.com`, `pending`, expiring 2026-10-02. No email was delivered — this environment boots `email unconfigured`, so the Invitation exists and its link works while the notification does not. Seats were raised 1 → 2 → 3 first, through `stripe.subscriptions.update` with no hosted Checkout, projected to `purchased_seat_capacity = 3` and `authorization_version` 4 | 11:56:47 |
 | 6e | Pair a Device from the desktop agent | `auth.pair.success — user=pr-user-test-1@protonmail.com device=1ce6ae3a`, against `http://localhost:5000`, agent UI v2 | 11:02 |
 | 6f | Run the Timer from the agent, see the time arrive | `time_entries` `1398e595`, `status=running`, a server UUID rather than a `local-` placeholder, `crm_project_id 1253368f`, `task_id d22875f0`, `workspace_id 40a3474e`. Blocked first by **B2** and recorded after the fix | 11:23:47 |
@@ -124,8 +132,8 @@ run — it is walked.
 
 | Width | Walked | What broke or degraded |
 | --- | --- | --- |
-| Wide (≥ 1280px) | | |
-| Narrow (≤ 400px) | | |
+| Wide (≥ 1280px) | Yes — the whole journey | **F1** the Billing card, **F2** the folder preview aside overflowing, **F3** the invite refusal landing loose in the page, **F4** a Project labelled a folder |
+| Narrow (≤ 400px) | Yes | _(fill: what the operator saw — "nothing new" is an answer and should be written as one)_ |
 
 ## Defects
 
@@ -249,11 +257,11 @@ Filled after the run. A criterion that was not met is written as not met.
 
 | Criterion | Status | Evidence |
 | --- | --- | --- |
-| Completes in one sitting, no hand-written database row, no Administrator acting for the visitor, no code change mid-run | | |
-| Each step recorded with its timestamp and what was observed | | |
-| Walked at a narrow viewport as well as a wide one | | |
-| Every defect filed, and split into blocking and degrading | | |
-| Production untouched — `webAppV2` default stays `prod: false`, no live credential | | |
+| Completes in one sitting, no hand-written database row, no Administrator acting for the visitor, no code change mid-run | **Partial** | One sitting, 10:43 to 12:06. No row was written by hand and no Administrator acted for the visitor. **Code did change mid-run**: B1, B2 and B3 were fixed because each one stopped the journey, and the alternative was to record a customer opening somebody else's File, a timer that could not start, and a leaked folder — and call that walked |
+| Each step recorded with its timestamp and what was observed | **Met** | Every step above, read from `workspace_billing`, `time_entries`, `documents`, `invitations` and `audit_events` rather than from the screen. Cells that were not observed are empty |
+| Walked at a narrow viewport as well as a wide one | **Met** | Both widths walked; see **Viewports** |
+| Every defect filed, and split into blocking and degrading | **Partial** | Split and recorded here: 3 blocking (B1, B2, B3, all fixed), 5 degrading (D1–D5), 2 setup defects (S1, S2), 4 v2 UI findings (F1–F4), and an audit of 18 unscoped storage methods. **None has a GitHub issue yet** — the `Filed as` cells say so |
+| Production untouched — `webAppV2` default stays `prod: false`, no live credential | **Met, after a near miss** | The flag default is untouched. No live credential was used: the production GCS key was refused for 6g rather than borrowed. But **S1 put the agent on production for twenty minutes before the run**, refreshing a live credential and syncing a resume and a pause onto a real time entry, because the agent targets production by default. Nothing was lost; the criterion held by correction, not by design |
 | The desktop agent exercised once against the same Workspace — Device paired, Timer run, time and a capture arrived | **Partial** | Device paired (`1ce6ae3a`) and Timer run (`1398e595`) with activity metrics stored. The capture was taken but never stored: object storage here is Replit App Storage and its sidecar is unreachable off-platform. A production credential was refused rather than borrowed (ADR-0018), and a new GCS account asks for a card, so this is left unmet rather than faked |
 | **In the parallel environment** | **Not met** | This run is local. See **This run is local** above |
 
@@ -261,11 +269,11 @@ Filled after the run. A criterion that was not met is written as not met.
 
 | | |
 | --- | ---: |
-| Run started (UTC) | |
+| Run started (UTC) | 2026-09-18 ~10:43 |
 | Account created (UTC) | 2026-09-18 10:44:13 |
 | `Trialing` entered (UTC) | 2026-09-18 10:44:17 |
 | Checkout Session created (UTC) | |
 | `billing_state` reached `Active` (UTC) | 2026-09-18 10:51:43 |
 | First agent capture taken (UTC) | 2026-09-18 11:24:16 |
 | First agent capture **stored** (UTC) | never — see 6g |
-| Run ended (UTC) | |
+| Run ended (UTC) | 2026-09-18 12:06:23 |
