@@ -140,9 +140,13 @@ makes it worse and feeds the parity spec rather than being fixed here.
 
 ### Degrading
 
+These feed the parity spec and are not fixed here. The v2 ones are kept in
+[`docs/web-app-v2/UI-FINDINGS.md`](../web-app-v2/UI-FINDINGS.md), which is the
+standing list any agent should read before touching a v2 screen.
+
 | # | What | Where | Filed as |
 | --- | --- | --- | --- |
-| | | | |
+| D1 | The paying Billing card gives `Cancel at period end` the same weight as `Update payment method`, with no confirmation; the seat form is an orphan between the figures and the actions; the seat input is empty while seats are 1; `Writes allowed.` is helper text for buttons it does not describe; `CONDITION` is not the domain's word for billing state | `client/src/v2/V2Administration.tsx:654-700` | [`UI-FINDINGS.md` F1](../web-app-v2/UI-FINDINGS.md) |
 
 ### Known before the run
 
