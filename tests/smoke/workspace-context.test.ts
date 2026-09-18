@@ -195,6 +195,50 @@ describe("WorkspaceContext", () => {
     expect(survivedForB.document).toMatchObject({ id: docB.id, name: "Their policy" });
   });
 
+  it("does not list another Workspace's documentation-enabled Projects", async () => {
+    const { storage } = await import("../../server/storage");
+    const { db } = await import("../../server/db");
+    const { contextFromUser, runWithWorkspaceContext } = await import(
+      "../../server/workspaceContext"
+    );
+    const { crmProjects } = await import("../../shared/schema");
+    const { eq } = await import("drizzle-orm");
+
+    await plantOtherWorkspace();
+
+    const ada = await storage.createUser({ email: "ada@test.invalid", firstName: "Ada" });
+    const other = await storage.createUser({ email: "other@test.invalid", firstName: "Other" });
+    await db.delete(memberships).where(eq(memberships.userId, other.id));
+    await db.insert(memberships).values({
+      workspaceId: OTHER_WORKSPACE_ID,
+      userId: other.id,
+      workspaceRoleId: "other-member",
+    });
+
+    const ctxA = await contextFromUser(ada.id);
+    const ctxB = await contextFromUser(other.id);
+
+    async function documentableProject(ctx: { workspaceId: string }, name: string, ownerId: string) {
+      return runWithWorkspaceContext(ctx, async () => {
+        const project = await storage.createProject({ name, ownerId });
+        const crm = await storage.createCrmProject({ projectId: project.id, name } as never);
+        await db
+          .update(crmProjects)
+          .set({ documentationEnabled: 1 })
+          .where(eq(crmProjects.id, crm.id));
+        return project;
+      });
+    }
+
+    const ours = await documentableProject(ctxA, "Ours", ada.id);
+    await documentableProject(ctxB, "Theirs", other.id);
+
+    const listed = await runWithWorkspaceContext(ctxA, () =>
+      storage.getDocumentationEnabledProjects(ada.id)
+    );
+    expect(listed.map((row) => row.id)).toEqual([ours.id]);
+  });
+
   it("establishes HTTP scope from the Membership and rejects an Archived Membership", async () => {
     const app = await makeApp();
     const member = await registerUser(app);

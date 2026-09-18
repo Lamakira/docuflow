@@ -1353,12 +1353,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDocumentationEnabledProjects(userId?: string): Promise<Project[]> {
-    // Company-wide visibility - return all documentation-enabled projects
+    // Visible to the whole Workspace, which is what "company-wide" meant when
+    // there was one company per install. It is not visible across Workspaces:
+    // both sides of the join are Workspace-owned, so both are scoped.
     const result = await db
       .select({ project: projects })
       .from(projects)
       .innerJoin(crmProjects, eq(projects.id, crmProjects.projectId))
-      .where(eq(crmProjects.documentationEnabled, 1))
+      .where(and(
+        eq(crmProjects.documentationEnabled, 1),
+        inWorkspace(projects),
+        inWorkspace(crmProjects)
+      ))
       .orderBy(desc(projects.updatedAt));
     
     return result.map(r => r.project);

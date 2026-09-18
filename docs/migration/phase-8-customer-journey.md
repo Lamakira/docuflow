@@ -137,6 +137,7 @@ makes it worse and feeds the parity spec rather than being fixed here.
 | # | What | Where | Filed as |
 | --- | --- | --- | --- |
 | B2 | **The agent's timer cannot start on a Task it did not just create.** `GET /api/agent/tasks` returned `id`, `name`, `status` and `durationToday` and left out `crmProjectId`, while `POST /api/agent/tasks` had always returned it. `POST /api/agent/timer/start` demands `crmProjectId`, and the v2 timer panel reads it off the listed Task — so every start from an existing Task sent `undefined` and came back `400 crmProjectId is required`. The agent then retried in a loop: start, fail, resync to `server=stopped`, start again. The renderer's `Task` type declares `crmProjectId: string` as required, so TypeScript could not see that the wire never carried it; `ApiClient`'s own `TaskSummary` had it optional, which was the honest shape. Two responses for one resource disagreed | `server/agentRoutes.ts:930` | **Fixed in this branch** — the list now carries `crmProjectId`, covered in `tests/characterization/agent-workspace.test.ts` |
+| B3 | **Project Documentation leaks the same way, through a different query.** After B1 was fixed, `Folder 1` was still listed — on the Project Documentation screen this time, `ACCESS: ASSIGNED`, updated 10 SEP, in a Workspace created that morning. `getDocumentationEnabledProjects` carried the comment "Company-wide visibility - return all documentation-enabled projects" and no predicate. That comment is a single-tenant leftover: "company-wide" meant the whole install when there was one company per install. `projects` and `crm_projects` both carry `workspaceId`, and both sides of the join are now scoped | `server/modules/postgresStorage.ts:1355` | **Fixed in this branch**, covered in `tests/smoke/workspace-context.test.ts` |
 | B1 | **Workspace Documents are not scoped to a Workspace.** A Workspace created minutes earlier, by a stranger who had just paid, listed `Folder 1` — a folder belonging to the seeded Workspace, carrying a real employee's name as last editor and a date from before the account existed. `company_document_folders.workspace_id` for that row is the literal string `seeded`, so the row is not the new Workspace's; the register simply does not filter. All twelve `*CompanyDocument*` methods in `postgresStorage.ts` query the tables with no workspace predicate — `getCompanyDocumentFolders`, `getCompanyDocumentFolder`, `createCompanyDocumentFolder`, `updateCompanyDocumentFolder`, `deleteCompanyDocumentFolder`, `getCompanyDocuments`, `getCompanyDocument`, `createCompanyDocument`, `updateCompanyDocument`, `deleteCompanyDocument`, `searchCompanyDocuments`, `searchCompanyDocumentFolders`. Read, write **and delete**: a Workspace holding another's document id can modify or delete it. `server/embeddings.ts:440` reads every folder in the database, so Ask DocuFlow is in the same blast radius. The preview panel on the same screen promises the opposite in as many words — "Restricted items never appear in this register, search results, Ask DocuFlow answers, or notifications". The helper this code needs exists and is used elsewhere: `inWorkspace()`, as `effectiveEntitlements` uses it | `server/modules/postgresStorage.ts:1491-1640`, `server/embeddings.ts:440` | **Fixed in this branch** — see below |
 
 `inWorkspace` is not the same subject as the row-level security ADR-0018 and
@@ -161,8 +162,39 @@ rather than every tenant's index from one tenant's button.
 `tests/smoke/workspace-context.test.ts` gained the case, written before the fix
 and failing on the first assertion — Workspace A listed two folders where one
 was its own. It now proves that A cannot list, read, search, edit or delete B's
-folders or documents, and that knowing an id is not authority. Full suite: 123
-files, 1096 tests, green.
+folders or documents, and that knowing an id is not authority.
+
+### The extent, measured rather than guessed
+
+B3 arriving straight after B1 made clear that fixing screens as they surface is
+not a strategy. The audit below was run instead: every `postgresStorage.ts`
+method that reads or writes a table carrying `workspaceId`, and mentions neither
+`inWorkspace`, `stampWorkspace`, nor `workspaceId` anywhere in its body.
+
+**32 Workspace-owned tables. 18 such methods remain**, after B1 and B3:
+
+| Line | Method | Table |
+| ---: | --- | --- |
+| 171, 176, 1373, 1380, 1487, 1492 | `getUser`, `getUserByEmail`, `getMainAdmin`, `getAllUsers`, `getAdminUserDetails`, `deleteUser` | `users` |
+| 1767, 1786, 1819 | `getCrmProjectNotes`, `getCrmProjectLatestNote`, `deleteCrmProjectNote` | `crm_project_notes` |
+| 1823 | `getCrmProjectStageHistory` | `crm_project_stage_history` |
+| 1918, 1922 | `markNotificationRead`, `markAllNotificationsRead` | `notifications` |
+| 1926 | `getAudioRecording` | `audio_recordings` |
+| 1949, 1953, 1975 | `getAllCrmTags`, `getCrmTag`, `deleteCrmTag` | `crm_tags` |
+| 1999 | `removeTagFromProject` | `crm_project_tags` |
+| 2102 | `getCrmProjectCustomFields` | `crm_custom_field_values` |
+
+**Not all eighteen are defects, and that is why none of them were touched here.**
+A `User` is a cross-Workspace identity by definition, so `getUser` and
+`getUserByEmail` are right to be unscoped. A `Notification` is defined as
+belonging to one Workspace but appearing in the user's *cross-Workspace* inbox,
+so `markNotificationRead` may be right too. The rest — notes, stage history,
+tags, custom field values, audio recordings — look like B1 and B3, but each one
+needs its own reading, and blanket-scoping them on a journey ticket would be
+guessing with a delete statement.
+
+This is a spec, not a defect list. It belongs beside the row-level security work
+rather than inside #232, and #232's contribution is the measurement.
 
 ### Degrading
 
