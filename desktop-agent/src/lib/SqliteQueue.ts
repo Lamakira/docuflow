@@ -32,6 +32,11 @@ export interface PendingScreenshot {
   nextRetryAt: number; // epoch ms
   attemptCount: number;
   createdAt: number; // epoch ms
+  /** The slot the server gave this capture, kept so a retry re-uploads into it
+   *  rather than asking for another one (#239). Absent until the first
+   *  successful presign, and on entries queued by an older build. */
+  screenshotId?: string;
+  uploadURL?: string;
 }
 
 export interface PendingTimerCommand {
@@ -210,6 +215,15 @@ export class SqliteQueue {
       .filter((s) => s.nextRetryAt <= nowMs)
       .sort((a, b) => a.createdAt - b.createdAt);
     return ready[0] ?? null;
+  }
+
+  /** Remember the slot a presign returned, so retries stop asking for new ones. */
+  recordScreenshotSlot(id: string, screenshotId: string, uploadURL: string): void {
+    const entry = this.data.screenshots.find((s) => s.id === id);
+    if (!entry) return;
+    entry.screenshotId = screenshotId;
+    entry.uploadURL = uploadURL;
+    this.scheduleSave();
   }
 
   markScreenshotSent(id: string): void {

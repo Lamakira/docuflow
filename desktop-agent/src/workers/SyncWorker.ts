@@ -228,8 +228,13 @@ export class SyncWorker {
       const deviceId = meta.deviceId ?? this.store.getDeviceId();
       if (!deviceId) return;
 
-      // Step 1: Presign
-      const presignResult = await this.apiClient.presignScreenshot({
+      // Step 1: Presign — once per capture, not once per attempt (#239).
+      // The server now refuses to open a second slot for the same capture, so
+      // this is a saved round trip rather than the guard itself; both sides
+      // matter, because an older agent talks to a newer server and the reverse.
+      const slot = pending.screenshotId && pending.uploadURL
+        ? { screenshotId: pending.screenshotId, uploadURL: pending.uploadURL }
+        : await this.apiClient.presignScreenshot({
         deviceId,
         timeEntryId: meta.timeEntryId,
         capturedAt: meta.capturedAt,
@@ -240,14 +245,15 @@ export class SyncWorker {
         keyboardCount: meta.keyboardCount ?? null,
         mouseCount: meta.mouseCount ?? null,
       });
+      this.queue.recordScreenshotSlot(pending.id, slot.screenshotId, slot.uploadURL);
 
       // Step 2: Upload binary (async to avoid blocking event loop)
       const imageBuffer = await fs.promises.readFile(pending.filePath);
-      await this.apiClient.uploadScreenshot(presignResult.uploadURL, imageBuffer);
+      await this.apiClient.uploadScreenshot(slot.uploadURL, imageBuffer);
 
       // Step 3: Confirm
       await this.apiClient.confirmScreenshot({
-        screenshotId: presignResult.screenshotId,
+        screenshotId: slot.screenshotId,
         deviceId,
       });
 
