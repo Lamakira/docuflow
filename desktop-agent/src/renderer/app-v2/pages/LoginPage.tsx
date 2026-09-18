@@ -45,7 +45,7 @@ export function LoginPage() {
         <span className="v2-login__name">DocuFlow Agent</span>
         {/* DEV only — see the note in App.tsx. The server host is printed at
             the foot of this screen either way. */}
-        {source && source !== 'default' && <span className="v2-stage__badge">DEV</span>}
+        {source && source !== 'build' && <span className="v2-stage__badge">DEV</span>}
       </header>
 
       {state.wasRevoked && (

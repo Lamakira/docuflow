@@ -2,70 +2,104 @@
  * Runtime configuration for the Desktop Agent.
  *
  * API_BASE resolution order (first wins):
- *   1. DOCUFLOW_API_URL environment variable
+ *   1. DOCUFLOW_API_URL environment variable — a runtime override, for a
+ *      developer pointing one launch somewhere else.
  *   2. ~/.docuflow-url  (plain text file — not committed, machine-local)
  *      Windows : C:\Users\<you>\.docuflow-url
  *      Linux   : /home/<you>/.docuflow-url
  *      macOS   : /Users/<you>/.docuflow-url
- *      Content: one URL per line, first line wins. Example:
- *        https://685f78d0-eb71-48b3-ad3d-cfc7079d359b-00-1ew2ty1yeevg0.spock.replit.dev  ← DEV
- *        # https://techma-doc--masdouk1.replit.app  ← PROD (commented)
- *   3. DEFAULT_API_URL baked in at build time (PROD)
+ *      Content: one URL per line, first line wins.
+ *   3. DOCUFLOW_DEFAULT_API_URL — baked in at build time by
+ *      `webpack.main.config.js`, because a packaged agent on a customer's
+ *      machine has neither of the two above. This is how a release names its
+ *      host, and `scripts/dist-*.js` refuse to build without it.
+ *   4. LOCAL_API_URL below.
  *
- * HOW TO SWITCH DEV ↔ PROD:
- *   DEV  → put dev URL in ~/.docuflow-url (or delete the prod line)
- *   PROD → delete ~/.docuflow-url  OR  replace its content with prod URL
+ * **The committed last resort is local, and that is load-bearing (#236).** It
+ * used to be a production URL, so `npm run dev:v2` on a fresh clone
+ * authenticated against production, refreshed a live credential and armed
+ * screen capture — which is what happened on 2026-09-18, twenty minutes before
+ * a journey run. ADR-0018 forbids this repository holding a production URL at
+ * all: "must never contain production credentials, production URLs, or any
+ * data-plane connection to production systems". A release gets its host from
+ * the build; the source tree gets one that cannot reach anyone's data.
  *
- * HOW TO VERIFY ACTIVE URL:
- *   Check %APPDATA%\docuflow-desktop-agent\debug.log — first line on startup
- *   shows "API_BASE=... (source: ...)"
+ * HOW TO POINT ONE LAUNCH SOMEWHERE ELSE:
+ *   DOCUFLOW_API_URL=https://… npm run dev:v2
+ *   or put the URL in ~/.docuflow-url to make it stick for this machine.
+ *
+ * HOW TO VERIFY THE ACTIVE URL:
+ *   The first line of the log reads `API_BASE=… (source: env|file|build|default)`.
  */
 
 import fs from "fs";
 import path from "path";
 import os from "os";
 
-const DEFAULT_API_URL = "https://docs.appvibed.com";
+/** What a build that named no host falls back to. Reaches only this machine. */
+const LOCAL_API_URL = "http://localhost:5000";
 
-export type ApiBaseSource = "env" | "file" | "default";
+/**
+ * Read as a **static member expression**, and that is the whole trick:
+ * `webpack.DefinePlugin` substitutes this exact text at build time, so it can
+ * only be written this way. Destructuring it, or reaching it through a variable
+ * holding `process.env`, leaves the lookup intact and the baked value is never
+ * seen. Same constraint, same reason, as `DOCUFLOW_COMMIT` in `server/buildInfo.ts`.
+ */
+const BUILD_API_URL: string = process.env.DOCUFLOW_DEFAULT_API_URL ?? "";
 
-function resolveApiBase(): { url: string; source: ApiBaseSource } {
-  // 1. Environment variable
-  if (process.env.DOCUFLOW_API_URL) {
-    return { url: process.env.DOCUFLOW_API_URL.replace(/\/+$/, ""), source: "env" };
+export type ApiBaseSource = "env" | "file" | "build" | "default";
+
+/**
+ * Takes its environment rather than reading the global one, so the order above
+ * is a testable claim instead of a comment (`tests/smoke/agent-api-base.test.ts`).
+ */
+export function resolveApiBase(
+  env: NodeJS.ProcessEnv = process.env,
+  homedir: string = os.homedir(),
+): { url: string; source: ApiBaseSource } {
+  const trim = (url: string) => url.replace(/\/+$/, "");
+
+  // 1. Runtime override.
+  if (env.DOCUFLOW_API_URL) {
+    return { url: trim(env.DOCUFLOW_API_URL), source: "env" };
   }
 
-  // 2. Override file: ~/.docuflow-url (not committed — machine-local)
+  // 2. Override file: ~/.docuflow-url (not committed — machine-local).
   try {
-    const overridePath = path.join(os.homedir(), ".docuflow-url");
+    const overridePath = path.join(homedir, ".docuflow-url");
     if (fs.existsSync(overridePath)) {
-      const url = fs.readFileSync(overridePath, "utf-8")
+      const url = fs
+        .readFileSync(overridePath, "utf-8")
         .split("\n")
-        .map(l => l.trim())
-        .find(l => l.startsWith("http"));
-      if (url) {
-        const cleaned = url.replace(/\/+$/, "");
-        // If the file points to the same URL as the default (prod), treat it as default
-        // so the DEV/PROD badge reflects the actual environment, not the source.
-        const source: ApiBaseSource = cleaned === DEFAULT_API_URL.replace(/\/+$/, "") ? "default" : "file";
-        return { url: cleaned, source };
-      }
+        .map((l) => l.trim())
+        .find((l) => l.startsWith("http"));
+      if (url) return { url: trim(url), source: "file" };
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
-  // 3. Build-time default (PROD)
-  return { url: DEFAULT_API_URL.replace(/\/+$/, ""), source: "default" };
+  // 3. Baked at build time — how a packaged release names its host. The
+  //    parameter is for the tests; the constant is what a real build carries.
+  const baked = env.DOCUFLOW_DEFAULT_API_URL ?? BUILD_API_URL;
+  if (baked) return { url: trim(baked), source: "build" };
+
+  // 4. Local. Never production: see the note above and ADR-0018.
+  return { url: LOCAL_API_URL, source: "default" };
 }
 
 const resolved = resolveApiBase();
 export const API_BASE: string = resolved.url;
 export const API_BASE_SOURCE: ApiBaseSource = resolved.source;
 
-/** Human-readable hostname for display in the UI. */
-export const API_HOST: string = (() => {
+/** Host only, for display. Falls back to the whole string if it will not parse. */
+export function apiHost(): string {
   try {
     return new URL(API_BASE).hostname;
   } catch {
     return API_BASE;
   }
-})();
+}
+
+export const API_HOST: string = apiHost();
