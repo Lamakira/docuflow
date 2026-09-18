@@ -73,10 +73,10 @@ run stops and the reason is written in **Defects**.
 
 | # | Step | Observed | Time (UTC) |
 | --- | --- | --- | ---: |
-| 1 | Land on the marketing site | | |
-| 2 | Follow a "Start free trial" call-to-action into the application | | |
-| 3 | Create an account — no Invitation, no Administrator | | |
-| 4 | Name the first Workspace, become its Owner, enter `Trialing` | | |
+| 1 | Land on the marketing site | Served locally on `:4323`, private window | _(fill)_ |
+| 2 | Follow a "Start free trial" call-to-action into the application | Reached the application's sign-up | _(fill)_ |
+| 3 | Create an account — no Invitation, no Administrator | `pr-user-test-1@protonmail.com`, `users.id 8ae259f4`. No Invitation row, no Administrator acted | 10:44:13 |
+| 4 | Name the first Workspace, become its Owner, enter `Trialing` | Workspace `40a3474e` "User's Workspace". Membership role **Owner**, not archived. `plan_key=trial`, `billing_state=Trialing`, 1 seat, `trial_ends_at 2026-10-02 10:44:17`, both Stripe ids null. Four seconds after the account | 10:44:17 |
 | 5a | Start Checkout from the v2 Administration UI | | |
 | 5b | Pay with a test card, return to the application | | |
 | 5c | **Read `workspace_billing` and see `Active`** | | |
@@ -176,8 +176,8 @@ Filled after the run. A criterion that was not met is written as not met.
 | | |
 | --- | ---: |
 | Run started (UTC) | |
-| Account created (UTC) | |
-| `Trialing` entered (UTC) | |
+| Account created (UTC) | 2026-09-18 10:44:13 |
+| `Trialing` entered (UTC) | 2026-09-18 10:44:17 |
 | Checkout Session created (UTC) | |
 | `billing_state` reached `Active` (UTC) | |
 | First agent capture stored (UTC) | |
