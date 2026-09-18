@@ -132,3 +132,35 @@ Two things beyond the position:
 **What it would take:** wrap the invite popover in `.df-refusal-anchor` like its
 three siblings, then decide whether the seat refusal earns a link to the seat
 control. The first is a one-line fix.
+
+---
+
+## F4 — Project Documentation calls a Project a folder
+
+- **Status:** open
+- **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232)
+- **Where:** `client/src/v2/V2ProjectDocumentation.tsx`, fed by `/api/projects/documentable`
+- **Severity:** degrading, and it costs debugging time rather than clicks
+
+`New folder` on this screen creates a row in `projects`. The register then lists
+it with `TYPE: FOLDER`, an item count, and a path — so a Project is presented as
+a folder everywhere on the page, and the word Project appears nowhere.
+
+`CONTEXT.md` has no **Folder** term at all. It has **Workspace**, **Project**
+(through `crm_projects`, the pivot the whole product hangs off) and
+**Document**. The screen introduces a fourth word for the second one.
+
+Two costs, both paid during this run:
+
+- An operator asked to "open a File" created a folder instead, because the
+  prominent control offers one and the vocabulary gives no hint that a folder
+  here is a Project.
+- Diagnosing the cross-Workspace leak took a detour through `documents` and
+  `company_documents` before the leaked `Folder 1` turned out to be a row in
+  `projects`. The label sent the search to the wrong two tables.
+
+**What it would take:** decide whether this screen groups by Project — in which
+case say Project, and let `New folder` read `New project` — or whether it has
+real folders, in which case they need a table of their own. Renaming the label
+is the cheap half; the expensive half is that `projects` is currently doing two
+jobs.
