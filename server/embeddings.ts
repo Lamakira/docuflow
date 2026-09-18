@@ -2,10 +2,10 @@ import OpenAI from "openai";
 import { config } from "./config";
 import { db } from "./db";
 import { documentEmbeddings, documents, projects, companyDocumentEmbeddings, companyDocuments, companyDocumentFolders } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
-import { requireWorkspaceContext } from "./workspaceContext";
+import { inWorkspace, requireWorkspaceContext } from "./workspaceContext";
 
 const CHUNK_SIZE = 800;
 const CHUNK_OVERLAP = 100;
@@ -410,12 +410,17 @@ export async function searchCompanyDocumentChunks(
   
   const results = await db.execute(sql`
     SELECT 
-      company_document_id,
-      folder_id,
-      chunk_text,
-      metadata,
-      1 - (embedding <=> ${embeddingString}::vector) as similarity
-    FROM company_document_embeddings
+      e.company_document_id,
+      e.folder_id,
+      e.chunk_text,
+      e.metadata,
+      1 - (e.embedding <=> ${embeddingString}::vector) as similarity
+    FROM company_document_embeddings e
+    WHERE EXISTS (
+      SELECT 1 FROM company_documents d
+       WHERE d.id = e.company_document_id
+         AND d.workspace_id = ${requireWorkspaceContext().workspaceId}
+    )
     ORDER BY embedding <=> ${embeddingString}::vector
     LIMIT ${limit}
   `);
@@ -431,13 +436,26 @@ export async function searchCompanyDocumentChunks(
 }
 
 export async function hasCompanyDocumentEmbeddings(): Promise<boolean> {
-  const result = await db.execute(sql`SELECT COUNT(*) as count FROM company_document_embeddings`);
+  const result = await db.execute(sql`
+    SELECT COUNT(*) as count
+      FROM company_document_embeddings e
+     WHERE EXISTS (
+       SELECT 1 FROM company_documents d
+        WHERE d.id = e.company_document_id
+          AND d.workspace_id = ${requireWorkspaceContext().workspaceId}
+     )
+  `);
   return ((result.rows[0] as any)?.count || 0) > 0;
 }
 
 export async function rebuildAllCompanyDocumentEmbeddings(): Promise<{ processed: number; errors: string[] }> {
-  const allDocs = await db.select().from(companyDocuments);
-  const allFolders = await db.select().from(companyDocumentFolders);
+  // Scoped: this runs from an HTTP route, so it repairs the caller's Workspace.
+  // Unscoped it made one tenant's repair button rebuild every tenant's index.
+  const allDocs = await db.select().from(companyDocuments).where(inWorkspace(companyDocuments));
+  const allFolders = await db
+    .select()
+    .from(companyDocumentFolders)
+    .where(inWorkspace(companyDocumentFolders));
   const folderMap = new Map(allFolders.map(f => [f.id, f.name]));
   
   let processed = 0;

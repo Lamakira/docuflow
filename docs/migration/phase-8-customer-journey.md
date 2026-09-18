@@ -136,13 +136,32 @@ makes it worse and feeds the parity spec rather than being fixed here.
 
 | # | What | Where | Filed as |
 | --- | --- | --- | --- |
-| B1 | **Workspace Documents are not scoped to a Workspace.** A Workspace created minutes earlier, by a stranger who had just paid, listed `Folder 1` — a folder belonging to the seeded Workspace, carrying a real employee's name as last editor and a date from before the account existed. `company_document_folders.workspace_id` for that row is the literal string `seeded`, so the row is not the new Workspace's; the register simply does not filter. All twelve `*CompanyDocument*` methods in `postgresStorage.ts` query the tables with no workspace predicate — `getCompanyDocumentFolders`, `getCompanyDocumentFolder`, `createCompanyDocumentFolder`, `updateCompanyDocumentFolder`, `deleteCompanyDocumentFolder`, `getCompanyDocuments`, `getCompanyDocument`, `createCompanyDocument`, `updateCompanyDocument`, `deleteCompanyDocument`, `searchCompanyDocuments`, `searchCompanyDocumentFolders`. Read, write **and delete**: a Workspace holding another's document id can modify or delete it. `server/embeddings.ts:440` reads every folder in the database, so Ask DocuFlow is in the same blast radius. The preview panel on the same screen promises the opposite in as many words — "Restricted items never appear in this register, search results, Ask DocuFlow answers, or notifications". The helper this code needs exists and is used elsewhere: `inWorkspace()`, as `effectiveEntitlements` uses it | `server/modules/postgresStorage.ts:1491-1640`, `server/embeddings.ts:440` | _(fill: issue)_ |
+| B1 | **Workspace Documents are not scoped to a Workspace.** A Workspace created minutes earlier, by a stranger who had just paid, listed `Folder 1` — a folder belonging to the seeded Workspace, carrying a real employee's name as last editor and a date from before the account existed. `company_document_folders.workspace_id` for that row is the literal string `seeded`, so the row is not the new Workspace's; the register simply does not filter. All twelve `*CompanyDocument*` methods in `postgresStorage.ts` query the tables with no workspace predicate — `getCompanyDocumentFolders`, `getCompanyDocumentFolder`, `createCompanyDocumentFolder`, `updateCompanyDocumentFolder`, `deleteCompanyDocumentFolder`, `getCompanyDocuments`, `getCompanyDocument`, `createCompanyDocument`, `updateCompanyDocument`, `deleteCompanyDocument`, `searchCompanyDocuments`, `searchCompanyDocumentFolders`. Read, write **and delete**: a Workspace holding another's document id can modify or delete it. `server/embeddings.ts:440` reads every folder in the database, so Ask DocuFlow is in the same blast radius. The preview panel on the same screen promises the opposite in as many words — "Restricted items never appear in this register, search results, Ask DocuFlow answers, or notifications". The helper this code needs exists and is used elsewhere: `inWorkspace()`, as `effectiveEntitlements` uses it | `server/modules/postgresStorage.ts:1491-1640`, `server/embeddings.ts:440` | **Fixed in this branch** — see below |
 
 `inWorkspace` is not the same subject as the row-level security ADR-0018 and
 [#228](https://github.com/Lamakira/docuflow/issues/228) place out of scope.
 RLS is defence in depth under the application; this is the application itself
 handing one tenant another tenant's rows. It stops the journey: step 6c cannot
 be recorded as a customer opening *their* File.
+
+**Fixed during the run**, which is a departure from "no code change mid-run" and
+is recorded as one. The run stopped, the defect was closed, and step 6c restarts
+after it. The alternative was to record a customer opening somebody else's File
+and call the journey walked.
+
+Ten queries gained `inWorkspace()` — the four folder methods, the four document
+methods, and both searches; the two creates already stamped the Workspace. The
+embedding path was scoped through the document the chunk belongs to, because
+`company_document_embeddings` carries no `workspace_id` of its own: the semantic
+search and the count now test `EXISTS (… company_documents.workspace_id = …)`,
+and `rebuildAllCompanyDocumentEmbeddings` repairs only the caller's Workspace
+rather than every tenant's index from one tenant's button.
+
+`tests/smoke/workspace-context.test.ts` gained the case, written before the fix
+and failing on the first assertion — Workspace A listed two folders where one
+was its own. It now proves that A cannot list, read, search, edit or delete B's
+folders or documents, and that knowing an id is not authority. Full suite: 123
+files, 1096 tests, green.
 
 ### Degrading
 
@@ -152,6 +171,8 @@ standing list any agent should read before touching a v2 screen.
 
 | # | What | Where | Filed as |
 | --- | --- | --- | --- |
+| D3 | Inviting into a full Workspace refuses correctly, but the refusal lands near the bottom-right of the page instead of under the Invite form: `.df-refusal-pop` is absolutely positioned against `.df-refusal-anchor`, and the invite call site is the only one of four that omits the anchor. The message names the wall without naming the seat control that lifts it | `client/src/v2/V2People.tsx:295` | [`UI-FINDINGS.md` F3](../web-app-v2/UI-FINDINGS.md) |
+| D2 | The folder preview aside is a fixed 400px with no `flex-shrink`, `max-width` or breakpoint, so it overflows the viewport and slices `Manage access` in half | `client/src/v2/tokens.css:3371` | [`UI-FINDINGS.md` F2](../web-app-v2/UI-FINDINGS.md) |
 | D1 | The paying Billing card gives `Cancel at period end` the same weight as `Update payment method`, with no confirmation; the seat form is an orphan between the figures and the actions; the seat input is empty while seats are 1; `Writes allowed.` is helper text for buttons it does not describe; `CONDITION` is not the domain's word for billing state | `client/src/v2/V2Administration.tsx:654-700` | [`UI-FINDINGS.md` F1](../web-app-v2/UI-FINDINGS.md) |
 
 ### Known before the run

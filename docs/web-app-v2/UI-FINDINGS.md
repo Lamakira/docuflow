@@ -95,3 +95,40 @@ most of a phone screen.
 register shrink, cap the aside with `max-width` and a percentage, and decide the
 narrow behaviour. The clipping is a symptom of the row having no rule, not of
 400 being the wrong number.
+
+---
+
+## F3 — People, the invite refusal floats loose in the page
+
+- **Status:** open
+- **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232), inviting a second person into a 1-seat Workspace
+- **Where:** `client/src/v2/V2People.tsx:295`, style `.df-refusal-pop` at `client/src/v2/tokens.css:1593`
+- **Severity:** degrading. The message is correct and reachable; it is in the wrong place and says too little
+
+Inviting someone when all seats are consumed refuses correctly. The refusal then
+appears as a bare white box near the bottom-right of an otherwise empty page,
+hundreds of pixels from the Invite form that raised it, reading
+"All 1 purchased seats are consumed." above a `Close` button.
+
+**The cause is one missing wrapper.** `.df-refusal-pop` is
+`position: absolute; right: 0; top: calc(100% + 8px)` — it is written to hang
+from `.df-refusal-anchor`, which is `position: relative`. Three of the four
+places that render it wrap it in that anchor (`V2FileViewer.tsx:158`,
+`V2People.tsx:506`, `V2Today.tsx:273`). The invite one at `V2People.tsx:295`
+does not, so the absolute position resolves against a distant ancestor and the
+popover lands wherever that ancestor ends. It is not a layout to redesign; it is
+a wrapper that was left off.
+
+Two things beyond the position:
+
+- **The message names the wall, not the way out.** "All 1 purchased seats are
+  consumed." is true and leaves the reader to work out that the Billing card,
+  on another screen, has a seat control. The refusal already knows the Workspace
+  is `Active` and the person is the Owner — it can say what to do.
+- **It is styled as neutral.** A refusal and a confirmation currently look the
+  same: white box, `df-ghost-btn`. `role="status"` is right for politeness, but
+  nothing visually separates "this did not happen" from "this happened".
+
+**What it would take:** wrap the invite popover in `.df-refusal-anchor` like its
+three siblings, then decide whether the seat refusal earns a link to the seat
+control. The first is a one-line fix.

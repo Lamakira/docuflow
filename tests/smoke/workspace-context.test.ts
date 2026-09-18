@@ -120,6 +120,81 @@ describe("WorkspaceContext", () => {
     expect(visible.theirs).toBeUndefined();
   });
 
+  it("does not let Workspace A read, edit or delete Workspace B's Workspace Documents", async () => {
+    const { storage } = await import("../../server/storage");
+    const { db } = await import("../../server/db");
+    const { contextFromUser, runWithWorkspaceContext } = await import(
+      "../../server/workspaceContext"
+    );
+    const { eq } = await import("drizzle-orm");
+
+    await plantOtherWorkspace();
+
+    const ada = await storage.createUser({ email: "ada@test.invalid", firstName: "Ada" });
+    const other = await storage.createUser({ email: "other@test.invalid", firstName: "Other" });
+    await db.delete(memberships).where(eq(memberships.userId, other.id));
+    await db.insert(memberships).values({
+      workspaceId: OTHER_WORKSPACE_ID,
+      userId: other.id,
+      workspaceRoleId: "other-member",
+    });
+
+    const ctxA = await contextFromUser(ada.id);
+    const ctxB = await contextFromUser(other.id);
+
+    const folderA = await runWithWorkspaceContext(ctxA, () =>
+      storage.createCompanyDocumentFolder({ name: "Ours", createdById: ada.id })
+    );
+    const folderB = await runWithWorkspaceContext(ctxB, () =>
+      storage.createCompanyDocumentFolder({ name: "Theirs", createdById: other.id })
+    );
+    const docB = await runWithWorkspaceContext(ctxB, () =>
+      storage.createCompanyDocument({
+        name: "Their policy",
+        folderId: folderB.id,
+        uploadedById: other.id,
+      })
+    );
+
+    // A write must be stamped from the context, never from the caller.
+    expect(folderA.workspaceId).toBe(SEEDED_WORKSPACE_ID);
+    expect(folderB.workspaceId).toBe(OTHER_WORKSPACE_ID);
+
+    const seenByA = await runWithWorkspaceContext(ctxA, async () => ({
+      folders: await storage.getCompanyDocumentFolders(),
+      theirFolder: await storage.getCompanyDocumentFolder(folderB.id),
+      documents: await storage.getCompanyDocuments(),
+      theirDocument: await storage.getCompanyDocument(docB.id),
+      searchedFolders: await storage.searchCompanyDocumentFolders("Theirs"),
+      searchedDocuments: await storage.searchCompanyDocuments("policy"),
+    }));
+
+    expect(seenByA.folders.map((row) => row.id)).toEqual([folderA.id]);
+    expect(seenByA.theirFolder).toBeUndefined();
+    expect(seenByA.documents).toEqual([]);
+    expect(seenByA.theirDocument).toBeUndefined();
+    expect(seenByA.searchedFolders).toEqual([]);
+    expect(seenByA.searchedDocuments).toEqual([]);
+
+    // Knowing the id is not authority: editing and deleting must miss too.
+    await runWithWorkspaceContext(ctxA, () =>
+      storage.updateCompanyDocumentFolder(folderB.id, { name: "Taken" })
+    );
+    await runWithWorkspaceContext(ctxA, () =>
+      storage.updateCompanyDocument(docB.id, { name: "Taken" })
+    );
+    await runWithWorkspaceContext(ctxA, () => storage.deleteCompanyDocumentFolder(folderB.id));
+    await runWithWorkspaceContext(ctxA, () => storage.deleteCompanyDocument(docB.id));
+
+    const survivedForB = await runWithWorkspaceContext(ctxB, async () => ({
+      folder: await storage.getCompanyDocumentFolder(folderB.id),
+      document: await storage.getCompanyDocument(docB.id),
+    }));
+
+    expect(survivedForB.folder).toMatchObject({ id: folderB.id, name: "Theirs" });
+    expect(survivedForB.document).toMatchObject({ id: docB.id, name: "Their policy" });
+  });
+
   it("establishes HTTP scope from the Membership and rejects an Archived Membership", async () => {
     const app = await makeApp();
     const member = await registerUser(app);
