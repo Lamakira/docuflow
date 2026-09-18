@@ -1353,12 +1353,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDocumentationEnabledProjects(userId?: string): Promise<Project[]> {
-    // Company-wide visibility - return all documentation-enabled projects
+    // Visible to the whole Workspace, which is what "company-wide" meant when
+    // there was one company per install. It is not visible across Workspaces:
+    // both sides of the join are Workspace-owned, so both are scoped.
     const result = await db
       .select({ project: projects })
       .from(projects)
       .innerJoin(crmProjects, eq(projects.id, crmProjects.projectId))
-      .where(eq(crmProjects.documentationEnabled, 1))
+      .where(and(
+        eq(crmProjects.documentationEnabled, 1),
+        inWorkspace(projects),
+        inWorkspace(crmProjects)
+      ))
       .orderBy(desc(projects.updatedAt));
     
     return result.map(r => r.project);
@@ -1492,6 +1498,7 @@ export class DatabaseStorage implements IStorage {
     const folders = await db
       .select()
       .from(companyDocumentFolders)
+      .where(inWorkspace(companyDocumentFolders))
       .orderBy(asc(companyDocumentFolders.name));
     
     const creatorIds = [...new Set(folders.map(f => f.createdById))];
@@ -1507,7 +1514,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCompanyDocumentFolder(id: string): Promise<CompanyDocumentFolderWithCreator | undefined> {
-    const [folder] = await db.select().from(companyDocumentFolders).where(eq(companyDocumentFolders.id, id));
+    const [folder] = await db
+      .select()
+      .from(companyDocumentFolders)
+      .where(and(eq(companyDocumentFolders.id, id), inWorkspace(companyDocumentFolders)));
     if (!folder) return undefined;
     
     const [creator] = await db.select().from(users).where(eq(users.id, folder.createdById));
@@ -1523,13 +1533,16 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(companyDocumentFolders)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(companyDocumentFolders.id, id))
+      .where(and(eq(companyDocumentFolders.id, id), inWorkspace(companyDocumentFolders)))
       .returning();
     return updated;
   }
 
   async deleteCompanyDocumentFolder(id: string): Promise<CompanyDocumentFolder | undefined> {
-    const [deleted] = await db.delete(companyDocumentFolders).where(eq(companyDocumentFolders.id, id)).returning();
+    const [deleted] = await db
+      .delete(companyDocumentFolders)
+      .where(and(eq(companyDocumentFolders.id, id), inWorkspace(companyDocumentFolders)))
+      .returning();
     return deleted;
   }
 
@@ -1538,7 +1551,10 @@ export class DatabaseStorage implements IStorage {
     const docs = await db
       .select()
       .from(companyDocuments)
-      .where(folderId ? eq(companyDocuments.folderId, folderId) : isNull(companyDocuments.folderId))
+      .where(and(
+        folderId ? eq(companyDocuments.folderId, folderId) : isNull(companyDocuments.folderId),
+        inWorkspace(companyDocuments)
+      ))
       .orderBy(desc(companyDocuments.createdAt));
     
     const uploaderIds = [...new Set(docs.map(d => d.uploadedById))];
@@ -1554,13 +1570,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCompanyDocument(id: string): Promise<CompanyDocumentWithUploader | undefined> {
-    const [doc] = await db.select().from(companyDocuments).where(eq(companyDocuments.id, id));
+    const [doc] = await db
+      .select()
+      .from(companyDocuments)
+      .where(and(eq(companyDocuments.id, id), inWorkspace(companyDocuments)));
     if (!doc) return undefined;
     
     const [uploader] = await db.select().from(users).where(eq(users.id, doc.uploadedById));
     let folder;
     if (doc.folderId) {
-      const [f] = await db.select().from(companyDocumentFolders).where(eq(companyDocumentFolders.id, doc.folderId));
+      const [f] = await db
+        .select()
+        .from(companyDocumentFolders)
+        .where(and(eq(companyDocumentFolders.id, doc.folderId), inWorkspace(companyDocumentFolders)));
       folder = f;
     }
     return { ...doc, uploadedBy: uploader, folder };
@@ -1576,7 +1598,7 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(companyDocuments)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(companyDocuments.id, id))
+      .where(and(eq(companyDocuments.id, id), inWorkspace(companyDocuments)))
       .returning();
     if (updated) {
       await this.syncFileForCompanyDocument(updated);
@@ -1585,7 +1607,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCompanyDocument(id: string): Promise<CompanyDocument | undefined> {
-    const [deleted] = await db.delete(companyDocuments).where(eq(companyDocuments.id, id)).returning();
+    const [deleted] = await db
+      .delete(companyDocuments)
+      .where(and(eq(companyDocuments.id, id), inWorkspace(companyDocuments)))
+      .returning();
     if (deleted) {
       await this.deleteFile(id);
     }
@@ -1597,10 +1622,13 @@ export class DatabaseStorage implements IStorage {
     const docs = await db
       .select()
       .from(companyDocuments)
-      .where(or(
-        like(companyDocuments.name, searchPattern),
-        like(companyDocuments.description, searchPattern),
-        like(companyDocuments.fileName, searchPattern)
+      .where(and(
+        or(
+          like(companyDocuments.name, searchPattern),
+          like(companyDocuments.description, searchPattern),
+          like(companyDocuments.fileName, searchPattern)
+        ),
+        inWorkspace(companyDocuments)
       ))
       .orderBy(desc(companyDocuments.createdAt));
     
@@ -1612,7 +1640,13 @@ export class DatabaseStorage implements IStorage {
     
     const folderIds = [...new Set(docs.filter(d => d.folderId).map(d => d.folderId!))];
     const foldersData = folderIds.length > 0
-      ? await db.select().from(companyDocumentFolders).where(or(...folderIds.map(id => eq(companyDocumentFolders.id, id))))
+      ? await db
+          .select()
+          .from(companyDocumentFolders)
+          .where(and(
+            or(...folderIds.map(id => eq(companyDocumentFolders.id, id))),
+            inWorkspace(companyDocumentFolders)
+          ))
       : [];
     const folderMap = new Map(foldersData.map(f => [f.id, f]));
     
@@ -1628,7 +1662,7 @@ export class DatabaseStorage implements IStorage {
     const folders = await db
       .select()
       .from(companyDocumentFolders)
-      .where(like(companyDocumentFolders.name, searchPattern))
+      .where(and(like(companyDocumentFolders.name, searchPattern), inWorkspace(companyDocumentFolders)))
       .orderBy(desc(companyDocumentFolders.createdAt));
     
     const creatorIds = [...new Set(folders.map(f => f.createdById))];

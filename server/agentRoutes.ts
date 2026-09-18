@@ -927,7 +927,19 @@ export function registerAgentRoutes(app: Express): void {
       const endOfDay   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
       const taskIds = taskList.map((t) => t.id).filter(Boolean) as string[];
       const durations = await storage.getTasksDurationToday(userId, taskIds, startOfDay, endOfDay);
-      res.json({ data: taskList.map((t) => ({ id: t.id, name: t.name, status: t.status, durationToday: durations[t.id] ?? 0 })) });
+      // `crmProjectId` travels with the Task because the agent starts a timer
+      // from a listed one and `POST /api/agent/timer/start` demands it. The
+      // create response has always carried it; the list had not, so the v2
+      // timer panel sent `undefined` for every Task it had not just created.
+      res.json({
+        data: taskList.map((t) => ({
+          id: t.id,
+          name: t.name,
+          status: t.status,
+          durationToday: durations[t.id] ?? 0,
+          crmProjectId: t.crmProjectId,
+        })),
+      });
     } catch (error) {
       logError("agent.tasks.list.failed", error);
       res.status(500).json({ message: "Failed to list tasks" });
