@@ -168,15 +168,31 @@ describe("desktop agent workspace (characterization)", () => {
       .query({ crmProjectId: crmProject.id });
     expect(foreign.status).toBe(200);
     expect(foreign.body.data).toEqual([
-      { id: task.id, name: "Write the runbook", status: "open", durationToday: 0 },
+      {
+        id: task.id,
+        name: "Write the runbook",
+        status: "open",
+        durationToday: 0,
+        crmProjectId: crmProject.id,
+      },
     ]);
 
     const listed = await device.request
       .get("/api/agent/tasks")
       .query({ crmProjectId: crmProject.id });
     expect(listed.status).toBe(200);
+    // The agent starts a timer from a listed Task and the server demands
+    // `crmProjectId`, so the list has to carry the project the Task belongs to.
+    // `POST /api/agent/tasks` already returns it; the two disagreed, and the v2
+    // timer panel sent `undefined` for every Task it had not just created.
     expect(listed.body.data).toEqual([
-      { id: task.id, name: "Write the runbook", status: "open", durationToday: 0 },
+      {
+        id: task.id,
+        name: "Write the runbook",
+        status: "open",
+        durationToday: 0,
+        crmProjectId: crmProject.id,
+      },
     ]);
 
     // `durationToday` counts stopped entries only, so it stays at zero while the

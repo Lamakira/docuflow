@@ -84,7 +84,7 @@ run stops and the reason is written in **Defects**.
 | 6b | Track time from the web timer | | |
 | 6c | Open a File | | |
 | 6d | Invite someone | | |
-| 6e | Pair a Device from the desktop agent | | |
+| 6e | Pair a Device from the desktop agent | `auth.pair.success — user=pr-user-test-1@protonmail.com device=1ce6ae3a`, against `http://localhost:5000`, agent UI v2 | 11:02 |
 | 6f | Run the Timer from the agent, see the time arrive | | |
 | 6g | See a capture arrive in the web application | | |
 
@@ -136,6 +136,7 @@ makes it worse and feeds the parity spec rather than being fixed here.
 
 | # | What | Where | Filed as |
 | --- | --- | --- | --- |
+| B2 | **The agent's timer cannot start on a Task it did not just create.** `GET /api/agent/tasks` returned `id`, `name`, `status` and `durationToday` and left out `crmProjectId`, while `POST /api/agent/tasks` had always returned it. `POST /api/agent/timer/start` demands `crmProjectId`, and the v2 timer panel reads it off the listed Task — so every start from an existing Task sent `undefined` and came back `400 crmProjectId is required`. The agent then retried in a loop: start, fail, resync to `server=stopped`, start again. The renderer's `Task` type declares `crmProjectId: string` as required, so TypeScript could not see that the wire never carried it; `ApiClient`'s own `TaskSummary` had it optional, which was the honest shape. Two responses for one resource disagreed | `server/agentRoutes.ts:930` | **Fixed in this branch** — the list now carries `crmProjectId`, covered in `tests/characterization/agent-workspace.test.ts` |
 | B1 | **Workspace Documents are not scoped to a Workspace.** A Workspace created minutes earlier, by a stranger who had just paid, listed `Folder 1` — a folder belonging to the seeded Workspace, carrying a real employee's name as last editor and a date from before the account existed. `company_document_folders.workspace_id` for that row is the literal string `seeded`, so the row is not the new Workspace's; the register simply does not filter. All twelve `*CompanyDocument*` methods in `postgresStorage.ts` query the tables with no workspace predicate — `getCompanyDocumentFolders`, `getCompanyDocumentFolder`, `createCompanyDocumentFolder`, `updateCompanyDocumentFolder`, `deleteCompanyDocumentFolder`, `getCompanyDocuments`, `getCompanyDocument`, `createCompanyDocument`, `updateCompanyDocument`, `deleteCompanyDocument`, `searchCompanyDocuments`, `searchCompanyDocumentFolders`. Read, write **and delete**: a Workspace holding another's document id can modify or delete it. `server/embeddings.ts:440` reads every folder in the database, so Ask DocuFlow is in the same blast radius. The preview panel on the same screen promises the opposite in as many words — "Restricted items never appear in this register, search results, Ask DocuFlow answers, or notifications". The helper this code needs exists and is used elsewhere: `inWorkspace()`, as `effectiveEntitlements` uses it | `server/modules/postgresStorage.ts:1491-1640`, `server/embeddings.ts:440` | **Fixed in this branch** — see below |
 
 `inWorkspace` is not the same subject as the row-level security ADR-0018 and
