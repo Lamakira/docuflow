@@ -16,7 +16,7 @@ import {
   type JobsPort,
   type JobsWriter,
 } from "../../jobs";
-import { requireWorkspaceContext } from "../../workspaceContext";
+import { inWorkspace, requireWorkspaceContext } from "../../workspaceContext";
 import {
   createAgentActivityEvents,
   createTimeEntryScreenshot,
@@ -25,7 +25,9 @@ import {
   updateTimeEntryScreenshot,
   type ActivityWriter,
 } from "./evidence";
+import { timeEntryScreenshots } from "@shared/schema";
 import type { InsertTimeEntryScreenshot, TimeEntryScreenshot } from "@shared/schema";
+import { and, eq, isNull, like } from "drizzle-orm";
 
 export const ACTIVITY_ATTRIBUTE_JOB = "activity.attribute-evidence";
 
@@ -69,12 +71,52 @@ async function enqueueScreenshotAttribution(
   );
 }
 
+/**
+ * The pending slot already standing for this capture, if there is one.
+ *
+ * Keyed on the Time Entry **and the captured instant**, not on the entry alone:
+ * a running Timer takes a capture every few minutes and they all share an
+ * entry. Workspace scoping comes from `inWorkspace`, as everywhere else.
+ */
+async function findPendingSlot(
+  screenshot: InsertTimeEntryScreenshot,
+  writer: ActivityJobsWriter,
+): Promise<TimeEntryScreenshot | undefined> {
+  if (!isPendingStorageKey(screenshot.storageKey)) return undefined;
+  const [row] = await writer
+    .select()
+    .from(timeEntryScreenshots)
+    .where(
+      and(
+        eq(timeEntryScreenshots.timeEntryId, screenshot.timeEntryId),
+        eq(timeEntryScreenshots.capturedAt, screenshot.capturedAt as Date),
+        like(timeEntryScreenshots.storageKey, "pending-%"),
+        isNull(timeEntryScreenshots.deletedAt),
+        inWorkspace(timeEntryScreenshots),
+      ),
+    )
+    .limit(1);
+  return row;
+}
+
 export async function ingestActivityScreenshot(input: {
   jobs: JobsPort;
   screenshot: InsertTimeEntryScreenshot;
   tx?: ActivityJobsWriter;
 }): Promise<TimeEntryScreenshot> {
   const persist = async (writer: ActivityJobsWriter) => {
+    // A capture gets one slot, however many times it is offered (#239). The
+    // agent presigns on every upload attempt, so an upload that kept failing
+    // left one row per retry — 41 rows for 9 captures, measured over ninety
+    // minutes during #232, each naming an object that was never written.
+    //
+    // Only a *pending* row is reusable, and that is the whole guard: once
+    // `commitActivityScreenshot` has replaced the key with committed bytes, the
+    // row is evidence, and a later presign for the same instant is a new
+    // capture rather than a licence to overwrite it.
+    const existing = await findPendingSlot(input.screenshot, writer);
+    if (existing) return existing;
+
     const row = await createTimeEntryScreenshot(input.screenshot, writer);
     // Two-phase upload: a pending-* row is only a slot. Attribution waits
     // until commitActivityScreenshot replaces that key with committed bytes.

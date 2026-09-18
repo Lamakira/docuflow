@@ -74,6 +74,63 @@ describe("desktop agent screenshots (characterization)", () => {
     return { screenshotId: slot.body.screenshotId, slot, put, confirmed };
   }
 
+  it("re-presigning the same capture reuses its pending slot instead of adding one", async () => {
+    // #239. The agent presigns on every attempt, so an upload that keeps
+    // failing left one row per retry — 41 rows for 9 captures, measured over
+    // ninety minutes during the #232 run, each holding a `pending-` storageKey
+    // naming an object that was never written. The capture is the same capture;
+    // the slot it is offered should be the same slot.
+    const app = await makeApp();
+    const { device, entry } = await trackingUser(app);
+    const capturedAt = new Date().toISOString();
+
+    const first = await presign(device, entry.id, { capturedAt });
+    const second = await presign(device, entry.id, { capturedAt });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body.screenshotId).toBe(first.body.screenshotId);
+    expect(second.body.uploadURL).toBe(first.body.uploadURL);
+
+    const { db } = await import("../../server/db");
+    const { timeEntryScreenshots } = await import("../../shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const rows = await db
+      .select()
+      .from(timeEntryScreenshots)
+      .where(eq(timeEntryScreenshots.timeEntryId, entry.id));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("gives a different capture its own slot", async () => {
+    // The guard above must key on the capture, not on the time entry: a running
+    // Timer takes one every few minutes and they all share an entry.
+    const app = await makeApp();
+    const { device, entry } = await trackingUser(app);
+
+    const first = await presign(device, entry.id, { capturedAt: "2026-09-18T11:24:16.404Z" });
+    const second = await presign(device, entry.id, { capturedAt: "2026-09-18T11:28:02.100Z" });
+
+    expect(second.body.screenshotId).not.toBe(first.body.screenshotId);
+  });
+
+  it("does not hand back a slot whose bytes already landed", async () => {
+    // Only a pending slot is reusable. Once committed, a fresh presign for the
+    // same instant is a new capture and must not overwrite stored evidence.
+    const app = await makeApp();
+    const { device, entry } = await trackingUser(app);
+    const capturedAt = new Date().toISOString();
+
+    const first = await presign(device, entry.id, { capturedAt });
+    await upload(device, first.body.uploadURL);
+    await device.request
+      .post("/api/agent/screenshots/confirm")
+      .send({ screenshotId: first.body.screenshotId, deviceId: device.deviceId });
+
+    const second = await presign(device, entry.id, { capturedAt });
+    expect(second.body.screenshotId).not.toBe(first.body.screenshotId);
+  });
+
   it("issues an upload slot that points back at this server, not at storage", async () => {
     const app = await makeApp();
     const { device, entry } = await trackingUser(app);
