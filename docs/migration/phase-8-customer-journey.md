@@ -133,7 +133,7 @@ run — it is walked.
 | Width | Walked | What broke or degraded |
 | --- | --- | --- |
 | Wide (≥ 1280px) | Yes — the whole journey | **F1** the Billing card, **F2** the folder preview aside overflowing, **F3** the invite refusal landing loose in the page, **F4** a Project labelled a folder |
-| Narrow (≤ 400px) | Yes | _(fill: what the operator saw — "nothing new" is an answer and should be written as one)_ |
+| Narrow (≤ 400px) | Yes | **Nothing new.** The four findings above were already visible wide; narrow added none and hid none. Reported by the operator who walked it |
 
 ## Defects
 
