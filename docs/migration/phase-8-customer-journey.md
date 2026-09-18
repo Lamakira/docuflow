@@ -133,6 +133,30 @@ makes it worse and feeds the parity spec rather than being fixed here.
 | `?plan=` travels from the pricing cards into the sign-up URL and nothing reads it | `docuflow-marketing/src/data/app.ts` | _(fill: issue)_ |
 | `client/src/hooks/useScreenCapture.ts` is dead — superseded by `ScreenCaptureWebService`, which is the live one — and implements a web capture path that could never replace the agent | `client/src/hooks/useScreenCapture.ts` | _(fill: issue)_ |
 
+### Found while setting the run up, before step 1
+
+Both were hit within twenty minutes of starting, by an operator who had been
+warned about neither. They are recorded as **blocking**: the run could not
+begin until both were understood.
+
+| # | What | Where | Filed as |
+| --- | --- | --- | --- |
+| S1 | **The desktop agent targets production by default.** `DEFAULT_API_URL = "https://docs.appvibed.com"` is committed here and is the last resort in `resolveApiBase`, so `npm run dev:v2` with no override authenticates against production, refreshes a live credential, and arms screen capture. It logged `auth.refresh.success`, six heartbeats, and synced a `resume` and a `pause` onto a real production time entry before anyone noticed. Capture uploaded nothing for one reason only — `Skipping — timer not running`. ADR-0018 forbids exactly this: the repository "must never contain production credentials, **production URLs**, or any data-plane connection to production systems". The default should be local, or absent, with production set explicitly | `desktop-agent/src/lib/config.ts:28` | _(fill: issue)_ |
+| S2 | **`Ctrl+C` does not stop the agent.** It kills the `electron-forge start` parent in the terminal and returns the prompt, while the Electron main process and its children keep running — still pointed at whatever server they booted against, still heartbeating, still writing. Here it survived the interrupt by twenty minutes and kept rewriting `agent-config.json` and `agent-queue.json`, and killing its children was not enough because the main process respawned them. The operator believed the agent was stopped and relaunched a second one on top of it. Nothing in the terminal says the app is still alive | `desktop-agent/`, `npm run dev` / `dev:v2` | _(fill: issue)_ |
+
+**What the run must do because of S1 and S2**, until they are fixed:
+
+- Launch the agent only as `DOCUFLOW_API_URL=http://localhost:5000 npm run dev:v2`,
+  and read the first log line before touching anything:
+  `API_BASE=http://localhost:5000 (source: env)`. If it names any other host,
+  stop.
+- Move `~/.config/docuflow-desktop-agent/agent-config.json` and `agent-queue.json`
+  aside first. A queue written against one server must not be drained against
+  another, in either direction. They were moved to `*.prod.bak` for this run.
+- Stop the agent by killing the Electron **main** process, not with `Ctrl+C`, and
+  verify with `pgrep -f docuflow-desktop-agent/node_modules/electron` that
+  nothing is left.
+
 ## Acceptance criteria
 
 Filled after the run. A criterion that was not met is written as not met.
