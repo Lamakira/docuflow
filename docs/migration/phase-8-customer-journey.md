@@ -85,8 +85,8 @@ run stops and the reason is written in **Defects**.
 | 6c | Open a File | | |
 | 6d | Invite someone | | |
 | 6e | Pair a Device from the desktop agent | `auth.pair.success — user=pr-user-test-1@protonmail.com device=1ce6ae3a`, against `http://localhost:5000`, agent UI v2 | 11:02 |
-| 6f | Run the Timer from the agent, see the time arrive | | |
-| 6g | See a capture arrive in the web application | | |
+| 6f | Run the Timer from the agent, see the time arrive | `time_entries` `1398e595`, `status=running`, a server UUID rather than a `local-` placeholder, `crm_project_id 1253368f`, `task_id d22875f0`, `workspace_id 40a3474e`. Blocked first by **B2** and recorded after the fix | 11:23:47 |
+| 6g | See a capture arrive in the web application | **Not met, and not a product defect.** The agent captured — `screenshot.capture`, a 408 KB PNG written to disk — and the activity metrics reached the database with it: `keyboard_activity_percent 25`, `mouse_activity_percent 48`, the signal a browser cannot produce. The upload failed: this environment resolves object storage to Replit App Storage, which authenticates against a sidecar at `127.0.0.1:1106` that does not exist outside Replit. Both rows are still `storage_key = pending-…` with an empty `content_hash` | capture 11:24:16 |
 
 ### Reading the projection
 
@@ -172,6 +172,7 @@ standing list any agent should read before touching a v2 screen.
 
 | # | What | Where | Filed as |
 | --- | --- | --- | --- |
+| D4 | **A failing screenshot upload creates a new row per retry.** One capture at `11:24:16.404` produced two `time_entry_screenshots` rows with that identical `captured_at` and `created_at` thirty-one seconds apart — the SyncWorker interval. Each retry presigns afresh instead of reusing the row it already has, so a session against unreachable storage grows `pending-` rows without bound, and each one holds a `storage_key` naming an object that was never written. Independent of the environment: the same retry path runs wherever an upload fails | `desktop-agent/src/workers/SyncWorker.ts`, `server/agentRoutes.ts:583` | _(fill: issue)_ |
 | D3 | Inviting into a full Workspace refuses correctly, but the refusal lands near the bottom-right of the page instead of under the Invite form: `.df-refusal-pop` is absolutely positioned against `.df-refusal-anchor`, and the invite call site is the only one of four that omits the anchor. The message names the wall without naming the seat control that lifts it | `client/src/v2/V2People.tsx:295` | [`UI-FINDINGS.md` F3](../web-app-v2/UI-FINDINGS.md) |
 | D2 | The folder preview aside is a fixed 400px with no `flex-shrink`, `max-width` or breakpoint, so it overflows the viewport and slices `Manage access` in half | `client/src/v2/tokens.css:3371` | [`UI-FINDINGS.md` F2](../web-app-v2/UI-FINDINGS.md) |
 | D1 | The paying Billing card gives `Cancel at period end` the same weight as `Update payment method`, with no confirmation; the seat form is an orphan between the figures and the actions; the seat input is empty while seats are 1; `Writes allowed.` is helper text for buttons it does not describe; `CONDITION` is not the domain's word for billing state | `client/src/v2/V2Administration.tsx:654-700` | [`UI-FINDINGS.md` F1](../web-app-v2/UI-FINDINGS.md) |
@@ -220,7 +221,7 @@ Filled after the run. A criterion that was not met is written as not met.
 | Walked at a narrow viewport as well as a wide one | | |
 | Every defect filed, and split into blocking and degrading | | |
 | Production untouched — `webAppV2` default stays `prod: false`, no live credential | | |
-| The desktop agent exercised once against the same Workspace — Device paired, Timer run, time and a capture arrived | | |
+| The desktop agent exercised once against the same Workspace — Device paired, Timer run, time and a capture arrived | **Partial** | Device paired (`1ce6ae3a`) and Timer run (`1398e595`) with activity metrics stored. The capture was taken but never stored: object storage here is Replit App Storage and its sidecar is unreachable off-platform. A production credential was refused rather than borrowed (ADR-0018), and a new GCS account asks for a card, so this is left unmet rather than faked |
 | **In the parallel environment** | **Not met** | This run is local. See **This run is local** above |
 
 ## Window
@@ -232,5 +233,6 @@ Filled after the run. A criterion that was not met is written as not met.
 | `Trialing` entered (UTC) | 2026-09-18 10:44:17 |
 | Checkout Session created (UTC) | |
 | `billing_state` reached `Active` (UTC) | 2026-09-18 10:51:43 |
-| First agent capture stored (UTC) | |
+| First agent capture taken (UTC) | 2026-09-18 11:24:16 |
+| First agent capture **stored** (UTC) | never — see 6g |
 | Run ended (UTC) | |
