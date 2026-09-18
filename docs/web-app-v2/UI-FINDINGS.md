@@ -65,3 +65,33 @@ redundant with something eight inches away.
 move the entitlement line into the band, rename the label, and give
 `Cancel at period end` a destructive treatment plus a confirmation. No new
 component; the pieces exist.
+
+---
+
+## F2 — Workspace Documents, the folder preview panel is cut off
+
+- **Status:** open
+- **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232), at a normal desktop width
+- **Where:** `client/src/v2/tokens.css:3371` (`.df-folder-preview { width: 400px; }`), used by `client/src/v2/V2Documents.tsx:350`
+- **Severity:** degrading. The panel works; part of it is unreachable
+
+Selecting a folder opens the `FOLDER PREVIEW` aside, and it overflows the
+viewport. The access paragraph is clipped mid-sentence — "Restricted items never
+appear in this register," and the rest is gone — and `Manage access` is sliced
+vertically, so one of the panel's two actions cannot be read or, at that width,
+reliably pressed.
+
+The rule is the whole style: a fixed `width: 400px` with no `flex-shrink`, no
+`max-width`, no `min-width: 0` on the register beside it, and no breakpoint. The
+register takes the width it wants, the aside adds 400px on top, and the row
+exceeds the container instead of the aside shrinking or moving. Nothing in the
+style says what should give.
+
+Worth checking at the same time whether the aside should become a drawer below
+some width rather than a column at all — a 400px panel next to a register is
+most of a phone screen.
+
+**What it would take:** give the row a `minmax()` or flex basis that lets the
+register shrink, cap the aside with `max-width` and a percentage, and decide the
+narrow behaviour. The clipping is a symptom of the row having no rule, not of
+400 being the wrong number.

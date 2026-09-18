@@ -136,7 +136,13 @@ makes it worse and feeds the parity spec rather than being fixed here.
 
 | # | What | Where | Filed as |
 | --- | --- | --- | --- |
-| | | | |
+| B1 | **Workspace Documents are not scoped to a Workspace.** A Workspace created minutes earlier, by a stranger who had just paid, listed `Folder 1` — a folder belonging to the seeded Workspace, carrying a real employee's name as last editor and a date from before the account existed. `company_document_folders.workspace_id` for that row is the literal string `seeded`, so the row is not the new Workspace's; the register simply does not filter. All twelve `*CompanyDocument*` methods in `postgresStorage.ts` query the tables with no workspace predicate — `getCompanyDocumentFolders`, `getCompanyDocumentFolder`, `createCompanyDocumentFolder`, `updateCompanyDocumentFolder`, `deleteCompanyDocumentFolder`, `getCompanyDocuments`, `getCompanyDocument`, `createCompanyDocument`, `updateCompanyDocument`, `deleteCompanyDocument`, `searchCompanyDocuments`, `searchCompanyDocumentFolders`. Read, write **and delete**: a Workspace holding another's document id can modify or delete it. `server/embeddings.ts:440` reads every folder in the database, so Ask DocuFlow is in the same blast radius. The preview panel on the same screen promises the opposite in as many words — "Restricted items never appear in this register, search results, Ask DocuFlow answers, or notifications". The helper this code needs exists and is used elsewhere: `inWorkspace()`, as `effectiveEntitlements` uses it | `server/modules/postgresStorage.ts:1491-1640`, `server/embeddings.ts:440` | _(fill: issue)_ |
+
+`inWorkspace` is not the same subject as the row-level security ADR-0018 and
+[#228](https://github.com/Lamakira/docuflow/issues/228) place out of scope.
+RLS is defence in depth under the application; this is the application itself
+handing one tenant another tenant's rows. It stops the journey: step 6c cannot
+be recorded as a customer opening *their* File.
 
 ### Degrading
 
