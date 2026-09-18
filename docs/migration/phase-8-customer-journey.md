@@ -77,9 +77,9 @@ run stops and the reason is written in **Defects**.
 | 2 | Follow a "Start free trial" call-to-action into the application | Reached the application's sign-up | _(fill)_ |
 | 3 | Create an account — no Invitation, no Administrator | `pr-user-test-1@protonmail.com`, `users.id 8ae259f4`. No Invitation row, no Administrator acted | 10:44:13 |
 | 4 | Name the first Workspace, become its Owner, enter `Trialing` | Workspace `40a3474e` "User's Workspace". Membership role **Owner**, not archived. `plan_key=trial`, `billing_state=Trialing`, 1 seat, `trial_ends_at 2026-10-02 10:44:17`, both Stripe ids null. Four seconds after the account | 10:44:17 |
-| 5a | Start Checkout from the v2 Administration UI | | |
-| 5b | Pay with a test card, return to the application | | |
-| 5c | **Read `workspace_billing` and see `Active`** | | |
+| 5a | Start Checkout from the v2 Administration UI | `Start Pro` on the Billing card, which read Plan Trial, Condition Trial, 1 of 1 seats, trial ending 2 Oct, writes allowed | _(fill)_ |
+| 5b | Pay with a test card, return to the application | Hosted Checkout, test card, returned to the application. Four events landed in `billing_webhook_inbox` | _(fill)_ |
+| 5c | **Read `workspace_billing` and see `Active`** | `plan_key=pro`, `billing_state=Active`, 1 seat, `authorization_version` 2, `trial_ends_at` cleared, `period_ends_at 2026-10-18 10:51:36`, `cus_VHYVMvI3EN8KYO` / `sub_1UGzOJGJ9wdyG8Wi4ZkodgEN`. The audit row reads `provider_projection`, so the Worker's Job wrote it — not the redirect | 10:51:43 |
 | 6a | Create a record — a client, a project | | |
 | 6b | Track time from the web timer | | |
 | 6c | Open a File | | |
@@ -94,8 +94,28 @@ run stops and the reason is written in **Defects**.
 row go here, with the moment `billing_state` changed:
 
 ```
-(fill: the query used, and the row it returned)
+select plan_key, billing_state, purchased_seat_capacity, authorization_version,
+       trial_ends_at, period_ends_at, stripe_customer_id, stripe_subscription_id, updated_at
+  from workspace_billing where workspace_id = '40a3474e-b108-446e-bf5e-1988d6054294';
+
+pro | Active | 1 | 2 | (null) | 2026-10-18 10:51:36 |
+cus_VHYVMvI3EN8KYO | sub_1UGzOJGJ9wdyG8Wi4ZkodgEN | 2026-09-18 10:51:43.898
 ```
+
+The audit trail for the same Workspace, which is what separates the projection
+from the redirect:
+
+```
+10:44:17  billing.state_transition  null -> Trialing   {"reason": "trial_started"}
+10:44:17  workspace.created         {"name": "User's Workspace"}
+10:51:43  billing.state_transition  Trialing -> Active {"reason": "provider_projection"}
+10:51:43  billing.plan_change       trial -> pro
+```
+
+`provider_projection` is the Worker's Job. `authorization_version` moved 1 -> 2,
+so entitlements were recomputed rather than the row merely touched. Seven
+minutes twenty-six between `Trialing` and `Active`, almost all of it the
+operator at the hosted Checkout.
 
 ## Viewports
 
@@ -179,6 +199,6 @@ Filled after the run. A criterion that was not met is written as not met.
 | Account created (UTC) | 2026-09-18 10:44:13 |
 | `Trialing` entered (UTC) | 2026-09-18 10:44:17 |
 | Checkout Session created (UTC) | |
-| `billing_state` reached `Active` (UTC) | |
+| `billing_state` reached `Active` (UTC) | 2026-09-18 10:51:43 |
 | First agent capture stored (UTC) | |
 | Run ended (UTC) | |
