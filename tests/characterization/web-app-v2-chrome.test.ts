@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   FLAG_DEFS,
@@ -16,6 +19,11 @@ import {
   workspaceRoleLabel,
   writeRailCollapsed,
 } from "../../client/src/v2/presentation";
+
+const railSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Rail.tsx"),
+  "utf8",
+);
 
 /**
  * Flagged authenticated app (#171). HTTP `/api/*` stays characterized elsewhere.
@@ -122,9 +130,14 @@ describe("v2 chrome behind the client flag (#171)", () => {
   it("shows Workspace initials and Workspace Role labels", () => {
     expect(workspaceInitials("Keystone Studio")).toBe("KS");
     expect(workspaceInitials("DocuFlow")).toBe("DO");
-    expect(workspaceRoleLabel({ role: "admin", owner: true })).toBe("OWNER");
-    expect(workspaceRoleLabel({ role: "admin", owner: false })).toBe("ADMINISTRATOR");
-    expect(workspaceRoleLabel({ role: "user", owner: false })).toBe("MEMBER");
+    // A self-service Owner keeps users.role = user; the rail reads the Membership.
+    expect(workspaceRoleLabel("OWNER")).toBe("OWNER");
+    expect(workspaceRoleLabel("ADMINISTRATOR")).toBe("ADMINISTRATOR");
+    expect(workspaceRoleLabel("MEMBER")).toBe("MEMBER");
+    expect(railSource).toContain("workspaceRoleLabel");
+    expect(railSource).toMatch(/workspaceRoleLabel\([\s\S]*workspaceRole/);
+    expect(railSource).not.toContain("isMainAdmin");
+    expect(railSource).not.toMatch(/user\.role/);
   });
 
   it("persists rail collapse across destinations", () => {

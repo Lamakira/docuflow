@@ -100,7 +100,10 @@ export function V2TodayPage() {
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const readOnly = current?.condition === "Read-only";
-  const canViewTeam = canViewTeamDailyUpdates(user);
+  const canViewTeam = canViewTeamDailyUpdates({
+    workspaceRole: current?.workspaceRole,
+    canViewDailyUpdates: user?.canViewDailyUpdates,
+  });
   const [dailyUpdateReminded, setDailyUpdateReminded] = useState(false);
   const [remindRefusal, setRemindRefusal] = useState<string | null>(null);
   const dayStart = useMemo(() => startOfDay(now), [now]);

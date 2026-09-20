@@ -33,7 +33,10 @@ export function V2TeamDailyUpdatesPage() {
   const { memberships } = useV2Chrome();
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
-  const canView = canViewTeamDailyUpdates(user);
+  const canView = canViewTeamDailyUpdates({
+    workspaceRole: current?.workspaceRole,
+    canViewDailyUpdates: user?.canViewDailyUpdates,
+  });
 
   const [rangeDays, setRangeDays] = useState("7");
   const [filterQuery, setFilterQuery] = useState("");

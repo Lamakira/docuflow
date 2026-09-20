@@ -58,9 +58,8 @@ export function V2Rail({
     user?.firstName && user?.lastName
       ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
       : (user?.email?.[0] ?? "U").toUpperCase();
-  const role = user
-    ? workspaceRoleLabel({ role: user.role, owner: user.isMainAdmin === 1 })
-    : "MEMBER";
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  const role = current ? workspaceRoleLabel(current.workspaceRole) : "";
 
   async function handleSignOut() {
     try {

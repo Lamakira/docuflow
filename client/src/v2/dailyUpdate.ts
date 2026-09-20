@@ -5,6 +5,7 @@
  */
 
 import { dailyUpdateBlockageTypeOptions, dailyUpdateStatusOptions } from "@shared/schema";
+import { canManageAdministration } from "./administration";
 import { chromeRefusal } from "./chrome";
 import { formatDateChip, formatWhen, memberName } from "./today";
 
@@ -204,11 +205,11 @@ export type TeamDailyUpdatesModel =
       members: Array<{ id: string; name: string }>;
     };
 
-export function canViewTeamDailyUpdates(user: {
-  role?: string | null;
+export function canViewTeamDailyUpdates(input: {
+  workspaceRole?: string | null;
   canViewDailyUpdates?: number | null;
 } | null | undefined): boolean {
-  return user?.role === "admin" || user?.canViewDailyUpdates === 1;
+  return canManageAdministration(input?.workspaceRole ?? "") || input?.canViewDailyUpdates === 1;
 }
 
 export function remindDailyUpdatesPath(): string {

@@ -205,12 +205,15 @@ describe("Team Daily Update review (#209)", () => {
     expect(personalSource).not.toContain("DailyUpdatesAdminPage");
   });
 
-  it("gates team review on the existing View Daily Updates grant", () => {
-    expect(canViewTeamDailyUpdates({ role: "admin", canViewDailyUpdates: 0 })).toBe(true);
-    expect(canViewTeamDailyUpdates({ role: "user", canViewDailyUpdates: 1 })).toBe(true);
-    expect(canViewTeamDailyUpdates({ role: "user", canViewDailyUpdates: 0 })).toBe(false);
+  it("gates team review on the Workspace Role or the View Daily Updates grant", () => {
+    expect(canViewTeamDailyUpdates({ workspaceRole: "OWNER", canViewDailyUpdates: 0 })).toBe(true);
+    expect(canViewTeamDailyUpdates({ workspaceRole: "ADMINISTRATOR", canViewDailyUpdates: 0 })).toBe(true);
+    expect(canViewTeamDailyUpdates({ workspaceRole: "MEMBER", canViewDailyUpdates: 1 })).toBe(true);
+    expect(canViewTeamDailyUpdates({ workspaceRole: "MEMBER", canViewDailyUpdates: 0 })).toBe(false);
     expect(teamSource).toContain("canViewTeamDailyUpdates");
+    expect(teamSource).toMatch(/workspaceRole:\s*current\?\.workspaceRole/);
     expect(todaySource).toContain("canViewTeamDailyUpdates");
+    expect(todaySource).toMatch(/workspaceRole:\s*current\?\.workspaceRole/);
   });
 
   it("names Capability and Read-only on Remind", () => {
