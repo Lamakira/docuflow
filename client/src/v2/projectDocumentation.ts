@@ -50,6 +50,7 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
       }),
       rows: [],
       folderCount: 0,
+      parentNoun: { singular: "PROJECT", plural: "PROJECTS" },
       itemCount: 0,
       preview: null,
     };
@@ -97,6 +98,7 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
     refusal: null,
     rows,
     folderCount: visibleProjects.length,
+    parentNoun: { singular: "PROJECT", plural: "PROJECTS" },
     itemCount: visibleDocs.length + visibleProjects.length,
     preview: null,
   };

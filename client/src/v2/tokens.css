@@ -1656,9 +1656,12 @@ button.df-activity-row {
 }
 
 /* An anchor around a full-width region rather than around a button: the popover
-   still hangs 8px under what raised it, but the region keeps its own layout. */
+   still hangs 8px under what raised it, and the region keeps the column and the
+   gap its children had when the page held them directly. */
 .df-refusal-anchor-block {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 /* A refusal says something did not happen, so it does not look like a
@@ -3180,8 +3183,12 @@ button.df-activity-row {
   display: flex;
   /* Something has to give when the register's floor and the aside's width do
      not both fit (#245, F2). The aside drops below the register rather than
-     being sliced off the right edge of the viewport. */
+     being sliced off the right edge of the viewport. Rows keep their own
+     height rather than splitting the container between them. */
   flex-wrap: wrap;
+  align-content: flex-start;
+  /* Only ever between rows, so the side-by-side layout is untouched. */
+  row-gap: 18px;
   flex: 1;
   min-height: 0;
   min-width: 1060px;
@@ -3453,6 +3460,8 @@ button.df-activity-row {
    `Manage access` could not be read. */
 .df-folder-preview {
   flex: 0 1 400px;
+  /* .df-panel sets a width; the basis above is the rule here. */
+  width: auto;
   min-width: 0;
   max-width: 100%;
 }

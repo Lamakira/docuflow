@@ -137,7 +137,7 @@ control. The first is a one-line fix.
 
 ## F4 — Project Documentation calls a Project a folder
 
-- **Status:** partly closed — [#245](https://github.com/Lamakira/docuflow/issues/245) took the vocabulary: the screen says Project, `New folder` reads `New project`, and the TYPE column reads `PROJECT`. **The expensive half stays open**: `projects` is still doing two jobs, and whether this screen should have real folders of its own is undecided
+- **Status:** partly closed — [#245](https://github.com/Lamakira/docuflow/issues/245) took the vocabulary: the screen says Project, `New folder` reads `New project`, and the TYPE column reads `PROJECT`. the register foot counts PROJECTS, and the internal names follow. **The expensive half stays open**: `projects` is still doing two jobs, and whether this screen should have real folders of its own is undecided
 - **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232)
 - **Where:** `client/src/v2/V2ProjectDocumentation.tsx`, fed by `/api/projects/documentable`
 - **Severity:** degrading, and it costs debugging time rather than clicks

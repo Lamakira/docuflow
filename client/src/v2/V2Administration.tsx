@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   PUBLIC_API_CAPABILITIES,
@@ -213,14 +213,6 @@ export function V2AdministrationPage() {
     : null;
   const savedTimezones = workspaceSettings?.allowedTimezones ?? [];
 
-  // The field starts from the capacity the Workspace already holds, so it never
-  // contradicts the BILLABLE SEATS figure above it and the submit is not
-  // disabled until the customer retypes a number the system already knows.
-  useEffect(() => {
-    if (!billing) return;
-    setSeatQuantity((current) => (current === "" ? String(billing.purchasedSeatCapacity) : current));
-  }, [billing]);
-
   useEffect(() => {
     if (!workspaceSettings) return;
     setPolicyDraft(normalizeScreenshotPolicy(workspaceSettings.screenshotPolicy));
@@ -239,6 +231,28 @@ export function V2AdministrationPage() {
     billing: billing ?? null,
     revealedSecret,
   });
+
+  // An armed confirmation must not outlive the action that armed it. If the
+  // subscription is already cancelling, or the Workspace turned read-only, the
+  // action leaves the model — and coming back later must not come back armed.
+  const cancelOffered =
+    page.kind === "ready" && page.billing.actions.some((action) => action.id === "cancel");
+  useEffect(() => {
+    if (!cancelOffered) setCancelArmed(false);
+  }, [cancelOffered]);
+
+  // The field starts from the capacity the Workspace already holds, so it never
+  // contradicts the BILLABLE SEATS figure above it, and the submit is not
+  // disabled until the customer retypes a number the system already knows.
+  //
+  // Keyed on that capacity rather than on the payload: a refetch mid-edit would
+  // otherwise put the old number back over whatever was being typed.
+  const seatQuantityDefault = page.kind === "ready" ? page.billing.seatQuantityDefault : "";
+  useEffect(() => {
+    if (!seatQuantityDefault) return;
+    setSeatQuantity(seatQuantityDefault);
+  }, [seatQuantityDefault]);
+
   const analytics = composeAnalytics({
     now: rangeAnchor,
     workspaceRole,
@@ -1688,12 +1702,31 @@ function CancelControl({
   onDismiss: () => void;
   onConfirm: () => void;
 }) {
+  const armRef = useRef<HTMLButtonElement | null>(null);
+  const dismissed = useRef(false);
+
+  // Dismissing unmounts the confirmation, so the focus it held would fall to the
+  // document. It goes back to the control that opened it.
+  useEffect(() => {
+    if (armed || !dismissed.current) return;
+    dismissed.current = false;
+    armRef.current?.focus();
+  }, [armed]);
+
   if (armed) {
     return (
       <span className="df-billing-confirm" role="group" aria-label={action.label}>
         <span className="df-billing-confirm-note">{action.consequence}</span>
         <span className="df-billing-confirm-actions">
-          <button type="button" className="df-ghost-btn" onClick={onDismiss} autoFocus>
+          <button
+            type="button"
+            className="df-ghost-btn"
+            onClick={() => {
+              dismissed.current = true;
+              onDismiss();
+            }}
+            autoFocus
+          >
             Keep subscription
           </button>
           <button
@@ -1711,6 +1744,7 @@ function CancelControl({
   }
   return (
     <button
+      ref={armRef}
       type="button"
       className="df-danger-btn"
       disabled={pending}

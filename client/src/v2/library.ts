@@ -74,9 +74,17 @@ export type LibraryModel = {
   refusal: string | null;
   rows: LibraryRow[];
   folderCount: number;
+  /**
+   * What this register's parents are called in its foot: folders in Workspace
+   * Documents, Projects in Project Documentation, where every parent is a row
+   * in `projects` (#245, F4).
+   */
+  parentNoun: { singular: string; plural: string };
   itemCount: number;
   preview: LibraryPreview | null;
 };
+
+export const FOLDER_PARENTS = { singular: "FOLDER", plural: "FOLDERS" } as const;
 
 const VIEW_WORKSPACE_DOCUMENTS_CAPABILITY = "View Workspace Documents";
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -101,6 +109,7 @@ export function composeLibrary(input: LibraryInput): LibraryModel {
       refusal,
       rows: [],
       folderCount: 0,
+      parentNoun: FOLDER_PARENTS,
       itemCount: 0,
       preview: null,
     };
@@ -160,6 +169,7 @@ export function composeLibrary(input: LibraryInput): LibraryModel {
     refusal: null,
     rows,
     folderCount: input.folders.length,
+    parentNoun: FOLDER_PARENTS,
     itemCount: visible.length + input.folders.length,
     preview,
   };

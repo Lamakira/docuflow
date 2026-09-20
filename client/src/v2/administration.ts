@@ -144,10 +144,10 @@ export type BillingModel = {
   plan: string;
   condition: "Trial" | "Active" | "Past due" | "Read-only" | null;
   seats: string;
-  entitlements: string;
   /**
    * The entitlement sentence, and only when it says more than the WRITES figure
-   * does. "Writes allowed." beside a figure reading Allowed is the same fact twice.
+   * does. "Writes allowed." beside a figure reading Allowed is the same fact
+   * twice; read-only carries a clause the figure cannot.
    */
   entitlementNote: string | null;
   /** What the seat field starts from, so it never contradicts the figure above it. */
@@ -343,7 +343,6 @@ function composeBilling(input: AdministrationInput): BillingModel {
         ? input.condition
         : null,
       seats: "Seat counts are not available.",
-      entitlements: "",
       entitlementNote: null,
       seatQuantityDefault: "",
       figures: [],
@@ -380,18 +379,14 @@ function composeBilling(input: AdministrationInput): BillingModel {
     });
   }
 
-  const entitlements = readOnly
-    ? "Writes blocked. Viewing, export, and recovery stay available."
-    : "Writes allowed.";
-
   return {
     available: true,
     plan: planLabel(pin.planKey),
     condition,
     seats: `${pin.consumedSeatCount} of ${pin.purchasedSeatCapacity} Billable Seats consumed.`,
-    entitlements,
-    // Read-only carries a clause the figure cannot: what still works.
-    entitlementNote: readOnly ? entitlements : null,
+    entitlementNote: readOnly
+      ? "Writes blocked. Viewing, export, and recovery stay available."
+      : null,
     seatQuantityDefault: String(pin.purchasedSeatCapacity),
     figures: [
       { label: "PLAN", value: planLabel(pin.planKey) },
@@ -399,11 +394,13 @@ function composeBilling(input: AdministrationInput): BillingModel {
       // word for it, and said the same thing as the chip in the header.
       { label: "BILLING STATE", value: condition ?? "—" },
       { label: "WRITES", value: readOnly ? "Blocked" : "Allowed" },
+      billingTermFigure(pin),
+      // Last, so the four-column band wraps it onto the row directly above the
+      // seat control, and the number sits with what edits it (#245, F1).
       {
         label: "BILLABLE SEATS",
         value: `${pin.consumedSeatCount} of ${pin.purchasedSeatCapacity}`,
       },
-      billingTermFigure(pin),
     ],
     actions,
     checkout: "redirect",

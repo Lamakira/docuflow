@@ -324,7 +324,8 @@ describe("Administration from operator routes (#193)", () => {
     expect(trial.billing.plan).toBe("Trial");
     expect(trial.billing.condition).toBe("Trial");
     expect(trial.billing.seats).toBe("1 of 1 Billable Seats consumed.");
-    expect(trial.billing.entitlements).toContain("Writes allowed");
+    expect(trial.billing.figures).toContainEqual({ label: "WRITES", value: "Allowed" });
+    expect(trial.billing.entitlementNote).toBeNull();
     expect(trial.billing.actions.map((action) => action.id)).toEqual(["checkout"]);
     expect(trial.billing.checkout).toBe("redirect");
     expect(pageSource).not.toMatch(/card number|cvc|cardholder/i);
@@ -380,7 +381,8 @@ describe("Administration from operator routes (#193)", () => {
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
     expect(page.billing.condition).toBe("Read-only");
-    expect(page.billing.entitlements).toContain("Writes blocked");
+    expect(page.billing.figures).toContainEqual({ label: "WRITES", value: "Blocked" });
+    expect(page.billing.entitlementNote).toContain("Writes blocked");
     expect(page.billing.actions.map((action) => action.id)).toEqual(["payment-method"]);
     expect(page.serviceAccounts.createAllowed).toBe(false);
     expect(page.webhookEndpoints.createAllowed).toBe(false);
@@ -1084,6 +1086,26 @@ describe("The Billing card reads as one card (#245, F1)", () => {
     expect(page.billing.seatQuantityDefault).toBe("8");
   });
 
+  it("never lets one press end the subscription", () => {
+    const pageSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Administration.tsx"),
+      "utf8",
+    );
+
+    // The press that arms the control is not the press that mutates.
+    expect(pageSource).toContain("onClick={onArm}");
+    expect(pageSource).toContain("Keep subscription");
+    expect(pageSource).toContain('data-testid="v2-administration-billing-cancel-confirm"');
+    // And it is never the neutral button its neighbour is.
+    expect(pageSource).toContain('className="df-danger-btn"');
+    expect(pageSource).not.toMatch(/onClick=\{\(\) => cancelAtPeriodEnd\.mutate\(\)\}/);
+
+    // The write gate still runs on the press that actually cancels.
+    const confirmBody = pageSource.slice(pageSource.indexOf("onConfirm={() => {"));
+    expect(confirmBody.slice(0, 200)).toContain("if (!guardWrite()) return;");
+    expect(confirmBody.slice(0, 200)).toContain("cancelAtPeriodEnd.mutate()");
+  });
+
   it("puts the entitlement status in the figure band, in the domain's words", () => {
     const page = composeAdministration(activeBilling());
     expect(page.kind).toBe("ready");
@@ -1094,8 +1116,10 @@ describe("The Billing card reads as one card (#245, F1)", () => {
       // CONDITION was neither the domain's word nor distinct from the header chip.
       { label: "BILLING STATE", value: "Active" },
       { label: "WRITES", value: "Allowed" },
-      { label: "BILLABLE SEATS", value: "3 of 8" },
       { label: "RENEWS", value: "1 OCT 2026" },
+      // Last of five in a four-column band, so it lands on the row above the
+      // seat control instead of two figures away from it.
+      { label: "BILLABLE SEATS", value: "3 of 8" },
     ]);
     // The sentence is only worth showing when it carries more than the figure.
     expect(page.billing.entitlementNote).toBeNull();
@@ -1159,8 +1183,8 @@ describe("Administration billing remainder (#212)", () => {
       { label: "PLAN", value: "Trial" },
       { label: "BILLING STATE", value: "Trial" },
       { label: "WRITES", value: "Allowed" },
-      { label: "BILLABLE SEATS", value: "1 of 1" },
       { label: "TRIAL ENDS", value: "20 SEP 2026" },
+      { label: "BILLABLE SEATS", value: "1 of 1" },
     ]);
 
     const cancelling = composeAdministration(
@@ -1179,7 +1203,7 @@ describe("Administration billing remainder (#212)", () => {
     );
     expect(cancelling.kind).toBe("ready");
     if (cancelling.kind !== "ready") return;
-    expect(cancelling.billing.figures[4]).toEqual({
+    expect(cancelling.billing.figures[3]).toEqual({
       label: "ACCESS ENDS",
       value: "1 OCT 2026",
     });
@@ -1200,7 +1224,7 @@ describe("Administration billing remainder (#212)", () => {
     );
     expect(renewing.kind).toBe("ready");
     if (renewing.kind !== "ready") return;
-    expect(renewing.billing.figures[4]).toEqual({ label: "RENEWS", value: "1 OCT 2026" });
+    expect(renewing.billing.figures[3]).toEqual({ label: "RENEWS", value: "1 OCT 2026" });
 
     const none = composeAdministration(emptyAdmin());
     expect(none.kind).toBe("ready");

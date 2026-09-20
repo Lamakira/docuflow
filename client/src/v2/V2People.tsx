@@ -267,7 +267,8 @@ export function V2PeoplePage() {
         resolved against a distant ancestor and landed near the bottom-right of
         the page, hundreds of pixels from the form that raised it.
       */}
-      <span className="df-refusal-anchor df-refusal-anchor-block">
+      {inviting || refusal?.id === "invite" ? (
+      <div className="df-refusal-anchor df-refusal-anchor-block">
       {inviting ? (
         <form className="df-filter-bar df-people-filter" onSubmit={onInvite}>
           <label className="df-filter-input">
@@ -308,7 +309,8 @@ export function V2PeoplePage() {
           </button>
         </div>
       ) : null}
-      </span>
+      </div>
+      ) : null}
 
       <section className="df-card df-people-register" data-testid="v2-people-register">
         {layout.stackedRegister ? null : (
