@@ -10,6 +10,15 @@ import fs from "fs";
 import os from "os";
 import { randomUUID } from "node:crypto";
 import { API_BASE, API_BASE_SOURCE, API_HOST } from "../lib/config";
+import {
+  INSTANCE_RECORD_FILENAME,
+  SHUTDOWN_SIGNALS,
+  formatInstanceRecord,
+  instanceAlreadyRunningMessage,
+  parseInstanceRecord,
+  pidIsAlive,
+  shouldQuitAsOrphan,
+} from "../lib/processLifetime";
 
 // ─── Linux / Wayland ───
 // Enable PipeWire-based screen capture so desktopCapturer works under Wayland
@@ -77,14 +86,75 @@ const WIDGET_WIDTH = 380;
 const WIDGET_HEIGHT = 44;
 const WIDGET_MARGIN = 20;
 
+function instanceRecordPath(): string {
+  return path.join(app.getPath("userData"), INSTANCE_RECORD_FILENAME);
+}
+
+function writeInstanceRecord(): void {
+  try {
+    fs.writeFileSync(
+      instanceRecordPath(),
+      formatInstanceRecord({ pid: process.pid, apiBase: API_BASE }),
+    );
+  } catch {
+    /* non-fatal — the Chromium lock still refuses the second instance */
+  }
+}
+
+function clearInstanceRecord(): void {
+  try {
+    fs.unlinkSync(instanceRecordPath());
+  } catch {
+    /* already gone */
+  }
+}
+
+function readRunningApiBase(): string | null {
+  try {
+    return parseInstanceRecord(fs.readFileSync(instanceRecordPath(), "utf8"))?.apiBase ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Single-instance lock MUST run before AgentStore / the queue open agent-config.json
+// and agent-queue.json. A second launch used to call app.quit() and then still
+// boot whenReady, so two agents wrote the same files (#237).
+const gotLock = app.requestSingleInstanceLock({ apiBase: API_BASE });
+if (!gotLock) {
+  console.error(
+    `[Main] ${instanceAlreadyRunningMessage({
+      runningApiBase: readRunningApiBase(),
+      thisApiBase: API_BASE,
+    })}`,
+  );
+  app.exit(1);
+  process.exit(1);
+}
+writeInstanceRecord();
+
 const SESSION_STARTED_AT = Date.now(); // anchors "This session" elapsed; resets on restart
 const store = new AgentStore();
 store.setSessionStartedAt(SESSION_STARTED_AT);
 // Pass userData path so SQLite DB survives restarts
 const queue = new SqliteQueue(app.getPath("userData"));
 
-/**
- * Called by ApiClient when the server signals this device is revoked or
+let quitting = false;
+function hardQuit(reason: string): void {
+  if (quitting) return;
+  quitting = true;
+  console.log(`[Main] ${reason} — quitting`);
+  stopWorkers();
+  try {
+    queue.close();
+  } catch {
+    /* already closed */
+  }
+  clearInstanceRecord();
+  app.exit(0);
+}
+
+/** Called by ApiClient when the server signals this device is revoked or
  * permanently invalid (401/403 on token refresh). Cleans up all local state
  * so the renderer returns to the login screen.
  */
@@ -448,7 +518,7 @@ function rebuildTrayMenu(): void {
     { label: "Status: " + (isPaired ? "Connected" : "Not paired"), enabled: false },
     { type: "separator" },
     ...timerItems,
-    { label: "Quit", click: () => { stopWorkers(); app.exit(0); } },
+    { label: "Quit", click: () => { hardQuit("tray quit"); } },
   ]);
 
   tray.setContextMenu(contextMenu);
@@ -637,6 +707,32 @@ function stopWorkers(): void {
   }
 
   console.log("[Main] Workers stopped");
+}
+
+for (const signal of SHUTDOWN_SIGNALS) {
+  try {
+    process.on(signal, () => hardQuit(signal));
+  } catch {
+    /* Windows has no SIGHUP */
+  }
+}
+
+const launchParentPid = Number.parseInt(process.env.DOCUFLOW_DEV_PARENT_PID ?? "", 10);
+if (!app.isPackaged && launchParentPid > 1) {
+  const orphanTimer = setInterval(() => {
+    if (
+      shouldQuitAsOrphan({
+        packaged: app.isPackaged,
+        launchParentPid,
+        currentParentPid: launchParentPid,
+        launchParentAlive: pidIsAlive(launchParentPid),
+      })
+    ) {
+      clearInterval(orphanTimer);
+      hardQuit("launch parent gone");
+    }
+  }, 1000);
+  orphanTimer.unref();
 }
 
 // ─── Timer resync (backend as source of truth) ───
@@ -1519,18 +1615,28 @@ function autoResumeFromQueue(): void {
 }
 
 // ─── Single instance ───
+// The lock itself is taken before AgentStore opens. This handler runs on the
+// instance that already holds it, when another launch calls requestSingleInstanceLock.
 
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-} else {
-  app.on("second-instance", () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      showMainWindow();
-    }
-  });
-}
+app.on("second-instance", (_event, _argv, _cwd, additionalData) => {
+  const incoming =
+    additionalData &&
+    typeof additionalData === "object" &&
+    "apiBase" in additionalData &&
+    typeof (additionalData as { apiBase?: unknown }).apiBase === "string"
+      ? (additionalData as { apiBase: string }).apiBase
+      : "";
+  if (incoming && incoming !== API_BASE) {
+    console.warn(
+      `[Main] refused a second instance that wanted API_BASE=${incoming}; this process stays on ${API_BASE}`,
+    );
+    return;
+  }
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    showMainWindow();
+  }
+});
 
 // ─── App lifecycle ───
 
@@ -1606,4 +1712,5 @@ app.on("activate", () => {
 app.on("before-quit", () => {
   stopWorkers();
   queue.close();
+  clearInstanceRecord();
 });

@@ -30,6 +30,13 @@
  *
  * HOW TO VERIFY THE ACTIVE URL:
  *   The first line of the log reads `API_BASE=… (source: env|file|build|default)`.
+ *
+ * HOW TO STOP A DEV LAUNCH (#237):
+ *   Ctrl+C in the terminal that ran `npm run dev` / `dev:v2`. That used to kill
+ *   only `electron-forge` and leave Electron heartbeating; `scripts/start-dev.js`
+ *   now takes the process tree down with it. If the prompt returns and the
+ *   agent is still alive:
+ *     pkill -KILL -f desktop-agent/node_modules/electron
  */
 
 import fs from "fs";
