@@ -251,6 +251,17 @@ begin until both were understood.
   verify with `pgrep -f docuflow-desktop-agent/node_modules/electron` that
   nothing is left.
 
+**Later — #236 and #237.** The committed default is localhost, and `Ctrl+C` on
+`npm run dev` / `dev:v2` now stops Electron too. If the prompt returns and the
+agent is still alive:
+
+```bash
+pkill -KILL -f "desktop-agent/node_modules/electron"
+```
+
+The first log line is still the check that the launch is not pointed at an
+unexpected host.
+
 ## Acceptance criteria
 
 Filled after the run. A criterion that was not met is written as not met.

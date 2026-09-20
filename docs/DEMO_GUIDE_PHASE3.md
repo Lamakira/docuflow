@@ -21,7 +21,7 @@
 
 ### 2. Desktop Agent: Pair
 
-1. Launch the Desktop Agent (`npm run dev` in `desktop-agent/`)
+1. Launch the Desktop Agent (`npm run dev` in `desktop-agent/`). Ctrl+C in that terminal stops Electron as well as forge. If the prompt returns and the agent is still alive: `pkill -KILL -f "desktop-agent/node_modules/electron"`
 2. Enter:
    - **Server URL**: `https://your-docuflow.replit.app`
    - **Device Name**: `Demo Laptop`
