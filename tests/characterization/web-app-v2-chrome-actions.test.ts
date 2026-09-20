@@ -190,7 +190,10 @@ describe("v2 chrome actions (#184)", () => {
         condition: "Read-only",
       }),
     ).toBe("Harbour View is read-only. Viewing, export, and recovery stay available.");
-    expect(chromeRefusal({ kind: "seat", purchased: 4 })).toBe("All 4 purchased seats are consumed.");
+    // The refusal names the way out, not only the wall (#245, F3).
+    expect(chromeRefusal({ kind: "seat", purchased: 4 })).toBe(
+      "All 4 purchased seats are consumed. Add seats in Administration → Billing.",
+    );
     expect(chromeRefusal({ kind: "generic", message: "permission denied" }).toLowerCase()).not.toContain(
       "permission denied",
     );

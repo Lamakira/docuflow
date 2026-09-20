@@ -394,7 +394,11 @@ export function chromeRefusal(input: ChromeRefusal): string {
     return `${input.workspaceName} is ${input.condition.toLowerCase()}.`;
   }
   if (input.kind === "seat") {
-    return `All ${input.purchased} purchased seats are consumed.`;
+    // Naming the wall without naming the way out leaves the reader to discover
+    // the seat control on another destination unaided (#245, F3). Every surface
+    // that raises this refusal is already gated on the Workspace Role that can
+    // reach Billing, so the instruction is one the reader can follow.
+    return `All ${input.purchased} purchased seats are consumed. Add seats in Administration → Billing.`;
   }
   const lower = input.message.toLowerCase();
   if (

@@ -240,6 +240,10 @@ describe("People from Memberships (#192)", () => {
     expect(pageSource).toContain("Invitation pending");
     expect(pageSource).toContain("Archive");
     expect(pageSource).toContain("df-project-mobile");
+    // The invite refusal hangs from an anchor like its three siblings (#245, F3);
+    // without one the popover resolves against a distant ancestor and lands
+    // hundreds of pixels from the form that raised it.
+    expect(pageSource).toContain("df-refusal-anchor df-refusal-anchor-block");
     expect(pageSource).not.toContain("custom role");
     expect(pageSource).not.toContain("reset-password");
   });
@@ -262,8 +266,10 @@ describe("People from Memberships (#192)", () => {
         condition: "Read-only",
       }),
     ).toBe("Harbor Co is read-only. Viewing, export, and recovery stay available.");
+    // A refusal that names the wall and not the way out leaves the reader to
+    // find the seat control on another screen by themselves (#245, F3).
     expect(peopleWriteRefusal({ kind: "seat", purchased: 3 })).toBe(
-      "All 3 purchased seats are consumed.",
+      "All 3 purchased seats are consumed. Add seats in Administration → Billing.",
     );
     expect(
       peopleWriteRefusal({
@@ -286,7 +292,7 @@ describe("People from Memberships (#192)", () => {
         errorMessage: "Billable Seat capacity is exhausted",
         purchasedSeats: 3,
       }),
-    ).toBe("All 3 purchased seats are consumed.");
+    ).toBe("All 3 purchased seats are consumed. Add seats in Administration → Billing.");
     expect(
       peopleWriteRefusal({
         kind: "error",

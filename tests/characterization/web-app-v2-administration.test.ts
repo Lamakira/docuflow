@@ -35,6 +35,7 @@ import {
   trackingPolicyIssue,
   type AdministrationInput,
   type AnalyticsInput,
+  type BillingInput,
   type TrackingPolicyInput,
 } from "../../client/src/v2/administration";
 
@@ -1021,6 +1022,97 @@ describe("Tracking Policy save motion (#212)", () => {
   });
 });
 
+describe("The Billing card reads as one card (#245, F1)", () => {
+  function activeBilling(overrides: Partial<BillingInput> = {}): AdministrationInput {
+    return emptyAdmin({
+      billing: {
+        planKey: "pro",
+        billingState: "Active",
+        purchasedSeatCapacity: 8,
+        consumedSeatCount: 3,
+        trialEndsAt: null,
+        periodEndsAt: "2026-10-01T00:00:00.000Z",
+        cancelAtPeriodEnd: false,
+        stripeCustomerId: "cus_123",
+        ...overrides,
+      },
+    });
+  }
+
+  it("sets Cancel at period end apart from the routine actions and states what it costs", () => {
+    const page = composeAdministration(activeBilling());
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+
+    const cancel = page.billing.actions.find((action) => action.id === "cancel");
+    const paymentMethod = page.billing.actions.find((action) => action.id === "payment-method");
+    expect(cancel).toBeDefined();
+    expect(paymentMethod).toBeDefined();
+    if (!cancel || !paymentMethod) return;
+
+    // The reflex that reaches Update payment method must not reach this one.
+    expect(cancel.tone).toBe("destructive");
+    expect(paymentMethod.tone).toBe("neutral");
+
+    // And it says what it ends, and when, before it runs.
+    expect(cancel.consequence).toBe(
+      "Pro entitlements stay until 1 OCT 2026. On that day writes stop and " +
+        "the Workspace becomes read-only. Viewing, export, and recovery stay available.",
+    );
+    expect(paymentMethod.consequence).toBeNull();
+  });
+
+  it("still names the day when the subscription has no period end to name", () => {
+    const page = composeAdministration(activeBilling({ periodEndsAt: null }));
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+
+    const cancel = page.billing.actions.find((action) => action.id === "cancel");
+    expect(cancel?.consequence).toBe(
+      "Writes stop at the end of the current period and the Workspace becomes " +
+        "read-only. Viewing, export, and recovery stay available.",
+    );
+  });
+
+  it("gives the seat control the figure it edits, rather than a blank field", () => {
+    const page = composeAdministration(activeBilling());
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+
+    // The field starts from what the Workspace already bought, so it never
+    // contradicts the figure above it.
+    expect(page.billing.seatQuantityDefault).toBe("8");
+  });
+
+  it("puts the entitlement status in the figure band, in the domain's words", () => {
+    const page = composeAdministration(activeBilling());
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+
+    expect(page.billing.figures).toEqual([
+      { label: "PLAN", value: "Pro" },
+      // CONDITION was neither the domain's word nor distinct from the header chip.
+      { label: "BILLING STATE", value: "Active" },
+      { label: "WRITES", value: "Allowed" },
+      { label: "BILLABLE SEATS", value: "3 of 8" },
+      { label: "RENEWS", value: "1 OCT 2026" },
+    ]);
+    // The sentence is only worth showing when it carries more than the figure.
+    expect(page.billing.entitlementNote).toBeNull();
+  });
+
+  it("keeps the read-only sentence, which says more than the figure can", () => {
+    const page = composeAdministration(activeBilling({ billingState: "ReadOnly" }));
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+
+    expect(page.billing.figures[2]).toEqual({ label: "WRITES", value: "Blocked" });
+    expect(page.billing.entitlementNote).toBe(
+      "Writes blocked. Viewing, export, and recovery stay available.",
+    );
+  });
+});
+
 describe("Administration billing remainder (#212)", () => {
   it("keeps a seeded or legacy Workspace out of Checkout", () => {
     const legacy = composeAdministration(
@@ -1065,7 +1157,8 @@ describe("Administration billing remainder (#212)", () => {
     if (trial.kind !== "ready") return;
     expect(trial.billing.figures).toEqual([
       { label: "PLAN", value: "Trial" },
-      { label: "CONDITION", value: "Trial" },
+      { label: "BILLING STATE", value: "Trial" },
+      { label: "WRITES", value: "Allowed" },
       { label: "BILLABLE SEATS", value: "1 of 1" },
       { label: "TRIAL ENDS", value: "20 SEP 2026" },
     ]);
@@ -1086,7 +1179,7 @@ describe("Administration billing remainder (#212)", () => {
     );
     expect(cancelling.kind).toBe("ready");
     if (cancelling.kind !== "ready") return;
-    expect(cancelling.billing.figures[3]).toEqual({
+    expect(cancelling.billing.figures[4]).toEqual({
       label: "ACCESS ENDS",
       value: "1 OCT 2026",
     });
@@ -1107,7 +1200,7 @@ describe("Administration billing remainder (#212)", () => {
     );
     expect(renewing.kind).toBe("ready");
     if (renewing.kind !== "ready") return;
-    expect(renewing.billing.figures[3]).toEqual({ label: "RENEWS", value: "1 OCT 2026" });
+    expect(renewing.billing.figures[4]).toEqual({ label: "RENEWS", value: "1 OCT 2026" });
 
     const none = composeAdministration(emptyAdmin());
     expect(none.kind).toBe("ready");

@@ -21,7 +21,7 @@ Related: [`DESIGN-BRIEF.md`](DESIGN-BRIEF.md) for the intent,
 
 ## F1 — Administration → Billing, the `Active` card
 
-- **Status:** open
+- **Status:** closed — [#245](https://github.com/Lamakira/docuflow/issues/245)
 - **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232) as a new customer, immediately after the Workspace reached `Active`
 - **Where:** `client/src/v2/V2Administration.tsx:654-700`, classes `df-admin-form df-inline-form df-daily-form`, `df-billing-actions`, `df-ghost-btn`, `df-ink-btn`
 - **Severity:** degrading, not blocking. Every control works
@@ -70,7 +70,7 @@ component; the pieces exist.
 
 ## F2 — Workspace Documents, the folder preview panel is cut off
 
-- **Status:** open
+- **Status:** closed — [#245](https://github.com/Lamakira/docuflow/issues/245)
 - **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232), at a normal desktop width
 - **Where:** `client/src/v2/tokens.css:3371` (`.df-folder-preview { width: 400px; }`), used by `client/src/v2/V2Documents.tsx:350`
 - **Severity:** degrading. The panel works; part of it is unreachable
@@ -100,7 +100,7 @@ narrow behaviour. The clipping is a symptom of the row having no rule, not of
 
 ## F3 — People, the invite refusal floats loose in the page
 
-- **Status:** open
+- **Status:** closed — [#245](https://github.com/Lamakira/docuflow/issues/245)
 - **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232), inviting a second person into a 1-seat Workspace
 - **Where:** `client/src/v2/V2People.tsx:295`, style `.df-refusal-pop` at `client/src/v2/tokens.css:1593`
 - **Severity:** degrading. The message is correct and reachable; it is in the wrong place and says too little
@@ -137,7 +137,7 @@ control. The first is a one-line fix.
 
 ## F4 — Project Documentation calls a Project a folder
 
-- **Status:** open
+- **Status:** partly closed — [#245](https://github.com/Lamakira/docuflow/issues/245) took the vocabulary: the screen says Project, `New folder` reads `New project`, and the TYPE column reads `PROJECT`. **The expensive half stays open**: `projects` is still doing two jobs, and whether this screen should have real folders of its own is undecided
 - **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232)
 - **Where:** `client/src/v2/V2ProjectDocumentation.tsx`, fed by `/api/projects/documentable`
 - **Severity:** degrading, and it costs debugging time rather than clicks

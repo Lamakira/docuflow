@@ -16,7 +16,10 @@ type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 
 type LibraryPayload = {
   capabilityMiss: boolean;
-  folders: Project[];
+  /** `/api/projects/documentable` returns Projects. Calling them folders here is
+      what sent a leak investigation through `documents` and `company_documents`
+      before the row turned out to be in `projects` (#245, F4). */
+  projects: Project[];
   crm: CrmProjectWithDetails[];
   documents: Document[];
 };
@@ -44,13 +47,13 @@ async function loadCrmProjects(): Promise<CrmProjectWithDetails[]> {
 async function loadProjectLibrary(): Promise<LibraryPayload> {
   const documentableRes = await fetch("/api/projects/documentable", { credentials: "include" });
   if (documentableRes.status === 401 || documentableRes.status === 403) {
-    return { capabilityMiss: true, folders: [], crm: [], documents: [] };
+    return { capabilityMiss: true, projects: [], crm: [], documents: [] };
   }
   if (!documentableRes.ok) throw new Error("Failed to fetch Project Documentation");
-  const folders = (await documentableRes.json()) as Project[];
+  const projects = (await documentableRes.json()) as Project[];
   const crm = await loadCrmProjects();
   const nested = await Promise.all(
-    folders.map(async (project) => {
+    projects.map(async (project) => {
       const res = await fetch(`/api/projects/${project.id}/documents`, { credentials: "include" });
       if (!res.ok) return [] as Document[];
       return (await res.json()) as Document[];
@@ -58,7 +61,7 @@ async function loadProjectLibrary(): Promise<LibraryPayload> {
   );
   return {
     capabilityMiss: false,
-    folders,
+    projects,
     crm,
     documents: nested.flat(),
   };
@@ -72,7 +75,7 @@ export function V2ProjectDocumentationPage() {
   const [filterQuery, setFilterQuery] = useState("");
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [createMode, setCreateMode] = useState<"document" | "folder" | null>(null);
+  const [createMode, setCreateMode] = useState<"document" | "project" | null>(null);
   const [name, setName] = useState("");
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
@@ -94,7 +97,7 @@ export function V2ProjectDocumentationPage() {
   const library = composeProjectDocumentation({
     now,
     workspaceName,
-    projects: (data?.folders ?? []).map((project) => {
+    projects: (data?.projects ?? []).map((project) => {
       const crm = crmByProjectId.get(project.id);
       const memberIds = crm
         ? (crm.members ?? [])
@@ -151,7 +154,7 @@ export function V2ProjectDocumentationPage() {
 
   const createDocument = useMutation({
     mutationFn: (title: string) => {
-      if (!selectedDocumentProjectId) throw new Error("Select a Project folder first.");
+      if (!selectedDocumentProjectId) throw new Error("Select a Project first.");
       return apiRequest("POST", `/api/projects/${selectedDocumentProjectId}/documents`, {
         title,
         content: { type: "doc", content: [{ type: "paragraph" }] },
@@ -173,10 +176,11 @@ export function V2ProjectDocumentationPage() {
     },
   });
 
-  const createFolder = useMutation({
-    mutationFn: (folderName: string) =>
+  // The control creates a row in `projects`, and the screen says so (#245, F4).
+  const createProject = useMutation({
+    mutationFn: (projectName: string) =>
       apiRequest("POST", "/api/crm/projects", {
-        name: folderName,
+        name: projectName,
         documentationEnabled: true,
         isDocumentationOnly: true,
       }),
@@ -192,11 +196,13 @@ export function V2ProjectDocumentationPage() {
     },
   });
 
-  function onFolderClick(folderId: string) {
+  // The register calls its expandable parents folders; on this screen each one
+  // is a Project (#245, F4).
+  function onFolderClick(projectId: string) {
     folderMotion.onUserExpand();
-    setSelectedProjectId(folderId);
+    setSelectedProjectId(projectId);
     setExpandedProjectIds((currentIds) =>
-      currentIds.includes(folderId) ? currentIds.filter((id) => id !== folderId) : [...currentIds, folderId],
+      currentIds.includes(projectId) ? currentIds.filter((id) => id !== projectId) : [...currentIds, projectId],
     );
   }
 
@@ -205,10 +211,10 @@ export function V2ProjectDocumentationPage() {
     const trimmed = name.trim();
     if (!trimmed) return;
     if (refuseWrite()) return;
-    if (createMode === "folder") createFolder.mutate(trimmed);
+    if (createMode === "project") createProject.mutate(trimmed);
     if (createMode === "document") {
       if (!selectedDocumentProjectId) {
-        setWriteRefusal("Select a Project folder first.");
+        setWriteRefusal("Select a Project first.");
         return;
       }
       createDocument.mutate(trimmed);
@@ -240,8 +246,8 @@ export function V2ProjectDocumentationPage() {
             <p className="df-subhead">{library.subhead}</p>
           </div>
           <div className="df-library-actions">
-            <button type="button" className="df-ghost-btn" onClick={() => setCreateMode("folder")}>
-              New folder
+            <button type="button" className="df-ghost-btn" onClick={() => setCreateMode("project")}>
+              New project
             </button>
             <button type="button" className="df-ink-btn" onClick={() => setCreateMode("document")}>
               New Document
@@ -256,14 +262,14 @@ export function V2ProjectDocumentationPage() {
                 type="text"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder={createMode === "folder" ? "Folder name" : "Document name"}
-                aria-label={createMode === "folder" ? "Folder name" : "Document name"}
+                placeholder={createMode === "project" ? "Project name" : "Document name"}
+                aria-label={createMode === "project" ? "Project name" : "Document name"}
               />
             </label>
             <button
               type="submit"
               className="df-ink-btn"
-              disabled={createDocument.isPending || createFolder.isPending || !name.trim()}
+              disabled={createDocument.isPending || createProject.isPending || !name.trim()}
             >
               Create
             </button>

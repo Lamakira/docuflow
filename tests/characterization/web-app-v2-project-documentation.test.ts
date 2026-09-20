@@ -86,6 +86,13 @@ describe("Project Documentation and Document editor routing (#189)", () => {
     );
     expect(pageSource).toContain("/api/projects/documentable");
     expect(pageSource).toContain("isDocumentationOnly: true");
+
+    // The control creates a row in `projects`, so it says so. Calling it a
+    // folder sent an operator to create one when they were asked to open a
+    // File, and sent a leak investigation to the wrong two tables (#245, F4).
+    expect(pageSource).toContain("New project");
+    expect(pageSource).toContain("Project name");
+    expect(pageSource).not.toMatch(/New folder|Folder name|Project folder/);
   });
 
   it("opens a Workspace Document from the library in the v2 editor, not a placeholder", () => {
@@ -194,9 +201,12 @@ describe("Project Documentation library from live Project Documents (#189)", () 
     expect(library.empty).toBe(false);
     expect(library.rows.filter((row) => row.kind === "folder")).toHaveLength(1);
     expect(library.rows.find((row) => row.id === "crm-1")).toMatchObject({
+      // `kind` is the row's shape in the register — an expandable parent. The
+      // TYPE column is the word the reader sees, and a row in `projects` is a
+      // Project; CONTEXT.md has no Folder at all (#245, F4).
       kind: "folder",
       name: "Ledger rebuild",
-      type: "FOLDER",
+      type: "PROJECT",
       expanded: true,
     });
     const child = library.rows.find((row) => row.id === "d1");

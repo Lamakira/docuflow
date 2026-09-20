@@ -124,10 +124,12 @@ function projectRow(
   const itemLabel = count === 1 ? "1 ITEM" : `${count} ITEMS`;
   return {
     id: project.id,
+    // `kind` is the row's shape in the register — an expandable parent. `type`
+    // is the word the reader gets, and this row is a Project (#245, F4).
     kind: "folder",
     name: project.name,
     path: `/ · ${itemLabel}`,
-    type: "FOLDER",
+    type: "PROJECT",
     access: "ASSIGNED",
     editor: latest?.createdBy ? memberName(latest.createdBy) : "—",
     updated: formatWhen(latest?.updatedAt ?? latest?.createdAt ?? project.updatedAt ?? null, now),

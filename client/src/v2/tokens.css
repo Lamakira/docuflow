@@ -1098,7 +1098,8 @@ button.df-activity-row {
 .df-form-actions .df-ink-btn,
 .df-form-actions .df-ghost-btn,
 .df-billing-actions .df-ink-btn,
-.df-billing-actions .df-ghost-btn {
+.df-billing-actions .df-ghost-btn,
+.df-billing-actions .df-danger-btn {
   height: var(--df-control-h);
 }
 
@@ -1110,7 +1111,8 @@ button.df-activity-row {
 .df-form-actions .df-ink-btn,
 .df-form-actions .df-ghost-btn,
 .df-billing-actions .df-ink-btn,
-.df-billing-actions .df-ghost-btn {
+.df-billing-actions .df-ghost-btn,
+.df-billing-actions .df-danger-btn {
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -1328,22 +1330,85 @@ button.df-activity-row {
   border-top: 1px solid var(--df-divider-light);
 }
 
-.df-billing-actions > .df-form-note {
+/* The seat control belongs to the figure it edits (#245, F1). It sits under the
+   band and shares its left edge, instead of floating centred between the
+   figures and the buttons, belonging to neither. */
+.df-admin-seat-form {
+  padding: 0 18px 14px;
+  max-width: 320px;
+}
+
+/* The entitlement sentence is a status about the Workspace, so it sits with the
+   band. Inside the button row it was laid out as helper text for buttons it
+   does not describe (#245, F1). */
+.df-admin-billing-note {
   margin: 0;
-  margin-right: auto;
-  padding: 0;
+  padding: 0 18px 14px;
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--df-archive-slate);
   max-width: 64ch;
 }
 
+/* A destructive control never borrows the neutral button's look (#245, F1):
+   ending a subscription must not be reachable by the reflex that updates a card. */
+.df-danger-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--df-destructive);
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: transparent;
+  color: var(--df-destructive);
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 12.5px;
+}
+
+.df-danger-btn:hover:not(:disabled) {
+  background: var(--df-destructive);
+  color: var(--df-card-white);
+}
+
+.df-danger-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* The armed state: what it costs, then the two ways out of it. */
+.df-billing-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  margin-left: auto;
+  text-align: right;
+}
+
+.df-billing-confirm-note {
+  max-width: 48ch;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--df-destructive);
+}
+
+.df-billing-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .df-v2[data-chrome="mobile"] .df-billing-actions {
   padding: 12px 13px;
 }
 
-.df-v2[data-chrome="mobile"] .df-billing-actions > .df-form-note {
+.df-v2[data-chrome="mobile"] .df-billing-confirm {
+  margin-left: 0;
   flex: 1 0 100%;
+  align-items: stretch;
+  text-align: left;
 }
 
 .df-analytics-register .df-register-head[data-columns="4"],
@@ -1590,6 +1655,15 @@ button.df-activity-row {
   justify-content: flex-end;
 }
 
+/* An anchor around a full-width region rather than around a button: the popover
+   still hangs 8px under what raised it, but the region keeps its own layout. */
+.df-refusal-anchor-block {
+  display: block;
+}
+
+/* A refusal says something did not happen, so it does not look like a
+   confirmation saying something did (#245, F3). The left edge carries the
+   difference; `role="status"` keeps the announcement polite. */
 .df-refusal-pop {
   position: absolute;
   right: 0;
@@ -1598,6 +1672,7 @@ button.df-activity-row {
   width: min(320px, 72vw);
   background: var(--df-card-white);
   border: 1px solid var(--df-divider);
+  border-left: 3px solid var(--df-destructive);
   border-radius: 8px;
   box-shadow: 0 12px 28px rgba(15, 21, 36, 0.12);
   transform-origin: top right;
@@ -3103,6 +3178,10 @@ button.df-activity-row {
 
 .df-library {
   display: flex;
+  /* Something has to give when the register's floor and the aside's width do
+     not both fit (#245, F2). The aside drops below the register rather than
+     being sliced off the right edge of the viewport. */
+  flex-wrap: wrap;
   flex: 1;
   min-height: 0;
   min-width: 1060px;
@@ -3368,8 +3447,14 @@ button.df-activity-row {
   text-transform: uppercase;
 }
 
+/* 400px when there is room for 400px, the full row when there is not, and never
+   wider than what contains it (#245, F2). A fixed width had no answer for the
+   case where the row was too narrow, so the panel was clipped mid-sentence and
+   `Manage access` could not be read. */
 .df-folder-preview {
-  width: 400px;
+  flex: 0 1 400px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .df-today-title-row {
