@@ -130,6 +130,13 @@ export type WebhookEndpointRow = {
 export type BillingAction = {
   id: "checkout" | "seats" | "payment-method" | "cancel";
   label: string;
+  /**
+   * A destructive action is set apart, so the reflex that reaches a routine
+   * button does not reach this one (#245, F1).
+   */
+  tone: "neutral" | "destructive";
+  /** What the action costs, stated before it runs. `null` when it costs nothing. */
+  consequence: string | null;
 };
 
 export type BillingModel = {
@@ -137,7 +144,14 @@ export type BillingModel = {
   plan: string;
   condition: "Trial" | "Active" | "Past due" | "Read-only" | null;
   seats: string;
-  entitlements: string;
+  /**
+   * The entitlement sentence, and only when it says more than the WRITES figure
+   * does. "Writes allowed." beside a figure reading Allowed is the same fact
+   * twice; read-only carries a clause the figure cannot.
+   */
+  entitlementNote: string | null;
+  /** What the seat field starts from, so it never contradicts the figure above it. */
+  seatQuantityDefault: string;
   /** The subscription read as discrete facts, so the card is not three loose lines. */
   figures: AnalyticsFigure[];
   actions: BillingAction[];
@@ -307,6 +321,18 @@ function billingTermFigure(pin: BillingInput): AnalyticsFigure {
   return { label: "RENEWS", value: "—" };
 }
 
+/** What cancelling ends, and when — the card says it before the action runs. */
+function cancellationConsequence(pin: BillingInput): string {
+  const tail = "Viewing, export, and recovery stay available.";
+  if (pin.periodEndsAt) {
+    return (
+      `${planLabel(pin.planKey)} entitlements stay until ${formatFullDay(pin.periodEndsAt)}. ` +
+      `On that day writes stop and the Workspace becomes read-only. ${tail}`
+    );
+  }
+  return `Writes stop at the end of the current period and the Workspace becomes read-only. ${tail}`;
+}
+
 function composeBilling(input: AdministrationInput): BillingModel {
   const pin = input.billing;
   if (!pin) {
@@ -317,7 +343,8 @@ function composeBilling(input: AdministrationInput): BillingModel {
         ? input.condition
         : null,
       seats: "Seat counts are not available.",
-      entitlements: "",
+      entitlementNote: null,
+      seatQuantityDefault: "",
       figures: [],
       actions: [],
       checkout: "redirect",
@@ -326,18 +353,30 @@ function composeBilling(input: AdministrationInput): BillingModel {
 
   const condition = billingCondition(pin.billingState);
   const readOnly = pin.billingState === "ReadOnly" || input.condition === "Read-only";
+  const routine = (id: BillingAction["id"], label: string): BillingAction => ({
+    id,
+    label,
+    tone: "neutral",
+    consequence: null,
+  });
+
   const actions: BillingAction[] = [];
   if (pin.planKey === "trial") {
-    actions.push({ id: "checkout", label: "Start Pro" });
+    actions.push(routine("checkout", "Start Pro"));
   }
   if (!readOnly && pin.planKey === "pro") {
-    actions.push({ id: "seats", label: "Change seats" });
+    actions.push(routine("seats", "Change seats"));
   }
   if (pin.stripeCustomerId) {
-    actions.push({ id: "payment-method", label: "Update payment method" });
+    actions.push(routine("payment-method", "Update payment method"));
   }
   if (!readOnly && pin.billingState === "Active" && !pin.cancelAtPeriodEnd) {
-    actions.push({ id: "cancel", label: "Cancel at period end" });
+    actions.push({
+      id: "cancel",
+      label: "Cancel at period end",
+      tone: "destructive",
+      consequence: cancellationConsequence(pin),
+    });
   }
 
   return {
@@ -345,17 +384,23 @@ function composeBilling(input: AdministrationInput): BillingModel {
     plan: planLabel(pin.planKey),
     condition,
     seats: `${pin.consumedSeatCount} of ${pin.purchasedSeatCapacity} Billable Seats consumed.`,
-    entitlements: readOnly
+    entitlementNote: readOnly
       ? "Writes blocked. Viewing, export, and recovery stay available."
-      : "Writes allowed.",
+      : null,
+    seatQuantityDefault: String(pin.purchasedSeatCapacity),
     figures: [
       { label: "PLAN", value: planLabel(pin.planKey) },
-      { label: "CONDITION", value: condition ?? "—" },
+      // The domain calls this the billing state. "CONDITION" was this card's own
+      // word for it, and said the same thing as the chip in the header.
+      { label: "BILLING STATE", value: condition ?? "—" },
+      { label: "WRITES", value: readOnly ? "Blocked" : "Allowed" },
+      billingTermFigure(pin),
+      // Last, so the four-column band wraps it onto the row directly above the
+      // seat control, and the number sits with what edits it (#245, F1).
       {
         label: "BILLABLE SEATS",
         value: `${pin.consumedSeatCount} of ${pin.purchasedSeatCapacity}`,
       },
-      billingTermFigure(pin),
     ],
     actions,
     checkout: "redirect",

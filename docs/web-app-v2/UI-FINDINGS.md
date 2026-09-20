@@ -21,7 +21,7 @@ Related: [`DESIGN-BRIEF.md`](DESIGN-BRIEF.md) for the intent,
 
 ## F1 — Administration → Billing, the `Active` card
 
-- **Status:** open
+- **Status:** closed — [#245](https://github.com/Lamakira/docuflow/issues/245)
 - **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232) as a new customer, immediately after the Workspace reached `Active`
 - **Where:** `client/src/v2/V2Administration.tsx:654-700`, classes `df-admin-form df-inline-form df-daily-form`, `df-billing-actions`, `df-ghost-btn`, `df-ink-btn`
 - **Severity:** degrading, not blocking. Every control works
@@ -70,7 +70,7 @@ component; the pieces exist.
 
 ## F2 — Workspace Documents, the folder preview panel is cut off
 
-- **Status:** open
+- **Status:** closed — [#245](https://github.com/Lamakira/docuflow/issues/245)
 - **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232), at a normal desktop width
 - **Where:** `client/src/v2/tokens.css:3371` (`.df-folder-preview { width: 400px; }`), used by `client/src/v2/V2Documents.tsx:350`
 - **Severity:** degrading. The panel works; part of it is unreachable
@@ -100,7 +100,7 @@ narrow behaviour. The clipping is a symptom of the row having no rule, not of
 
 ## F3 — People, the invite refusal floats loose in the page
 
-- **Status:** open
+- **Status:** closed — [#245](https://github.com/Lamakira/docuflow/issues/245)
 - **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232), inviting a second person into a 1-seat Workspace
 - **Where:** `client/src/v2/V2People.tsx:295`, style `.df-refusal-pop` at `client/src/v2/tokens.css:1593`
 - **Severity:** degrading. The message is correct and reachable; it is in the wrong place and says too little
@@ -137,7 +137,7 @@ control. The first is a one-line fix.
 
 ## F4 — Project Documentation calls a Project a folder
 
-- **Status:** open
+- **Status:** partly closed — [#245](https://github.com/Lamakira/docuflow/issues/245) took the vocabulary: the screen says Project, `New folder` reads `New project`, the TYPE column reads `PROJECT`, the register foot counts PROJECTS, and the internal names follow. **The expensive half stays open**: `projects` is still doing two jobs, and whether this screen should have real folders of its own is undecided
 - **Found:** 2026-09-18, walking [#232](https://github.com/Lamakira/docuflow/issues/232)
 - **Where:** `client/src/v2/V2ProjectDocumentation.tsx`, fed by `/api/projects/documentable`
 - **Severity:** degrading, and it costs debugging time rather than clicks
@@ -164,3 +164,34 @@ case say Project, and let `New folder` read `New project` — or whether it has
 real folders, in which case they need a table of their own. Renaming the label
 is the cheap half; the expensive half is that `projects` is currently doing two
 jobs.
+
+---
+
+## F5 — Administration → Billing, the cancel confirmation lands away from its button
+
+- **Status:** open — deferred to the modal standardisation pass
+- **Found:** 2026-09-20, using the Billing card after [#245](https://github.com/Lamakira/docuflow/issues/245) fixed F1
+- **Where:** `client/src/v2/tokens.css` (`.df-billing-confirm`), `client/src/v2/V2Administration.tsx` (`CancelControl`)
+- **Severity:** degrading. The guard works — one press no longer cancels — but the guard reads badly
+
+Arming `Cancel at period end` opens the consequence and its two buttons hard
+against the bottom-right corner of the card, the full width of the card away
+from `Update payment method`, which is left stranded on the left. At 1400px the
+row reads as two unrelated groups rather than one control and its question.
+
+This is **F3's defect, reproduced**: a message that floats away from what
+raised it. `.df-billing-confirm` carries `margin-left: auto` in the
+`.df-billing-actions` flex row, which is what pushes it. The shape was copied
+from `RevokeControl` in `V2Devices.tsx`, where it works because it lives inside
+a narrow register row; a 1400px card is not that.
+
+The owner's verdict on seeing it: it should be a modal. v2 has no overlay of
+any kind today, and `client/src/components/ui/alert-dialog.tsx` has never been
+used here — so the first destructive confirmation to become a modal sets the
+pattern for every one after it. That is a decision about the chrome, not about
+this button, which is why it is deferred rather than patched.
+
+**What it would take:** the modal standardisation pass. Until then the cheap
+half is dropping `margin-left: auto` so the confirmation sits under the control
+that armed it. Worth checking in the same pass whether `.df-danger-btn`'s red
+is actually reaching the label, which is not obvious on screen.

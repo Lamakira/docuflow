@@ -150,7 +150,7 @@ export function V2LibraryRegister({
       <div className="df-library-foot">
         <span>
           {library.itemCount} {library.itemCount === 1 ? "ITEM" : "ITEMS"} · {library.folderCount}{" "}
-          {library.folderCount === 1 ? "FOLDER" : "FOLDERS"}
+          {library.folderCount === 1 ? library.parentNoun.singular : library.parentNoun.plural}
         </span>
       </div>
     </section>

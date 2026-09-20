@@ -261,6 +261,14 @@ export function V2PeoplePage() {
         </button>
       </div>
 
+      {/*
+        The invite refusal hangs from this anchor (#245, F3). `.df-refusal-pop`
+        is positioned against `.df-refusal-anchor`; without one here the popover
+        resolved against a distant ancestor and landed near the bottom-right of
+        the page, hundreds of pixels from the form that raised it.
+      */}
+      {inviting || refusal?.id === "invite" ? (
+      <div className="df-refusal-anchor df-refusal-anchor-block">
       {inviting ? (
         <form className="df-filter-bar df-people-filter" onSubmit={onInvite}>
           <label className="df-filter-input">
@@ -300,6 +308,8 @@ export function V2PeoplePage() {
             Close
           </button>
         </div>
+      ) : null}
+      </div>
       ) : null}
 
       <section className="df-card df-people-register" data-testid="v2-people-register">

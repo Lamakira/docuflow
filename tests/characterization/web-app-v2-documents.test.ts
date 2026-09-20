@@ -1,6 +1,14 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
 import { composeLibrary, type LibraryInput } from "../../client/src/v2/library";
+
+const css = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/tokens.css"),
+  "utf8",
+).replace(/\/\*[\s\S]*?\*\//g, "");
 
 /**
  * Workspace Documents live register (#174).
@@ -215,5 +223,28 @@ describe("Workspace Documents register from live Workspace records (#174)", () =
     expect(library.rows).toEqual([]);
     expect(library.emptyCopy.toLowerCase()).toContain("filter");
     expect(JSON.stringify(library)).not.toContain("Keystone");
+  });
+});
+
+
+describe("the folder preview does not run off the page (#245, F2)", () => {
+  /** The rule as it is written, without the comments the reader does not run. */
+  function rule(selector: string): string {
+    const match = css.match(new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`));
+    return match ? match[1] : "";
+  }
+
+  it("lets the row give way instead of clipping the aside", () => {
+    // The clipping was the row having no rule: a fixed 400px aside added on top
+    // of a register that refuses to go below 1060px overflows any viewport
+    // narrower than the sum. Wrapping is what gives.
+    expect(rule(".df-library")).toMatch(/flex-wrap:\s*wrap/);
+
+    const preview = rule(".df-folder-preview");
+    expect(preview).toMatch(/flex:\s*0\s+1\s+400px/);
+    expect(preview).toMatch(/max-width:\s*100%/);
+    expect(preview).toMatch(/min-width:\s*0/);
+    // The fixed width is what could not give way.
+    expect(preview).not.toMatch(/^\s*width:\s*400px/m);
   });
 });

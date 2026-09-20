@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   PUBLIC_API_CAPABILITIES,
@@ -52,6 +52,7 @@ import {
   type AnalyticsModel,
   type AnalyticsOverviewInput,
   type AnalyticsRangePreset,
+  type BillingAction,
   type BillingInput,
   type RevealedSecretInput,
   type ServiceAccountInput,
@@ -108,6 +109,7 @@ export function V2AdministrationPage() {
   const [endpointUrl, setEndpointUrl] = useState("");
   const [eventTypes, setEventTypes] = useState<string[]>([]);
   const [seatQuantity, setSeatQuantity] = useState("");
+  const [cancelArmed, setCancelArmed] = useState(false);
   const [revealedSecret, setRevealedSecret] = useState<RevealedSecretInput | null>(null);
   const [actionRefusal, setActionRefusal] = useState<string | null>(null);
   const [rangePreset, setRangePreset] = useState<AnalyticsRangePreset>("7d");
@@ -229,6 +231,28 @@ export function V2AdministrationPage() {
     billing: billing ?? null,
     revealedSecret,
   });
+
+  // An armed confirmation must not outlive the action that armed it. If the
+  // subscription is already cancelling, or the Workspace turned read-only, the
+  // action leaves the model — and coming back later must not come back armed.
+  const cancelOffered =
+    page.kind === "ready" && page.billing.actions.some((action) => action.id === "cancel");
+  useEffect(() => {
+    if (!cancelOffered) setCancelArmed(false);
+  }, [cancelOffered]);
+
+  // The field starts from the capacity the Workspace already holds, so it never
+  // contradicts the BILLABLE SEATS figure above it, and the submit is not
+  // disabled until the customer retypes a number the system already knows.
+  //
+  // Keyed on that capacity rather than on the payload: a refetch mid-edit would
+  // otherwise put the old number back over whatever was being typed.
+  const seatQuantityDefault = page.kind === "ready" ? page.billing.seatQuantityDefault : "";
+  useEffect(() => {
+    if (!seatQuantityDefault) return;
+    setSeatQuantity(seatQuantityDefault);
+  }, [seatQuantityDefault]);
+
   const analytics = composeAnalytics({
     now: rangeAnchor,
     workspaceRole,
@@ -652,9 +676,13 @@ export function V2AdministrationPage() {
           <p className="df-empty">{page.billing.seats}</p>
         )}
 
+        {page.billing.entitlementNote ? (
+          <p className="df-admin-billing-note">{page.billing.entitlementNote}</p>
+        ) : null}
+
         {page.billing.actions.some((action) => action.id === "seats") ? (
           <form
-            className="df-admin-form df-inline-form df-daily-form"
+            className="df-admin-form df-inline-form df-admin-seat-form"
             onSubmit={(event) => {
               event.preventDefault();
               if (!guardWrite()) return;
@@ -683,7 +711,6 @@ export function V2AdministrationPage() {
         ) : null}
 
         <div className="df-billing-actions">
-          <p className="df-form-note">{page.billing.entitlements}</p>
           {page.billing.actions.map((action) => {
             if (action.id === "seats") return null;
             if (action.id === "checkout") {
@@ -712,19 +739,23 @@ export function V2AdministrationPage() {
                 </button>
               );
             }
+            // Ending the subscription is not reachable by the reflex that
+            // reaches the buttons beside it: it is styled apart, and it states
+            // what it costs before it runs (#245, F1).
             return (
-              <button
+              <CancelControl
                 key={action.id}
-                type="button"
-                className="df-ghost-btn"
-                disabled={cancelAtPeriodEnd.isPending}
-                onClick={() => {
+                action={action}
+                armed={cancelArmed}
+                pending={cancelAtPeriodEnd.isPending}
+                onArm={() => setCancelArmed(true)}
+                onDismiss={() => setCancelArmed(false)}
+                onConfirm={() => {
                   if (!guardWrite()) return;
+                  setCancelArmed(false);
                   cancelAtPeriodEnd.mutate();
                 }}
-              >
-                {action.label}
-              </button>
+              />
             );
           })}
         </div>
@@ -1647,5 +1678,80 @@ function EndpointActions({
         </button>
       ) : null}
     </span>
+  );
+}
+
+/**
+ * Ending the subscription, guarded the way a Device Enrollment revoke is: the
+ * first press states the cost, the second one pays it (#245, F1). The control
+ * carries `df-danger-btn` in both states, so it never looks like the routine
+ * button beside it.
+ */
+function CancelControl({
+  action,
+  armed,
+  pending,
+  onArm,
+  onDismiss,
+  onConfirm,
+}: {
+  action: BillingAction;
+  armed: boolean;
+  pending: boolean;
+  onArm: () => void;
+  onDismiss: () => void;
+  onConfirm: () => void;
+}) {
+  const armRef = useRef<HTMLButtonElement | null>(null);
+  const dismissed = useRef(false);
+
+  // Dismissing unmounts the confirmation, so the focus it held would fall to the
+  // document. It goes back to the control that opened it.
+  useEffect(() => {
+    if (armed || !dismissed.current) return;
+    dismissed.current = false;
+    armRef.current?.focus();
+  }, [armed]);
+
+  if (armed) {
+    return (
+      <span className="df-billing-confirm" role="group" aria-label={action.label}>
+        <span className="df-billing-confirm-note">{action.consequence}</span>
+        <span className="df-billing-confirm-actions">
+          <button
+            type="button"
+            className="df-ghost-btn"
+            onClick={() => {
+              dismissed.current = true;
+              onDismiss();
+            }}
+            autoFocus
+          >
+            Keep subscription
+          </button>
+          <button
+            type="button"
+            className="df-danger-btn"
+            disabled={pending}
+            data-testid="v2-administration-billing-cancel-confirm"
+            onClick={onConfirm}
+          >
+            {pending ? "Cancelling…" : action.label}
+          </button>
+        </span>
+      </span>
+    );
+  }
+  return (
+    <button
+      ref={armRef}
+      type="button"
+      className="df-danger-btn"
+      disabled={pending}
+      data-testid="v2-administration-billing-cancel"
+      onClick={onArm}
+    >
+      {action.label}
+    </button>
   );
 }
