@@ -323,23 +323,30 @@ export function composeDeliveryPreference(input: {
   };
 }
 
-export type AccountTheme = "light" | "dark" | "system";
+export type AccountTheme = "light" | "system";
+
+export type AccountMenuStructure = "theme" | "separator" | "account" | "signOut";
 
 export type AccountMenuModel = {
   themeOptions: Array<{ id: AccountTheme; label: string; selected: boolean }>;
+  /** Radio group, then a separator, then Account and Sign out (#249). */
+  structure: AccountMenuStructure[];
   /** The account destination itself — where deletion lives (#217, Flow 10). */
   accountLabel: "Account";
   signOutLabel: "Sign out";
 };
 
-export function composeAccountMenu(input: { theme: AccountTheme }): AccountMenuModel {
+export function composeAccountMenu(input: { theme: string }): AccountMenuModel {
+  // Dark is not a palette yet (#249). A stored "dark" preference collapses to Light
+  // so the menu never offers, or appears to have selected, what does not exist.
+  const theme: AccountTheme = input.theme === "system" ? "system" : "light";
   return {
     accountLabel: "Account",
     signOutLabel: "Sign out",
+    structure: ["theme", "separator", "account", "signOut"],
     themeOptions: [
-      { id: "light", label: "Light", selected: input.theme === "light" },
-      { id: "dark", label: "Dark", selected: input.theme === "dark" },
-      { id: "system", label: "System", selected: input.theme === "system" },
+      { id: "light", label: "Light", selected: theme === "light" },
+      { id: "system", label: "System", selected: theme === "system" },
     ],
   };
 }
@@ -410,6 +417,28 @@ export function toastModel(input: { message: string; undo?: boolean }): ToastMod
     message: input.message,
     edge: "bottom",
     undoLabel: input.undo ? "UNDO" : null,
+  };
+}
+
+export type RefusalPlacement = {
+  open: boolean;
+  align: "end";
+  side: "bottom";
+};
+
+/**
+ * A Capability refusal hangs from the control that failed (#245 F3, #249).
+ * The composer names that attachment so a screen cannot place the popover
+ * against a distant ancestor.
+ */
+export function composeRefusalPlacement(input: {
+  failedControlId: string | null;
+  controlId: string;
+}): RefusalPlacement {
+  return {
+    open: input.failedControlId === input.controlId,
+    align: "end",
+    side: "bottom",
   };
 }
 

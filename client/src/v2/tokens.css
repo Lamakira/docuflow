@@ -336,6 +336,16 @@
   border-color: var(--df-case-ink);
 }
 
+.df-ghost-btn:focus-visible {
+  outline: 2px solid var(--df-amber);
+  outline-offset: 2px;
+}
+
+.df-ghost-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .df-icon-btn {
   position: relative;
   width: 34px;
@@ -351,6 +361,16 @@
 
 .df-icon-btn:hover {
   border-color: var(--df-case-ink);
+}
+
+.df-icon-btn:focus-visible {
+  outline: 2px solid var(--df-amber);
+  outline-offset: 2px;
+}
+
+.df-icon-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .df-badge {
@@ -421,6 +441,21 @@
   font-size: 12.5px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.df-v2 .df-ink-btn:hover:not(:disabled) {
+  filter: brightness(1.18);
+}
+
+.df-v2 .df-ink-btn:focus-visible {
+  outline: 2px solid var(--df-amber);
+  outline-offset: 2px;
+}
+
+.df-v2 .df-ink-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+  filter: none;
 }
 
 .df-card {
@@ -1371,44 +1406,18 @@ button.df-activity-row {
   color: var(--df-card-white);
 }
 
+.df-danger-btn:focus-visible {
+  outline: 2px solid var(--df-amber);
+  outline-offset: 2px;
+}
+
 .df-danger-btn:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-/* The armed state: what it costs, then the two ways out of it. */
-.df-billing-confirm {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  margin-left: auto;
-  text-align: right;
-}
-
-.df-billing-confirm-note {
-  max-width: 48ch;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--df-destructive);
-}
-
-.df-billing-confirm-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 .df-v2[data-chrome="mobile"] .df-billing-actions {
   padding: 12px 13px;
-}
-
-.df-v2[data-chrome="mobile"] .df-billing-confirm {
-  margin-left: 0;
-  flex: 1 0 100%;
-  align-items: stretch;
-  text-align: left;
 }
 
 .df-analytics-register .df-register-head[data-columns="4"],
@@ -1664,24 +1673,23 @@ button.df-activity-row {
   gap: 18px;
 }
 
-/* A refusal says something did not happen, so it does not look like a
-   confirmation saying something did (#245, F3). The left edge carries the
-   difference; `role="status"` keeps the announcement polite. */
-.df-refusal-pop {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
+/* shadcn Popover wearing the refusal texture (#249). The primitive owns
+   position; this class only restyles. The left edge still carries the
+   difference from a confirmation (#245, F3). */
+.df-v2.df-refusal-popover {
   z-index: 4;
   width: min(320px, 72vw);
+  padding: 0;
   background: var(--df-card-white);
   border: 1px solid var(--df-divider);
   border-left: 3px solid var(--df-destructive);
   border-radius: 8px;
   box-shadow: 0 12px 28px rgba(15, 21, 36, 0.12);
+  font-family: var(--df-font-ui);
   transform-origin: top right;
 }
 
-.df-refusal-pop[data-motion="standard"] {
+.df-v2.df-refusal-popover[data-motion="standard"] {
   opacity: 1;
   transform: none;
   transition:
@@ -1690,21 +1698,22 @@ button.df-activity-row {
 }
 
 @starting-style {
-  .df-refusal-pop[data-motion="standard"] {
+  .df-v2.df-refusal-popover[data-motion="standard"] {
     opacity: 0;
     transform: scale(0.97);
   }
 }
 
-.df-refusal-pop[data-motion="instant"] {
+.df-v2.df-refusal-popover[data-motion="instant"] {
   transition: none;
+  animation: none;
 }
 
-.df-refusal-pop .df-refusal {
+.df-v2.df-refusal-popover .df-refusal {
   padding: 12px 14px 4px;
 }
 
-.df-refusal-pop .df-ghost-link {
+.df-v2.df-refusal-popover .df-btn {
   margin: 0 14px 12px;
 }
 
@@ -2000,26 +2009,23 @@ button.df-activity-row {
   flex-direction: column;
 }
 
-.df-overlay-scrim {
-  position: fixed;
-  inset: 0;
+.df-command-scrim {
   background: rgba(15, 21, 36, 0.28);
-  z-index: 40;
   transition: none;
   animation: none;
 }
 
-.df-overlay {
-  position: fixed;
-  left: 50%;
-  top: 110px;
-  transform: translateX(-50%);
+.df-v2.df-command-palette {
   width: min(620px, calc(100vw - 48px));
-  background: #fff;
+  max-width: 620px;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  background: var(--df-card-white);
+  border: 1px solid var(--df-divider);
   border-radius: 10px;
   box-shadow: 0 20px 50px rgba(15, 21, 36, 0.25);
-  z-index: 41;
-  overflow: hidden;
+  font-family: var(--df-font-ui);
   transition: none;
   animation: none;
 }
@@ -2128,9 +2134,16 @@ button.df-activity-row {
   min-width: 220px;
 }
 
-.df-ws-menu {
-  transition: none;
+.df-v2.df-menu {
+  padding: 0;
   animation: none;
+  transition: none;
+}
+
+.df-v2.df-menu.df-menu-match-trigger {
+  width: var(--radix-dropdown-menu-trigger-width);
+  min-width: var(--radix-dropdown-menu-trigger-width);
+  max-width: var(--radix-dropdown-menu-trigger-width);
 }
 
 .df-chooser {
@@ -2138,7 +2151,6 @@ button.df-activity-row {
   animation: none;
 }
 
-.df-ws-menu button,
 .df-chooser button {
   transition: none;
   animation: none;
@@ -2317,7 +2329,6 @@ button.df-activity-row {
 .df-people-action .df-ghost-btn,
 .df-devices-confirm .df-ghost-btn,
 .df-policy-timezone .df-ghost-btn,
-.df-refusal-pop .df-ghost-btn,
 .df-card-head .df-ghost-btn {
   height: var(--df-control-h);
   padding-top: 0;
@@ -2325,8 +2336,8 @@ button.df-activity-row {
 }
 
 .df-ghost-btn[data-danger="true"] {
-  border-color: var(--df-case-ink);
-  color: var(--df-case-ink);
+  border-color: var(--df-destructive);
+  color: var(--df-destructive);
   font-weight: 600;
 }
 
@@ -2433,17 +2444,17 @@ button.df-activity-row {
 .df-v2.df-row-menu {
   min-width: 168px;
   padding: 0;
-  /* The v2 menus do not animate open; this one matches them. */
   animation: none;
   transition: none;
 }
 
-.df-v2 .df-row-menu-item {
+.df-v2 .df-menu-item {
   display: flex;
   align-items: center;
   width: 100%;
   padding: 9px 12px;
   border-bottom: 1px solid var(--df-divider-light);
+  border-radius: 0;
   background: transparent;
   cursor: pointer;
   outline: none;
@@ -2453,23 +2464,64 @@ button.df-activity-row {
   color: var(--df-case-ink);
 }
 
-.df-v2 .df-row-menu-item:last-child {
+.df-v2 .df-menu-item:last-child {
   border-bottom: 0;
 }
 
-.df-v2 .df-row-menu-item[data-highlighted] {
+.df-v2 .df-menu-item[data-highlighted] {
   background: var(--df-hover);
 }
 
-/* A permanent action is named, not coloured like an alarm: it still asks for
-   a confirm on the row before anything is destroyed. */
-.df-v2 .df-row-menu-item[data-danger="true"] {
+.df-v2 .df-menu-item[data-danger="true"] {
+  color: var(--df-destructive);
   font-weight: 600;
 }
 
-.df-v2 .df-row-menu-item[data-disabled] {
+.df-v2 .df-menu-item[data-disabled] {
   opacity: 0.5;
   cursor: default;
+}
+
+.df-v2 .df-menu-item svg {
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-menu-separator {
+  margin: 0;
+  background: var(--df-divider);
+}
+
+.df-v2 .df-btn {
+  font-family: var(--df-font-ui);
+}
+
+.df-v2.df-alert {
+  background: var(--df-card-white);
+  border: 1px solid var(--df-divider);
+  border-radius: 8px;
+  font-family: var(--df-font-ui);
+  box-shadow: 0 20px 50px rgba(15, 21, 36, 0.18);
+}
+
+.df-v2.df-context-sheet {
+  padding: 0;
+  gap: 0;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  max-width: none;
+  background: var(--df-card-white);
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 -10px 30px rgba(15, 21, 36, 0.14);
+  font-family: var(--df-font-ui);
+}
+
+.df-context-sheet-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--df-card-white);
 }
 
 /* A band of controls that belong to the card below it, not a split header. */
@@ -3625,46 +3677,6 @@ button.df-activity-row {
   cursor: pointer;
 }
 
-.df-sheet {
-  position: absolute;
-  inset: 0;
-  background: var(--df-card-white);
-  border-radius: 8px 8px 0 0;
-  box-shadow: 0 -10px 30px rgba(15, 21, 36, 0.14);
-  display: flex;
-  flex-direction: column;
-  z-index: 15;
-}
-
-.df-sheet-handle {
-  width: 36px;
-  height: 4px;
-  border-radius: 99px;
-  background: var(--df-divider);
-  border: 0;
-  padding: 0;
-  margin: 10px auto 0;
-  cursor: pointer;
-  display: block;
-  flex: none;
-}
-
-.df-sheet-foot {
-  padding: 12px 16px;
-  border-top: 1px solid var(--df-divider);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.df-sheet-btn {
-  width: 100%;
-  justify-content: center;
-  min-height: 44px;
-  font-size: 14px;
-  padding: 12px 0;
-}
-
 .df-action-bar {
   display: flex;
   align-items: center;
@@ -3898,7 +3910,7 @@ button.df-activity-row {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .df-sheet {
+  .df-v2.df-context-sheet {
     box-shadow: none;
   }
 
@@ -3935,7 +3947,7 @@ button.df-activity-row {
     transition: background-color var(--duration-press) var(--ease-out);
   }
 
-  .df-refusal-pop[data-motion="standard"] {
+  .df-v2.df-refusal-popover[data-motion="standard"] {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
   }
@@ -3981,7 +3993,7 @@ button.df-activity-row {
       transform: none;
     }
 
-    .df-refusal-pop[data-motion="standard"] {
+    .df-v2.df-refusal-popover[data-motion="standard"] {
       transform: none;
     }
 

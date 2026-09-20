@@ -171,7 +171,7 @@ describe("Notifications inbox (#210)", () => {
 describe("Account menu (#210)", () => {
   it("holds theme and sign out, and does not duplicate Devices or a Clerk password field", () => {
     const menu = composeAccountMenu({ theme: "system" });
-    expect(menu.themeOptions.map((option) => option.id)).toEqual(["light", "dark", "system"]);
+    expect(menu.themeOptions.map((option) => option.id)).toEqual(["light", "system"]);
     expect(menu.themeOptions.find((option) => option.id === "system")?.selected).toBe(true);
     expect(menu.signOutLabel).toBe("Sign out");
     expect(JSON.stringify(menu).toLowerCase()).not.toContain("password");
@@ -182,6 +182,15 @@ describe("Account menu (#210)", () => {
     expect(railSource).toContain("setTheme");
     expect(railSource).not.toContain("password");
     expect(railSource).not.toMatch(/href="\/devices"/);
+  });
+
+  it("drops Dark so the menu only offers themes that exist (#249)", () => {
+    const storedDark = composeAccountMenu({ theme: "dark" });
+    expect(storedDark.themeOptions.map((option) => option.id)).toEqual(["light", "system"]);
+    expect(storedDark.themeOptions.find((option) => option.id === "light")?.selected).toBe(true);
+    expect(storedDark.structure).toEqual(["theme", "separator", "account", "signOut"]);
+    expect(railSource).toContain("account.structure");
+    expect(railSource).toMatch(/theme === ["']dark["']/);
   });
 });
 
@@ -209,7 +218,7 @@ describe("Ask and Notifications motion (#210)", () => {
     expect(motionForSurface("search-overlay").enterExit).toBe("instant");
     expect(motionForSurface("ask-composer").enterExit).toBe("instant");
     expect(motionForSurface("delivery-preference").enterExit).toBe("instant");
-    expect(rule(".df-overlay")).toMatch(/transition:\s*none/);
+    expect(rule(".df-v2.df-command-palette")).toMatch(/transition:\s*none/);
     expect(rule(".df-search-hits")).toMatch(/transition:\s*none/);
     expect(rule(".df-ask-composer input")).toMatch(/transition:\s*none/);
     expect(rule(".df-delivery-toggle")).toMatch(/transition:\s*none/);

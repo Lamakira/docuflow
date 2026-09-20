@@ -178,6 +178,25 @@ describe("v2 Active Workspace (#183)", () => {
     expect(switcher.rows.map((row) => row.workspaceId)).toEqual(["seeded"]);
   });
 
+  it("lists other Workspaces in the menu, not the Active Workspace a second time (#249)", () => {
+    const switcher = workspaceSwitcher({
+      memberships: [seeded, harbour],
+      activeWorkspaceId: "parallel",
+      timerWorkspaceId: "seeded",
+    });
+    expect(switcher.current?.workspaceId).toBe("parallel");
+    expect(switcher.others.map((row) => row.workspaceId)).toEqual(["seeded"]);
+    expect(switcher.others.some((row) => row.active)).toBe(false);
+
+    const alone = workspaceSwitcher({
+      memberships: [seeded],
+      activeWorkspaceId: "seeded",
+      timerWorkspaceId: null,
+    });
+    expect(alone.current?.workspaceId).toBe("seeded");
+    expect(alone.others).toEqual([]);
+  });
+
   it("labels a Timer with the Workspace it belongs to and does not steal the entered Workspace's amber identity", () => {
     const running = timerChipModel({
       isRunning: true,
@@ -237,7 +256,7 @@ describe("v2 Active Workspace (#183)", () => {
     expect(rule(".df-workspace-content")).toMatch(/opacity/);
     expect(rule('.df-workspace-content[data-motion="standard"]')).toMatch(/transform/);
     expect(reducedMotionCss()).toMatch(/\.df-workspace-content[^{]*\{[^}]*transform:\s*none/);
-    expect(rule(".df-ws-menu")).toMatch(/transition:\s*none/);
+    expect(rule(".df-v2.df-menu")).toMatch(/transition:\s*none/);
     expect(rule(".df-chooser")).toMatch(/transition:\s*none/);
   });
 

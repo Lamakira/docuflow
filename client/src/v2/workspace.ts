@@ -130,24 +130,32 @@ export function workspaceEntry(input: {
   return { kind: "chooser", rows };
 }
 
+export type WorkspaceSwitcherRow = MembershipOption & { active: boolean; timer: boolean };
+
 export function workspaceSwitcher(input: {
   memberships: MembershipOption[];
   activeWorkspaceId: string;
   timerWorkspaceId: string | null;
 }): {
-  rows: Array<MembershipOption & { active: boolean; timer: boolean }>;
+  current: WorkspaceSwitcherRow | null;
+  others: WorkspaceSwitcherRow[];
+  rows: WorkspaceSwitcherRow[];
 } {
-  const rows = activeMemberships(input.memberships).sort((a, b) => {
-    if (a.workspaceId === input.activeWorkspaceId) return -1;
-    if (b.workspaceId === input.activeWorkspaceId) return 1;
-    return byName(a, b);
-  });
-  return {
-    rows: rows.map((row) => ({
+  const rows = activeMemberships(input.memberships)
+    .sort((a, b) => {
+      if (a.workspaceId === input.activeWorkspaceId) return -1;
+      if (b.workspaceId === input.activeWorkspaceId) return 1;
+      return byName(a, b);
+    })
+    .map((row) => ({
       ...row,
       active: row.workspaceId === input.activeWorkspaceId,
       timer: input.timerWorkspaceId != null && row.workspaceId === input.timerWorkspaceId,
-    })),
+    }));
+  return {
+    current: rows.find((row) => row.active) ?? null,
+    others: rows.filter((row) => !row.active),
+    rows,
   };
 }
 

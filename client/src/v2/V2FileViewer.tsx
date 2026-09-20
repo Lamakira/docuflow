@@ -13,6 +13,7 @@ import { ZoomIn, ZoomOut } from "lucide-react";
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Button } from "@/components/ui/button";
+import { V2RefusalPopover } from "./V2RefusalPopover";
 import {
   composeFileViewer,
   formatZoom,
@@ -155,24 +156,29 @@ function DownloadControl({ href, fileName }: { href: string; fileName: string })
   const [failed, setFailed] = useState(false);
 
   return (
-    <div className="df-refusal-anchor">
-      <button
-        type="button"
-        className="df-ink-btn"
-        data-testid="v2-file-download"
-        onClick={async () => {
-          setFailed(false);
-          try {
-            await saveFile(href, fileName);
-          } catch {
-            setFailed(true);
-          }
-        }}
-      >
-        Download
-      </button>
-      {failed ? <p className="df-refusal">This File could not be downloaded.</p> : null}
-    </div>
+    <V2RefusalPopover
+      controlId="download"
+      failedControlId={failed ? "download" : null}
+      message={failed ? "This File could not be downloaded." : null}
+      onDismiss={() => setFailed(false)}
+      trigger={
+        <button
+          type="button"
+          className="df-ink-btn"
+          data-testid="v2-file-download"
+          onClick={async () => {
+            setFailed(false);
+            try {
+              await saveFile(href, fileName);
+            } catch {
+              setFailed(true);
+            }
+          }}
+        >
+          Download
+        </button>
+      }
+    />
   );
 }
 

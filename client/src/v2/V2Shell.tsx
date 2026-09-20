@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import type { SafeUser } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { V2AppBar } from "./V2AppBar";
 import { V2CommandBar } from "./V2CommandBar";
 import { V2ContextPanel } from "./V2ContextPanel";
@@ -301,12 +302,28 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
                   </div>
                 </main>
               </div>
-              {panel && surface.kind !== "none" ? (
-                <V2ContextPanel panel={panel} onClose={() => setPanel(null)} surface={surface.kind} />
+              {panel && surface.kind === "side-panel" ? (
+                <V2ContextPanel panel={panel} onClose={() => setPanel(null)} surface="side-panel" />
               ) : null}
             </div>
           </div>
         </div>
+        <Sheet open={sheetOpen} onOpenChange={(open) => { if (!open) setPanel(null); }}>
+          <SheetContent
+            side="bottom"
+            overlayClassName="df-command-scrim"
+            className="df-v2 df-context-sheet"
+          >
+            {panel && surface.kind === "sheet" ? (
+              <>
+                <SheetTitle className="sr-only">
+                  {panel === "ask" ? "Ask DocuFlow" : panel === "approvals" ? "Approvals" : "Notifications"}
+                </SheetTitle>
+                <V2ContextPanel panel={panel} onClose={() => setPanel(null)} surface="sheet" />
+              </>
+            ) : null}
+          </SheetContent>
+        </Sheet>
         <V2ToastHost toast={toast} onDismiss={dismissToast} onGone={() => setToast(null)} />
       </div>
     </V2ChromeContext.Provider>

@@ -16,12 +16,12 @@ import {
 } from "./people";
 import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
+import { V2RefusalPopover } from "./V2RefusalPopover";
 
 type WorkspaceMembershipsResponse = { memberships: PeopleMembershipInput[] };
 type BillingSubscription = { purchasedSeatCapacity?: number };
 type RefusalTarget = { id: string; message: string };
 
-const REFUSAL_MOTION = motionForSurface("capability-refusal").enterExit;
 const ACCEPT_MOTION = motionForSurface("invitation-accept").enterExit;
 
 export function V2PeoplePage() {
@@ -261,13 +261,17 @@ export function V2PeoplePage() {
       </div>
 
       {/*
-        The invite refusal hangs from this anchor (#245, F3). `.df-refusal-pop`
-        is positioned against `.df-refusal-anchor`; without one here the popover
-        resolved against a distant ancestor and landed near the bottom-right of
-        the page, hundreds of pixels from the form that raised it.
+        The invite refusal hangs from this anchor (#245, F3, #249).
       */}
       {inviting || refusal?.id === "invite" ? (
-      <div className="df-refusal-anchor df-refusal-anchor-block">
+      <V2RefusalPopover
+        controlId="invite"
+        failedControlId={refusal?.id ?? null}
+        message={refusal?.id === "invite" ? refusal.message : null}
+        testId="v2-people-refusal-invite"
+        onDismiss={() => setRefusal(null)}
+        trigger={
+      <div className="df-refusal-anchor-block">
       {inviting ? (
         <form className="df-filter-bar df-people-filter" onSubmit={onInvite}>
           <label className="df-filter-input">
@@ -299,16 +303,9 @@ export function V2PeoplePage() {
         </form>
       ) : null}
       {inviting ? <p className="df-empty df-people-seats">{page.invitePreview}</p> : null}
-
-      {refusal?.id === "invite" ? (
-        <div className="df-refusal-pop" data-motion={REFUSAL_MOTION} role="status" data-testid="v2-people-refusal-invite">
-          <p className="df-refusal">{refusal.message}</p>
-          <button type="button" className="df-ghost-btn" onClick={() => setRefusal(null)}>
-            Close
-          </button>
-        </div>
-      ) : null}
       </div>
+        }
+      />
       ) : null}
 
       <section className="df-card df-people-register" data-testid="v2-people-register">
@@ -513,18 +510,17 @@ function RefusalAnchor({
 }) {
   const open = refusal?.id === id;
   return (
-    <span className="df-refusal-anchor">
-      <button type="button" className="df-ghost-btn" disabled={pending} data-testid={testId} onClick={onClick}>
-        {label}
-      </button>
-      {open ? (
-        <div className="df-refusal-pop" data-motion={REFUSAL_MOTION} role="status" data-testid={`v2-people-refusal-${id}`}>
-          <p className="df-refusal">{refusal.message}</p>
-          <button type="button" className="df-ghost-btn" onClick={onDismiss}>
-            Close
-          </button>
-        </div>
-      ) : null}
-    </span>
+    <V2RefusalPopover
+      controlId={id}
+      failedControlId={refusal?.id ?? null}
+      message={open ? refusal.message : null}
+      testId={`v2-people-refusal-${id}`}
+      onDismiss={onDismiss}
+      trigger={
+        <button type="button" className="df-ghost-btn" disabled={pending} data-testid={testId} onClick={onClick}>
+          {label}
+        </button>
+      }
+    />
   );
 }

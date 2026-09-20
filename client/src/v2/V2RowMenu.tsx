@@ -48,7 +48,7 @@ export function V2RowMenu({ ariaLabel, items, testId }: V2RowMenuProps) {
         {items.map((item) => (
           <DropdownMenuItem
             key={item.label}
-            className="df-row-menu-item"
+            className="df-menu-item"
             data-danger={item.danger ? "true" : "false"}
             disabled={item.disabled}
             data-testid={item.testId}

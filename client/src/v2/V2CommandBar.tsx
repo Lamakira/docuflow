@@ -1,9 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { CrmProjectWithDetails } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
-import { BellIcon, CloseIcon, SearchIcon, SparkleIcon } from "./icons";
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { BellIcon, SearchIcon, SparkleIcon } from "./icons";
 import { V2TimerChip } from "./V2TimerChip";
 import { composeSearch, selectCommandPanel, chromeRefusal, type SearchModel } from "./chrome";
 import { motionForSurface } from "./motion";
@@ -182,7 +189,7 @@ async function loadSearch(
 
 export function SearchOverlay({ workspaceName, onClose }: { workspaceName: string; onClose: () => void }) {
   const [query, setQuery] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [, navigate] = useLocation();
   const trimmed = query.trim();
   const { user } = useAuth();
   const { memberships } = useV2Chrome();
@@ -206,62 +213,53 @@ export function SearchOverlay({ workspaceName, onClose }: { workspaceName: strin
   const footer = data?.model.footer ?? null;
   const knowledgeRefusal = data?.knowledgeRefusal ?? null;
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
   return (
-    <>
-      <div className="df-overlay-scrim" data-motion={SEARCH_MOTION} onClick={onClose} />
-      <div
-        className="df-overlay"
-        role="dialog"
-        aria-label={`Search ${workspaceName}`}
-        data-testid="v2-search-overlay"
+    <CommandDialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      shouldFilter={false}
+      overlayClassName="df-command-scrim"
+      className="df-v2 df-command-palette"
+      title={`Search ${workspaceName}`}
+      data-testid="v2-search-overlay"
+    >
+      <CommandInput
+        value={query}
+        onValueChange={setQuery}
+        placeholder={`Search ${workspaceName}`}
         data-motion={SEARCH_MOTION}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid #D8DEE6" }}>
-          <SearchIcon />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={`Search ${workspaceName}`}
-            aria-label={`Search ${workspaceName}`}
-            style={{
-              flex: 1,
-              border: 0,
-              outline: "none",
-              fontSize: 14,
-              background: "transparent",
-            }}
-          />
-          <button type="button" onClick={onClose} className="df-icon-btn" style={{ width: 28, height: 28 }} aria-label="Close search">
-            <CloseIcon />
-          </button>
-        </div>
-        <div className="df-search-hits">
-          {knowledgeRefusal ? <p className="df-refusal">{knowledgeRefusal}</p> : null}
-          {trimmed && !isFetching && rows.length === 0 && !knowledgeRefusal ? (
-            <p style={{ padding: "14px", fontSize: 13.5, color: "#59657A" }}>No results in this Workspace.</p>
-          ) : (
-            rows.map((row) => (
-              <Link key={row.id} href={row.href} onClick={onClose} className="df-search-row">
-                <span className="df-mono" style={{ width: 74, flex: "none", fontSize: 10, color: "#59657A" }}>
-                  {row.kind}
+      />
+      <CommandList className="df-search-hits">
+        {knowledgeRefusal ? <p className="df-refusal">{knowledgeRefusal}</p> : null}
+        {trimmed && !isFetching && rows.length === 0 && !knowledgeRefusal ? (
+          <CommandEmpty>No results in this Workspace.</CommandEmpty>
+        ) : (
+          rows.map((row) => (
+            <CommandItem
+              key={row.id}
+              value={`${row.kind} ${row.title} ${row.id}`}
+              className="df-search-row"
+              onSelect={() => {
+                onClose();
+                navigate(row.href);
+              }}
+            >
+              <span className="df-mono" style={{ width: 74, flex: "none", fontSize: 10, color: "#59657A" }}>
+                {row.kind}
+              </span>
+              <span style={{ minWidth: 0, flex: 1, fontWeight: 500, fontSize: 13.5 }}>{row.title}</span>
+              {row.meta ? (
+                <span className="df-mono" style={{ fontSize: 10.5, color: "#59657A" }}>
+                  {row.meta}
                 </span>
-                <span style={{ minWidth: 0, flex: 1, fontWeight: 500, fontSize: 13.5 }}>{row.title}</span>
-                {row.meta ? (
-                  <span className="df-mono" style={{ fontSize: 10.5, color: "#59657A" }}>
-                    {row.meta}
-                  </span>
-                ) : null}
-              </Link>
-            ))
-          )}
-        </div>
-        {footer ? <div className="df-search-foot">{footer}</div> : null}
-      </div>
-    </>
+              ) : null}
+            </CommandItem>
+          ))
+        )}
+      </CommandList>
+      {footer ? <div className="df-search-foot">{footer}</div> : null}
+    </CommandDialog>
   );
 }

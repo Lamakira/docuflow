@@ -38,11 +38,11 @@ describe("v2 motion substrate (#182)", () => {
     expect(search.movement).toBe("none");
     expect(motionForSurface("command-palette").enterExit).toBe("instant");
     expect(motionForSurface("focus-jump").enterExit).toBe("instant");
-    expect(rule(".df-overlay")).toMatch(/transition:\s*none/);
-    expect(rule(".df-overlay")).toMatch(/animation:\s*none/);
-    expect(rule(".df-overlay-scrim")).toMatch(/transition:\s*none/);
-    expect(rule(".df-overlay-scrim")).toMatch(/animation:\s*none/);
-    expect(css).not.toMatch(/\.df-overlay[^{]*\{[^}]*@starting-style/);
+    expect(rule(".df-v2.df-command-palette")).toMatch(/transition:\s*none/);
+    expect(rule(".df-v2.df-command-palette")).toMatch(/animation:\s*none/);
+    expect(rule(".df-command-scrim")).toMatch(/transition:\s*none/);
+    expect(rule(".df-command-scrim")).toMatch(/animation:\s*none/);
+    expect(css).not.toMatch(/\.df-command[^{]*\{[^}]*@starting-style/);
   });
 
   it("clicks a rail destination with no enter/exit", () => {
