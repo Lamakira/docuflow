@@ -196,3 +196,64 @@ this button, which is why it is deferred rather than patched.
 half is dropping `margin-left: auto` so the confirmation sits under the control
 that armed it. Worth checking in the same pass whether `.df-danger-btn`'s red
 is actually reaching the label, which is not obvious on screen.
+
+---
+
+## F6 — The rail offers a Member a destination the Workspace Role cannot reach
+
+- **Status:** open
+- **Found:** 2026-09-20, auditing every destination while fixing [#250](https://github.com/Lamakira/docuflow/issues/250)
+- **Where:** `client/src/v2/presentation.ts:195` (`V2_NAV`), rendered whole at `client/src/v2/V2Rail.tsx:126`; the refusal it leads to at `client/src/v2/administration.ts:411`
+- **Severity:** degrading, not blocking. The refusal is correct, the server refuses too, and nothing leaks
+
+`V2_NAV` is a constant. The rail renders every section and every item, with no
+filter on the Workspace Role or on anything else. A Member therefore sees
+`Administration` in the rail, clicks it, and reads:
+
+> Administration is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.
+
+The sentence is right. The rail entry above it is not. ADR-0025 draws the line
+this breaks: "a Capability governs destinations and actions **within** a
+Workspace Role's reach; the Role itself decides which destinations are in reach
+at all." Administration is out of a Member's reach, so the rail is advertising a
+place that does not exist for this reader.
+
+**This is one destination, not a pattern.** All twelve were checked:
+
+| Destination | Reachable by a Member | What refuses, and where |
+| --- | --- | --- |
+| Today | yes | nothing |
+| Opportunities | yes | writes, on the control (`opportunityWriteRefusal`) |
+| Clients | yes | writes, on the control (`clientWriteRefusal`) |
+| Projects | yes | rows filtered by `projectVisibleTo`; writes on the control |
+| Workspace Documents | yes | rows filtered by Document Access; writes on the control |
+| Project Documentation | yes | writes, on the control |
+| Time Tracking | yes | the Workspace-wide breakdown and the MEMBER filter are hidden |
+| Activity | yes | own evidence only; reviewing others is hidden |
+| People | yes | invite and edit, on the control |
+| **Administration** | **no** | **the whole page** |
+| Devices | yes | revoke, on the control |
+| Help Center | yes | nothing |
+
+Every `GET` behind the other eleven is `isAuthenticated` and nothing more. So
+Administration is the only entry that could be filtered out, and the fix is
+worth exactly one line of the rail — not a visibility system.
+
+**Do not extend this to Capabilities.** A Member sees Clients because reading
+the register is theirs; only `Create Clients` refuses. Hiding Clients would take
+away a read they hold. That is the mistake this finding invites and must not
+cause.
+
+**There is already a precedent for hiding.** Team Daily Updates (`/daily-updates`)
+is the one genuinely Capability-gated destination — `canViewTeamDailyUpdates`
+takes the Workspace Role or `view_daily_updates`. It is not in `V2_NAV` at all,
+and the Today row that links to it (`today.ts:208`) only appears on data the
+screen fetches when the reader can view team updates. A Member never meets it.
+Administration is the outlier.
+
+**What it would take:** a `reach` predicate on `V2NavItem`, carried by the
+`administration` entry alone, and one filter where the rail maps `V2_NAV`.
+`/administration` typed by hand must still land on the refusal page — the URL
+has to explain itself, and the page already does. Worth deciding in the same
+pass whether the rail should say anything at all about a hidden destination, or
+simply not draw it.
