@@ -3,6 +3,8 @@
  * Timer origin, Notification origin. Motion lives in motion.ts.
  */
 
+import { memberName } from "./today";
+
 export type WorkspaceCondition = "Trial" | "Read-only" | "Past due" | null;
 
 export type MembershipOption = {
@@ -54,6 +56,40 @@ export function workspaceCondition(billingState: string | null | undefined): Wor
   if (billingState === "ReadOnly") return "Read-only";
   if (billingState === "PastDue") return "Past due";
   return null;
+}
+
+/**
+ * The Workspace Roles as prose, for refusal copy; a custom Role keeps the name
+ * the Workspace gave it. presentation.ts's workspaceRoleLabel shouts the same
+ * answer in caps for the rail, so the two can never disagree (#250).
+ */
+export function workspaceRoleInCopy(workspaceRole: string): string {
+  const role = workspaceRole.trim().toUpperCase();
+  // A Membership always carries a Role; an absent one reads as the least
+  // privileged rather than as an empty chip or an empty sentence.
+  if (!role) return "Member";
+  if (role === "OWNER") return "Owner";
+  if (role === "ADMINISTRATOR") return "Administrator";
+  if (role === "MEMBER") return "Member";
+  return workspaceRole.trim();
+}
+
+export type WorkspaceMemberRow = {
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  workspaceRole: string;
+};
+
+/**
+ * The Owner a refusal names: the sole protected Membership of the Workspace the
+ * reader is standing in. Never the platform SuperAdmin flag on a User — a
+ * self-service Workspace has no SuperAdmin, and the seeded one's SuperAdmin
+ * holds no authority over the Workspace being read (#250).
+ */
+export function workspaceOwnerName(memberships: WorkspaceMemberRow[]): string | null {
+  const owner = memberships.find((row) => row.workspaceRole?.trim().toUpperCase() === "OWNER");
+  return owner ? memberName(owner) : null;
 }
 
 export function membershipRoleLabel(slug: string): string {

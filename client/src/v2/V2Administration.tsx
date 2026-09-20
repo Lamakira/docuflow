@@ -60,7 +60,7 @@ import {
 } from "./administration";
 import { trackingPolicyPath } from "./activity";
 import { motionForSurface } from "./motion";
-import { memberName } from "./today";
+import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
 
 type WorkspaceMembershipsResponse = {
@@ -219,8 +219,7 @@ export function V2AdministrationPage() {
     setTimezoneDraft(workspaceSettings.allowedTimezones ?? []);
   }, [workspaceSettings]);
 
-  const owner = (people?.memberships ?? []).find((row) => row.workspaceRole === "OWNER");
-  const ownerName = owner ? memberName(owner) : null;
+  const ownerName = workspaceOwnerName(people?.memberships ?? []);
   const page = composeAdministration({
     workspaceName,
     ownerName,

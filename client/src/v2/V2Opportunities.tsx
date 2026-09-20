@@ -8,12 +8,12 @@ import {
 } from "@hello-pangea/dnd";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { CrmClient, CrmProjectWithDetails, SafeUser } from "@shared/schema";
+import type { CrmClient, CrmProjectWithDetails } from "@shared/schema";
 import { opportunityStageFromCombined } from "@shared/projectLifecycle";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
 import { matchV2Route } from "./presentation";
-import { memberName } from "./today";
+import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import {
   canChangeOpportunityStage,
@@ -221,9 +221,7 @@ export function V2OpportunitiesPage() {
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const readOnly = current?.condition === "Read-only";
 
-  const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
-  const owner = users.find((member) => member.isMainAdmin === 1);
-  const ownerName = owner ? memberName(owner) : null;
+  const ownerName = useWorkspaceOwnerName();
 
   const { data: fields = [] } = useQuery<ModuleField[]>({
     queryKey: ["/api/modules/projects/fields"],

@@ -30,6 +30,7 @@ import {
 import { motionForSurface } from "./motion";
 import { matchV2Route } from "./presentation";
 import { memberName } from "./today";
+import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
@@ -313,8 +314,7 @@ export function V2DossierPage() {
     setWriteRefusal(null);
   }, [project?.id, project?.project?.name]);
 
-  const owner = users.find((member) => member.isMainAdmin === 1);
-  const ownerName = owner ? memberName(owner) : null;
+  const ownerName = useWorkspaceOwnerName();
 
   function refuseWrite(errorMessage?: string, capability = "Manage Projects") {
     if (readOnly) {

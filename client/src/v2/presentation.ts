@@ -1,3 +1,5 @@
+import { workspaceRoleInCopy } from "./workspace";
+
 export type AuthenticatedPresentation = {
   chrome: "v1" | "v2";
   signedInHome: "home" | "today";
@@ -740,11 +742,12 @@ export function workspaceInitials(name: string): string {
   return name.trim().slice(0, 2).toUpperCase() || "WS";
 }
 
+/**
+ * The rail's Workspace Role chip. One answer with chrome.ts's refusal copy,
+ * shouted: a custom Role keeps its own name rather than reading as MEMBER.
+ */
 export function workspaceRoleLabel(workspaceRole: string): string {
-  const role = workspaceRole.trim().toUpperCase();
-  if (role === "OWNER") return "OWNER";
-  if (role === "ADMINISTRATOR") return "ADMINISTRATOR";
-  return "MEMBER";
+  return workspaceRoleInCopy(workspaceRole).toUpperCase();
 }
 
 export const RAIL_COLLAPSED_STORAGE_KEY = "docuflow.v2.railCollapsed";

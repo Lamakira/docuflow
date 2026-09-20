@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { CompanyDocumentWithUploader, CrmProjectWithDetails, DocumentWithCreator, SafeUser } from "@shared/schema";
+import type { CompanyDocumentWithUploader, CrmProjectWithDetails, DocumentWithCreator } from "@shared/schema";
 import { BlockEditor } from "@/components/editor/BlockEditor";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useDebouncedCallback } from "@/hooks/useDebounce";
@@ -15,9 +15,9 @@ import {
   type DocumentEditorSource,
 } from "./documentEditor";
 import { matchV2Route } from "./presentation";
+import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { V2FileViewer } from "./V2FileViewer";
 import { projectVisibleTo } from "./projects";
-import { memberName } from "./today";
 import { useV2Chrome } from "./V2Shell";
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
@@ -84,8 +84,7 @@ export function V2DocumentPage() {
   const [saveState, setSaveState] = useState<DocumentEditorSaveState>("idle");
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
-  const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
-  const owner = users.find((member) => member.isMainAdmin === 1);
+  const ownerName = useWorkspaceOwnerName();
   const { data, isLoading } = useQuery<LoadedDocument>({
     queryKey: [source === "project" ? "/api/documents" : "/api/company-documents", documentId, "v2-editor"],
     enabled: Boolean(documentId),
@@ -142,7 +141,7 @@ export function V2DocumentPage() {
       assigned === false ||
       (!isLoading && !assignmentPending && !data?.record && !data?.forbidden),
     forbidden: data?.forbidden === true,
-    ownerName: owner ? memberName(owner) : null,
+    ownerName,
     saveState,
     assigned,
   });

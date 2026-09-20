@@ -9,6 +9,7 @@ import { chromeRefusal } from "./chrome";
 import { composeProjectDocumentation } from "./projectDocumentation";
 import { projectVisibleTo } from "./projects";
 import { memberName } from "./today";
+import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { useV2Chrome } from "./V2Shell";
 
@@ -88,8 +89,7 @@ export function V2ProjectDocumentationPage() {
     queryFn: loadProjectLibrary,
   });
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
-  const owner = users.find((member) => member.isMainAdmin === 1);
-  const ownerName = owner ? memberName(owner) : null;
+  const ownerName = useWorkspaceOwnerName();
 
   const crmByProjectId = new Map(
     (data?.crm ?? []).map((project) => [project.project?.id, project] as const),

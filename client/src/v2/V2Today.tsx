@@ -10,6 +10,7 @@ import type {
   SafeUser,
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { SparkleIcon } from "./icons";
 import {
@@ -19,7 +20,7 @@ import {
   remindDailyUpdatesPath,
 } from "./dailyUpdate";
 import { motionForSurface } from "./motion";
-import { composeToday, memberName, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
+import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -131,18 +132,7 @@ export function V2TodayPage() {
     queryKey: ["/api/time-tracking/stats", "month", monthStart.toISOString()],
     queryFn: () => fetch(statsUrl(monthStart, dayEnd), { credentials: "include" }).then((res) => res.json()),
   });
-  const { data: people } = useQuery<{
-    memberships: Array<{ firstName: string | null; lastName: string | null; email: string; workspaceRole: string }>;
-  }>({
-    queryKey: ["/api/workspace/memberships"],
-    queryFn: async () => {
-      const res = await fetch("/api/workspace/memberships", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch Memberships");
-      return res.json();
-    },
-  });
-  const owner = (people?.memberships ?? []).find((row) => row.workspaceRole === "OWNER");
-  const ownerName = owner ? memberName(owner) : null;
+  const ownerName = useWorkspaceOwnerName();
   const { data: todayStatus } = useQuery<DailyUpdateTodayStatus | null>({
     queryKey: [adminDailyUpdateTodayStatusPath()],
     enabled: canViewTeam,

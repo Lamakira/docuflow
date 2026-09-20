@@ -19,6 +19,7 @@ import {
   workspaceRoleLabel,
   writeRailCollapsed,
 } from "../../client/src/v2/presentation";
+import { workspaceRoleInCopy } from "../../client/src/v2/workspace";
 
 const railSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Rail.tsx"),
@@ -134,6 +135,12 @@ describe("v2 chrome behind the client flag (#171)", () => {
     expect(workspaceRoleLabel("OWNER")).toBe("OWNER");
     expect(workspaceRoleLabel("ADMINISTRATOR")).toBe("ADMINISTRATOR");
     expect(workspaceRoleLabel("MEMBER")).toBe("MEMBER");
+    // A Workspace may add its own Roles; the rail shouts the Role it was given
+    // rather than demoting an unrecognised one to MEMBER (#250).
+    expect(workspaceRoleLabel("Auditor")).toBe("AUDITOR");
+    expect(workspaceRoleInCopy("Auditor")).toBe("Auditor");
+    expect(workspaceRoleInCopy("OWNER")).toBe("Owner");
+    expect(workspaceRoleLabel("")).toBe("MEMBER");
     expect(railSource).toContain("workspaceRoleLabel");
     expect(railSource).toMatch(/workspaceRoleLabel\([\s\S]*workspaceRole/);
     expect(railSource).not.toContain("isMainAdmin");

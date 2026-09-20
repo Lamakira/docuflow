@@ -5,7 +5,6 @@ import { Search } from "lucide-react";
 import type {
   CompanyDocumentFolderWithCreator,
   CompanyDocumentWithUploader,
-  SafeUser,
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
@@ -15,7 +14,7 @@ import {
   type LibraryFolder,
   type LibraryInput,
 } from "./library";
-import { memberName } from "./today";
+import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 
@@ -130,8 +129,7 @@ export function V2DocumentsPage() {
     queryKey: ["/api/company-document-folders", "workspace-library"],
     queryFn: loadWorkspaceLibrary,
   });
-  const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
-  const owner = users.find((member) => member.isMainAdmin === 1);
+  const ownerName = useWorkspaceOwnerName();
 
   const input: LibraryInput = {
     now,
@@ -142,7 +140,7 @@ export function V2DocumentsPage() {
     selectedFolderId,
     filterQuery,
     capabilityMiss: data?.capabilityMiss === true,
-    ownerName: owner ? memberName(owner) : null,
+    ownerName,
   };
   const library = composeLibrary(input);
   const folderMotion = useFolderExpandMotion(filterQuery);
