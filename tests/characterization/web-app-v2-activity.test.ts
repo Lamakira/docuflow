@@ -157,6 +157,38 @@ describe("Activity from Activity Evidence (#191)", () => {
     expect(JSON.stringify(page.policyLines).toLowerCase()).not.toContain("productivity");
   });
 
+  it("an Owner reviewing the Workspace sees every Member's evidence", () => {
+    const page = composeActivity(
+      emptyActivity({
+        canReview: true,
+        users: [
+          { id: "me", firstName: "Sam", lastName: "Lee", email: "sam@example.com" },
+          { id: "other", firstName: "Pat", lastName: "Ng", email: "pat@example.com" },
+        ],
+        evidence: [
+          {
+            id: "mine",
+            capturedAt: new Date(2026, 8, 10, 10, 0, 0),
+            userId: "me",
+            crmProjectId: "prj-1",
+            timeEntryId: "te-1",
+            storageKey: "shot-me",
+          },
+          {
+            id: "theirs",
+            capturedAt: new Date(2026, 8, 10, 11, 0, 0),
+            userId: "other",
+            crmProjectId: "prj-1",
+            timeEntryId: "te-2",
+            storageKey: "shot-them",
+          },
+        ],
+      }),
+    );
+    expect(page.rows.map((row) => row.id)).toEqual(["mine", "theirs"]);
+    expect(page.refusal).toBeNull();
+  });
+
   it("Members without review Capability see only their own evidence and refusals name the Capability", () => {
     const page = composeActivity(
       emptyActivity({
@@ -209,6 +241,8 @@ describe("Activity from Activity Evidence (#191)", () => {
     expect(trackingPolicyPath()).toBe("/api/time-tracking/tracking-policy");
     expect(pageSource).toContain("/api/time-tracking/screenshots");
     expect(pageSource).toContain("/api/time-tracking/tracking-policy");
+    expect(pageSource).toContain("canManageAdministration");
+    expect(pageSource).not.toMatch(/user\?\.role === ["']admin["']/);
     expect(pageSource).not.toMatch(/productivity/i);
     expect(pageSource).toContain("Open");
   });

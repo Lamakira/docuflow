@@ -3,6 +3,7 @@ import { Link, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import type { CrmProjectWithDetails, SafeUser, ScreenshotPolicy, TimeEntryWithDetails } from "@shared/schema";
+import { canManageAdministration } from "./administration";
 import { motionForSurface } from "./motion";
 import { memberName } from "./today";
 import { timeEntriesPath } from "./time";
@@ -96,7 +97,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
 
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
-  const canReview = user?.role === "admin";
+  const canReview = canManageAdministration(current?.workspaceRole ?? "");
 
   const rangeDates = useMemo(
     () => evidenceDateRange(range, now, { day: typedDay, from: typedFrom, to: typedTo }),

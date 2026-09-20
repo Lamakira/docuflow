@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { CrmProjectWithDetails, SafeUser, TimeEntryWithDetails } from "@shared/schema";
+import { canManageAdministration } from "./administration";
 import { chromeRefusal } from "./chrome";
 import { motionForSurface } from "./motion";
 import { memberName } from "./today";
@@ -71,7 +72,9 @@ function useWorkspaceCondition() {
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   return {
     workspaceName: current?.workspaceName ?? "this Workspace",
+    workspaceRole: current?.workspaceRole ?? "",
     readOnly: current?.condition === "Read-only",
+    ready: memberships !== undefined,
   };
 }
 
@@ -109,7 +112,8 @@ function TimeEntriesPane() {
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
   const { layout } = useV2Chrome();
-  const { workspaceName, readOnly } = useWorkspaceCondition();
+  const { workspaceName, workspaceRole, readOnly, ready } = useWorkspaceCondition();
+  const canManage = ready && canManageAdministration(workspaceRole);
   const {
     projects,
     tasks,
@@ -137,8 +141,6 @@ function TimeEntriesPane() {
   const [leavingIds, setLeavingIds] = useState<string[]>([]);
   const knownIds = useRef<Set<string> | null>(null);
 
-  const isAdmin = user?.role === "admin";
-
   const rangeDates = useMemo(() => {
     if (range === "all") return { startDate: null, endDate: null };
     if (range === "week") return { startDate: startOfWeek(now), endDate: endOfDay(now) };
@@ -150,7 +152,7 @@ function TimeEntriesPane() {
     endDate: rangeDates.endDate,
     crmProjectId: projectFilter === "all" ? null : projectFilter,
     status: statusFilter === "all" ? null : statusFilter,
-    userId: isAdmin && userFilter !== "all" ? userFilter : null,
+    userId: canManage && userFilter !== "all" ? userFilter : null,
   };
   const entriesUrl = timeEntriesPath(filters);
   // The Workday chip counts today, whatever range the register is filtered to.
@@ -182,7 +184,7 @@ function TimeEntriesPane() {
     now,
     workspaceName,
     currentUserId: user?.id ?? "",
-    isAdmin,
+    isAdmin: canManage,
     isRunning,
     displayDuration,
     activeEntryId: activeEntry?.id ?? null,
@@ -265,7 +267,7 @@ function TimeEntriesPane() {
     handleStop();
   }
 
-  if (isLoading) {
+  if (!ready || isLoading) {
     return (
       <>
         <header className="df-today-head">
@@ -393,7 +395,7 @@ function TimeEntriesPane() {
             { value: "stopped", label: "Stopped" },
           ]}
         />
-        {isAdmin ? (
+        {canManage ? (
           <V2FilterSelect
             label="MEMBER"
             ariaLabel="Filter by Member"
@@ -491,11 +493,10 @@ function TimeEntriesPane() {
  */
 function TimeStatsPane() {
   const now = useMemo(() => new Date(), []);
-  const { user } = useAuth();
-  const { workspaceName } = useWorkspaceCondition();
+  const { workspaceName, workspaceRole, ready } = useWorkspaceCondition();
   const [period, setPeriod] = useState<TimePeriod>("week");
 
-  const canSeeEveryone = user?.role === "admin";
+  const canSeeEveryone = canManageAdministration(workspaceRole);
   const periodRange = useMemo(() => timePeriodRange(period, now), [period, now]);
   const statsUrl = timeStatsPath({
     startDate: periodRange.startDate,
@@ -517,6 +518,20 @@ function TimeStatsPane() {
     canSeeEveryone,
     stats: data ?? null,
   });
+
+  if (!ready) {
+    return (
+      <>
+        <header className="df-today-head">
+          <div>
+            <h1 className="df-title">Time stats</h1>
+            <p className="df-subhead">Loading this Workspace…</p>
+          </div>
+        </header>
+        <div className="df-card" style={{ minHeight: 280 }} />
+      </>
+    );
+  }
 
   return (
     <>

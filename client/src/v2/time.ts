@@ -243,7 +243,7 @@ export type TimeStatsResponse = {
 export type TimeStatsInput = {
   period: TimePeriod;
   workspaceName: string;
-  /** Only an Administrator's stats span the Workspace; a Member sees their own. */
+  /** Owner and Administrator stats span the Workspace; a Member sees their own. */
   canSeeEveryone: boolean;
   stats: TimeStatsResponse | null;
 };

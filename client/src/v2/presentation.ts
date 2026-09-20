@@ -740,9 +740,10 @@ export function workspaceInitials(name: string): string {
   return name.trim().slice(0, 2).toUpperCase() || "WS";
 }
 
-export function workspaceRoleLabel(user: { role: string; owner: boolean }): string {
-  if (user.owner) return "OWNER";
-  if (user.role === "admin") return "ADMINISTRATOR";
+export function workspaceRoleLabel(workspaceRole: string): string {
+  const role = workspaceRole.trim().toUpperCase();
+  if (role === "OWNER") return "OWNER";
+  if (role === "ADMINISTRATOR") return "ADMINISTRATOR";
   return "MEMBER";
 }
 

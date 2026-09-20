@@ -5,8 +5,10 @@ import { describe, expect, it } from "vitest";
 import { motionForSurface } from "../../client/src/v2/motion";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
 import {
+  composeTimeStats,
   composeTimeTracking,
   timeEntriesPath,
+  type TimeStatsInput,
   type TimeTrackingInput,
 } from "../../client/src/v2/time";
 import {
@@ -318,6 +320,67 @@ describe("Time Entry enter/exit motion (#190)", () => {
     expect(reducedMotionCss()).toMatch(/\.df-time-row\[data-motion="standard"\][^{]*\{[^}]*transform:\s*none/);
   });
 });
+
+describe("Time stats Workspace Role (#247)", () => {
+  it("builds the per-member breakdown when the reader can see everyone", () => {
+    const page = composeTimeStats(
+      emptyStats({
+        canSeeEveryone: true,
+        stats: {
+          totalDuration: 10800,
+          totalIdleTime: 0,
+          entriesCount: 2,
+          screenshotCount: 0,
+          byProject: [{ crmProjectId: "prj-1", projectName: "Harbour rebuild", totalDuration: 10800 }],
+          byUser: [
+            { userId: "u-2", userName: "Sam Lee", totalDuration: 7200 },
+            { userId: "u-1", userName: "Ada Okoro", totalDuration: 3600 },
+          ],
+        },
+      }),
+    );
+    expect(page.showMembers).toBe(true);
+    expect(page.subhead).toBe("Workday totals across Harbor Co, this week.");
+    expect(page.byMember.rows).toEqual([
+      { id: "u-1", name: "Ada Okoro", hours: "1h 0m", share: null },
+      { id: "u-2", name: "Sam Lee", hours: "2h 0m", share: null },
+    ]);
+  });
+
+  it("hides the breakdown from a Member and does not invent one from byUser", () => {
+    const page = composeTimeStats(
+      emptyStats({
+        canSeeEveryone: false,
+        stats: {
+          totalDuration: 3600,
+          totalIdleTime: 0,
+          entriesCount: 1,
+          screenshotCount: 0,
+          byProject: [{ crmProjectId: "prj-1", projectName: "Harbour rebuild", totalDuration: 3600 }],
+          byUser: [{ userId: "me", userName: "Sam Lee", totalDuration: 3600 }],
+        },
+      }),
+    );
+    expect(page.showMembers).toBe(false);
+    expect(page.byMember.rows).toEqual([]);
+    expect(page.subhead).toBe("Your Workday totals in Harbor Co, this week.");
+  });
+
+  it("gates the Time MEMBER filter and breakdown on the Workspace Role", () => {
+    expect(pageSource).toContain("canManageAdministration");
+    expect(pageSource).not.toMatch(/user\?\.role === ["']admin["']/);
+  });
+});
+
+function emptyStats(overrides: Partial<TimeStatsInput> = {}): TimeStatsInput {
+  return {
+    period: "week",
+    workspaceName: "Harbor Co",
+    canSeeEveryone: false,
+    stats: null,
+    ...overrides,
+  };
+}
 
 function emptyDaily(overrides: Partial<DailyUpdatePageInput> = {}): DailyUpdatePageInput {
   return {
