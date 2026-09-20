@@ -16,7 +16,6 @@ import {
 } from "@shared/schema";
 import { db } from "../../db";
 import { inWorkspace, stampWorkspace } from "../../workspaceContext";
-import { canManageAdministration } from "../../workspaceRole";
 
 const SECRET_PREFIX = "dfwh_";
 const SECRET_BYTES = 32;
@@ -150,9 +149,4 @@ export async function rotateWebhookEndpointSecret(
     .set({ hmacSecret: plaintextSecret })
     .where(and(eq(webhookEndpoints.id, id), inWorkspace(webhookEndpoints)));
   return { id, plaintextSecret };
-}
-
-/** Owner and Administrator may manage Webhook Endpoints. Member may not. */
-export async function canManageWebhookEndpoints(): Promise<boolean> {
-  return canManageAdministration();
 }

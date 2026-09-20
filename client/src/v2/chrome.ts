@@ -362,8 +362,12 @@ export type ChromeRefusal =
   | { kind: "seat"; purchased: number }
   | { kind: "generic"; message: string };
 
-/** The built-in Workspace Roles as a reader sees them; a custom Role keeps its own name. */
-export function workspaceRoleLabel(workspaceRole: string): string {
+/**
+ * The built-in Workspace Roles as prose, for refusal copy; a custom Role keeps its
+ * own name. Distinct from presentation.ts's same-named chrome label, which
+ * shouts the Role in caps.
+ */
+export function workspaceRoleInCopy(workspaceRole: string): string {
   const role = workspaceRole.trim().toUpperCase();
   if (role === "OWNER") return "Owner";
   if (role === "ADMINISTRATOR") return "Administrator";
@@ -377,7 +381,7 @@ export function chromeRefusal(input: ChromeRefusal): string {
     return input.ownerName ? `${base} ${input.ownerName} (Owner) can grant it.` : base;
   }
   if (input.kind === "workspace-role") {
-    const role = workspaceRoleLabel(input.workspaceRole);
+    const role = workspaceRoleInCopy(input.workspaceRole);
     const base = `${input.destination} is open to ${input.roles}. Your Workspace Role is ${role}.`;
     // The Owner is never told to ask the Owner: that was the refusal #238 found.
     if (!input.ownerName || role === "Owner") return base;

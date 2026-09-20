@@ -16,7 +16,6 @@ import {
 } from "./entitlements";
 import type { PlanKey } from "./planRegistry";
 import { countConsumedSeats, SeatCapacityFloorError } from "./seats";
-import { canManageAdministration } from "../../workspaceRole";
 
 export class SeededWorkspaceCheckoutError extends Error {
   readonly statusCode = 400;
@@ -43,11 +42,6 @@ export class PaymentMethodUpdateUnavailableError extends Error {
 }
 
 export type SubscriptionStatus = BillingProjection & { consumedSeatCount: number };
-
-/** Owner and Administrator may manage billing. Member may not. */
-export async function canManageBilling(): Promise<boolean> {
-  return canManageAdministration();
-}
 
 export async function getSubscriptionStatus(): Promise<SubscriptionStatus> {
   const pin = await getBillingProjection();

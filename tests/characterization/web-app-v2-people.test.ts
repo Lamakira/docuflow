@@ -244,13 +244,17 @@ describe("People from Memberships (#192)", () => {
     expect(pageSource).not.toContain("reset-password");
   });
 
-  it("refusal copy names Capability, Workspace condition, or seat capacity — never permission denied", () => {
+  it("refusal copy names the Workspace Role, Workspace condition, or seat capacity — never permission denied", () => {
     expect(
       peopleWriteRefusal({
-        kind: "capability",
+        kind: "workspace-role",
+        workspaceRole: "MEMBER",
         ownerName: "Sam Lee",
       }),
-    ).toBe("This action needs a Capability. Sam Lee (Owner) can grant it.");
+    ).toBe(
+      "Inviting and managing People is open to the Owner and Administrators. " +
+        "Your Workspace Role is Member. Sam Lee (Owner) can change it.",
+    );
     expect(
       peopleWriteRefusal({
         kind: "workspace-condition",
@@ -265,14 +269,19 @@ describe("People from Memberships (#192)", () => {
       peopleWriteRefusal({
         kind: "error",
         workspaceName: "Harbor Co",
+        workspaceRole: "MEMBER",
         ownerName: "Sam Lee",
         errorMessage: "Access denied",
       }),
-    ).toBe("This action needs a Capability. Sam Lee (Owner) can grant it.");
+    ).toBe(
+      "Inviting and managing People is open to the Owner and Administrators. " +
+        "Your Workspace Role is Member. Sam Lee (Owner) can change it.",
+    );
     expect(
       peopleWriteRefusal({
         kind: "error",
         workspaceName: "Harbor Co",
+        workspaceRole: "MEMBER",
         ownerName: "Sam Lee",
         errorMessage: "Billable Seat capacity is exhausted",
         purchasedSeats: 3,
@@ -282,6 +291,7 @@ describe("People from Memberships (#192)", () => {
       peopleWriteRefusal({
         kind: "error",
         workspaceName: "Harbor Co",
+        workspaceRole: "MEMBER",
         ownerName: "Sam Lee",
         errorMessage: "Workspace is read-only",
       }),

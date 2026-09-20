@@ -1,4 +1,4 @@
-import type { Express, RequestHandler } from "express";
+import type { Express } from "express";
 import { z } from "zod";
 import { isAuthenticated, isIdentified, getUserId } from "../../auth";
 import {
@@ -27,7 +27,6 @@ import {
   transferWorkspaceOwnership,
 } from "./firstWorkspace";
 import {
-  canManageWebhookEndpoints,
   createWebhookEndpoint,
   disableWebhookEndpoint,
   enableWebhookEndpoint,
@@ -55,7 +54,6 @@ import {
   InvitationUnauthorizedError,
   MembershipNotFoundError,
   acceptInvitation,
-  canManageInvitations,
   listInvitationsForUser,
   listWorkspaceInvitations,
   revokeInvitation,
@@ -63,6 +61,7 @@ import {
   updateMembershipProfile,
 } from "./invitations";
 import { SeatExhaustedError } from "../billing/writeClassification";
+import { requireAdministration } from "../../workspaceRole";
 
 const createBody = z.object({
   url: z.string().url(),
@@ -82,14 +81,7 @@ function notFound(res: { status: (code: number) => { json: (body: unknown) => vo
  * Workspace Role. `{ message }` errors, matching today's `/api/*`.
  */
 export function registerWebhookEndpointRoutes(app: Express): void {
-  const requireManager: RequestHandler = async (_req, res, next) => {
-    if (!(await canManageWebhookEndpoints())) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-    next();
-  };
-
-  app.post("/api/webhook-endpoints", isAuthenticated, requireManager, async (req, res) => {
+  app.post("/api/webhook-endpoints", isAuthenticated, requireAdministration, async (req, res) => {
     try {
       const body = createBody.parse(req.body);
       const created = await createWebhookEndpoint(body);
@@ -105,11 +97,11 @@ export function registerWebhookEndpointRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/webhook-endpoints", isAuthenticated, requireManager, async (_req, res) => {
+  app.get("/api/webhook-endpoints", isAuthenticated, requireAdministration, async (_req, res) => {
     res.json(await listWebhookEndpoints());
   });
 
-  app.get("/api/webhook-endpoints/:id", isAuthenticated, requireManager, async (req, res) => {
+  app.get("/api/webhook-endpoints/:id", isAuthenticated, requireAdministration, async (req, res) => {
     try {
       res.json(await getWebhookEndpoint(req.params.id));
     } catch (error) {
@@ -117,7 +109,7 @@ export function registerWebhookEndpointRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/webhook-endpoints/:id/disable", isAuthenticated, requireManager, async (req, res) => {
+  app.post("/api/webhook-endpoints/:id/disable", isAuthenticated, requireAdministration, async (req, res) => {
     try {
       await disableWebhookEndpoint(req.params.id);
       res.json({ ok: true });
@@ -126,7 +118,7 @@ export function registerWebhookEndpointRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/webhook-endpoints/:id/enable", isAuthenticated, requireManager, async (req, res) => {
+  app.post("/api/webhook-endpoints/:id/enable", isAuthenticated, requireAdministration, async (req, res) => {
     try {
       await enableWebhookEndpoint(req.params.id);
       res.json({ ok: true });
@@ -135,7 +127,7 @@ export function registerWebhookEndpointRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/webhook-endpoints/:id/rotate", isAuthenticated, requireManager, async (req, res) => {
+  app.post("/api/webhook-endpoints/:id/rotate", isAuthenticated, requireAdministration, async (req, res) => {
     try {
       res.json(await rotateWebhookEndpointSecret(req.params.id));
     } catch (error) {
@@ -258,13 +250,6 @@ function invitationError(res: Responder, error: unknown): boolean {
  * Errors stay `{ message }`.
  */
 export function registerInvitationRoutes(app: Express): void {
-  const requireManager: RequestHandler = async (_req, res, next) => {
-    if (!(await canManageInvitations())) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-    next();
-  };
-
   app.get("/api/workspace/invitations", isAuthenticated, async (_req, res) => {
     res.json(await listWorkspaceInvitations());
   });
@@ -282,7 +267,7 @@ export function registerInvitationRoutes(app: Express): void {
     res.json(await listInvitationsForUser(userId));
   });
 
-  app.post("/api/workspace/invitations", isAuthenticated, requireManager, async (req, res) => {
+  app.post("/api/workspace/invitations", isAuthenticated, requireAdministration, async (req, res) => {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ message: "Unauthorized" });
     const parsed = sendBody.safeParse(req.body);
@@ -297,7 +282,7 @@ export function registerInvitationRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/workspace/invitations/:id/revoke", isAuthenticated, requireManager, async (req, res) => {
+  app.post("/api/workspace/invitations/:id/revoke", isAuthenticated, requireAdministration, async (req, res) => {
     try {
       res.json(await revokeInvitation(req.params.id));
     } catch (error) {
@@ -305,7 +290,7 @@ export function registerInvitationRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/workspace/memberships/:id", isAuthenticated, requireManager, async (req, res) => {
+  app.patch("/api/workspace/memberships/:id", isAuthenticated, requireAdministration, async (req, res) => {
     const parsed = profileBody.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });

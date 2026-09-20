@@ -3,7 +3,11 @@ import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, getUserId } from "./auth";
-import { canManageAdministration, requireAdministration } from "./workspaceRole";
+import {
+  alignWorkspaceRoleToGlobalRole,
+  canManageAdministration,
+  requireAdministration,
+} from "./workspaceRole";
 import { config } from "./config";
 import { z } from "zod";
 import {
@@ -2650,6 +2654,23 @@ Instructions:
   // Administration is governed by the Workspace Role (#238). The routes below
   // once read the global `users.role` column, which no Workspace created
   // through #217 ever sets — its Owner was refused their own Workspace.
+  //
+  // `/api/admin/users*` is the exception and keeps the old column. It reads and
+  // writes `users`, which is global by design (no `workspace_id`, so no RLS and
+  // no query scope), so it is a platform directory, not a Workspace surface.
+  // Opening it on a Workspace Role would let anyone who signs up and creates a
+  // Workspace list, re-role, reset and delete every account on the platform.
+  const requirePlatformAdmin = async (req: any, res: any, next: any) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    const user = await storage.getUser(userId);
+    if (!user || user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied" });
+    }
+    next();
+  };
 
   // Administration reaches the daily-updates dashboard, and so does any
   // Membership granted the "view daily updates" Capability.
@@ -2770,7 +2791,7 @@ Instructions:
   });
 
   // Get all users (admin only)
-  app.get("/api/admin/users", isAuthenticated, requireAdministration, async (req: any, res) => {
+  app.get("/api/admin/users", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
     try {
       const users = await storage.getAllUsers();
       res.json(users);
@@ -2781,7 +2802,7 @@ Instructions:
   });
 
   // Get single user details (admin only)
-  app.get("/api/admin/users/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
+  app.get("/api/admin/users/:id", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
     try {
       const user = await storage.getAdminUserDetails(req.params.id);
       if (!user) {
@@ -2804,7 +2825,7 @@ Instructions:
   });
 
   // Update user role (admin only)
-  app.patch("/api/admin/users/:id/role", isAuthenticated, requireAdministration, async (req: any, res) => {
+  app.patch("/api/admin/users/:id/role", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
     try {
       // Check if target user is SuperAdmin
       const targetUser = await storage.getUser(req.params.id);
@@ -2825,7 +2846,8 @@ Instructions:
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+      await alignWorkspaceRoleToGlobalRole(req.params.id, parsed.data.role);
+
       res.json(user);
     } catch (error) {
       console.error("Error updating user role:", error);
@@ -2834,7 +2856,7 @@ Instructions:
   });
 
   // Create new user (admin only)
-  app.post("/api/admin/users", isAuthenticated, requireAdministration, async (req: any, res) => {
+  app.post("/api/admin/users", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
     try {
       const createUserSchema = z.object({
         email: z.string().email(),
@@ -2862,6 +2884,7 @@ Instructions:
 
       if (parsed.data.role !== "user") {
         await storage.updateUserRole(newUser.id, parsed.data.role);
+        await alignWorkspaceRoleToGlobalRole(newUser.id, parsed.data.role);
       }
 
       await identityProvider.sendPasswordSetInvite({ email: parsed.data.email });
@@ -2881,7 +2904,7 @@ Instructions:
 
   // Update user info (admin only)
   // Archive / unarchive a user (soft delete — data is preserved)
-  app.patch("/api/admin/users/:id/archive", isAuthenticated, requireAdministration, async (req: any, res) => {
+  app.patch("/api/admin/users/:id/archive", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
     try {
       const targetUser = await storage.getUser(req.params.id);
       if (!targetUser) return res.status(404).json({ message: "User not found" });
@@ -2900,7 +2923,7 @@ Instructions:
     }
   });
 
-  app.patch("/api/admin/users/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
+  app.patch("/api/admin/users/:id", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
     try {
       // Check if target user is SuperAdmin
       const targetUser = await storage.getUser(req.params.id);
@@ -2942,7 +2965,7 @@ Instructions:
   });
 
   // Reset user password (admin only)
-  app.post("/api/admin/users/:id/reset-password", isAuthenticated, requireAdministration, async (req: any, res) => {
+  app.post("/api/admin/users/:id/reset-password", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
     try {
       const user = await storage.getUser(req.params.id);
       if (!user) {
@@ -2963,7 +2986,7 @@ Instructions:
   });
 
   // Delete user (admin only)
-  app.delete("/api/admin/users/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
+  app.delete("/api/admin/users/:id", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
     try {
       const userId = req.params.id;
       
@@ -3739,7 +3762,6 @@ Instructions:
   app.get("/api/time-tracking/entries", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const user = await storage.getUser(userId);
       
       // Parse query params
       const filters: {
@@ -3751,7 +3773,7 @@ Instructions:
       } = {};
       
       // Non-admins can only see their own entries
-      if (user?.role !== "admin") {
+      if (!(await canManageAdministration())) {
         filters.userId = userId;
       } else if (req.query.userId) {
         filters.userId = req.query.userId as string;
@@ -3792,7 +3814,7 @@ Instructions:
       } = {};
       
       // Non-admins can only see their own stats
-      if (user?.role !== "admin") {
+      if (!(await canManageAdministration())) {
         filters.userId = userId;
       } else if (req.query.userId) {
         filters.userId = req.query.userId as string;
@@ -4179,7 +4201,6 @@ Instructions:
   app.delete("/api/time-tracking/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const user = await storage.getUser(userId);
       const entry = await storage.getTimeEntry(req.params.id);
       
       if (!entry) {
@@ -4187,7 +4208,7 @@ Instructions:
       }
       
       // Only owner or admin can delete
-      if (entry.userId !== userId && user?.role !== "admin") {
+      if (entry.userId !== userId && !(await canManageAdministration())) {
         return res.status(403).json({ message: "Not authorized" });
       }
       
@@ -4203,7 +4224,6 @@ Instructions:
   app.get("/api/time-tracking/project/:crmProjectId", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const user = await storage.getUser(userId);
       
       const filters: {
         crmProjectId: string;
@@ -4213,7 +4233,7 @@ Instructions:
       };
       
       // Non-admins can only see their own entries
-      if (user?.role !== "admin") {
+      if (!(await canManageAdministration())) {
         filters.userId = userId;
       }
       
@@ -4298,7 +4318,6 @@ Instructions:
   app.get("/api/time-tracking/screenshots", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const user = await storage.getUser(userId);
 
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = parseInt(req.query.offset as string) || 0;
@@ -4318,7 +4337,7 @@ Instructions:
       if (req.query.startDate) filters.startDate = new Date(req.query.startDate as string);
       if (req.query.endDate) filters.endDate = new Date(req.query.endDate as string);
 
-      if (user?.role !== "admin") {
+      if (!(await canManageAdministration())) {
         filters.userId = userId;
       } else if (req.query.userId) {
         filters.userId = req.query.userId;
@@ -4348,7 +4367,6 @@ Instructions:
   app.get("/api/time-tracking/screenshots/:id/image", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const user = await storage.getUser(userId);
 
       const screenshot = await storage.getTimeEntryScreenshotById(req.params.id);
 
@@ -4356,7 +4374,7 @@ Instructions:
         return res.status(404).json({ message: "Screenshot not found" });
       }
 
-      if (user?.role !== "admin" && screenshot.userId !== userId) {
+      if (!(await canManageAdministration()) && screenshot.userId !== userId) {
         return res.status(403).json({ message: "Not authorized" });
       }
 
@@ -4383,8 +4401,7 @@ Instructions:
   app.delete("/api/time-tracking/screenshots/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const user = await storage.getUser(userId);
-      if (user?.role !== "admin") {
+      if (!(await canManageAdministration())) {
         return res.status(403).json({ message: "Admin only" });
       }
 

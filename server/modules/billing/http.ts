@@ -1,4 +1,4 @@
-import type { Express, Request, RequestHandler } from "express";
+import type { Express, Request } from "express";
 import { z } from "zod";
 import { isAuthenticated, getUserId } from "../../auth";
 import {
@@ -13,7 +13,6 @@ import {
   UnknownBillingWebhookError,
   billingProvider,
   cancelAtPeriodEnd,
-  canManageBilling,
   changeSeats,
   createBillingJobsPort,
   getSubscriptionStatus,
@@ -21,6 +20,7 @@ import {
   startCheckout,
   startPaymentMethodUpdate,
 } from "./index";
+import { requireAdministration } from "../../workspaceRole";
 
 function stripeSignature(req: { headers: Record<string, unknown> }): string {
   const header = req.headers["stripe-signature"];
@@ -82,13 +82,6 @@ function sendBillingError(
  * returns without applying Entitlements (ADR-0013).
  */
 export function registerBillingRoutes(app: Express): void {
-  const requireManager: RequestHandler = async (_req, res, next) => {
-    if (!(await canManageBilling())) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-    next();
-  };
-
   app.post("/api/billing/webhooks", async (req, res) => {
     try {
       await ingestBillingWebhook({
@@ -111,11 +104,11 @@ export function registerBillingRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/billing/subscription", isAuthenticated, requireManager, async (_req, res) => {
+  app.get("/api/billing/subscription", isAuthenticated, requireAdministration, async (_req, res) => {
     res.json(await getSubscriptionStatus());
   });
 
-  app.post("/api/billing/checkout", isAuthenticated, requireManager, async (req, res) => {
+  app.post("/api/billing/checkout", isAuthenticated, requireAdministration, async (req, res) => {
     try {
       const body = checkoutBody.parse(req.body);
       res.json(await startCheckout(body, actorOf(req), billingProvider));
@@ -124,7 +117,7 @@ export function registerBillingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/billing/seats", isAuthenticated, requireManager, async (req, res) => {
+  app.post("/api/billing/seats", isAuthenticated, requireAdministration, async (req, res) => {
     try {
       const body = seatsBody.parse(req.body);
       res.json(await changeSeats(body.seatQuantity, actorOf(req), billingProvider));
@@ -133,7 +126,7 @@ export function registerBillingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/billing/payment-method", isAuthenticated, requireManager, async (req, res) => {
+  app.post("/api/billing/payment-method", isAuthenticated, requireAdministration, async (req, res) => {
     try {
       const body = paymentMethodBody.parse(req.body);
       res.json(await startPaymentMethodUpdate(body, actorOf(req), billingProvider));
@@ -142,7 +135,7 @@ export function registerBillingRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/billing/cancel-at-period-end", isAuthenticated, requireManager, async (req, res) => {
+  app.post("/api/billing/cancel-at-period-end", isAuthenticated, requireAdministration, async (req, res) => {
     try {
       res.json(await cancelAtPeriodEnd(actorOf(req)));
     } catch (error) {

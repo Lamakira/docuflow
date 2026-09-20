@@ -18,7 +18,6 @@ export type {
   ServiceAccountView,
 } from "./serviceAccounts";
 export {
-  canManageServiceAccounts,
   createServiceAccount,
   listServiceAccounts,
   principalContextFromApiKey,

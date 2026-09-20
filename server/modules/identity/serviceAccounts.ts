@@ -12,7 +12,6 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { capabilities, serviceAccountCapabilities, serviceAccounts } from "@shared/schema";
 import { db } from "../../db";
 import { inWorkspace, runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
-import { canManageAdministration } from "../../workspaceRole";
 
 const KEY_PREFIX = "dfsa_";
 const KEY_BYTES = 32;
@@ -214,9 +213,4 @@ export async function principalContextFromApiKey(
       capabilities: grants.get(row.id) ?? [],
     };
   });
-}
-
-/** Owner and Administrator may manage Service Accounts. Member may not. */
-export async function canManageServiceAccounts(): Promise<boolean> {
-  return canManageAdministration();
 }

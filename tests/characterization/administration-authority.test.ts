@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { promoteToAdmin, registerUser, setWorkspaceRole } from "../helpers/auth";
+import { promoteToAdmin, registerAdmin, registerUser, setWorkspaceRole } from "../helpers/auth";
 import { removeAllMemberships } from "../helpers/workspace";
 
 /**
@@ -23,9 +23,16 @@ const ADMINISTRATION_ROUTES = [
   "/api/admin/analytics/coverage",
   "/api/admin/analytics/devices",
   "/api/admin/org-settings",
-  "/api/admin/users",
   "/api/admin/modules",
 ];
+
+/**
+ * The one admin family that is not a Workspace surface. `users` is global — no
+ * `workspace_id`, no RLS, no query scope — so this stays on the platform column
+ * until the directory is scoped. Opening it on a Workspace Role would hand
+ * every account on the platform to anyone who signs up and creates a Workspace.
+ */
+const PLATFORM_ROUTES = ["/api/admin/users", "/api/admin/users/whoever"];
 
 /** A User who created their own Workspace and therefore owns it (#217, Flow 1). */
 async function selfServiceOwner(app: Awaited<ReturnType<typeof makeApp>>) {
@@ -93,10 +100,9 @@ describe("the Workspace Role governs Administration (#238)", () => {
     expect(overview.body).toEqual({ message: "Access denied" });
   });
 
-  it("moves the Workspace Role when the admin console promotes and demotes", async () => {
+  it("moves the Workspace Role when the platform console promotes and demotes", async () => {
     const app = await makeApp();
-    const owner = await registerUser(app);
-    await setWorkspaceRole(owner.id, "owner");
+    const owner = await registerAdmin(app);
     const target = await registerUser(app);
 
     const refusedFirst = await target.agent.get("/api/admin/analytics/overview");
@@ -123,14 +129,31 @@ describe("the Workspace Role governs Administration (#238)", () => {
     const app = await makeApp();
     const owner = await registerUser(app);
     await setWorkspaceRole(owner.id, "owner");
-    const other = await registerUser(app);
-    await setWorkspaceRole(other.id, "administrator");
+    const platformAdmin = await registerAdmin(app);
 
-    const demoted = await other.agent.patch(`/api/admin/users/${owner.id}/role`).send({ role: "user" });
+    const demoted = await platformAdmin.agent
+      .patch(`/api/admin/users/${owner.id}/role`)
+      .send({ role: "user" });
     expect(demoted.status).toBe(200);
 
     // Ownership is transferred, never taken by a role write (CONTEXT.md).
     const still = await owner.agent.get("/api/admin/analytics/overview");
     expect(still.status).toBe(200);
+  });
+
+  it("does not hand the platform user directory to a Workspace Owner", async () => {
+    const app = await makeApp();
+    const owner = await selfServiceOwner(app);
+
+    for (const route of PLATFORM_ROUTES) {
+      const res = await owner.agent.get(route);
+      expect(res.status, route).toBe(403);
+      expect(res.body, route).toEqual({ message: "Access denied" });
+    }
+
+    const created = await owner.agent
+      .post("/api/admin/users")
+      .send({ email: "outsider@example.com", firstName: "Out", lastName: "Sider" });
+    expect(created.status).toBe(403);
   });
 });

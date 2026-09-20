@@ -23,7 +23,6 @@ import { sendInvitationEmail } from "../../email";
 import { identityProvider } from "../identity";
 import { bearerToken } from "../identity/webSession";
 import { membershipRoleLabel } from "./activeWorkspace";
-import { canManageAdministration } from "../../workspaceRole";
 
 const INVITE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const INVITE_ROLES = new Set(["MEMBER", "ADMINISTRATOR"]);
@@ -115,10 +114,6 @@ export class MembershipNotFoundError extends Error {
     super("Membership not found");
     this.name = "MembershipNotFoundError";
   }
-}
-
-export async function canManageInvitations(): Promise<boolean> {
-  return canManageAdministration();
 }
 
 function normalizeEmail(email: string): string {
