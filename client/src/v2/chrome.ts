@@ -14,7 +14,7 @@ import {
 import { documentHref, projectDocumentHref } from "./library";
 import type { V2CommandPanel } from "./presentation";
 import { projectHref } from "./today";
-import { notificationOrigin } from "./workspace";
+import { notificationOrigin, workspaceRoleInCopy } from "./workspace";
 
 export type SearchHit = {
   type: string;
@@ -361,19 +361,6 @@ export type ChromeRefusal =
   | { kind: "workspace-condition"; workspaceName: string; condition: "Read-only" | "Trial" | "Past due" }
   | { kind: "seat"; purchased: number }
   | { kind: "generic"; message: string };
-
-/**
- * The built-in Workspace Roles as prose, for refusal copy; a custom Role keeps its
- * own name. Distinct from presentation.ts's same-named chrome label, which
- * shouts the Role in caps.
- */
-export function workspaceRoleInCopy(workspaceRole: string): string {
-  const role = workspaceRole.trim().toUpperCase();
-  if (role === "OWNER") return "Owner";
-  if (role === "ADMINISTRATOR") return "Administrator";
-  if (role === "MEMBER") return "Member";
-  return workspaceRole.trim();
-}
 
 export function chromeRefusal(input: ChromeRefusal): string {
   if (input.kind === "capability") {

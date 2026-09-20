@@ -58,6 +58,22 @@ export function workspaceCondition(billingState: string | null | undefined): Wor
   return null;
 }
 
+/**
+ * The Workspace Roles as prose, for refusal copy; a custom Role keeps the name
+ * the Workspace gave it. presentation.ts's workspaceRoleLabel shouts the same
+ * answer in caps for the rail, so the two can never disagree (#250).
+ */
+export function workspaceRoleInCopy(workspaceRole: string): string {
+  const role = workspaceRole.trim().toUpperCase();
+  // A Membership always carries a Role; an absent one reads as the least
+  // privileged rather than as an empty chip or an empty sentence.
+  if (!role) return "Member";
+  if (role === "OWNER") return "Owner";
+  if (role === "ADMINISTRATOR") return "Administrator";
+  if (role === "MEMBER") return "Member";
+  return workspaceRole.trim();
+}
+
 export type WorkspaceMemberRow = {
   firstName?: string | null;
   lastName?: string | null;
