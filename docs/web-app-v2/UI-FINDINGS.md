@@ -13,7 +13,8 @@ Each entry: what was seen, where it lives, why it is wrong, and what it would
 take. No entry is deleted — it is marked **Fixed** with the change that fixed
 it, so the next reader can tell a live problem from a settled one.
 
-Related: [`DESIGN-BRIEF.md`](DESIGN-BRIEF.md) for the intent,
+Related: [`PARITY.md`](PARITY.md) for what v2 still owes v1,
+[`DESIGN-BRIEF.md`](DESIGN-BRIEF.md) for the intent,
 [`AMENDMENTS.md`](AMENDMENTS.md) for the token decisions,
 [`FLOWS.md`](FLOWS.md) for the journeys.
 
