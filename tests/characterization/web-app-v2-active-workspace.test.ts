@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { motionForSurface } from "../../client/src/v2/motion";
@@ -10,9 +10,11 @@ import {
   timerChipOnSwitch,
   workspaceCondition,
   workspaceEntry,
+  workspaceOwnerName,
   workspaceSwitcher,
 } from "../../client/src/v2/workspace";
 import { timerChipModel } from "../../client/src/v2/presentation";
+import { chromeRefusal } from "../../client/src/v2/chrome";
 
 /**
  * Active Workspace switcher, chooser, Timer label, and switch motion (#183).
@@ -37,6 +39,85 @@ const harbour = {
   workspaceRole: "ADMINISTRATOR",
   condition: "Trial" as const,
 };
+
+const v2Dir = join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2");
+
+/**
+ * The Owner a refusal names (#250). The Owner is a Membership of the Workspace
+ * the reader is standing in, never the platform SuperAdmin flag on a User.
+ */
+describe("v2 Workspace Owner (#250)", () => {
+  it("names the Owner from the Memberships of the active Workspace", () => {
+    expect(
+      workspaceOwnerName([
+        { firstName: "Pat", lastName: "Ng", email: "pat@example.com", workspaceRole: "MEMBER" },
+        { firstName: "Sam", lastName: "Lee", email: "sam@example.com", workspaceRole: "OWNER" },
+      ]),
+    ).toBe("Sam Lee");
+  });
+
+  it("falls back to the Owner's email when the Membership carries no name", () => {
+    expect(
+      workspaceOwnerName([{ firstName: null, lastName: null, email: "sam@example.com", workspaceRole: "owner" }]),
+    ).toBe("sam@example.com");
+  });
+
+  it("returns null rather than a wrong name when no Membership holds the Owner Role", () => {
+    expect(workspaceOwnerName([])).toBeNull();
+    expect(
+      workspaceOwnerName([
+        { firstName: "Pat", lastName: "Ng", email: "pat@example.com", workspaceRole: "ADMINISTRATOR" },
+      ]),
+    ).toBeNull();
+  });
+
+  it("reads no Owner from the platform SuperAdmin flag anywhere in v2", () => {
+    const offenders = readdirSync(v2Dir)
+      .filter((name) => name.endsWith(".ts") || name.endsWith(".tsx"))
+      .filter((name) => readFileSync(join(v2Dir, name), "utf8").includes("isMainAdmin"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("has every screen that names the Owner take it from the Workspace Memberships", () => {
+    const bindings = readdirSync(v2Dir)
+      .filter((name) => name.endsWith(".tsx"))
+      .flatMap((name) => {
+        const source = readFileSync(join(v2Dir, name), "utf8");
+        return [...source.matchAll(/const ownerName = (.*);/g)].map((match) => `${name}: ${match[1]}`);
+      });
+    // Every screen that ends a refusal with the Owner reads the same Membership,
+    // through the hook or the lookup it wraps.
+    for (const binding of bindings) {
+      expect(binding).toMatch(/useWorkspaceOwnerName\(\)|workspaceOwnerName\(/);
+    }
+    // The seven that read the SuperAdmin flag before #250, by name.
+    for (const screen of [
+      "V2Activity.tsx",
+      "V2Clients.tsx",
+      "V2Document.tsx",
+      "V2Documents.tsx",
+      "V2Dossier.tsx",
+      "V2Opportunities.tsx",
+      "V2ProjectDocumentation.tsx",
+    ]) {
+      expect(bindings).toContain(`${screen}: useWorkspaceOwnerName()`);
+    }
+  });
+
+  it("names the Owner of a self-service Workspace, which has no SuperAdmin to find", () => {
+    const memberships = [
+      { firstName: "Sam", lastName: "Lee", email: "sam@example.com", workspaceRole: "OWNER" },
+      { firstName: "Pat", lastName: "Ng", email: "pat@example.com", workspaceRole: "MEMBER" },
+    ];
+    expect(
+      chromeRefusal({
+        kind: "capability",
+        capability: "Manage Clients",
+        ownerName: workspaceOwnerName(memberships),
+      }),
+    ).toBe("You do not have the Manage Clients Capability. Sam Lee (Owner) can grant it.");
+  });
+});
 
 describe("v2 Active Workspace (#183)", () => {
   it("enters the only active Membership with no chooser", () => {

@@ -11,7 +11,7 @@ import {
   type TeamDailyUpdateMember,
   type TeamDailyUpdatesKpis,
 } from "./dailyUpdate";
-import { memberName } from "./today";
+import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 
 type TodayStatus = {
@@ -48,16 +48,7 @@ export function V2TeamDailyUpdatesPage() {
   const listPath = adminDailyUpdatesPath({ startDate, endDate });
   const kpiPath = adminDailyUpdateKpisPath({ startDate, endDate });
 
-  const { data: people } = useQuery<{ memberships: Array<{ firstName: string | null; lastName: string | null; email: string; workspaceRole: string }> }>({
-    queryKey: ["/api/workspace/memberships"],
-    queryFn: async () => {
-      const res = await fetch("/api/workspace/memberships", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch Memberships");
-      return res.json();
-    },
-  });
-  const owner = (people?.memberships ?? []).find((row) => row.workspaceRole === "OWNER");
-  const ownerName = owner ? memberName(owner) : null;
+  const ownerName = useWorkspaceOwnerName();
 
   const { data: updates = [], isLoading: updatesLoading } = useQuery<ProjectDailyUpdateWithDetails[]>({
     queryKey: [listPath],

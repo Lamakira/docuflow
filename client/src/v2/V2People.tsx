@@ -14,7 +14,7 @@ import {
   type PeopleInvitationInput,
   type PeopleMembershipInput,
 } from "./people";
-import { memberName } from "./today";
+import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
 
 type WorkspaceMembershipsResponse = { memberships: PeopleMembershipInput[] };
@@ -67,8 +67,7 @@ export function V2PeoplePage() {
     },
   });
 
-  const owner = (data?.memberships ?? []).find((row) => row.workspaceRole === "OWNER");
-  const ownerName = owner ? memberName(owner) : null;
+  const ownerName = workspaceOwnerName(data?.memberships ?? []);
 
   const page = composePeople({
     workspaceName,

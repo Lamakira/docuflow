@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { CrmClient, CrmContact, CrmProjectWithDetails, SafeUser } from "@shared/schema";
+import type { CrmClient, CrmContact, CrmProjectWithDetails } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -20,7 +20,7 @@ import {
 } from "./clients";
 import { motionForSurface } from "./motion";
 import { matchV2Route } from "./presentation";
-import { memberName } from "./today";
+import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 
 type ClientWithContacts = CrmClient & { contacts?: CrmContact[] };
@@ -106,9 +106,7 @@ export function V2ClientsPage() {
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const readOnly = current?.condition === "Read-only";
 
-  const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
-  const owner = users.find((member) => member.isMainAdmin === 1);
-  const ownerName = owner ? memberName(owner) : null;
+  const ownerName = useWorkspaceOwnerName();
 
   const { data: clients = [], isLoading, isError } = useQuery<CrmClient[]>({
     queryKey: ["/api/crm/clients", "register"],

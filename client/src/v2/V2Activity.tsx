@@ -8,6 +8,7 @@ import { motionForSurface } from "./motion";
 import { memberName } from "./today";
 import { timeEntriesPath } from "./time";
 import { ACTIVITY_TAB_IDS, type ActivityTabId } from "./presentation";
+import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
 import {
@@ -123,6 +124,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     userId: filters.userId,
   });
 
+  const ownerName = useWorkspaceOwnerName();
   const usersUrl = includeArchivedUsers ? "/api/users?includeArchived=true" : "/api/users";
   const { data: users = [] } = useQuery<SafeUser[]>({
     queryKey: ["/api/users", usersUrl],
@@ -132,7 +134,6 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
       return res.json();
     },
   });
-  const owner = users.find((member) => member.isMainAdmin === 1);
   const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
     queryKey: ["/api/crm/projects", { pageSize: 500 }],
     queryFn: () => fetch("/api/crm/projects?pageSize=500").then((res) => res.json()),
@@ -167,7 +168,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     workspaceName,
     currentUserId: user?.id ?? "",
     canReview,
-    ownerName: owner ? memberName(owner) : null,
+    ownerName,
     requestedUserId,
     expandedId,
     policy: policyResponse?.screenshotPolicy ?? null,
