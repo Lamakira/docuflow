@@ -116,17 +116,6 @@ export class MembershipNotFoundError extends Error {
   }
 }
 
-export async function canManageInvitations(): Promise<boolean> {
-  const ctx = requireWorkspaceContext();
-  if (!ctx.membershipId) return false;
-  const [row] = await db
-    .select({ slug: workspaceRoles.slug })
-    .from(memberships)
-    .innerJoin(workspaceRoles, eq(memberships.workspaceRoleId, workspaceRoles.id))
-    .where(eq(memberships.id, ctx.membershipId));
-  return row?.slug === "owner" || row?.slug === "administrator";
-}
-
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }

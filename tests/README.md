@@ -301,6 +301,7 @@ implementation and each suite's header lists what the document gets wrong):
 | `objects-uploads`                | signed URLs, object ACLs, public objects, audio notes               |
 | `chat-embeddings`                | retrieval-augmented chat and the embedding pipeline                 |
 | `admin-analytics`                | analytics dashboards and the CSV export                             |
+| `administration-authority`       | who governs Administration, and the platform directory it excludes (#238) |
 | `desktop-downloads`              | public installer endpoints and CI release registration              |
 | `teams`                          | former Teams and invite routes fail closed (#98)                     |
 | `transcripts`                    | transcript status and sync on the no-video paths                    |

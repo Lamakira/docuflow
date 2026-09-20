@@ -128,7 +128,6 @@ export {
   SeededWorkspaceCheckoutError,
   InvalidCheckoutError,
   PaymentMethodUpdateUnavailableError,
-  canManageBilling,
   getSubscriptionStatus,
   startCheckout,
   startPaymentMethodUpdate,

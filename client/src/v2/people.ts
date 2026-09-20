@@ -202,22 +202,29 @@ export function composePeople(input: PeopleInput): PeopleModel {
 }
 
 export type PeopleWriteRefusal =
-  | { kind: "capability"; ownerName?: string | null }
+  | { kind: "workspace-role"; workspaceRole: string; ownerName?: string | null }
   | { kind: "workspace-condition"; workspaceName: string; condition: "Read-only" | "Trial" | "Past due" }
   | { kind: "seat"; purchased: number }
   | {
       kind: "error";
       workspaceName: string;
+      workspaceRole: string;
       ownerName?: string | null;
       errorMessage: string;
       purchasedSeats?: number | null;
     };
 
 export function peopleWriteRefusal(input: PeopleWriteRefusal): string {
-  if (input.kind === "capability") {
-    return input.ownerName
-      ? `This action needs a Capability. ${input.ownerName} (Owner) can grant it.`
-      : chromeRefusal({ kind: "generic", message: "Access denied" });
+  if (input.kind === "workspace-role") {
+    // Inviting and re-roling authorize on the Workspace Role, as Administration
+    // does (#238) — there is no Capability row here either, so none is named.
+    return chromeRefusal({
+      kind: "workspace-role",
+      destination: "Inviting and managing People",
+      roles: "the Owner and Administrators",
+      workspaceRole: input.workspaceRole,
+      ownerName: input.ownerName,
+    });
   }
   if (input.kind === "workspace-condition") {
     return chromeRefusal({
@@ -242,7 +249,11 @@ export function peopleWriteRefusal(input: PeopleWriteRefusal): string {
     return chromeRefusal({ kind: "seat", purchased: input.purchasedSeats ?? 0 });
   }
   if (/permission denied|not authorized|access denied|forbidden/i.test(message)) {
-    return peopleWriteRefusal({ kind: "capability", ownerName: input.ownerName });
+    return peopleWriteRefusal({
+      kind: "workspace-role",
+      workspaceRole: input.workspaceRole,
+      ownerName: input.ownerName,
+    });
   }
   return chromeRefusal({ kind: "generic", message });
 }

@@ -111,7 +111,7 @@ describe("Administration CRM modules and fields (#213)", () => {
 });
 
 describe("Administration from operator routes (#193)", () => {
-  it("refuses Members with a named Capability, never permission denied", () => {
+  it("refuses Members by naming the Workspace Role, never permission denied", () => {
     const page = composeAdministration(
       emptyAdmin({
         workspaceRole: "MEMBER",
@@ -120,10 +120,29 @@ describe("Administration from operator routes (#193)", () => {
 
     expect(page.kind).toBe("refusal");
     if (page.kind !== "refusal") return;
-    expect(page.refusal).toBe(
-      "You do not have the Administration Capability. Sam Lee (Owner) can grant it.",
-    );
+    expect(page.refusal).toBe("Administration is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.");
     expect(page.refusal.toLowerCase()).not.toContain("permission denied");
+    // No Capability is named, because none exists to grant (#238).
+    expect(page.refusal).not.toContain("Capability");
+  });
+
+  it("never sends the Owner to ask the Owner (#238)", () => {
+    const page = composeAdministration(
+      emptyAdmin({ workspaceRole: "OWNER", ownerName: "User Test" }),
+    );
+    // The Owner is not refused at all — that was the whole of D5.
+    expect(page.kind).toBe("ready");
+
+    // And where an Owner is refused for some other reason, the copy does not
+    // offer them a grant only they could make.
+    const refused = composeAnalytics(
+      emptyAnalytics({ workspaceRole: "OWNER", ownerName: "User Test", refused: true }),
+    );
+    expect(refused.kind).toBe("refusal");
+    if (refused.kind !== "refusal") return;
+    expect(refused.refusal).toBe("Administration could not be opened for your Membership in this Workspace.");
+    expect(refused.refusal).not.toContain("User Test");
+    expect(refused.refusal).not.toContain("Capability");
   });
 
   it("empty operator lists use empty geometry and never show sample names", () => {
@@ -407,10 +426,11 @@ describe("Administration from operator routes (#193)", () => {
       administrationWriteRefusal({
         kind: "error",
         workspaceName: "Harbor Co",
+        workspaceRole: "MEMBER",
         ownerName: "Sam Lee",
         errorMessage: "Access denied",
       }),
-    ).toBe("You do not have the Administration Capability. Sam Lee (Owner) can grant it.");
+    ).toBe("Administration is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.");
     expect(pageSource).toContain("window.location");
     expect(pageSource).toContain("df-project-mobile");
     expect(pageSource).not.toContain("input type=\"password\"");
@@ -510,14 +530,12 @@ describe("Administration analytics (#212)", () => {
     expect(workspaceSettingsPath()).toBe("/api/admin/org-settings");
   });
 
-  it("refuses a Member from the analytics control by naming the Capability", () => {
+  it("refuses a Member from the analytics control by naming the Workspace Role", () => {
     const page = composeAnalytics(emptyAnalytics({ workspaceRole: "MEMBER" }));
 
     expect(page.kind).toBe("refusal");
     if (page.kind !== "refusal") return;
-    expect(page.refusal).toBe(
-      "You do not have the Administration Capability. Sam Lee (Owner) can grant it.",
-    );
+    expect(page.refusal).toBe("Administration is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.");
     expect(page.refusal.toLowerCase()).not.toContain("permission denied");
     expect(page.refusal.toLowerCase()).not.toContain("403");
   });
@@ -526,9 +544,7 @@ describe("Administration analytics (#212)", () => {
     const analytics = composeAnalytics(emptyAnalytics({ refused: true }));
     expect(analytics.kind).toBe("refusal");
     if (analytics.kind !== "refusal") return;
-    expect(analytics.refusal).toBe(
-      "You do not have the Administration Capability. Sam Lee (Owner) can grant it.",
-    );
+    expect(analytics.refusal).toBe("Administration could not be opened for your Membership in this Workspace.");
 
     const policy = composeTrackingPolicyEditor(editorInput({ refused: true }));
     expect(policy.kind).toBe("refusal");
@@ -809,9 +825,7 @@ describe("Tracking Policy editing (#212)", () => {
     const member = composeTrackingPolicyEditor(editorInput({ workspaceRole: "MEMBER" }));
     expect(member.kind).toBe("refusal");
     if (member.kind !== "refusal") return;
-    expect(member.refusal).toBe(
-      "You do not have the Administration Capability. Sam Lee (Owner) can grant it.",
-    );
+    expect(member.refusal).toBe("Administration is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.");
 
     const readOnly = composeTrackingPolicyEditor(editorInput({ condition: "Read-only" }));
     expect(readOnly.kind).toBe("ready");

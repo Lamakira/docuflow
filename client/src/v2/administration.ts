@@ -18,7 +18,37 @@ import { formatRelativeTime } from "./devices";
 import { formatHours } from "./today";
 import type { WorkspaceCondition } from "./workspace";
 
-export const ADMINISTRATION_CAPABILITY = "Administration";
+/**
+ * Administration is a destination governed by the Workspace Role (#238), not a
+ * Capability: `capabilities` has no row for it, so no Owner could grant one.
+ */
+export const ADMINISTRATION_DESTINATION = "Administration";
+
+/** Who governs it, said the way a reader would say it. */
+const ADMINISTRATION_ROLES = "the Owner and Administrators";
+
+/**
+ * The single refusal every Administration surface shows. It names the
+ * destination, the authority that actually governs it, and the Workspace Role
+ * the reader actually holds.
+ */
+export function administrationRefusal(input: {
+  workspaceRole: string;
+  ownerName?: string | null;
+}): string {
+  if (canManageAdministration(input.workspaceRole)) {
+    // The Role qualifies and the read was refused anyway. Blaming the Role here
+    // would be a second false reason, so say only what is known.
+    return `${ADMINISTRATION_DESTINATION} could not be opened for your Membership in this Workspace.`;
+  }
+  return chromeRefusal({
+    kind: "workspace-role",
+    destination: ADMINISTRATION_DESTINATION,
+    roles: ADMINISTRATION_ROLES,
+    workspaceRole: input.workspaceRole,
+    ownerName: input.ownerName,
+  });
+}
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
@@ -199,20 +229,20 @@ export function canManageAdministration(workspaceRole: string): boolean {
 }
 
 export type AdministrationWriteRefusal =
-  | { kind: "capability"; ownerName?: string | null }
+  | { kind: "workspace-role"; workspaceRole: string; ownerName?: string | null }
   | { kind: "workspace-condition"; workspaceName: string; condition: "Read-only" | "Trial" | "Past due" }
   | {
       kind: "error";
       workspaceName: string;
+      workspaceRole: string;
       ownerName?: string | null;
       errorMessage: string;
     };
 
 export function administrationWriteRefusal(input: AdministrationWriteRefusal): string {
-  if (input.kind === "capability") {
-    return chromeRefusal({
-      kind: "capability",
-      capability: ADMINISTRATION_CAPABILITY,
+  if (input.kind === "workspace-role") {
+    return administrationRefusal({
+      workspaceRole: input.workspaceRole,
       ownerName: input.ownerName,
     });
   }
@@ -232,7 +262,11 @@ export function administrationWriteRefusal(input: AdministrationWriteRefusal): s
     });
   }
   if (/permission denied|not authorized|access denied|forbidden/i.test(message)) {
-    return administrationWriteRefusal({ kind: "capability", ownerName: input.ownerName });
+    return administrationWriteRefusal({
+      kind: "workspace-role",
+      workspaceRole: input.workspaceRole,
+      ownerName: input.ownerName,
+    });
   }
   return chromeRefusal({ kind: "generic", message });
 }
@@ -332,9 +366,8 @@ export function composeAdministration(input: AdministrationInput): Administratio
   if (!canManageAdministration(input.workspaceRole)) {
     return {
       kind: "refusal",
-      refusal: chromeRefusal({
-        kind: "capability",
-        capability: ADMINISTRATION_CAPABILITY,
+      refusal: administrationRefusal({
+        workspaceRole: input.workspaceRole,
         ownerName: input.ownerName,
       }),
       pagePrimary: "case-ink",
@@ -604,9 +637,8 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
   if (input.refused || !canManageAdministration(input.workspaceRole)) {
     return {
       kind: "refusal",
-      refusal: chromeRefusal({
-        kind: "capability",
-        capability: ADMINISTRATION_CAPABILITY,
+      refusal: administrationRefusal({
+        workspaceRole: input.workspaceRole,
         ownerName: input.ownerName,
       }),
     };
@@ -806,9 +838,8 @@ export function composeTrackingPolicyEditor(input: TrackingPolicyInput): Trackin
   if (input.refused || !canManageAdministration(input.workspaceRole)) {
     return {
       kind: "refusal",
-      refusal: chromeRefusal({
-        kind: "capability",
-        capability: ADMINISTRATION_CAPABILITY,
+      refusal: administrationRefusal({
+        workspaceRole: input.workspaceRole,
         ownerName: input.ownerName,
       }),
     };

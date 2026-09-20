@@ -33,8 +33,12 @@ A permission set assigned to one membership. Owner, Administrator, and Member ar
 _Avoid_: User role, project role, permission override
 
 **Capability**:
-A named permission granted through a workspace role that determines which destinations and actions a member may access.
+A named permission granted through a workspace role that determines which destinations and actions a member may access within the reach that role already has. It never decides whether a destination is in reach at all — the workspace role does (ADR-0025).
 _Avoid_: Role check, access flag
+
+**Destination**:
+A top-level place in the product a member navigates to, such as Today, People, or Administration. Which destinations a membership may reach is settled by its workspace role.
+_Avoid_: Page, tab, section
 
 **Active Workspace**:
 The workspace currently selected by a user and therefore the scope for navigation, search, permissions, and newly created records. Notifications remain global to the user, and an active timer retains its own explicit workspace scope.

@@ -88,6 +88,7 @@ export function V2PeoplePage() {
       message: peopleWriteRefusal({
         kind: "error",
         workspaceName,
+        workspaceRole,
         ownerName,
         errorMessage,
         purchasedSeats: subscription?.purchasedSeatCapacity ?? null,
@@ -157,7 +158,7 @@ export function V2PeoplePage() {
     if (!canManage) {
       setRefusal({
         id,
-        message: peopleWriteRefusal({ kind: "capability", ownerName }),
+        message: peopleWriteRefusal({ kind: "workspace-role", workspaceRole, ownerName }),
       });
       return false;
     }

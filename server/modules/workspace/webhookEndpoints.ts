@@ -10,18 +10,12 @@
 import { randomBytes } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import {
-  memberships,
   WEBHOOK_EVENT_TYPES,
   webhookEndpoints,
-  workspaceRoles,
   type WebhookEventType,
 } from "@shared/schema";
 import { db } from "../../db";
-import {
-  currentWorkspaceContext,
-  inWorkspace,
-  stampWorkspace,
-} from "../../workspaceContext";
+import { inWorkspace, stampWorkspace } from "../../workspaceContext";
 
 const SECRET_PREFIX = "dfwh_";
 const SECRET_BYTES = 32;
@@ -155,16 +149,4 @@ export async function rotateWebhookEndpointSecret(
     .set({ hmacSecret: plaintextSecret })
     .where(and(eq(webhookEndpoints.id, id), inWorkspace(webhookEndpoints)));
   return { id, plaintextSecret };
-}
-
-/** Owner and Administrator may manage Webhook Endpoints. Member may not. */
-export async function canManageWebhookEndpoints(): Promise<boolean> {
-  const ctx = currentWorkspaceContext();
-  if (!ctx?.membershipId) return false;
-  const [row] = await db
-    .select({ slug: workspaceRoles.slug })
-    .from(memberships)
-    .innerJoin(workspaceRoles, eq(memberships.workspaceRoleId, workspaceRoles.id))
-    .where(eq(memberships.id, ctx.membershipId));
-  return row?.slug === "owner" || row?.slug === "administrator";
 }

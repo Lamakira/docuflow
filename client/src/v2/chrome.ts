@@ -346,14 +346,46 @@ export function composeAccountMenu(input: { theme: AccountTheme }): AccountMenuM
 
 export type ChromeRefusal =
   | { kind: "capability"; capability: string; ownerName?: string | null }
+  | {
+      /**
+       * A destination governed by the Workspace Role rather than by a Capability
+       * (#238). Naming a Capability here would name a row that does not exist and
+       * offer a grant nobody — the Owner included — could make.
+       */
+      kind: "workspace-role";
+      destination: string;
+      roles: string;
+      workspaceRole: string;
+      ownerName?: string | null;
+    }
   | { kind: "workspace-condition"; workspaceName: string; condition: "Read-only" | "Trial" | "Past due" }
   | { kind: "seat"; purchased: number }
   | { kind: "generic"; message: string };
+
+/**
+ * The built-in Workspace Roles as prose, for refusal copy; a custom Role keeps its
+ * own name. Distinct from presentation.ts's same-named chrome label, which
+ * shouts the Role in caps.
+ */
+export function workspaceRoleInCopy(workspaceRole: string): string {
+  const role = workspaceRole.trim().toUpperCase();
+  if (role === "OWNER") return "Owner";
+  if (role === "ADMINISTRATOR") return "Administrator";
+  if (role === "MEMBER") return "Member";
+  return workspaceRole.trim();
+}
 
 export function chromeRefusal(input: ChromeRefusal): string {
   if (input.kind === "capability") {
     const base = `You do not have the ${input.capability} Capability.`;
     return input.ownerName ? `${base} ${input.ownerName} (Owner) can grant it.` : base;
+  }
+  if (input.kind === "workspace-role") {
+    const role = workspaceRoleInCopy(input.workspaceRole);
+    const base = `${input.destination} is open to ${input.roles}. Your Workspace Role is ${role}.`;
+    // The Owner is never told to ask the Owner: that was the refusal #238 found.
+    if (!input.ownerName || role === "Owner") return base;
+    return `${base} ${input.ownerName} (Owner) can change it.`;
   }
   if (input.kind === "workspace-condition") {
     if (input.condition === "Read-only") {

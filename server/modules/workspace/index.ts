@@ -17,7 +17,6 @@ export type {
 } from "./webhookEndpoints";
 export { workspaceOwnerUserId } from "./owner";
 export {
-  canManageWebhookEndpoints,
   createWebhookEndpoint,
   disableWebhookEndpoint,
   enableWebhookEndpoint,
