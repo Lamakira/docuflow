@@ -36,7 +36,16 @@ const BUILT_IN_ROLES = [
   { slug: "member", name: "Member" },
 ] as const;
 
-/** Role grants the seeded Workspace carries, so a new one is not born poorer. */
+/**
+ * Role grants the seeded Workspace carries, so a new one is not born poorer.
+ *
+ * One row is the whole member-facing catalogue, not a poverty (#238): the other
+ * five Capabilities — `clients_read`, `clients_write`, `projects_read`,
+ * `time_entries_read`, `webhook_endpoints_manage` — are Public API grants a
+ * Service Account carries, and a Membership has no use for them. Administration
+ * is not here either: the Workspace Role governs that destination, and
+ * `server/workspaceRole.ts` is where it is decided.
+ */
 const ROLE_CAPABILITIES: Record<string, string[]> = {
   owner: ["view_daily_updates"],
   administrator: ["view_daily_updates"],

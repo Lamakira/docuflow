@@ -4,10 +4,10 @@
  * URL. The return path does not mark Active until the projection Job runs.
  */
 
-import { memberships, SEEDED_WORKSPACE_ID, workspaceBilling, workspaceRoles } from "@shared/schema";
+import { SEEDED_WORKSPACE_ID, workspaceBilling } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
-import { currentWorkspaceContext, inWorkspace, requireWorkspaceContext } from "../../workspaceContext";
+import { inWorkspace, requireWorkspaceContext } from "../../workspaceContext";
 import type { BillingProvider, HostedBillingSession } from "./billingProvider";
 import {
   getBillingProjection,
@@ -16,6 +16,7 @@ import {
 } from "./entitlements";
 import type { PlanKey } from "./planRegistry";
 import { countConsumedSeats, SeatCapacityFloorError } from "./seats";
+import { canManageAdministration } from "../../workspaceRole";
 
 export class SeededWorkspaceCheckoutError extends Error {
   readonly statusCode = 400;
@@ -45,14 +46,7 @@ export type SubscriptionStatus = BillingProjection & { consumedSeatCount: number
 
 /** Owner and Administrator may manage billing. Member may not. */
 export async function canManageBilling(): Promise<boolean> {
-  const ctx = currentWorkspaceContext();
-  if (!ctx?.membershipId) return false;
-  const [row] = await db
-    .select({ slug: workspaceRoles.slug })
-    .from(memberships)
-    .innerJoin(workspaceRoles, eq(memberships.workspaceRoleId, workspaceRoles.id))
-    .where(eq(memberships.id, ctx.membershipId));
-  return row?.slug === "owner" || row?.slug === "administrator";
+  return canManageAdministration();
 }
 
 export async function getSubscriptionStatus(): Promise<SubscriptionStatus> {

@@ -9,20 +9,10 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import {
-  capabilities,
-  memberships,
-  serviceAccountCapabilities,
-  serviceAccounts,
-  workspaceRoles,
-} from "@shared/schema";
+import { capabilities, serviceAccountCapabilities, serviceAccounts } from "@shared/schema";
 import { db } from "../../db";
-import {
-  currentWorkspaceContext,
-  inWorkspace,
-  runWithWorkspaceContext,
-  stampWorkspace,
-} from "../../workspaceContext";
+import { inWorkspace, runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
+import { canManageAdministration } from "../../workspaceRole";
 
 const KEY_PREFIX = "dfsa_";
 const KEY_BYTES = 32;
@@ -228,12 +218,5 @@ export async function principalContextFromApiKey(
 
 /** Owner and Administrator may manage Service Accounts. Member may not. */
 export async function canManageServiceAccounts(): Promise<boolean> {
-  const ctx = currentWorkspaceContext();
-  if (!ctx?.membershipId) return false;
-  const [row] = await db
-    .select({ slug: workspaceRoles.slug })
-    .from(memberships)
-    .innerJoin(workspaceRoles, eq(memberships.workspaceRoleId, workspaceRoles.id))
-    .where(eq(memberships.id, ctx.membershipId));
-  return row?.slug === "owner" || row?.slug === "administrator";
+  return canManageAdministration();
 }

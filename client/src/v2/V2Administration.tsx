@@ -259,6 +259,7 @@ export function V2AdministrationPage() {
       administrationWriteRefusal({
         kind: "error",
         workspaceName,
+        workspaceRole,
         ownerName,
         errorMessage: message,
       }),

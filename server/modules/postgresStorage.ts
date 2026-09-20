@@ -111,6 +111,7 @@ import {
   PARALLEL_WORKSPACE_ID,
   PARALLEL_MEMBER_ROLE_ID,
   memberships,
+  workspaceRoles,
   deviceEnrollments,
   workspaces,
   toSafeUser,
@@ -1450,7 +1451,42 @@ export class DatabaseStorage implements IStorage {
       .set({ role, updatedAt: new Date() })
       .where(eq(users.id, userId))
       .returning();
+    if (updated) await this.alignWorkspaceRole(userId, role);
     return updated && toSafeUser(updated);
+  }
+
+  /**
+   * Administration authorizes on the Workspace Role (#238), so the admin
+   * console's promote and demote have to move that Role, not only the global
+   * column — otherwise a freshly promoted admin still meets a 403.
+   *
+   * The Owner is never touched: ownership is transferred, never taken by a role
+   * write (CONTEXT.md), and a demotion here would leave the Workspace ownerless.
+   */
+  private async alignWorkspaceRole(userId: string, role: string): Promise<void> {
+    const workspaceId = currentWorkspaceContext()?.workspaceId ?? SEEDED_WORKSPACE_ID;
+    const slug = role === "admin" ? "administrator" : "member";
+    await runWithWorkspaceContext({ workspaceId }, async () => {
+      const [current] = await db
+        .select({ id: memberships.id, slug: workspaceRoles.slug })
+        .from(memberships)
+        .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
+        .where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.userId, userId)))
+        .limit(1);
+      if (!current || current.slug === "owner" || current.slug === slug) return;
+
+      const [target] = await db
+        .select({ id: workspaceRoles.id })
+        .from(workspaceRoles)
+        .where(and(eq(workspaceRoles.workspaceId, workspaceId), eq(workspaceRoles.slug, slug)))
+        .limit(1);
+      if (!target) return;
+
+      await db
+        .update(memberships)
+        .set({ workspaceRoleId: target.id, updatedAt: new Date() })
+        .where(eq(memberships.id, current.id));
+    });
   }
 
   async updateUser(userId: string, data: { firstName?: string; lastName?: string; email?: string; hoursPerDay?: number; canViewDailyUpdates?: number }): Promise<SafeUser | undefined> {

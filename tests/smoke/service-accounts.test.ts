@@ -250,6 +250,10 @@ describe("Service Account web BFF", () => {
     const app = await makeApp();
     const member = await registerUser(app);
     const platformAdmin = await registerAdmin(app);
+    // The column alone, with no Workspace Role behind it — the state this test
+    // is about. `registerAdmin` grants both, because Administration authorizes
+    // on the Role (#238).
+    await setWorkspaceRole(platformAdmin.id, "member");
 
     const asMember = await member.agent.post("/api/service-accounts").send({ name: "Nope" });
     expect(asMember.status).toBe(403);

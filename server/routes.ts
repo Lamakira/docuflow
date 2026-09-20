@@ -3,6 +3,7 @@ import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, getUserId } from "./auth";
+import { canManageAdministration, requireAdministration } from "./workspaceRole";
 import { config } from "./config";
 import { z } from "zod";
 import {
@@ -2646,34 +2647,27 @@ Instructions:
   });
 
   // ==================== Admin Routes ====================
-  const isAdmin = async (req: any, res: any, next: any) => {
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    const user = await storage.getUser(userId);
-    if (!user || user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied" });
-    }
-    next();
-  };
+  // Administration is governed by the Workspace Role (#238). The routes below
+  // once read the global `users.role` column, which no Workspace created
+  // through #217 ever sets — its Owner was refused their own Workspace.
 
-  // Allows admins OR non-admin users who were granted the "view daily updates"
-  // permission (canViewDailyUpdates flag) to reach the daily-updates dashboard.
+  // Administration reaches the daily-updates dashboard, and so does any
+  // Membership granted the "view daily updates" Capability.
   const canViewDailyUpdates = async (req: any, res: any, next: any) => {
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ message: "Not authenticated" });
     }
+    if (await canManageAdministration()) return next();
     const user = await storage.getUser(userId);
-    if (!user || (user.role !== "admin" && user.canViewDailyUpdates !== 1)) {
+    if (!user || user.canViewDailyUpdates !== 1) {
       return res.status(403).json({ message: "Access denied" });
     }
     next();
   };
 
   // Org settings — screenshot policy + timezone allow-list
-  app.get("/api/admin/org-settings", isAuthenticated, isAdmin, async (_req, res) => {
+  app.get("/api/admin/org-settings", isAuthenticated, requireAdministration, async (_req, res) => {
     try {
       const [screenshotPolicy, allowedTimezones, helpCenterScreenshots] = await Promise.all([
         storage.getScreenshotPolicy(),
@@ -2687,7 +2681,7 @@ Instructions:
     }
   });
 
-  app.patch("/api/admin/org-settings", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.patch("/api/admin/org-settings", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const { screenshotPolicy, allowedTimezones, helpCenterScreenshots } = req.body;
       const ops: Promise<void>[] = [];
@@ -2776,7 +2770,7 @@ Instructions:
   });
 
   // Get all users (admin only)
-  app.get("/api/admin/users", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/users", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const users = await storage.getAllUsers();
       res.json(users);
@@ -2787,7 +2781,7 @@ Instructions:
   });
 
   // Get single user details (admin only)
-  app.get("/api/admin/users/:id", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/users/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const user = await storage.getAdminUserDetails(req.params.id);
       if (!user) {
@@ -2810,7 +2804,7 @@ Instructions:
   });
 
   // Update user role (admin only)
-  app.patch("/api/admin/users/:id/role", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.patch("/api/admin/users/:id/role", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       // Check if target user is SuperAdmin
       const targetUser = await storage.getUser(req.params.id);
@@ -2840,7 +2834,7 @@ Instructions:
   });
 
   // Create new user (admin only)
-  app.post("/api/admin/users", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.post("/api/admin/users", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const createUserSchema = z.object({
         email: z.string().email(),
@@ -2887,7 +2881,7 @@ Instructions:
 
   // Update user info (admin only)
   // Archive / unarchive a user (soft delete — data is preserved)
-  app.patch("/api/admin/users/:id/archive", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.patch("/api/admin/users/:id/archive", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const targetUser = await storage.getUser(req.params.id);
       if (!targetUser) return res.status(404).json({ message: "User not found" });
@@ -2906,7 +2900,7 @@ Instructions:
     }
   });
 
-  app.patch("/api/admin/users/:id", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.patch("/api/admin/users/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       // Check if target user is SuperAdmin
       const targetUser = await storage.getUser(req.params.id);
@@ -2948,7 +2942,7 @@ Instructions:
   });
 
   // Reset user password (admin only)
-  app.post("/api/admin/users/:id/reset-password", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.post("/api/admin/users/:id/reset-password", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const user = await storage.getUser(req.params.id);
       if (!user) {
@@ -2969,7 +2963,7 @@ Instructions:
   });
 
   // Delete user (admin only)
-  app.delete("/api/admin/users/:id", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.delete("/api/admin/users/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const userId = req.params.id;
       
@@ -3016,7 +3010,7 @@ Instructions:
   // ==================== Admin Modules & Fields ====================
 
   // Get all CRM modules with their fields
-  app.get("/api/admin/modules", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/modules", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const modules = await storage.getCrmModules();
       res.json(modules);
@@ -3027,7 +3021,7 @@ Instructions:
   });
 
   // Get a single module with fields
-  app.get("/api/admin/modules/:id", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/modules/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const mod = await storage.getCrmModule(req.params.id);
       if (!mod) {
@@ -3050,7 +3044,7 @@ Instructions:
     displayOrder: z.number().optional(),
   });
 
-  app.post("/api/admin/modules", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.post("/api/admin/modules", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const parsed = createModuleSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -3069,7 +3063,7 @@ Instructions:
   });
 
   // Update a module
-  app.patch("/api/admin/modules/:id", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.patch("/api/admin/modules/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const mod = await storage.getCrmModule(req.params.id);
       if (!mod) {
@@ -3085,7 +3079,7 @@ Instructions:
   });
 
   // Delete a module
-  app.delete("/api/admin/modules/:id", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.delete("/api/admin/modules/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const mod = await storage.getCrmModule(req.params.id);
       if (!mod) {
@@ -3105,7 +3099,7 @@ Instructions:
   });
 
   // Get fields for a module
-  app.get("/api/admin/modules/:moduleId/fields", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/modules/:moduleId/fields", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const fields = await storage.getCrmModuleFields(req.params.moduleId);
       res.json(fields);
@@ -3129,7 +3123,7 @@ Instructions:
     displayOrder: z.number().optional(),
   });
 
-  app.post("/api/admin/modules/:moduleId/fields", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.post("/api/admin/modules/:moduleId/fields", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const parsed = createFieldSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -3149,7 +3143,7 @@ Instructions:
   });
 
   // Update a field
-  app.patch("/api/admin/fields/:id", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.patch("/api/admin/fields/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const field = await storage.getCrmModuleField(req.params.id);
       if (!field) {
@@ -3244,7 +3238,7 @@ Instructions:
   });
 
   // Delete a field
-  app.delete("/api/admin/fields/:id", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.delete("/api/admin/fields/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const field = await storage.getCrmModuleField(req.params.id);
       if (!field) {
@@ -3273,7 +3267,7 @@ Instructions:
     return { start, end };
   };
 
-  app.get("/api/admin/analytics/overview", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/analytics/overview", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const { start, end } = parseDateRange(req.query);
       const data = await storage.getAdminOverview({ startDate: start, endDate: end });
@@ -3284,7 +3278,7 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/analytics/productivity", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/analytics/productivity", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const { start, end } = parseDateRange(req.query);
       const data = await storage.getAdminProductivity({
@@ -3300,7 +3294,7 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/analytics/activity", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/analytics/activity", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const { start, end } = parseDateRange(req.query);
       const data = await storage.getAdminActivityStats({
@@ -3315,7 +3309,7 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/analytics/screenshots", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/analytics/screenshots", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const { start, end } = parseDateRange(req.query);
       const data = await storage.getAdminScreenshotStats({
@@ -3330,7 +3324,7 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/analytics/alerts", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/analytics/alerts", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const { start, end } = parseDateRange(req.query);
       const data = await storage.getAdminAlerts({ startDate: start, endDate: end });
@@ -3342,7 +3336,7 @@ Instructions:
   });
 
   // Data quality report — evidence completeness flags, never redefines tracked time
-  app.get("/api/admin/analytics/data-quality", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/analytics/data-quality", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const { start, end } = parseDateRange(req.query);
       const data = await storage.getDataQualityReport({
@@ -3359,7 +3353,7 @@ Instructions:
 
   // Screenshot coverage report — evidence completeness vs tracked time
   // Coverage is purely observational. Tracked time is never modified by this endpoint.
-  app.get("/api/admin/analytics/coverage", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/analytics/coverage", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const { start, end } = parseDateRange(req.query);
       const data = await storage.getScreenshotCoverageReport({
@@ -3377,7 +3371,7 @@ Instructions:
 
   // Evidence quality score — per-user composite score (0–100).
   // NEVER modifies or replaces tracked time; purely observational.
-  app.get("/api/admin/analytics/evidence-quality", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/analytics/evidence-quality", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const { start, end } = parseDateRange(req.query);
       const data = await storage.getEvidenceQualityReport({
@@ -3392,7 +3386,7 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/analytics/devices", isAuthenticated, isAdmin, async (_req, res) => {
+  app.get("/api/admin/analytics/devices", isAuthenticated, requireAdministration, async (_req, res) => {
     try {
       const data = await storage.getAdminAllDevices();
       res.json(data);
@@ -3402,7 +3396,7 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/analytics/export", isAuthenticated, isAdmin, async (req: any, res) => {
+  app.get("/api/admin/analytics/export", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const { start, end } = parseDateRange(req.query);
       const entries = await storage.getTimeEntries({
@@ -3578,9 +3572,8 @@ Instructions:
 
       // If adding someone other than themselves, caller must be owner or admin
       if (targetUserId !== callerId) {
-        const caller = await storage.getUser(callerId);
         const isOwner = crmProject.project?.ownerId === callerId;
-        const isAdmin = caller?.role === "admin";
+        const isAdmin = await canManageAdministration();
         if (!isOwner && !isAdmin) {
           return res.status(403).json({ message: "Only project owner or admin can add other members" });
         }
@@ -3615,9 +3608,8 @@ Instructions:
       if (targetUserId !== callerId) {
         const crmProject = await storage.getCrmProject(projectId);
         if (!crmProject) return res.status(404).json({ message: "Project not found" });
-        const caller = await storage.getUser(callerId);
         const isOwner = crmProject.project?.ownerId === callerId;
-        const isAdmin = caller?.role === "admin";
+        const isAdmin = await canManageAdministration();
         if (!isOwner && !isAdmin) {
           return res.status(403).json({ message: "Only project owner or admin can remove other members" });
         }

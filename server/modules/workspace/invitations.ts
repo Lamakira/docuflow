@@ -23,6 +23,7 @@ import { sendInvitationEmail } from "../../email";
 import { identityProvider } from "../identity";
 import { bearerToken } from "../identity/webSession";
 import { membershipRoleLabel } from "./activeWorkspace";
+import { canManageAdministration } from "../../workspaceRole";
 
 const INVITE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const INVITE_ROLES = new Set(["MEMBER", "ADMINISTRATOR"]);
@@ -117,14 +118,7 @@ export class MembershipNotFoundError extends Error {
 }
 
 export async function canManageInvitations(): Promise<boolean> {
-  const ctx = requireWorkspaceContext();
-  if (!ctx.membershipId) return false;
-  const [row] = await db
-    .select({ slug: workspaceRoles.slug })
-    .from(memberships)
-    .innerJoin(workspaceRoles, eq(memberships.workspaceRoleId, workspaceRoles.id))
-    .where(eq(memberships.id, ctx.membershipId));
-  return row?.slug === "owner" || row?.slug === "administrator";
+  return canManageAdministration();
 }
 
 function normalizeEmail(email: string): string {

@@ -83,8 +83,8 @@ export async function createUnlinkedUser(
  *
  * Promotion is a direct database write on purpose: the only routes that can grant
  * admin are themselves admin-only, so an HTTP-only path would have no way to
- * create the first one. `isAdmin` re-reads the role from the database on every
- * request, so the existing session picks the change up without re-login.
+ * create the first one. The gate re-reads the Workspace Role on every request,
+ * so the existing session picks the change up without re-login.
  */
 export async function registerAdmin(
   app: Express,
@@ -95,8 +95,14 @@ export async function registerAdmin(
   return user;
 }
 
+/**
+ * The global column and the Workspace Role together, because Administration
+ * authorizes on the Role (#238) and the column is what the legacy console and
+ * the seeded data still carry. Migration 0007 mapped them the same way.
+ */
 export async function promoteToAdmin(userId: string): Promise<void> {
   await updateUserRow(userId, "role = 'admin'");
+  await setWorkspaceRole(userId, "administrator");
 }
 
 /** Flag a user as the SuperAdmin — the account admin routes refuse to modify. */
