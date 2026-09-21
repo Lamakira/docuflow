@@ -11,7 +11,11 @@
   --df-muted-ink: #8a94a6;
   --df-placeholder: #c3cad4;
   --df-hover: #edeff3;
-  --df-destructive: #b3261e;
+  /* A carmine that leans toward Case Ink rather than toward orange, so the one
+     red in a palette of two chromatic voices still reads as this system's.
+     Dark enough for 8.2:1 on white, which the token needs in both its jobs:
+     a fill under white text, and red text on Card White. */
+  --df-destructive: #95232a;
   --df-font-display: "Cabinet Grotesk", sans-serif;
   --df-font-ui: "Switzer", system-ui, sans-serif;
   --df-font-mono: "JetBrains Mono", ui-monospace, monospace;

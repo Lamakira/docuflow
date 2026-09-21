@@ -14,6 +14,11 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground border border-primary-border",
         destructive:
           "bg-destructive text-destructive-foreground border border-destructive-border",
+        // A destructive control at rest, for the trigger that opens a confirmation
+        // rather than the action that carries it out. The flood is the answer to
+        // the dialog's question, not the invitation to ask it.
+        destructiveOutline:
+          "border border-destructive bg-transparent text-destructive hover:bg-destructive hover:text-destructive-foreground",
         outline:
           // Shows the background color of whatever card / sidebar / accent background it is inside of.
           // Inherits the current text color.

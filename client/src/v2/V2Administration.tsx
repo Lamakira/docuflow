@@ -1697,7 +1697,7 @@ function CancelControl({
       <AlertDialogTrigger asChild>
         <Button
           type="button"
-          variant="destructive"
+          variant="destructiveOutline"
           className="df-btn"
           disabled={pending}
           data-testid="v2-administration-billing-cancel"

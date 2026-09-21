@@ -57,6 +57,21 @@ function cssVar(block: string, name: string): string {
   return match[1].trim();
 }
 
+/** WCAG 2.1 relative luminance, for the one token that must stay legible. */
+function luminance(hex: string): number {
+  const raw = hex.replace("#", "");
+  const full = raw.length === 3 ? [...raw].map((char) => char + char).join("") : raw;
+  const channels = [0, 2, 4].map((offset) => {
+    const value = Number.parseInt(full.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrastWithWhite(hex: string): number {
+  return 1.05 / (luminance(hex) + 0.05);
+}
+
 function hexToHslTriplet(hex: string): string {
   const raw = hex.replace("#", "");
   const full = raw.length === 3 ? [...raw].map((char) => char + char).join("") : raw;
@@ -191,6 +206,22 @@ describe("controls have hover, focus-visible, and disabled states (#249)", () =>
     expect(tokensCss).toMatch(/\.df-ink-btn:hover/);
     expect(tokensCss).toMatch(/\.df-ink-btn:focus-visible/);
     expect(tokensCss).toMatch(/\.df-ink-btn:disabled/);
+  });
+
+  it("keeps the destructive token legible in both of the jobs it does", () => {
+    // --df-destructive is a fill under white text and red text on Card White, so
+    // one number covers both: its contrast against white. 7:1 is WCAG AAA for the
+    // 12.5px label on the one control a reader must never misread.
+    expect(contrastWithWhite(dfHex("--df-destructive"))).toBeGreaterThanOrEqual(7);
+  });
+
+  it("opens a destructive confirmation from a control that does not flood", () => {
+    // The flood is the answer to the dialog's question, not the invitation to ask
+    // it — and a chromatic flood is a loud thing in a palette of two voices.
+    const admin = source("client/src/v2/V2Administration.tsx");
+    expect(admin).toContain('variant="destructiveOutline"');
+    expect(admin).not.toContain('variant="destructive"');
+    expect(source("client/src/components/ui/button.tsx")).toContain("destructiveOutline");
   });
 
   it("uses one danger convention, the destructive token", () => {
