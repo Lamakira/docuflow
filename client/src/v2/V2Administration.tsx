@@ -1711,7 +1711,12 @@ function CancelControl({
           <AlertDialogDescription>{action.consequence}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel className="df-btn">Keep subscription</AlertDialogCancel>
+          {/* Focused on open: the destructive action reads first in this footer
+              (shadcn stacks it above the dismissal on a phone, which is the
+              platform convention), so the keyboard must not agree with it. */}
+          <AlertDialogCancel className="df-btn" autoFocus>
+            Keep subscription
+          </AlertDialogCancel>
           <AlertDialogAction
             className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
             disabled={pending}

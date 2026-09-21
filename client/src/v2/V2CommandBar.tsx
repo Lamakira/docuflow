@@ -233,6 +233,12 @@ export function SearchOverlay({ workspaceName, onClose }: { workspaceName: strin
       />
       <CommandList className="df-search-hits">
         {knowledgeRefusal ? <p className="df-refusal">{knowledgeRefusal}</p> : null}
+        {!trimmed && !knowledgeRefusal ? (
+          // Without this the palette is an input and nothing else, which on a
+          // phone reads as a stray field rather than a surface waiting for a
+          // query.
+          <CommandEmpty>Type to search {workspaceName}.</CommandEmpty>
+        ) : null}
         {trimmed && !isFetching && rows.length === 0 && !knowledgeRefusal ? (
           <CommandEmpty>No results in this Workspace.</CommandEmpty>
         ) : (

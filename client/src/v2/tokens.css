@@ -2034,6 +2034,17 @@ button.df-activity-row {
   animation: none;
 }
 
+/* Anchored near the top rather than centred once the viewport is a phone's: a
+   palette centred vertically sits under the thumb and above nothing, and reads
+   as an input dropped on the page instead of a surface. */
+@media (max-width: 639px) {
+  .df-v2.df-command-palette {
+    top: 12px;
+    transform: translate(-50%, 0);
+    width: calc(100vw - 24px);
+  }
+}
+
 .df-search-hits {
   transition: none;
   animation: none;
@@ -2457,7 +2468,6 @@ button.df-activity-row {
   align-items: center;
   width: 100%;
   padding: 9px 12px;
-  border-bottom: 1px solid var(--df-divider-light);
   border-radius: 0;
   background: transparent;
   cursor: pointer;
@@ -2468,8 +2478,13 @@ button.df-activity-row {
   color: var(--df-case-ink);
 }
 
-.df-v2 .df-menu-item:last-child {
-  border-bottom: 0;
+/* A radio item keeps shadcn's indicator gutter. The indicator is positioned
+   absolutely at the item's left edge, and `.df-v2 .df-menu-item` outranks the
+   single-class `pl-8` that reserved room for it — so without this the dot lands
+   on the first letter of the label. */
+.df-v2 .df-menu-item[role="menuitemradio"],
+.df-v2 .df-menu-item[role="menuitemcheckbox"] {
+  padding-left: 32px;
 }
 
 .df-v2 .df-menu-item[data-highlighted] {
@@ -2490,8 +2505,12 @@ button.df-activity-row {
   color: var(--df-case-ink);
 }
 
+/* The only rule inside a menu. Items carried a hairline each, which left the
+   separator indistinguishable from the gaps around it and the account menu
+   reading as one flat list — the grouping #249 set out to give it. */
 .df-v2 .df-menu-separator {
-  margin: 0;
+  margin: 4px 0;
+  height: 1px;
   background: var(--df-divider);
 }
 

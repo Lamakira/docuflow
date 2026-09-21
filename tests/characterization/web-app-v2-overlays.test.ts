@@ -239,6 +239,32 @@ describe("controls have hover, focus-visible, and disabled states (#249)", () =>
     expect(inlineScript).not.toContain('type="module"');
   });
 
+  it("groups a menu with its separator rather than a hairline on every item", () => {
+    // A rule under every item made the separator indistinguishable from the gaps
+    // around it, and the account menu read as one flat list.
+    expect(rule(tokensCss, ".df-v2 .df-menu-item")).not.toMatch(/border-bottom:\s*1px/);
+    expect(rule(tokensCss, ".df-v2 .df-menu-separator")).toMatch(/background:\s*var\(--df-divider\)/);
+    expect(source("client/src/v2/chrome.ts")).toContain('"separator"');
+  });
+
+  it("keeps the indicator gutter on a menu item that carries one", () => {
+    // shadcn positions the indicator absolutely and reserves room with a
+    // single-class `pl-8`, which `.df-v2 .df-menu-item` outranks — the dot then
+    // lands on the first letter of the label.
+    expect(tokensCss).toMatch(/\[role="menuitemradio"\][\s\S]*?padding-left:\s*32px/);
+  });
+
+  it("anchors the command palette to the top of a phone viewport", () => {
+    expect(tokensCss).toMatch(/@media \(max-width: 639px\)[\s\S]*?\.df-v2\.df-command-palette[\s\S]*?top:\s*12px/);
+    // And says what it is waiting for, so it is a surface and not a stray field.
+    expect(source("client/src/v2/V2CommandBar.tsx")).toMatch(/Type to search/);
+  });
+
+  it("points the keyboard at the dismissal, not at the destructive action", () => {
+    const admin = source("client/src/v2/V2Administration.tsx");
+    expect(admin).toMatch(/<AlertDialogCancel[^>]*autoFocus/);
+  });
+
   it("uses one danger convention, the destructive token", () => {
     expect(rule(tokensCss, '.df-ghost-btn[data-danger="true"]')).toMatch(/var\(--df-destructive\)/);
     expect(rule(tokensCss, '.df-v2 .df-menu-item[data-danger="true"]')).toMatch(
