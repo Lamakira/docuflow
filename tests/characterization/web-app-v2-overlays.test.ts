@@ -224,6 +224,21 @@ describe("controls have hover, focus-visible, and disabled states (#249)", () =>
     expect(source("client/src/components/ui/button.tsx")).toContain("destructiveOutline");
   });
 
+  it("keeps the dev overlay from reporting floating-ui's settling notice as an error", () => {
+    // Every Radix surface positions through @floating-ui autoUpdate, which makes
+    // the browser emit "ResizeObserver loop completed with undelivered
+    // notifications" when it cannot settle inside one frame. It carries no Error
+    // object, so the Replit overlay renders it as "(unknown runtime error)" over
+    // a stack of its own script. The guard must stay in index.html: the overlay
+    // injects a deferred module, and only a classic inline script registers
+    // ahead of it.
+    const html = source("client/index.html");
+    const inlineScript = html.slice(0, html.indexOf('<script type="module"'));
+    expect(inlineScript).toContain("ResizeObserver loop");
+    expect(inlineScript).toContain("stopImmediatePropagation");
+    expect(inlineScript).not.toContain('type="module"');
+  });
+
   it("uses one danger convention, the destructive token", () => {
     expect(rule(tokensCss, '.df-ghost-btn[data-danger="true"]')).toMatch(/var\(--df-destructive\)/);
     expect(rule(tokensCss, '.df-v2 .df-menu-item[data-danger="true"]')).toMatch(

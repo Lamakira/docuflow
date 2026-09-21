@@ -11,6 +11,31 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <script>
+      /*
+       * "ResizeObserver loop completed with undelivered notifications" is a
+       * browser notification, not an exception: floating-ui's autoUpdate — the
+       * positioner behind every Radix Popper surface — could not settle an
+       * observation inside one frame, and will deliver on the next. Nothing is
+       * broken and nothing is lost.
+       *
+       * It still reaches the screen in development, because it arrives as an
+       * `error` event carrying no Error object, and the Replit overlay renders
+       * any non-Error as "(unknown runtime error)" with a stack pointing into
+       * its own script (#249). That is unreadable and it hides real errors
+       * behind noise.
+       *
+       * This listener has to be here rather than in main.tsx: the overlay
+       * injects a deferred module, and a classic inline script runs before any
+       * deferred module, which is the only way to register ahead of it and stop
+       * the event reaching it.
+       */
+      window.addEventListener("error", function (event) {
+        if (event.message && event.message.indexOf("ResizeObserver loop") === 0) {
+          event.stopImmediatePropagation();
+        }
+      });
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
   </head>
   <body>
