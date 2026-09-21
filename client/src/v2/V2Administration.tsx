@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   PUBLIC_API_CAPABILITIES,
@@ -8,6 +8,18 @@ import {
 } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -109,7 +121,6 @@ export function V2AdministrationPage() {
   const [endpointUrl, setEndpointUrl] = useState("");
   const [eventTypes, setEventTypes] = useState<string[]>([]);
   const [seatQuantity, setSeatQuantity] = useState("");
-  const [cancelArmed, setCancelArmed] = useState(false);
   const [revealedSecret, setRevealedSecret] = useState<RevealedSecretInput | null>(null);
   const [actionRefusal, setActionRefusal] = useState<string | null>(null);
   const [rangePreset, setRangePreset] = useState<AnalyticsRangePreset>("7d");
@@ -230,15 +241,6 @@ export function V2AdministrationPage() {
     billing: billing ?? null,
     revealedSecret,
   });
-
-  // An armed confirmation must not outlive the action that armed it. If the
-  // subscription is already cancelling, or the Workspace turned read-only, the
-  // action leaves the model — and coming back later must not come back armed.
-  const cancelOffered =
-    page.kind === "ready" && page.billing.actions.some((action) => action.id === "cancel");
-  useEffect(() => {
-    if (!cancelOffered) setCancelArmed(false);
-  }, [cancelOffered]);
 
   // The field starts from the capacity the Workspace already holds, so it never
   // contradicts the BILLABLE SEATS figure above it, and the submit is not
@@ -745,13 +747,9 @@ export function V2AdministrationPage() {
               <CancelControl
                 key={action.id}
                 action={action}
-                armed={cancelArmed}
                 pending={cancelAtPeriodEnd.isPending}
-                onArm={() => setCancelArmed(true)}
-                onDismiss={() => setCancelArmed(false)}
                 onConfirm={() => {
                   if (!guardWrite()) return;
-                  setCancelArmed(false);
                   cancelAtPeriodEnd.mutate();
                 }}
               />
@@ -1681,76 +1679,54 @@ function EndpointActions({
 }
 
 /**
- * Ending the subscription, guarded the way a Device Enrollment revoke is: the
- * first press states the cost, the second one pays it (#245, F1). The control
- * carries `df-danger-btn` in both states, so it never looks like the routine
- * button beside it.
+ * Ending the subscription is a modal confirmation (#249, F5). The trigger
+ * carries the destructive treatment so it never looks like the routine
+ * button beside it (#245, F1).
  */
 function CancelControl({
   action,
-  armed,
   pending,
-  onArm,
-  onDismiss,
   onConfirm,
 }: {
   action: BillingAction;
-  armed: boolean;
   pending: boolean;
-  onArm: () => void;
-  onDismiss: () => void;
   onConfirm: () => void;
 }) {
-  const armRef = useRef<HTMLButtonElement | null>(null);
-  const dismissed = useRef(false);
-
-  // Dismissing unmounts the confirmation, so the focus it held would fall to the
-  // document. It goes back to the control that opened it.
-  useEffect(() => {
-    if (armed || !dismissed.current) return;
-    dismissed.current = false;
-    armRef.current?.focus();
-  }, [armed]);
-
-  if (armed) {
-    return (
-      <span className="df-billing-confirm" role="group" aria-label={action.label}>
-        <span className="df-billing-confirm-note">{action.consequence}</span>
-        <span className="df-billing-confirm-actions">
-          <button
-            type="button"
-            className="df-ghost-btn"
-            onClick={() => {
-              dismissed.current = true;
-              onDismiss();
-            }}
-            autoFocus
-          >
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          type="button"
+          variant="destructiveOutline"
+          className="df-btn"
+          disabled={pending}
+          data-testid="v2-administration-billing-cancel"
+        >
+          {action.label}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent className="df-v2 df-alert">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{action.label}</AlertDialogTitle>
+          <AlertDialogDescription>{action.consequence}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          {/* Focused on open: the destructive action reads first in this footer
+              (shadcn stacks it above the dismissal on a phone, which is the
+              platform convention), so the keyboard must not agree with it. */}
+          <AlertDialogCancel className="df-btn" autoFocus>
             Keep subscription
-          </button>
-          <button
-            type="button"
-            className="df-danger-btn"
+          </AlertDialogCancel>
+          <AlertDialogAction
+            className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
             disabled={pending}
             data-testid="v2-administration-billing-cancel-confirm"
             onClick={onConfirm}
           >
             {pending ? "Cancelling…" : action.label}
-          </button>
-        </span>
-      </span>
-    );
-  }
-  return (
-    <button
-      ref={armRef}
-      type="button"
-      className="df-danger-btn"
-      disabled={pending}
-      data-testid="v2-administration-billing-cancel"
-      onClick={onArm}
-    >
-      {action.label}
-    </button>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

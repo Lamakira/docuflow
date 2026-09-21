@@ -6,6 +6,7 @@ import {
   chromeRefusal,
   composeAsk,
   composeNotifications,
+  composeRefusalPlacement,
   composeSearch,
   selectCommandPanel,
   timerChipCommands,
@@ -34,8 +35,8 @@ describe("v2 chrome actions (#184)", () => {
     const search = motionForSurface("search-overlay");
     expect(search.enterExit).toBe("instant");
     expect(search.movement).toBe("none");
-    expect(rule(".df-overlay")).toMatch(/transition:\s*none/);
-    expect(rule(".df-overlay")).toMatch(/animation:\s*none/);
+    expect(rule(".df-v2.df-command-palette")).toMatch(/transition:\s*none/);
+    expect(rule(".df-v2.df-command-palette")).toMatch(/animation:\s*none/);
     expect(rule(".df-search-hits")).toMatch(/transition:\s*none/);
     expect(rule(".df-search-hits")).toMatch(/animation:\s*none/);
   });
@@ -197,6 +198,13 @@ describe("v2 chrome actions (#184)", () => {
     expect(chromeRefusal({ kind: "generic", message: "permission denied" }).toLowerCase()).not.toContain(
       "permission denied",
     );
+  });
+
+  it("opens a Capability refusal from the control that failed, not from a distant ancestor (#249)", () => {
+    const invite = composeRefusalPlacement({ failedControlId: "invite", controlId: "invite" });
+    expect(invite).toEqual({ open: true, align: "end", side: "bottom" });
+    expect(composeRefusalPlacement({ failedControlId: "invite", controlId: "row-archive" }).open).toBe(false);
+    expect(composeRefusalPlacement({ failedControlId: null, controlId: "invite" }).open).toBe(false);
   });
 
   it("enters and exits toasts from the same bottom edge, interruptible, with optional UNDO", () => {

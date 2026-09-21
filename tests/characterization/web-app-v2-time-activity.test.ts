@@ -713,7 +713,7 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     // tokens (white, 8px radius, no padding, no animation) and its items in
     // Switzer 12.5px, with shadcn's own classes overridden.
     expect(rule(".df-v2.df-row-menu")).toMatch(/animation:\s*none/);
-    expect(rule(".df-v2 .df-row-menu-item")).toMatch(/var\(--df-font-ui\)/);
+    expect(rule(".df-v2 .df-menu-item")).toMatch(/var\(--df-font-ui\)/);
   });
 
   it("gives a Task row real controls, not three quiet annotations", () => {

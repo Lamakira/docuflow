@@ -21,6 +21,7 @@ import {
 } from "./dailyUpdate";
 import { motionForSurface } from "./motion";
 import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
+import { V2RefusalPopover } from "./V2RefusalPopover";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -91,7 +92,6 @@ function TodayActionBar({ onApprovals, onAsk }: { onApprovals: () => void; onAsk
 }
 
 const REMIND_MOTION = motionForSurface("daily-update-remind").enterExit;
-const REFUSAL_MOTION = motionForSurface("capability-refusal").enterExit;
 
 export function V2TodayPage() {
   const now = useMemo(() => new Date(), []);
@@ -263,7 +263,13 @@ export function V2TodayPage() {
                   {row.title}
                 </Link>
                 <span className="df-mono df-meta">{row.meta}</span>
-                <span className="df-refusal-anchor">
+                <V2RefusalPopover
+                  controlId="remind"
+                  failedControlId={remindRefusal ? "remind" : null}
+                  message={remindRefusal}
+                  testId="v2-today-remind-refusal"
+                  onDismiss={() => setRemindRefusal(null)}
+                  trigger={
                   <button
                     type="button"
                     className="df-cta"
@@ -273,20 +279,8 @@ export function V2TodayPage() {
                   >
                     {row.cta}
                   </button>
-                  {remindRefusal ? (
-                    <div
-                      className="df-refusal-pop"
-                      data-motion={REFUSAL_MOTION}
-                      role="status"
-                      data-testid="v2-today-remind-refusal"
-                    >
-                      <p className="df-refusal">{remindRefusal}</p>
-                      <button type="button" className="df-ghost-btn" onClick={() => setRemindRefusal(null)}>
-                        Close
-                      </button>
-                    </div>
-                  ) : null}
-                </span>
+                  }
+                />
               </div>
             ) : (
               <Link key={row.id} href={row.href} className="df-attention-row">

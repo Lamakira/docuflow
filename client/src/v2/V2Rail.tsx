@@ -1,8 +1,18 @@
+import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useTheme } from "@/components/ThemeProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { signOutOfIdentityProvider } from "@/lib/identitySession";
 import { queryClient } from "@/lib/queryClient";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { composeAccountMenu } from "./chrome";
 import {
   CloseIcon,
@@ -48,6 +58,10 @@ export function V2Rail({
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
   const account = composeAccountMenu({ theme });
+
+  useEffect(() => {
+    if (theme === "dark") setTheme("light");
+  }, [theme, setTheme]);
   const activeId = navIdForPath(location);
   const initials = workspaceInitials(workspaceName);
   const displayName =
@@ -201,52 +215,85 @@ export function V2Rail({
           );
         })}
 
-        <details>
-          <summary
-            className="df-user-card"
-            title={displayName}
-            style={{ listStyle: "none" }}
-          >
-            <span
-              className="df-tile"
-              style={{ width: 26, height: 26, borderRadius: "50%", fontSize: 10, fontWeight: 500 }}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="df-user-card"
+              title={displayName}
             >
-              {userInitials}
-            </span>
-            {!collapsed ? (
-              <>
-                <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-                  <span style={{ fontWeight: 600, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {displayName}
-                  </span>
-                  <span className="df-mono" style={{ fontSize: 9.5, color: "#59657A" }}>
-                    {role}
-                  </span>
-                </span>
-                <KebabIcon />
-              </>
-            ) : null}
-          </summary>
-          <div className="df-menu" style={{ marginTop: 6 }} data-testid="v2-account-menu">
-            {account.themeOptions.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => setTheme(option.id)}
-                data-selected={option.selected ? "true" : "false"}
-                data-testid={`v2-theme-${option.id}`}
+              <span
+                className="df-tile"
+                style={{ width: 26, height: 26, borderRadius: "50%", fontSize: 10, fontWeight: 500 }}
               >
-                {option.label}
-              </button>
-            ))}
-            <Link href="/account" className="df-nav" data-testid="v2-account-link">
-              {account.accountLabel}
-            </Link>
-            <button type="button" onClick={handleSignOut} data-testid="v2-sign-out">
-              {account.signOutLabel}
+                {userInitials}
+              </span>
+              {!collapsed ? (
+                <>
+                  <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                    <span style={{ fontWeight: 600, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {displayName}
+                    </span>
+                    <span className="df-mono" style={{ fontSize: 9.5, color: "#59657A" }}>
+                      {role}
+                    </span>
+                  </span>
+                  <KebabIcon />
+                </>
+              ) : null}
             </button>
-          </div>
-        </details>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className={`df-v2 df-menu${collapsed ? "" : " df-menu-match-trigger"}`}
+            data-testid="v2-account-menu"
+          >
+            {account.structure.map((part) => {
+              if (part === "theme") {
+                return (
+                  <DropdownMenuRadioGroup
+                    key={part}
+                    value={account.themeOptions.find((option) => option.selected)?.id ?? "light"}
+                    onValueChange={(value) => setTheme(value === "system" ? "system" : "light")}
+                  >
+                    {account.themeOptions.map((option) => (
+                      <DropdownMenuRadioItem
+                        key={option.id}
+                        value={option.id}
+                        className="df-menu-item"
+                        data-testid={`v2-theme-${option.id}`}
+                      >
+                        {option.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                );
+              }
+              if (part === "separator") {
+                return <DropdownMenuSeparator key={part} className="df-menu-separator" />;
+              }
+              if (part === "account") {
+                return (
+                  <DropdownMenuItem key={part} asChild className="df-menu-item">
+                    <Link href="/account" data-testid="v2-account-link">
+                      {account.accountLabel}
+                    </Link>
+                  </DropdownMenuItem>
+                );
+              }
+              return (
+                <DropdownMenuItem
+                  key={part}
+                  className="df-menu-item"
+                  data-testid="v2-sign-out"
+                  onSelect={() => void handleSignOut()}
+                >
+                  {account.signOutLabel}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </aside>
   );
@@ -276,35 +323,40 @@ function WorkspaceSelector({
   });
 
   return (
-    <details>
-      <summary className="df-ws" style={{ listStyle: "none" }} data-testid="v2-workspace-selector">
-        <span className="df-tile" style={{ width: 22, height: 22, borderRadius: 4, fontSize: 10 }}>
-          {initials}
-        </span>
-        <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-          <span style={{ fontWeight: 600, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {name}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className="df-ws" data-testid="v2-workspace-selector">
+          <span className="df-tile" style={{ width: 22, height: 22, borderRadius: 4, fontSize: 10 }}>
+            {initials}
           </span>
-          <span className="df-mono" style={{ fontSize: 9.5, color: "#59657A" }}>
-            {memberCountLabel(memberCount)}
+          <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <span style={{ fontWeight: 600, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {name}
+            </span>
+            <span className="df-mono" style={{ fontSize: 9.5, color: "#59657A" }}>
+              {memberCountLabel(memberCount)}
+            </span>
           </span>
-        </span>
-        <SwapIcon />
-      </summary>
-      <div className="df-menu df-ws-menu" style={{ marginTop: 6 }} data-testid="v2-workspace-menu">
-        {switcher.rows.map((row) => (
+          <SwapIcon />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="df-v2 df-menu df-menu-match-trigger" data-testid="v2-workspace-menu">
+        {switcher.others.map((row) => (
           <WorkspaceRow
             key={row.workspaceId}
             row={row}
-            onSwitch={row.active ? undefined : onSwitchWorkspace}
+            onSwitch={onSwitchWorkspace}
           />
         ))}
         {/* Flow 4: a secondary action, under the Workspaces it belongs beside. */}
-        <Link href="/workspaces/new" className="df-nav" data-testid="v2-new-workspace">
-          Create a Workspace
-        </Link>
-      </div>
-    </details>
+        <DropdownMenuSeparator className="df-menu-separator" />
+        <DropdownMenuItem asChild className="df-menu-item">
+          <Link href="/workspaces/new" data-testid="v2-new-workspace">
+            Create a Workspace
+          </Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -317,10 +369,10 @@ function WorkspaceRow({
 }) {
   const initials = workspaceInitials(row.workspaceName);
   return (
-    <button
-      type="button"
-      disabled={row.active || !onSwitch}
-      onClick={() => onSwitch?.(row.workspaceId)}
+    <DropdownMenuItem
+      className="df-menu-item"
+      disabled={!onSwitch}
+      onSelect={() => onSwitch?.(row.workspaceId)}
       data-testid={`v2-workspace-${row.workspaceId}`}
     >
       <span className="df-tile" style={{ width: 18, height: 18, borderRadius: 4, fontSize: 8 }}>
@@ -333,15 +385,11 @@ function WorkspaceRow({
           {row.condition ? ` · ${row.condition}` : ""}
         </span>
       </span>
-      {row.active ? (
-        <span className="df-mono" style={{ fontSize: 9, color: "#1F9D6B" }}>
-          Active
-        </span>
-      ) : row.timer ? (
+      {row.timer ? (
         <span className="df-mono" style={{ fontSize: 9, color: "#E9A23B" }}>
           TIMER
         </span>
       ) : null}
-    </button>
+    </DropdownMenuItem>
   );
 }

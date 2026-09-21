@@ -240,10 +240,9 @@ describe("People from Memberships (#192)", () => {
     expect(pageSource).toContain("Invitation pending");
     expect(pageSource).toContain("Archive");
     expect(pageSource).toContain("df-project-mobile");
-    // The invite refusal hangs from an anchor like its three siblings (#245, F3);
-    // without one the popover resolves against a distant ancestor and lands
-    // hundreds of pixels from the form that raised it.
-    expect(pageSource).toContain("df-refusal-anchor df-refusal-anchor-block");
+    // The invite refusal hangs from the form that raised it (#245, F3, #249).
+    expect(pageSource).toContain("V2RefusalPopover");
+    expect(pageSource).toContain("df-refusal-anchor-block");
     expect(pageSource).not.toContain("custom role");
     expect(pageSource).not.toContain("reset-password");
   });
@@ -424,12 +423,12 @@ describe("People Capability refusal and Invitation accept motion (#192, #211)", 
     expect(reduced.movement).toBe("none");
     expect(reduced.keepOpacity).toBe(true);
 
-    expect(rule('.df-refusal-pop[data-motion="standard"]')).toMatch(/var\(--ease-out\)/);
-    expect(rule('.df-refusal-pop[data-motion="standard"]')).not.toMatch(/transition\s*:\s*all\b/);
+    expect(rule('.df-v2.df-refusal-popover[data-motion="standard"]')).toMatch(/var\(--ease-out\)/);
+    expect(rule('.df-v2.df-refusal-popover[data-motion="standard"]')).not.toMatch(/transition\s*:\s*all\b/);
     expect(rule(".df-people-register")).toMatch(/animation:\s*none/);
     expect(rule(".df-people-register .df-avatar")).toMatch(/animation:\s*none/);
     expect(reducedMotionCss()).toMatch(
-      /\.df-refusal-pop\[data-motion="standard"\][^{]*\{[^}]*transform:\s*none/,
+      /\.df-v2\.df-refusal-popover\[data-motion="standard"\][^{]*\{[^}]*transform:\s*none/,
     );
   });
 

@@ -1092,12 +1092,10 @@ describe("The Billing card reads as one card (#245, F1)", () => {
       "utf8",
     );
 
-    // The press that arms the control is not the press that mutates.
-    expect(pageSource).toContain("onClick={onArm}");
+    // Opening the dialog is not the press that mutates.
     expect(pageSource).toContain("Keep subscription");
     expect(pageSource).toContain('data-testid="v2-administration-billing-cancel-confirm"');
-    // And it is never the neutral button its neighbour is.
-    expect(pageSource).toContain('className="df-danger-btn"');
+    expect(pageSource).toContain('from "@/components/ui/alert-dialog"');
     expect(pageSource).not.toMatch(/onClick=\{\(\) => cancelAtPeriodEnd\.mutate\(\)\}/);
 
     // The write gate still runs on the press that actually cancels.

@@ -42,13 +42,10 @@ export function V2ContextPanel({
 
   return (
     <aside
-      className={sheet ? "df-sheet" : "df-panel"}
+      className={sheet ? "df-context-sheet-body" : "df-panel"}
       data-testid={sheet ? `v2-sheet-${panel}` : `v2-panel-${panel}`}
       aria-label={title}
     >
-      {sheet ? (
-        <button type="button" className="df-sheet-handle" aria-label="Close" onClick={onClose} />
-      ) : null}
       <header
         style={{
           padding: sheet ? "12px 16px 13px" : "14px 16px",
@@ -72,14 +69,16 @@ export function V2ContextPanel({
             {title}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close panel"
-          style={{ background: "transparent", border: 0, cursor: "pointer", padding: 4 }}
-        >
-          <CloseIcon />
-        </button>
+        {sheet ? null : (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close panel"
+            style={{ background: "transparent", border: 0, cursor: "pointer", padding: 4 }}
+          >
+            <CloseIcon />
+          </button>
+        )}
       </header>
       {panel === "approvals" ? (
         <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
@@ -92,13 +91,6 @@ export function V2ContextPanel({
       ) : (
         <NotificationsBody onClose={onClose} />
       )}
-      {sheet && panel !== "ask" ? (
-        <div className="df-sheet-foot">
-          <button type="button" className="df-ghost-btn df-sheet-btn" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      ) : null}
     </aside>
   );
 }

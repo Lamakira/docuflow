@@ -170,10 +170,11 @@ jobs.
 
 ## F5 — Administration → Billing, the cancel confirmation lands away from its button
 
-- **Status:** open — deferred to the modal standardisation pass
+- **Status:** closed — [#249](https://github.com/Lamakira/docuflow/issues/249)
 - **Found:** 2026-09-20, using the Billing card after [#245](https://github.com/Lamakira/docuflow/issues/245) fixed F1
 - **Where:** `client/src/v2/tokens.css` (`.df-billing-confirm`), `client/src/v2/V2Administration.tsx` (`CancelControl`)
 - **Severity:** degrading. The guard works — one press no longer cancels — but the guard reads badly
+- **Fixed:** 2026-09-20. `Cancel at period end` opens `alert-dialog.tsx`. The confirmation is a modal on the control, not an inline block against the card's far corner.
 
 Arming `Cancel at period end` opens the consequence and its two buttons hard
 against the bottom-right corner of the card, the full width of the card away
