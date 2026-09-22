@@ -109,11 +109,15 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
 }
 
 /**
- * Delivery board (#259). v1's Kanban drew the whole combined lifecycle, so its
- * first five columns were the sales pipeline — which v2 already draws on
- * Opportunities. ADR-0001 separates the two: an Opportunity ends won or lost,
- * and delivery starts after. So this board shows won work and Internal Projects
- * only, in the Project Status the register already speaks.
+ * Delivery board (#259). The same Projects the register lists, grouped by the
+ * same Project Status — the toggle changes how they are drawn, never which.
+ *
+ * v1's Kanban drew the whole combined lifecycle, so its first five columns were
+ * the sales pipeline, which v2 already draws on Opportunities. ADR-0001
+ * separates the two, and this board follows it for **writes**: an Opportunity
+ * that is still open, or lost, sits where the register puts it but does not move
+ * from here. Dropping a lead on ACTIVE would win the sale from the delivery
+ * board.
  */
 
 export function projectsAllPath(): string {
@@ -150,9 +154,14 @@ export function combinedStatusForProjectStatus(projectStatus: string): string {
   return COMBINED_FOR_PROJECT_STATUS[projectStatus] ?? "won_not_started";
 }
 
-/** Won work, or work that never went through a sale. */
-function isDelivery(project: { projectType: string | null; status: string }): boolean {
-  return project.projectType === "internal" || project.status.startsWith("won");
+/**
+ * Moves from the board. Won work, and Internal work — which never went through a
+ * sale. "Internal" is the register's definition, a Project type or no Client at
+ * all, so the two views agree on what they call it.
+ */
+function movesOnBoard(project: { projectType: string | null; clientName: string | null; status: string }): boolean {
+  if (project.status.startsWith("won")) return true;
+  return project.projectType === "internal" || !project.clientName;
 }
 
 export type ProjectBoardRowInput = {
@@ -160,8 +169,10 @@ export type ProjectBoardRowInput = {
   name: string;
   clientName: string | null;
   projectType: string | null;
-  /** The combined lifecycle, as HTTP returns it. */
+  /** The combined lifecycle, as HTTP returns it. What a drop writes. */
   status: string;
+  /** What the register groups by, so the board groups by it too. */
+  projectStatus: string;
   visible: boolean;
 };
 
@@ -179,6 +190,8 @@ export type ProjectBoardCard = {
   status: string;
   href: string;
   changing: boolean;
+  /** False for an Opportunity that is still open, or lost. */
+  movable: boolean;
 };
 
 export type ProjectBoardColumn = {
@@ -205,14 +218,20 @@ export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel
   const columnById = new Map(columns.map((column) => [column.id, column]));
 
   for (const project of input.projects) {
-    if (!project.visible || !isDelivery(project)) continue;
+    if (!project.visible) continue;
     if (needle) {
       const haystack = `${project.name} ${project.clientName ?? ""}`.toLowerCase();
       if (!haystack.includes(needle)) continue;
     }
-    const projectStatus = projectStatusFromCombined(project.status);
-    const column = columnById.get(projectStatus);
-    if (!column) continue;
+    const projectStatus = project.projectStatus || projectStatusFromCombined(project.status);
+    let column = columnById.get(projectStatus);
+    if (!column) {
+      // A Project Status with no fixed column (on_hold) still gets one: a card
+      // the register lists must never vanish from the board.
+      column = { id: projectStatus, label: projectStatus.replace(/_/g, " ").toUpperCase(), cards: [] };
+      columns.push(column);
+      columnById.set(projectStatus, column);
+    }
     column.cards.push({
       id: project.id,
       name: project.name || "Untitled Project",
@@ -220,6 +239,7 @@ export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel
       status: projectStatus,
       href: projectHref(project.id),
       changing: project.id === input.changingId,
+      movable: movesOnBoard(project),
     });
   }
 
@@ -244,7 +264,10 @@ export function projectVisibleTo(input: {
   memberIds: string[];
   assigneeId: string | null;
 }): boolean {
-  if (input.role === "owner" || input.role === "administrator") return true;
+  // `/api/memberships` answers "OWNER"; some callers lowercased it and some did
+  // not, and an Owner passed through as-is was treated as a Member.
+  const role = input.role?.trim().toLowerCase() ?? null;
+  if (role === "owner" || role === "administrator") return true;
   if (input.memberIds.includes(input.userId)) return true;
   if (input.memberIds.length === 0 && input.assigneeId && input.assigneeId === input.userId) return true;
   return false;

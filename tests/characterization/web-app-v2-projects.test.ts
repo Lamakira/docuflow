@@ -192,14 +192,29 @@ function emptyBoard(overrides: Partial<ProjectBoardInput> = {}): ProjectBoardInp
   };
 }
 
+describe("Project visibility reads the Workspace Role in any casing", () => {
+  it("shows an Owner and an Administrator every Project, as the server spells the Role", () => {
+    // /api/memberships answers "OWNER"; two callers passed it through as-is and
+    // the Owner was treated as a Member.
+    for (const role of ["OWNER", "owner", "ADMINISTRATOR", "Administrator"]) {
+      expect(projectVisibleTo({ role, userId: "u-owner", memberIds: ["u-other"], assigneeId: "u-other" })).toBe(true);
+    }
+    expect(projectVisibleTo({ role: "MEMBER", userId: "u-me", memberIds: ["u-other"], assigneeId: "u-other" })).toBe(
+      false,
+    );
+  });
+});
+
 describe("Projects board (#259)", () => {
   function row(overrides: Partial<ProjectBoardInput["projects"][number]>): ProjectBoardInput["projects"][number] {
+    const status = overrides.status ?? "won_in_progress";
     return {
       id: "prj",
       name: "Harbor",
       clientName: "Northwind",
       projectType: "one_time",
-      status: "won_in_progress",
+      status,
+      projectStatus: projectStatusFromCombined(status),
       visible: true,
       ...overrides,
     };
@@ -247,32 +262,76 @@ describe("Projects board (#259)", () => {
         status: "active",
         href: "/projects/prj-live",
         changing: false,
+        movable: true,
       },
     ]);
     expect(board.columns.flatMap((column) => column.cards).map((card) => card.id)).toEqual(["prj-live"]);
     expect(board.count).toBe(1);
   });
 
-  it("leaves an unwon or lost Opportunity to the Opportunities pipeline", () => {
+  it("lists exactly the rows the register lists, so the two views never disagree", () => {
+    // The toggle switches how the same Projects are drawn, never which ones.
+    const rows = [
+      row({ id: "prj-lead", status: "lead" }),
+      row({ id: "prj-negotiating", status: "in_negotiation" }),
+      row({ id: "prj-lost", status: "lost" }),
+      row({ id: "prj-won", status: "won_not_started" }),
+      row({ id: "prj-noclient", status: "lead", clientName: null }),
+      row({ id: "prj-hidden", status: "won_in_progress", visible: false }),
+    ];
+    const board = composeProjectBoard(emptyBoard({ projects: rows }));
+    const register = composeProjectRegister(
+      emptyInput({
+        projects: rows.map((item) => ({
+          id: item.id,
+          name: item.name,
+          clientName: item.clientName,
+          projectType: item.projectType,
+          projectStatus: item.projectStatus,
+          leadName: null,
+          budgetPercent: null,
+          trackedMtd: "0.0 h",
+          visible: item.visible,
+        })),
+      }),
+    );
+    const onBoard = board.columns.flatMap((column) => column.cards.map((card) => card.id)).sort();
+    expect(onBoard).toEqual(register.rows.map((item) => item.id).sort());
+  });
+
+  it("places an open or lost Opportunity where the register does, and will not move it from here", () => {
+    // Dropping a lead on ACTIVE would win the sale from the delivery board.
+    const board = composeProjectBoard(
+      emptyBoard({ projects: [row({ id: "prj-lead", status: "follow_up" }), row({ id: "prj-lost", status: "lost" })] }),
+    );
+    const planned = board.columns.find((column) => column.id === "planned")?.cards ?? [];
+    const archived = board.columns.find((column) => column.id === "archived")?.cards ?? [];
+    expect(planned.map((card) => [card.id, card.movable])).toEqual([["prj-lead", false]]);
+    expect(archived.map((card) => [card.id, card.movable])).toEqual([["prj-lost", false]]);
+  });
+
+  it("moves Internal work: an Internal Project, and one with no Client, which the register calls Internal", () => {
     const board = composeProjectBoard(
       emptyBoard({
         projects: [
-          row({ id: "prj-lead", status: "lead" }),
-          row({ id: "prj-negotiating", status: "in_negotiation" }),
-          row({ id: "prj-lost", status: "lost" }),
-          row({ id: "prj-won", status: "won_not_started" }),
+          row({ id: "prj-internal", status: "lead", projectType: "internal" }),
+          row({ id: "prj-noclient", status: "lead", clientName: null }),
         ],
       }),
     );
-    expect(board.columns.flatMap((column) => column.cards).map((card) => card.id)).toEqual(["prj-won"]);
+    const planned = board.columns.find((column) => column.id === "planned")?.cards ?? [];
+    expect(planned.map((card) => [card.id, card.movable])).toEqual([
+      ["prj-internal", true],
+      ["prj-noclient", true],
+    ]);
   });
 
-  it("keeps an Internal Project, which never went through a sale", () => {
+  it("gives a Project Status with no fixed column one, rather than dropping the card", () => {
     const board = composeProjectBoard(
-      emptyBoard({ projects: [row({ id: "prj-internal", projectType: "internal", status: "lead", clientName: null })] }),
+      emptyBoard({ projects: [row({ id: "prj-held", status: "won_in_progress", projectStatus: "on_hold" })] }),
     );
-    expect(board.columns.find((column) => column.id === "planned")?.cards.map((card) => card.id)).toEqual([
-      "prj-internal",
+    expect(board.columns.find((column) => column.id === "on_hold")?.cards.map((card) => card.id)).toEqual([
+      "prj-held",
     ]);
   });
 

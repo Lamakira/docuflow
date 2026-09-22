@@ -1786,6 +1786,16 @@ button.df-activity-row {
   animation: none;
 }
 
+/* An Opportunity that is still open, or lost, on the Projects board: where the
+   register puts it, but moved on Opportunities, not here (#259). */
+.df-project-card-opportunity {
+  margin-top: var(--df-space-2);
+  font-family: var(--df-font-mono);
+  font-size: var(--df-text-1);
+  letter-spacing: 0.06em;
+  color: var(--df-archive-slate);
+}
+
 .df-opportunity-card[data-locked="true"] {
   cursor: pointer;
 }

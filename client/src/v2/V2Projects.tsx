@@ -171,6 +171,11 @@ function ProjectBoardCardView({
     >
       <div className="df-row-title">{card.name}</div>
       {card.clientLabel ? <div className="df-opportunity-card-client">{card.clientLabel}</div> : null}
+      {card.movable ? null : (
+        <div className="df-project-card-opportunity" title="Still an Opportunity. Move it on Opportunities.">
+          OPPORTUNITY
+        </div>
+      )}
     </article>
   );
 }
@@ -247,6 +252,7 @@ export function V2ProjectsPage() {
         clientName: project.client?.name ?? null,
         projectType: project.projectType ?? null,
         status: project.status,
+        projectStatus: project.projectStatus,
         visible: projectVisibleTo({
           role: viewer.role,
           userId: viewer.userId,
@@ -487,13 +493,13 @@ export function V2ProjectsPage() {
                             key={card.id}
                             draggableId={card.id}
                             index={index}
-                            isDragDisabled={readOnly}
+                            isDragDisabled={readOnly || !card.movable}
                           >
                             {(drag) => (
                               <ProjectBoardCardView
                                 card={card}
                                 provided={drag}
-                                locked={readOnly}
+                                locked={readOnly || !card.movable}
                                 onOpen={setLocation}
                               />
                             )}
