@@ -24,6 +24,7 @@ import {
 import {
   V2_FOOTER_NAV,
   V2_NAV,
+  destinationsInReach,
   memberCountLabel,
   navIdForPath,
   workspaceInitials,
@@ -74,6 +75,8 @@ export function V2Rail({
       : (user?.email?.[0] ?? "U").toUpperCase();
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceRole = current?.workspaceRole ?? "";
+  // Undefined memberships is "not loaded", not a Member. Do not pass "" into reach (#258).
+  const roleForReach = memberships === undefined ? null : workspaceRole;
   const role = current ? workspaceRoleLabel(current.workspaceRole) : "";
 
   async function handleSignOut() {
@@ -141,7 +144,7 @@ export function V2Rail({
             {!collapsed && section.label ? (
               <div className="df-group-label">{section.label}</div>
             ) : null}
-            {section.items.filter((item) => item.reach?.(workspaceRole) !== false).map((item) => {
+            {destinationsInReach(section.items, roleForReach).map((item) => {
               const active = activeId === item.id;
               const count =
                 item.countKey === "projects"

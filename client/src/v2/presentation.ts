@@ -237,6 +237,17 @@ export const V2_NAV: V2NavSection[] = [
   },
 ];
 
+/**
+ * Destinations the rail may paint (#257, #258).
+ * An unknown Membership is not a Workspace Role: reach is not consulted, so
+ * Administration is not refused before the answer arrives. A known Role is
+ * the only input that may hide a destination.
+ */
+export function destinationsInReach(items: V2NavItem[], workspaceRole: string | null): V2NavItem[] {
+  if (workspaceRole == null) return items;
+  return items.filter((item) => item.reach?.(workspaceRole) !== false);
+}
+
 /** Devices owns the installer (#215), so the v1 download page lands there too. */
 function isDownloadRewrite(pathname: string): boolean {
   return pathname === "/time-tracking/download" || pathname.startsWith("/time-tracking/download/");

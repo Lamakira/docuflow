@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   FLAG_DEFS,
   flagEnvKey,
@@ -11,6 +11,7 @@ import {
   RAIL_COLLAPSED_STORAGE_KEY,
   V2_FOOTER_NAV,
   V2_NAV,
+  destinationsInReach,
   authenticatedPresentation,
   formatElapsedClock,
   matchV2Route,
@@ -184,11 +185,22 @@ describe("the rail offers only destinations the Workspace Role can reach (#257)"
 
   function labelsInReach(workspaceRole: string): string[] {
     return V2_NAV.flatMap((section) =>
-      section.items
-        .filter((item) => item.reach?.(workspaceRole) !== false)
-        .map((item) => item.label),
+      destinationsInReach(section.items, workspaceRole).map((item) => item.label),
     );
   }
+
+  it("keeps Administration while the Workspace Role is unknown, without consulting reach", () => {
+    const reach = vi.fn(() => false);
+    const items: V2NavItem[] = [
+      { id: "today", label: "Today", href: "/" },
+      { id: "administration", label: "Administration", href: "/administration", reach },
+    ];
+    expect(destinationsInReach(items, null).map((item) => item.label)).toEqual([
+      "Today",
+      "Administration",
+    ]);
+    expect(reach).not.toHaveBeenCalled();
+  });
 
   it("hides Administration from a Member and keeps it for an Owner and an Administrator", () => {
     expect(labelsInReach("MEMBER")).not.toContain("Administration");
@@ -202,9 +214,10 @@ describe("the rail offers only destinations the Workspace Role can reach (#257)"
   });
 
   it("filters where the rail maps V2_NAV, and a typed /administration still resolves", () => {
-    expect(railSource).toMatch(
-      /section\.items\.filter\(\(item\) => item\.reach\?\.\(workspaceRole\) !== false\)/,
-    );
+    expect(railSource).toContain("destinationsInReach(section.items, roleForReach)");
+    expect(railSource).toMatch(/memberships === undefined \? null : workspaceRole/);
+    expect(railSource).not.toMatch(/reach\?\.\(workspaceRole\)/);
+    expect(railSource).not.toMatch(/\?\? "OWNER"/);
     expect(matchV2Route("/administration").kind).toBe("administration");
   });
 });
