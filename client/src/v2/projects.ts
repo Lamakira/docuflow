@@ -1,3 +1,4 @@
+import { projectStatusFromCombined } from "@shared/projectLifecycle";
 import { projectHref } from "./today";
 
 /**
@@ -108,9 +109,11 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
 }
 
 /**
- * Portfolio board (#259). A view on the same Projects the register lists.
- * Columns are the combined status v1's Kanban used, so a daily reader still
- * sees where each Project sits. Opportunities keeps the sales pipeline.
+ * Delivery board (#259). v1's Kanban drew the whole combined lifecycle, so its
+ * first five columns were the sales pipeline — which v2 already draws on
+ * Opportunities. ADR-0001 separates the two: an Opportunity ends won or lost,
+ * and delivery starts after. So this board shows won work and Internal Projects
+ * only, in the Project Status the register already speaks.
  */
 
 export function projectsAllPath(): string {
@@ -122,24 +125,42 @@ export function projectsKanbanPath(): string {
 }
 
 export const PROJECT_BOARD_COLUMNS: Array<{ id: string; label: string }> = [
-  { id: "lead", label: "LEAD" },
-  { id: "discovering_call_completed", label: "DISCOVERING CALL" },
-  { id: "proposal_sent", label: "PROPOSAL SENT" },
-  { id: "follow_up", label: "FOLLOW UP" },
-  { id: "in_negotiation", label: "IN NEGOTIATION" },
-  { id: "won", label: "WON" },
-  { id: "won_not_started", label: "WON - NOT STARTED" },
-  { id: "won_in_progress", label: "WON - IN PROGRESS" },
-  { id: "won_in_review", label: "WON - IN REVIEW" },
-  { id: "won_completed", label: "WON - COMPLETED" },
-  { id: "lost", label: "LOST" },
-  { id: "won_cancelled", label: "WON - CANCELLED" },
+  { id: "planned", label: "PLANNED" },
+  { id: "active", label: "ACTIVE" },
+  { id: "in_review", label: "IN REVIEW" },
+  { id: "completed", label: "COMPLETED" },
+  { id: "archived", label: "ARCHIVED" },
 ];
+
+/**
+ * HTTP still writes the combined lifecycle, and storage derives Project Status
+ * from it (`postgresStorage.ts`). A drop therefore writes the one combined value
+ * that reads back as the column it landed in; anything else and the card jumps.
+ * `on_hold` has no combined source, so it is not a column.
+ */
+const COMBINED_FOR_PROJECT_STATUS: Record<string, string> = {
+  planned: "won_not_started",
+  active: "won_in_progress",
+  in_review: "won_in_review",
+  completed: "won_completed",
+  archived: "won_cancelled",
+};
+
+export function combinedStatusForProjectStatus(projectStatus: string): string {
+  return COMBINED_FOR_PROJECT_STATUS[projectStatus] ?? "won_not_started";
+}
+
+/** Won work, or work that never went through a sale. */
+function isDelivery(project: { projectType: string | null; status: string }): boolean {
+  return project.projectType === "internal" || project.status.startsWith("won");
+}
 
 export type ProjectBoardRowInput = {
   id: string;
   name: string;
   clientName: string | null;
+  projectType: string | null;
+  /** The combined lifecycle, as HTTP returns it. */
   status: string;
   visible: boolean;
 };
@@ -174,13 +195,6 @@ export type ProjectBoardModel = {
   count: number;
 };
 
-function boardLabel(status: string): string {
-  return (
-    PROJECT_BOARD_COLUMNS.find((column) => column.id === status)?.label ??
-    status.replace(/_/g, " ").toUpperCase()
-  );
-}
-
 export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel {
   const needle = input.filterQuery.trim().toLowerCase();
   const columns: ProjectBoardColumn[] = PROJECT_BOARD_COLUMNS.map((column) => ({
@@ -191,22 +205,19 @@ export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel
   const columnById = new Map(columns.map((column) => [column.id, column]));
 
   for (const project of input.projects) {
-    if (!project.visible) continue;
+    if (!project.visible || !isDelivery(project)) continue;
     if (needle) {
       const haystack = `${project.name} ${project.clientName ?? ""}`.toLowerCase();
       if (!haystack.includes(needle)) continue;
     }
-    let column = columnById.get(project.status);
-    if (!column) {
-      column = { id: project.status, label: boardLabel(project.status), cards: [] };
-      columns.push(column);
-      columnById.set(project.status, column);
-    }
+    const projectStatus = projectStatusFromCombined(project.status);
+    const column = columnById.get(projectStatus);
+    if (!column) continue;
     column.cards.push({
       id: project.id,
       name: project.name || "Untitled Project",
       clientLabel: project.clientName?.trim() || "",
-      status: project.status,
+      status: projectStatus,
       href: projectHref(project.id),
       changing: project.id === input.changingId,
     });

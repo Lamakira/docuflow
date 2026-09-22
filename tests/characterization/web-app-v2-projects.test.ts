@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
+import { projectStatusFromCombined } from "../../shared/projectLifecycle";
 import {
+  PROJECT_BOARD_COLUMNS,
+  combinedStatusForProjectStatus,
   composeProjectBoard,
   composeProjectRegister,
   projectsAllPath,
@@ -190,66 +193,102 @@ function emptyBoard(overrides: Partial<ProjectBoardInput> = {}): ProjectBoardInp
 }
 
 describe("Projects board (#259)", () => {
+  function row(overrides: Partial<ProjectBoardInput["projects"][number]>): ProjectBoardInput["projects"][number] {
+    return {
+      id: "prj",
+      name: "Harbor",
+      clientName: "Northwind",
+      projectType: "one_time",
+      status: "won_in_progress",
+      visible: true,
+      ...overrides,
+    };
+  }
+
   it("reads the unpaginated portfolio the v1 board used", () => {
     expect(projectsAllPath()).toBe("/api/crm/projects/all");
     expect(projectsKanbanPath()).toBe("/api/crm/projects/all-kanban");
   });
 
-  it("places a Project in the column of its combined status and hides one the reader cannot see", () => {
+  it("draws delivery in five Project Status columns and none of the sales pipeline", () => {
+    // ADR-0001: an Opportunity ends won or lost; delivery starts after. The
+    // Opportunities screen already draws the sales stages.
+    expect(PROJECT_BOARD_COLUMNS.map((column) => column.id)).toEqual([
+      "planned",
+      "active",
+      "in_review",
+      "completed",
+      "archived",
+    ]);
+    const board = composeProjectBoard(emptyBoard({ projects: [] }));
+    const ids = board.columns.map((column) => column.id);
+    for (const sales of ["lead", "discovering_call_completed", "proposal_sent", "follow_up", "in_negotiation", "lost"]) {
+      expect(ids).not.toContain(sales);
+    }
+  });
+
+  it("places a won Project by its Project Status and hides one the reader cannot see", () => {
     const board = composeProjectBoard(
       emptyBoard({
         projects: [
-          {
-            id: "prj-live",
-            name: "Harbor",
-            clientName: "Northwind",
-            status: "won_in_progress",
-            visible: true,
-          },
-          {
-            id: "prj-hidden",
-            name: "Secret",
-            clientName: null,
-            status: "lead",
-            visible: false,
-          },
+          row({ id: "prj-live", status: "won_in_progress" }),
+          row({ id: "prj-hidden", status: "won_completed", visible: false }),
         ],
       }),
     );
 
-    const progress = board.columns.find((column) => column.id === "won_in_progress");
-    expect(progress?.label).toBe("WON - IN PROGRESS");
-    expect(progress?.cards).toEqual([
+    const active = board.columns.find((column) => column.id === "active");
+    expect(active?.label).toBe("ACTIVE");
+    expect(active?.cards).toEqual([
       {
         id: "prj-live",
         name: "Harbor",
         clientLabel: "Northwind",
-        status: "won_in_progress",
+        status: "active",
         href: "/projects/prj-live",
         changing: false,
       },
     ]);
-    expect(board.columns.some((column) => column.cards.some((card) => card.id === "prj-hidden"))).toBe(
-      false,
-    );
+    expect(board.columns.flatMap((column) => column.cards).map((card) => card.id)).toEqual(["prj-live"]);
     expect(board.count).toBe(1);
-    expect(board.empty).toBe(false);
+  });
+
+  it("leaves an unwon or lost Opportunity to the Opportunities pipeline", () => {
+    const board = composeProjectBoard(
+      emptyBoard({
+        projects: [
+          row({ id: "prj-lead", status: "lead" }),
+          row({ id: "prj-negotiating", status: "in_negotiation" }),
+          row({ id: "prj-lost", status: "lost" }),
+          row({ id: "prj-won", status: "won_not_started" }),
+        ],
+      }),
+    );
+    expect(board.columns.flatMap((column) => column.cards).map((card) => card.id)).toEqual(["prj-won"]);
+  });
+
+  it("keeps an Internal Project, which never went through a sale", () => {
+    const board = composeProjectBoard(
+      emptyBoard({ projects: [row({ id: "prj-internal", projectType: "internal", status: "lead", clientName: null })] }),
+    );
+    expect(board.columns.find((column) => column.id === "planned")?.cards.map((card) => card.id)).toEqual([
+      "prj-internal",
+    ]);
+  });
+
+  it("writes the combined status that reads back as the column it was dropped in", () => {
+    // HTTP still writes the combined lifecycle; storage derives Project Status
+    // from it. A drop must round-trip, or the card jumps back.
+    for (const column of PROJECT_BOARD_COLUMNS) {
+      const combined = combinedStatusForProjectStatus(column.id);
+      expect(combined.startsWith("won")).toBe(true);
+      expect(projectStatusFromCombined(combined)).toBe(column.id);
+    }
   });
 
   it("says when the filter matches nothing", () => {
     const board = composeProjectBoard(
-      emptyBoard({
-        filterQuery: "nope",
-        projects: [
-          {
-            id: "prj-live",
-            name: "Harbor",
-            clientName: "Northwind",
-            status: "lead",
-            visible: true,
-          },
-        ],
-      }),
+      emptyBoard({ filterQuery: "nope", projects: [row({ id: "prj-live" })] }),
     );
 
     expect(board.empty).toBe(true);

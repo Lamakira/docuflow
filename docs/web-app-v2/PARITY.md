@@ -99,7 +99,11 @@ Removing a named member from a Project is v1-only too; v2 reads `/api/crm/projec
 
 ### ~~D. The Kanban board~~
 
-Addressed by [#259](https://github.com/Lamakira/docuflow/issues/259). The board is a view on `/projects`, not a second destination: the register answers what exists, the board answers where each Project sits, and Opportunities keeps the sales pipeline. `/crm` opens the board.
+Addressed by [#259](https://github.com/Lamakira/docuflow/issues/259). The board is a view on `/projects`, not a second destination: the register answers what exists, the board answers where each Project sits. `/crm` opens the board.
+
+It is **not** v1's board. v1 drew the whole combined lifecycle in twelve columns, the first five of which were the sales pipeline — which v2 already draws on Opportunities. Following ADR-0001, the v2 board shows won work and Internal Projects only, in five Project Status columns: planned, active, in review, completed, archived. A drop writes the one combined status that reads back as that column.
+
+`/api/crm/projects/all` did not exist on the server before #259: v1's `ClientDetailPage` queried it and landed on `/api/crm/projects/:id` with `id = "all"`. #259 added the route, which fixes that v1 page as a side effect.
 
 - ~~`/api/crm/projects/all`~~
 - ~~`/api/crm/projects/all-kanban`~~

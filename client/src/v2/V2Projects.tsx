@@ -8,6 +8,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import { matchV2Route } from "./presentation";
 import {
+  combinedStatusForProjectStatus,
   composeProjectBoard,
   composeProjectRegister,
   projectsAllPath,
@@ -244,6 +245,7 @@ export function V2ProjectsPage() {
         id: project.id,
         name: project.project?.name || "Untitled Project",
         clientName: project.client?.name ?? null,
+        projectType: project.projectType ?? null,
         status: project.status,
         visible: projectVisibleTo({
           role: viewer.role,
@@ -308,7 +310,8 @@ export function V2ProjectsPage() {
     const { destination, source, draggableId } = result;
     if (!destination) return;
     if (destination.droppableId === source.droppableId) return;
-    onMove(draggableId, destination.droppableId);
+    // A column is a Project Status; HTTP writes the combined lifecycle.
+    onMove(draggableId, combinedStatusForProjectStatus(destination.droppableId));
   }
 
   const createProject = useMutation({
