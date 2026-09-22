@@ -37,7 +37,8 @@
     "evidence:export": "tsx --env-file-if-exists=.env scripts/evidence-export.ts export",
     "evidence:verify": "tsx --env-file-if-exists=.env scripts/evidence-export.ts verify",
     "evidence:decrypt": "tsx --env-file-if-exists=.env scripts/evidence-export.ts decrypt",
-    "publish:windows": "node scripts/publish-windows.js"
+    "publish:windows": "node scripts/publish-windows.js",
+    "db:seed:demo": "tsx --env-file-if-exists=.env scripts/seed-demo.ts"
   },
   "dependencies": {
     "@clerk/backend": "^3.17.0",
