@@ -20,6 +20,7 @@ import {
 } from "./projects";
 import { formatHours, memberName, mobileProjectMeta } from "./today";
 import { useV2Chrome } from "./V2Shell";
+import { V2FilterSelect } from "./V2Select";
 import { Button } from "@/components/ui/button";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
@@ -434,39 +435,35 @@ export function V2ProjectsPage() {
           />
         </label>
         {boardView ? null : (
-          <label className="df-filter-chip">
-            STATUS
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-              aria-label="Filter by Project Status"
-            >
-              <option value="all">ALL</option>
-              <option value="planned">PLANNED</option>
-              <option value="active">ACTIVE</option>
-              <option value="on_hold">ON HOLD</option>
-              <option value="in_review">IN REVIEW</option>
-              <option value="completed">COMPLETED</option>
-              <option value="archived">ARCHIVED</option>
-            </select>
-          </label>
+          <V2FilterSelect
+            label="STATUS"
+            ariaLabel="Filter by Project Status"
+            value={statusFilter}
+            active={statusFilter !== "all"}
+            options={[
+              { value: "all", label: "ALL" },
+              { value: "planned", label: "PLANNED" },
+              { value: "active", label: "ACTIVE" },
+              { value: "on_hold", label: "ON HOLD" },
+              { value: "in_review", label: "IN REVIEW" },
+              { value: "completed", label: "COMPLETED" },
+              { value: "archived", label: "ARCHIVED" },
+            ]}
+            onChange={setStatusFilter}
+          />
         )}
         {boardView || workspaceTags.length === 0 ? null : (
-          <label className="df-filter-chip">
-            TAG
-            <select
-              value={tagFilter}
-              onChange={(event) => setTagFilter(event.target.value)}
-              aria-label="Filter by Tag"
-            >
-              <option value="all">ALL</option>
-              {workspaceTags.map((tag) => (
-                <option key={tag.id} value={tag.id}>
-                  {tag.name.toUpperCase()}
-                </option>
-              ))}
-            </select>
-          </label>
+          <V2FilterSelect
+            label="TAG"
+            ariaLabel="Filter by Tag"
+            value={tagFilter}
+            active={tagFilter !== "all"}
+            options={[
+              { value: "all", label: "ALL" },
+              ...workspaceTags.map((tag) => ({ value: tag.id, label: tag.name.toUpperCase() })),
+            ]}
+            onChange={setTagFilter}
+          />
         )}
         <div className="df-segment" role="group" aria-label="Project view">
           <button

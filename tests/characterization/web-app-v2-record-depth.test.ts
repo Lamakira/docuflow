@@ -384,6 +384,15 @@ describe("the v2 screens call what they now offer (#260)", () => {
     expect(dossierPage).toContain('type="color"');
   });
 
+  it("chooses with the shared shadcn select, never a native one", () => {
+    // A native <select> draws the browser's control beside the v2 chips.
+    for (const page of [dossierPage, read("client/src/v2/V2Projects.tsx")]) {
+      expect(page).toContain('from "./V2Select"');
+      expect(page).not.toContain("<select");
+      expect(page).not.toContain("<option");
+    }
+  });
+
   it("attaches a File to a Project note through public object upload", () => {
     expect(dossierPage).toContain("/api/objects/upload-public");
     expect(dossierPage).toMatch(/attachments/);

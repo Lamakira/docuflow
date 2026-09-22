@@ -45,6 +45,7 @@ import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2RowMenu } from "./V2RowMenu";
+import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -1276,20 +1277,13 @@ function DossierTasks({
               {row.done ? "✓" : null}
             </button>
             <span className="df-task-title">{row.title}</span>
-            <label className="df-filter-chip">
-              STATUS
-              <select
-                aria-label={`Task status for ${row.title}`}
-                value={row.statusValue}
-                onChange={(event) => onComplete(row.id, event.target.value)}
-              >
-                {TASK_STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <V2FilterSelect
+              label="STATUS"
+              ariaLabel={`Task status for ${row.title}`}
+              value={row.statusValue}
+              options={TASK_STATUS_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+              onChange={(status) => onComplete(row.id, status)}
+            />
             {row.flag ? (
               <span className="df-flag" data-flag={row.flag}>
                 {row.flag}
@@ -1812,38 +1806,28 @@ function DossierSettings({
         ))}
       </div>
       <form className="df-filter-bar df-inset-follow" onSubmit={(event) => event.preventDefault()}>
-        <label className="df-filter-chip">
-          LEAD
-          <select
-            aria-label="Project lead"
-            value={dossier.settings.lead?.id ?? ""}
-            onChange={(event) => onAssignLead(event.target.value)}
-          >
-            <option value="">NONE</option>
-            {users.map((member) => (
-              <option key={member.id} value={member.id}>
-                {memberName(member)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <V2FilterSelect
+          label="LEAD"
+          ariaLabel="Project lead"
+          value={dossier.settings.lead?.id ?? V2_SELECT_NONE}
+          options={[
+            { value: V2_SELECT_NONE, label: "NONE" },
+            ...users.map((member) => ({ value: member.id, label: memberName(member) })),
+          ]}
+          onChange={(value) => onAssignLead(value === V2_SELECT_NONE ? "" : value)}
+        />
       </form>
       <form className="df-filter-bar df-inset-follow" onSubmit={onAddMember}>
-        <label className="df-filter-chip">
-          MEMBER
-          <select
-            aria-label="Add Project Assignment"
-            value={memberId}
-            onChange={(event) => setMemberId(event.target.value)}
-          >
-            <option value="">ADD MEMBER</option>
-            {available.map((member) => (
-              <option key={member.id} value={member.id}>
-                {memberName(member)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <V2FilterSelect
+          label="MEMBER"
+          ariaLabel="Add Project Assignment"
+          value={memberId || V2_SELECT_NONE}
+          options={[
+            { value: V2_SELECT_NONE, label: "ADD MEMBER", disabled: true },
+            ...available.map((member) => ({ value: member.id, label: memberName(member) })),
+          ]}
+          onChange={(value) => setMemberId(value === V2_SELECT_NONE ? "" : value)}
+        />
         <Button variant="outline" type="submit" disabled={memberPending || !memberId} className="df-btn">
           Assign
         </Button>
