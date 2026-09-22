@@ -35,9 +35,9 @@ export function V2FileViewer({ viewer }: { viewer: FileViewerModel }) {
   return (
     <div className="df-editor-page df-file-viewer" data-testid="v2-file-viewer">
       <header className="df-editor-head df-file-head">
-        <Link href={viewer.backHref} className="df-ghost-btn">
+        <Button asChild variant="outline" className="df-btn"><Link href={viewer.backHref}>
           Back to {viewer.backLabel}
-        </Link>
+        </Link></Button>
         <div className="df-file-identity">
           <h1 className="df-title" style={{ fontSize: 22 }}>
             {viewer.title}
@@ -162,21 +162,9 @@ function DownloadControl({ href, fileName }: { href: string; fileName: string })
       message={failed ? "This File could not be downloaded." : null}
       onDismiss={() => setFailed(false)}
       trigger={
-        <button
-          type="button"
-          className="df-ink-btn"
-          data-testid="v2-file-download"
-          onClick={async () => {
-            setFailed(false);
-            try {
-              await saveFile(href, fileName);
-            } catch {
-              setFailed(true);
-            }
-          }}
-        >
+        <Button variant="default" type="button" data-testid="v2-file-download" onClick={async () => { setFailed(false); try { await saveFile(href, fileName); } catch { setFailed(true); } }} className="df-btn">
           Download
-        </button>
+        </Button>
       }
     />
   );
@@ -247,7 +235,7 @@ function PdfPreview({ src }: { src: string }) {
             type="button"
             variant="outline"
             size="icon"
-            className="df-file-zoom-btn"
+            className="df-btn"
             aria-label="Zoom out"
             disabled={scale <= FILE_ZOOM_MIN}
             onClick={() => setScale((current) => zoomFile(current, "out"))}
@@ -261,7 +249,7 @@ function PdfPreview({ src }: { src: string }) {
             type="button"
             variant="outline"
             size="icon"
-            className="df-file-zoom-btn"
+            className="df-btn"
             aria-label="Zoom in"
             disabled={scale >= FILE_ZOOM_MAX}
             onClick={() => setScale((current) => zoomFile(current, "in"))}

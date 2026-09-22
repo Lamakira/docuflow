@@ -131,7 +131,13 @@ Editing or deleting a folder, duplicating a Document, reordering a Project's Doc
 /api/screencasts/timezones
 ```
 
-Public object upload, the Help Center screenshot map, and the Screencasts timezone list. The last is probably covered — v2 edits allowed timezones through `/api/admin/org-settings` — and is listed so the next reader can confirm rather than assume.
+Public object upload, the Help Center screenshot map, and the Screencasts timezone list. Listed so the next reader could confirm rather than assume — **confirmed 2026-09-22, and two of the three are real gaps**:
+
+- **`/api/objects/upload-public`** — reached from `client/src/pages/CrmProjectPage.tsx` only. No v2 caller. A gap.
+- **`/api/help-center/screenshot-map`** — reached from `client/src/components/help-center/HelpScreenshot.tsx` only. v2's Help Center has no equivalent, so a help article that relies on a screenshot renders without one. A gap.
+- **`/api/screencasts/timezones`** — covered, but not the way this section guessed. v2 edits `allowedTimezones` through `/api/workspace/settings`, not `/api/admin/org-settings`, and with a **free-text input** (`V2Administration.tsx:546`, `addAllowedTimezone`) rather than a choice from the list endpoint. Typing a timezone where v1 offered a list is a small step down, not a missing capability.
+
+The two gaps are carried by [#260](https://github.com/Lamakira/docuflow/issues/260).
 
 ---
 
@@ -142,6 +148,8 @@ The gaps are not one decision. They are four:
 1. **A needs a decision before it needs code.** The platform directory is not a Workspace surface, and dropping it into the Workspace chrome would repeat the mistake [#238](https://github.com/Lamakira/docuflow/issues/238) fixed.
 2. **B and D are migrations** — the screens exist in v1 and have a clear home in v2.
 3. **C and E are depth** — each one small, together the difference between a rewrite that looks finished and one that is.
-4. **F is a check**, not work.
+4. **F was a check**, now done — and it produced work, not a clean bill. Two of its three endpoints are gaps, carried by [#260](https://github.com/Lamakira/docuflow/issues/260).
 
 Nothing here is scheduled. This document records the debt; it does not decide when it is paid.
+
+**Since the audit**, the four have been written up: [#259](https://github.com/Lamakira/docuflow/issues/259) carries B and D, [#260](https://github.com/Lamakira/docuflow/issues/260) carries C, E and F's two gaps, and [#261](https://github.com/Lamakira/docuflow/issues/261) asks for A's decision without attaching code to it.

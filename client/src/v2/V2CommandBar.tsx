@@ -17,6 +17,7 @@ import { motionForSurface } from "./motion";
 import { type V2CommandPanel, breadcrumbFor } from "./presentation";
 import { projectVisibleTo } from "./projects";
 import { useV2Chrome } from "./V2Shell";
+import { Button } from "@/components/ui/button";
 
 const SEARCH_MOTION = motionForSurface("search-overlay").enterExit;
 
@@ -66,9 +67,9 @@ export function V2CommandBar({
   return (
     <>
       <header className="df-command" data-testid="v2-command-bar">
-        <nav className="df-crumb" style={{ display: "flex", alignItems: "center", gap: 7, color: "#59657A", whiteSpace: "nowrap" }}>
+        <nav className="df-crumb">
           {crumbs.map((crumb, index) => (
-            <span key={`${crumb.label}-${index}`} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span key={`${crumb.label}-${index}`}>
               {index > 0 ? <span style={{ color: "#C3CAD4" }}>/</span> : null}
               {crumb.href ? (
                 <Link href={crumb.href} style={{ color: "#59657A" }}>
@@ -91,26 +92,15 @@ export function V2CommandBar({
 
         <V2TimerChip workspaceLabel={timerWorkspaceLabel} onToast={onToast} />
 
-        <button
-          type="button"
-          className="df-ghost-btn"
-          data-testid="v2-ask"
-          onClick={() => onPanel(selectCommandPanel(panel, "ask"))}
-        >
+        <Button variant="outline" type="button" data-testid="v2-ask" onClick={() => onPanel(selectCommandPanel(panel, "ask"))} className="df-btn">
           <SparkleIcon />
           Ask DocuFlow
-        </button>
+        </Button>
 
-        <button
-          type="button"
-          className="df-icon-btn"
-          data-testid="v2-notifications"
-          onClick={() => onPanel(selectCommandPanel(panel, "notifications"))}
-          aria-label="Notifications"
-        >
+        <Button variant="outline" size="icon" type="button" data-testid="v2-notifications" onClick={() => onPanel(selectCommandPanel(panel, "notifications"))} aria-label="Notifications" className="df-btn">
           <BellIcon />
           {unreadCount > 0 ? <span className="df-badge">{unreadCount > 99 ? "99+" : unreadCount}</span> : null}
-        </button>
+        </Button>
       </header>
 
       {searchOpen ? <SearchOverlay workspaceName={workspaceName} onClose={() => setSearchOpen(false)} /> : null}

@@ -619,7 +619,7 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     const at = css.indexOf(".df-toolbar .df-filter-chip");
     expect(at).toBeGreaterThan(-1);
     const block = css.slice(at, css.indexOf("}", at) + 1);
-    for (const control of [".df-filter-chip", ".df-filter-input", ".df-ghost-btn", ".df-ink-btn"]) {
+    for (const control of [".df-filter-chip", ".df-filter-input", ".df-btn"]) {
       expect(block).toContain(`.df-toolbar ${control}`);
     }
     expect(block).toMatch(/height:\s*var\(--df-control-h\)/);
@@ -631,7 +631,7 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     const at = css.indexOf(".df-filter-bar .df-filter-chip");
     expect(at).toBeGreaterThan(-1);
     const block = css.slice(at, css.indexOf("}", at) + 1);
-    for (const control of [".df-filter-chip", ".df-filter-input", ".df-ghost-btn", ".df-ink-btn"]) {
+    for (const control of [".df-filter-chip", ".df-filter-input", ".df-btn"]) {
       expect(block).toContain(`.df-filter-bar ${control}`);
     }
     expect(block).toMatch(/height:\s*var\(--df-control-h\)/);
@@ -639,17 +639,13 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
   });
 
   it("keeps the system's gutter and radii instead of hand-rolled spacing", () => {
-    // The card head and every register row inset at 18px; a band is .df-toolbar.
-    expect(rule(".df-card-head")).toMatch(/padding:\s*15px 18px/);
-    expect(rule(".df-toolbar")).toMatch(/padding:\s*12px 18px/);
+    // The card head and a band share the one card padding (#256).
+    expect(rule(".df-card-head")).toMatch(/padding:\s*var\(--df-space-4\)/);
+    expect(rule(".df-toolbar")).toMatch(/padding:\s*var\(--df-space-4\)/);
     expect(timeSource).not.toMatch(/style=\{\{ padding/);
     expect(timeSource).toContain('className="df-toolbar" data-align="start"');
 
-    // Radii are 3 / 6 / 8 — nothing off that scale.
-    for (const selector of [".df-task-rename"]) {
-      const radius = rule(selector).match(/border-radius:\s*(\d+)px/)?.[1];
-      expect(["3", "6", "8"]).toContain(radius);
-    }
+    expect(rule(".df-task-rename")).toMatch(/border-radius:\s*var\(--df-radius-2\)/);
   });
 
   it("renders Tasks as a sortable table on TanStack Table v9", () => {
@@ -669,7 +665,7 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
 
     // Markup is the shadcn Table, wearing the register texture.
     expect(tableSource).toContain('from "@/components/ui/table"');
-    expect(rule(".df-v2 .df-table-cell")).toMatch(/padding:\s*15px 18px/);
+    expect(rule(".df-v2 .df-table-cell")).toMatch(/padding:\s*var\(--df-space-4\)/);
     expect(rule(".df-v2 .df-table-head")).toMatch(/var\(--df-font-mono\)/);
 
     // Sorting is keyboard-frequency: it re-renders, it does not animate.
@@ -717,14 +713,15 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
   });
 
   it("gives a Task row real controls, not three quiet annotations", () => {
-    // df-ghost-link is mono 10px archive-slate — an annotation, not a control.
-    expect(topLevelRule(".df-ghost-link")).toMatch(/font-size:\s*10px/);
+    // df-ghost-link is mono label type, archive-slate — an annotation, not a control.
+    expect(topLevelRule(".df-ghost-link")).toMatch(/font-size:\s*var\(--df-text-1\)/);
     expect(tableSource).toContain('className="df-row-actions"');
-    expect(tableSource).toContain('className="df-ghost-btn"');
+    expect(tableSource).toContain('className="df-btn"');
+    expect(tableSource).toContain('variant="destructiveOutline"');
     expect(tableSource).not.toContain('className="df-ghost-link"');
     expect(rule(".df-v2 .df-row-menu-trigger")).toMatch(/flex:\s*none/);
     expect(rule(".df-row-actions")).toMatch(/display:\s*flex/);
-    const actionsAt = css.indexOf(".df-row-actions .df-ghost-btn");
+    const actionsAt = css.indexOf(".df-row-actions .df-btn");
     expect(actionsAt).toBeGreaterThan(-1);
     expect(css.slice(actionsAt, css.indexOf("}", actionsAt))).toMatch(
       /height:\s*var\(--df-control-h\)/,
@@ -756,7 +753,7 @@ describe("Time and Activity on a narrow viewport (#214)", () => {
     expect(mobileRule(".df-gallery-grid")).toMatch(/grid-template-columns/);
     const at = css.indexOf('.df-v2[data-chrome="mobile"] .df-table-cell');
     expect(at).toBeGreaterThan(-1);
-    expect(css.slice(at, css.indexOf("}", at))).toMatch(/padding-left:\s*13px/);
+    expect(css.slice(at, css.indexOf("}", at))).toMatch(/padding-left:\s*var\(--df-space-3\)/);
   });
 });
 

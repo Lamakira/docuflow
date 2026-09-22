@@ -7,6 +7,7 @@ import { composeHelp } from "./help";
 import { motionForSurface } from "./motion";
 import { matchV2Route } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
+import { Button } from "@/components/ui/button";
 
 const ARTICLE_MOTION = motionForSurface("help-article").enterExit;
 
@@ -27,9 +28,9 @@ export function V2HelpPage() {
             <p className="df-subhead">{page.emptyCopy}</p>
           </div>
         </header>
-        <Link href={page.backHref} className="df-ghost-btn">
+        <Button asChild variant="outline" className="df-btn"><Link href={page.backHref}>
           Back to Help Center
-        </Link>
+        </Link></Button>
       </div>
     );
   }
@@ -116,7 +117,7 @@ export function V2HelpPage() {
                   {Icon ? <Icon className="df-help-topic-icon" aria-hidden /> : null}
                   <span style={{ minWidth: 0 }}>
                     <div className="df-row-title">{topic.title}</div>
-                    <div className="df-empty" style={{ padding: 0 }}>
+                    <div className="df-empty df-flush">
                       {topic.subtitle}
                     </div>
                   </span>

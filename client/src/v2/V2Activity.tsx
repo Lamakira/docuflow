@@ -26,6 +26,7 @@ import {
   type GalleryEvidenceInput,
   type GalleryTile,
 } from "./activity";
+import { Button } from "@/components/ui/button";
 
 type ScreenshotsResponse = { data: GalleryEvidenceInput[]; total?: number };
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
@@ -314,7 +315,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
             </div>
           ))}
         </div>
-        <p className="df-empty" style={{ paddingTop: 0 }}>
+        <p className="df-empty" data-edge="end">
           {page.policyFootnote}
         </p>
       </section>
@@ -436,9 +437,9 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
                 INCLUDE ARCHIVED MEMBERS
               </label>
             ) : null}
-            <button type="button" className="df-ghost-btn" onClick={onClearFilters}>
+            <Button variant="outline" type="button" onClick={onClearFilters} className="df-btn">
               Clear filters
-            </button>
+            </Button>
           </>
         ) : null}
       </div>
@@ -565,17 +566,12 @@ function ActivityGallery({
       <div className="df-card-head">
         <h2 className="df-card-title">{gallery.countCopy}</h2>
         <span className="df-gallery-actions">
-          <button type="button" className="df-ghost-btn" onClick={onSelectShown}>
+          <Button variant="outline" type="button" onClick={onSelectShown} className="df-btn">
             {gallery.selectedCount === gallery.count && gallery.count > 0 ? "Clear selection" : "Select all"}
-          </button>
-          <button
-            type="button"
-            className="df-ink-btn"
-            disabled={!gallery.canBatch || downloading}
-            onClick={onBatchDownload}
-          >
+          </Button>
+          <Button variant="default" type="button" disabled={!gallery.canBatch || downloading} onClick={onBatchDownload} className="df-btn">
             {downloading ? "Downloading…" : gallery.batchLabel}
-          </button>
+          </Button>
         </span>
       </div>
       {gallery.empty ? (
@@ -622,9 +618,9 @@ function ActivityGallery({
                       </span>
                     </span>
                     {tile.identical ? <span className="df-status-word">Identical</span> : null}
-                    <button type="button" className="df-ghost-btn" onClick={() => onSave(tile)}>
+                    <Button variant="outline" type="button" onClick={() => onSave(tile)} className="df-btn">
                       Download
-                    </button>
+                    </Button>
                   </span>
                 </div>
               ))}
@@ -657,22 +653,12 @@ function ActivityGallery({
         <div className="df-gallery-paging">
           <span className="df-mono df-meta">{gallery.paging.label}</span>
           <span className="df-gallery-actions">
-            <button
-              type="button"
-              className="df-ghost-btn"
-              disabled={!gallery.paging.hasPrevious}
-              onClick={() => onPage(-1)}
-            >
+            <Button variant="outline" type="button" disabled={!gallery.paging.hasPrevious} onClick={() => onPage(-1)} className="df-btn">
               Previous
-            </button>
-            <button
-              type="button"
-              className="df-ghost-btn"
-              disabled={!gallery.paging.hasNext}
-              onClick={() => onPage(1)}
-            >
+            </Button>
+            <Button variant="outline" type="button" disabled={!gallery.paging.hasNext} onClick={() => onPage(1)} className="df-btn">
               Next
-            </button>
+            </Button>
           </span>
         </div>
       ) : null}

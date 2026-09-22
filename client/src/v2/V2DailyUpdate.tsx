@@ -11,6 +11,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import { composeDailyUpdatePage } from "./dailyUpdate";
 import { useV2Chrome } from "./V2Shell";
+import { Button } from "@/components/ui/button";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 
@@ -156,7 +157,7 @@ export function V2DailyUpdatePage() {
               {row.blocker ? (
                 <div className="df-blocker">
                   <div className="df-mono df-meta">BLOCKER</div>
-                  <p className="df-prose" style={{ margin: "6px 0 0" }}>
+                  <p className="df-prose df-prose-follow">
                     {row.blocker}
                   </p>
                 </div>
@@ -239,13 +240,9 @@ export function V2DailyUpdatePage() {
               />
               Waiting on the Client
             </label>
-            <button
-              type="submit"
-              className="df-ink-btn"
-              disabled={submit.isPending || !crmProjectId || !status || (blocked && !blockageType)}
-            >
+            <Button variant="default" type="submit" disabled={submit.isPending || !crmProjectId || !status || (blocked && !blockageType)} className="df-btn">
               Submit
-            </button>
+            </Button>
           </div>
         </form>
       ) : null}

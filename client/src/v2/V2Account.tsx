@@ -11,6 +11,7 @@ import {
   type AccountDeletionState,
   type OwnedWorkspaceRow,
 } from "./lifecycle";
+import { Button } from "@/components/ui/button";
 
 const GRACE_MOTION = motionForSurface("account-deletion-grace").enterExit;
 const CONFIRM_MOTION = motionForSurface("account-confirm-typing").enterExit;
@@ -129,15 +130,9 @@ export function V2AccountPage() {
         ) : null}
 
         {page.action === "cancel" ? (
-          <button
-            type="button"
-            className="df-ink-btn"
-            data-testid="v2-account-cancel"
-            disabled={cancel.isPending}
-            onClick={() => cancel.mutate()}
-          >
+          <Button variant="default" type="button" data-testid="v2-account-cancel" disabled={cancel.isPending} onClick={() => cancel.mutate()} className="df-btn">
             {page.actionLabel}
-          </button>
+          </Button>
         ) : (
           <form
             className="df-account-confirm"
@@ -158,14 +153,9 @@ export function V2AccountPage() {
               disabled={!page.precondition.met}
               onChange={(event) => setConfirmation(event.target.value)}
             />
-            <button
-              type="submit"
-              className="df-ink-btn"
-              data-testid="v2-account-start"
-              disabled={!page.canSubmit || start.isPending}
-            >
+            <Button variant="default" type="submit" data-testid="v2-account-start" disabled={!page.canSubmit || start.isPending} className="df-btn">
               {page.actionLabel}
-            </button>
+            </Button>
           </form>
         )}
       </section>
@@ -234,15 +224,9 @@ function OwnedWorkspaceCard({
             testId={`v2-account-successor-${row.workspaceId}`}
             options={members.map((member) => ({ value: member.userId, label: member.name }))}
           />
-          <button
-            type="button"
-            className="df-ink-btn"
-            data-testid={`v2-account-transfer-${row.workspaceId}`}
-            disabled={!successorId || transfer.isPending}
-            onClick={() => transfer.mutate()}
-          >
+          <Button variant="default" type="button" data-testid={`v2-account-transfer-${row.workspaceId}`} disabled={!successorId || transfer.isPending} onClick={() => transfer.mutate()} className="df-btn">
             {row.choiceLabel}
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="df-account-workspace-action">
@@ -255,15 +239,9 @@ function OwnedWorkspaceCard({
             data-testid={`v2-account-confirm-name-${row.workspaceId}`}
             onChange={(event) => setConfirmName(event.target.value)}
           />
-          <button
-            type="button"
-            className="df-ink-btn"
-            data-testid={`v2-account-delete-${row.workspaceId}`}
-            disabled={confirmName !== row.workspaceName || remove.isPending}
-            onClick={() => remove.mutate()}
-          >
+          <Button variant="default" type="button" data-testid={`v2-account-delete-${row.workspaceId}`} disabled={confirmName !== row.workspaceName || remove.isPending} onClick={() => remove.mutate()} className="df-btn">
             {row.choiceLabel}
-          </button>
+          </Button>
         </div>
       )}
     </div>

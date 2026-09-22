@@ -15,6 +15,7 @@ import {
 } from "./devices";
 import { motionForSurface } from "./motion";
 import { useV2Chrome } from "./V2Shell";
+import { Button } from "@/components/ui/button";
 
 type DevicesResponse = { data: DeviceInput[] };
 type PairingResponse = { pairingCode: string; expiresAt: string };
@@ -136,9 +137,9 @@ export function V2DevicesPage() {
           <p className="df-subhead">{page.subhead}</p>
         </div>
         <div className="df-devices-actions">
-          <button type="button" className="df-ink-btn" data-testid="v2-devices-pair" onClick={onPair}>
+          <Button variant="default" type="button" data-testid="v2-devices-pair" onClick={onPair} className="df-btn">
             Pair a device
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -148,9 +149,9 @@ export function V2DevicesPage() {
         <section className="df-card" data-testid="v2-devices-pairing">
           <div className="df-card-head">
             <h2 className="df-card-title">Pairing code</h2>
-            <button type="button" className="df-ghost-btn" onClick={() => setPairingOpen(false)}>
+            <Button variant="outline" type="button" onClick={() => setPairingOpen(false)} className="df-btn">
               Close
-            </button>
+            </Button>
           </div>
           <div className="df-daily-form">
             {page.pairing.pending ? (
@@ -161,22 +162,18 @@ export function V2DevicesPage() {
                   {page.pairing.code}
                 </p>
                 {page.pairing.expiresAt ? (
-                  <p className="df-empty" style={{ padding: 0 }}>
+                  <p className="df-empty df-flush">
                     Expires {new Date(page.pairing.expiresAt).toLocaleTimeString()}. Enter it once in the desktop
                     agent.
                   </p>
                 ) : null}
                 <div className="df-devices-actions">
-                  <button type="button" className="df-ghost-btn" onClick={onPair} disabled={pair.isPending}>
+                  <Button variant="outline" type="button" onClick={onPair} disabled={pair.isPending} className="df-btn">
                     New code
-                  </button>
-                  <button
-                    type="button"
-                    className="df-ink-btn"
-                    onClick={() => void navigator.clipboard.writeText(page.pairing.code!)}
-                  >
+                  </Button>
+                  <Button variant="default" type="button" onClick={() => void navigator.clipboard.writeText(page.pairing.code!)} className="df-btn">
                     Copy code
-                  </button>
+                  </Button>
                 </div>
               </>
             ) : (
@@ -281,13 +278,15 @@ function InstallerRowView({ row }: { row: InstallerRow }) {
         {row.note ? <p className="df-card-sub">{row.note}</p> : null}
       </div>
       {row.ready && row.href ? (
-        <a
-          className="df-ghost-btn df-installer-get"
-          href={row.href}
-          data-testid={`v2-devices-installer-get-${row.platform}`}
-        >
-          {row.action}
-        </a>
+        <Button asChild variant="outline" className="df-btn">
+          <a
+            className="df-installer-get"
+            href={row.href}
+            data-testid={`v2-devices-installer-get-${row.platform}`}
+          >
+            {row.action}
+          </a>
+        </Button>
       ) : (
         <span className="df-installer-state" data-testid={`v2-devices-installer-state-${row.platform}`}>
           {row.action}
@@ -313,33 +312,21 @@ function RevokeControl({
   if (confirming) {
     return (
       <span className="df-devices-confirm">
-        <span className="df-empty" style={{ padding: 0 }}>
+        <span className="df-empty df-flush">
           Revoke this Device Enrollment? It ends access to the Workspace.
         </span>
-        <button
-          type="button"
-          className="df-ghost-btn"
-          disabled={pending}
-          data-testid={`v2-devices-revoke-${row.key}`}
-          onClick={() => onRevoke(row)}
-        >
+        <Button variant="outline" type="button" disabled={pending} data-testid={`v2-devices-revoke-${row.key}`} onClick={() => onRevoke(row)} className="df-btn">
           Revoke
-        </button>
-        <button type="button" className="df-ghost-btn" onClick={onCancel}>
+        </Button>
+        <Button variant="outline" type="button" onClick={onCancel} className="df-btn">
           Cancel
-        </button>
+        </Button>
       </span>
     );
   }
   return (
-    <button
-      type="button"
-      className="df-ghost-btn"
-      disabled={pending}
-      data-testid={`v2-devices-revoke-${row.key}`}
-      onClick={() => onRevoke(row)}
-    >
+    <Button variant="outline" type="button" disabled={pending} data-testid={`v2-devices-revoke-${row.key}`} onClick={() => onRevoke(row)} className="df-btn">
       Revoke
-    </button>
+    </Button>
   );
 }

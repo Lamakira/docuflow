@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import type { TaskManagerRow } from "./tasks";
 import { V2RowMenu } from "./V2RowMenu";
+import { Button } from "@/components/ui/button";
 
 const features = tableFeatures({
   rowSortingFeature,
@@ -223,12 +224,12 @@ function TaskActions({
   if (editing) {
     return (
       <span className="df-row-actions">
-        <button type="button" className="df-ink-btn" onClick={() => onRename(row.id)}>
+        <Button variant="default" type="button" onClick={() => onRename(row.id)} className="df-btn">
           Save
-        </button>
-        <button type="button" className="df-ghost-btn" onClick={onCancelRename}>
+        </Button>
+        <Button variant="outline" type="button" onClick={onCancelRename} className="df-btn">
           Cancel
-        </button>
+        </Button>
       </span>
     );
   }
@@ -237,12 +238,12 @@ function TaskActions({
   if (confirming) {
     return (
       <span className="df-row-actions">
-        <button type="button" className="df-ghost-btn" data-danger="true" onClick={() => onDelete(row.id)}>
+        <Button variant="destructiveOutline" type="button" onClick={() => onDelete(row.id)} className="df-btn">
           Confirm delete
-        </button>
-        <button type="button" className="df-ghost-btn" onClick={onCancelDelete}>
+        </Button>
+        <Button variant="outline" type="button" onClick={onCancelDelete} className="df-btn">
           Cancel
-        </button>
+        </Button>
       </span>
     );
   }

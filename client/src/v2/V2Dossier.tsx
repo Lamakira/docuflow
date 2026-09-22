@@ -32,6 +32,7 @@ import { matchV2Route } from "./presentation";
 import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { Button } from "@/components/ui/button";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = { totalDuration: number };
@@ -604,6 +605,7 @@ export function V2DossierPage() {
                 </div>
                 {dossier.stats.budgetPercent != null ? (
                   <span className="df-meter df-meter-wide">
+                    {/* Per-instance: the fill width is this project's budget share. */}
                     <span
                       className="df-meter-fill"
                       style={{ width: `${Math.min(100, dossier.stats.budgetPercent)}%`, background: "#0F1524" }}
@@ -619,12 +621,12 @@ export function V2DossierPage() {
                 ) : null}
               </div>
               <div className="df-dossier-actions">
-                <button type="button" className="df-ghost-btn" onClick={onStartTimer}>
+                <Button variant="outline" type="button" onClick={onStartTimer} className="df-btn">
                   Start Timer
-                </button>
-                <Link href={`/projects/${projectId}/tasks`} className="df-ink-btn">
+                </Button>
+                <Button asChild variant="default" className="df-btn"><Link href={`/projects/${projectId}/tasks`}>
                   New Task
-                </Link>
+                </Link></Button>
               </div>
             </div>
           ) : null}
@@ -762,7 +764,7 @@ function DossierOverview({
 }) {
   return (
     <div className="df-overview">
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="df-stack">
         <section className="df-card">
           <div className="df-card-head">
             <h2 className="df-card-title">Next actions</h2>
@@ -817,7 +819,7 @@ function DossierOverview({
               {dossier.dailyUpdate.blocker ? (
                 <div className="df-blocker">
                   <div className="df-mono df-meta">BLOCKER</div>
-                  <p className="df-prose" style={{ margin: "6px 0 0" }}>
+                  <p className="df-prose">
                     {dossier.dailyUpdate.blocker}
                   </p>
                 </div>
@@ -839,20 +841,21 @@ function DossierOverview({
               ))}
             </div>
           )}
-          <p className="df-empty" style={{ paddingTop: 0 }}>
+          <p className="df-empty" data-edge="end">
             {dossier.evidence.footnote}
           </p>
         </section>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="df-stack">
         <section className="df-card">
           <div className="df-card-head">
             <h2 className="df-card-title">Budget & time</h2>
           </div>
-          <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="df-card-body-stack">
             <div className="df-mono df-meta">CONSUMED {dossier.budgetTime.consumedLabel}</div>
             <span className="df-meter df-meter-lg">
+              {/* Per-instance: the fill width is this project's budget share. */}
               <span
                 className="df-meter-fill"
                 style={{
@@ -861,7 +864,7 @@ function DossierOverview({
                 }}
               />
             </span>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <div className="df-spread">
               <span className="df-mono df-meta">
                 {dossier.budgetTime.percent == null ? "—" : `${dossier.budgetTime.percent}% USED`}
               </span>
@@ -901,8 +904,8 @@ function DossierOverview({
           {!dossier.client ? (
             <p className="df-empty">This is an Internal Project.</p>
           ) : (
-            <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <div className="df-card-body-stack">
+              <div className="df-cluster">
                 <span className="df-tile" style={{ width: 30, height: 30, borderRadius: 6, fontSize: 11 }}>
                   {dossier.client.initials}
                 </span>
@@ -964,7 +967,7 @@ function DossierTasks({
         <h2 className="df-card-title">Tasks</h2>
         <span className="df-count-chip">{dossier.tasks.rows.length}</span>
       </div>
-      <form className="df-filter-bar" style={{ padding: "12px 18px" }} onSubmit={onCreateTask}>
+      <form className="df-filter-bar df-inset-bar" onSubmit={onCreateTask}>
         <label className="df-filter-input">
           <input
             type="text"
@@ -974,12 +977,12 @@ function DossierTasks({
             aria-label="Task name"
           />
         </label>
-        <button type="submit" className="df-ink-btn" disabled={createPending || !taskName.trim()}>
+        <Button variant="default" type="submit" disabled={createPending || !taskName.trim()} className="df-btn">
           Create
-        </button>
+        </Button>
       </form>
       {dossier.tasks.assignees.length > 0 ? (
-        <p className="df-mono df-meta" style={{ padding: "0 18px 8px" }}>
+        <p className="df-mono df-meta df-inset-meta">
           PROJECT ASSIGNMENT · {dossier.tasks.assignees.map((member) => member.name).join(" · ")}
         </p>
       ) : null}
@@ -1017,9 +1020,9 @@ function DossierTasks({
                 {row.flag}
               </span>
             ) : (
-              <button type="button" className="df-ghost-btn" onClick={() => onStartTask(row.id)}>
+              <Button variant="outline" type="button" onClick={() => onStartTask(row.id)} className="df-btn">
                 Start Timer
-              </button>
+              </Button>
             )}
           </div>
         ))
@@ -1067,7 +1070,7 @@ function DossierActivity({ dossier }: { dossier: DossierModel }) {
           ))}
         </div>
       )}
-      <p className="df-empty" style={{ paddingTop: 0 }}>
+      <p className="df-empty" data-edge="end">
         {dossier.evidence.footnote}
       </p>
     </section>
@@ -1095,7 +1098,7 @@ function DossierUpdates({ dossier }: { dossier: DossierModel }) {
             {row.blocker ? (
               <div className="df-blocker">
                 <div className="df-mono df-meta">BLOCKER</div>
-                <p className="df-prose" style={{ margin: "6px 0 0" }}>
+                <p className="df-prose">
                   {row.blocker}
                 </p>
               </div>
@@ -1137,8 +1140,8 @@ function DossierNotes({
         ) : (
           <div className="df-inline-form">
             <label className="df-daily-field" style={{ flex: 1 }}>NOTE<textarea value={noteContent} onChange={(event) => setNoteContent(event.target.value)} aria-label="Project note" /></label>
-            <button type="button" className="df-ghost-btn" onClick={() => setRecordingNote(true)}>Record audio</button>
-            <button type="button" className="df-ink-btn" onClick={onCreateNote} disabled={!noteContent.trim()}>Add note</button>
+            <Button variant="outline" type="button" onClick={() => setRecordingNote(true)} className="df-btn">Record audio</Button>
+            <Button variant="default" type="button" onClick={onCreateNote} disabled={!noteContent.trim()} className="df-btn">Add note</Button>
           </div>
         )}
       </div>
@@ -1147,7 +1150,7 @@ function DossierNotes({
           <div className="df-mono df-meta">{note.meta}</div>
           <p className="df-prose">{note.content}</p>
           {note.audioUrl ? <V2NoteAudioPlayer audioUrl={note.audioUrl} audioRecordingId={note.audioRecordingId ?? undefined} transcriptStatus={note.transcriptStatus ?? undefined} audioTranscript={note.audioTranscript ?? undefined} /> : null}
-          <button type="button" className="df-ghost-btn" onClick={() => onDeleteNote(note.id)}>Delete</button>
+          <Button variant="outline" type="button" onClick={() => onDeleteNote(note.id)} className="df-btn">Delete</Button>
         </article>
       ))}
     </section>
@@ -1218,12 +1221,12 @@ function ReminderRow({
             />
           </label>
           <div className="df-form-actions">
-            <button type="button" className="df-ghost-btn" onClick={() => setEditing(false)}>
+            <Button variant="outline" type="button" onClick={() => setEditing(false)} className="df-btn">
               Cancel
-            </button>
-            <button type="submit" className="df-ink-btn" disabled={!draft.title.trim() || !draft.dueAt}>
+            </Button>
+            <Button variant="default" type="submit" disabled={!draft.title.trim() || !draft.dueAt} className="df-btn">
               Save Reminder
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -1240,21 +1243,21 @@ function ReminderRow({
       <span className="df-status">{reminder.status}</span>
       <span className="df-people-action">
         {reminder.canComplete ? (
-          <button type="button" className="df-ghost-btn" onClick={() => onSetStatus(reminder.id, "done")}>
+          <Button variant="outline" type="button" onClick={() => onSetStatus(reminder.id, "done")} className="df-btn">
             Done
-          </button>
+          </Button>
         ) : null}
         {reminder.canReopen ? (
-          <button type="button" className="df-ghost-btn" onClick={() => onSetStatus(reminder.id, "upcoming")}>
+          <Button variant="outline" type="button" onClick={() => onSetStatus(reminder.id, "upcoming")} className="df-btn">
             Reopen
-          </button>
+          </Button>
         ) : null}
-        <button type="button" className="df-ghost-btn" onClick={open}>
+        <Button variant="outline" type="button" onClick={open} className="df-btn">
           Edit
-        </button>
-        <button type="button" className="df-ghost-btn" onClick={() => onDelete(reminder.id)}>
+        </Button>
+        <Button variant="outline" type="button" onClick={() => onDelete(reminder.id)} className="df-btn">
           Delete
-        </button>
+        </Button>
       </span>
     </div>
   );
@@ -1292,7 +1295,7 @@ function DossierReminders({
         <label className="df-daily-field">TITLE<input value={reminderTitle} onChange={(event) => setReminderTitle(event.target.value)} /></label>
         <label className="df-daily-field">NOTE<textarea value={reminderNote} onChange={(event) => setReminderNote(event.target.value)} /></label>
         <label className="df-daily-field">DUE<input type="datetime-local" value={reminderDueAt} onChange={(event) => setReminderDueAt(event.target.value)} /></label>
-        <button type="submit" className="df-ink-btn" disabled={!reminderTitle.trim() || !reminderDueAt}>Add reminder</button>
+        <Button variant="default" type="submit" disabled={!reminderTitle.trim() || !reminderDueAt} className="df-btn">Add reminder</Button>
       </form>
       {dossier.reminders.empty ? (
         <p className="df-empty">{dossier.reminders.emptyCopy}</p>
@@ -1414,7 +1417,7 @@ function DossierSettings({
       <div className="df-card-head">
         <h2 className="df-card-title">Settings</h2>
       </div>
-      <form className="df-filter-bar" style={{ padding: "12px 18px" }} onSubmit={onSaveName}>
+      <form className="df-filter-bar df-inset-bar" onSubmit={onSaveName}>
         <label className="df-filter-input">
           <input
             type="text"
@@ -1423,11 +1426,11 @@ function DossierSettings({
             aria-label="Project name"
           />
         </label>
-        <button type="submit" className="df-ink-btn" disabled={!projectName.trim()}>
+        <Button variant="default" type="submit" disabled={!projectName.trim()} className="df-btn">
           Save name
-        </button>
+        </Button>
       </form>
-      <div style={{ padding: "8px 18px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="df-settings-fields">
         {dossier.settings.fields.map((field) => (
           <div key={field.label} className="df-kv">
             <span>{field.label}</span>
@@ -1435,7 +1438,7 @@ function DossierSettings({
           </div>
         ))}
       </div>
-      <form className="df-filter-bar" style={{ padding: "0 18px 16px" }} onSubmit={(event) => event.preventDefault()}>
+      <form className="df-filter-bar df-inset-follow" onSubmit={(event) => event.preventDefault()}>
         <label className="df-filter-chip">
           LEAD
           <select
@@ -1452,7 +1455,7 @@ function DossierSettings({
           </select>
         </label>
       </form>
-      <form className="df-filter-bar" style={{ padding: "0 18px 16px" }} onSubmit={onAddMember}>
+      <form className="df-filter-bar df-inset-follow" onSubmit={onAddMember}>
         <label className="df-filter-chip">
           MEMBER
           <select
@@ -1468,9 +1471,9 @@ function DossierSettings({
             ))}
           </select>
         </label>
-        <button type="submit" className="df-ghost-btn" disabled={memberPending || !memberId}>
+        <Button variant="outline" type="submit" disabled={memberPending || !memberId} className="df-btn">
           Assign
-        </button>
+        </Button>
       </form>
     </section>
   );

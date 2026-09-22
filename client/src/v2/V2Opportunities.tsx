@@ -26,6 +26,7 @@ import {
   type OpportunityCard,
   type OpportunityPipelineRowInput,
 } from "./opportunities";
+import { Button } from "@/components/ui/button";
 
 type OpportunityRowsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type ModuleField = { slug: string; options: string[] | null };
@@ -187,7 +188,7 @@ export function V2OpportunityRecordPage() {
       </header>
       <section className="df-card">
         <div className="df-card-head"><h2 className="df-card-title">Opportunity record</h2></div>
-        <div style={{ padding: "16px 18px" }}>
+        <div className="df-card-body">
           <div className="df-kv"><span>CLIENT</span><span>{record.clientLabel}</span></div>
           <div className="df-kv"><span>STAGE</span><span>{record.stage}</span></div>
         </div>
@@ -387,9 +388,9 @@ export function V2OpportunitiesPage() {
           <p className="df-subhead">{pipeline.subhead}</p>
         </div>
         <div className="df-library-actions">
-          <button type="button" className="df-ink-btn" onClick={() => setCreating((open) => !open)}>
+          <Button variant="default" type="button" onClick={() => setCreating((open) => !open)} className="df-btn">
             New Opportunity
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -419,9 +420,9 @@ export function V2OpportunitiesPage() {
               ))}
             </select>
           </label>
-          <button type="submit" className="df-ink-btn" disabled={createOpportunity.isPending || !name.trim()}>
+          <Button variant="default" type="submit" disabled={createOpportunity.isPending || !name.trim()} className="df-btn">
             Create
-          </button>
+          </Button>
         </form>
       ) : null}
       {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}

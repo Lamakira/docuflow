@@ -17,6 +17,7 @@ import {
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
+import { Button } from "@/components/ui/button";
 
 type LibraryPayload = {
   capabilityMiss: boolean;
@@ -263,15 +264,15 @@ export function V2DocumentsPage() {
             <p className="df-subhead">{library.subhead}</p>
           </div>
           <div className="df-library-actions">
-            <button type="button" className="df-ghost-btn" onClick={() => setCreateMode("folder")}>
+            <Button variant="outline" type="button" onClick={() => setCreateMode("folder")} className="df-btn">
               New folder
-            </button>
-            <button type="button" className="df-ghost-btn" onClick={() => setCreateMode("upload")}>
+            </Button>
+            <Button variant="outline" type="button" onClick={() => setCreateMode("upload")} className="df-btn">
               Upload File
-            </button>
-            <button type="button" className="df-ink-btn" onClick={() => setCreateMode("document")}>
+            </Button>
+            <Button variant="default" type="button" onClick={() => setCreateMode("document")} className="df-btn">
               New Document
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -286,13 +287,9 @@ export function V2DocumentsPage() {
                 aria-label={createMode === "folder" ? "Folder name" : "Document name"}
               />
             </label>
-            <button
-              type="submit"
-              className="df-ink-btn"
-              disabled={createDocument.isPending || createFolder.isPending || !name.trim()}
-            >
+            <Button variant="default" type="submit" disabled={createDocument.isPending || createFolder.isPending || !name.trim()} className="df-btn">
               Create
-            </button>
+            </Button>
           </form>
         ) : null}
         {createMode === "upload" ? (
@@ -346,52 +343,30 @@ export function V2DocumentsPage() {
 
       {library.preview ? (
         <aside className="df-panel df-folder-preview" data-testid="v2-folder-preview">
-          <header
-            style={{
-              padding: "14px 16px",
-              borderBottom: "1px solid #D8DEE6",
-            }}
-          >
+          <header className="df-panel-head">
             <div className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.08em" }}>
               FOLDER PREVIEW
             </div>
             <div style={{ fontFamily: "var(--df-font-display)", fontWeight: 700, fontSize: 18 }}>
               {library.preview.title}
             </div>
-            <div className="df-mono df-meta" style={{ marginTop: 4 }}>
+            <div className="df-mono df-meta df-meta-follow">
               {library.preview.meta}
             </div>
           </header>
-          <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+          <div className="df-panel-scroll">
             <div className="df-mono df-meta">ACCESS</div>
-            <p className="df-prose" style={{ marginTop: 8, color: "#59657A" }}>
+            <p className="df-prose df-prose-follow" style={{ color: "var(--df-archive-slate)" }}>
               {library.preview.accessCopy}
             </p>
           </div>
-          <footer
-            style={{
-              padding: 12,
-              borderTop: "1px solid #D8DEE6",
-              display: "flex",
-              gap: 8,
-            }}
-          >
-            <button
-              type="button"
-              className="df-ink-btn"
-              style={{ flex: 1 }}
-              onClick={() => {
-                if (!selectedFolderId) return;
-                setExpandedFolderIds((current) =>
-                  current.includes(selectedFolderId) ? current : [...current, selectedFolderId],
-                );
-              }}
-            >
+          <footer className="df-panel-foot">
+            <Button variant="default" type="button" style={{ flex: 1 }} onClick={() => { if (!selectedFolderId) return; setExpandedFolderIds((current) => current.includes(selectedFolderId) ? current : [...current, selectedFolderId], ); }} className="df-btn">
               Open folder
-            </button>
-            <Link href="/documents/access" className="df-ghost-btn">
+            </Button>
+            <Button asChild variant="outline" className="df-btn"><Link href="/documents/access">
               Manage access
-            </Link>
+            </Link></Button>
           </footer>
         </aside>
       ) : null}

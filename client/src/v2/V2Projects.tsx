@@ -13,6 +13,7 @@ import {
 } from "./projects";
 import { formatHours, memberName, mobileProjectMeta } from "./today";
 import { useV2Chrome } from "./V2Shell";
+import { Button } from "@/components/ui/button";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -239,9 +240,9 @@ export function V2ProjectsPage() {
           <p className="df-subhead">{register.subhead}</p>
         </div>
         <div className="df-library-actions">
-          <button type="button" className="df-ink-btn" onClick={() => setCreating((open) => !open)}>
+          <Button variant="default" type="button" onClick={() => setCreating((open) => !open)} className="df-btn">
             New Project
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -256,9 +257,9 @@ export function V2ProjectsPage() {
               aria-label="Project name"
             />
           </label>
-          <button type="submit" className="df-ink-btn" disabled={createProject.isPending || !name.trim()}>
+          <Button variant="default" type="submit" disabled={createProject.isPending || !name.trim()} className="df-btn">
             Create
-          </button>
+          </Button>
         </form>
       ) : null}
       {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
@@ -341,6 +342,7 @@ export function V2ProjectsPage() {
                     ) : (
                       <span className="df-meter-row">
                         <span className="df-meter">
+                          {/* Per-instance: the fill width is this project's budget share. */}
                           <span
                             className="df-meter-fill"
                             style={{

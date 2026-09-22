@@ -197,15 +197,19 @@ describe("floating surfaces are shadcn primitives (#249)", () => {
 });
 
 describe("controls have hover, focus-visible, and disabled states (#249)", () => {
-  it("covers the four v2 button classes without migrating screen markup", () => {
-    for (const cls of [".df-ghost-btn", ".df-icon-btn", ".df-danger-btn"]) {
-      expect(tokensCss).toMatch(new RegExp(`${cls.replace(".", "\\.")}:hover`));
-      expect(tokensCss).toMatch(new RegExp(`${cls.replace(".", "\\.")}:focus-visible`));
-      expect(tokensCss).toMatch(new RegExp(`${cls.replace(".", "\\.")}:disabled`));
+  it("wears the shadcn Button instead of a parallel button class", () => {
+    for (const cls of ["df-ghost-btn", "df-icon-btn", "df-ink-btn", "df-danger-btn", "df-file-zoom-btn"]) {
+      expect(tokensCss).not.toContain(`.${cls}`);
     }
-    expect(tokensCss).toMatch(/\.df-ink-btn:hover/);
-    expect(tokensCss).toMatch(/\.df-ink-btn:focus-visible/);
-    expect(tokensCss).toMatch(/\.df-ink-btn:disabled/);
+    const files = readdirSync(v2Dir).filter((name) => name.endsWith(".tsx"));
+    for (const name of files) {
+      const body = readFileSync(join(v2Dir, name), "utf8");
+      expect(body, name).not.toMatch(/\bdf-(?:ghost|ink|icon|danger|file-zoom)-btn\b/);
+    }
+    expect(source("client/src/components/ui/button.tsx")).toContain("hover-elevate");
+    expect(tokensCss).toMatch(/\.df-v2 button:not\(\.df-btn\)/);
+    expect(tokensCss).toMatch(/\.df-v2 button\.df-btn\.bg-primary/);
+    expect(tokensCss).toMatch(/\.df-v2 a\.df-btn\.bg-primary/);
   });
 
   it("keeps the destructive token legible in both of the jobs it does", () => {
@@ -251,7 +255,7 @@ describe("controls have hover, focus-visible, and disabled states (#249)", () =>
     // shadcn positions the indicator absolutely and reserves room with a
     // single-class `pl-8`, which `.df-v2 .df-menu-item` outranks — the dot then
     // lands on the first letter of the label.
-    expect(tokensCss).toMatch(/\[role="menuitemradio"\][\s\S]*?padding-left:\s*32px/);
+    expect(tokensCss).toMatch(/\[role="menuitemradio"\][\s\S]*?padding-left:\s*var\(--df-space-7\)/);
   });
 
   it("anchors the command palette to the top of a phone viewport", () => {
@@ -266,10 +270,12 @@ describe("controls have hover, focus-visible, and disabled states (#249)", () =>
   });
 
   it("uses one danger convention, the destructive token", () => {
-    expect(rule(tokensCss, '.df-ghost-btn[data-danger="true"]')).toMatch(/var\(--df-destructive\)/);
+    expect(source("client/src/components/ui/button.tsx")).toMatch(
+      /destructiveOutline:[\s\S]*text-destructive/,
+    );
+    expect(source("client/src/v2/V2TaskTable.tsx")).toContain('variant="destructiveOutline"');
     expect(rule(tokensCss, '.df-v2 .df-menu-item[data-danger="true"]')).toMatch(
       /var\(--df-destructive\)/,
     );
-    expect(tokensCss).toMatch(/^\.df-danger-btn\s*\{[^}]*var\(--df-destructive\)/m);
   });
 });

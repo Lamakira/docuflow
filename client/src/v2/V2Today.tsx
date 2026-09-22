@@ -22,6 +22,7 @@ import {
 import { motionForSurface } from "./motion";
 import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
 import { V2RefusalPopover } from "./V2RefusalPopover";
+import { Button } from "@/components/ui/button";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -81,9 +82,9 @@ function meterFill(status: string): string {
 function TodayActionBar({ onApprovals, onAsk }: { onApprovals: () => void; onAsk: () => void }) {
   return (
     <div className="df-action-bar" data-testid="v2-action-bar">
-      <button type="button" className="df-ink-btn df-action-primary" onClick={onApprovals}>
+      <Button variant="default" type="button" className="df-btn df-action-primary" onClick={onApprovals}>
         Resolve approvals
-      </button>
+      </Button>
       <button type="button" className="df-action-ask" data-testid="v2-ask" aria-label="Ask DocuFlow" onClick={onAsk}>
         <SparkleIcon />
       </button>
@@ -228,14 +229,14 @@ export function V2TodayPage() {
           </div>
           <p className="df-subhead">{today.subhead}</p>
         </div>
-        <button type="button" className="df-ink-btn df-today-resolve" onClick={() => openPanel("approvals")}>
+        <Button variant="default" type="button" className="df-btn df-today-resolve" onClick={() => openPanel("approvals")}>
           Resolve approvals
-        </button>
+        </Button>
       </header>
 
       <section className="df-card" data-testid="v2-today-attention">
         <div className="df-card-head">
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="df-cluster">
             <h2 className="df-card-title">Needs attention</h2>
             <span className="df-count-chip">{today.attention.length} ITEMS</span>
           </div>
@@ -350,6 +351,7 @@ export function V2TodayPage() {
                     ) : (
                       <span className="df-meter-row">
                         <span className="df-meter">
+                          {/* Per-instance: the fill width is this project's budget share. */}
                           <span
                             className="df-meter-fill"
                             style={{

@@ -17,6 +17,7 @@ import {
 import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
 import { V2RefusalPopover } from "./V2RefusalPopover";
+import { Button } from "@/components/ui/button";
 
 type WorkspaceMembershipsResponse = { memberships: PeopleMembershipInput[] };
 type BillingSubscription = { purchasedSeatCapacity?: number };
@@ -220,7 +221,7 @@ export function V2PeoplePage() {
         <span className="df-count-chip df-people-seats">{page.rows.length}</span>
       </header>
 
-      <p className="df-empty df-people-seats" style={{ paddingTop: 0 }}>
+      <p className="df-empty df-people-seats" data-edge="end">
         {page.seatCopy}
       </p>
 
@@ -247,17 +248,9 @@ export function V2PeoplePage() {
             Show archived
           </label>
         ) : null}
-        <button
-          type="button"
-          className="df-ink-btn"
-          data-testid="v2-people-invite"
-          onClick={() => {
-            if (!guardWrite("invite")) return;
-            setInviting((open) => !open);
-          }}
-        >
+        <Button variant="default" type="button" data-testid="v2-people-invite" onClick={() => { if (!guardWrite("invite")) return; setInviting((open) => !open); }} className="df-btn">
           Invite
-        </button>
+        </Button>
       </div>
 
       {/*
@@ -297,9 +290,9 @@ export function V2PeoplePage() {
               ))}
             </select>
           </label>
-          <button type="submit" className="df-ink-btn" disabled={invite.isPending || !inviteEmail.trim()}>
+          <Button variant="default" type="submit" disabled={invite.isPending || !inviteEmail.trim()} className="df-btn">
             Send Invitation
-          </button>
+          </Button>
         </form>
       ) : null}
       {inviting ? <p className="df-empty df-people-seats">{page.invitePreview}</p> : null}
@@ -517,9 +510,9 @@ function RefusalAnchor({
       testId={`v2-people-refusal-${id}`}
       onDismiss={onDismiss}
       trigger={
-        <button type="button" className="df-ghost-btn" disabled={pending} data-testid={testId} onClick={onClick}>
+        <Button variant="outline" type="button" disabled={pending} data-testid={testId} onClick={onClick} className="df-btn">
           {label}
-        </button>
+        </Button>
       }
     />
   );

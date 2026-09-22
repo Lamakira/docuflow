@@ -12,6 +12,7 @@ import {
   type FirstWorkspaceStatus,
 } from "./lifecycle";
 import "./tokens.css";
+import { Button } from "@/components/ui/button";
 
 const CREATED_MOTION = motionForSurface("first-workspace-created").enterExit;
 
@@ -54,17 +55,17 @@ export function V2FirstWorkspace({ belongedBefore = false }: { belongedBefore?: 
   }
 
   return (
-    <div className="df-v2 df-first-workspace" data-testid="v2-first-workspace" style={{ height: "100vh", display: "flex" }}>
+    <div className="df-v2 df-first-workspace df-gate" data-testid="v2-first-workspace">
       <div
         className="df-first-workspace-card"
         data-motion={status === "created" ? CREATED_MOTION : "none"}
         data-testid="v2-first-workspace-card"
       >
         <div className="df-mono df-first-workspace-kicker">{page.kicker}</div>
-        <h1 className="df-title" style={{ fontSize: 26, margin: "6px 0 10px" }}>
+        <h1 className="df-title df-title-follow">
           {page.title}
         </h1>
-        <p className="df-subhead" style={{ marginBottom: 16 }}>
+        <p className="df-subhead df-subhead-follow">
           {page.copy}
         </p>
 
@@ -96,14 +97,9 @@ export function V2FirstWorkspace({ belongedBefore = false }: { belongedBefore?: 
               {page.error}
             </p>
           ) : null}
-          <button
-            type="submit"
-            className="df-ink-btn"
-            disabled={!page.canSubmit}
-            data-testid="v2-first-workspace-submit"
-          >
+          <Button variant="default" type="submit" disabled={!page.canSubmit} data-testid="v2-first-workspace-submit" className="df-btn">
             {page.action}
-          </button>
+          </Button>
         </form>
 
         <p className="df-first-workspace-trial" data-testid="v2-first-workspace-trial">

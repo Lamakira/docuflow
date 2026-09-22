@@ -616,16 +616,16 @@ export function V2AdministrationPage() {
         <div className="df-card-head"><div className="df-card-head-text"><h2 className="df-card-title">CRM modules &amp; fields</h2><p className="df-card-sub">Configure the Work record schema used by Clients and Projects.</p></div></div>
         <form className="df-admin-form df-inline-form" onSubmit={(event) => { event.preventDefault(); if (!guardWrite() || !moduleName.trim()) return; createCrmModule.mutate(); }}>
           <label className="df-daily-field">MODULE NAME<input value={moduleName} onChange={(event) => setModuleName(event.target.value)} /></label>
-          <button type="submit" className="df-ink-btn" disabled={!moduleName.trim() || createCrmModule.isPending}>Add module</button>
+          <Button variant="default" type="submit" disabled={!moduleName.trim() || createCrmModule.isPending} className="df-btn">Add module</Button>
         </form>
         {crmModules.length === 0 ? <p className="df-empty">No CRM modules configured.</p> : crmModules.map((module) => (
           <div key={module.id} className="df-register-row" data-testid={`v2-crm-module-${module.id}`}>
-            <span><button type="button" className="df-ghost-btn" onClick={() => setSelectedModuleId(module.id)}>Open</button><input aria-label={`Module name for ${module.name}`} defaultValue={module.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === module.name || !guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { name } }); }} /></span>
+            <span><Button variant="outline" type="button" onClick={() => setSelectedModuleId(module.id)} className="df-btn">Open</Button><input aria-label={`Module name for ${module.name}`} defaultValue={module.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === module.name || !guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { name } }); }} /></span>
             <span className="df-mono df-meta">{module.slug}</span>
             <span className="df-status">{module.isEnabled ? "ACTIVE" : "INACTIVE"}</span>
             <span className="df-people-action">
-              <button type="button" className="df-ghost-btn" onClick={() => { if (!guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { isEnabled: module.isEnabled ? 0 : 1 } }); }}>{module.isEnabled ? "Disable" : "Enable"}</button>
-              {module.isSystem !== 1 ? <button type="button" className="df-ghost-btn" onClick={() => { if (!guardWrite()) return; deleteCrmModule.mutate(module.id); }}>Delete</button> : null}
+              <Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { isEnabled: module.isEnabled ? 0 : 1 } }); }} className="df-btn">{module.isEnabled ? "Disable" : "Enable"}</Button>
+              {module.isSystem !== 1 ? <Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; deleteCrmModule.mutate(module.id); }} className="df-btn">Delete</Button> : null}
             </span>
           </div>
         ))}
@@ -635,12 +635,12 @@ export function V2AdministrationPage() {
             <form className="df-admin-form df-inline-form" onSubmit={(event) => { event.preventDefault(); if (!guardWrite() || !fieldName.trim()) return; createCrmField.mutate(); }}>
               <label className="df-daily-field">FIELD NAME<input value={fieldName} onChange={(event) => setFieldName(event.target.value)} /></label>
               <label className="df-daily-field">TYPE<Select value={fieldType} onValueChange={setFieldType}><SelectTrigger className="df-filter-chip df-select-trigger" aria-label="CRM field type"><SelectValue /></SelectTrigger><SelectContent className="df-v2 df-select-content">{[["text", "TEXT"], ["textarea", "LONG TEXT"], ["number", "NUMBER"], ["date", "DATE"], ["select", "SELECT"], ["multiselect", "MULTISELECT"], ["checkbox", "CHECKBOX"]].map(([value, label]) => <SelectItem key={value} value={value} className="df-select-item">{label}</SelectItem>)}</SelectContent></Select></label>
-              <button type="submit" className="df-ink-btn" disabled={!fieldName.trim() || createCrmField.isPending}>Add field</button>
+              <Button variant="default" type="submit" disabled={!fieldName.trim() || createCrmField.isPending} className="df-btn">Add field</Button>
             </form>
             {(selectedModule.fields ?? []).map((field) => (
               <div key={field.id} className="df-register-row" data-testid={`v2-crm-field-${field.id}`}>
                 <span><input aria-label={`Field name for ${field.name}`} defaultValue={field.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === field.name || !guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { name } }); }} />{field.fieldType === "select" || field.fieldType === "multiselect" ? <textarea aria-label={`Options for ${field.name}`} defaultValue={(field.options ?? []).join("\n")} onBlur={(event) => { const options = event.target.value.split("\n").map((option) => option.trim()).filter(Boolean); if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { options } }); }} /> : null}</span><span className="df-mono df-meta">{field.fieldType} · {field.slug}</span><span className="df-status">{field.isEnabled ? "ACTIVE" : "INACTIVE"}</span>
-                <span className="df-people-action"><button type="button" className="df-ghost-btn" onClick={() => { if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { isEnabled: field.isEnabled ? 0 : 1 } }); }}>{field.isEnabled ? "Disable" : "Enable"}</button>{field.isSystem !== 1 ? <button type="button" className="df-ghost-btn" onClick={() => { if (!guardWrite()) return; deleteCrmField.mutate(field.id); }}>Delete</button> : null}</span>
+                <span className="df-people-action"><Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { isEnabled: field.isEnabled ? 0 : 1 } }); }} className="df-btn">{field.isEnabled ? "Disable" : "Enable"}</Button>{field.isSystem !== 1 ? <Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; deleteCrmField.mutate(field.id); }} className="df-btn">Delete</Button> : null}</span>
               </div>
             ))}
           </div>
@@ -701,13 +701,9 @@ export function V2AdministrationPage() {
                 onChange={(event) => setSeatQuantity(event.target.value)}
               />
             </label>
-            <button
-              type="submit"
-              className="df-ghost-btn"
-              disabled={changeSeats.isPending || !seatQuantity}
-            >
+            <Button variant="outline" type="submit" disabled={changeSeats.isPending || !seatQuantity} className="df-btn">
               {changeSeats.isPending ? "Changing…" : "Change seats"}
-            </button>
+            </Button>
           </form>
         ) : null}
 
@@ -716,28 +712,16 @@ export function V2AdministrationPage() {
             if (action.id === "seats") return null;
             if (action.id === "checkout") {
               return (
-                <button
-                  key={action.id}
-                  type="button"
-                  className="df-ink-btn"
-                  disabled={startCheckout.isPending}
-                  onClick={() => startCheckout.mutate()}
-                >
+                <Button variant="default" key={action.id} type="button" disabled={startCheckout.isPending} onClick={() => startCheckout.mutate()} className="df-btn">
                   {action.label}
-                </button>
+                </Button>
               );
             }
             if (action.id === "payment-method") {
               return (
-                <button
-                  key={action.id}
-                  type="button"
-                  className="df-ghost-btn"
-                  disabled={updatePaymentMethod.isPending}
-                  onClick={() => updatePaymentMethod.mutate()}
-                >
+                <Button variant="outline" key={action.id} type="button" disabled={updatePaymentMethod.isPending} onClick={() => updatePaymentMethod.mutate()} className="df-btn">
                   {action.label}
-                </button>
+                </Button>
               );
             }
             // Ending the subscription is not reachable by the reflex that
@@ -767,27 +751,21 @@ export function V2AdministrationPage() {
         >
           <div className="df-card-head">
             <h2 className="df-card-title">Secret</h2>
-            <button type="button" className="df-ghost-btn" onClick={() => setRevealedSecret(null)}>
+            <Button variant="outline" type="button" onClick={() => setRevealedSecret(null)} className="df-btn">
               Dismiss
-            </button>
+            </Button>
           </div>
           <div className="df-daily-form">
-            <p className="df-empty" style={{ padding: 0 }}>
+            <p className="df-empty df-flush">
               {page.secretOnce.label}
             </p>
             <code className="df-admin-secret">{page.secretOnce.plaintext}</code>
-            <p className="df-empty" style={{ padding: 0 }}>
+            <p className="df-empty df-flush">
               {page.secretOnce.confirmation}
             </p>
-            <button
-              type="button"
-              className="df-ghost-btn"
-              onClick={() => {
-                void navigator.clipboard.writeText(page.secretOnce!.plaintext);
-              }}
-            >
+            <Button variant="outline" type="button" onClick={() => { void navigator.clipboard.writeText(page.secretOnce!.plaintext); }} className="df-btn">
               Copy
-            </button>
+            </Button>
           </div>
         </section>
       ) : null}
@@ -796,9 +774,9 @@ export function V2AdministrationPage() {
         <div className="df-card-head">
           <h2 className="df-card-title">Service Accounts</h2>
           {page.serviceAccounts.createAllowed ? (
-            <button type="button" className="df-ghost-btn" onClick={() => setCreatingAccount((open) => !open)}>
+            <Button variant="outline" type="button" onClick={() => setCreatingAccount((open) => !open)} className="df-btn">
               New Service Account
-            </button>
+            </Button>
           ) : null}
         </div>
         {creatingAccount ? (
@@ -831,20 +809,12 @@ export function V2AdministrationPage() {
               ))}
             </fieldset>
             <div className="df-form-actions">
-              <button
-                type="button"
-                className="df-ghost-btn"
-                onClick={() => setCreatingAccount(false)}
-              >
+              <Button variant="outline" type="button" onClick={() => setCreatingAccount(false)} className="df-btn">
                 Cancel
-              </button>
-              <button
-                type="submit"
-                className="df-ink-btn"
-                disabled={createAccount.isPending || !accountName.trim()}
-              >
+              </Button>
+              <Button variant="default" type="submit" disabled={createAccount.isPending || !accountName.trim()} className="df-btn">
                 {createAccount.isPending ? "Creating…" : "Create Service Account"}
-              </button>
+              </Button>
             </div>
           </form>
         ) : null}
@@ -895,9 +865,9 @@ export function V2AdministrationPage() {
         <div className="df-card-head">
           <h2 className="df-card-title">Webhook Endpoints</h2>
           {page.webhookEndpoints.createAllowed ? (
-            <button type="button" className="df-ghost-btn" onClick={() => setCreatingEndpoint((open) => !open)}>
+            <Button variant="outline" type="button" onClick={() => setCreatingEndpoint((open) => !open)} className="df-btn">
               New Webhook Endpoint
-            </button>
+            </Button>
           ) : null}
         </div>
         {creatingEndpoint ? (
@@ -930,20 +900,12 @@ export function V2AdministrationPage() {
               ))}
             </fieldset>
             <div className="df-form-actions">
-              <button
-                type="button"
-                className="df-ghost-btn"
-                onClick={() => setCreatingEndpoint(false)}
-              >
+              <Button variant="outline" type="button" onClick={() => setCreatingEndpoint(false)} className="df-btn">
                 Cancel
-              </button>
-              <button
-                type="submit"
-                className="df-ink-btn"
-                disabled={createEndpoint.isPending || !endpointUrl.trim() || eventTypes.length === 0}
-              >
+              </Button>
+              <Button variant="default" type="submit" disabled={createEndpoint.isPending || !endpointUrl.trim() || eventTypes.length === 0} className="df-btn">
                 {createEndpoint.isPending ? "Creating…" : "Create Webhook Endpoint"}
-              </button>
+              </Button>
             </div>
           </form>
         ) : null}
@@ -1173,17 +1135,9 @@ export function V2AdministrationPage() {
                   {trackingPolicy.dirty ? "Unsaved changes." : "No change to save."}
                 </p>
               )}
-              <button
-                type="button"
-                className="df-ink-btn"
-                disabled={!trackingPolicy.canSave || saveTrackingPolicy.isPending}
-                onClick={() => {
-                  if (!guardWrite()) return;
-                  saveTrackingPolicy.mutate();
-                }}
-              >
+              <Button variant="default" type="button" disabled={!trackingPolicy.canSave || saveTrackingPolicy.isPending} onClick={() => { if (!guardWrite()) return; saveTrackingPolicy.mutate(); }} className="df-btn">
                 {saveTrackingPolicy.isPending ? "Saving…" : "Save Tracking Policy"}
-              </button>
+              </Button>
             </div>
           </section>
 
@@ -1218,9 +1172,9 @@ export function V2AdministrationPage() {
                     }}
                   />
                 </label>
-                <button type="submit" className="df-ghost-btn" disabled={!trackingPolicy.editable}>
+                <Button variant="outline" type="submit" disabled={!trackingPolicy.editable} className="df-btn">
                   Add
-                </button>
+                </Button>
               </form>
               {timezoneError ? <p className="df-refusal">{timezoneError}</p> : null}
               {trackingPolicy.timezones.empty ? (
@@ -1233,14 +1187,9 @@ export function V2AdministrationPage() {
                     data-testid={`v2-administration-timezone-${timezone}`}
                   >
                     <span>{timezone}</span>
-                    <button
-                      type="button"
-                      className="df-ghost-btn"
-                      disabled={!trackingPolicy.editable}
-                      onClick={() => setTimezoneDraft((current) => removeAllowedTimezone(current, timezone))}
-                    >
+                    <Button variant="outline" type="button" disabled={!trackingPolicy.editable} onClick={() => setTimezoneDraft((current) => removeAllowedTimezone(current, timezone))} className="df-btn">
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 ))
               )}
@@ -1251,17 +1200,9 @@ export function V2AdministrationPage() {
                   ? "Unsaved changes."
                   : "No change to save."}
               </p>
-              <button
-                type="button"
-                className="df-ink-btn"
-                disabled={!trackingPolicy.timezones.canSave || saveTimezones.isPending}
-                onClick={() => {
-                  if (!guardWrite()) return;
-                  saveTimezones.mutate();
-                }}
-              >
+              <Button variant="default" type="button" disabled={!trackingPolicy.timezones.canSave || saveTimezones.isPending} onClick={() => { if (!guardWrite()) return; saveTimezones.mutate(); }} className="df-btn">
                 {saveTimezones.isPending ? "Saving…" : "Save timezones"}
-              </button>
+              </Button>
             </div>
           </section>
         </>
@@ -1466,14 +1407,15 @@ function AdministrationAnalytics({
               ))}
             </SelectContent>
           </Select>
-          <a
-            className="df-ghost-btn"
-            href={analytics.export.href}
-            download={analytics.export.filename}
-            data-testid="v2-administration-analytics-export"
-          >
-            {analytics.export.label}
-          </a>
+          <Button asChild variant="outline" className="df-btn">
+            <a
+              href={analytics.export.href}
+              download={analytics.export.filename}
+              data-testid="v2-administration-analytics-export"
+            >
+              {analytics.export.label}
+            </a>
+          </Button>
         </div>
         {loading ? (
           <p className="df-empty">Reading analytics for this range…</p>
@@ -1633,14 +1575,14 @@ function AccountActions({
   return (
     <span className="df-people-action">
       {row.rotate ? (
-        <button type="button" className="df-ghost-btn" onClick={() => onRotate(row.id, row.name)}>
+        <Button variant="outline" type="button" onClick={() => onRotate(row.id, row.name)} className="df-btn">
           Rotate
-        </button>
+        </Button>
       ) : null}
       {row.revoke ? (
-        <button type="button" className="df-ghost-btn" onClick={() => onRevoke(row.id)}>
+        <Button variant="outline" type="button" onClick={() => onRevoke(row.id)} className="df-btn">
           Revoke
-        </button>
+        </Button>
       ) : null}
     </span>
   );
@@ -1660,19 +1602,19 @@ function EndpointActions({
   return (
     <span className="df-people-action">
       {row.rotate ? (
-        <button type="button" className="df-ghost-btn" onClick={() => onRotate(row.id, row.url)}>
+        <Button variant="outline" type="button" onClick={() => onRotate(row.id, row.url)} className="df-btn">
           Rotate
-        </button>
+        </Button>
       ) : null}
       {row.disable ? (
-        <button type="button" className="df-ghost-btn" onClick={() => onDisable(row.id)}>
+        <Button variant="outline" type="button" onClick={() => onDisable(row.id)} className="df-btn">
           Disable
-        </button>
+        </Button>
       ) : null}
       {row.enable ? (
-        <button type="button" className="df-ghost-btn" onClick={() => onEnable(row.id)}>
+        <Button variant="outline" type="button" onClick={() => onEnable(row.id)} className="df-btn">
           Enable
-        </button>
+        </Button>
       ) : null}
     </span>
   );
