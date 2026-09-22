@@ -73,6 +73,7 @@ export function V2Rail({
       ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
       : (user?.email?.[0] ?? "U").toUpperCase();
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  const workspaceRole = current?.workspaceRole ?? "";
   const role = current ? workspaceRoleLabel(current.workspaceRole) : "";
 
   async function handleSignOut() {
@@ -151,7 +152,7 @@ export function V2Rail({
             {!collapsed && section.label ? (
               <div className="df-group-label">{section.label}</div>
             ) : null}
-            {section.items.map((item) => {
+            {section.items.filter((item) => item.reach?.(workspaceRole) !== false).map((item) => {
               const active = activeId === item.id;
               const count =
                 item.countKey === "projects"

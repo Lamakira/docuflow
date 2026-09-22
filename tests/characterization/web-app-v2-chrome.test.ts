@@ -9,6 +9,8 @@ import {
 } from "../../client/src/lib/featureFlags";
 import {
   RAIL_COLLAPSED_STORAGE_KEY,
+  V2_FOOTER_NAV,
+  V2_NAV,
   authenticatedPresentation,
   formatElapsedClock,
   matchV2Route,
@@ -18,6 +20,7 @@ import {
   workspaceInitials,
   workspaceRoleLabel,
   writeRailCollapsed,
+  type V2NavItem,
 } from "../../client/src/v2/presentation";
 import { workspaceRoleInCopy } from "../../client/src/v2/workspace";
 
@@ -165,5 +168,43 @@ describe("v2 chrome behind the client flag (#171)", () => {
   it("renders recorded elapsed time as a stable clock", () => {
     expect(formatElapsedClock(0)).toBe("00:00:00");
     expect(formatElapsedClock(65)).toBe("00:01:05");
+  });
+});
+
+/**
+ * Administration is the one destination a Workspace Role can put out of reach
+ * (#257, ADR-0025). A Capability never hides a destination: Clients stays,
+ * because a Member may read the register.
+ */
+describe("the rail offers only destinations the Workspace Role can reach (#257)", () => {
+  const railNavItems = (): V2NavItem[] => [
+    ...V2_NAV.flatMap((section) => section.items),
+    ...V2_FOOTER_NAV,
+  ];
+
+  function labelsInReach(workspaceRole: string): string[] {
+    return V2_NAV.flatMap((section) =>
+      section.items
+        .filter((item) => item.reach?.(workspaceRole) !== false)
+        .map((item) => item.label),
+    );
+  }
+
+  it("hides Administration from a Member and keeps it for an Owner and an Administrator", () => {
+    expect(labelsInReach("MEMBER")).not.toContain("Administration");
+    expect(labelsInReach("OWNER")).toContain("Administration");
+    expect(labelsInReach("ADMINISTRATOR")).toContain("Administration");
+    expect(labelsInReach("MEMBER")).toContain("Clients");
+  });
+
+  it("carries a reach predicate on the administration entry alone", () => {
+    expect(railNavItems().filter((item) => item.reach).map((item) => item.id)).toEqual(["administration"]);
+  });
+
+  it("filters where the rail maps V2_NAV, and a typed /administration still resolves", () => {
+    expect(railSource).toMatch(
+      /section\.items\.filter\(\(item\) => item\.reach\?\.\(workspaceRole\) !== false\)/,
+    );
+    expect(matchV2Route("/administration").kind).toBe("administration");
   });
 });

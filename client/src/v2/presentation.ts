@@ -1,3 +1,4 @@
+import { canManageAdministration } from "./administration";
 import { workspaceRoleInCopy } from "./workspace";
 
 export type AuthenticatedPresentation = {
@@ -184,6 +185,11 @@ export type V2NavItem = {
   label: string;
   href: string;
   countKey?: "projects" | "people";
+  /**
+   * Workspace Role reach. Absent means every Role can reach the destination.
+   * Only Administration carries one (#257): a Capability never hides a destination.
+   */
+  reach?: (workspaceRole: string) => boolean;
 };
 
 export type V2NavSection = {
@@ -221,7 +227,12 @@ export const V2_NAV: V2NavSection[] = [
     separated: true,
     items: [
       { id: "people", label: "People", href: "/people", countKey: "people" },
-      { id: "administration", label: "Administration", href: "/administration" },
+      {
+        id: "administration",
+        label: "Administration",
+        href: "/administration",
+        reach: canManageAdministration,
+      },
     ],
   },
 ];
