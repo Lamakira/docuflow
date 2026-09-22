@@ -1,5 +1,6 @@
-import { useMemo, useState, type FormEvent } from "react";
-import { Link, Redirect, useLocation } from "wouter";
+import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent } from "react";
+import { DragDropContext, Draggable, Droppable, type DraggableProvided, type DropResult } from "@hello-pangea/dnd";
+import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { CrmProjectWithDetails } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
@@ -7,8 +8,12 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import { matchV2Route } from "./presentation";
 import {
+  composeProjectBoard,
   composeProjectRegister,
+  projectsAllPath,
+  projectsKanbanPath,
   projectVisibleTo,
+  type ProjectBoardCard,
   type ProjectRegisterRowInput,
 } from "./projects";
 import { formatHours, memberName, mobileProjectMeta } from "./today";
@@ -36,26 +41,19 @@ function statsUrl(start: Date, end: Date): string {
   return `/api/time-tracking/stats?${params.toString()}`;
 }
 
-async function loadProjects(): Promise<ProjectsResponse> {
-  const pageSize = 200;
-  const rows: CrmProjectWithDetails[] = [];
-  let page = 1;
-  let total = 0;
+async function loadProjectList(path: string): Promise<ProjectsResponse> {
+  const res = await fetch(path, { credentials: "include" });
+  if (!res.ok) throw new Error("Failed to fetch Projects");
+  return res.json();
+}
 
-  for (;;) {
-    const res = await fetch(`/api/crm/projects?page=${page}&pageSize=${pageSize}`, {
-      credentials: "include",
-    });
-    if (!res.ok) throw new Error("Failed to fetch Projects");
-    const body = (await res.json()) as ProjectsResponse;
-    const batch = body.data ?? [];
-    total = body.total ?? rows.length + batch.length;
-    rows.push(...batch);
-    if (rows.length >= total || batch.length === 0) break;
-    page += 1;
-  }
-
-  return { data: rows, total };
+function isBoardCardClick(
+  event: Pick<MouseEvent, "button" | "shiftKey" | "altKey" | "clientX" | "clientY">,
+  origin: { x: number; y: number } | null,
+): boolean {
+  if (!origin) return false;
+  if (event.button !== 0 || event.shiftKey || event.altKey) return false;
+  return Math.abs(event.clientX - origin.x) <= 5 && Math.abs(event.clientY - origin.y) <= 5;
 }
 
 function meterFill(status: string): string {
@@ -130,13 +128,64 @@ export function V2LegacyProjectPage() {
   );
 }
 
+function ProjectBoardCardView({
+  card,
+  provided,
+  locked,
+  onOpen,
+}: {
+  card: ProjectBoardCard;
+  provided: DraggableProvided;
+  locked: boolean;
+  onOpen: (href: string) => void;
+}) {
+  const origin = useRef<{ x: number; y: number } | null>(null);
+
+  function onPointerDown(event: PointerEvent<HTMLElement>) {
+    if (event.button !== 0) return;
+    origin.current = { x: event.clientX, y: event.clientY };
+  }
+
+  function onClick(event: MouseEvent<HTMLElement>) {
+    if (!isBoardCardClick(event, origin.current)) return;
+    origin.current = null;
+    event.preventDefault();
+    if (event.metaKey || event.ctrlKey) {
+      window.open(card.href, "_blank", "noopener,noreferrer");
+      return;
+    }
+    onOpen(card.href);
+  }
+
+  return (
+    <article
+      ref={provided.innerRef}
+      {...provided.draggableProps}
+      {...provided.dragHandleProps}
+      className="df-opportunity-card"
+      data-locked={locked ? "true" : "false"}
+      data-testid={`v2-project-card-${card.id}`}
+      onPointerDown={onPointerDown}
+      onClick={onClick}
+    >
+      <div className="df-row-title">{card.name}</div>
+      {card.clientLabel ? <div className="df-opportunity-card-client">{card.clientLabel}</div> : null}
+    </article>
+  );
+}
+
 export function V2ProjectsPage() {
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
   const { layout, memberships } = useV2Chrome();
+  const search = useSearch();
+  const [, setLocation] = useLocation();
+  const boardView = new URLSearchParams(search).get("view") === "board";
+  const boardRef = useRef<HTMLDivElement>(null);
   const [filterQuery, setFilterQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [changingId, setChangingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(
     () => new URLSearchParams(window.location.search).get("new") === "1",
   );
@@ -150,8 +199,17 @@ export function V2ProjectsPage() {
   const readOnly = current?.condition === "Read-only";
 
   const { data: projectsResponse, isLoading, isError } = useQuery<ProjectsResponse>({
-    queryKey: ["/api/crm/projects", "register"],
-    queryFn: loadProjects,
+    queryKey: [projectsAllPath()],
+    queryFn: () => loadProjectList(projectsAllPath()),
+  });
+  const {
+    data: kanbanResponse,
+    isLoading: boardLoading,
+    isError: boardError,
+  } = useQuery<ProjectsResponse>({
+    queryKey: [projectsKanbanPath()],
+    enabled: boardView,
+    queryFn: () => loadProjectList(projectsKanbanPath()),
   });
   const { data: monthStats } = useQuery<TimeStats>({
     queryKey: ["/api/time-tracking/stats", "projects-register", monthStart.toISOString()],
@@ -171,11 +229,94 @@ export function V2ProjectsPage() {
     statusFilter,
     selectedId,
   });
+  const viewer = {
+    userId: user?.id ?? "",
+    role: current?.workspaceRole ?? null,
+  };
+  const boardSource = kanbanResponse?.data ?? [];
+  const board = composeProjectBoard({
+    workspaceName,
+    projects: boardSource.map((project) => {
+      const memberIds = (project.members ?? [])
+        .map((row) => row.userId || row.user?.id)
+        .filter((id): id is string => Boolean(id));
+      return {
+        id: project.id,
+        name: project.project?.name || "Untitled Project",
+        clientName: project.client?.name ?? null,
+        status: project.status,
+        visible: projectVisibleTo({
+          role: viewer.role,
+          userId: viewer.userId,
+          memberIds,
+          assigneeId: project.assigneeId ?? project.assignee?.id ?? null,
+        }),
+      };
+    }),
+    filterQuery,
+    changingId,
+  });
+
+  const moveProject = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiRequest("PATCH", `/api/crm/projects/${id}`, { status }),
+    onMutate: async ({ id, status }) => {
+      await queryClient.cancelQueries({ queryKey: [projectsKanbanPath()] });
+      const previous = queryClient.getQueryData<ProjectsResponse>([projectsKanbanPath()]);
+      if (previous) {
+        queryClient.setQueryData<ProjectsResponse>([projectsKanbanPath()], {
+          ...previous,
+          data: previous.data.map((row) =>
+            row.id === id ? { ...row, status: status as CrmProjectWithDetails["status"] } : row,
+          ),
+        });
+      }
+      setChangingId(id);
+      setWriteRefusal(null);
+      return { previous };
+    },
+    onError: (error: Error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData([projectsKanbanPath()], context.previous);
+      }
+      setChangingId(null);
+      setWriteRefusal(error.message || "Failed to move Project");
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: [projectsKanbanPath()] });
+      await queryClient.invalidateQueries({ queryKey: [projectsAllPath()] });
+      window.setTimeout(() => setChangingId(null), 180);
+    },
+  });
+
+  function onMove(id: string, status: string) {
+    if (readOnly) {
+      setWriteRefusal(
+        chromeRefusal({
+          kind: "workspace-condition",
+          workspaceName,
+          condition: "Read-only",
+        }),
+      );
+      return;
+    }
+    moveProject.mutate({ id, status });
+  }
+
+  function onDragEnd(result: DropResult) {
+    boardRef.current?.setAttribute("data-dragging", "false");
+    const { destination, source, draggableId } = result;
+    if (!destination) return;
+    if (destination.droppableId === source.droppableId) return;
+    onMove(draggableId, destination.droppableId);
+  }
 
   const createProject = useMutation({
     mutationFn: (projectName: string) => apiRequest("POST", "/api/crm/projects", { name: projectName }),
     onSuccess: (response: { crmProject?: { id?: string } }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      queryClient.invalidateQueries({ queryKey: [projectsAllPath()] });
+      queryClient.invalidateQueries({ queryKey: [projectsKanbanPath()] });
       const createdId = response?.crmProject?.id ?? null;
       setSelectedId(createdId);
       setName("");
@@ -204,7 +345,7 @@ export function V2ProjectsPage() {
     createProject.mutate(projectName);
   }
 
-  if (isLoading) {
+  if (isLoading || (boardView && boardLoading)) {
     return (
       <div className="df-page" data-testid="v2-projects">
         <header className="df-today-head">
@@ -218,7 +359,7 @@ export function V2ProjectsPage() {
     );
   }
 
-  if (isError) {
+  if (isError || (boardView && boardError)) {
     return (
       <div className="df-page" data-testid="v2-projects">
         <header className="df-today-head">
@@ -274,24 +415,99 @@ export function V2ProjectsPage() {
             aria-label="Filter Projects"
           />
         </label>
-        <label className="df-filter-chip">
-          STATUS
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-            aria-label="Filter by Project Status"
+        {boardView ? null : (
+          <label className="df-filter-chip">
+            STATUS
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              aria-label="Filter by Project Status"
+            >
+              <option value="all">ALL</option>
+              <option value="planned">PLANNED</option>
+              <option value="active">ACTIVE</option>
+              <option value="on_hold">ON HOLD</option>
+              <option value="in_review">IN REVIEW</option>
+              <option value="completed">COMPLETED</option>
+              <option value="archived">ARCHIVED</option>
+            </select>
+          </label>
+        )}
+        <div className="df-segment" role="group" aria-label="Project view">
+          <button
+            type="button"
+            data-active={boardView ? "false" : "true"}
+            onClick={() => setLocation("/projects")}
           >
-            <option value="all">ALL</option>
-            <option value="planned">PLANNED</option>
-            <option value="active">ACTIVE</option>
-            <option value="on_hold">ON HOLD</option>
-            <option value="in_review">IN REVIEW</option>
-            <option value="completed">COMPLETED</option>
-            <option value="archived">ARCHIVED</option>
-          </select>
-        </label>
+            REGISTER
+          </button>
+          <button
+            type="button"
+            data-active={boardView ? "true" : "false"}
+            onClick={() => setLocation("/projects?view=board")}
+          >
+            BOARD
+          </button>
+        </div>
       </div>
 
+      {boardView ? (
+        <>
+          {board.empty ? <p className="df-empty">{board.emptyCopy}</p> : null}
+          <DragDropContext
+            onDragStart={() => boardRef.current?.setAttribute("data-dragging", "true")}
+            onDragEnd={onDragEnd}
+          >
+            <div
+              ref={boardRef}
+              className="df-opportunity-pipeline"
+              data-stacked={layout.stackedRegister ? "true" : "false"}
+              data-dragging="false"
+              data-testid="v2-projects-board"
+            >
+              {board.columns.map((column) => (
+                <section key={column.id} className="df-card df-opportunity-column">
+                  <div className="df-card-head">
+                    <h2 className="df-card-title">{column.label}</h2>
+                    <span className="df-count-chip">{column.cards.length}</span>
+                  </div>
+                  <Droppable droppableId={column.id}>
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className="df-opportunity-drop"
+                        data-over={snapshot.isDraggingOver ? "true" : "false"}
+                      >
+                        {column.cards.map((card, index) => (
+                          <Draggable
+                            key={card.id}
+                            draggableId={card.id}
+                            index={index}
+                            isDragDisabled={readOnly}
+                          >
+                            {(drag) => (
+                              <ProjectBoardCardView
+                                card={card}
+                                provided={drag}
+                                locked={readOnly}
+                                onOpen={setLocation}
+                              />
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+                </section>
+              ))}
+            </div>
+          </DragDropContext>
+        </>
+      ) : null}
+
+      {boardView ? null : (
       <section className="df-card df-projects-register" data-testid="v2-projects-register">
         {layout.stackedRegister ? null : (
           <div className="df-register-head df-desktop-only">
@@ -371,6 +587,7 @@ export function V2ProjectsPage() {
           </span>
         </div>
       </section>
+      )}
     </div>
   );
 }

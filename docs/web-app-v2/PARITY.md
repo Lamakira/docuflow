@@ -27,7 +27,7 @@ Every v1 route has a v2 home. Nothing is orphaned, and v2 does not fall back to 
 | v1 | v2 | |
 | --- | --- | --- |
 | `/` | `/` — Today | rewritten |
-| `/crm` | `/projects` | redirect |
+| `/crm` | `/projects?view=board` | redirect — board, addressed by [#259](https://github.com/Lamakira/docuflow/issues/259) |
 | `/crm/project/new`, `/crm/project/:id` | `/projects?new=1`, dossier | redirect |
 | `/crm/client/new`, `/crm/client/:id` | `/clients?new=1`, client record | redirect |
 | `/documentation` | `/project-documentation` | redirect |
@@ -37,7 +37,7 @@ Every v1 route has a v2 home. Nothing is orphaned, and v2 does not fall back to 
 | `/document/:id` | `V2DocumentPage` | rewritten |
 | `/daily-update` | `/daily-update` | rewritten |
 | `/admin`, `/admin/create`, `/admin/user/:id` | `/administration` | redirect — **see A** |
-| `/admin/analytics` | `/administration` | redirect — **see B** |
+| `/admin/analytics` | `/administration#alerts` | redirect — warnings, addressed by [#259](https://github.com/Lamakira/docuflow/issues/259) |
 | `/admin/daily-updates` | `/daily-updates` | redirect |
 | `/time-tracking` | `/time` | redirect |
 | `/time-tracking/dashboard` | `/time/stats` | redirect |
@@ -48,7 +48,7 @@ Every v1 route has a v2 home. Nothing is orphaned, and v2 does not fall back to 
 | `/help-center`, `/help-center/:slug` | `/help` | redirect |
 | `/invitations/:token` | same component in both | shared |
 
-A redirect is not a migration. Three of them land somewhere that cannot do what the origin did; those are A, B and D below.
+A redirect is not a migration. One of them still lands somewhere that cannot do what the origin did: A, below. B and D are addressed by [#259](https://github.com/Lamakira/docuflow/issues/259).
 
 ---
 
@@ -71,18 +71,14 @@ v2's People does Invitations and a Membership's profile — hours per day, the d
 
 This is the widest gap, and [ADR-0025](../adr/0025-let-the-workspace-role-govern-administration-and-keep-the-platform-directory-separate.md) makes it more pointed: the directory is a **platform** surface, not a Workspace one — `users` has no `workspace_id`, so no row-level security and no query scope — and it stays behind the global `users.role` column for exactly that reason. So it is not only un-migrated, it is the one surface that cannot simply be dropped into the Workspace chrome. Whatever v2 does here needs a decision first.
 
-### B. Four analytics dashboards
+### ~~B. Four analytics dashboards~~
 
-```
-/api/admin/analytics/alerts
-/api/admin/analytics/evidence-quality
-/api/admin/analytics/productivity
-/api/admin/analytics/screenshots
-```
+Addressed by [#259](https://github.com/Lamakira/docuflow/issues/259). Administration draws the four beside the analytics it already had. `/admin/analytics` opens the warnings, which name a Device that has stopped reporting.
 
-v2's Administration builds five analytics paths (`administration.ts:511-527`): overview, activity, coverage, devices, export. The four above are reachable only from v1's `/admin/analytics`, which now redirects to a screen that does not draw them.
-
-`alerts` is the one to weigh: `tests/characterization/admin-analytics.test.ts` shows it answering `highIdleUsers`, `stalledDevices` and `runningWithoutScreenshots` — the operational warnings, and the only place in the product that names a device that has stopped reporting.
+- ~~`/api/admin/analytics/alerts`~~
+- ~~`/api/admin/analytics/evidence-quality`~~
+- ~~`/api/admin/analytics/productivity`~~
+- ~~`/api/admin/analytics/screenshots`~~
 
 ### C. Project record depth
 
@@ -101,16 +97,12 @@ Cloning a Project, reading its stage history, and the Tag vocabulary in full —
 
 Removing a named member from a Project is v1-only too; v2 reads `/api/crm/projects` and the dossier, and offers no member removal.
 
-### D. The Kanban board
+### ~~D. The Kanban board~~
 
-```
-/api/crm/projects/all
-/api/crm/projects/all-kanban
-```
+Addressed by [#259](https://github.com/Lamakira/docuflow/issues/259). The board is a view on `/projects`, not a second destination: the register answers what exists, the board answers where each Project sits, and Opportunities keeps the sales pipeline. `/crm` opens the board.
 
-v1's `/crm` offers a Kanban view over the portfolio. `/crm` redirects to `/projects`, which is a register. The word `kanban` does not appear anywhere under `client/src/v2`.
-
-This is the redirect most likely to be read as a loss by someone who used it daily.
+- ~~`/api/crm/projects/all`~~
+- ~~`/api/crm/projects/all-kanban`~~
 
 ### E. Documents
 
@@ -146,10 +138,10 @@ The two gaps are carried by [#260](https://github.com/Lamakira/docuflow/issues/2
 The gaps are not one decision. They are four:
 
 1. **A needs a decision before it needs code.** The platform directory is not a Workspace surface, and dropping it into the Workspace chrome would repeat the mistake [#238](https://github.com/Lamakira/docuflow/issues/238) fixed.
-2. **B and D are migrations** — the screens exist in v1 and have a clear home in v2.
+2. **B and D were migrations**, and [#259](https://github.com/Lamakira/docuflow/issues/259) addresses them: the four analytics panes sit in Administration, and the Kanban is a board view on Projects.
 3. **C and E are depth** — each one small, together the difference between a rewrite that looks finished and one that is.
 4. **F was a check**, now done — and it produced work, not a clean bill. Two of its three endpoints are gaps, carried by [#260](https://github.com/Lamakira/docuflow/issues/260).
 
 Nothing here is scheduled. This document records the debt; it does not decide when it is paid.
 
-**Since the audit**, the four have been written up: [#259](https://github.com/Lamakira/docuflow/issues/259) carries B and D, [#260](https://github.com/Lamakira/docuflow/issues/260) carries C, E and F's two gaps, and [#261](https://github.com/Lamakira/docuflow/issues/261) asks for A's decision without attaching code to it.
+**Since the audit**, [#259](https://github.com/Lamakira/docuflow/issues/259) addresses B and D. [#260](https://github.com/Lamakira/docuflow/issues/260) still carries C, E and F's two gaps, and [#261](https://github.com/Lamakira/docuflow/issues/261) asks for A's decision without attaching code to it.

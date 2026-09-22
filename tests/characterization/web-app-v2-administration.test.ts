@@ -8,10 +8,14 @@ import { DEFAULT_SCREENSHOT_POLICY, type ScreenshotPolicy } from "@shared/schema
 import {
   addAllowedTimezone,
   analyticsActivityPath,
+  analyticsAlertsPath,
   analyticsCoveragePath,
   analyticsDevicesPath,
+  analyticsEvidenceQualityPath,
   analyticsExportPath,
   analyticsOverviewPath,
+  analyticsProductivityPath,
+  analyticsScreenshotsPath,
   analyticsRange,
   billingCancelPath,
   billingCheckoutPath,
@@ -530,6 +534,10 @@ describe("Administration analytics (#212)", () => {
     expect(analyticsCoveragePath(RANGE)).toBe(`/api/admin/analytics/coverage?${query}`);
     expect(analyticsDevicesPath()).toBe("/api/admin/analytics/devices");
     expect(analyticsExportPath(RANGE)).toBe(`/api/admin/analytics/export?${query}`);
+    expect(analyticsAlertsPath(RANGE)).toBe(`/api/admin/analytics/alerts?${query}`);
+    expect(analyticsEvidenceQualityPath(RANGE)).toBe(`/api/admin/analytics/evidence-quality?${query}`);
+    expect(analyticsProductivityPath(RANGE)).toBe(`/api/admin/analytics/productivity?${query}`);
+    expect(analyticsScreenshotsPath(RANGE)).toBe(`/api/admin/analytics/screenshots?${query}`);
     expect(workspaceSettingsPath()).toBe("/api/admin/org-settings");
   });
 
@@ -710,6 +718,118 @@ describe("Administration analytics (#212)", () => {
     });
   });
 
+  it("names a stalled Device and the other warnings alerts already records", () => {
+    const page = composeAnalytics(
+      emptyAnalytics({
+        alerts: {
+          highIdleUsers: [
+            { userId: "u-1", userName: "Ada Byron", idleRatio: 62, totalSeconds: 36000 },
+          ],
+          stalledDevices: [
+            {
+              deviceId: "dev-quiet",
+              deviceName: "Quiet Mac",
+              userId: "u-2",
+              userName: "Grace Hopper",
+              lastSeenAt: "2026-09-05T12:00:00.000Z",
+              daysSinceLastSeen: 9,
+            },
+          ],
+          runningWithoutScreenshots: [
+            {
+              userId: "u-1",
+              userName: "Ada Byron",
+              entryId: "entry-1",
+              startedAt: "2026-09-14T09:15:00.000Z",
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+    expect(page.alerts.empty).toBe(false);
+    expect(page.alerts.stalledDevices).toEqual([
+      {
+        id: "dev-quiet",
+        name: "Quiet Mac",
+        who: "Grace Hopper",
+        lastSeen: "9d ago",
+      },
+    ]);
+    expect(page.alerts.highIdle).toEqual([
+      { id: "u-1", who: "Ada Byron", tracked: "10.0 h", idle: "62%" },
+    ]);
+    expect(page.alerts.runningWithoutEvidence).toEqual([
+      { id: "entry-1", who: "Ada Byron", started: "2h ago" },
+    ]);
+  });
+
+  it("reads productivity, screenshots, and evidence quality as recorded totals", () => {
+    const page = composeAnalytics(
+      emptyAnalytics({
+        productivity: {
+          byUser: [
+            { userId: "u-1", userName: "Ada Byron", totalSeconds: 36000, idleSeconds: 3600, entriesCount: 4 },
+          ],
+          byProject: [
+            { crmProjectId: "prj-1", projectName: "Harbor", totalSeconds: 36000, entriesCount: 4 },
+          ],
+          byTask: [{ taskId: "task-1", taskName: "Survey", totalSeconds: 7200 }],
+          dailyTrend: [{ date: "2026-09-10", totalSeconds: 36000 }],
+        },
+        screenshots: {
+          totalCount: 12,
+          byUser: [{ userId: "u-1", userName: "Ada Byron", count: 12 }],
+          hourlyDistribution: [{ hour: 9, count: 3 }],
+          duplicates: [{ contentHash: "abc123def456", count: 2 }],
+          deletedCount: 1,
+        },
+        evidenceQuality: {
+          gradeDistribution: { strong: 0, moderate: 1, weak: 0, insufficient: 0 },
+          byUser: [
+            {
+              userId: "u-1",
+              userName: "Ada Byron",
+              grade: "moderate",
+              screenshotCount: 8,
+              expectedScreenshots: 10,
+              hasEvents: true,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+    expect(page.recordedTime.rows).toEqual([
+      { id: "u-1", who: "Ada Byron", tracked: "10.0 h", idle: "1.0 h", entries: "4" },
+    ]);
+    expect(page.recordedTime.projects).toEqual([
+      { id: "prj-1", name: "Harbor", tracked: "10.0 h", entries: "4" },
+    ]);
+    expect(page.recordedTime.tasks).toEqual([{ id: "task-1", name: "Survey", tracked: "2.0 h" }]);
+    expect(page.recordedTime.days).toEqual([{ id: "2026-09-10", day: "2026-09-10", tracked: "10.0 h" }]);
+    expect(page.recordedTime.footnote.toLowerCase()).not.toContain("rank");
+    expect(JSON.stringify(page.recordedTime)).not.toContain("score");
+
+    expect(page.screenshots.summary).toEqual([
+      { label: "EVIDENCE", value: "12" },
+      { label: "TOMBSTONED", value: "1" },
+      { label: "DUPLICATE GROUPS", value: "1" },
+    ]);
+    expect(page.screenshots.byMember).toEqual([{ id: "u-1", who: "Ada Byron", evidence: "12" }]);
+    expect(page.screenshots.hours).toEqual([{ id: "9", hour: "09:00", evidence: "3" }]);
+
+    expect(page.evidenceQuality.footnote.toLowerCase()).toContain("does not");
+    expect(page.evidenceQuality.rows).toEqual([
+      { id: "u-1", who: "Ada Byron", grade: "MODERATE", evidence: "8 of 10", events: "RECORDED" },
+    ]);
+    expect(JSON.stringify(page.evidenceQuality.rows)).not.toContain("55");
+  });
+
   it("keeps empty analytics honest and never shows sample names", () => {
     const page = composeAnalytics(emptyAnalytics());
     const blob = JSON.stringify(page);
@@ -725,6 +845,12 @@ describe("Administration analytics (#212)", () => {
     expect(page.coverage.emptyCopy.toLowerCase()).toContain("evidence");
     expect(page.devices.empty).toBe(true);
     expect(page.devices.emptyCopy.toLowerCase()).toContain("device");
+    expect(page.alerts.empty).toBe(true);
+    expect(page.alerts.stalledDevices).toEqual([]);
+    expect(page.alerts.emptyCopy.toLowerCase()).toContain("warning");
+    expect(page.recordedTime.empty).toBe(true);
+    expect(page.screenshots.empty).toBe(true);
+    expect(page.evidenceQuality.empty).toBe(true);
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
     }

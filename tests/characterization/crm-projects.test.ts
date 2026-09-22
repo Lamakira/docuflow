@@ -151,6 +151,13 @@ describe("CRM projects (characterization)", () => {
     const kanban = await user.agent.get("/api/crm/projects/all-kanban");
     expect(kanban.status).toBe(200);
     expect(kanban.body).toMatchObject({ page: 1, pageSize: 10000, total: 2 });
+
+    const all = await user.agent.get("/api/crm/projects/all");
+    expect(all.status).toBe(200);
+    expect(all.body).toMatchObject({ page: 1, pageSize: 10000, total: 2 });
+    expect(all.body.data.map((p: { id: string }) => p.id).sort()).toEqual(
+      kanban.body.data.map((p: { id: string }) => p.id).sort(),
+    );
   });
 
   it("applies ?search after pagination, leaving total unfiltered", async () => {

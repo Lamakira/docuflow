@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
-import { composeProjectRegister, projectVisibleTo, type ProjectRegisterInput } from "../../client/src/v2/projects";
+import {
+  composeProjectBoard,
+  composeProjectRegister,
+  projectsAllPath,
+  projectsKanbanPath,
+  projectVisibleTo,
+  type ProjectBoardInput,
+  type ProjectRegisterInput,
+} from "../../client/src/v2/projects";
 
 /**
  * Projects live register (#185).
@@ -168,5 +176,84 @@ describe("Projects register from live Project rows (#185)", () => {
         assigneeId: null,
       }),
     ).toBe(true);
+  });
+});
+
+function emptyBoard(overrides: Partial<ProjectBoardInput> = {}): ProjectBoardInput {
+  return {
+    workspaceName: "Harbor Co",
+    projects: [],
+    filterQuery: "",
+    changingId: null,
+    ...overrides,
+  };
+}
+
+describe("Projects board (#259)", () => {
+  it("reads the unpaginated portfolio the v1 board used", () => {
+    expect(projectsAllPath()).toBe("/api/crm/projects/all");
+    expect(projectsKanbanPath()).toBe("/api/crm/projects/all-kanban");
+  });
+
+  it("places a Project in the column of its combined status and hides one the reader cannot see", () => {
+    const board = composeProjectBoard(
+      emptyBoard({
+        projects: [
+          {
+            id: "prj-live",
+            name: "Harbor",
+            clientName: "Northwind",
+            status: "won_in_progress",
+            visible: true,
+          },
+          {
+            id: "prj-hidden",
+            name: "Secret",
+            clientName: null,
+            status: "lead",
+            visible: false,
+          },
+        ],
+      }),
+    );
+
+    const progress = board.columns.find((column) => column.id === "won_in_progress");
+    expect(progress?.label).toBe("WON - IN PROGRESS");
+    expect(progress?.cards).toEqual([
+      {
+        id: "prj-live",
+        name: "Harbor",
+        clientLabel: "Northwind",
+        status: "won_in_progress",
+        href: "/projects/prj-live",
+        changing: false,
+      },
+    ]);
+    expect(board.columns.some((column) => column.cards.some((card) => card.id === "prj-hidden"))).toBe(
+      false,
+    );
+    expect(board.count).toBe(1);
+    expect(board.empty).toBe(false);
+  });
+
+  it("says when the filter matches nothing", () => {
+    const board = composeProjectBoard(
+      emptyBoard({
+        filterQuery: "nope",
+        projects: [
+          {
+            id: "prj-live",
+            name: "Harbor",
+            clientName: "Northwind",
+            status: "lead",
+            visible: true,
+          },
+        ],
+      }),
+    );
+
+    expect(board.empty).toBe(true);
+    expect(board.emptyCopy).toBe("No Projects match this filter.");
+    expect(board.count).toBe(0);
   });
 });

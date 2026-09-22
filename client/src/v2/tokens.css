@@ -1372,6 +1372,26 @@ button.df-activity-row {
   padding: var(--df-space-4);
 }
 
+.df-analytics-group-label {
+  margin: 0;
+  padding: var(--df-space-4) var(--df-space-5) 0;
+  font-family: var(--df-font-mono);
+  font-size: var(--df-text-1);
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  color: var(--df-archive-slate);
+}
+
+.df-analytics-register .df-register-head[data-columns="2"],
+.df-analytics-register .df-register-row[data-columns="2"] {
+  grid-template-columns: 1.7fr 0.9fr;
+}
+
+.df-analytics-register .df-register-head[data-columns="3"],
+.df-analytics-register .df-register-row[data-columns="3"] {
+  grid-template-columns: 1.7fr 1fr 0.9fr;
+}
+
 .df-analytics-register .df-register-head[data-columns="4"],
 .df-analytics-register .df-register-row[data-columns="4"] {
   grid-template-columns: 1.7fr 0.9fr 0.9fr 0.9fr;
@@ -3332,9 +3352,23 @@ button.df-activity-row {
   white-space: nowrap;
 }
 
-.df-segment span[data-active="true"] {
+.df-segment span[data-active="true"],
+.df-segment button[data-active="true"] {
   background: var(--df-case-ink);
   color: #fff;
+}
+
+.df-segment button {
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: var(--df-text-2);
+  letter-spacing: 0.04em;
+  padding: var(--df-space-2) var(--df-space-3);
+  color: var(--df-archive-slate);
+  white-space: nowrap;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .df-library-head,

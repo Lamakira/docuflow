@@ -32,9 +32,13 @@ import {
   addAllowedTimezone,
   administrationWriteRefusal,
   analyticsActivityPath,
+  analyticsAlertsPath,
   analyticsCoveragePath,
   analyticsDevicesPath,
+  analyticsEvidenceQualityPath,
   analyticsOverviewPath,
+  analyticsProductivityPath,
+  analyticsScreenshotsPath,
   analyticsRange,
   ANALYTICS_RANGE_PRESETS,
   billingCancelPath,
@@ -58,8 +62,12 @@ import {
   webhookEnablePath,
   webhookEndpointsPath,
   type AnalyticsActivityInput,
+  type AnalyticsAlertsInput,
   type AnalyticsCoverageInput,
   type AnalyticsDeviceInput,
+  type AnalyticsEvidenceQualityInput,
+  type AnalyticsProductivityInput,
+  type AnalyticsScreenshotsInput,
   type AnalyticsFigure,
   type AnalyticsModel,
   type AnalyticsOverviewInput,
@@ -203,6 +211,38 @@ export function V2AdministrationPage() {
     enabled: canManage,
     queryFn: () => readBehindAdministration<AnalyticsDeviceInput[]>(analyticsDevicesPath()),
   });
+  const { data: alerts, isLoading: alertsLoading, isError: alertsFailed } = useQuery<AnalyticsAlertsInput | null>({
+    queryKey: [analyticsAlertsPath(range)],
+    enabled: canManage,
+    queryFn: () => readBehindAdministration<AnalyticsAlertsInput>(analyticsAlertsPath(range)),
+  });
+  const {
+    data: recordedTime,
+    isLoading: recordedTimeLoading,
+    isError: recordedTimeFailed,
+  } = useQuery<AnalyticsProductivityInput | null>({
+    queryKey: [analyticsProductivityPath(range)],
+    enabled: canManage,
+    queryFn: () => readBehindAdministration<AnalyticsProductivityInput>(analyticsProductivityPath(range)),
+  });
+  const {
+    data: screenshots,
+    isLoading: screenshotsLoading,
+    isError: screenshotsFailed,
+  } = useQuery<AnalyticsScreenshotsInput | null>({
+    queryKey: [analyticsScreenshotsPath(range)],
+    enabled: canManage,
+    queryFn: () => readBehindAdministration<AnalyticsScreenshotsInput>(analyticsScreenshotsPath(range)),
+  });
+  const {
+    data: evidenceQuality,
+    isLoading: evidenceQualityLoading,
+    isError: evidenceQualityFailed,
+  } = useQuery<AnalyticsEvidenceQualityInput | null>({
+    queryKey: [analyticsEvidenceQualityPath(range)],
+    enabled: canManage,
+    queryFn: () => readBehindAdministration<AnalyticsEvidenceQualityInput>(analyticsEvidenceQualityPath(range)),
+  });
   const { data: workspaceSettings, isLoading: workspaceSettingsLoading } =
     useQuery<WorkspaceSettingsResponse | null>({
       queryKey: [workspaceSettingsPath()],
@@ -210,12 +250,14 @@ export function V2AdministrationPage() {
       queryFn: () => readBehindAdministration<WorkspaceSettingsResponse>(workspaceSettingsPath()),
     });
 
+  // Warnings ride with the analytics already on this page. The three
+  // reporting reads must not hold a stalled Device off the screen.
   const analyticsLoading =
-    overviewLoading || activityLoading || coverageLoading || analyticsDevicesLoading;
+    overviewLoading || activityLoading || coverageLoading || analyticsDevicesLoading || alertsLoading;
   const analyticsRefused =
-    overview === null || activity === null || coverage === null || analyticsDevices === null;
+    overview === null || activity === null || coverage === null || analyticsDevices === null || alerts === null;
   const analyticsFailed =
-    overviewFailed || activityFailed || coverageFailed || analyticsDevicesFailed;
+    overviewFailed || activityFailed || coverageFailed || analyticsDevicesFailed || alertsFailed;
   const settingsRefused = workspaceSettings === null;
   // A policy that has not been read is not the default policy — saving defaults
   // over a real Tracking Policy would silently reset every Device.
@@ -229,6 +271,12 @@ export function V2AdministrationPage() {
     setPolicyDraft(normalizeScreenshotPolicy(workspaceSettings.screenshotPolicy));
     setTimezoneDraft(workspaceSettings.allowedTimezones ?? []);
   }, [workspaceSettings]);
+
+  useEffect(() => {
+    if (analyticsLoading) return;
+    if (window.location.hash !== "#alerts") return;
+    document.getElementById("alerts")?.scrollIntoView();
+  }, [analyticsLoading]);
 
   const ownerName = workspaceOwnerName(people?.memberships ?? []);
   const page = composeAdministration({
@@ -263,6 +311,10 @@ export function V2AdministrationPage() {
     activity: activity ?? null,
     coverage: coverage ?? null,
     devices: analyticsDevices ?? [],
+    alerts: alerts ?? null,
+    productivity: recordedTime ?? null,
+    screenshots: screenshots ?? null,
+    evidenceQuality: evidenceQuality ?? null,
     refused: analyticsRefused,
     readFailed: analyticsFailed,
   });
@@ -610,6 +662,9 @@ export function V2AdministrationPage() {
         stacked={layout.stackedRegister}
         rangePreset={rangePreset}
         onRangeChange={setRangePreset}
+        recordedTimeRead={reportRead(recordedTimeLoading, recordedTimeFailed, recordedTime)}
+        screenshotsRead={reportRead(screenshotsLoading, screenshotsFailed, screenshots)}
+        evidenceQualityRead={reportRead(evidenceQualityLoading, evidenceQualityFailed, evidenceQuality)}
       />
 
       <section className="df-card df-admin-register" data-testid="v2-administration-crm-modules">
@@ -1339,18 +1394,32 @@ function CheckRow({
  * rather than inside it, and figures get their own padded band. A card carries
  * no padding of its own, so each band brings the house 18px gutter.
  */
+type ReportRead = "loading" | "failed" | "ready";
+
+function reportRead(loading: boolean, failed: boolean, data: unknown): ReportRead {
+  if (loading) return "loading";
+  if (failed || data === null) return "failed";
+  return "ready";
+}
+
 function AdministrationAnalytics({
   analytics,
   loading,
   stacked,
   rangePreset,
   onRangeChange,
+  recordedTimeRead,
+  screenshotsRead,
+  evidenceQualityRead,
 }: {
   analytics: AnalyticsModel;
   loading: boolean;
   stacked: boolean;
   rangePreset: AnalyticsRangePreset;
   onRangeChange: (preset: AnalyticsRangePreset) => void;
+  recordedTimeRead: ReportRead;
+  screenshotsRead: ReportRead;
+  evidenceQualityRead: ReportRead;
 }) {
   if (analytics.kind !== "ready") {
     return (
@@ -1426,6 +1495,75 @@ function AdministrationAnalytics({
 
       {loading ? null : (
         <>
+          <section
+            id="alerts"
+            className="df-card df-analytics-register"
+            data-testid="v2-administration-alerts"
+          >
+            <div className="df-card-head">
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Warnings</h2>
+                <p className="df-card-sub">
+                  Operational warnings for this range, including any Device that has stopped reporting.
+                </p>
+              </div>
+            </div>
+            {analytics.alerts.empty ? (
+              <p className="df-empty">{analytics.alerts.emptyCopy}</p>
+            ) : (
+              <>
+                {analytics.alerts.stalledDevices.length > 0 ? (
+                  <>
+                  <p className="df-analytics-group-label">STALLED DEVICES</p>
+                  <AnalyticsRegister
+                    stacked={stacked}
+                    head={["DEVICE", "MEMBER", "LAST SEEN"]}
+                    rows={analytics.alerts.stalledDevices.map((row) => ({
+                      id: row.id,
+                      cells: [row.name, row.who, row.lastSeen],
+                    }))}
+                    empty={false}
+                    emptyCopy=""
+                    testId="v2-administration-alert-device"
+                  />
+                  </>
+                ) : null}
+                {analytics.alerts.highIdle.length > 0 ? (
+                  <>
+                  <p className="df-analytics-group-label">HIGH IDLE</p>
+                  <AnalyticsRegister
+                    stacked={stacked}
+                    head={["MEMBER", "TRACKED", "IDLE"]}
+                    rows={analytics.alerts.highIdle.map((row) => ({
+                      id: row.id,
+                      cells: [row.who, row.tracked, row.idle],
+                    }))}
+                    empty={false}
+                    emptyCopy=""
+                    testId="v2-administration-alert-idle"
+                  />
+                  </>
+                ) : null}
+                {analytics.alerts.runningWithoutEvidence.length > 0 ? (
+                  <>
+                  <p className="df-analytics-group-label">RUNNING WITHOUT EVIDENCE</p>
+                  <AnalyticsRegister
+                    stacked={stacked}
+                    head={["MEMBER", "STARTED"]}
+                    rows={analytics.alerts.runningWithoutEvidence.map((row) => ({
+                      id: row.id,
+                      cells: [row.who, row.started],
+                    }))}
+                    empty={false}
+                    emptyCopy=""
+                    testId="v2-administration-alert-running"
+                  />
+                  </>
+                ) : null}
+              </>
+            )}
+          </section>
+
           <section className="df-card df-analytics-register" data-testid="v2-administration-activity">
             <div className="df-card-head">
               <div className="df-card-head-text">
@@ -1488,6 +1626,157 @@ function AdministrationAnalytics({
               testId="v2-administration-device"
             />
           </section>
+
+          {recordedTimeRead === "loading" ? null : (
+          <section className="df-card df-analytics-register" data-testid="v2-administration-recorded-time">
+            <div className="df-card-head">
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Recorded time</h2>
+                {recordedTimeRead === "ready" ? (
+                  <p className="df-card-sub">{analytics.recordedTime.footnote}</p>
+                ) : null}
+              </div>
+            </div>
+            {recordedTimeRead === "failed" ? (
+              <p className="df-refusal">
+                Recorded time could not be read for this range. Nothing here is a count of zero.
+              </p>
+            ) : analytics.recordedTime.empty ? (
+              <p className="df-empty">{analytics.recordedTime.emptyCopy}</p>
+            ) : (
+              <>
+                <p className="df-analytics-group-label">MEMBERS</p>
+                <AnalyticsRegister
+                  stacked={stacked}
+                  head={["MEMBER", "TRACKED", "IDLE", "ENTRIES"]}
+                  rows={analytics.recordedTime.rows.map((row) => ({
+                    id: row.id,
+                    cells: [row.who, row.tracked, row.idle, row.entries],
+                  }))}
+                  empty={analytics.recordedTime.rows.length === 0}
+                  emptyCopy="No tracked time by Member in this range."
+                  testId="v2-administration-recorded-time-member"
+                />
+                <p className="df-analytics-group-label">PROJECTS</p>
+                <AnalyticsRegister
+                  stacked={stacked}
+                  head={["PROJECT", "TRACKED", "ENTRIES"]}
+                  rows={analytics.recordedTime.projects.map((row) => ({
+                    id: row.id,
+                    cells: [row.name, row.tracked, row.entries],
+                  }))}
+                  empty={analytics.recordedTime.projects.length === 0}
+                  emptyCopy="No tracked time by Project in this range."
+                  testId="v2-administration-recorded-time-project"
+                />
+                <p className="df-analytics-group-label">TASKS</p>
+                <AnalyticsRegister
+                  stacked={stacked}
+                  head={["TASK", "TRACKED"]}
+                  rows={analytics.recordedTime.tasks.map((row) => ({
+                    id: row.id,
+                    cells: [row.name, row.tracked],
+                  }))}
+                  empty={analytics.recordedTime.tasks.length === 0}
+                  emptyCopy="No tracked time by Task in this range."
+                  testId="v2-administration-recorded-time-task"
+                />
+                <p className="df-analytics-group-label">DAYS</p>
+                <AnalyticsRegister
+                  stacked={stacked}
+                  head={["DAY", "TRACKED"]}
+                  rows={analytics.recordedTime.days.map((row) => ({
+                    id: row.id,
+                    cells: [row.day, row.tracked],
+                  }))}
+                  empty={analytics.recordedTime.days.length === 0}
+                  emptyCopy="No tracked time by day in this range."
+                  testId="v2-administration-recorded-time-day"
+                />
+              </>
+            )}
+          </section>
+          )}
+
+          {screenshotsRead === "loading" ? null : (
+          <section className="df-card df-analytics-register" data-testid="v2-administration-screenshots">
+            <div className="df-card-head">
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Activity Evidence</h2>
+                <p className="df-card-sub">Captures in this range. Observational only.</p>
+              </div>
+            </div>
+            {screenshotsRead === "failed" ? (
+              <p className="df-refusal">
+                Activity Evidence could not be read for this range. Nothing here is a count of zero.
+              </p>
+            ) : (
+            <>
+            <FigureBand figures={analytics.screenshots.summary} testId="v2-administration-screenshots" />
+            {analytics.screenshots.empty ? (
+              <p className="df-empty">{analytics.screenshots.emptyCopy}</p>
+            ) : (
+              <>
+                <p className="df-analytics-group-label">BY MEMBER</p>
+                <AnalyticsRegister
+                  stacked={stacked}
+                  head={["MEMBER", "EVIDENCE"]}
+                  rows={analytics.screenshots.byMember.map((row) => ({
+                    id: row.id,
+                    cells: [row.who, row.evidence],
+                  }))}
+                  empty={analytics.screenshots.byMember.length === 0}
+                  emptyCopy="No Activity Evidence by Member in this range."
+                  testId="v2-administration-screenshot-member"
+                />
+                <p className="df-analytics-group-label">BY HOUR</p>
+                <AnalyticsRegister
+                  stacked={stacked}
+                  head={["HOUR", "EVIDENCE"]}
+                  rows={analytics.screenshots.hours.map((row) => ({
+                    id: row.id,
+                    cells: [row.hour, row.evidence],
+                  }))}
+                  empty={analytics.screenshots.hours.length === 0}
+                  emptyCopy="No hourly Activity Evidence in this range."
+                  testId="v2-administration-screenshot-hour"
+                />
+              </>
+            )}
+            </>
+            )}
+          </section>
+          )}
+
+          {evidenceQualityRead === "loading" ? null : (
+          <section className="df-card df-analytics-register" data-testid="v2-administration-evidence-quality">
+            <div className="df-card-head">
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Evidence quality</h2>
+                {evidenceQualityRead === "ready" ? (
+                  <p className="df-card-sub">{analytics.evidenceQuality.footnote}</p>
+                ) : null}
+              </div>
+            </div>
+            {evidenceQualityRead === "failed" ? (
+              <p className="df-refusal">
+                Evidence quality could not be read for this range. Nothing here is a count of zero.
+              </p>
+            ) : (
+            <AnalyticsRegister
+              stacked={stacked}
+              head={["MEMBER", "GRADE", "EVIDENCE", "EVENTS"]}
+              rows={analytics.evidenceQuality.rows.map((row) => ({
+                id: row.id,
+                cells: [row.who, row.grade, row.evidence, row.events],
+              }))}
+              empty={analytics.evidenceQuality.empty}
+              emptyCopy={analytics.evidenceQuality.emptyCopy}
+              testId="v2-administration-evidence-quality"
+            />
+            )}
+          </section>
+          )}
         </>
       )}
     </>

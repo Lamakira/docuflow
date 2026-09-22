@@ -76,7 +76,7 @@ export function V2AuthenticatedApp() {
           </Route>
           <Route path="/crm/project/:id" component={V2ProjectRecordRedirect} />
           <Route path="/crm">
-            <Redirect to="/projects" />
+            <Redirect to="/projects?view=board" />
           </Route>
           <Route path="/project/:id" component={V2LegacyProjectPage} />
           <Route path="/time/:tab?" component={V2TimePage} />
@@ -94,6 +94,9 @@ export function V2AuthenticatedApp() {
           </Route>
           <Route path="/admin/daily-updates">
             <Redirect to="/daily-updates" />
+          </Route>
+          <Route path="/admin/analytics">
+            <Redirect to="/administration#alerts" />
           </Route>
           <Route path="/admin/user/:id">
             <Redirect to="/administration" />

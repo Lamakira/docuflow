@@ -107,6 +107,126 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
   };
 }
 
+/**
+ * Portfolio board (#259). A view on the same Projects the register lists.
+ * Columns are the combined status v1's Kanban used, so a daily reader still
+ * sees where each Project sits. Opportunities keeps the sales pipeline.
+ */
+
+export function projectsAllPath(): string {
+  return "/api/crm/projects/all";
+}
+
+export function projectsKanbanPath(): string {
+  return "/api/crm/projects/all-kanban";
+}
+
+export const PROJECT_BOARD_COLUMNS: Array<{ id: string; label: string }> = [
+  { id: "lead", label: "LEAD" },
+  { id: "discovering_call_completed", label: "DISCOVERING CALL" },
+  { id: "proposal_sent", label: "PROPOSAL SENT" },
+  { id: "follow_up", label: "FOLLOW UP" },
+  { id: "in_negotiation", label: "IN NEGOTIATION" },
+  { id: "won", label: "WON" },
+  { id: "won_not_started", label: "WON - NOT STARTED" },
+  { id: "won_in_progress", label: "WON - IN PROGRESS" },
+  { id: "won_in_review", label: "WON - IN REVIEW" },
+  { id: "won_completed", label: "WON - COMPLETED" },
+  { id: "lost", label: "LOST" },
+  { id: "won_cancelled", label: "WON - CANCELLED" },
+];
+
+export type ProjectBoardRowInput = {
+  id: string;
+  name: string;
+  clientName: string | null;
+  status: string;
+  visible: boolean;
+};
+
+export type ProjectBoardInput = {
+  workspaceName: string;
+  projects: ProjectBoardRowInput[];
+  filterQuery: string;
+  changingId: string | null;
+};
+
+export type ProjectBoardCard = {
+  id: string;
+  name: string;
+  clientLabel: string;
+  status: string;
+  href: string;
+  changing: boolean;
+};
+
+export type ProjectBoardColumn = {
+  id: string;
+  label: string;
+  cards: ProjectBoardCard[];
+};
+
+export type ProjectBoardModel = {
+  subhead: string;
+  empty: boolean;
+  emptyCopy: string;
+  columns: ProjectBoardColumn[];
+  count: number;
+};
+
+function boardLabel(status: string): string {
+  return (
+    PROJECT_BOARD_COLUMNS.find((column) => column.id === status)?.label ??
+    status.replace(/_/g, " ").toUpperCase()
+  );
+}
+
+export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel {
+  const needle = input.filterQuery.trim().toLowerCase();
+  const columns: ProjectBoardColumn[] = PROJECT_BOARD_COLUMNS.map((column) => ({
+    id: column.id,
+    label: column.label,
+    cards: [],
+  }));
+  const columnById = new Map(columns.map((column) => [column.id, column]));
+
+  for (const project of input.projects) {
+    if (!project.visible) continue;
+    if (needle) {
+      const haystack = `${project.name} ${project.clientName ?? ""}`.toLowerCase();
+      if (!haystack.includes(needle)) continue;
+    }
+    let column = columnById.get(project.status);
+    if (!column) {
+      column = { id: project.status, label: boardLabel(project.status), cards: [] };
+      columns.push(column);
+      columnById.set(project.status, column);
+    }
+    column.cards.push({
+      id: project.id,
+      name: project.name || "Untitled Project",
+      clientLabel: project.clientName?.trim() || "",
+      status: project.status,
+      href: projectHref(project.id),
+      changing: project.id === input.changingId,
+    });
+  }
+
+  const count = columns.reduce((sum, column) => sum + column.cards.length, 0);
+  const empty = count === 0;
+  return {
+    subhead: `Projects in ${input.workspaceName}.`,
+    empty,
+    emptyCopy: empty
+      ? needle
+        ? "No Projects match this filter."
+        : "No Projects in this Workspace yet."
+      : "",
+    columns,
+    count,
+  };
+}
+
 export function projectVisibleTo(input: {
   role: string | null;
   userId: string;
