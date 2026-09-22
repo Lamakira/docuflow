@@ -527,6 +527,22 @@ export function analyticsExportPath(range: AnalyticsRange): string {
   return `/api/admin/analytics/export?${rangeQuery(range)}`;
 }
 
+export function analyticsAlertsPath(range: AnalyticsRange): string {
+  return `/api/admin/analytics/alerts?${rangeQuery(range)}`;
+}
+
+export function analyticsEvidenceQualityPath(range: AnalyticsRange): string {
+  return `/api/admin/analytics/evidence-quality?${rangeQuery(range)}`;
+}
+
+export function analyticsProductivityPath(range: AnalyticsRange): string {
+  return `/api/admin/analytics/productivity?${rangeQuery(range)}`;
+}
+
+export function analyticsScreenshotsPath(range: AnalyticsRange): string {
+  return `/api/admin/analytics/screenshots?${rangeQuery(range)}`;
+}
+
 export function workspaceSettingsPath(): string {
   return "/api/admin/org-settings";
 }
@@ -587,6 +603,72 @@ export type AnalyticsDeviceInput = {
   createdAt: string | Date | null;
 };
 
+export type AnalyticsAlertsInput = {
+  highIdleUsers: Array<{
+    userId: string;
+    userName: string;
+    idleRatio: number;
+    totalSeconds: number;
+  }>;
+  stalledDevices: Array<{
+    deviceId: string;
+    deviceName: string;
+    userId: string;
+    userName: string;
+    lastSeenAt: string | Date | null;
+    daysSinceLastSeen: number;
+  }>;
+  runningWithoutScreenshots: Array<{
+    userId: string;
+    userName: string;
+    entryId: string;
+    startedAt: string | Date;
+  }>;
+};
+
+export type AnalyticsProductivityInput = {
+  byUser: Array<{
+    userId: string;
+    userName: string;
+    totalSeconds: number;
+    idleSeconds: number;
+    entriesCount: number;
+  }>;
+  byProject: Array<{
+    crmProjectId: string;
+    projectName: string;
+    totalSeconds: number;
+    entriesCount: number;
+  }>;
+  byTask: Array<{ taskId: string | null; taskName: string; totalSeconds: number }>;
+  dailyTrend: Array<{ date: string; totalSeconds: number }>;
+};
+
+export type AnalyticsScreenshotsInput = {
+  totalCount: number;
+  byUser: Array<{ userId: string; userName: string; count: number }>;
+  hourlyDistribution: Array<{ hour: number; count: number }>;
+  duplicates: Array<{ contentHash: string; count: number }>;
+  deletedCount: number;
+};
+
+export type AnalyticsEvidenceQualityInput = {
+  gradeDistribution: {
+    strong: number;
+    moderate: number;
+    weak: number;
+    insufficient: number;
+  };
+  byUser: Array<{
+    userId: string;
+    userName: string;
+    grade: string;
+    screenshotCount: number;
+    expectedScreenshots: number;
+    hasEvents: boolean;
+  }>;
+};
+
 export type AnalyticsInput = {
   now: Date;
   workspaceRole: string;
@@ -596,6 +678,10 @@ export type AnalyticsInput = {
   activity: AnalyticsActivityInput | null;
   coverage: AnalyticsCoverageInput | null;
   devices: AnalyticsDeviceInput[];
+  alerts?: AnalyticsAlertsInput | null;
+  productivity?: AnalyticsProductivityInput | null;
+  screenshots?: AnalyticsScreenshotsInput | null;
+  evidenceQuality?: AnalyticsEvidenceQualityInput | null;
   /** The BFF refused the read behind the same Administration gate — name it, do not draw an empty range. */
   refused?: boolean;
   /** A read failed for some other reason — say so; an outage is not an empty Workspace. */
@@ -630,6 +716,73 @@ export type AnalyticsDeviceRow = {
   status: "ACTIVE" | "REVOKED";
 };
 
+export type AnalyticsAlertDeviceRow = {
+  id: string;
+  name: string;
+  who: string;
+  lastSeen: string;
+};
+
+export type AnalyticsAlertPersonRow = {
+  id: string;
+  who: string;
+  tracked: string;
+  idle: string;
+};
+
+export type AnalyticsAlertRunningRow = {
+  id: string;
+  who: string;
+  started: string;
+};
+
+export type AnalyticsProductivityRow = {
+  id: string;
+  who: string;
+  tracked: string;
+  idle: string;
+  entries: string;
+};
+
+export type AnalyticsProductivityProjectRow = {
+  id: string;
+  name: string;
+  tracked: string;
+  entries: string;
+};
+
+export type AnalyticsProductivityTaskRow = {
+  id: string;
+  name: string;
+  tracked: string;
+};
+
+export type AnalyticsProductivityDayRow = {
+  id: string;
+  day: string;
+  tracked: string;
+};
+
+export type AnalyticsScreenshotMemberRow = {
+  id: string;
+  who: string;
+  evidence: string;
+};
+
+export type AnalyticsScreenshotHourRow = {
+  id: string;
+  hour: string;
+  evidence: string;
+};
+
+export type AnalyticsEvidenceQualityRow = {
+  id: string;
+  who: string;
+  grade: string;
+  evidence: string;
+  events: string;
+};
+
 export type AnalyticsModel =
   | { kind: "refusal"; refusal: string }
   | { kind: "unreadable"; note: string }
@@ -650,6 +803,35 @@ export type AnalyticsModel =
         rows: AnalyticsCoverageRow[];
       };
       devices: { empty: boolean; emptyCopy: string; rows: AnalyticsDeviceRow[] };
+      alerts: {
+        empty: boolean;
+        emptyCopy: string;
+        highIdle: AnalyticsAlertPersonRow[];
+        stalledDevices: AnalyticsAlertDeviceRow[];
+        runningWithoutEvidence: AnalyticsAlertRunningRow[];
+      };
+      recordedTime: {
+        empty: boolean;
+        emptyCopy: string;
+        footnote: string;
+        rows: AnalyticsProductivityRow[];
+        projects: AnalyticsProductivityProjectRow[];
+        tasks: AnalyticsProductivityTaskRow[];
+        days: AnalyticsProductivityDayRow[];
+      };
+      screenshots: {
+        empty: boolean;
+        emptyCopy: string;
+        summary: AnalyticsFigure[];
+        byMember: AnalyticsScreenshotMemberRow[];
+        hours: AnalyticsScreenshotHourRow[];
+      };
+      evidenceQuality: {
+        empty: boolean;
+        emptyCopy: string;
+        footnote: string;
+        rows: AnalyticsEvidenceQualityRow[];
+      };
       export: { href: string; label: string; filename: string };
     };
 
@@ -750,6 +932,74 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
     status: device.revokedAt ? "REVOKED" : "ACTIVE",
   }));
 
+  const alerts = input.alerts;
+  const stalledDevices: AnalyticsAlertDeviceRow[] = (alerts?.stalledDevices ?? []).map((device) => ({
+    id: device.deviceId,
+    name: device.deviceName,
+    who: device.userName,
+    lastSeen: formatRelativeTime(toIsoOrNull(device.lastSeenAt), input.now),
+  }));
+  const highIdle: AnalyticsAlertPersonRow[] = (alerts?.highIdleUsers ?? []).map((row) => ({
+    id: row.userId,
+    who: row.userName,
+    tracked: formatHours(row.totalSeconds),
+    idle: `${Math.round(row.idleRatio)}%`,
+  }));
+  const runningWithoutEvidence: AnalyticsAlertRunningRow[] = (
+    alerts?.runningWithoutScreenshots ?? []
+  ).map((row) => ({
+    id: row.entryId,
+    who: row.userName,
+    started: formatRelativeTime(toIsoOrNull(row.startedAt), input.now),
+  }));
+
+  const productivity = input.productivity;
+  const productivityRows: AnalyticsProductivityRow[] = (productivity?.byUser ?? []).map((row) => ({
+    id: row.userId,
+    who: row.userName,
+    tracked: formatHours(row.totalSeconds),
+    idle: formatHours(row.idleSeconds),
+    entries: String(row.entriesCount),
+  }));
+  const productivityProjects: AnalyticsProductivityProjectRow[] = (productivity?.byProject ?? []).map(
+    (row) => ({
+      id: row.crmProjectId,
+      name: row.projectName,
+      tracked: formatHours(row.totalSeconds),
+      entries: String(row.entriesCount),
+    }),
+  );
+  const productivityTasks: AnalyticsProductivityTaskRow[] = (productivity?.byTask ?? []).map(
+    (row, index) => ({
+      id: row.taskId ?? `task-${index}`,
+      name: row.taskName,
+      tracked: formatHours(row.totalSeconds),
+    }),
+  );
+  const productivityDays: AnalyticsProductivityDayRow[] = (productivity?.dailyTrend ?? []).map((row) => ({
+    id: row.date,
+    day: row.date,
+    tracked: formatHours(row.totalSeconds),
+  }));
+
+  const shots = input.screenshots;
+  const screenshotHours: AnalyticsScreenshotHourRow[] = (shots?.hourlyDistribution ?? [])
+    .filter((row) => row.count > 0)
+    .map((row) => ({
+      id: String(row.hour),
+      hour: `${String(row.hour).padStart(2, "0")}:00`,
+      evidence: String(row.count),
+    }));
+
+  const quality = input.evidenceQuality;
+  const qualityRows: AnalyticsEvidenceQualityRow[] = (quality?.byUser ?? []).map((row) => ({
+    id: row.userId,
+    who: row.userName,
+    grade: row.grade.trim().toUpperCase(),
+    evidence: `${row.screenshotCount} of ${row.expectedScreenshots}`,
+    events: row.hasEvents ? "RECORDED" : "NONE",
+  }));
+
   return {
     kind: "ready",
     rangeLabel: `${formatDay(input.range.start)} – ${formatDay(input.range.end)}`,
@@ -770,6 +1020,49 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
       empty: deviceRows.length === 0,
       emptyCopy: "No Device paired in this Workspace.",
       rows: deviceRows,
+    },
+    alerts: {
+      empty: stalledDevices.length === 0 && highIdle.length === 0 && runningWithoutEvidence.length === 0,
+      emptyCopy: "No operational warnings in this range.",
+      highIdle,
+      stalledDevices,
+      runningWithoutEvidence,
+    },
+    recordedTime: {
+      empty:
+        productivityRows.length === 0 &&
+        productivityProjects.length === 0 &&
+        productivityTasks.length === 0 &&
+        productivityDays.length === 0,
+      emptyCopy: "No tracked time in this range.",
+      footnote: "Recorded totals only.",
+      rows: productivityRows,
+      projects: productivityProjects,
+      tasks: productivityTasks,
+      days: productivityDays,
+    },
+    screenshots: {
+      empty: (shots?.totalCount ?? 0) === 0 && (shots?.byUser.length ?? 0) === 0,
+      emptyCopy: "No Activity Evidence in this range.",
+      summary: shots
+        ? [
+            { label: "EVIDENCE", value: String(shots.totalCount) },
+            { label: "TOMBSTONED", value: String(shots.deletedCount) },
+            { label: "DUPLICATE GROUPS", value: String(shots.duplicates.length) },
+          ]
+        : [],
+      byMember: (shots?.byUser ?? []).map((row) => ({
+        id: row.userId,
+        who: row.userName,
+        evidence: String(row.count),
+      })),
+      hours: screenshotHours,
+    },
+    evidenceQuality: {
+      empty: qualityRows.length === 0,
+      emptyCopy: "No evidence quality reading in this range.",
+      footnote: "Observational only. This does not change tracked time, and it does not score Members.",
+      rows: qualityRows,
     },
     export: {
       href: analyticsExportPath(input.range),
