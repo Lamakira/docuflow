@@ -255,6 +255,11 @@ describe("v2 Active Workspace (#183)", () => {
 
     expect(rule(".df-workspace-content")).toMatch(/opacity/);
     expect(rule('.df-workspace-content[data-motion="standard"]')).toMatch(/transform/);
+    // At rest it must be `none`. `translateY(0)` still makes this element the
+    // containing block for every fixed descendant, and a dragged board card was
+    // drawn a rail's width away from the pointer.
+    expect(rule('.df-workspace-content[data-motion="standard"]')).toMatch(/transform:\s*none/);
+    expect(rule('.df-workspace-content[data-motion="standard"]')).not.toMatch(/translateY\(0\)/);
     expect(reducedMotionCss()).toMatch(/\.df-workspace-content[^{]*\{[^}]*transform:\s*none/);
     expect(rule(".df-v2.df-menu")).toMatch(/transition:\s*none/);
     expect(rule(".df-chooser")).toMatch(/transition:\s*none/);

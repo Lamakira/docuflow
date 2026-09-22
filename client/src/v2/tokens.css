@@ -3589,8 +3589,14 @@ button.df-activity-row {
   opacity: 1;
 }
 
+/* At rest the transform is `none`, not `translateY(0)`. Any other value makes
+   this element the containing block for every `position: fixed` descendant, and
+   @hello-pangea/dnd draws a dragged card fixed to the viewport — so the card
+   was offset by this element's origin, a rail's width to the right of the
+   pointer. The entrance still animates: `none` interpolates from the
+   @starting-style value like any transform. */
 .df-workspace-content[data-motion="standard"] {
-  transform: translateY(0);
+  transform: none;
   transition:
     opacity var(--duration-ui) var(--ease-out),
     transform var(--duration-ui) var(--ease-out);
