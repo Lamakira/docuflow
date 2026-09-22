@@ -30,6 +30,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   addAllowedTimezone,
+  timezoneSuggestions,
   administrationWriteRefusal,
   analyticsActivityPath,
   analyticsAlertsPath,
@@ -1219,6 +1220,7 @@ export function V2AdministrationPage() {
                     type="text"
                     value={timezoneInput}
                     placeholder="Europe/Paris"
+                    list="v2-timezone-suggestions"
                     disabled={!trackingPolicy.editable}
                     aria-label="IANA timezone"
                     onChange={(event) => {
@@ -1226,6 +1228,11 @@ export function V2AdministrationPage() {
                       setTimezoneError(null);
                     }}
                   />
+                  <datalist id="v2-timezone-suggestions">
+                    {timezoneSuggestions(timezoneDraft).map((zone) => (
+                      <option key={zone} value={zone} />
+                    ))}
+                  </datalist>
                 </label>
                 <Button variant="outline" type="submit" disabled={!trackingPolicy.editable} className="df-btn">
                   Add

@@ -62,6 +62,10 @@ export type LibraryRow = {
 };
 
 export type LibraryPreview = {
+  folderId: string;
+  name: string;
+  /** What the delete confirmation says: the route cascades to every Document inside (#260). */
+  deleteConsequence: string;
   title: string;
   meta: string;
   accessCopy: string;
@@ -91,6 +95,10 @@ const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "
 
 export function documentHref(id: string): string {
   return `/documents/${id}`;
+}
+
+export function folderPath(id: string): string {
+  return `/api/company-document-folders/${id}`;
 }
 
 export function projectDocumentHref(id: string): string {
@@ -234,6 +242,12 @@ function folderPreview(folder: LibraryFolder, children: LibraryDocument[]): Libr
   const count = children.length;
   const itemLabel = count === 1 ? "1 ITEM" : `${count} ITEMS`;
   return {
+    folderId: folder.id,
+    name: folder.name,
+    deleteConsequence:
+      count === 0
+        ? `${folder.name} will be deleted. It holds no Workspace Documents.`
+        : `${folder.name} and the ${count === 1 ? "1 Workspace Document" : `${count} Workspace Documents`} in it will be deleted. This cannot be undone.`,
     title: folder.name,
     meta: `${itemLabel} · FOLDER`,
     accessCopy:

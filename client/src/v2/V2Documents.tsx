@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
@@ -10,6 +10,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import {
   composeLibrary,
+  folderPath,
   type LibraryDocument,
   type LibraryFolder,
   type LibraryInput,
@@ -18,6 +19,17 @@ import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type LibraryPayload = {
   capabilityMiss: boolean;
@@ -122,6 +134,7 @@ export function V2DocumentsPage() {
   const [createMode, setCreateMode] = useState<CreateMode>(() => actionFromSearch());
   const [name, setName] = useState("");
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
+  const [folderName, setFolderName] = useState("");
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const readOnly = current?.condition === "Read-only";
@@ -145,6 +158,12 @@ export function V2DocumentsPage() {
   };
   const library = composeLibrary(input);
   const folderMotion = useFolderExpandMotion(filterQuery);
+  const previewFolderId = library.preview?.folderId ?? null;
+  const previewFolderName = library.preview?.name ?? "";
+
+  useEffect(() => {
+    setFolderName(previewFolderName);
+  }, [previewFolderId, previewFolderName]);
 
   function refuseWrite(errorMessage?: string) {
     if (readOnly) {
@@ -221,6 +240,47 @@ export function V2DocumentsPage() {
       refuseWrite(error.message);
     },
   });
+
+  // A folder could be created and never tidied; it can now be renamed and deleted (#260).
+  const renameFolder = useMutation({
+    mutationFn: ({ id, name: nextName }: { id: string; name: string }) =>
+      apiRequest("PATCH", folderPath(id), { name: nextName }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => {
+      refuseWrite(error.message);
+    },
+  });
+
+  const deleteFolder = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", folderPath(id)),
+    onSuccess: (_result, id) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/company-documents"] });
+      setSelectedFolderId(null);
+      setExpandedFolderIds((current) => current.filter((folderId) => folderId !== id));
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => {
+      refuseWrite(error.message);
+    },
+  });
+
+  function onRenameFolder(event: FormEvent) {
+    event.preventDefault();
+    const trimmed = folderName.trim();
+    if (!previewFolderId || !trimmed || trimmed === previewFolderName) return;
+    if (refuseWrite()) return;
+    renameFolder.mutate({ id: previewFolderId, name: trimmed });
+  }
+
+  function onDeleteFolder() {
+    if (!previewFolderId) return;
+    if (refuseWrite()) return;
+    deleteFolder.mutate(previewFolderId);
+  }
 
   function onFolderClick(folderId: string) {
     folderMotion.onUserExpand();
@@ -359,6 +419,58 @@ export function V2DocumentsPage() {
             <p className="df-prose df-prose-follow" style={{ color: "var(--df-archive-slate)" }}>
               {library.preview.accessCopy}
             </p>
+            <form className="df-daily-form df-folder-rename" onSubmit={onRenameFolder}>
+              <label className="df-daily-field">
+                NAME
+                <input
+                  type="text"
+                  value={folderName}
+                  onChange={(event) => setFolderName(event.target.value)}
+                  aria-label="Folder name"
+                />
+              </label>
+              <div className="df-form-actions">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructiveOutline"
+                      className="df-btn"
+                      disabled={deleteFolder.isPending}
+                      data-testid="v2-folder-delete"
+                    >
+                      Delete folder
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="df-v2 df-alert">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete folder</AlertDialogTitle>
+                      <AlertDialogDescription>{library.preview.deleteConsequence}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="df-btn" autoFocus>
+                        Keep folder
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        data-testid="v2-folder-delete-confirm"
+                        onClick={onDeleteFolder}
+                      >
+                        Delete folder
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <Button
+                  variant="outline"
+                  type="submit"
+                  disabled={renameFolder.isPending || !folderName.trim() || folderName.trim() === library.preview.name}
+                  className="df-btn"
+                >
+                  Rename
+                </Button>
+              </div>
+            </form>
           </div>
           <footer className="df-panel-foot">
             <Button variant="default" type="button" style={{ flex: 1 }} onClick={() => { if (!selectedFolderId) return; setExpandedFolderIds((current) => current.includes(selectedFolderId) ? current : [...current, selectedFolderId], ); }} className="df-btn">

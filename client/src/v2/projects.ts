@@ -17,6 +17,7 @@ export type ProjectRegisterRowInput = {
   budgetPercent: number | null;
   trackedMtd: string;
   visible: boolean;
+  tags: Array<{ id: string; name: string }>;
 };
 
 export type ProjectRegisterInput = {
@@ -24,6 +25,8 @@ export type ProjectRegisterInput = {
   projects: ProjectRegisterRowInput[];
   filterQuery: string;
   statusFilter: string;
+  /** A Tag id, or `all` (#260). */
+  tagFilter: string;
   selectedId: string | null;
 };
 
@@ -38,6 +41,7 @@ export type ProjectRegisterRow = {
   trackedMtd: string;
   href: string;
   selected: boolean;
+  tags: string[];
 };
 
 export type ProjectRegisterModel = {
@@ -68,8 +72,14 @@ function statusLabel(status: string): string {
   return STATUS_LABEL[status] ?? status.replace(/_/g, " ").toUpperCase();
 }
 
-function matchesFilter(project: ProjectRegisterRowInput, needle: string, statusFilter: string): boolean {
+function matchesFilter(
+  project: ProjectRegisterRowInput,
+  needle: string,
+  statusFilter: string,
+  tagFilter: string,
+): boolean {
   if (statusFilter !== "all" && project.projectStatus !== statusFilter) return false;
+  if (tagFilter !== "all" && !project.tags.some((tag) => tag.id === tagFilter)) return false;
   if (!needle) return true;
   const haystack = `${project.name} ${project.clientName ?? ""}`.toLowerCase();
   return haystack.includes(needle);
@@ -80,7 +90,7 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
   const needle = input.filterQuery.trim().toLowerCase();
   const rows = input.projects
     .filter((project) => project.visible)
-    .filter((project) => matchesFilter(project, needle, input.statusFilter))
+    .filter((project) => matchesFilter(project, needle, input.statusFilter, input.tagFilter))
     .map((project) => ({
       id: project.id,
       name: project.name || "Untitled Project",
@@ -92,6 +102,7 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
       trackedMtd: project.trackedMtd,
       href: projectHref(project.id),
       selected: project.id === input.selectedId,
+      tags: project.tags.map((tag) => tag.name),
     }));
 
   const empty = rows.length === 0;
@@ -99,7 +110,7 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
     subhead,
     empty,
     emptyCopy: empty
-      ? needle || input.statusFilter !== "all"
+      ? needle || input.statusFilter !== "all" || input.tagFilter !== "all"
         ? "No Projects match this filter."
         : "No Projects in this Workspace yet."
       : "",

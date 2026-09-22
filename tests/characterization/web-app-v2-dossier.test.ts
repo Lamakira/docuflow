@@ -35,6 +35,9 @@ function emptyInput(overrides: Partial<DossierInput> = {}): DossierInput {
     files: [],
     reminders: [],
     notes: [],
+    stageHistory: [],
+    tags: [],
+    workspaceTags: [],
     ...overrides,
   };
 }
@@ -212,7 +215,13 @@ describe("Project Dossier Overview from live Workspace records (#173)", () => {
     expect(dossier.dailyUpdate.prose).toContain("Imported the remaining vendor batches.");
     expect(dossier.dailyUpdate.blocker).toBeTruthy();
     expect(dossier.documents.rows).toEqual([
-      { id: "d1", title: "Scope notes", meta: "12:41", href: "/document/d1" },
+      {
+        id: "d1",
+        title: "Scope notes",
+        meta: "12:41",
+        href: "/document/d1",
+        order: { parentId: null, up: null, down: null },
+      },
     ]);
     expect(matchV2Route(dossier.documents.rows[0].href).kind).toBe("document-editor");
     expect(dossier.evidence.tiles).toHaveLength(1);

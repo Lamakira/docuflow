@@ -44,6 +44,23 @@ export type DossierDocument = {
   updatedAt: Date | string | null;
   projectId?: string;
   access?: string | null;
+  parentId?: string | null;
+  position?: number | null;
+};
+
+/** One row of `crm_project_stage_history`; the status columns hold the combined lifecycle. */
+export type DossierStageChange = {
+  id: string;
+  fromStatus: string | null;
+  toStatus: string;
+  changedAt: Date | string | null;
+  changedBy?: DossierPerson | null;
+};
+
+export type DossierTag = {
+  id: string;
+  name: string;
+  color: string;
 };
 
 export type DossierDailyUpdate = {
@@ -148,6 +165,11 @@ export type DossierInput = {
   files: DossierFile[];
   reminders: DossierReminder[];
   notes: DossierNote[];
+  stageHistory: DossierStageChange[];
+  /** The Tags attached to this Project. */
+  tags: DossierTag[];
+  /** The Workspace's whole Tag vocabulary. */
+  workspaceTags: DossierTag[];
 };
 
 export type DossierTab = {
@@ -180,6 +202,7 @@ export type DossierModel = {
     lead: { name: string; initials: string; self: boolean } | null;
     team: Array<{ name: string; initials: string }>;
     updatedLabel: string | null;
+    tags: DossierTag[];
   } | null;
   stats: {
     budgetPercent: number | null;
@@ -242,6 +265,26 @@ export type DossierModel = {
     fields: Array<{ label: string; value: string }>;
     lead: { id: string; name: string } | null;
     members: Array<{ id: string; name: string }>;
+    /** Rows in `project_members`, each one a member a reader could take off. */
+    memberRows: Array<{ id: string; name: string; self: boolean }>;
+    documentationEnabled: boolean;
+  };
+  history: {
+    rows: Array<{
+      id: string;
+      from: string | null;
+      to: string;
+      when: string;
+      who: string;
+      /** How long the Project sat in `to` — until the next change, or until now. */
+      held: string;
+    }>;
+    empty: boolean;
+    emptyCopy: string;
+  };
+  tags: {
+    vocabulary: Array<DossierTag & { attached: boolean }>;
+    emptyCopy: string;
   };
   dailyUpdate: {
     kind: "empty" | "record" | "refusal";
@@ -263,7 +306,14 @@ export type DossierModel = {
     unapproved: string | null;
   };
   documents: {
-    rows: Array<{ id: string; title: string; meta: string; href: string }>;
+    rows: Array<{
+      id: string;
+      title: string;
+      meta: string;
+      href: string;
+      /** Sibling indexes the reorder route takes; null where the move goes nowhere. */
+      order: { parentId: string | null; up: number | null; down: number | null };
+    }>;
     count: number;
     empty: boolean;
     emptyCopy: string;
@@ -302,6 +352,51 @@ const TAB_LABEL: Record<DossierTabId, string> = {
 };
 
 const VIEW_DAILY_UPDATES_CAPABILITY = "View Daily Updates";
+
+/**
+ * Project and Document depth (#260). Each of these routes existed for v1's
+ * Project page; the dossier reaches them instead of a v1 screen.
+ */
+export function projectClonePath(projectId: string): string {
+  return `/api/crm/projects/${projectId}/clone`;
+}
+
+export function projectStageHistoryPath(projectId: string): string {
+  return `/api/crm/projects/${projectId}/stage-history`;
+}
+
+export function projectTagsPath(projectId: string): string {
+  return `/api/crm/projects/${projectId}/tags`;
+}
+
+export function projectTagPath(projectId: string, tagId: string): string {
+  return `/api/crm/projects/${projectId}/tags/${tagId}`;
+}
+
+export function projectMemberPath(projectId: string, userId: string): string {
+  return `/api/crm/projects/${projectId}/members/${userId}`;
+}
+
+export function projectDocumentationPath(projectId: string): string {
+  return `/api/crm/projects/${projectId}/documentation`;
+}
+
+export function tagsPath(): string {
+  return "/api/crm/tags";
+}
+
+export function tagPath(tagId: string): string {
+  return `/api/crm/tags/${tagId}`;
+}
+
+export function documentDuplicatePath(documentId: string): string {
+  return `/api/documents/${documentId}/duplicate`;
+}
+
+/** Keyed by the `projects` row a Document belongs to, not the CRM Project. */
+export function documentsReorderPath(documentProjectId: string): string {
+  return `/api/projects/${documentProjectId}/documents/reorder`;
+}
 
 function parseDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
@@ -585,7 +680,7 @@ function composeNotes(input: DossierInput): DossierModel["notes"] {
 function composeSettings(input: DossierInput): DossierModel["settings"] {
   const project = input.project;
   if (!project) {
-    return { fields: [], lead: null, members: [] };
+    return { fields: [], lead: null, members: [], memberRows: [], documentationEnabled: false };
   }
   const lead = project.assignee?.id
     ? { id: project.assignee.id, name: memberName(project.assignee) }
@@ -607,7 +702,100 @@ function composeSettings(input: DossierInput): DossierModel["settings"] {
   // Custom CRM field values are not shown here: `crm_custom_field_values`
   // holds them but no route exposes it, so there is nothing honest to render.
   // Composing one needs a BFF route, which #213 does not carry.
-  return { fields, lead, members };
+  const memberRows: DossierModel["settings"]["memberRows"] = [];
+  const seen = new Set<string>();
+  for (const member of project.members ?? []) {
+    if (!member.user?.id || seen.has(member.user.id)) continue;
+    seen.add(member.user.id);
+    memberRows.push({
+      id: member.user.id,
+      name: memberName(member.user),
+      self: member.user.id === input.currentUserId,
+    });
+  }
+  return {
+    fields,
+    lead,
+    members,
+    memberRows,
+    documentationEnabled: Boolean(project.documentationEnabled),
+  };
+}
+
+function lifecycleLabel(status: string): string {
+  return status.replace(/_/g, " ").toUpperCase();
+}
+
+function formatSpan(ms: number): string {
+  const minutes = Math.max(0, Math.floor(ms / 60_000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const rest = minutes % 60;
+  if (days > 0) return hours > 0 ? `${days} d ${hours} h` : `${days} d`;
+  if (hours > 0) return rest > 0 ? `${hours} h ${rest} min` : `${hours} h`;
+  return `${rest} min`;
+}
+
+/**
+ * The only record of how long anything took (#260). The route returns newest
+ * first; the composer sorts anyway, because the span of each row is measured
+ * to the change after it.
+ */
+function composeHistory(input: DossierInput): DossierModel["history"] {
+  const changes = input.stageHistory
+    .map((change) => ({ change, at: parseDate(change.changedAt) }))
+    .sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
+  const rows = changes.map(({ change, at }, index) => {
+    const next = index > 0 ? changes[index - 1].at : null;
+    const held = at ? formatSpan((next ?? input.now).getTime() - at.getTime()) : "—";
+    return {
+      id: change.id,
+      from: change.fromStatus ? lifecycleLabel(change.fromStatus) : null,
+      to: lifecycleLabel(change.toStatus),
+      when: at ? formatDayStamp(at) : "",
+      who: change.changedBy ? memberName(change.changedBy) : "—",
+      held: next || !at ? held : `${held} so far`,
+    };
+  });
+  return {
+    rows,
+    empty: rows.length === 0,
+    emptyCopy: "No stage changes recorded for this Project yet.",
+  };
+}
+
+function composeTags(input: DossierInput): DossierModel["tags"] {
+  const attached = new Set(input.tags.map((tag) => tag.id));
+  const vocabulary = input.workspaceTags
+    .map((tag) => ({ id: tag.id, name: tag.name, color: tag.color, attached: attached.has(tag.id) }))
+    .sort((a, b) => Number(b.attached) - Number(a.attached) || a.name.localeCompare(b.name));
+  return {
+    vocabulary,
+    emptyCopy: vocabulary.length === 0 ? "No Tags in this Workspace yet." : "",
+  };
+}
+
+/** Siblings share a parent; the reorder route takes an index among them, the moved one excluded. */
+function documentOrder(documents: DossierDocument[]): Map<string, DossierModel["documents"]["rows"][number]["order"]> {
+  const byParent = new Map<string | null, DossierDocument[]>();
+  for (const document of documents) {
+    const parentId = document.parentId ?? null;
+    const list = byParent.get(parentId) ?? [];
+    list.push(document);
+    byParent.set(parentId, list);
+  }
+  const order = new Map<string, DossierModel["documents"]["rows"][number]["order"]>();
+  byParent.forEach((siblings, parentId) => {
+    const sorted = [...siblings].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    sorted.forEach((document, index) => {
+      order.set(document.id, {
+        parentId,
+        up: index > 0 ? index - 1 : null,
+        down: index < sorted.length - 1 ? index + 1 : null,
+      });
+    });
+  });
+  return order;
 }
 
 export function composeDossier(input: DossierInput): DossierModel {
@@ -621,6 +809,9 @@ export function composeDossier(input: DossierInput): DossierModel {
   const reminders = composeReminders(input);
   const notes = composeNotes(input);
   const settings = composeSettings(input);
+  const history = composeHistory(input);
+  const tags = composeTags(input);
+  const order = documentOrder(documents);
   const assignees = projectAssignees(project);
   const trackedMtd = formatHours(input.monthSeconds);
   const budgeted = project?.budgetedHours ?? 0;
@@ -680,6 +871,7 @@ export function composeDossier(input: DossierInput): DossierModel {
         : null,
       team,
       updatedLabel: updatedAt ? `UPDATED ${formatWhen(updatedAt, input.now)}` : null,
+      tags: input.tags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
     };
   }
 
@@ -738,6 +930,8 @@ export function composeDossier(input: DossierInput): DossierModel {
     reminders,
     notes,
     settings,
+    history,
+    tags,
     dailyUpdate: composeDailyUpdate(input),
     evidence: {
       tiles: screenshots.map((shot) => {
@@ -767,6 +961,7 @@ export function composeDossier(input: DossierInput): DossierModel {
         title: document.title,
         meta: formatWhen(document.updatedAt, input.now),
         href: `/document/${document.id}`,
+        order: order.get(document.id) ?? { parentId: null, up: null, down: null },
       })),
       count: documents.length,
       empty: documents.length === 0,

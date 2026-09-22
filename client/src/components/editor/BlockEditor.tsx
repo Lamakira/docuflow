@@ -1009,74 +1009,77 @@ export function BlockEditor({ content, onChange, onImageUpload, onDocumentUpload
         >
           <Video className="w-4 h-4" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          disabled={isUploadingDocument}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={async () => {
-            if (onDocumentUpload && !isUploadingDocument) {
-              const { from, to } = editor.state.selection;
-              savedSelectionRef.current = { from, to };
-              setIsUploadingDocument(true);
-              setDocumentUploadProgress(0);
-              try {
-                const result = await onDocumentUpload((progress) => {
-                  setDocumentUploadProgress(progress);
-                });
-                if (result && savedSelectionRef.current) {
-                  editor.chain()
-                    .focus(undefined, { scrollIntoView: false })
-                    .setTextSelection(savedSelectionRef.current.from)
-                    .setFileAttachment({
-                      src: result.url,
-                      filename: result.filename,
-                      filesize: result.filesize,
-                      filetype: result.filetype,
-                    })
-                    .run();
-                }
-              } finally {
-                setIsUploadingDocument(false);
+        {/* A page without an attachment route gets no attach control (#260). */}
+        {onDocumentUpload ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            disabled={isUploadingDocument}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={async () => {
+              if (onDocumentUpload && !isUploadingDocument) {
+                const { from, to } = editor.state.selection;
+                savedSelectionRef.current = { from, to };
+                setIsUploadingDocument(true);
                 setDocumentUploadProgress(0);
-                savedSelectionRef.current = null;
+                try {
+                  const result = await onDocumentUpload((progress) => {
+                    setDocumentUploadProgress(progress);
+                  });
+                  if (result && savedSelectionRef.current) {
+                    editor.chain()
+                      .focus(undefined, { scrollIntoView: false })
+                      .setTextSelection(savedSelectionRef.current.from)
+                      .setFileAttachment({
+                        src: result.url,
+                        filename: result.filename,
+                        filesize: result.filesize,
+                        filetype: result.filetype,
+                      })
+                      .run();
+                  }
+                } finally {
+                  setIsUploadingDocument(false);
+                  setDocumentUploadProgress(0);
+                  savedSelectionRef.current = null;
+                }
               }
-            }
-          }}
-          data-testid="button-attach"
-        >
-          {isUploadingDocument ? (
-            <div className="relative w-6 h-6 flex items-center justify-center">
-              <svg className="w-6 h-6 transform -rotate-90" viewBox="0 0 24 24">
-                <circle
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  opacity="0.2"
-                />
-                <circle
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeDasharray={2 * Math.PI * 10}
-                  strokeDashoffset={2 * Math.PI * 10 * (1 - documentUploadProgress / 100)}
-                  strokeLinecap="round"
-                  className="text-primary transition-all duration-150"
-                />
-              </svg>
-              <span className="absolute text-[8px] font-medium">{documentUploadProgress}%</span>
-            </div>
-          ) : (
-            <Paperclip className="w-4 h-4" />
-          )}
-        </Button>
+            }}
+            data-testid="button-attach"
+          >
+            {isUploadingDocument ? (
+              <div className="relative w-6 h-6 flex items-center justify-center">
+                <svg className="w-6 h-6 transform -rotate-90" viewBox="0 0 24 24">
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    opacity="0.2"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeDasharray={2 * Math.PI * 10}
+                    strokeDashoffset={2 * Math.PI * 10 * (1 - documentUploadProgress / 100)}
+                    strokeLinecap="round"
+                    className="text-primary transition-all duration-150"
+                  />
+                </svg>
+                <span className="absolute text-[8px] font-medium">{documentUploadProgress}%</span>
+              </div>
+            ) : (
+              <Paperclip className="w-4 h-4" />
+            )}
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="icon"

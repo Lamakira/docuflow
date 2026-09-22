@@ -4908,3 +4908,104 @@ button.df-activity-row {
 .df-page-inset {
   padding: 0 var(--df-space-6);
 }
+
+/*
+ * Project and Document depth (#260). A Tag is a label, not a status: it
+ * carries its own colour on a swatch and keeps the ink neutral.
+ */
+.df-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--df-space-2);
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: var(--df-text-1);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-1);
+  padding: var(--df-space-1) var(--df-space-2);
+  color: var(--df-case-ink);
+}
+
+.df-tag-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.df-v2 .df-chip-remove {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--df-archive-slate);
+  cursor: pointer;
+}
+
+.df-note-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--df-space-2);
+}
+
+.df-history-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
+  padding: var(--df-space-4);
+  border-bottom: 1px solid var(--df-divider-light);
+}
+
+.df-history-row:last-child {
+  border-bottom: 0;
+}
+
+.df-history-move {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--df-space-2);
+}
+
+.df-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
+  padding: var(--df-space-4) var(--df-space-5) 0;
+  border-top: 1px solid var(--df-divider-light);
+  margin-top: var(--df-space-4);
+}
+
+.df-settings-section > .df-contact-row {
+  padding-left: 0;
+  padding-right: 0;
+  justify-content: space-between;
+}
+
+.df-settings-section > .df-filter-bar {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.df-settings-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--df-space-3);
+  padding-bottom: var(--df-space-4);
+}
+
+.df-doc-row > .df-doc-link {
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.df-doc-row > .df-doc-link:hover {
+  text-decoration: underline;
+}
+
+.df-folder-rename {
+  margin-top: var(--df-space-4);
+}
