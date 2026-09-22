@@ -132,6 +132,12 @@ describe("v2 scale (#256)", () => {
     );
   });
 
+  it("gives a card's own form the card gutter", () => {
+    expect(css).toMatch(
+      /\.df-card > \.df-inline-form:not\(\.df-admin-seat-form\) \{[^}]*padding:\s*var\(--df-space-4\) var\(--df-space-4\) 0/,
+    );
+  });
+
   it("keeps padding, gap, radius, and type on the scale", () => {
     const decl = /(padding(?:-(?:top|right|bottom|left))?|gap|row-gap|column-gap|border-radius|font-size)\s*:\s*([^;]+);/g;
     const stray: string[] = [];
