@@ -60,7 +60,7 @@ describe("v2 row actions look like controls", () => {
   });
 
   it("gives an action control the one control height wherever it sits", () => {
-    const at = css.indexOf(".df-row-actions .df-ghost-btn");
+    const at = css.indexOf(".df-row-actions .df-btn");
     expect(at).toBeGreaterThan(-1);
     const block = css.slice(at, css.indexOf("}", at) + 1);
     for (const container of [
@@ -69,7 +69,7 @@ describe("v2 row actions look like controls", () => {
       ".df-devices-confirm",
       ".df-card-head",
     ]) {
-      expect(block).toContain(`${container} .df-ghost-btn`);
+      expect(block).toContain(`${container} .df-btn`);
     }
     // Measured in Chrome: the button renders 34px, the action row 65px.
     expect(block).toMatch(/height:\s*var\(--df-control-h\)/);

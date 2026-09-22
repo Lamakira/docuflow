@@ -46,15 +46,7 @@ export function V2ContextPanel({
       data-testid={sheet ? `v2-sheet-${panel}` : `v2-panel-${panel}`}
       aria-label={title}
     >
-      <header
-        style={{
-          padding: sheet ? "12px 16px 13px" : "14px 16px",
-          borderBottom: "1px solid #D8DEE6",
-          display: "flex",
-          alignItems: "flex-start",
-          gap: 12,
-        }}
-      >
+      <header className="df-panel-head">
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.08em" }}>
             {kicker}
@@ -74,14 +66,14 @@ export function V2ContextPanel({
             type="button"
             onClick={onClose}
             aria-label="Close panel"
-            style={{ background: "transparent", border: 0, cursor: "pointer", padding: 4 }}
+            className="df-panel-close"
           >
             <CloseIcon />
           </button>
         )}
       </header>
       {panel === "approvals" ? (
-        <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+        <div className="df-panel-scroll">
           <p style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "62ch", color: "#59657A" }}>
             {EMPTY_TIMESHEET_APPROVALS.copy}
           </p>
@@ -146,7 +138,7 @@ function AskBody() {
 
   return (
     <>
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="df-panel-scroll-stack">
         {model.messages.length === 0 ? (
           <p style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "62ch", color: "#59657A" }}>{model.emptyCopy}</p>
         ) : (
@@ -260,7 +252,7 @@ function NotificationsBody({ onClose }: { onClose: () => void }) {
     <>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
         {model.rows.length === 0 ? (
-          <p style={{ padding: 16, fontSize: 14, lineHeight: 1.55, color: "#59657A" }}>{model.emptyCopy}</p>
+          <p className="df-subhead df-card-body">{model.emptyCopy}</p>
         ) : (
           model.rows.map((row) => (
             <Link
@@ -291,7 +283,7 @@ function NotificationsBody({ onClose }: { onClose: () => void }) {
             {delivery.kicker}
           </div>
           <div style={{ fontWeight: 600, fontSize: 13 }}>{delivery.title}</div>
-          <p style={{ fontSize: 12, lineHeight: 1.5, color: "#59657A", margin: 0 }}>{delivery.copy}</p>
+          <p className="df-subhead">{delivery.copy}</p>
           {delivery.rows.map((row) => (
             <div key={row.id} className="df-delivery-row">
               <span style={{ fontSize: 13, fontWeight: 500 }}>{row.label}</span>

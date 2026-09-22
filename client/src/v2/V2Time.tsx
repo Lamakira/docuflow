@@ -34,6 +34,7 @@ import {
   type TimePeriod,
   type TimeStatsResponse,
 } from "./time";
+import { Button } from "@/components/ui/button";
 
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
 type TimeStats = { totalDuration: number };
@@ -340,19 +341,13 @@ function TimeEntriesPane() {
                 .map((task) => ({ value: task.id, label: task.name })),
             ]}
           />
-          <button
-            type="button"
-            className="df-ink-btn"
-            data-primary={page.pagePrimary}
-            disabled={readOnly || (!busy && startBlocked)}
-            onClick={onPrimary}
-          >
+          <Button variant="default" type="button" data-primary={page.pagePrimary} disabled={readOnly || (!busy && startBlocked)} onClick={onPrimary} className="df-btn">
             {isRunning ? "Pause" : isPaused ? "Resume" : "Start"}
-          </button>
+          </Button>
           {hasActiveEntry ? (
-            <button type="button" className="df-ink-btn" disabled={readOnly} onClick={onStop}>
+            <Button variant="default" type="button" disabled={readOnly} onClick={onStop} className="df-btn">
               Stop
-            </button>
+            </Button>
           ) : null}
         </div>
       </section>
@@ -454,9 +449,9 @@ function TimeEntriesPane() {
                   </span>
                   <span className="df-mono df-time-clock">{row.duration}</span>
                   {row.canDelete ? (
-                    <button type="button" className="df-ghost-btn" onClick={() => onDelete(row.id)}>
+                    <Button variant="outline" type="button" onClick={() => onDelete(row.id)} className="df-btn">
                       Remove
-                    </button>
+                    </Button>
                   ) : null}
                 </span>
               ) : (
@@ -471,9 +466,9 @@ function TimeEntriesPane() {
                   </span>
                   <span style={{ textAlign: "right" }}>
                     {row.canDelete ? (
-                      <button type="button" className="df-ghost-btn" onClick={() => onDelete(row.id)}>
+                      <Button variant="outline" type="button" onClick={() => onDelete(row.id)} className="df-btn">
                         Remove
-                      </button>
+                      </Button>
                     ) : null}
                   </span>
                 </>
@@ -594,6 +589,7 @@ function TimeStatsPane() {
                       </span>
                     </div>
                     <span className="df-meter df-meter-wide">
+                      {/* Per-instance: the fill width is this project's share of tracked time. */}
                       <span
                         className="df-stat-bar-fill df-meter-fill"
                         style={{ width: `${Math.min(100, row.share ?? 0)}%` }}
@@ -820,14 +816,9 @@ function ProjectTasksPane() {
                     }}
                   />
                 </label>
-                <button
-                  type="button"
-                  className="df-ink-btn"
-                  disabled={!taskName.trim() || createTask.isPending}
-                  onClick={onCreate}
-                >
+                <Button variant="default" type="button" disabled={!taskName.trim() || createTask.isPending} onClick={onCreate} className="df-btn">
                   Add Task
-                </button>
+                </Button>
               </div>
 
               <V2TaskTable

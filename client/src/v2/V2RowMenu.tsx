@@ -11,6 +11,7 @@
  * V2FilterSelect uses, because Radix portals the panel outside `.df-v2`.
  */
 
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,8 +40,16 @@ export function V2RowMenu({ ariaLabel, items, testId }: V2RowMenuProps) {
   if (items.length === 0) return null;
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="df-icon-btn df-row-menu-trigger" aria-label={ariaLabel} data-testid={testId}>
-        <KebabIcon />
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          className="df-btn df-row-menu-trigger"
+          aria-label={ariaLabel}
+          data-testid={testId}
+        >
+          <KebabIcon />
+        </Button>
       </DropdownMenuTrigger>
       {/* Radix portals to document.body, outside `.df-v2`, so the panel
           carries the class itself or the --df-* tokens do not resolve. */}

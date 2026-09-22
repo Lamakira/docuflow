@@ -41,11 +41,11 @@ export function groupLibraryRows(rows: LibraryRow[]): LibraryGroup[] {
 function LibraryRowBody({ row }: { row: LibraryRow }) {
   return (
     <>
-      <span style={{ minWidth: 0, display: "flex", alignItems: "flex-start", gap: 10 }}>
+      <span className="df-cluster-start">
         {row.kind === "folder" ? (
-          <Folder width={15} height={15} strokeWidth={1.4} color="#0F1524" style={{ marginTop: 2, flex: "none" }} />
+          <Folder width={15} height={15} strokeWidth={1.4} color="#0F1524" className="df-row-icon" />
         ) : (
-          <FileText width={15} height={15} strokeWidth={1.4} color="#59657A" style={{ marginTop: 2, flex: "none" }} />
+          <FileText width={15} height={15} strokeWidth={1.4} color="#59657A" className="df-row-icon" />
         )}
         <span style={{ minWidth: 0 }}>
           <div

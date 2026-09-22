@@ -98,19 +98,13 @@ export function V2Rail({
       data-testid="v2-rail"
     >
       <div className="df-rail-head">
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: collapsed ? "center" : "space-between",
-          }}
-        >
+        <div className="df-rail-brand">
           {!collapsed ? <span className="df-brand">DocuFlow</span> : null}
           <button
             type="button"
+            className="df-rail-collapse"
             title={drawer ? "Close navigation" : collapsed ? "Expand navigation" : "Collapse navigation"}
             onClick={onToggleCollapse}
-            style={{ display: "flex", padding: 3, borderRadius: 5, background: "transparent", border: 0, cursor: "pointer" }}
             data-testid="v2-rail-collapse"
           >
             {drawer ? <CloseIcon /> : <CollapseIcon />}
@@ -141,13 +135,8 @@ export function V2Rail({
         {V2_NAV.map((section, index) => (
           <div
             key={section.label ?? `section-${index}`}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 3,
-              borderTop: section.separated ? "1px solid #D8DEE6" : undefined,
-              paddingTop: section.separated ? 10 : undefined,
-            }}
+            className="df-rail-section"
+            data-separated={section.separated ? "true" : "false"}
           >
             {!collapsed && section.label ? (
               <div className="df-group-label">{section.label}</div>
@@ -168,15 +157,7 @@ export function V2Rail({
                   data-active={active ? "true" : "false"}
                   title={item.label}
                 >
-                  <span
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: collapsed ? "center" : undefined,
-                      gap: collapsed ? 0 : 10,
-                      minWidth: 0,
-                    }}
-                  >
+                  <span className="df-rail-label">
                     <RailIcon id={item.id} color={active ? "#0F1524" : "#59657A"} />
                     {!collapsed ? (
                       <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -206,9 +187,8 @@ export function V2Rail({
               className="df-rail-item df-nav"
               data-active={active ? "true" : "false"}
               title={item.label}
-              style={collapsed ? undefined : { padding: "6px 9px", fontSize: 13, fontWeight: 500 }}
             >
-              <span style={{ display: "flex", alignItems: "center", gap: collapsed ? 0 : 10 }}>
+              <span className="df-rail-label">
                 <RailIcon id={item.id} color={active ? "#0F1524" : "#59657A"} />
                 {!collapsed ? <span>{item.label}</span> : null}
               </span>

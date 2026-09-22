@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 
 function clock(seconds: number): string {
   const safe = Math.max(0, Math.floor(seconds));
@@ -90,17 +91,17 @@ export function V2AudioRecorder({
       <span className="df-audio-clock">{clock(elapsed)}</span>
       <span className="df-people-action">
         {recording ? (
-          <button type="button" className="df-ink-btn" onClick={stop} disabled={isUploading}>
+          <Button variant="default" type="button" onClick={stop} disabled={isUploading} className="df-btn">
             Stop
-          </button>
+          </Button>
         ) : (
-          <button type="button" className="df-ink-btn" onClick={start} disabled={isUploading}>
+          <Button variant="default" type="button" onClick={start} disabled={isUploading} className="df-btn">
             Record
-          </button>
+          </Button>
         )}
-        <button type="button" className="df-ghost-btn" onClick={cancel} disabled={isUploading}>
+        <Button variant="outline" type="button" onClick={cancel} disabled={isUploading} className="df-btn">
           Cancel
-        </button>
+        </Button>
       </span>
     </div>
   );

@@ -17,24 +17,15 @@ export function V2WorkspaceChooser({
   onAccept?: (token: string) => void;
 }) {
   return (
-    <div className="df-v2 df-chooser" data-testid="v2-workspace-chooser" style={{ height: "100vh", display: "flex" }}>
-      <div
-        style={{
-          margin: "auto",
-          width: "min(420px, calc(100% - 32px))",
-          background: "#fff",
-          border: "1px solid #D8DEE6",
-          borderRadius: 10,
-          padding: 22,
-        }}
-      >
+    <div className="df-v2 df-chooser df-gate" data-testid="v2-workspace-chooser">
+      <div className="df-gate-card">
         <div className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.08em" }}>
           WORKSPACE
         </div>
-        <h1 className="df-title" style={{ fontSize: 26, margin: "6px 0 16px" }}>
+        <h1 className="df-title df-title-follow-card">
           Choose a Workspace
         </h1>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="df-stack-snug">
           {rows.map((row) => (
             <button
               key={row.workspaceId}

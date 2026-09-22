@@ -22,6 +22,7 @@ import { motionForSurface } from "./motion";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { Button } from "@/components/ui/button";
 
 type ClientWithContacts = CrmClient & { contacts?: CrmContact[] };
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
@@ -196,9 +197,9 @@ export function V2ClientsPage() {
           <p className="df-subhead">{register.subhead}</p>
         </div>
         <div className="df-library-actions">
-          <button type="button" className="df-ink-btn" onClick={() => setCreating((open) => !open)}>
+          <Button variant="default" type="button" onClick={() => setCreating((open) => !open)} className="df-btn">
             New Client
-          </button>
+          </Button>
         </div>
       </header>
 
@@ -213,9 +214,9 @@ export function V2ClientsPage() {
               aria-label="Client name"
             />
           </label>
-          <button type="submit" className="df-ink-btn" disabled={createClient.isPending || !name.trim()}>
+          <Button variant="default" type="submit" disabled={createClient.isPending || !name.trim()} className="df-btn">
             Create
-          </button>
+          </Button>
         </form>
       ) : null}
       {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
@@ -478,12 +479,12 @@ export function V2ClientRecordPage() {
           <p className="df-empty">{record.emptyCopy}</p>
         ) : (
           <div className="df-overview">
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="df-stack">
               <section className="df-card df-client-contacts">
                 <div className="df-card-head">
                   <h2 className="df-card-title">On this Client</h2>
                   <span className="df-mono df-meta">{record.contacts.length}</span>
-                  <button type="button" className="df-ghost-btn" onClick={() => setAddingContact((open) => !open)}>Add contact</button>
+                  <Button variant="outline" type="button" onClick={() => setAddingContact((open) => !open)} className="df-btn">Add contact</Button>
                 </div>
                 {addingContact ? (
                   <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); if (contactDraft.name.trim()) createContact.mutate(); }}>
@@ -499,7 +500,7 @@ export function V2ClientRecordPage() {
                       />
                       <label htmlFor="df-contact-primary">Primary contact</label>
                     </div>
-                    <button className="df-ink-btn" type="submit" disabled={!contactDraft.name.trim() || createContact.isPending}>Create contact</button>
+                    <Button variant="default" type="submit" disabled={!contactDraft.name.trim() || createContact.isPending} className="df-btn">Create contact</Button>
                   </form>
                 ) : null}
                 {record.contacts.length === 0 ? (
@@ -560,7 +561,7 @@ export function V2ClientRecordPage() {
               <section className="df-card">
                 <div className="df-card-head">
                   <h2 className="df-card-title">Client details</h2>
-                  <button type="button" className="df-ghost-btn" onClick={() => setEditing((open) => !open)}>Edit Client</button>
+                  <Button variant="outline" type="button" onClick={() => setEditing((open) => !open)} className="df-btn">Edit Client</Button>
                 </div>
                 {editing ? (
                   <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); updateClient.mutate(); }}>
@@ -586,7 +587,7 @@ export function V2ClientRecordPage() {
                     </div>
                     {draft.source === "fiverr" ? <label className="df-daily-field">FIVERR USERNAME<input value={draft.fiverrUsername} onChange={(event) => setDraft((value) => ({ ...value, fiverrUsername: event.target.value }))} /></label> : null}
                     <label className="df-daily-field">NOTES<textarea value={draft.notes} onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))} /></label>
-                    <button className="df-ink-btn" type="submit" disabled={updateClient.isPending}>Save Client</button>
+                    <Button variant="default" type="submit" disabled={updateClient.isPending} className="df-btn">Save Client</Button>
                   </form>
                 ) : (
                   <>

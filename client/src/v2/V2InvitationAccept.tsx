@@ -10,6 +10,7 @@ import {
   type InvitationAcceptStatus,
 } from "./people";
 import "./tokens.css";
+import { Button } from "@/components/ui/button";
 
 function tokenFromPath(path: string): string {
   const parts = path.split("/").filter(Boolean);
@@ -55,24 +56,15 @@ export function V2InvitationAcceptPage() {
   });
 
   return (
-    <div className="df-v2" data-testid="v2-invitation-accept" style={{ height: "100vh", display: "flex" }}>
-      <div
-        style={{
-          margin: "auto",
-          width: "min(420px, calc(100% - 32px))",
-          background: "#fff",
-          border: "1px solid #D8DEE6",
-          borderRadius: 10,
-          padding: 22,
-        }}
-      >
+    <div className="df-v2 df-gate" data-testid="v2-invitation-accept">
+      <div className="df-gate-card">
         <div className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.08em" }}>
           INVITATION
         </div>
-        <h1 className="df-title" style={{ fontSize: 26, margin: "6px 0 12px" }}>
+        <h1 className="df-title df-title-follow">
           {page.title}
         </h1>
-        <p className="df-subhead" style={{ marginBottom: 16 }}>
+        <p className="df-subhead df-subhead-follow">
           {page.copy}
         </p>
         {!isLoaded ? <p className="df-empty">Loading…</p> : null}
@@ -88,20 +80,14 @@ export function V2InvitationAcceptPage() {
           </div>
         ) : null}
         {page.action === "accept" ? (
-          <button
-            type="button"
-            className="df-ink-btn"
-            disabled={accept.isPending || !token}
-            data-testid="v2-invitation-accept-submit"
-            onClick={() => accept.mutate()}
-          >
+          <Button variant="default" type="button" disabled={accept.isPending || !token} data-testid="v2-invitation-accept-submit" onClick={() => accept.mutate()} className="df-btn">
             Accept Invitation
-          </button>
+          </Button>
         ) : null}
         {page.action === "today" ? (
-          <button type="button" className="df-ink-btn" onClick={() => setLocation("/")}>
+          <Button variant="default" type="button" onClick={() => setLocation("/")} className="df-btn">
             Continue to Today
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>

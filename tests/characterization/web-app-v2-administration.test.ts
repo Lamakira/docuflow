@@ -991,9 +991,9 @@ describe("Administration controls (#212)", () => {
     expect(shared).not.toBeNull();
     const selectors = shared![1];
     for (const control of [
-      ".df-toolbar .df-ghost-btn",
-      ".df-form-actions .df-ink-btn",
-      ".df-inline-form .df-ghost-btn",
+      ".df-toolbar .df-btn",
+      ".df-form-actions .df-btn",
+      ".df-inline-form .df-btn",
     ]) {
       expect(selectors).toContain(control);
     }

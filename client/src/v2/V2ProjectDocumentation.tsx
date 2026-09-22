@@ -12,6 +12,7 @@ import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { useV2Chrome } from "./V2Shell";
+import { Button } from "@/components/ui/button";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 
@@ -246,12 +247,12 @@ export function V2ProjectDocumentationPage() {
             <p className="df-subhead">{library.subhead}</p>
           </div>
           <div className="df-library-actions">
-            <button type="button" className="df-ghost-btn" onClick={() => setCreateMode("project")}>
+            <Button variant="outline" type="button" onClick={() => setCreateMode("project")} className="df-btn">
               New project
-            </button>
-            <button type="button" className="df-ink-btn" onClick={() => setCreateMode("document")}>
+            </Button>
+            <Button variant="default" type="button" onClick={() => setCreateMode("document")} className="df-btn">
               New Document
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -266,13 +267,9 @@ export function V2ProjectDocumentationPage() {
                 aria-label={createMode === "project" ? "Project name" : "Document name"}
               />
             </label>
-            <button
-              type="submit"
-              className="df-ink-btn"
-              disabled={createDocument.isPending || createProject.isPending || !name.trim()}
-            >
+            <Button variant="default" type="submit" disabled={createDocument.isPending || createProject.isPending || !name.trim()} className="df-btn">
               Create
-            </button>
+            </Button>
           </form>
         ) : null}
         {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}

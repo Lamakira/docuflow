@@ -159,11 +159,11 @@ export function V2TeamDailyUpdatesPage() {
           <div>
             <div className="df-mono df-meta">Submitted</div>
             {page.submitted.length === 0 ? (
-              <p className="df-empty" style={{ padding: "12px 0" }}>
+              <p className="df-empty df-band-y">
                 {page.submittedEmptyCopy}
               </p>
             ) : (
-              <div className="df-chip-list" style={{ marginTop: 10 }}>
+              <div className="df-chip-list df-chip-follow">
                 {page.submitted.map((member) => (
                   <span key={member.id} className="df-person-chip">
                     {member.name}
@@ -176,12 +176,12 @@ export function V2TeamDailyUpdatesPage() {
             <div className="df-mono df-meta">Missing</div>
             {page.missing.length === 0 ? (
               page.missingEmptyCopy ? (
-                <p className="df-empty" style={{ padding: "12px 0" }}>
+                <p className="df-empty df-band-y">
                   {page.missingEmptyCopy}
                 </p>
               ) : null
             ) : (
-              <div className="df-chip-list" style={{ marginTop: 10 }}>
+              <div className="df-chip-list df-chip-follow">
                 {page.missing.map((member) => (
                   <span key={member.id} className="df-person-chip">
                     {member.name}
@@ -266,7 +266,7 @@ export function V2TeamDailyUpdatesPage() {
                 {row.blocker ? (
                   <div className="df-blocker">
                     <div className="df-mono df-meta">BLOCKER</div>
-                    <p className="df-prose" style={{ margin: "6px 0 0" }}>
+                    <p className="df-prose df-prose-follow">
                       {row.blocker}
                     </p>
                   </div>

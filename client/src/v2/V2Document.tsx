@@ -19,6 +19,7 @@ import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { V2FileViewer } from "./V2FileViewer";
 import { projectVisibleTo } from "./projects";
 import { useV2Chrome } from "./V2Shell";
+import { Button } from "@/components/ui/button";
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 
@@ -256,7 +257,7 @@ export function V2DocumentPage() {
             Document
           </h1>
         </header>
-        <p className="df-subhead" style={{ padding: "0 22px" }}>
+        <p className="df-subhead df-page-inset">
           Loading this Document…
         </p>
       </div>
@@ -267,9 +268,9 @@ export function V2DocumentPage() {
     return (
       <div className="df-editor-page" data-testid="v2-document-editor">
         <header className="df-editor-head">
-          <Link href={editor.backHref} className="df-ghost-btn">
+          <Button asChild variant="outline" className="df-btn"><Link href={editor.backHref}>
             Back to {editor.backLabel}
-          </Link>
+          </Link></Button>
         </header>
         {editor.refusal ? <p className="df-refusal">{editor.refusal}</p> : <p className="df-empty">{editor.emptyCopy}</p>}
       </div>
@@ -301,16 +302,16 @@ export function V2DocumentPage() {
   return (
     <div className="df-editor-page" data-testid="v2-document-editor">
       <header className="df-editor-head">
-        <Link href={editor.backHref} className="df-ghost-btn">
+        <Button asChild variant="outline" className="df-btn"><Link href={editor.backHref}>
           Back to {editor.backLabel}
-        </Link>
+        </Link></Button>
         {editor.saveLabel ? (
           <span className="df-save-state" data-state={saveState} data-motion={saveState === "idle" ? "none" : "standard"}>
             {editor.saveLabel}
           </span>
         ) : null}
         {writeRefusal ? (
-          <p className="df-refusal" style={{ margin: 0 }}>
+          <p className="df-refusal df-flush">
             {writeRefusal}
           </p>
         ) : null}
