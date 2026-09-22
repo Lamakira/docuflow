@@ -258,6 +258,16 @@ describe("controls have hover, focus-visible, and disabled states (#249)", () =>
     expect(tokensCss).toMatch(/\[role="menuitemradio"\][\s\S]*?padding-left:\s*var\(--df-space-7\)/);
   });
 
+  it("rings the palette's search row, not the bare input inside it", () => {
+    // `.df-v2 :focus-visible` outranks shadcn's `outline-none` on the input, so
+    // without this the amber sat inside the row, with the magnifier outside it,
+    // clipped at the top by the palette's overflow.
+    expect(rule(tokensCss, ".df-v2.df-command-palette [cmdk-input]:focus-visible")).toMatch(/outline:\s*none/);
+    expect(
+      rule(tokensCss, ".df-v2.df-command-palette [cmdk-input-wrapper]:has([cmdk-input]:focus-visible)"),
+    ).toMatch(/box-shadow:\s*inset 0 -2px 0 var\(--df-amber\)/);
+  });
+
   it("anchors the command palette to the top of a phone viewport", () => {
     expect(tokensCss).toMatch(/@media \(max-width: 639px\)[\s\S]*?\.df-v2\.df-command-palette[\s\S]*?top:\s*12px/);
     // And says what it is waiting for, so it is a surface and not a stray field.
