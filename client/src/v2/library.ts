@@ -64,7 +64,7 @@ export type LibraryRow = {
 export type LibraryPreview = {
   folderId: string;
   name: string;
-  /** What the delete confirmation says: the route cascades to every Document inside (#260). */
+  /** What the delete confirmation says: the route cascades to everything filed inside (#260). */
   deleteConsequence: string;
   title: string;
   meta: string;
@@ -244,10 +244,10 @@ function folderPreview(folder: LibraryFolder, children: LibraryDocument[]): Libr
   return {
     folderId: folder.id,
     name: folder.name,
-    deleteConsequence:
-      count === 0
-        ? `${folder.name} will be deleted. It holds no Workspace Documents.`
-        : `${folder.name} and the ${count === 1 ? "1 Workspace Document" : `${count} Workspace Documents`} in it will be deleted. This cannot be undone.`,
+    // The route cascades to every row filed under the folder, including
+    // Restricted Documents and Files this register never lists, so the
+    // confirmation cannot honestly give a count.
+    deleteConsequence: `${folder.name} and everything filed in it will be deleted, including items you may not be able to see. This cannot be undone.`,
     title: folder.name,
     meta: `${itemLabel} · FOLDER`,
     accessCopy:

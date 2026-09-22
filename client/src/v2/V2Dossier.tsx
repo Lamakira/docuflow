@@ -564,8 +564,9 @@ export function V2DossierPage() {
     onError: (error: Error) => refuseWrite(error.message),
   });
 
-  const renameTag = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => apiRequest("PATCH", tagPath(id), { name }),
+  const updateTag = useMutation({
+    mutationFn: ({ id, name, color }: { id: string; name: string; color: string }) =>
+      apiRequest("PATCH", tagPath(id), { name, color }),
     onSuccess: () => {
       invalidateTags();
       setWriteRefusal(null);
@@ -928,7 +929,7 @@ export function V2DossierPage() {
                 createTag.mutate(name);
               },
               onSetTagAttached: (id, attached) => { if (!refuseWrite()) setTagAttached.mutate({ id, attached }); },
-              onRenameTag: (id, name) => { if (!refuseWrite()) renameTag.mutate({ id, name }); },
+              onEditTag: (id, draft) => { if (!refuseWrite()) updateTag.mutate({ id, ...draft }); },
               onDeleteTag: (id) => { if (!refuseWrite()) deleteTag.mutate(id); },
               onDuplicateDocument: (id) => { if (!refuseWrite()) duplicateDocument.mutate(id); },
               onMoveDocument: (id, parentId, position) => {
@@ -990,7 +991,7 @@ function renderDossierTab(props: {
   setTagName: (value: string) => void;
   onCreateTag: (event: FormEvent) => void;
   onSetTagAttached: (id: string, attached: boolean) => void;
-  onRenameTag: (id: string, name: string) => void;
+  onEditTag: (id: string, draft: { name: string; color: string }) => void;
   onDeleteTag: (id: string) => void;
   onDuplicateDocument: (id: string) => void;
   onMoveDocument: (id: string, parentId: string | null, position: number) => void;
@@ -1150,9 +1151,9 @@ function DossierOverview({
           )}
         </section>
 
-        <section className="df-card" data-testid="v2-dossier-stage-history">
+        <section className="df-card" data-testid="v2-dossier-status-history">
           <div className="df-card-head">
-            <h2 className="df-card-title">Stage history</h2>
+            <h2 className="df-card-title">Status history</h2>
           </div>
           {dossier.history.empty ? (
             <p className="df-empty">{dossier.history.emptyCopy}</p>
@@ -1448,14 +1449,16 @@ function DossierNotes({
             {noteAttachments.map((attachment) => (
               <span key={attachment.url} className="df-tag-chip">
                 {attachment.filename}
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon"
                   type="button"
                   className="df-chip-remove"
                   aria-label={`Remove ${attachment.filename}`}
                   onClick={() => onDropNoteAttachment(attachment.url)}
                 >
                   ×
-                </button>
+                </Button>
               </span>
             ))}
           </div>
@@ -1756,7 +1759,7 @@ function DossierSettings({
   setTagName,
   onCreateTag,
   onSetTagAttached,
-  onRenameTag,
+  onEditTag,
   onDeleteTag,
 }: {
   dossier: DossierModel;
@@ -1777,7 +1780,7 @@ function DossierSettings({
   setTagName: (value: string) => void;
   onCreateTag: (event: FormEvent) => void;
   onSetTagAttached: (id: string, attached: boolean) => void;
-  onRenameTag: (id: string, name: string) => void;
+  onEditTag: (id: string, draft: { name: string; color: string }) => void;
   onDeleteTag: (id: string) => void;
 }) {
   const assigned = new Set(dossier.settings.members.map((member) => member.id));
@@ -1853,15 +1856,35 @@ function DossierSettings({
           dossier.settings.memberRows.map((member) => (
             <div key={member.id} className="df-contact-row">
               <span className="df-row-title">{member.name}</span>
-              <Button
-                variant="outline"
-                type="button"
-                onClick={() => onRemoveMember(member.id)}
-                className="df-btn"
-                data-testid={`v2-dossier-remove-member-${member.id}`}
-              >
-                {member.self ? "Leave" : "Remove"}
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructiveOutline"
+                    type="button"
+                    className="df-btn"
+                    data-testid={`v2-dossier-remove-member-${member.id}`}
+                  >
+                    {member.action}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="df-v2 df-alert">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{member.action === "Leave" ? "Leave Project" : `Remove ${member.name}`}</AlertDialogTitle>
+                    <AlertDialogDescription>{member.consequence}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="df-btn" autoFocus>
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={() => onRemoveMember(member.id)}
+                    >
+                      {member.action}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           ))
         )}
@@ -1874,7 +1897,7 @@ function DossierSettings({
             key={tag.id}
             tag={tag}
             onSetAttached={onSetTagAttached}
-            onRename={onRenameTag}
+            onEdit={onEditTag}
             onDelete={onDeleteTag}
           />
         ))}
@@ -1918,16 +1941,17 @@ function DossierSettings({
 function TagRow({
   tag,
   onSetAttached,
-  onRename,
+  onEdit,
   onDelete,
 }: {
   tag: DossierModel["tags"]["vocabulary"][number];
   onSetAttached: (id: string, attached: boolean) => void;
-  onRename: (id: string, name: string) => void;
+  onEdit: (id: string, draft: { name: string; color: string }) => void;
   onDelete: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tag.name);
+  const [color, setColor] = useState(tag.color);
 
   if (editing) {
     return (
@@ -1938,7 +1962,7 @@ function TagRow({
           event.preventDefault();
           const name = draft.trim();
           if (!name) return;
-          if (name !== tag.name) onRename(tag.id, name);
+          if (name !== tag.name || color !== tag.color) onEdit(tag.id, { name, color });
           setEditing(false);
         }}
       >
@@ -1950,6 +1974,14 @@ function TagRow({
             onChange={(event) => setDraft(event.target.value)}
           />
         </label>
+        {/* shadcn has no colour control; the native one is the whole of it. */}
+        <input
+          type="color"
+          className="df-tag-color"
+          value={color}
+          aria-label="Tag colour"
+          onChange={(event) => setColor(event.target.value)}
+        />
         <span className="df-people-action">
           <Button variant="outline" type="button" onClick={() => setEditing(false)} className="df-btn">
             Cancel
@@ -1963,9 +1995,7 @@ function TagRow({
             <AlertDialogContent className="df-v2 df-alert">
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete Tag</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {tag.name} will be removed from every Project that carries it. This cannot be undone.
-                </AlertDialogDescription>
+                <AlertDialogDescription>{tag.deleteConsequence}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel className="df-btn" autoFocus>
@@ -2013,6 +2043,7 @@ function TagRow({
           type="button"
           onClick={() => {
             setDraft(tag.name);
+            setColor(tag.color);
             setEditing(true);
           }}
           className="df-btn"

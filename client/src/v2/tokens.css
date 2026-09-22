@@ -4935,12 +4935,30 @@ button.df-activity-row {
   flex: none;
 }
 
+/* shadcn's icon Button is 36px square; inside a chip it is the glyph only. */
 .df-v2 .df-chip-remove {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
   border: 0;
   background: none;
   padding: 0;
   color: var(--df-archive-slate);
-  cursor: pointer;
+}
+
+.df-tag-color {
+  width: var(--df-control-h);
+  height: var(--df-control-h);
+  flex: none;
+  padding: var(--df-space-1);
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-1);
+  background: var(--df-card-white);
+}
+
+.df-v2.df-timezone-picker {
+  width: 280px;
+  padding: var(--df-space-1);
 }
 
 .df-note-attachments {

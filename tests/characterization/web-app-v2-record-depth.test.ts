@@ -91,7 +91,7 @@ describe("Project record depth reaches the routes v1 used (#260, C)", () => {
   });
 });
 
-describe("Stage history says how long each stage took (#260, C)", () => {
+describe("Status history says how long each Project Status held (#260, C)", () => {
   it("lists changes newest first, with who moved it and how long it held", () => {
     const dossier = composeDossier(
       emptyInput({
@@ -140,7 +140,7 @@ describe("Stage history says how long each stage took (#260, C)", () => {
     expect(composeDossier(emptyInput({ project: liveProject() })).history).toEqual({
       rows: [],
       empty: true,
-      emptyCopy: "No stage changes recorded for this Project yet.",
+      emptyCopy: "No Project Status changes recorded for this Project yet.",
     });
 
     const shuffled = composeDossier(
@@ -173,10 +173,13 @@ describe("Tags are a vocabulary the dossier can edit (#260, C)", () => {
     );
 
     expect(dossier.identity?.tags).toEqual([{ id: "t-2", name: "Priority", color: "#ef4444" }]);
-    expect(dossier.tags.vocabulary).toEqual([
+    expect(dossier.tags.vocabulary.map(({ deleteConsequence: _, ...tag }) => tag)).toEqual([
       { id: "t-2", name: "Priority", color: "#ef4444", attached: true },
       { id: "t-1", name: "Retainer", color: "#6366f1", attached: false },
     ]);
+    expect(dossier.tags.vocabulary[0].deleteConsequence).toBe(
+      "Priority will be removed from every Project that carries it. This cannot be undone.",
+    );
     expect(dossier.tags.emptyCopy).toBe("");
   });
 
@@ -193,10 +196,13 @@ describe("A named member can be taken off a Project (#260, C)", () => {
     project.assignee = { id: "user-9", firstName: "Lee", lastName: "Ray", email: "lee@example.com" };
     const dossier = composeDossier(emptyInput({ project }));
 
-    expect(dossier.settings.memberRows).toEqual([
-      { id: "user-1", name: "Sam Lee", self: true },
-      { id: "user-2", name: "Pat Ng", self: false },
+    expect(dossier.settings.memberRows.map(({ id, name, self, action }) => ({ id, name, self, action }))).toEqual([
+      { id: "user-1", name: "Sam Lee", self: true, action: "Leave" },
+      { id: "user-2", name: "Pat Ng", self: false, action: "Remove" },
     ]);
+    expect(dossier.settings.memberRows[1].consequence).toBe(
+      "Pat Ng will no longer be assigned to this Project. They can be added back from Settings.",
+    );
   });
 
   it("carries whether Documentation is on, so Settings can switch it", () => {
@@ -308,16 +314,23 @@ describe("A folder can be tidied, not only created (#260, E)", () => {
     expect(folderPath("f-1")).toBe("/api/company-document-folders/f-1");
   });
 
-  it("gives the preview the folder it amends and says what deleting it takes with it", () => {
-    const library = composeLibrary(libraryInput());
+  it("gives the preview the folder it amends, and never counts what the delete cascades to", () => {
+    // The route deletes Restricted Documents and Files the register never
+    // lists, so a count taken from visible rows would undercount.
+    const library = composeLibrary(
+      libraryInput({
+        documents: [
+          { id: "d-1", name: "Leave", folderId: "f-1" },
+          { id: "d-2", name: "Payroll", folderId: "f-1", access: "restricted" },
+        ],
+      }),
+    );
     expect(library.preview?.folderId).toBe("f-1");
     expect(library.preview?.name).toBe("Policies");
     expect(library.preview?.deleteConsequence).toBe(
-      "Policies and the 1 Workspace Document in it will be deleted. This cannot be undone.",
+      "Policies and everything filed in it will be deleted, including items you may not be able to see. This cannot be undone.",
     );
-
-    const empty = composeLibrary(libraryInput({ documents: [] }));
-    expect(empty.preview?.deleteConsequence).toBe("Policies will be deleted. It holds no Workspace Documents.");
+    expect(library.preview?.deleteConsequence).not.toMatch(/\d/);
   });
 });
 
@@ -329,9 +342,10 @@ describe("an allowed timezone is chosen from a list, not only typed (#260, F)", 
     expect([...suggestions].sort()).toEqual(suggestions);
   });
 
-  it("offers the list on the free-text input it keeps", () => {
+  it("offers the list beside the free-text input it keeps, as the shadcn combobox", () => {
     const page = read("client/src/v2/V2Administration.tsx");
-    expect(page).toContain('list="v2-timezone-suggestions"');
+    expect(page).toContain('from "@/components/ui/command"');
+    expect(page).toContain("<TimezonePicker");
     expect(page).toContain("timezoneSuggestions(");
   });
 });
@@ -357,6 +371,17 @@ describe("the v2 screens call what they now offer (#260)", () => {
     ]) {
       expect(dossierPage).toContain(`${helper}(`);
     }
+  });
+
+  it("confirms a member removal in the shared modal", () => {
+    expect(dossierPage).toMatch(/member\.consequence/);
+    expect(dossierPage).toContain("Status history");
+    expect(dossierPage).not.toContain("Stage history");
+  });
+
+  it("edits a Tag's colour as well as its name", () => {
+    expect(dossierPage).toMatch(/"PATCH", tagPath\([^)]*\), \{ name, color \}/);
+    expect(dossierPage).toContain('type="color"');
   });
 
   it("attaches a File to a Project note through public object upload", () => {

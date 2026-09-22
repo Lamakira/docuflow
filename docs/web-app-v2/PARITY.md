@@ -84,9 +84,9 @@ Addressed by [#259](https://github.com/Lamakira/docuflow/issues/259). Administra
 
 Addressed by [#260](https://github.com/Lamakira/docuflow/issues/260). The dossier reaches every one of these, in the order the audit ranked them by what a reader loses without them:
 
-- **Stage history** — a card on Overview lists each change newest first, who made it, and how long the Project held that stage: until the next change, or "so far" for the current one. It is the only record of duration, so the span is the point of the card, not the date.
-- **Tags** — Settings holds the Workspace's whole vocabulary: create (which attaches the new Tag to this Project), rename, delete, attach, detach. Deleting a Tag takes it off every Project that carries it, so it asks first, in the same modal Billing uses. The attached Tags sit beside the status in the dossier header, and the Projects register shows them on each row and filters by one.
-- **Member removal** — Settings lists the rows in `project_members`, each with Remove, or Leave on the reader's own. The route decides who may remove whom — the Project owner or an Administrator removes anyone, a member only themselves — and its refusal reaches the page as written.
+- **Status history** — a card on Overview lists each Project Status change newest first, who made it, and how long the Project held that status: until the next change, or "so far" for the current one. The route is still called `stage-history`; the screen says Project Status, as `CONTEXT.md` does. It is the only record of duration, so the span is the point of the card, not the date.
+- **Tags** — Settings holds the Workspace's whole vocabulary: create (which attaches the new Tag to this Project), rename, recolour, delete, attach, detach. Deleting a Tag takes it off every Project that carries it, so it asks first, in the same modal Billing uses. The attached Tags sit beside the status in the dossier header, and the Projects register shows them on each row and filters by one.
+- **Member removal** — Settings lists the rows in `project_members`, each with Remove, or Leave on the reader's own, confirmed in the shared modal. The route decides who may remove whom — the Project owner or an Administrator removes anyone, a member only themselves — and its refusal reaches the page as written.
 - **Clone** — Settings clones the Project and opens the copy's Settings, where the name ends in "(Copy)" and wants changing.
 - **Documentation** — the DOCUMENTATION field was read-only; Settings now switches it through `/api/crm/projects/:id/documentation`.
 
@@ -114,9 +114,9 @@ It is **not** v1's board. v1 drew the whole combined lifecycle in twelve columns
 
 Addressed by [#260](https://github.com/Lamakira/docuflow/issues/260).
 
-- **Folders** — the folder preview in Workspace Documents renames the folder and deletes it. The route deletes every Workspace Document in the folder with it, so the confirmation says how many, in the shared modal. The server still lets only a platform `admin` delete one; everyone else gets its refusal.
+- **Folders** — the folder preview in Workspace Documents renames the folder and deletes it. The route cascades to everything filed under the folder — Restricted Documents and Files included, which the register never lists — so the confirmation, in the shared modal, says everything in it goes rather than giving a count it could only get wrong. A folder's description stays unedited: v2 never shows one. The server still lets only a platform `admin` delete one; everyone else gets its refusal.
 - **Duplicate and reorder** — each Project Document on the dossier's Documents tab carries Duplicate, Move up and Move down in its row menu. A move stays among the Document's siblings — the ones sharing its parent — because that is what the reorder route's index counts.
-- **Attachments** — the attach control in the document editor now attaches: the File is uploaded and its object path set public through `/api/document-attachments`, the way v1's Document page did, on Project and Workspace Documents alike. The control was drawn on every v2 Document and did nothing ([#249](https://github.com/Lamakira/docuflow/issues/249)); the editor now draws it only for a page that passes a handler, so a read-only Document shows none.
+- **Attachments** — the attach control in the document editor now attaches: the File is uploaded and its object path set public through `/api/document-attachments`, the way v1's Document page did, on Project and Workspace Documents alike. The control was drawn on every v2 Document and did nothing ([#249](https://github.com/Lamakira/docuflow/issues/249)); the editor now draws it only for a page that passes a handler, so a read-only Document shows none. `BlockEditor` is shared, so this reaches v1 as well: its Workspace Document editor and File viewer pass no handler and lose a button that never worked there either. Only v1's Document page, which has the route, keeps it.
 
 - ~~`/api/company-document-folders/:id`~~
 - ~~`/api/documents/:id/duplicate`~~
@@ -129,7 +129,7 @@ Closed by [#260](https://github.com/Lamakira/docuflow/issues/260) — and the 20
 
 - ~~`/api/help-center/screenshot-map`~~ — **was never a gap.** v2's Help Center renders the same article components v1 does (`HELP_ARTICLE_COMPONENTS`, under a `surface="v2"` provider), and five of those articles place `HelpScreenshot`, which reads the map. The figure classes already have v2 tokens (`df-doc-figure*`). A characterization test now holds that path open.
 - ~~`/api/objects/upload-public`~~ — **reachable already**, for the same reason: `HelpScreenshot` uploads a platform `admin`'s screenshot through it. What was missing was the capability v1's `CrmProjectPage` used it for — a File attached to a Project note. The dossier's Notes tab now attaches Files to a note, and they land on its Files tab.
-- ~~`/api/screencasts/timezones`~~ — covered, as found: v2 edits `allowedTimezones` through `/api/workspace/settings`. The input stays free text with its validation, and now offers every IANA zone the Workspace does not allow yet as a list to choose from. The endpoint itself returns the allowed zones, not a catalogue, so it was never the list to pick from.
+- ~~`/api/screencasts/timezones`~~ — covered, as found: v2 edits `allowedTimezones` through `/api/workspace/settings`. The input stays free text with its validation, and a shadcn combobox beside it offers every IANA zone the Workspace does not allow yet. The endpoint itself returns the allowed zones, not a catalogue, so it was never the list to pick from.
 
 ---
 

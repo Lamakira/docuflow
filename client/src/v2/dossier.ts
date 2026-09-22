@@ -266,7 +266,7 @@ export type DossierModel = {
     lead: { id: string; name: string } | null;
     members: Array<{ id: string; name: string }>;
     /** Rows in `project_members`, each one a member a reader could take off. */
-    memberRows: Array<{ id: string; name: string; self: boolean }>;
+    memberRows: Array<{ id: string; name: string; self: boolean; action: string; consequence: string }>;
     documentationEnabled: boolean;
   };
   history: {
@@ -283,7 +283,7 @@ export type DossierModel = {
     emptyCopy: string;
   };
   tags: {
-    vocabulary: Array<DossierTag & { attached: boolean }>;
+    vocabulary: Array<DossierTag & { attached: boolean; deleteConsequence: string }>;
     emptyCopy: string;
   };
   dailyUpdate: {
@@ -707,10 +707,16 @@ function composeSettings(input: DossierInput): DossierModel["settings"] {
   for (const member of project.members ?? []) {
     if (!member.user?.id || seen.has(member.user.id)) continue;
     seen.add(member.user.id);
+    const name = memberName(member.user);
+    const self = member.user.id === input.currentUserId;
     memberRows.push({
       id: member.user.id,
-      name: memberName(member.user),
-      self: member.user.id === input.currentUserId,
+      name,
+      self,
+      action: self ? "Leave" : "Remove",
+      consequence: self
+        ? "You will no longer be assigned to this Project. A Project owner or Administrator can add you back."
+        : `${name} will no longer be assigned to this Project. They can be added back from Settings.`,
     });
   }
   return {
@@ -737,7 +743,7 @@ function formatSpan(ms: number): string {
 }
 
 /**
- * The only record of how long anything took (#260). The route returns newest
+ * Status history: the only record of how long anything took (#260). The route returns newest
  * first; the composer sorts anyway, because the span of each row is measured
  * to the change after it.
  */
@@ -760,14 +766,20 @@ function composeHistory(input: DossierInput): DossierModel["history"] {
   return {
     rows,
     empty: rows.length === 0,
-    emptyCopy: "No stage changes recorded for this Project yet.",
+    emptyCopy: "No Project Status changes recorded for this Project yet.",
   };
 }
 
 function composeTags(input: DossierInput): DossierModel["tags"] {
   const attached = new Set(input.tags.map((tag) => tag.id));
   const vocabulary = input.workspaceTags
-    .map((tag) => ({ id: tag.id, name: tag.name, color: tag.color, attached: attached.has(tag.id) }))
+    .map((tag) => ({
+      id: tag.id,
+      name: tag.name,
+      color: tag.color,
+      attached: attached.has(tag.id),
+      deleteConsequence: `${tag.name} will be removed from every Project that carries it. This cannot be undone.`,
+    }))
     .sort((a, b) => Number(b.attached) - Number(a.attached) || a.name.localeCompare(b.name));
   return {
     vocabulary,
