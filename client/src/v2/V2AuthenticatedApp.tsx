@@ -19,6 +19,7 @@ import {
 import { V2AccountPage } from "./V2Account";
 import { V2ClientRecordPage, V2ClientRecordRedirect, V2ClientsPage } from "./V2Clients";
 import { V2FilePage } from "./V2FileViewer";
+import { V2LegacyAdminRedirect, V2PlatformPage } from "./V2Platform";
 import { V2InvitationAcceptPage } from "./V2InvitationAccept";
 import { V2OpportunitiesPage, V2OpportunityRecordPage } from "./V2Opportunities";
 import { V2ProjectRecordRedirect, V2LegacyProjectPage, V2ProjectsPage } from "./V2Projects";
@@ -86,6 +87,7 @@ export function V2AuthenticatedApp() {
           <Route path="/administration" component={V2AdministrationPage} />
           <Route path="/devices" component={V2DevicesPage} />
           <Route path="/account" component={V2AccountPage} />
+          <Route path="/platform" component={V2PlatformPage} />
           <Route path="/help/:slug" component={V2HelpPage} />
           <Route path="/help" component={V2HelpPage} />
           <Route path="/help-center/:slug" component={V2HelpPage} />
@@ -98,15 +100,10 @@ export function V2AuthenticatedApp() {
           <Route path="/admin/analytics">
             <Redirect to="/administration#alerts" />
           </Route>
-          <Route path="/admin/user/:id">
-            <Redirect to="/administration" />
-          </Route>
-          <Route path="/admin/:rest">
-            <Redirect to="/administration" />
-          </Route>
-          <Route path="/admin">
-            <Redirect to="/administration" />
-          </Route>
+          {/* v1's User directory: the platform console for a platform admin (#266). */}
+          <Route path="/admin/user/:id" component={V2LegacyAdminRedirect} />
+          <Route path="/admin/:rest" component={V2LegacyAdminRedirect} />
+          <Route path="/admin" component={V2LegacyAdminRedirect} />
           <Route path="/time-tracking/screencasts/:rest">
             <Redirect to="/activity" />
           </Route>

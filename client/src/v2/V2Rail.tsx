@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { composeAccountMenu } from "./chrome";
+import { isPlatformAdmin } from "./platform";
 import {
   CloseIcon,
   CollapseIcon,
@@ -58,7 +59,7 @@ export function V2Rail({
   const [location] = useLocation();
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
-  const account = composeAccountMenu({ theme });
+  const account = composeAccountMenu({ theme, platformAdmin: isPlatformAdmin(user) });
 
   useEffect(() => {
     if (theme === "dark") setTheme("light");
@@ -255,6 +256,15 @@ export function V2Rail({
               }
               if (part === "separator") {
                 return <DropdownMenuSeparator key={part} className="df-menu-separator" />;
+              }
+              if (part === "platform") {
+                return (
+                  <DropdownMenuItem key={part} asChild className="df-menu-item">
+                    <Link href="/platform" data-testid="v2-platform-link">
+                      {account.platformLabel}
+                    </Link>
+                  </DropdownMenuItem>
+                );
               }
               if (part === "account") {
                 return (

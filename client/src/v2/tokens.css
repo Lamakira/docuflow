@@ -5009,3 +5009,33 @@ button.df-activity-row {
 .df-folder-rename {
   margin-top: var(--df-space-4);
 }
+
+/* The platform console (#266): three columns, and an archived User reads as one. */
+.df-platform-register .df-register-head,
+.df-platform-register .df-register-row {
+  grid-template-columns: 2fr 1fr 0.8fr;
+}
+
+.df-v2 .df-platform-register .df-register-row {
+  width: 100%;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.df-platform-register .df-register-row[data-selected="true"] {
+  background: var(--df-cold-stock);
+}
+
+.df-platform-register .df-register-row[data-archived="true"] .df-row-title {
+  color: var(--df-archive-slate);
+}
+
+.df-platform-actions {
+  flex-wrap: wrap;
+  gap: var(--df-space-3);
+}

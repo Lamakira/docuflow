@@ -4,7 +4,6 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, getUserId } from "./auth";
 import {
-  alignWorkspaceRoleToGlobalRole,
   canManageAdministration,
   requireAdministration,
 } from "./workspaceRole";
@@ -2804,7 +2803,8 @@ Instructions:
   // Get all users (admin only)
   app.get("/api/admin/users", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
     try {
-      const users = await storage.getAllUsers();
+      // The platform console lists archived accounts on request, so it can restore them (#266).
+      const users = await storage.getAllUsers({ includeArchived: req.query.includeArchived === "true" });
       res.json(users);
     } catch (error) {
       console.error("Error fetching users:", error);
@@ -2857,8 +2857,7 @@ Instructions:
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      await alignWorkspaceRoleToGlobalRole(req.params.id, parsed.data.role);
-
+      // The global role writes nothing else: a Workspace Role is People's to change (ADR-0026).
       res.json(user);
     } catch (error) {
       console.error("Error updating user role:", error);
@@ -2895,7 +2894,6 @@ Instructions:
 
       if (parsed.data.role !== "user") {
         await storage.updateUserRole(newUser.id, parsed.data.role);
-        await alignWorkspaceRoleToGlobalRole(newUser.id, parsed.data.role);
       }
 
       await identityProvider.sendPasswordSetInvite({ email: parsed.data.email });

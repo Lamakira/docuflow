@@ -325,7 +325,7 @@ export function composeDeliveryPreference(input: {
 
 export type AccountTheme = "light" | "system";
 
-export type AccountMenuStructure = "theme" | "separator" | "account" | "signOut";
+export type AccountMenuStructure = "theme" | "separator" | "platform" | "account" | "signOut";
 
 export type AccountMenuModel = {
   themeOptions: Array<{ id: AccountTheme; label: string; selected: boolean }>;
@@ -333,17 +333,22 @@ export type AccountMenuModel = {
   structure: AccountMenuStructure[];
   /** The account destination itself — where deletion lives (#217, Flow 10). */
   accountLabel: "Account";
+  /** The platform console, for a platform admin only (#266) — never a rail destination. */
+  platformLabel: "Platform console";
   signOutLabel: "Sign out";
 };
 
-export function composeAccountMenu(input: { theme: string }): AccountMenuModel {
+export function composeAccountMenu(input: { theme: string; platformAdmin?: boolean }): AccountMenuModel {
   // Dark is not a palette yet (#249). A stored "dark" preference collapses to Light
   // so the menu never offers, or appears to have selected, what does not exist.
   const theme: AccountTheme = input.theme === "system" ? "system" : "light";
   return {
     accountLabel: "Account",
+    platformLabel: "Platform console",
     signOutLabel: "Sign out",
-    structure: ["theme", "separator", "account", "signOut"],
+    structure: input.platformAdmin
+      ? ["theme", "separator", "platform", "account", "signOut"]
+      : ["theme", "separator", "account", "signOut"],
     themeOptions: [
       { id: "light", label: "Light", selected: theme === "light" },
       { id: "system", label: "System", selected: theme === "system" },

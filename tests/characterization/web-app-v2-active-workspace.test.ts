@@ -72,8 +72,11 @@ describe("v2 Workspace Owner (#250)", () => {
   });
 
   it("reads no Owner from the platform SuperAdmin flag anywhere in v2", () => {
+    // platform.ts is the platform console's composer (#266): the SuperAdmin is
+    // the account it shields, not an Owner, and it is the one file that reads it.
     const offenders = readdirSync(v2Dir)
       .filter((name) => name.endsWith(".ts") || name.endsWith(".tsx"))
+      .filter((name) => name !== "platform.ts")
       .filter((name) => readFileSync(join(v2Dir, name), "utf8").includes("isMainAdmin"));
     expect(offenders).toEqual([]);
   });
