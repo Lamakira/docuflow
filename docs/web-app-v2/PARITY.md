@@ -60,9 +60,9 @@ v1 reaches 87 distinct endpoints, v2 reaches 94. v2 is the larger surface — it
 
 Decided on [#261](https://github.com/Lamakira/docuflow/issues/261), built by [#266](https://github.com/Lamakira/docuflow/issues/266). v2 has a **platform console** at `/platform`: outside the Workspace rail, reached from the account menu, and only by a User whose global `users.role` is `admin`. [ADR-0025](../adr/0025-let-the-workspace-role-govern-administration-and-keep-the-platform-directory-separate.md) keeps the directory off the Workspace Role, and the console keeps it out of the Workspace chrome for the same reason. `/admin`, `/admin/create` and `/admin/user/:id` open the console for a platform admin and Administration for everyone else.
 
-The console lists every User, archived ones included, filters them by name or email, and on one User changes the global role, sends a password reset and archives or restores. Role changes and archiving confirm in the shared modal; the SuperAdmin shows no actions to anyone but itself, because every route refuses it.
+The console lists every User, archived ones included, filters them by name or email, and on one User changes the global role, sends a password reset and archives or restores. Role changes and archiving confirm in the shared modal; the SuperAdmin shows no actions to anyone but itself, because every route refuses it, and the console does not ask the detail route for the SuperAdmin on anyone else's behalf, since that route refuses too.
 
-- ~~`/api/admin/users`~~ — now takes `includeArchived=true`, so an archived account can be found and restored. v1's "Show archived" never could: the route never returned one.
+- ~~`/api/admin/users`~~ — now takes `includeArchived=true`, so an archived User can be found and restored. v1's "Show archived" never could: the route never returned one.
 - ~~`/api/admin/users/:id`~~
 - ~~`/api/admin/users/:id/role`~~ — writes the global role and nothing else. It used to move the target between Member and Administrator in the caller's active Workspace; [ADR-0026](../adr/0026-let-the-global-role-write-no-workspace-role.md) records why that stopped.
 - ~~`/api/admin/users/:id/reset-password`~~
@@ -70,8 +70,8 @@ The console lists every User, archived ones included, filters them by name or em
 
 Three routes are **deliberately dropped** from v2. They stay on the server; v2 does not call them:
 
-- `POST /api/admin/users` — it writes a `users` row with no Workspace, Membership or Clerk identity. Invitations and Clerk sign-up create accounts.
-- `DELETE /api/admin/users/:id` — archive covers it; destroying an account is a compliance control (ADR-0015), not a button.
+- `POST /api/admin/users` — it writes a `users` row with no Workspace, Membership or Clerk identity. Invitations and Clerk sign-up create Users.
+- `DELETE /api/admin/users/:id` — archive covers it; destroying a User is a compliance control (ADR-0015), not a button.
 - `PATCH /api/admin/users/:id` — email is Clerk's to change; hours per day and the daily-updates flag live on the Membership, and People edits them.
 
 ### ~~B. Four analytics dashboards~~

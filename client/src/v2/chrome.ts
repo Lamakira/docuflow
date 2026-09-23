@@ -4,6 +4,7 @@
  * in motion.ts.
  */
 
+import { PLATFORM_CONSOLE_LABEL } from "./platform";
 import { isVisibleDocumentAccess } from "@shared/documentAccess";
 import {
   DELIVERY_CATEGORIES,
@@ -334,7 +335,7 @@ export type AccountMenuModel = {
   /** The account destination itself — where deletion lives (#217, Flow 10). */
   accountLabel: "Account";
   /** The platform console, for a platform admin only (#266) — never a rail destination. */
-  platformLabel: "Platform console";
+  platformLabel: typeof PLATFORM_CONSOLE_LABEL;
   signOutLabel: "Sign out";
 };
 
@@ -344,7 +345,7 @@ export function composeAccountMenu(input: { theme: string; platformAdmin?: boole
   const theme: AccountTheme = input.theme === "system" ? "system" : "light";
   return {
     accountLabel: "Account",
-    platformLabel: "Platform console",
+    platformLabel: PLATFORM_CONSOLE_LABEL,
     signOutLabel: "Sign out",
     structure: input.platformAdmin
       ? ["theme", "separator", "platform", "account", "signOut"]

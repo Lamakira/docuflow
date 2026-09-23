@@ -31,15 +31,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-
-function stamp(value: Date | string | null | undefined): string {
-  if (!value) return "—";
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return `${date.getDate().toString().padStart(2, "0")} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
-}
-
 /** v1's `/admin`, `/admin/create` and `/admin/user/:id` (#266). */
 export function V2LegacyAdminRedirect() {
   const { user } = useAuth();
@@ -51,6 +42,7 @@ export function V2LegacyAdminRedirect() {
  * Workspace: the directory is `users`, which ADR-0025 keeps on the global role.
  */
 export function V2PlatformPage() {
+  const now = useMemo(() => new Date(), []);
   const { user, isLoading: userLoading } = useAuth();
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -59,25 +51,44 @@ export function V2PlatformPage() {
   const allowed = isPlatformAdmin(user);
 
   const { data: users = [], isLoading } = useQuery<SafeUser[]>({
-    queryKey: [platformUsersPath(true)],
+    queryKey: [platformUsersPath()],
     enabled: allowed,
-    queryFn: () => apiRequest("GET", platformUsersPath(true)),
-  });
-  const { data: detailRecord } = useQuery<SafeUser>({
-    queryKey: [platformUserPath(selectedId ?? "")],
-    enabled: allowed && Boolean(selectedId),
-    queryFn: () => apiRequest("GET", platformUserPath(selectedId ?? "")),
+    queryFn: () => apiRequest("GET", platformUsersPath()),
   });
 
-  const directory = useMemo(
+  const listed = useMemo(
     () =>
       composePlatformDirectory({
+        now,
         users: users.map(toPlatformUser),
         currentUserId: user?.id ?? "",
         filterQuery,
         selectedId,
       }),
-    [users, user?.id, filterQuery, selectedId],
+    [now, users, user?.id, filterQuery, selectedId],
+  );
+
+  // The detail route refuses the SuperAdmin to every other platform admin; the
+  // composer says so, and the page does not ask (#266).
+  const { data: detailRecord } = useQuery<SafeUser>({
+    queryKey: [platformUserPath(selectedId ?? "")],
+    enabled: allowed && Boolean(selectedId) && listed.detail?.readable === true,
+    queryFn: () => apiRequest("GET", platformUserPath(selectedId ?? "")),
+  });
+
+  // A fresher detail read replaces the listed row for the selected User.
+  const directory = useMemo(
+    () =>
+      detailRecord
+        ? composePlatformDirectory({
+            now,
+            users: users.map((row) => toPlatformUser(row.id === detailRecord.id ? detailRecord : row)),
+            currentUserId: user?.id ?? "",
+            filterQuery,
+            selectedId,
+          })
+        : listed,
+    [detailRecord, listed, now, users, user?.id, filterQuery, selectedId],
   );
 
   const act = useMutation({
@@ -87,7 +98,7 @@ export function V2PlatformPage() {
       return apiRequest("PATCH", platformUserArchivePath(userId), action.body);
     },
     onSuccess: (_result, { userId, action }) => {
-      queryClient.invalidateQueries({ queryKey: [platformUsersPath(true)] });
+      queryClient.invalidateQueries({ queryKey: [platformUsersPath()] });
       queryClient.invalidateQueries({ queryKey: [platformUserPath(userId)] });
       // Dropping your own platform role closes this console on the next read.
       if (userId === user?.id) queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
@@ -110,7 +121,7 @@ export function V2PlatformPage() {
       <div className="df-library-main">
         <header className="df-today-head">
           <div style={{ minWidth: 0 }}>
-            <h1 className="df-title">Platform console</h1>
+            <h1 className="df-title">{directory.title}</h1>
             <p className="df-subhead">{directory.subhead}</p>
           </div>
         </header>
@@ -122,7 +133,7 @@ export function V2PlatformPage() {
               type="search"
               value={filterQuery}
               onChange={(event) => setFilterQuery(event.target.value)}
-              placeholder="Filter by name or email"
+              placeholder={directory.filterPlaceholder}
               aria-label="Filter Users"
             />
           </label>
@@ -131,9 +142,9 @@ export function V2PlatformPage() {
 
         <section className="df-card df-platform-register" data-testid="v2-platform-register">
           <div className="df-register-head">
-            <span>USER</span>
-            <span>ROLE</span>
-            <span>STATUS</span>
+            {directory.columns.map((column) => (
+              <span key={column}>{column}</span>
+            ))}
           </div>
           {isLoading ? (
             <div className="df-card" style={{ minHeight: 240, border: 0 }} />
@@ -162,16 +173,14 @@ export function V2PlatformPage() {
                   <div className="df-mono df-meta">{row.email}</div>
                 </span>
                 <span>
-                  <span className="df-status">{row.superAdmin ? "SUPERADMIN" : row.role}</span>
+                  <span className="df-status">{row.role}</span>
                 </span>
-                <span className="df-mono df-meta">{row.archived ? "ARCHIVED" : "ACTIVE"}</span>
+                <span className="df-mono df-meta">{row.status}</span>
               </button>
             ))
           )}
           <div className="df-library-foot">
-            <span>
-              {directory.count} {directory.count === 1 ? "USER" : "USERS"}
-            </span>
+            <span>{directory.countLabel}</span>
           </div>
         </section>
       </div>
@@ -186,19 +195,19 @@ export function V2PlatformPage() {
           <div className="df-panel-scroll">
             <div className="df-kv">
               <span>ROLE</span>
-              <span>{detail.superAdmin ? "SUPERADMIN" : detail.role}</span>
+              <span>{detail.role}</span>
             </div>
             <div className="df-kv">
               <span>STATUS</span>
-              <span>{detail.archived ? "ARCHIVED" : "ACTIVE"}</span>
+              <span>{detail.status}</span>
             </div>
             <div className="df-kv">
               <span>LAST SIGN-IN</span>
-              <span>{stamp(detailRecord?.lastLoginAt)}</span>
+              <span>{detail.lastSignIn}</span>
             </div>
             <div className="df-kv">
               <span>JOINED</span>
-              <span>{stamp(detailRecord?.createdAt)}</span>
+              <span>{detail.joined}</span>
             </div>
             {detail.note ? <p className="df-empty df-flush">{detail.note}</p> : null}
             {notice ? <p className="df-prose df-prose-follow">{notice}</p> : null}
@@ -230,7 +239,7 @@ function PlatformActionControl({
   pending: boolean;
   onRun: () => void;
 }) {
-  const destructive = action.kind === "archive" || action.label === "Remove platform admin";
+  const { destructive } = action;
   if (!action.confirm) {
     return (
       <Button
@@ -274,9 +283,10 @@ function PlatformActionControl({
                 : "df-btn"
             }
             data-testid={`v2-platform-${action.kind}-confirm`}
+            disabled={pending}
             onClick={onRun}
           >
-            {action.label}
+            {pending ? "Working…" : action.label}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

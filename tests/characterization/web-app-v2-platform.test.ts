@@ -12,6 +12,7 @@ import {
   platformUserResetPath,
   platformUserRolePath,
   platformUsersPath,
+  toPlatformUser,
   type PlatformDirectoryInput,
   type PlatformUser,
 } from "../../client/src/v2/platform";
@@ -34,9 +35,10 @@ function user(overrides: Partial<PlatformUser> & { id: string }): PlatformUser {
     firstName: "Pat",
     lastName: "Ng",
     role: "user",
-    isMainAdmin: 0,
+    superAdmin: false,
     isArchived: false,
     lastLoginAt: null,
+    createdAt: null,
     ...overrides,
   };
 }
@@ -44,10 +46,11 @@ function user(overrides: Partial<PlatformUser> & { id: string }): PlatformUser {
 const ann = user({ id: "ann", firstName: "Ann", lastName: "Lee", role: "admin" });
 const bob = user({ id: "bob", firstName: "Bob", lastName: "Ray" });
 const cid = user({ id: "cid", firstName: "Cid", lastName: "Moe", isArchived: true });
-const sue = user({ id: "sue", firstName: "Sue", lastName: "Kim", role: "admin", isMainAdmin: 1 });
+const sue = user({ id: "sue", firstName: "Sue", lastName: "Kim", role: "admin", superAdmin: true });
 
 function input(overrides: Partial<PlatformDirectoryInput> = {}): PlatformDirectoryInput {
   return {
+    now: new Date(2026, 8, 23, 12, 0, 0),
     users: [ann, bob, cid, sue],
     currentUserId: "ann",
     filterQuery: "",
@@ -58,8 +61,8 @@ function input(overrides: Partial<PlatformDirectoryInput> = {}): PlatformDirecto
 
 describe("the platform console reaches the five kept routes (#266)", () => {
   it("names them", () => {
-    expect(platformUsersPath(false)).toBe("/api/admin/users");
-    expect(platformUsersPath(true)).toBe("/api/admin/users?includeArchived=true");
+    // Archived Users included, so the console can restore one.
+    expect(platformUsersPath()).toBe("/api/admin/users?includeArchived=true");
     expect(platformUserPath("bob")).toBe("/api/admin/users/bob");
     expect(platformUserRolePath("bob")).toBe("/api/admin/users/bob/role");
     expect(platformUserResetPath("bob")).toBe("/api/admin/users/bob/reset-password");
@@ -120,8 +123,11 @@ describe("the platform directory register (#266)", () => {
       ["ann", "Ann Lee", "PLATFORM ADMIN", false],
       ["bob", "Bob Ray", "USER", false],
       ["cid", "Cid Moe", "USER", true],
-      ["sue", "Sue Kim", "PLATFORM ADMIN", false],
+      ["sue", "Sue Kim", "SUPERADMIN", false],
     ]);
+    expect(directory.rows.map((row) => row.status)).toEqual(["ACTIVE", "ACTIVE", "ARCHIVED", "ACTIVE"]);
+    expect(directory.countLabel).toBe("4 USERS");
+    expect(directory.title).toBe("Platform console");
     expect(directory.rows.find((row) => row.id === "sue")?.superAdmin).toBe(true);
     expect(directory.rows.find((row) => row.id === "ann")?.self).toBe(true);
     expect(directory.count).toBe(4);
@@ -152,8 +158,30 @@ describe("what the console offers on one User (#266)", () => {
     // The side effect #266 removed must not come back in the copy.
     expect(role?.consequence).toContain("Their role in each Workspace does not change.");
     expect(detail?.actions.find((action) => action.kind === "archive")?.consequence).toBe(
-      "Bob Ray's Memberships in every Workspace will be archived, so they reach no Workspace. Their records stay, and the account can be restored here.",
+      "Bob Ray's Memberships in every Workspace will be archived, so they reach no Workspace. Their records stay, and the User can be restored here.",
     );
+    // What a platform admin reaches is wider than the console itself.
+    expect(role?.consequence).toBe(
+      "Bob Ray will reach this console, every User on the platform and the controls kept for platform admins. Their role in each Workspace does not change.",
+    );
+    expect(detail?.actions.map((action) => [action.kind, action.destructive])).toEqual([
+      ["role", false],
+      ["reset", false],
+      ["archive", true],
+    ]);
+  });
+
+  it("reads the SuperAdmin flag in one place, from the route's own column", () => {
+    const { superAdmin: _flag, ...row } = bob;
+    expect(toPlatformUser({ ...row, isMainAdmin: 1 }).superAdmin).toBe(true);
+    expect(toPlatformUser({ ...row, isMainAdmin: 0 }).superAdmin).toBe(false);
+  });
+
+  it("does not ask the detail route for the SuperAdmin unless the SuperAdmin is asking", () => {
+    // GET /api/admin/users/:id answers 403 "Cannot view SuperAdmin details" otherwise.
+    expect(composePlatformDirectory(input({ selectedId: "sue" })).detail?.readable).toBe(false);
+    expect(composePlatformDirectory(input({ selectedId: "sue", currentUserId: "sue" })).detail?.readable).toBe(true);
+    expect(composePlatformDirectory(input({ selectedId: "bob" })).detail?.readable).toBe(true);
   });
 
   it("says a password reset went out, since nothing in the register shows it", () => {
@@ -181,8 +209,10 @@ describe("what the console offers on one User (#266)", () => {
   it("lets a platform admin drop their own role, saying what it costs, but never archive themselves", () => {
     const detail = composePlatformDirectory(input({ selectedId: "ann" })).detail;
     expect(detail?.actions.map((action) => action.kind)).toEqual(["role", "reset"]);
-    expect(detail?.actions[0]).toMatchObject({ label: "Remove platform admin", body: { role: "user" } });
-    expect(detail?.actions[0].consequence).toContain("You will lose access to this console at once.");
+    expect(detail?.actions[0]).toMatchObject({ label: "Remove platform admin", body: { role: "user" }, destructive: true });
+    expect(detail?.actions[0].consequence).toBe(
+      "You will lose access to this console at once, and to every User on the platform and the controls kept for platform admins. Your role in each Workspace does not change.",
+    );
   });
 
   it("has no detail when nothing is selected", () => {
@@ -205,6 +235,10 @@ describe("the console page (#266)", () => {
     }
     expect(page).toContain("@/components/ui/alert-dialog");
     expect(page).not.toContain("<select");
+    // The confirm cannot fire twice, as Billing's cancel cannot.
+    expect(page).toMatch(/<AlertDialogAction[\s\S]*?disabled=\{pending\}/);
+    // The detail read waits on the composer's word that the route will answer.
+    expect(page).toContain("readable === true");
   });
 
   it("sends a User without the global role away", () => {
