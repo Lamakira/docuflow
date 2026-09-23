@@ -11,6 +11,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import { composeDailyUpdatePage } from "./dailyUpdate";
 import { useV2Chrome } from "./V2Shell";
+import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
@@ -175,29 +176,29 @@ export function V2DailyUpdatePage() {
           <div className="df-daily-form">
             <label className="df-daily-field">
               Project
-              <select
-                value={crmProjectId}
-                aria-label="Project"
-                onChange={(event) => setCrmProjectId(event.target.value)}
-              >
-                <option value="">Choose a Project</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
+              <V2FilterSelect
+                label=""
+                ariaLabel="Project"
+                value={crmProjectId || V2_SELECT_NONE}
+                options={[
+                  { value: V2_SELECT_NONE, label: "Choose a Project", disabled: true },
+                  ...projects.map((project) => ({ value: project.id, label: project.name })),
+                ]}
+                onChange={(value) => setCrmProjectId(value === V2_SELECT_NONE ? "" : value)}
+              />
             </label>
             <label className="df-daily-field">
               Status
-              <select value={status} aria-label="Status" onChange={(event) => setStatus(event.target.value)}>
-                <option value="">Choose a status</option>
-                {dailyUpdateStatusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              <V2FilterSelect
+                label=""
+                ariaLabel="Status"
+                value={status || V2_SELECT_NONE}
+                options={[
+                  { value: V2_SELECT_NONE, label: "Choose a status", disabled: true },
+                  ...dailyUpdateStatusOptions.map((option) => ({ value: option.value, label: option.label })),
+                ]}
+                onChange={(value) => setStatus(value === V2_SELECT_NONE ? "" : value)}
+              />
             </label>
             <label className="df-daily-field">
               Progress
@@ -218,18 +219,16 @@ export function V2DailyUpdatePage() {
             {blocked ? (
               <label className="df-daily-field">
                 Blockage
-                <select
-                  value={blockageType}
-                  aria-label="Blockage"
-                  onChange={(event) => setBlockageType(event.target.value)}
-                >
-                  <option value="">Choose a cause</option>
-                  {dailyUpdateBlockageTypeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                <V2FilterSelect
+                  label=""
+                  ariaLabel="Blockage"
+                  value={blockageType || V2_SELECT_NONE}
+                  options={[
+                    { value: V2_SELECT_NONE, label: "Choose a cause", disabled: true },
+                    ...dailyUpdateBlockageTypeOptions.map((option) => ({ value: option.value, label: option.label })),
+                  ]}
+                  onChange={(value) => setBlockageType(value === V2_SELECT_NONE ? "" : value)}
+                />
               </label>
             ) : null}
             <label className="df-daily-field df-daily-check">

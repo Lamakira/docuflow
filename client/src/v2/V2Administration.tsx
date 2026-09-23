@@ -19,6 +19,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -30,6 +32,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   addAllowedTimezone,
+  timezoneSuggestions,
   administrationWriteRefusal,
   analyticsActivityPath,
   analyticsAlertsPath,
@@ -594,8 +597,8 @@ export function V2AdministrationPage() {
     return Number.isFinite(parsed) ? parsed : fallback;
   }
 
-  function onAddTimezone() {
-    const edit = addAllowedTimezone(timezoneDraft, timezoneInput);
+  function onAddTimezone(candidate = timezoneInput) {
+    const edit = addAllowedTimezone(timezoneDraft, candidate);
     if (!edit.ok) {
       setTimezoneError(edit.reason);
       return;
@@ -1227,6 +1230,11 @@ export function V2AdministrationPage() {
                     }}
                   />
                 </label>
+                <TimezonePicker
+                  zones={timezoneSuggestions(timezoneDraft)}
+                  disabled={!trackingPolicy.editable}
+                  onChoose={(zone) => onAddTimezone(zone)}
+                />
                 <Button variant="outline" type="submit" disabled={!trackingPolicy.editable} className="df-btn">
                   Add
                 </Button>
@@ -1906,6 +1914,58 @@ function EndpointActions({
         </Button>
       ) : null}
     </span>
+  );
+}
+
+/**
+ * v1 chose an allowed timezone from a list; v2 keeps the typed input and its
+ * validation, and offers the list beside it as the shadcn combobox (#260).
+ */
+function TimezonePicker({
+  zones,
+  disabled,
+  onChoose,
+}: {
+  zones: string[];
+  disabled: boolean;
+  onChoose: (zone: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          type="button"
+          disabled={disabled}
+          className="df-btn"
+          data-testid="v2-timezone-picker"
+        >
+          Choose from list
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="df-v2 df-select-content df-timezone-picker">
+        <Command>
+          <CommandInput placeholder="Search timezones" aria-label="Search timezones" />
+          <CommandList>
+            <CommandEmpty>No timezone matches.</CommandEmpty>
+            {zones.map((zone) => (
+              <CommandItem
+                key={zone}
+                value={zone}
+                className="df-select-item"
+                onSelect={() => {
+                  onChoose(zone);
+                  setOpen(false);
+                }}
+              >
+                {zone}
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 

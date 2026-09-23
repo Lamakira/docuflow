@@ -80,22 +80,24 @@ Addressed by [#259](https://github.com/Lamakira/docuflow/issues/259). Administra
 - ~~`/api/admin/analytics/productivity`~~
 - ~~`/api/admin/analytics/screenshots`~~
 
-### C. Project record depth
+### ~~C. Project record depth~~
 
-```
-/api/crm/projects/:id/clone
-/api/crm/projects/:id/stage-history
-/api/crm/projects/:id/tags/:id
-/api/crm/projects/:id/members/:id
-/api/crm/projects/:id/documentation
-/api/crm/tags
-/api/crm/tags/:id
-/api/projects/:id
-```
+Addressed by [#260](https://github.com/Lamakira/docuflow/issues/260). The dossier reaches every one of these, in the order the audit ranked them by what a reader loses without them:
 
-Cloning a Project, reading its stage history, and the Tag vocabulary in full — create, edit, delete, attach, detach — exist only in v1. The v2 dossier has no `kanban`, no `tags` and no `tagIds` anywhere in `client/src/v2`.
+- **Status history** — a card on Overview lists each Project Status change newest first, who made it, and how long the Project held that status: until the next change, or "so far" for the current one. The route is still called `stage-history`; the screen says Project Status, as `CONTEXT.md` does. It is the only record of duration, so the span is the point of the card, not the date.
+- **Tags** — Settings holds the Workspace's whole vocabulary: create (which attaches the new Tag to this Project), rename, recolour, delete, attach, detach. Deleting a Tag takes it off every Project that carries it, so it asks first, in the same modal Billing uses. The attached Tags sit beside the status in the dossier header, and the Projects register shows them on each row and filters by one.
+- **Member removal** — Settings lists the rows in `project_members`, each with Remove, or Leave on the reader's own, confirmed in the shared modal. The route decides who may remove whom — the Project owner or an Administrator removes anyone, a member only themselves — and its refusal reaches the page as written.
+- **Clone** — Settings clones the Project and opens the copy's Settings, where the name ends in "(Copy)" and wants changing.
+- **Documentation** — the DOCUMENTATION field was read-only; Settings now switches it through `/api/crm/projects/:id/documentation`.
 
-Removing a named member from a Project is v1-only too; v2 reads `/api/crm/projects` and the dossier, and offers no member removal.
+- ~~`/api/crm/projects/:id/clone`~~
+- ~~`/api/crm/projects/:id/stage-history`~~
+- ~~`/api/crm/projects/:id/tags/:id`~~ — and `/api/crm/projects/:id/tags`, which the audit did not list, reads the attached ones
+- ~~`/api/crm/projects/:id/members/:id`~~
+- ~~`/api/crm/projects/:id/documentation`~~
+- ~~`/api/crm/tags`~~
+- ~~`/api/crm/tags/:id`~~
+- ~~`/api/projects/:id`~~ — **deliberately dropped.** v1 used it for two things, and v2 already does both through the CRM route: it reads the `projects` row inside `/api/crm/projects/:id`, and it renames through `PATCH /api/crm/projects/:id` with `projectName`. The route itself says Project updates "should go through CRM for metadata consistency"; a second rename path would be two ways to write one field.
 
 ### ~~D. The Kanban board~~
 
@@ -108,32 +110,26 @@ It is **not** v1's board. v1 drew the whole combined lifecycle in twelve columns
 - ~~`/api/crm/projects/all`~~
 - ~~`/api/crm/projects/all-kanban`~~
 
-### E. Documents
+### ~~E. Documents~~
 
-```
-/api/company-document-folders/:id
-/api/documents/:id/duplicate
-/api/projects/:id/documents/reorder
-/api/document-attachments
-```
+Addressed by [#260](https://github.com/Lamakira/docuflow/issues/260).
 
-Editing or deleting a folder, duplicating a Document, reordering a Project's Documents, and Document attachments. v2 Documents creates folders and uploads; it does not amend a folder or duplicate a Document.
+- **Folders** — the folder preview in Workspace Documents renames the folder and deletes it. The route cascades to everything filed under the folder — Restricted Documents and Files included, which the register never lists — so the confirmation, in the shared modal, says everything in it goes rather than giving a count it could only get wrong. A folder's description stays unedited: v2 never shows one. The server still lets only a platform `admin` delete one; everyone else gets its refusal.
+- **Duplicate and reorder** — each Project Document on the dossier's Documents tab carries Duplicate, Move up and Move down in its row menu. A move stays among the Document's siblings — the ones sharing its parent — because that is what the reorder route's index counts.
+- **Attachments** — the attach control in the document editor now attaches: the File is uploaded and its object path set public through `/api/document-attachments`, the way v1's Document page did, on Project and Workspace Documents alike. The control was drawn on every v2 Document and did nothing ([#249](https://github.com/Lamakira/docuflow/issues/249)); the editor now draws it only for a page that passes a handler, so a read-only Document shows none. `BlockEditor` is shared, so this reaches v1 as well: its Workspace Document editor and File viewer pass no handler and lose a button that never worked there either. Only v1's Document page, which has the route, keeps it.
 
-### F. Remainder
+- ~~`/api/company-document-folders/:id`~~
+- ~~`/api/documents/:id/duplicate`~~
+- ~~`/api/projects/:id/documents/reorder`~~
+- ~~`/api/document-attachments`~~
 
-```
-/api/objects/upload-public
-/api/help-center/screenshot-map
-/api/screencasts/timezones
-```
+### ~~F. Remainder~~
 
-Public object upload, the Help Center screenshot map, and the Screencasts timezone list. Listed so the next reader could confirm rather than assume — **confirmed 2026-09-22, and two of the three are real gaps**:
+Closed by [#260](https://github.com/Lamakira/docuflow/issues/260) — and the 2026-09-22 confirmation was wrong about two of the three. It searched for endpoint strings under `client/src/v2`, which misses anything v2 renders from a shared component.
 
-- **`/api/objects/upload-public`** — reached from `client/src/pages/CrmProjectPage.tsx` only. No v2 caller. A gap.
-- **`/api/help-center/screenshot-map`** — reached from `client/src/components/help-center/HelpScreenshot.tsx` only. v2's Help Center has no equivalent, so a help article that relies on a screenshot renders without one. A gap.
-- **`/api/screencasts/timezones`** — covered, but not the way this section guessed. v2 edits `allowedTimezones` through `/api/workspace/settings`, not `/api/admin/org-settings`, and with a **free-text input** (`V2Administration.tsx:546`, `addAllowedTimezone`) rather than a choice from the list endpoint. Typing a timezone where v1 offered a list is a small step down, not a missing capability.
-
-The two gaps are carried by [#260](https://github.com/Lamakira/docuflow/issues/260).
+- ~~`/api/help-center/screenshot-map`~~ — **was never a gap.** v2's Help Center renders the same article components v1 does (`HELP_ARTICLE_COMPONENTS`, under a `surface="v2"` provider), and five of those articles place `HelpScreenshot`, which reads the map. The figure classes already have v2 tokens (`df-doc-figure*`). A characterization test now holds that path open.
+- ~~`/api/objects/upload-public`~~ — **reachable already**, for the same reason: `HelpScreenshot` uploads a platform `admin`'s screenshot through it. What was missing was the capability v1's `CrmProjectPage` used it for — a File attached to a Project note. The dossier's Notes tab now attaches Files to a note, and they land on its Files tab.
+- ~~`/api/screencasts/timezones`~~ — covered, as found: v2 edits `allowedTimezones` through `/api/workspace/settings`. The input stays free text with its validation, and a shadcn combobox beside it offers every IANA zone the Workspace does not allow yet. The endpoint itself returns the allowed zones, not a catalogue, so it was never the list to pick from.
 
 ---
 
@@ -143,9 +139,9 @@ The gaps are not one decision. They are four:
 
 1. **A needs a decision before it needs code.** The platform directory is not a Workspace surface, and dropping it into the Workspace chrome would repeat the mistake [#238](https://github.com/Lamakira/docuflow/issues/238) fixed.
 2. **B and D were migrations**, and [#259](https://github.com/Lamakira/docuflow/issues/259) addresses them: the four analytics panes sit in Administration, and the Kanban is a board view on Projects.
-3. **C and E are depth** — each one small, together the difference between a rewrite that looks finished and one that is.
-4. **F was a check**, now done — and it produced work, not a clean bill. Two of its three endpoints are gaps, carried by [#260](https://github.com/Lamakira/docuflow/issues/260).
+3. **C and E were depth** — each one small, together the difference between a rewrite that looks finished and one that is. [#260](https://github.com/Lamakira/docuflow/issues/260) addresses both.
+4. **F was a check.** It found two gaps, and [#260](https://github.com/Lamakira/docuflow/issues/260) found that one of them was a gap in the search, not in v2.
 
 Nothing here is scheduled. This document records the debt; it does not decide when it is paid.
 
-**Since the audit**, [#259](https://github.com/Lamakira/docuflow/issues/259) addresses B and D. [#260](https://github.com/Lamakira/docuflow/issues/260) still carries C, E and F's two gaps, and [#261](https://github.com/Lamakira/docuflow/issues/261) asks for A's decision without attaching code to it.
+**Since the audit**, [#259](https://github.com/Lamakira/docuflow/issues/259) addresses B and D, and [#260](https://github.com/Lamakira/docuflow/issues/260) addresses C, E and F. A remains: [#261](https://github.com/Lamakira/docuflow/issues/261) asks for its decision without attaching code to it.

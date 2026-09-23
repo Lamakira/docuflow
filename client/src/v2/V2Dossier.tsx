@@ -5,6 +5,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type {
+  CrmProjectStageHistoryWithUser,
+  CrmTag,
   CrmProjectWithDetails,
   CrmProjectNoteWithCreator,
   CrmModuleField,
@@ -19,6 +21,16 @@ import { V2AudioRecorder, V2NoteAudioPlayer } from "./V2NoteAudio";
 import { chromeRefusal } from "./chrome";
 import {
   composeDossier,
+  documentDuplicatePath,
+  documentsReorderPath,
+  projectClonePath,
+  projectDocumentationPath,
+  projectMemberPath,
+  projectStageHistoryPath,
+  projectTagPath,
+  projectTagsPath,
+  tagPath,
+  tagsPath,
   type DossierDailyUpdate,
   type DossierDocument,
   type DossierInput,
@@ -32,7 +44,20 @@ import { matchV2Route } from "./presentation";
 import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { V2RowMenu } from "./V2RowMenu";
+import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = { totalDuration: number };
@@ -48,6 +73,18 @@ type DailyUpdatesQuery = {
   latest: ProjectDailyUpdateWithDetails | null;
   rows: ProjectDailyUpdateWithDetails[];
 };
+
+type NoteAttachment = { url: string; filename: string; filesize: number; filetype: string };
+
+/** The note route stores what v1's note composer uploaded: a `/public-objects/…` path per File. */
+async function uploadNoteAttachment(file: File): Promise<NoteAttachment> {
+  const slot = await apiRequest("POST", "/api/objects/upload-public");
+  const { uploadURL, publicPath } = slot as { uploadURL: string; publicPath: string };
+  const filetype = file.type || "application/octet-stream";
+  const uploaded = await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": filetype } });
+  if (!uploaded.ok) throw new Error(`Failed to upload ${file.name}`);
+  return { url: publicPath, filename: file.name, filesize: file.size, filetype };
+}
 
 const LIVE_PROJECT_STATUSES = new Set(["active", "on_hold", "in_review", "completed"]);
 const TAB_MOTION = motionForSurface("dossier-tab-swap").enterExit;
@@ -135,6 +172,8 @@ function toDossierDocument(document: Document): DossierDocument {
     title: document.title,
     updatedAt: document.updatedAt,
     projectId: document.projectId,
+    parentId: document.parentId,
+    position: document.position,
     access: "access" in document ? ((document as { access?: string | null }).access ?? null) : null,
   };
 }
@@ -221,6 +260,10 @@ export function V2DossierPage() {
   const [reminderTitle, setReminderTitle] = useState("");
   const [reminderNote, setReminderNote] = useState("");
   const [reminderDueAt, setReminderDueAt] = useState("");
+  const [noteAttachments, setNoteAttachments] = useState<NoteAttachment[]>([]);
+  const [attachingNote, setAttachingNote] = useState(false);
+  const [tagName, setTagName] = useState("");
+  const [, navigate] = useLocation();
 
   const { data: project, isLoading: projectLoading } = useQuery<CrmProjectWithDetails | null>({
     queryKey: ["/api/crm/projects", projectId],
@@ -310,6 +353,20 @@ export function V2DossierPage() {
     enabled: Boolean(projectId),
     queryFn: () => apiRequest("GET", `/api/crm/projects/${projectId}/reminders`),
   });
+  const { data: stageHistory = [] } = useQuery<CrmProjectStageHistoryWithUser[]>({
+    queryKey: [projectStageHistoryPath(projectId)],
+    enabled: Boolean(projectId),
+    queryFn: () => apiRequest("GET", projectStageHistoryPath(projectId)),
+  });
+  const { data: projectTags = [] } = useQuery<CrmTag[]>({
+    queryKey: [projectTagsPath(projectId)],
+    enabled: Boolean(projectId),
+    queryFn: () => apiRequest("GET", projectTagsPath(projectId)),
+  });
+  const { data: workspaceTags = [] } = useQuery<CrmTag[]>({
+    queryKey: [tagsPath()],
+    queryFn: () => apiRequest("GET", tagsPath()),
+  });
   useEffect(() => {
     setProjectName(project?.project?.name ?? "");
     setWriteRefusal(null);
@@ -389,11 +446,18 @@ export function V2DossierPage() {
   });
 
   const createNote = useMutation({
-    mutationFn: (body: { content: string; audioUrl?: string; audioRecordingId?: string; transcriptStatus?: string }) =>
+    mutationFn: (body: {
+      content: string;
+      audioUrl?: string;
+      audioRecordingId?: string;
+      transcriptStatus?: string;
+      attachments?: NoteAttachment[];
+    }) =>
       apiRequest("POST", `/api/crm/projects/${projectId}/notes`, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "notes"] });
       setNoteContent("");
+      setNoteAttachments([]);
       setRecordingNote(false);
       setWriteRefusal(null);
     },
@@ -433,6 +497,134 @@ export function V2DossierPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] }),
     onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
   });
+
+  function invalidateProject() {
+    queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/crm/projects/all"] });
+  }
+
+  const removeMember = useMutation({
+    mutationFn: (userId: string) => apiRequest("DELETE", projectMemberPath(projectId, userId)),
+    onSuccess: () => {
+      invalidateProject();
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuseWrite(error.message),
+  });
+
+  const toggleDocumentation = useMutation({
+    mutationFn: (enabled: boolean) => apiRequest("PATCH", projectDocumentationPath(projectId), { enabled }),
+    onSuccess: () => {
+      invalidateProject();
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"] });
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuseWrite(error.message),
+  });
+
+  const cloneProject = useMutation({
+    mutationFn: () => apiRequest("POST", projectClonePath(projectId)),
+    onSuccess: (created: { crmProject?: { id?: string } }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects/all-kanban"] });
+      setWriteRefusal(null);
+      if (created?.crmProject?.id) navigate(`/projects/${created.crmProject.id}/settings`);
+    },
+    onError: (error: Error) => refuseWrite(error.message),
+  });
+
+  function invalidateTags() {
+    queryClient.invalidateQueries({ queryKey: [tagsPath()] });
+    queryClient.invalidateQueries({ queryKey: [projectTagsPath(projectId)] });
+    queryClient.invalidateQueries({ queryKey: ["/api/crm/projects/all"] });
+  }
+
+  const setTagAttached = useMutation({
+    mutationFn: ({ id, attached }: { id: string; attached: boolean }) =>
+      apiRequest(attached ? "POST" : "DELETE", projectTagPath(projectId, id)),
+    onSuccess: () => {
+      invalidateTags();
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuseWrite(error.message),
+  });
+
+  // A new Tag is made for this Project, so it is attached as it is created.
+  const createTag = useMutation({
+    mutationFn: async (name: string) => {
+      const created = (await apiRequest("POST", tagsPath(), { name })) as CrmTag;
+      await apiRequest("POST", projectTagPath(projectId, created.id));
+      return created;
+    },
+    onSuccess: () => {
+      invalidateTags();
+      setTagName("");
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuseWrite(error.message),
+  });
+
+  const updateTag = useMutation({
+    mutationFn: ({ id, name, color }: { id: string; name: string; color: string }) =>
+      apiRequest("PATCH", tagPath(id), { name, color }),
+    onSuccess: () => {
+      invalidateTags();
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuseWrite(error.message),
+  });
+
+  const deleteTag = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", tagPath(id)),
+    onSuccess: () => {
+      invalidateTags();
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuseWrite(error.message),
+  });
+
+  function invalidateDocuments() {
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", projectRecordId, "documents"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"] });
+  }
+
+  const duplicateDocument = useMutation({
+    mutationFn: (documentId: string) => apiRequest("POST", documentDuplicatePath(documentId)),
+    onSuccess: () => {
+      invalidateDocuments();
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuseWrite(error.message, "Manage Project Documents"),
+  });
+
+  const reorderDocument = useMutation({
+    mutationFn: (move: { documentId: string; newParentId: string | null; newPosition: number }) => {
+      if (!projectRecordId) throw new Error("This Project has no Documents yet.");
+      return apiRequest("POST", documentsReorderPath(projectRecordId), move);
+    },
+    onSuccess: () => {
+      invalidateDocuments();
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => refuseWrite(error.message, "Manage Project Documents"),
+  });
+
+  async function attachNoteFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    if (refuseWrite()) return;
+    setAttachingNote(true);
+    try {
+      const uploaded: NoteAttachment[] = [];
+      for (const file of Array.from(files)) uploaded.push(await uploadNoteAttachment(file));
+      setNoteAttachments((current) => [...current, ...uploaded]);
+      setWriteRefusal(null);
+    } catch (error) {
+      refuseWrite(error instanceof Error ? error.message : "Failed to upload File");
+    } finally {
+      setAttachingNote(false);
+    }
+  }
 
   async function uploadAudioNote(audioBlob: Blob) {
     if (refuseWrite()) return;
@@ -481,6 +673,15 @@ export function V2DossierPage() {
     files: filesFromNotes(notes),
     reminders,
     notes,
+    stageHistory: stageHistory.map((change) => ({
+      id: change.id,
+      fromStatus: change.fromStatus,
+      toStatus: change.toStatus,
+      changedAt: change.changedAt,
+      changedBy: change.changedBy ?? null,
+    })),
+    tags: projectTags,
+    workspaceTags,
   };
   const dossier = composeDossier(input);
   const firstTodoTask = dossier.nextActions.rows.find((row) => !row.done);
@@ -561,6 +762,13 @@ export function V2DossierPage() {
                   <span className="df-status" data-status={dossier.identity.status}>
                     {dossier.identity.status}
                   </span>
+                  {dossier.identity.tags.map((tag) => (
+                    <span key={tag.id} className="df-tag-chip" data-testid={`v2-dossier-tag-${tag.id}`}>
+                      {/* Per-instance: the swatch is this Tag's own colour. */}
+                      <span className="df-tag-swatch" style={{ background: tag.color }} aria-hidden />
+                      {tag.name}
+                    </span>
+                  ))}
                 </div>
                 <div className="df-dossier-provenance">
                   {dossier.identity.lead ? (
@@ -682,7 +890,18 @@ export function V2DossierPage() {
               memberPending: addMember.isPending,
               noteContent,
               setNoteContent,
-              onCreateNote: () => { if (!noteContent.trim() || refuseWrite()) return; createNote.mutate({ content: noteContent.trim() }); },
+              onCreateNote: () => {
+                if (!noteContent.trim() || refuseWrite()) return;
+                createNote.mutate({
+                  content: noteContent.trim(),
+                  ...(noteAttachments.length > 0 ? { attachments: noteAttachments } : {}),
+                });
+              },
+              noteAttachments,
+              onAttachNoteFiles: attachNoteFiles,
+              onDropNoteAttachment: (url) =>
+                setNoteAttachments((current) => current.filter((attachment) => attachment.url !== url)),
+              attachingNote,
               onDeleteNote: (id) => { if (!refuseWrite()) deleteNote.mutate(id); },
               recordingNote,
               setRecordingNote,
@@ -698,6 +917,26 @@ export function V2DossierPage() {
               onSetReminderStatus: (id, status) => { if (!refuseWrite()) setReminderStatus.mutate({ id, status }); },
               onEditReminder: (id, draft) => { if (!refuseWrite()) updateReminder.mutate({ id, ...draft }); },
               onDeleteReminder: (id) => { if (!refuseWrite()) deleteReminder.mutate(id); },
+              onRemoveMember: (id) => { if (!refuseWrite()) removeMember.mutate(id); },
+              onToggleDocumentation: (enabled) => { if (!refuseWrite()) toggleDocumentation.mutate(enabled); },
+              onClone: () => { if (!refuseWrite()) cloneProject.mutate(); },
+              clonePending: cloneProject.isPending,
+              tagName,
+              setTagName,
+              onCreateTag: (event) => {
+                event.preventDefault();
+                const name = tagName.trim();
+                if (!name || refuseWrite()) return;
+                createTag.mutate(name);
+              },
+              onSetTagAttached: (id, attached) => { if (!refuseWrite()) setTagAttached.mutate({ id, attached }); },
+              onEditTag: (id, draft) => { if (!refuseWrite()) updateTag.mutate({ id, ...draft }); },
+              onDeleteTag: (id) => { if (!refuseWrite()) deleteTag.mutate(id); },
+              onDuplicateDocument: (id) => { if (!refuseWrite()) duplicateDocument.mutate(id); },
+              onMoveDocument: (id, parentId, position) => {
+                if (refuseWrite()) return;
+                reorderDocument.mutate({ documentId: id, newParentId: parentId, newPosition: position });
+              },
             })}
           </div>
         ) : null}
@@ -741,6 +980,22 @@ function renderDossierTab(props: {
   onSetReminderStatus: (id: string, status: string) => void;
   onEditReminder: (id: string, draft: { title: string; note: string; dueAt: string }) => void;
   onDeleteReminder: (id: string) => void;
+  noteAttachments: NoteAttachment[];
+  onAttachNoteFiles: (files: FileList | null) => void;
+  onDropNoteAttachment: (url: string) => void;
+  attachingNote: boolean;
+  onRemoveMember: (id: string) => void;
+  onToggleDocumentation: (enabled: boolean) => void;
+  onClone: () => void;
+  clonePending: boolean;
+  tagName: string;
+  setTagName: (value: string) => void;
+  onCreateTag: (event: FormEvent) => void;
+  onSetTagAttached: (id: string, attached: boolean) => void;
+  onEditTag: (id: string, draft: { name: string; color: string }) => void;
+  onDeleteTag: (id: string) => void;
+  onDuplicateDocument: (id: string) => void;
+  onMoveDocument: (id: string, parentId: string | null, position: number) => void;
 }): ReactNode {
   const { dossier } = props;
   if (dossier.tab === "tasks") return <DossierTasks {...props} />;
@@ -749,7 +1004,7 @@ function renderDossierTab(props: {
   if (dossier.tab === "updates") return <DossierUpdates dossier={dossier} />;
   if (dossier.tab === "notes") return <DossierNotes {...props} />;
   if (dossier.tab === "reminders") return <DossierReminders {...props} />;
-  if (dossier.tab === "documents") return <DossierDocuments dossier={dossier} />;
+  if (dossier.tab === "documents") return <DossierDocuments {...props} />;
   if (dossier.tab === "files") return <DossierFiles dossier={dossier} />;
   if (dossier.tab === "settings") return <DossierSettings {...props} />;
   return <DossierOverview {...props} />;
@@ -897,6 +1152,27 @@ function DossierOverview({
           )}
         </section>
 
+        <section className="df-card" data-testid="v2-dossier-status-history">
+          <div className="df-card-head">
+            <h2 className="df-card-title">Status history</h2>
+          </div>
+          {dossier.history.empty ? (
+            <p className="df-empty">{dossier.history.emptyCopy}</p>
+          ) : (
+            dossier.history.rows.map((row) => (
+              <div key={row.id} className="df-history-row">
+                <div className="df-history-move">
+                  {row.from ? <span className="df-mono df-meta">{row.from} →</span> : null}
+                  <span className="df-status">{row.to}</span>
+                </div>
+                <div className="df-mono df-meta">
+                  {row.when} · {row.who.toUpperCase()} · HELD {row.held.toUpperCase()}
+                </div>
+              </div>
+            ))
+          )}
+        </section>
+
         <section className="df-card">
           <div className="df-card-head">
             <h2 className="df-card-title">Client</h2>
@@ -1001,20 +1277,13 @@ function DossierTasks({
               {row.done ? "✓" : null}
             </button>
             <span className="df-task-title">{row.title}</span>
-            <label className="df-filter-chip">
-              STATUS
-              <select
-                aria-label={`Task status for ${row.title}`}
-                value={row.statusValue}
-                onChange={(event) => onComplete(row.id, event.target.value)}
-              >
-                {TASK_STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <V2FilterSelect
+              label="STATUS"
+              ariaLabel={`Task status for ${row.title}`}
+              value={row.statusValue}
+              options={TASK_STATUS_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+              onChange={(status) => onComplete(row.id, status)}
+            />
             {row.flag ? (
               <span className="df-flag" data-flag={row.flag}>
                 {row.flag}
@@ -1120,6 +1389,10 @@ function DossierNotes({
   setRecordingNote,
   onAudio,
   uploadingAudio,
+  noteAttachments,
+  onAttachNoteFiles,
+  onDropNoteAttachment,
+  attachingNote,
 }: {
   dossier: DossierModel;
   noteContent: string;
@@ -1130,6 +1403,10 @@ function DossierNotes({
   setRecordingNote: (value: boolean) => void;
   onAudio: (blob: Blob) => void;
   uploadingAudio: boolean;
+  noteAttachments: NoteAttachment[];
+  onAttachNoteFiles: (files: FileList | null) => void;
+  onDropNoteAttachment: (url: string) => void;
+  attachingNote: boolean;
 }) {
   return (
     <section className="df-card">
@@ -1141,9 +1418,45 @@ function DossierNotes({
           <div className="df-inline-form">
             <label className="df-daily-field" style={{ flex: 1 }}>NOTE<textarea value={noteContent} onChange={(event) => setNoteContent(event.target.value)} aria-label="Project note" /></label>
             <Button variant="outline" type="button" onClick={() => setRecordingNote(true)} className="df-btn">Record audio</Button>
-            <Button variant="default" type="button" onClick={onCreateNote} disabled={!noteContent.trim()} className="df-btn">Add note</Button>
+            {/* A File attached here lands on the Files tab once the note is added (#260). */}
+            <Button asChild variant="outline" className="df-btn" aria-disabled={attachingNote}>
+              <label>
+                {attachingNote ? "Attaching…" : "Attach file"}
+                <input
+                  type="file"
+                  multiple
+                  hidden
+                  disabled={attachingNote}
+                  aria-label="Attach file to note"
+                  onChange={(event) => {
+                    onAttachNoteFiles(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </Button>
+            <Button variant="default" type="button" onClick={onCreateNote} disabled={!noteContent.trim() || attachingNote} className="df-btn">Add note</Button>
           </div>
         )}
+        {noteAttachments.length > 0 ? (
+          <div className="df-note-attachments" data-testid="v2-dossier-note-attachments">
+            {noteAttachments.map((attachment) => (
+              <span key={attachment.url} className="df-tag-chip">
+                {attachment.filename}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  className="df-chip-remove"
+                  aria-label={`Remove ${attachment.filename}`}
+                  onClick={() => onDropNoteAttachment(attachment.url)}
+                >
+                  ×
+                </Button>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
       {dossier.notes.empty ? <p className="df-empty">{dossier.notes.emptyCopy}</p> : dossier.notes.rows.map((note) => (
         <article key={note.id} className="df-update-body">
@@ -1314,7 +1627,19 @@ function DossierReminders({
   );
 }
 
-function DossierDocuments({ dossier }: { dossier: DossierModel }) {
+/**
+ * Duplicate and reorder sit in the row's overflow menu (#214): opening the
+ * Document stays the row's primary action (#260).
+ */
+function DossierDocuments({
+  dossier,
+  onDuplicateDocument,
+  onMoveDocument,
+}: {
+  dossier: DossierModel;
+  onDuplicateDocument: (id: string) => void;
+  onMoveDocument: (id: string, parentId: string | null, position: number) => void;
+}) {
   return (
     <section className="df-card">
       <div className="df-card-head">
@@ -1324,12 +1649,34 @@ function DossierDocuments({ dossier }: { dossier: DossierModel }) {
       {dossier.documents.empty ? (
         <p className="df-empty">{dossier.documents.emptyCopy}</p>
       ) : (
-        dossier.documents.rows.map((row) => (
-          <Link key={row.id} href={row.href} className="df-doc-row">
-            <span className="df-row-title">{row.title}</span>
-            <span className="df-mono df-meta">{row.meta}</span>
-          </Link>
-        ))
+        dossier.documents.rows.map((row) => {
+          const { parentId, up, down } = row.order;
+          return (
+            <div key={row.id} className="df-doc-row" data-testid={`v2-dossier-document-${row.id}`}>
+              <Link href={row.href} className="df-row-title df-doc-link">
+                {row.title}
+              </Link>
+              <span className="df-mono df-meta">{row.meta}</span>
+              <V2RowMenu
+                ariaLabel={`Actions on ${row.title}`}
+                testId={`v2-dossier-document-menu-${row.id}`}
+                items={[
+                  { label: "Duplicate", onSelect: () => onDuplicateDocument(row.id) },
+                  {
+                    label: "Move up",
+                    disabled: up == null,
+                    onSelect: () => { if (up != null) onMoveDocument(row.id, parentId, up); },
+                  },
+                  {
+                    label: "Move down",
+                    disabled: down == null,
+                    onSelect: () => { if (down != null) onMoveDocument(row.id, parentId, down); },
+                  },
+                ]}
+              />
+            </div>
+          );
+        })
       )}
     </section>
   );
@@ -1398,6 +1745,16 @@ function DossierSettings({
   onAddMember,
   users,
   memberPending,
+  onRemoveMember,
+  onToggleDocumentation,
+  onClone,
+  clonePending,
+  tagName,
+  setTagName,
+  onCreateTag,
+  onSetTagAttached,
+  onEditTag,
+  onDeleteTag,
 }: {
   dossier: DossierModel;
   projectName: string;
@@ -1409,6 +1766,16 @@ function DossierSettings({
   onAddMember: (event: FormEvent) => void;
   users: SafeUser[];
   memberPending: boolean;
+  onRemoveMember: (id: string) => void;
+  onToggleDocumentation: (enabled: boolean) => void;
+  onClone: () => void;
+  clonePending: boolean;
+  tagName: string;
+  setTagName: (value: string) => void;
+  onCreateTag: (event: FormEvent) => void;
+  onSetTagAttached: (id: string, attached: boolean) => void;
+  onEditTag: (id: string, draft: { name: string; color: string }) => void;
+  onDeleteTag: (id: string) => void;
 }) {
   const assigned = new Set(dossier.settings.members.map((member) => member.id));
   const available = users.filter((member) => !assigned.has(member.id));
@@ -1439,43 +1806,236 @@ function DossierSettings({
         ))}
       </div>
       <form className="df-filter-bar df-inset-follow" onSubmit={(event) => event.preventDefault()}>
-        <label className="df-filter-chip">
-          LEAD
-          <select
-            aria-label="Project lead"
-            value={dossier.settings.lead?.id ?? ""}
-            onChange={(event) => onAssignLead(event.target.value)}
-          >
-            <option value="">NONE</option>
-            {users.map((member) => (
-              <option key={member.id} value={member.id}>
-                {memberName(member)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <V2FilterSelect
+          label="LEAD"
+          ariaLabel="Project lead"
+          value={dossier.settings.lead?.id ?? V2_SELECT_NONE}
+          options={[
+            { value: V2_SELECT_NONE, label: "NONE" },
+            ...users.map((member) => ({ value: member.id, label: memberName(member) })),
+          ]}
+          onChange={(value) => onAssignLead(value === V2_SELECT_NONE ? "" : value)}
+        />
       </form>
       <form className="df-filter-bar df-inset-follow" onSubmit={onAddMember}>
-        <label className="df-filter-chip">
-          MEMBER
-          <select
-            aria-label="Add Project Assignment"
-            value={memberId}
-            onChange={(event) => setMemberId(event.target.value)}
-          >
-            <option value="">ADD MEMBER</option>
-            {available.map((member) => (
-              <option key={member.id} value={member.id}>
-                {memberName(member)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <V2FilterSelect
+          label="MEMBER"
+          ariaLabel="Add Project Assignment"
+          value={memberId || V2_SELECT_NONE}
+          options={[
+            { value: V2_SELECT_NONE, label: "ADD MEMBER", disabled: true },
+            ...available.map((member) => ({ value: member.id, label: memberName(member) })),
+          ]}
+          onChange={(value) => setMemberId(value === V2_SELECT_NONE ? "" : value)}
+        />
         <Button variant="outline" type="submit" disabled={memberPending || !memberId} className="df-btn">
           Assign
         </Button>
       </form>
+      <div className="df-settings-section" data-testid="v2-dossier-members">
+        <div className="df-mono df-meta">MEMBERS</div>
+        {dossier.settings.memberRows.length === 0 ? (
+          <p className="df-empty df-flush">No Members assigned to this Project.</p>
+        ) : (
+          dossier.settings.memberRows.map((member) => (
+            <div key={member.id} className="df-contact-row">
+              <span className="df-row-title">{member.name}</span>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructiveOutline"
+                    type="button"
+                    className="df-btn"
+                    data-testid={`v2-dossier-remove-member-${member.id}`}
+                  >
+                    {member.action}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="df-v2 df-alert">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{member.action === "Leave" ? "Leave Project" : `Remove ${member.name}`}</AlertDialogTitle>
+                    <AlertDialogDescription>{member.consequence}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="df-btn" autoFocus>
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={() => onRemoveMember(member.id)}
+                    >
+                      {member.action}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          ))
+        )}
+      </div>
+      <div className="df-settings-section" data-testid="v2-dossier-tags">
+        <div className="df-mono df-meta">TAGS</div>
+        {dossier.tags.emptyCopy ? <p className="df-empty df-flush">{dossier.tags.emptyCopy}</p> : null}
+        {dossier.tags.vocabulary.map((tag) => (
+          <TagRow
+            key={tag.id}
+            tag={tag}
+            onSetAttached={onSetTagAttached}
+            onEdit={onEditTag}
+            onDelete={onDeleteTag}
+          />
+        ))}
+        <form className="df-filter-bar df-inset-follow" onSubmit={onCreateTag}>
+          <label className="df-filter-input">
+            <input
+              type="text"
+              value={tagName}
+              onChange={(event) => setTagName(event.target.value)}
+              placeholder="New Tag"
+              aria-label="New Tag name"
+            />
+          </label>
+          <Button variant="outline" type="submit" disabled={!tagName.trim()} className="df-btn">
+            Create Tag
+          </Button>
+        </form>
+      </div>
+      <div className="df-settings-section df-settings-actions">
+        <Button
+          variant="outline"
+          type="button"
+          onClick={() => onToggleDocumentation(!dossier.settings.documentationEnabled)}
+          className="df-btn"
+        >
+          {dossier.settings.documentationEnabled ? "Turn Documentation off" : "Turn Documentation on"}
+        </Button>
+        <Button variant="outline" type="button" onClick={onClone} disabled={clonePending} className="df-btn">
+          {clonePending ? "Cloning…" : "Clone Project"}
+        </Button>
+      </div>
     </section>
+  );
+}
+
+/**
+ * One Tag in the Workspace vocabulary (#260). Attaching is the row's primary
+ * action; editing opens the row, and deleting a Tag — which takes it off every
+ * Project — asks first, in the same modal Billing uses.
+ */
+function TagRow({
+  tag,
+  onSetAttached,
+  onEdit,
+  onDelete,
+}: {
+  tag: DossierModel["tags"]["vocabulary"][number];
+  onSetAttached: (id: string, attached: boolean) => void;
+  onEdit: (id: string, draft: { name: string; color: string }) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(tag.name);
+  const [color, setColor] = useState(tag.color);
+
+  if (editing) {
+    return (
+      <form
+        className="df-contact-row"
+        data-testid={`v2-dossier-tag-edit-${tag.id}`}
+        onSubmit={(event) => {
+          event.preventDefault();
+          const name = draft.trim();
+          if (!name) return;
+          if (name !== tag.name || color !== tag.color) onEdit(tag.id, { name, color });
+          setEditing(false);
+        }}
+      >
+        <label className="df-filter-input">
+          <input
+            type="text"
+            value={draft}
+            aria-label="Tag name"
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        </label>
+        {/* shadcn has no colour control; the native one is the whole of it. */}
+        <input
+          type="color"
+          className="df-tag-color"
+          value={color}
+          aria-label="Tag colour"
+          onChange={(event) => setColor(event.target.value)}
+        />
+        <span className="df-people-action">
+          <Button variant="outline" type="button" onClick={() => setEditing(false)} className="df-btn">
+            Cancel
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button type="button" variant="destructiveOutline" className="df-btn">
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="df-v2 df-alert">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Tag</AlertDialogTitle>
+                <AlertDialogDescription>{tag.deleteConsequence}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="df-btn" autoFocus>
+                  Keep Tag
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={() => {
+                    onDelete(tag.id);
+                    setEditing(false);
+                  }}
+                >
+                  Delete Tag
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Button variant="default" type="submit" disabled={!draft.trim()} className="df-btn">
+            Save
+          </Button>
+        </span>
+      </form>
+    );
+  }
+
+  return (
+    <div className="df-contact-row" data-attached={tag.attached ? "true" : "false"}>
+      <span className="df-tag-chip">
+        {/* Per-instance: the swatch is this Tag's own colour. */}
+        <span className="df-tag-swatch" style={{ background: tag.color }} aria-hidden />
+        {tag.name}
+      </span>
+      <span className="df-people-action">
+        <Button
+          variant="outline"
+          type="button"
+          onClick={() => onSetAttached(tag.id, !tag.attached)}
+          className="df-btn"
+          data-testid={`v2-dossier-tag-toggle-${tag.id}`}
+        >
+          {tag.attached ? "Detach" : "Attach"}
+        </Button>
+        <Button
+          variant="outline"
+          type="button"
+          onClick={() => {
+            setDraft(tag.name);
+            setColor(tag.color);
+            setEditing(true);
+          }}
+          className="df-btn"
+        >
+          Edit
+        </Button>
+      </span>
+    </div>
   );
 }
 

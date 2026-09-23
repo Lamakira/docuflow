@@ -27,6 +27,7 @@ function emptyInput(overrides: Partial<ProjectRegisterInput> = {}): ProjectRegis
     projects: [],
     filterQuery: "",
     statusFilter: "all",
+    tagFilter: "all",
     selectedId: null,
     ...overrides,
   };
@@ -85,6 +86,7 @@ describe("Projects register from live Project rows (#185)", () => {
             budgetPercent: 40,
             trackedMtd: "12.0 h",
             visible: true,
+            tags: [],
           },
           {
             id: "prj-hidden",
@@ -96,6 +98,7 @@ describe("Projects register from live Project rows (#185)", () => {
             budgetPercent: null,
             trackedMtd: "0.0 h",
             visible: false,
+            tags: [],
           },
         ],
         selectedId: "prj-live",
@@ -133,6 +136,7 @@ describe("Projects register from live Project rows (#185)", () => {
             budgetPercent: null,
             trackedMtd: "0.0 h",
             visible: true,
+            tags: [],
           },
           {
             id: "prj-2",
@@ -144,6 +148,7 @@ describe("Projects register from live Project rows (#185)", () => {
             budgetPercent: 10,
             trackedMtd: "1.0 h",
             visible: true,
+            tags: [],
           },
         ],
       }),
@@ -292,6 +297,7 @@ describe("Projects board (#259)", () => {
           budgetPercent: null,
           trackedMtd: "0.0 h",
           visible: item.visible,
+          tags: [],
         })),
       }),
     );

@@ -13,6 +13,7 @@ import {
 } from "./dailyUpdate";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { V2FilterSelect } from "./V2Select";
 
 type TodayStatus = {
   submitted: TeamDailyUpdateMember[];
@@ -202,49 +203,41 @@ export function V2TeamDailyUpdatesPage() {
             onChange={(event) => setFilterQuery(event.target.value)}
           />
         </label>
-        <label className="df-filter-chip" data-active={rangeDays === "1" ? "true" : "false"}>
-          RANGE
-          <select
-            value={rangeDays}
-            aria-label="Range"
-            onChange={(event) => setRangeDays(event.target.value)}
-          >
-            <option value="1">Today</option>
-            <option value="7">Last 7 days</option>
-            <option value="14">Last 14 days</option>
-            <option value="30">Last 30 days</option>
-          </select>
-        </label>
-        <label className="df-filter-chip">
-          STATUS
-          <select
-            value={statusFilter}
-            aria-label="Filter by status"
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="all">All</option>
-            {dailyUpdateStatusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="df-filter-chip">
-          MEMBER
-          <select
-            value={memberFilter}
-            aria-label="Filter by Member"
-            onChange={(event) => setMemberFilter(event.target.value)}
-          >
-            <option value="all">All</option>
-            {page.members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <V2FilterSelect
+          label="RANGE"
+          ariaLabel="Range"
+          value={rangeDays}
+          active={rangeDays === "1"}
+          options={[
+            { value: "1", label: "Today" },
+            { value: "7", label: "Last 7 days" },
+            { value: "14", label: "Last 14 days" },
+            { value: "30", label: "Last 30 days" },
+          ]}
+          onChange={setRangeDays}
+        />
+        <V2FilterSelect
+          label="STATUS"
+          ariaLabel="Filter by status"
+          value={statusFilter}
+          active={statusFilter !== "all"}
+          options={[
+            { value: "all", label: "All" },
+            ...dailyUpdateStatusOptions.map((option) => ({ value: option.value, label: option.label })),
+          ]}
+          onChange={setStatusFilter}
+        />
+        <V2FilterSelect
+          label="MEMBER"
+          ariaLabel="Filter by Member"
+          value={memberFilter}
+          active={memberFilter !== "all"}
+          options={[
+            { value: "all", label: "All" },
+            ...page.members.map((member) => ({ value: member.id, label: member.name })),
+          ]}
+          onChange={setMemberFilter}
+        />
       </div>
 
       {page.empty ? (

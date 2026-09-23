@@ -62,6 +62,10 @@ export type LibraryRow = {
 };
 
 export type LibraryPreview = {
+  folderId: string;
+  name: string;
+  /** What the delete confirmation says: the route cascades to everything filed inside (#260). */
+  deleteConsequence: string;
   title: string;
   meta: string;
   accessCopy: string;
@@ -91,6 +95,10 @@ const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "
 
 export function documentHref(id: string): string {
   return `/documents/${id}`;
+}
+
+export function folderPath(id: string): string {
+  return `/api/company-document-folders/${id}`;
 }
 
 export function projectDocumentHref(id: string): string {
@@ -234,6 +242,12 @@ function folderPreview(folder: LibraryFolder, children: LibraryDocument[]): Libr
   const count = children.length;
   const itemLabel = count === 1 ? "1 ITEM" : `${count} ITEMS`;
   return {
+    folderId: folder.id,
+    name: folder.name,
+    // The route cascades to every row filed under the folder, including
+    // Restricted Documents and Files this register never lists, so the
+    // confirmation cannot honestly give a count.
+    deleteConsequence: `${folder.name} and everything filed in it will be deleted, including items you may not be able to see. This cannot be undone.`,
     title: folder.name,
     meta: `${itemLabel} · FOLDER`,
     accessCopy:

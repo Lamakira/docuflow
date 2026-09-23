@@ -2,10 +2,11 @@ import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type Pointe
 import { DragDropContext, Draggable, Droppable, type DraggableProvided, type DropResult } from "@hello-pangea/dnd";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { CrmProjectWithDetails } from "@shared/schema";
+import type { CrmProjectWithDetails, CrmTag } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
+import { tagsPath } from "./dossier";
 import { matchV2Route } from "./presentation";
 import {
   combinedStatusForProjectStatus,
@@ -19,6 +20,7 @@ import {
 } from "./projects";
 import { formatHours, memberName, mobileProjectMeta } from "./today";
 import { useV2Chrome } from "./V2Shell";
+import { V2FilterSelect } from "./V2Select";
 import { Button } from "@/components/ui/button";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
@@ -89,6 +91,7 @@ function toRegisterProject(
     leadName: leadName(project),
     budgetPercent: budgeted > 0 ? Math.round((actual / budgeted) * 100) : null,
     trackedMtd: formatHours(monthSeconds),
+    tags: (project.tags ?? []).map((tag) => ({ id: tag.id, name: tag.name })),
     visible: projectVisibleTo({
       role: viewer.role,
       userId: viewer.userId,
@@ -190,6 +193,7 @@ export function V2ProjectsPage() {
   const boardRef = useRef<HTMLDivElement>(null);
   const [filterQuery, setFilterQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [changingId, setChangingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(
@@ -222,6 +226,11 @@ export function V2ProjectsPage() {
     queryFn: () => fetch(statsUrl(monthStart, dayEnd), { credentials: "include" }).then((res) => res.json()),
   });
 
+  const { data: workspaceTags = [] } = useQuery<CrmTag[]>({
+    queryKey: [tagsPath()],
+    queryFn: () => apiRequest("GET", tagsPath()),
+  });
+
   const monthByProject = new Map((monthStats?.byProject ?? []).map((row) => [row.crmProjectId, row.totalDuration]));
   const register = composeProjectRegister({
     workspaceName,
@@ -233,6 +242,7 @@ export function V2ProjectsPage() {
     ),
     filterQuery,
     statusFilter,
+    tagFilter,
     selectedId,
   });
   const viewer = {
@@ -425,22 +435,35 @@ export function V2ProjectsPage() {
           />
         </label>
         {boardView ? null : (
-          <label className="df-filter-chip">
-            STATUS
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-              aria-label="Filter by Project Status"
-            >
-              <option value="all">ALL</option>
-              <option value="planned">PLANNED</option>
-              <option value="active">ACTIVE</option>
-              <option value="on_hold">ON HOLD</option>
-              <option value="in_review">IN REVIEW</option>
-              <option value="completed">COMPLETED</option>
-              <option value="archived">ARCHIVED</option>
-            </select>
-          </label>
+          <V2FilterSelect
+            label="STATUS"
+            ariaLabel="Filter by Project Status"
+            value={statusFilter}
+            active={statusFilter !== "all"}
+            options={[
+              { value: "all", label: "ALL" },
+              { value: "planned", label: "PLANNED" },
+              { value: "active", label: "ACTIVE" },
+              { value: "on_hold", label: "ON HOLD" },
+              { value: "in_review", label: "IN REVIEW" },
+              { value: "completed", label: "COMPLETED" },
+              { value: "archived", label: "ARCHIVED" },
+            ]}
+            onChange={setStatusFilter}
+          />
+        )}
+        {boardView || workspaceTags.length === 0 ? null : (
+          <V2FilterSelect
+            label="TAG"
+            ariaLabel="Filter by Tag"
+            value={tagFilter}
+            active={tagFilter !== "all"}
+            options={[
+              { value: "all", label: "ALL" },
+              ...workspaceTags.map((tag) => ({ value: tag.id, label: tag.name.toUpperCase() })),
+            ]}
+            onChange={setTagFilter}
+          />
         )}
         <div className="df-segment" role="group" aria-label="Project view">
           <button
@@ -555,6 +578,7 @@ export function V2ProjectsPage() {
                     </div>
                     <div className="df-mono df-meta">
                       {row.clientLabel} · {row.kindLabel}
+                      {row.tags.length > 0 ? ` · ${row.tags.join(" · ").toUpperCase()}` : ""}
                     </div>
                   </span>
                   <span>

@@ -1162,6 +1162,18 @@ export function addAllowedTimezone(timezones: string[], candidate: string): Time
   return { ok: true, timezones: [...timezones, value] };
 }
 
+/**
+ * The zones the input offers as a list (#260). v1 chose from one; v2 kept the
+ * free-text input and its validation, and suggests every IANA zone the runtime
+ * knows that this Workspace does not allow yet.
+ */
+export function timezoneSuggestions(allowed: string[]): string[] {
+  const taken = new Set(allowed);
+  const supported =
+    typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+  return supported.filter((zone) => !taken.has(zone)).sort();
+}
+
 export function removeAllowedTimezone(timezones: string[], value: string): string[] {
   return timezones.filter((timezone) => timezone !== value);
 }

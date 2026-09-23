@@ -1113,9 +1113,7 @@ button.df-activity-row {
 /* One control height across a form row, so a field and the button beside it
    share a baseline and a top edge. */
 .df-admin-form .df-daily-field > input,
-.df-admin-form .df-daily-field > select,
 .df-policy-form .df-daily-field > input,
-.df-policy-form .df-daily-field > select,
 .df-toolbar .df-filter-chip,
 .df-toolbar .df-filter-input,
 .df-toolbar .df-btn,
@@ -1417,11 +1415,6 @@ button.df-activity-row {
 
 /* Tracking Policy (#212) — the form never animates on a keystroke. */
 .df-policy-form input {
-  animation: none;
-  transition: none;
-}
-
-.df-policy-form select {
   animation: none;
   transition: none;
 }
@@ -2918,7 +2911,6 @@ button.df-activity-row {
 }
 
 .df-daily-field input,
-.df-daily-field select,
 .df-daily-field textarea {
   font: inherit;
   border: 1px solid var(--df-divider);
@@ -3344,16 +3336,6 @@ button.df-activity-row {
 
 .df-filter-chip input[type="checkbox"] {
   margin-right: 6px;
-}
-
-.df-filter-chip select {
-  border: 0;
-  background: transparent;
-  font-family: var(--df-font-ui);
-  font-weight: 500;
-  font-size: var(--df-text-2);
-  color: inherit;
-  margin-left: 6px;
 }
 
 .df-filter-chip[data-active="true"] {
@@ -4907,4 +4889,123 @@ button.df-activity-row {
 
 .df-page-inset {
   padding: 0 var(--df-space-6);
+}
+
+/*
+ * Project and Document depth (#260). A Tag is a label, not a status: it
+ * carries its own colour on a swatch and keeps the ink neutral.
+ */
+.df-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--df-space-2);
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: var(--df-text-1);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-1);
+  padding: var(--df-space-1) var(--df-space-2);
+  color: var(--df-case-ink);
+}
+
+.df-tag-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* shadcn's icon Button is 36px square; inside a chip it is the glyph only. */
+.df-v2 .df-chip-remove {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--df-archive-slate);
+}
+
+.df-tag-color {
+  width: var(--df-control-h);
+  height: var(--df-control-h);
+  flex: none;
+  padding: var(--df-space-1);
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-1);
+  background: var(--df-card-white);
+}
+
+.df-v2.df-timezone-picker {
+  width: 280px;
+  padding: var(--df-space-1);
+}
+
+.df-note-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--df-space-2);
+}
+
+.df-history-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
+  padding: var(--df-space-4);
+  border-bottom: 1px solid var(--df-divider-light);
+}
+
+.df-history-row:last-child {
+  border-bottom: 0;
+}
+
+.df-history-move {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--df-space-2);
+}
+
+.df-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
+  padding: var(--df-space-4) var(--df-space-5) 0;
+  border-top: 1px solid var(--df-divider-light);
+  margin-top: var(--df-space-4);
+}
+
+.df-settings-section > .df-contact-row {
+  padding-left: 0;
+  padding-right: 0;
+  justify-content: space-between;
+}
+
+.df-settings-section > .df-filter-bar {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.df-settings-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--df-space-3);
+  padding-bottom: var(--df-space-4);
+}
+
+.df-doc-row > .df-doc-link {
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.df-doc-row > .df-doc-link:hover {
+  text-decoration: underline;
+}
+
+.df-folder-rename {
+  margin-top: var(--df-space-4);
 }

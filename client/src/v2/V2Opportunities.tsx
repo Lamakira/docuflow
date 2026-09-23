@@ -15,6 +15,7 @@ import { motionForSurface } from "./motion";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import {
   canChangeOpportunityStage,
   combinedStatusForStage,
@@ -405,21 +406,16 @@ export function V2OpportunitiesPage() {
               aria-label="Opportunity name"
             />
           </label>
-          <label className="df-filter-chip">
-            CLIENT
-            <select
-              value={clientId}
-              onChange={(event) => setClientId(event.target.value)}
-              aria-label="Client"
-            >
-              <option value="">NONE</option>
-              {clients.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <V2FilterSelect
+            label="CLIENT"
+            ariaLabel="Client"
+            value={clientId || V2_SELECT_NONE}
+            options={[
+              { value: V2_SELECT_NONE, label: "NONE" },
+              ...clients.map((client) => ({ value: client.id, label: client.name })),
+            ]}
+            onChange={(value) => setClientId(value === V2_SELECT_NONE ? "" : value)}
+          />
           <Button variant="default" type="submit" disabled={createOpportunity.isPending || !name.trim()} className="df-btn">
             Create
           </Button>

@@ -245,6 +245,79 @@ export function V2DocumentPage() {
     });
   }, [source]);
 
+  /**
+   * The editor's attach control (#260). It was drawn on every v2 Document and
+   * did nothing (#249); it now stores the File the way v1's Document page did,
+   * as an object whose ACL `/api/document-attachments` sets.
+   */
+  const handleDocumentUpload = useCallback(
+    async (onProgress?: (progress: number) => void) => {
+      const input = window.document.createElement("input");
+      input.type = "file";
+      input.style.display = "none";
+      window.document.body.appendChild(input);
+      return new Promise<{ url: string; filename: string; filesize: number; filetype: string } | null>(
+        (resolve) => {
+          const cleanup = () => {
+            if (input.parentNode) input.parentNode.removeChild(input);
+          };
+          input.onchange = async () => {
+            const file = input.files?.[0];
+            if (!file) {
+              cleanup();
+              resolve(null);
+              return;
+            }
+            if (readOnly) {
+              setWriteRefusal(
+                chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }),
+              );
+              cleanup();
+              resolve(null);
+              return;
+            }
+            const filetype = file.type || "application/octet-stream";
+            try {
+              const slot = (await apiRequest("POST", "/api/objects/upload")) as {
+                uploadURL: string;
+                objectPath?: string;
+              };
+              onProgress?.(0);
+              const uploaded = await fetch(slot.uploadURL, {
+                method: "PUT",
+                body: file,
+                headers: { "Content-Type": filetype },
+              });
+              if (!uploaded.ok) throw new Error(`Failed to upload ${file.name}`);
+              onProgress?.(100);
+              const attached = (await apiRequest("PUT", "/api/document-attachments", {
+                fileURL: slot.objectPath ?? slot.uploadURL,
+              })) as { objectPath: string };
+              setWriteRefusal(null);
+              cleanup();
+              resolve({ url: attached.objectPath, filename: file.name, filesize: file.size, filetype });
+            } catch (error) {
+              setWriteRefusal(
+                chromeRefusal({
+                  kind: "generic",
+                  message: error instanceof Error ? error.message : "Failed to attach File",
+                }),
+              );
+              cleanup();
+              resolve(null);
+            }
+          };
+          input.addEventListener("cancel", () => {
+            cleanup();
+            resolve(null);
+          });
+          input.click();
+        },
+      );
+    },
+    [readOnly, workspaceName],
+  );
+
   if (!documentId) {
     return <Redirect to={source === "project" ? "/project-documentation" : "/documents"} />;
   }
@@ -323,6 +396,7 @@ export function V2DocumentPage() {
             content={content}
             onChange={handleContentChange}
             onImageUpload={handleImageUpload}
+            onDocumentUpload={readOnly ? undefined : handleDocumentUpload}
             title={title}
             onTitleChange={handleTitleChange}
             titlePlaceholder="Untitled"
