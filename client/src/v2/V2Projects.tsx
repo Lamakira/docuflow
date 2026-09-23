@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type PointerEvent } from "react";
 import { DragDropContext, Draggable, Droppable, type DraggableProvided, type DropResult } from "@hello-pangea/dnd";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -498,9 +498,19 @@ export function V2ProjectsPage() {
               data-testid="v2-projects-board"
             >
               {board.columns.map((column) => (
-                <section key={column.id} className="df-card df-opportunity-column">
+                <section
+                  key={column.id}
+                  className="df-card df-opportunity-column"
+                  data-staged="true"
+                  // Per-instance: the column's Project Status colour, read by the pill and the tint.
+                  style={{ "--df-stage": column.color } as CSSProperties}
+                >
                   <div className="df-card-head">
-                    <h2 className="df-card-title">{column.label}</h2>
+                    <h2 className="df-card-title">
+                      <span className="df-stage-pill" data-ink={column.ink}>
+                        {column.label}
+                      </span>
+                    </h2>
                     <span className="df-count-chip">{column.cards.length}</span>
                   </div>
                   <Droppable droppableId={column.id}>
