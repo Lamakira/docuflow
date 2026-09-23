@@ -5044,7 +5044,7 @@ button.df-activity-row {
  * Colour on the boards (v1 parity). The column carries its stage or Project
  * Status colour as --df-stage; the pill is filled with it and the column wears
  * a light tint of it, so the white cards still read as the records. The ink on
- * the pill is whichever contrasts more (stageColor.ts), not white by habit.
+ * the pill is white unless the fill is too light for it (stageColor.ts).
  */
 .df-opportunity-column[data-staged="true"] {
   background: color-mix(in srgb, var(--df-stage) 7%, var(--df-card-white));

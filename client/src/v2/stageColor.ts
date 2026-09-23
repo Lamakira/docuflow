@@ -27,7 +27,13 @@ const STAGE_COLORS: Record<string, string> = {
 };
 
 const HEX = /^#[0-9a-f]{6}$/i;
-const CASE_INK = "#0f1524";
+
+/**
+ * White reads best on a saturated fill (red, blue, purple) even where dark ink
+ * would measure slightly higher. Below 3:1 — amber, lime, the greens and
+ * cyans — white stops being legible, and the pill takes dark ink instead.
+ */
+const WHITE_MIN_CONTRAST = 3;
 
 /** A configured colour lands in a style attribute, so only a hex colour is taken. */
 export function stageColor(stageId: string, configured?: string | null): string {
@@ -43,10 +49,8 @@ function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-/** Whichever of white or case ink contrasts more with the pill. */
+/** White on the pill unless the fill is too light for it. */
 export function stageInk(hex: string): "light" | "dark" {
-  const fill = luminance(hex);
-  const onWhite = 1.05 / (fill + 0.05);
-  const onInk = (fill + 0.05) / (luminance(CASE_INK) + 0.05);
-  return onWhite >= onInk ? "light" : "dark";
+  const whiteContrast = 1.05 / (luminance(hex) + 0.05);
+  return whiteContrast >= WHITE_MIN_CONTRAST ? "light" : "dark";
 }

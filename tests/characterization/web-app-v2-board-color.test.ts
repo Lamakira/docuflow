@@ -42,13 +42,17 @@ describe("a stage's colour", () => {
     expect(stageColor("proposal_sent", "")).toBe("#f59e0b");
   });
 
-  it("puts the more legible ink on the pill, by contrast rather than habit", () => {
-    // v1 wrote white on every pill: 2.15:1 on amber, 3.76:1 even on red.
+  it("keeps white on a saturated pill and takes dark ink only where white falls under 3:1", () => {
+    // v1 wrote white on every pill, 2.15:1 on amber. Dark on red reads worse
+    // than white does, so white stays wherever it clears 3:1.
+    expect(stageInk("#ef4444")).toBe("light");
+    expect(stageInk("#f43f5e")).toBe("light");
+    expect(stageInk("#3b82f6")).toBe("light");
+    expect(stageInk("#8b5cf6")).toBe("light");
+    expect(stageInk(STAGE_FALLBACK_COLOR)).toBe("light");
     expect(stageInk("#f59e0b")).toBe("dark");
     expect(stageInk("#84cc16")).toBe("dark");
-    expect(stageInk("#ef4444")).toBe("dark");
-    expect(stageInk("#3b82f6")).toBe("dark");
-    expect(stageInk(STAGE_FALLBACK_COLOR)).toBe("light");
+    expect(stageInk("#06b6d4")).toBe("dark");
   });
 });
 
