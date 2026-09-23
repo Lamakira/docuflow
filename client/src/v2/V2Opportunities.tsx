@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type PointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type MouseEvent,
+  type PointerEvent,
+} from "react";
 import {
   DragDropContext,
   Draggable,
@@ -454,9 +463,16 @@ export function V2OpportunitiesPage() {
               key={column.id}
               className="df-card df-opportunity-column"
               data-terminal={column.terminal ? "true" : "false"}
+              data-staged="true"
+              // Per-instance: the column's stage colour, read by the pill and the tint.
+              style={{ "--df-stage": column.color } as CSSProperties}
             >
               <div className="df-card-head">
-                <h2 className="df-card-title">{column.label}</h2>
+                <h2 className="df-card-title">
+                  <span className="df-stage-pill" data-ink={column.ink}>
+                    {column.label}
+                  </span>
+                </h2>
                 <span className="df-count-chip">{column.cards.length}</span>
               </div>
               <Droppable

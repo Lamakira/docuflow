@@ -4,6 +4,7 @@ import {
   projectHasOpportunity,
 } from "@shared/projectLifecycle";
 import { chromeRefusal } from "./chrome";
+import { stageColor, stageInk } from "./stageColor";
 import { projectHref } from "./today";
 
 /**
@@ -17,6 +18,8 @@ export type OpportunityStageOption = {
   id: string;
   label: string;
   terminal: boolean;
+  /** The colour an Administrator gave the stage in the CRM field options. */
+  color?: string;
 };
 
 export type OpportunityPipelineRowInput = {
@@ -86,6 +89,9 @@ export type OpportunityColumn = {
   id: string;
   label: string;
   terminal: boolean;
+  /** The stage colour, as a pill over a tint (v1 parity). */
+  color: string;
+  ink: "light" | "dark";
   cards: OpportunityCard[];
 };
 
@@ -131,7 +137,12 @@ export function stageOptionsFromFieldOptions(options: string[] | null | undefine
           .toLowerCase()
           .replace(/[\s-]+/g, "_")
           .replace(/[^a-z0-9_]/g, "");
-        return { id, label: stageLabel(id, parsed.label), terminal: isOpportunityTerminal(id) };
+        return {
+          id,
+          label: stageLabel(id, parsed.label),
+          terminal: isOpportunityTerminal(id),
+          ...(typeof parsed.color === "string" ? { color: parsed.color } : {}),
+        };
       }
     } catch {
       /* legacy string */
@@ -145,20 +156,29 @@ export function composeOpportunityStages(options: OpportunityStageOption[]): Opp
   const source = options.length ? options : FALLBACK_OPEN_STAGES;
   const seen = new Set<string>();
   const open: OpportunityStageOption[] = [];
+  const terminalColor = new Map<string, string>();
 
   for (const option of source) {
     const id = opportunityStageFromCombined(option.id);
-    if (isOpportunityTerminal(id)) continue;
+    if (isOpportunityTerminal(id)) {
+      if (option.color && !terminalColor.has(id)) terminalColor.set(id, option.color);
+      continue;
+    }
     if (seen.has(id)) continue;
     seen.add(id);
     open.push({
       id,
       label: stageLabel(id, option.label),
       terminal: false,
+      ...(option.color ? { color: option.color } : {}),
     });
   }
 
-  return [...open, ...TERMINAL_STAGES];
+  const terminal = TERMINAL_STAGES.map((stage) => {
+    const color = terminalColor.get(stage.id);
+    return color ? { ...stage, color } : stage;
+  });
+  return [...open, ...terminal];
 }
 
 export function canChangeOpportunityStage(from: string, to: string): boolean {
@@ -178,16 +198,18 @@ export function combinedStatusForStage(stage: string, currentCombined?: string):
   return stage;
 }
 
+function stageColumn(id: string, label: string, terminal: boolean, configured?: string): OpportunityColumn {
+  const color = stageColor(id, configured);
+  return { id, label, terminal, color, ink: stageInk(color), cards: [] };
+}
+
 export function composeOpportunityPipeline(input: OpportunityPipelineInput): OpportunityPipelineModel {
   const needle = input.filterQuery.trim().toLowerCase();
   const stages = input.stages.length ? input.stages : composeOpportunityStages(FALLBACK_OPEN_STAGES);
   const stageById = new Map(stages.map((stage) => [stage.id, stage]));
-  const columns: OpportunityColumn[] = stages.map((stage) => ({
-    id: stage.id,
-    label: stage.label,
-    terminal: stage.terminal || isOpportunityTerminal(stage.id),
-    cards: [],
-  }));
+  const columns: OpportunityColumn[] = stages.map((stage) =>
+    stageColumn(stage.id, stage.label, stage.terminal || isOpportunityTerminal(stage.id), stage.color),
+  );
   const columnById = new Map(columns.map((column) => [column.id, column]));
 
   for (const row of input.rows) {
@@ -209,12 +231,12 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
     const spec = stageById.get(stage);
     let column = columnById.get(stage);
     if (!column) {
-      column = {
-        id: stage,
-        label: spec?.label ?? stageLabel(stage),
-        terminal: spec?.terminal || isOpportunityTerminal(stage),
-        cards: [],
-      };
+      column = stageColumn(
+        stage,
+        spec?.label ?? stageLabel(stage),
+        spec?.terminal || isOpportunityTerminal(stage),
+        spec?.color,
+      );
       columns.push(column);
       columnById.set(stage, column);
     }

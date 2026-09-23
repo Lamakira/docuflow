@@ -1,4 +1,5 @@
 import { projectStatusFromCombined } from "@shared/projectLifecycle";
+import { stageColor, stageInk } from "./stageColor";
 import { projectHref } from "./today";
 
 /**
@@ -208,8 +209,16 @@ export type ProjectBoardCard = {
 export type ProjectBoardColumn = {
   id: string;
   label: string;
+  /** The Project Status colour, as a pill over a tint (v1 parity). */
+  color: string;
+  ink: "light" | "dark";
   cards: ProjectBoardCard[];
 };
+
+function boardColumn(id: string, label: string): ProjectBoardColumn {
+  const color = stageColor(id);
+  return { id, label, color, ink: stageInk(color), cards: [] };
+}
 
 export type ProjectBoardModel = {
   subhead: string;
@@ -221,11 +230,7 @@ export type ProjectBoardModel = {
 
 export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel {
   const needle = input.filterQuery.trim().toLowerCase();
-  const columns: ProjectBoardColumn[] = PROJECT_BOARD_COLUMNS.map((column) => ({
-    id: column.id,
-    label: column.label,
-    cards: [],
-  }));
+  const columns: ProjectBoardColumn[] = PROJECT_BOARD_COLUMNS.map((column) => boardColumn(column.id, column.label));
   const columnById = new Map(columns.map((column) => [column.id, column]));
 
   for (const project of input.projects) {
@@ -239,7 +244,7 @@ export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel
     if (!column) {
       // A Project Status with no fixed column (on_hold) still gets one: a card
       // the register lists must never vanish from the board.
-      column = { id: projectStatus, label: projectStatus.replace(/_/g, " ").toUpperCase(), cards: [] };
+      column = boardColumn(projectStatus, projectStatus.replace(/_/g, " ").toUpperCase());
       columns.push(column);
       columnById.set(projectStatus, column);
     }

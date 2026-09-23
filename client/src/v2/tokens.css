@@ -5039,3 +5039,48 @@ button.df-activity-row {
   flex-wrap: wrap;
   gap: var(--df-space-3);
 }
+
+/*
+ * Colour on the boards (v1 parity). The column carries its stage or Project
+ * Status colour as --df-stage; the pill is filled with it and the column wears
+ * a light tint of it, so the white cards still read as the records. The ink on
+ * the pill is white unless the fill is too light for it (stageColor.ts).
+ */
+.df-opportunity-column[data-staged="true"] {
+  background: color-mix(in srgb, var(--df-stage) 7%, var(--df-card-white));
+  border-color: color-mix(in srgb, var(--df-stage) 22%, var(--df-divider));
+}
+
+.df-opportunity-column[data-staged="true"] .df-card-head {
+  border-bottom-color: color-mix(in srgb, var(--df-stage) 22%, var(--df-divider-light));
+}
+
+.df-stage-pill {
+  display: inline-block;
+  max-width: 100%;
+  background: var(--df-stage);
+  border-radius: var(--df-radius-1);
+  padding: var(--df-space-1) var(--df-space-2);
+  font-family: var(--df-font-mono);
+  font-weight: 600;
+  font-size: var(--df-text-1);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.df-stage-pill[data-ink="dark"] {
+  color: var(--df-case-ink);
+}
+
+.df-stage-pill[data-ink="light"] {
+  color: var(--df-card-white);
+}
+
+.df-opportunity-column[data-staged="true"] .df-count-chip {
+  background: var(--df-card-white);
+}
