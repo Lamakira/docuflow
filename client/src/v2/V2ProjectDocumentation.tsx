@@ -13,6 +13,7 @@ import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
+import { SkeletonLibrary, V2PageSkeleton } from "./V2Skeleton";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 
@@ -224,17 +225,14 @@ export function V2ProjectDocumentationPage() {
 
   if (isLoading) {
     return (
-      <div className="df-library" data-testid="v2-project-documentation">
-        <div className="df-library-main">
-          <header className="df-today-head">
-            <div>
-              <h1 className="df-title">Project Documentation</h1>
-              <p className="df-subhead">Loading this Workspace…</p>
-            </div>
-          </header>
-          <div className="df-card" style={{ minHeight: 280 }} />
-        </div>
-      </div>
+      <V2PageSkeleton
+        title="Project Documentation"
+        testId="v2-project-documentation"
+        frame="library"
+        status="Loading Project Documentation."
+      >
+        <SkeletonLibrary />
+      </V2PageSkeleton>
     );
   }
 

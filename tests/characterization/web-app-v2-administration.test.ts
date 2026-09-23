@@ -1070,17 +1070,23 @@ describe("Administration controls (#212)", () => {
   });
 
   it("waits with the destination's real geometry, not an empty box", () => {
-    expect(pageSource).toContain('from "@/components/ui/skeleton"');
+    // The skeleton pieces moved to V2Skeleton.tsx so every destination shares them.
+    const skeletonSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Skeleton.tsx"),
+      "utf8",
+    );
+    expect(pageSource).toContain('from "./V2Skeleton"');
+    expect(skeletonSource).toContain('from "@/components/ui/skeleton"');
     // The old placeholder was a bare card with a hardcoded height.
     expect(pageSource).not.toContain("minHeight: 280");
     // Section titles are known before any fetch, so the wait states them.
     expect(pageSource).toContain('<SkeletonSection title="Analytics"');
     expect(pageSource).toContain('<SkeletonSection title="Billing"');
     // The wait reuses the real bands and rows, so nothing moves on arrival.
-    expect(pageSource).toContain('className="df-figure-band"');
-    expect(pageSource).toContain('className="df-register-row"');
-    expect(pageSource).toContain('aria-busy="true"');
-    expect(pageSource).toContain('role="status"');
+    expect(skeletonSource).toContain('className="df-figure-band"');
+    expect(skeletonSource).toContain('className="df-register-row"');
+    expect(skeletonSource).toContain('aria-busy="true"');
+    expect(skeletonSource).toContain('role="status"');
   });
 
   it("breathes on opacity only and stops entirely under reduced motion", () => {

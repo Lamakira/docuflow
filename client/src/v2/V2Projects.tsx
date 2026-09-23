@@ -15,6 +15,7 @@ import {
   projectsAllPath,
   projectsKanbanPath,
   projectVisibleTo,
+  PROJECT_BOARD_COLUMNS,
   type ProjectBoardCard,
   type ProjectRegisterRowInput,
 } from "./projects";
@@ -22,6 +23,7 @@ import { formatHours, memberName, mobileProjectMeta } from "./today";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
 import { Button } from "@/components/ui/button";
+import { SkeletonBoard, SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -366,15 +368,16 @@ export function V2ProjectsPage() {
 
   if (isLoading || (boardView && boardLoading)) {
     return (
-      <div className="df-page" data-testid="v2-projects">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Projects</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 280 }} />
-      </div>
+      <V2PageSkeleton title="Projects" testId="v2-projects" status="Loading Projects for this Workspace.">
+        {boardView ? (
+          <SkeletonBoard columns={PROJECT_BOARD_COLUMNS.map((column) => column.label)} />
+        ) : (
+          <SkeletonRegister
+            className="df-projects-register"
+            heads={["PROJECT / CLIENT", "STATUS", "LEAD", "BUDGET USED", "TRACKED MTD"]}
+          />
+        )}
+      </V2PageSkeleton>
     );
   }
 

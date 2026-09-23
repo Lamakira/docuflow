@@ -30,6 +30,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { SkeletonLibrary, V2PageSkeleton } from "./V2Skeleton";
 
 type LibraryPayload = {
   capabilityMiss: boolean;
@@ -301,17 +302,14 @@ export function V2DocumentsPage() {
 
   if (isLoading) {
     return (
-      <div className="df-library" data-testid="v2-documents">
-        <div className="df-library-main">
-          <header className="df-today-head">
-            <div>
-              <h1 className="df-title">Workspace Documents</h1>
-              <p className="df-subhead">Loading this Workspace…</p>
-            </div>
-          </header>
-          <div className="df-card" style={{ minHeight: 280 }} />
-        </div>
-      </div>
+      <V2PageSkeleton
+        title="Workspace Documents"
+        testId="v2-documents"
+        frame="library"
+        status="Loading Workspace Documents."
+      >
+        <SkeletonLibrary />
+      </V2PageSkeleton>
     );
   }
 

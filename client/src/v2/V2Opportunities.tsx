@@ -37,6 +37,7 @@ import {
   type OpportunityPipelineRowInput,
 } from "./opportunities";
 import { Button } from "@/components/ui/button";
+import { SkeletonBoard, SkeletonRecordHead, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type OpportunityRowsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type ModuleField = { slug: string; options: string[] | null };
@@ -173,7 +174,14 @@ export function V2OpportunityRecordPage() {
   });
 
   if (match.kind !== "opportunity-record") return null;
-  if (isLoading) return <div className="df-page"><div className="df-card" style={{ minHeight: 240 }} /></div>;
+  if (isLoading) {
+    return (
+      <div className="df-page" data-testid="v2-opportunity-record" aria-busy="true">
+        <SkeletonRecordHead />
+        <SkeletonSection title="Opportunity record" lines={4} />
+      </div>
+    );
+  }
   if (isError || !row) {
     return <div className="df-page"><p className="df-empty">This Opportunity could not be loaded.</p></div>;
   }
@@ -364,15 +372,10 @@ export function V2OpportunitiesPage() {
 
   if (isLoading) {
     return (
-      <div className="df-page" data-testid="v2-opportunities">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Opportunities</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 280 }} />
-      </div>
+      <V2PageSkeleton title="Opportunities" testId="v2-opportunities" status="Loading Opportunities for this Workspace.">
+        {/* Stage names come from the CRM field options, so the columns wait unnamed. */}
+        <SkeletonBoard columns={[null, null, null, null, null]} />
+      </V2PageSkeleton>
     );
   }
 

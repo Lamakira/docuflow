@@ -58,6 +58,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { SkeletonRecordHead, SkeletonSection } from "./V2Skeleton";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = { totalDuration: number };
@@ -726,18 +727,21 @@ export function V2DossierPage() {
 
   if (projectLoading) {
     return (
-      <div data-testid="v2-dossier">
-        <header className="df-dossier-head">
-          <div className="df-dossier-identity">
-            <div className="df-dossier-copy">
-              <div className="df-card" style={{ minHeight: 88, border: 0 }} />
-            </div>
-          </div>
-        </header>
+      <div data-testid="v2-dossier" aria-busy="true">
+        <SkeletonRecordHead />
+        <p className="df-sr-only" role="status">
+          Loading this Project.
+        </p>
         <div className="df-dossier-body">
           <div className="df-overview">
-            <div className="df-card" style={{ minHeight: 240 }} />
-            <div className="df-card" style={{ minHeight: 240 }} />
+            <div className="df-stack">
+              <SkeletonSection title="Next actions" lines={4} />
+              <SkeletonSection title="Latest Daily Update" lines={3} />
+            </div>
+            <div className="df-stack">
+              <SkeletonSection title="Budget & time" lines={3} />
+              <SkeletonSection title="Project Documents" lines={3} />
+            </div>
           </div>
         </div>
       </div>

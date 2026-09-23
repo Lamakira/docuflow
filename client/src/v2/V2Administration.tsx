@@ -7,7 +7,7 @@ import {
   type ScreenshotPolicy,
 } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1276,92 +1276,17 @@ export function V2AdministrationPage() {
 
 
 
-/**
- * A destination's section titles are known before any fetch; only the values
- * are not. So the wait shows the real geometry with the real titles and leaves
- * only the values unexposed — when the data lands, nothing moves. That is the
- * same spatial-consistency rule the rest of the v2 motion substrate follows.
- */
-function Bar({ width, role }: { width?: "short" | "medium" | "long"; role?: "value" }) {
-  return <Skeleton className="df-skeleton" data-width={width} data-role={role} />;
-}
-
-function SkeletonBand({ tiles }: { tiles: number }) {
-  return (
-    <div className="df-figure-band">
-      {Array.from({ length: tiles }, (_, index) => (
-        <div key={index} className="df-analytics-figure">
-          <Bar width="short" />
-          <Bar role="value" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SkeletonRows({ columns, rows }: { columns: number; rows: number }) {
-  return (
-    <>
-      {Array.from({ length: rows }, (_, row) => (
-        <div
-          key={row}
-          className="df-register-row"
-          data-columns={columns}
-          data-skeleton="true"
-        >
-          <Bar width="long" />
-          {Array.from({ length: columns - 1 }, (_, cell) => (
-            <Bar key={cell} width="short" />
-          ))}
-        </div>
-      ))}
-    </>
-  );
-}
-
-function SkeletonSection({
-  title,
-  tiles,
-  columns,
-  rows,
-}: {
-  title: string;
-  tiles?: number;
-  columns?: number;
-  rows?: number;
-}) {
-  return (
-    <section className="df-card df-analytics-register">
-      <div className="df-card-head">
-        <div className="df-card-head-text">
-          <h2 className="df-card-title">{title}</h2>
-          <div className="df-card-sub" data-skeleton="true">
-            <Bar width="long" />
-          </div>
-        </div>
-      </div>
-      {tiles ? <SkeletonBand tiles={tiles} /> : null}
-      {columns && rows ? <SkeletonRows columns={columns} rows={rows} /> : null}
-    </section>
-  );
-}
-
 function AdministrationSkeleton() {
   return (
-    <div className="df-page" data-testid="v2-administration" aria-busy="true">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Administration</h1>
-          <p className="df-subhead">Loading this Workspace…</p>
-        </div>
-      </header>
-      <p className="df-sr-only" role="status">
-        Loading Administration for this Workspace.
-      </p>
-      <SkeletonSection title="Analytics" tiles={8} />
-      <SkeletonSection title="Activity" columns={4} rows={3} />
-      <SkeletonSection title="Billing" tiles={4} />
-    </div>
+    <V2PageSkeleton
+      title="Administration"
+      testId="v2-administration"
+      status="Loading Administration for this Workspace."
+    >
+      <SkeletonSection title="Analytics" className="df-analytics-register" tiles={8} />
+      <SkeletonSection title="Activity" className="df-analytics-register" columns={4} rows={3} dataColumns />
+      <SkeletonSection title="Billing" className="df-analytics-register" tiles={4} />
+    </V2PageSkeleton>
   );
 }
 

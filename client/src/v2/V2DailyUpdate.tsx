@@ -13,6 +13,7 @@ import { composeDailyUpdatePage } from "./dailyUpdate";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
+import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 
@@ -113,15 +114,10 @@ export function V2DailyUpdatePage() {
 
   if (projectsLoading || submissionsLoading) {
     return (
-      <div className="df-page" data-testid="v2-daily-update">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Daily Update</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 240 }} />
-      </div>
+      <V2PageSkeleton title="Daily Update" testId="v2-daily-update" status="Loading your Daily Update.">
+        <SkeletonSection title="Submitted today" lines={2} />
+        <SkeletonSection title="Submit today's update" lines={4} />
+      </V2PageSkeleton>
     );
   }
 
