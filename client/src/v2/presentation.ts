@@ -163,6 +163,7 @@ export type V2Match =
   | { kind: "file-viewer"; title: "File"; href: "/files" }
   | { kind: "help"; title: "Help Center"; href: "/help"; slug?: string }
   | { kind: "account"; title: "Account"; href: "/account" }
+  | { kind: "platform"; title: "Platform"; href: "/platform" }
   | { kind: "new-workspace"; title: "New Workspace"; href: "/workspaces/new" }
   | { kind: "placeholder"; title: string; href: string };
 
@@ -354,6 +355,8 @@ export function matchV2Route(path: string): V2Match {
   if (pathname === "/auth") return { kind: "auth-redirect", title: "Today", href: "/" };
   // Account lifecycle (#217, Flow 10) is the User's own, not a rail destination.
   if (pathname === "/account") return { kind: "account", title: "Account", href: "/account" };
+  // The platform console (#266) is the platform admin's, not a Workspace destination.
+  if (pathname === "/platform") return { kind: "platform", title: "Platform", href: "/platform" };
   // Flow 4's secondary action: creating another Workspace from the chooser or
   // the rail switcher reaches the same naming screen Flow 1 uses.
   if (pathname === "/workspaces/new") {
@@ -534,7 +537,7 @@ export function navIdForPath(path: string): V2NavId | null {
   // A File reached from a Dossier is not the Workspace Documents destination.
   if (match.kind === "file-viewer") return null;
   // Neither the account nor Workspace creation is a Workspace destination.
-  if (match.kind === "account" || match.kind === "new-workspace") return null;
+  if (match.kind === "account" || match.kind === "new-workspace" || match.kind === "platform") return null;
   const item = [...V2_NAV.flatMap((section) => section.items), ...V2_FOOTER_NAV].find(
     (nav) => nav.href === match.href,
   );
@@ -550,6 +553,8 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
       { label: "TODAY" },
     ];
   }
+  // Above every Workspace, so no Workspace crumb (#266).
+  if (match.kind === "platform") return [{ label: "PLATFORM" }];
   if (match.kind === "dossier") {
     return [
       { label: workspace, href: "/" },

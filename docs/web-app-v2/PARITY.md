@@ -36,7 +36,7 @@ Every v1 route has a v2 home. Nothing is orphaned, and v2 does not fall back to 
 | `/project/:id` | `V2LegacyProjectPage` | rewritten |
 | `/document/:id` | `V2DocumentPage` | rewritten |
 | `/daily-update` | `/daily-update` | rewritten |
-| `/admin`, `/admin/create`, `/admin/user/:id` | `/administration` | redirect — **see A** |
+| `/admin`, `/admin/create`, `/admin/user/:id` | `/platform` for a platform admin, `/administration` otherwise | platform console — addressed by [#266](https://github.com/Lamakira/docuflow/issues/266) |
 | `/admin/analytics` | `/administration#alerts` | redirect — warnings, addressed by [#259](https://github.com/Lamakira/docuflow/issues/259) |
 | `/admin/daily-updates` | `/daily-updates` | redirect |
 | `/time-tracking` | `/time` | redirect |
@@ -48,7 +48,7 @@ Every v1 route has a v2 home. Nothing is orphaned, and v2 does not fall back to 
 | `/help-center`, `/help-center/:slug` | `/help` | redirect |
 | `/invitations/:token` | same component in both | shared |
 
-A redirect is not a migration. One of them still lands somewhere that cannot do what the origin did: A, below. B and D are addressed by [#259](https://github.com/Lamakira/docuflow/issues/259).
+A redirect is not a migration. One of them used to land somewhere that could not do what the origin did: A, below, addressed by [#266](https://github.com/Lamakira/docuflow/issues/266). B and D are addressed by [#259](https://github.com/Lamakira/docuflow/issues/259).
 
 ---
 
@@ -56,20 +56,23 @@ A redirect is not a migration. One of them still lands somewhere that cannot do 
 
 v1 reaches 87 distinct endpoints, v2 reaches 94. v2 is the larger surface — it owns Workspaces, Billing, Invitations, Service Accounts, Webhook Endpoints, notification preferences, cross-Workspace search and account deletion, none of which exist in v1. The rewrite is not behind overall. It is behind in specific, nameable places.
 
-### A. The platform user directory — nothing in v2
+### ~~A. The platform user directory~~
 
-```
-/api/admin/users
-/api/admin/users/:id
-/api/admin/users/:id/role
-/api/admin/users/:id/reset-password
-```
+Decided on [#261](https://github.com/Lamakira/docuflow/issues/261), built by [#266](https://github.com/Lamakira/docuflow/issues/266). v2 has a **platform console** at `/platform`: outside the Workspace rail, reached from the account menu, and only by a User whose global `users.role` is `admin`. [ADR-0025](../adr/0025-let-the-workspace-role-govern-administration-and-keep-the-platform-directory-separate.md) keeps the directory off the Workspace Role, and the console keeps it out of the Workspace chrome for the same reason. `/admin`, `/admin/create` and `/admin/user/:id` open the console for a platform admin and Administration for everyone else.
 
-v1's `/admin` creates a User, opens their detail, changes their global role, and resets their password. `/admin/create` and `/admin/user/:id` both redirect to `/administration`, which offers none of it.
+The console lists every User, archived ones included, filters them by name or email, and on one User changes the global role, sends a password reset and archives or restores. Role changes and archiving confirm in the shared modal; the SuperAdmin shows no actions to anyone but itself, because every route refuses it, and the console does not ask the detail route for the SuperAdmin on anyone else's behalf, since that route refuses too.
 
-v2's People does Invitations and a Membership's profile — hours per day, the daily-updates flag. It never creates a User and never touches `users.role`.
+- ~~`/api/admin/users`~~ — now takes `includeArchived=true`, so an archived User can be found and restored. v1's "Show archived" never could: the route never returned one.
+- ~~`/api/admin/users/:id`~~
+- ~~`/api/admin/users/:id/role`~~ — writes the global role and nothing else. It used to move the target between Member and Administrator in the caller's active Workspace; [ADR-0026](../adr/0026-let-the-global-role-write-no-workspace-role.md) records why that stopped.
+- ~~`/api/admin/users/:id/reset-password`~~
+- `/api/admin/users/:id/archive` — not in the audit's list, reached too.
 
-This is the widest gap, and [ADR-0025](../adr/0025-let-the-workspace-role-govern-administration-and-keep-the-platform-directory-separate.md) makes it more pointed: the directory is a **platform** surface, not a Workspace one — `users` has no `workspace_id`, so no row-level security and no query scope — and it stays behind the global `users.role` column for exactly that reason. So it is not only un-migrated, it is the one surface that cannot simply be dropped into the Workspace chrome. Whatever v2 does here needs a decision first.
+Three routes are **deliberately dropped** from v2. They stay on the server; v2 does not call them:
+
+- `POST /api/admin/users` — it writes a `users` row with no Workspace, Membership or Clerk identity. Invitations and Clerk sign-up create Users.
+- `DELETE /api/admin/users/:id` — archive covers it; destroying a User is a compliance control (ADR-0015), not a button.
+- `PATCH /api/admin/users/:id` — email is Clerk's to change; hours per day and the daily-updates flag live on the Membership, and People edits them.
 
 ### ~~B. Four analytics dashboards~~
 
@@ -137,11 +140,11 @@ Closed by [#260](https://github.com/Lamakira/docuflow/issues/260) — and the 20
 
 The gaps are not one decision. They are four:
 
-1. **A needs a decision before it needs code.** The platform directory is not a Workspace surface, and dropping it into the Workspace chrome would repeat the mistake [#238](https://github.com/Lamakira/docuflow/issues/238) fixed.
+1. **A needed a decision before it needed code.** The platform directory is not a Workspace surface, and dropping it into the Workspace chrome would have repeated the mistake [#238](https://github.com/Lamakira/docuflow/issues/238) fixed. [#261](https://github.com/Lamakira/docuflow/issues/261) decided on a platform console; [#266](https://github.com/Lamakira/docuflow/issues/266) built it.
 2. **B and D were migrations**, and [#259](https://github.com/Lamakira/docuflow/issues/259) addresses them: the four analytics panes sit in Administration, and the Kanban is a board view on Projects.
 3. **C and E were depth** — each one small, together the difference between a rewrite that looks finished and one that is. [#260](https://github.com/Lamakira/docuflow/issues/260) addresses both.
 4. **F was a check.** It found two gaps, and [#260](https://github.com/Lamakira/docuflow/issues/260) found that one of them was a gap in the search, not in v2.
 
 Nothing here is scheduled. This document records the debt; it does not decide when it is paid.
 
-**Since the audit**, [#259](https://github.com/Lamakira/docuflow/issues/259) addresses B and D, and [#260](https://github.com/Lamakira/docuflow/issues/260) addresses C, E and F. A remains: [#261](https://github.com/Lamakira/docuflow/issues/261) asks for its decision without attaching code to it.
+**Since the audit**, [#259](https://github.com/Lamakira/docuflow/issues/259) addresses B and D, and [#260](https://github.com/Lamakira/docuflow/issues/260) addresses C, E and F. [#266](https://github.com/Lamakira/docuflow/issues/266) addresses A, as [#261](https://github.com/Lamakira/docuflow/issues/261) decided. Every section is closed.

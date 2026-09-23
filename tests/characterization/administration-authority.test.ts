@@ -91,8 +91,8 @@ describe("the Workspace Role governs Administration (#238)", () => {
     const app = await makeApp();
     const globalAdmin = await registerUser(app);
     await promoteToAdmin(globalAdmin.id);
-    // Promotion moved the Workspace Role too; putting it back is what isolates
-    // the column, and the column alone must not open the destination.
+    // The helper sets the Workspace Role with the column; putting it back is
+    // what isolates the column, and the column alone must not open the destination.
     await setWorkspaceRole(globalAdmin.id, "member");
 
     const overview = await globalAdmin.agent.get("/api/admin/analytics/overview");
@@ -100,29 +100,30 @@ describe("the Workspace Role governs Administration (#238)", () => {
     expect(overview.body).toEqual({ message: "Access denied" });
   });
 
-  it("moves the Workspace Role when the platform console promotes and demotes", async () => {
+  it("leaves every Workspace Role alone when the platform console promotes and demotes (#266)", async () => {
+    // A platform role change used to move the target between Member and
+    // Administrator in the promoter's active Workspace. The two roles are
+    // separate (ADR-0025, ADR-0026): the global column writes nothing else.
     const app = await makeApp();
-    const owner = await registerAdmin(app);
-    const target = await registerUser(app);
+    const platformAdmin = await registerAdmin(app);
+    const member = await registerUser(app);
+    const administrator = await registerUser(app);
+    await setWorkspaceRole(administrator.id, "administrator");
 
-    const refusedFirst = await target.agent.get("/api/admin/analytics/overview");
-    expect(refusedFirst.status).toBe(403);
-
-    const promoted = await owner.agent
-      .patch(`/api/admin/users/${target.id}/role`)
+    const promoted = await platformAdmin.agent
+      .patch(`/api/admin/users/${member.id}/role`)
       .send({ role: "admin" });
     expect(promoted.status).toBe(200);
+    expect(promoted.body).toMatchObject({ id: member.id, role: "admin" });
+    const stillRefused = await member.agent.get("/api/admin/analytics/overview");
+    expect(stillRefused.status).toBe(403);
 
-    const allowed = await target.agent.get("/api/admin/analytics/overview");
-    expect(allowed.status).toBe(200);
-
-    const demoted = await owner.agent
-      .patch(`/api/admin/users/${target.id}/role`)
+    const demoted = await platformAdmin.agent
+      .patch(`/api/admin/users/${administrator.id}/role`)
       .send({ role: "user" });
     expect(demoted.status).toBe(200);
-
-    const refusedAgain = await target.agent.get("/api/admin/analytics/overview");
-    expect(refusedAgain.status).toBe(403);
+    const stillAllowed = await administrator.agent.get("/api/admin/analytics/overview");
+    expect(stillAllowed.status).toBe(200);
   });
 
   it("never demotes an Owner out of ownership through the global role column", async () => {

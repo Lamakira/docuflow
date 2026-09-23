@@ -55,6 +55,23 @@ describe("users and admin management (characterization)", () => {
     expect(adminAsking.body.find((u: { id: string }) => u.id === archived.id).isArchived).toBe(true);
   });
 
+  it("lists archived users on the platform directory only when asked (#266)", async () => {
+    const app = await makeApp();
+    const admin = await registerAdmin(app, { firstName: "Ann" });
+    const archived = await registerUser(app, { firstName: "Cid" });
+    await admin.agent.patch(`/api/admin/users/${archived.id}/archive`).send({ isArchived: true });
+
+    const plain = await admin.agent.get("/api/admin/users");
+    expect(plain.status).toBe(200);
+    expect(plain.body.map((u: { id: string }) => u.id)).not.toContain(archived.id);
+
+    // Restoring an account needs to find it first.
+    const asking = await admin.agent.get("/api/admin/users").query({ includeArchived: "true" });
+    expect(asking.status).toBe(200);
+    expect(asking.body.find((u: { id: string }) => u.id === archived.id)).toMatchObject({ isArchived: true });
+    expect(asking.body[0]).not.toHaveProperty("identityProviderSubjectId");
+  });
+
   it("refuses the admin routes to non-admins", async () => {
     const app = await makeApp();
     const member = await registerUser(app);
