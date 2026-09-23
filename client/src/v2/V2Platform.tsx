@@ -129,7 +129,7 @@ export function V2PlatformPage() {
 
         <div className="df-filter-bar">
           <label className="df-filter-input">
-            <Search width={14} height={14} strokeWidth={1.4} color="#59657A" />
+            <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
             <input
               type="search"
               value={filterQuery}

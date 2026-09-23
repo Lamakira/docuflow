@@ -29,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { statusTone } from "./palette";
 import type { TaskManagerRow } from "./tasks";
 import { V2RowMenu } from "./V2RowMenu";
 import { Button } from "@/components/ui/button";
@@ -100,7 +101,9 @@ export function V2TaskTable(props: V2TaskTableProps) {
         helper.accessor("statusValue", {
           header: "STATUS",
           sortFn: "text",
-          cell: ({ row }) => <span className="df-status-word">{row.original.status}</span>,
+          cell: ({ row }) => (
+            <span className="df-status-word" data-tone={statusTone(row.original.status)}>{row.original.status}</span>
+          ),
         }),
         helper.display({
           id: "actions",

@@ -162,7 +162,7 @@ export function V2Rail({
                   title={item.label}
                 >
                   <span className="df-rail-label">
-                    <RailIcon id={item.id} color={active ? "#0F1524" : "#59657A"} />
+                    <RailIcon id={item.id} active={active} />
                     {!collapsed ? (
                       <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         {item.label}
@@ -170,7 +170,7 @@ export function V2Rail({
                     ) : null}
                   </span>
                   {!collapsed && count != null ? (
-                    <span className="df-mono" style={{ fontSize: 10, color: "#59657A" }}>
+                    <span className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)" }}>
                       {count}
                     </span>
                   ) : null}
@@ -193,7 +193,7 @@ export function V2Rail({
               title={item.label}
             >
               <span className="df-rail-label">
-                <RailIcon id={item.id} color={active ? "#0F1524" : "#59657A"} />
+                <RailIcon id={item.id} active={active} />
                 {!collapsed ? <span>{item.label}</span> : null}
               </span>
             </Link>
@@ -219,7 +219,7 @@ export function V2Rail({
                     <span style={{ fontWeight: 600, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {displayName}
                     </span>
-                    <span className="df-mono" style={{ fontSize: 9.5, color: "#59657A" }}>
+                    <span className="df-mono" style={{ fontSize: 9.5, color: "var(--df-archive-slate)" }}>
                       {role}
                     </span>
                   </span>
@@ -327,7 +327,7 @@ function WorkspaceSelector({
             <span style={{ fontWeight: 600, fontSize: 12.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {name}
             </span>
-            <span className="df-mono" style={{ fontSize: 9.5, color: "#59657A" }}>
+            <span className="df-mono" style={{ fontSize: 9.5, color: "var(--df-archive-slate)" }}>
               {memberCountLabel(memberCount)}
             </span>
           </span>
@@ -374,13 +374,13 @@ function WorkspaceRow({
       </span>
       <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", textAlign: "left" }}>
         <span>{row.workspaceName}</span>
-        <span className="df-mono" style={{ fontSize: 9, color: "#59657A" }}>
+        <span className="df-mono" style={{ fontSize: 9, color: "var(--df-archive-slate)" }}>
           {row.workspaceRole}
           {row.condition ? ` · ${row.condition}` : ""}
         </span>
       </span>
       {row.timer ? (
-        <span className="df-mono" style={{ fontSize: 9, color: "#E9A23B" }}>
+        <span className="df-mono" style={{ fontSize: 9, color: "var(--df-amber-800)" }}>
           TIMER
         </span>
       ) : null}

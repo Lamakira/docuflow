@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import { tagsPath } from "./dossier";
+import { meterTone, statusTone } from "./palette";
 import { matchV2Route } from "./presentation";
 import {
   combinedStatusForProjectStatus,
@@ -59,12 +60,6 @@ function isBoardCardClick(
   if (!origin) return false;
   if (event.button !== 0 || event.shiftKey || event.altKey) return false;
   return Math.abs(event.clientX - origin.x) <= 5 && Math.abs(event.clientY - origin.y) <= 5;
-}
-
-function meterFill(status: string): string {
-  if (status === "COMPLETED") return "#1F9D6B";
-  if (status === "ON HOLD" || status === "ARCHIVED") return "#59657A";
-  return "#0F1524";
 }
 
 function leadName(project: CrmProjectWithDetails): string | null {
@@ -595,7 +590,7 @@ export function V2ProjectsPage() {
                     </div>
                   </span>
                   <span>
-                    <span className="df-status-word">{row.status}</span>
+                    <span className="df-status-word" data-tone={statusTone(row.status)}>{row.status}</span>
                   </span>
                   <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.lead}</span>
                   <span>
@@ -607,10 +602,8 @@ export function V2ProjectsPage() {
                           {/* Per-instance: the fill width is this project's budget share. */}
                           <span
                             className="df-meter-fill"
-                            style={{
-                              width: `${Math.min(100, row.budgetPercent)}%`,
-                              background: meterFill(row.status),
-                            }}
+                            data-tone={meterTone(row.budgetPercent, row.status)}
+                            style={{ width: `${Math.min(100, row.budgetPercent)}%` }}
                           />
                         </span>
                         <span className="df-mono" style={{ fontSize: 11, width: 36 }}>

@@ -70,13 +70,13 @@ export function V2CommandBar({
         <nav className="df-crumb">
           {crumbs.map((crumb, index) => (
             <span key={`${crumb.label}-${index}`}>
-              {index > 0 ? <span style={{ color: "#C3CAD4" }}>/</span> : null}
+              {index > 0 ? <span style={{ color: "var(--df-placeholder)" }}>/</span> : null}
               {crumb.href ? (
-                <Link href={crumb.href} style={{ color: "#59657A" }}>
+                <Link href={crumb.href} style={{ color: "var(--df-archive-slate)" }}>
                   {crumb.label}
                 </Link>
               ) : (
-                <span style={{ color: "#0F1524" }}>{crumb.label}</span>
+                <span style={{ color: "var(--df-case-ink)" }}>{crumb.label}</span>
               )}
             </span>
           ))}
@@ -242,12 +242,12 @@ export function SearchOverlay({ workspaceName, onClose }: { workspaceName: strin
                 navigate(row.href);
               }}
             >
-              <span className="df-mono" style={{ width: 74, flex: "none", fontSize: 10, color: "#59657A" }}>
+              <span className="df-mono" style={{ width: 74, flex: "none", fontSize: 10, color: "var(--df-archive-slate)" }}>
                 {row.kind}
               </span>
               <span style={{ minWidth: 0, flex: 1, fontWeight: 500, fontSize: 13.5 }}>{row.title}</span>
               {row.meta ? (
-                <span className="df-mono" style={{ fontSize: 10.5, color: "#59657A" }}>
+                <span className="df-mono" style={{ fontSize: 10.5, color: "var(--df-archive-slate)" }}>
                   {row.meta}
                 </span>
               ) : null}

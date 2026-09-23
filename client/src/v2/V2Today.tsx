@@ -20,6 +20,7 @@ import {
   remindDailyUpdatesPath,
 } from "./dailyUpdate";
 import { motionForSurface } from "./motion";
+import { meterTone, statusTone } from "./palette";
 import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { Button } from "@/components/ui/button";
@@ -72,12 +73,6 @@ function toTodayProject(project: CrmProjectWithDetails): TodayProject {
         }
       : null,
   };
-}
-
-function meterFill(status: string): string {
-  if (status === "COMPLETED") return "#1F9D6B";
-  if (status === "ON HOLD") return "#59657A";
-  return "#0F1524";
 }
 
 function TodayActionBar({ onApprovals, onAsk }: { onApprovals: () => void; onAsk: () => void }) {
@@ -248,7 +243,7 @@ export function V2TodayPage() {
             <h2 className="df-card-title">Needs attention</h2>
             <span className="df-count-chip">{today.attention.length} ITEMS</span>
           </div>
-          <span className="df-mono df-attention-sort" style={{ fontSize: 10, color: "#8A94A6", letterSpacing: "0.06em" }}>
+          <span className="df-mono df-attention-sort" style={{ fontSize: 10, color: "var(--df-muted-ink)", letterSpacing: "0.06em" }}>
             SORTED BY IMPACT
           </span>
         </div>
@@ -348,7 +343,7 @@ export function V2TodayPage() {
                     </div>
                   </span>
                   <span>
-                    <span className="df-status" data-status={row.status}>
+                    <span className="df-status" data-status={row.status} data-tone={statusTone(row.status)}>
                       {row.status}
                     </span>
                   </span>
@@ -362,10 +357,8 @@ export function V2TodayPage() {
                           {/* Per-instance: the fill width is this project's budget share. */}
                           <span
                             className="df-meter-fill"
-                            style={{
-                              width: `${Math.min(100, row.budgetPercent)}%`,
-                              background: meterFill(row.status),
-                            }}
+                            data-tone={meterTone(row.budgetPercent, row.status)}
+                            style={{ width: `${Math.min(100, row.budgetPercent)}%` }}
                           />
                         </span>
                         <span className="df-mono" style={{ fontSize: 11, width: 36 }}>
@@ -388,7 +381,7 @@ export function V2TodayPage() {
         <section className="df-card" data-testid="v2-today-workday">
           <div className="df-card-head">
             <h2 className="df-card-title">Workday</h2>
-            <span className="df-mono" style={{ fontSize: 10, color: "#59657A" }}>
+            <span className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)" }}>
               {today.workday.memberCount} {today.workday.memberCount === 1 ? "MEMBER" : "MEMBERS"} ·{" "}
               {today.workday.hoursTodayLabel}
             </span>
@@ -418,7 +411,7 @@ export function V2TodayPage() {
         <section className="df-card" data-testid="v2-today-knowledge">
           <div className="df-card-head">
             <h2 className="df-card-title">Recent knowledge changes</h2>
-            <span className="df-mono" style={{ fontSize: 10, color: "#8A94A6" }}>
+            <span className="df-mono" style={{ fontSize: 10, color: "var(--df-muted-ink)" }}>
               ACCESS-FILTERED
             </span>
           </div>

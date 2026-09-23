@@ -14,6 +14,7 @@ import {
   type InstallerRow,
 } from "./devices";
 import { motionForSurface } from "./motion";
+import { statusTone } from "./palette";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
 import { SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
@@ -235,7 +236,7 @@ export function V2DevicesPage() {
                       <div className="df-mono df-meta">{row.version ?? "—"}</div>
                     </span>
                     <span className="df-mono df-meta">{row.os ?? "—"}</span>
-                    <span className="df-status" data-status={row.status}>
+                    <span className="df-status" data-status={row.status} data-tone={statusTone(row.status)}>
                       {row.status}
                     </span>
                     <span className="df-mono df-meta">{row.lastSeen}</span>

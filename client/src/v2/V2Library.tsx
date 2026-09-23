@@ -43,9 +43,9 @@ function LibraryRowBody({ row }: { row: LibraryRow }) {
     <>
       <span className="df-cluster-start">
         {row.kind === "folder" ? (
-          <Folder width={15} height={15} strokeWidth={1.4} color="#0F1524" className="df-row-icon" />
+          <Folder width={15} height={15} strokeWidth={1.4} style={{ color: "var(--df-case-ink)" }} className="df-row-icon" />
         ) : (
-          <FileText width={15} height={15} strokeWidth={1.4} color="#59657A" className="df-row-icon" />
+          <FileText width={15} height={15} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} className="df-row-icon" />
         )}
         <span style={{ minWidth: 0 }}>
           <div

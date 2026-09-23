@@ -58,7 +58,7 @@ export function V2InvitationAcceptPage() {
   return (
     <div className="df-v2 df-gate" data-testid="v2-invitation-accept">
       <div className="df-gate-card">
-        <div className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.08em" }}>
+        <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.08em" }}>
           INVITATION
         </div>
         <h1 className="df-title df-title-follow">

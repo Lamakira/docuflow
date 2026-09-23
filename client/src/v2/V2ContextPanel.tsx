@@ -48,7 +48,7 @@ export function V2ContextPanel({
     >
       <header className="df-panel-head">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.08em" }}>
+          <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.08em" }}>
             {kicker}
           </div>
           <div
@@ -74,7 +74,7 @@ export function V2ContextPanel({
       </header>
       {panel === "approvals" ? (
         <div className="df-panel-scroll">
-          <p style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "62ch", color: "#59657A" }}>
+          <p style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "62ch", color: "var(--df-archive-slate)" }}>
             {EMPTY_TIMESHEET_APPROVALS.copy}
           </p>
         </div>
@@ -140,7 +140,7 @@ function AskBody() {
     <>
       <div className="df-panel-scroll-stack">
         {model.messages.length === 0 ? (
-          <p style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "62ch", color: "#59657A" }}>{model.emptyCopy}</p>
+          <p style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "62ch", color: "var(--df-archive-slate)" }}>{model.emptyCopy}</p>
         ) : (
           model.messages.map((message, index) =>
             message.role === "user" ? (
@@ -168,7 +168,7 @@ function AskBody() {
           )
         )}
         {refusal ? <p className="df-refusal">{refusal}</p> : null}
-        <p style={{ fontSize: 11, color: "#59657A" }}>{model.footnote}</p>
+        <p style={{ fontSize: 11, color: "var(--df-archive-slate)" }}>{model.footnote}</p>
       </div>
       <form className="df-ask-composer" onSubmit={onSubmit} data-motion={ASK_COMPOSER_MOTION}>
         <input
@@ -267,11 +267,11 @@ function NotificationsBody({ onClose }: { onClose: () => void }) {
                 onClose();
               }}
             >
-              <span className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.06em" }}>
+              <span className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.06em" }}>
                 {row.kind}
               </span>
               <span style={{ fontWeight: 500, fontSize: 13 }}>{row.title}</span>
-              <span className="df-mono" style={{ fontSize: 10.5, color: "#59657A" }}>
+              <span className="df-mono" style={{ fontSize: 10.5, color: "var(--df-archive-slate)" }}>
                 {row.when}
                 {row.origin ? ` · ${row.origin}` : ""}
               </span>
@@ -279,7 +279,7 @@ function NotificationsBody({ onClose }: { onClose: () => void }) {
           ))
         )}
         <section className="df-delivery" data-testid="v2-delivery-preference">
-          <div className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.08em" }}>
+          <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.08em" }}>
             {delivery.kicker}
           </div>
           <div style={{ fontWeight: 600, fontSize: 13 }}>{delivery.title}</div>
@@ -287,7 +287,7 @@ function NotificationsBody({ onClose }: { onClose: () => void }) {
           {delivery.rows.map((row) => (
             <div key={row.id} className="df-delivery-row">
               <span style={{ fontSize: 13, fontWeight: 500 }}>{row.label}</span>
-              <span className="df-mono" style={{ fontSize: 10, color: "#59657A" }}>
+              <span className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)" }}>
                 Inbox on
               </span>
               <button

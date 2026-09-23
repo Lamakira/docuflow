@@ -44,10 +44,11 @@ function darkBlock(css: string): string {
   return match[1];
 }
 
+/** A token's hex, following an alias such as `--df-amber: var(--df-amber-500)`. */
 function dfHex(name: string): string {
-  const match = tokensCss.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]+)`));
+  const match = tokensCss.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]+|var\\((--df-[a-z0-9-]+)\\))`));
   if (!match) throw new Error(`missing ${name}`);
-  return match[1];
+  return match[2] ? dfHex(match[2]) : match[1];
 }
 
 function cssVar(block: string, name: string): string {

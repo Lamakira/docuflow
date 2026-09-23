@@ -40,6 +40,7 @@ import {
   type DossierTimeEntry,
 } from "./dossier";
 import { motionForSurface } from "./motion";
+import { meterTone, statusTone } from "./palette";
 import { matchV2Route } from "./presentation";
 import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
@@ -763,7 +764,7 @@ export function V2DossierPage() {
                 </div>
                 <div className="df-dossier-title-row">
                   <h1 className="df-record-title">{dossier.identity.title}</h1>
-                  <span className="df-status" data-status={dossier.identity.status}>
+                  <span className="df-status" data-status={dossier.identity.status} data-tone={statusTone(dossier.identity.status)}>
                     {dossier.identity.status}
                   </span>
                   {dossier.identity.tags.map((tag) => (
@@ -820,7 +821,8 @@ export function V2DossierPage() {
                     {/* Per-instance: the fill width is this project's budget share. */}
                     <span
                       className="df-meter-fill"
-                      style={{ width: `${Math.min(100, dossier.stats.budgetPercent)}%`, background: "#0F1524" }}
+                      data-tone={meterTone(dossier.stats.budgetPercent)}
+                      style={{ width: `${Math.min(100, dossier.stats.budgetPercent)}%` }}
                     />
                   </span>
                 ) : null}
@@ -1052,7 +1054,7 @@ function DossierOverview({
                   </span>
                 ) : null}
                 {row.meta ? (
-                  <span className="df-mono" style={{ fontSize: 11, color: row.done ? "#1F9D6B" : "#59657A" }}>
+                  <span className="df-mono" style={{ fontSize: 11, color: row.done ? "var(--df-green-700)" : "var(--df-archive-slate)" }}>
                     {row.meta}
                   </span>
                 ) : null}
@@ -1117,10 +1119,8 @@ function DossierOverview({
               {/* Per-instance: the fill width is this project's budget share. */}
               <span
                 className="df-meter-fill"
-                style={{
-                  width: `${Math.min(100, dossier.budgetTime.percent ?? 0)}%`,
-                  background: "#0F1524",
-                }}
+                data-tone={meterTone(dossier.budgetTime.percent)}
+                style={{ width: `${Math.min(100, dossier.budgetTime.percent ?? 0)}%` }}
               />
             </span>
             <div className="df-spread">
