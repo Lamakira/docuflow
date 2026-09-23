@@ -12,6 +12,7 @@ import {
   type OwnedWorkspaceRow,
 } from "./lifecycle";
 import { Button } from "@/components/ui/button";
+import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 const GRACE_MOTION = motionForSurface("account-deletion-grace").enterExit;
 const CONFIRM_MOTION = motionForSurface("account-confirm-typing").enterExit;
@@ -65,15 +66,15 @@ export function V2AccountPage() {
 
   if (isLoading) {
     return (
-      <div className="df-page" data-testid="v2-account">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">{page.title}</h1>
-            <p className="df-subhead">Loading your account…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 220 }} />
-      </div>
+      <V2PageSkeleton
+        title={page.title}
+        testId="v2-account"
+        subhead="Loading your account…"
+        status="Loading your account."
+      >
+        <SkeletonSection title="Workspaces you own" lines={2} />
+        <SkeletonSection title="What stays behind" lines={3} />
+      </V2PageSkeleton>
     );
   }
 

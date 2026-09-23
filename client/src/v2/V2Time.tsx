@@ -35,6 +35,7 @@ import {
   type TimeStatsResponse,
 } from "./time";
 import { Button } from "@/components/ui/button";
+import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
 type TimeStats = { totalDuration: number };
@@ -270,15 +271,13 @@ function TimeEntriesPane() {
 
   if (!ready || isLoading) {
     return (
-      <>
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Time Tracking</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 280 }} />
-      </>
+      <V2PageSkeleton title="Time Tracking" frame="fragment" status="Loading Time Entries for this Workspace.">
+        <SkeletonSection title="Timer" lines={2} />
+        <SkeletonRegister
+          className="df-time-register"
+          heads={["WHEN", "PROJECT", "TASK", "WHO", "STATUS", "DURATION"]}
+        />
+      </V2PageSkeleton>
     );
   }
 
@@ -516,15 +515,11 @@ function TimeStatsPane() {
 
   if (!ready) {
     return (
-      <>
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Time stats</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 280 }} />
-      </>
+      <V2PageSkeleton title="Time stats" frame="fragment" status="Loading Time stats for this Workspace.">
+        <SkeletonSection title={timePeriodLabel(period)} tiles={4} />
+        <SkeletonSection title="By Project" lines={3} />
+        <SkeletonSection title="By Member" lines={3} />
+      </V2PageSkeleton>
     );
   }
 

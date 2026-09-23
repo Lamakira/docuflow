@@ -27,6 +27,7 @@ import {
   type GalleryTile,
 } from "./activity";
 import { Button } from "@/components/ui/button";
+import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type ScreenshotsResponse = { data: GalleryEvidenceInput[]; total?: number };
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
@@ -251,15 +252,13 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
 
   if (isLoading) {
     return (
-      <div className="df-page" data-testid="v2-activity">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Activity</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 280 }} />
-      </div>
+      <V2PageSkeleton title="Activity" testId="v2-activity" status="Loading Activity for this Workspace.">
+        <SkeletonSection title="Tracking Policy" lines={3} />
+        <SkeletonRegister
+          className="df-activity-register df-activity-stream"
+          heads={["WHEN", "PROJECT", "TASK", "WHO", "SOURCE"]}
+        />
+      </V2PageSkeleton>
     );
   }
 

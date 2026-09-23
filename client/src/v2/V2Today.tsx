@@ -23,6 +23,7 @@ import { motionForSurface } from "./motion";
 import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { Button } from "@/components/ui/button";
+import { LOADING_SUBHEAD, SkeletonRegister, SkeletonSection } from "./V2Skeleton";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -196,19 +197,26 @@ export function V2TodayPage() {
 
   if (projectsLoading) {
     return (
-      <div className="df-page df-today" data-testid="v2-today">
+      <div className="df-page df-today" data-testid="v2-today" aria-busy="true">
         <div className="df-today-body">
           <header className="df-today-head">
             <div>
               <h1 className="df-title">Today</h1>
-              <p className="df-subhead">Loading this Workspace…</p>
+              <p className="df-subhead">{LOADING_SUBHEAD}</p>
             </div>
           </header>
-          <div className="df-card" style={{ minHeight: 160 }} />
-          <div className="df-card" style={{ minHeight: 200 }} />
+          <p className="df-sr-only" role="status">
+            Loading Today for this Workspace.
+          </p>
+          <SkeletonSection title="Needs attention" lines={3} />
+          <SkeletonRegister
+            title="Active Projects"
+            heads={["PROJECT / CLIENT", "STATUS", "LEAD", "BUDGET USED", "TRACKED MTD"]}
+            rows={4}
+          />
           <div className="df-split">
-            <div className="df-card" style={{ minHeight: 180 }} />
-            <div className="df-card" style={{ minHeight: 180 }} />
+            <SkeletonSection title="Workday" lines={3} />
+            <SkeletonSection title="Recent knowledge changes" lines={3} />
           </div>
         </div>
         {layout.actionBar ? (

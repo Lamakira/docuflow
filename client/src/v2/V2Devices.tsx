@@ -16,6 +16,7 @@ import {
 import { motionForSurface } from "./motion";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
+import { SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
 
 type DevicesResponse = { data: DeviceInput[] };
 type PairingResponse = { pairingCode: string; expiresAt: string };
@@ -117,15 +118,19 @@ export function V2DevicesPage() {
 
   if (isLoading) {
     return (
-      <div className="df-page" data-testid="v2-devices">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Devices</h1>
-            <p className="df-subhead">Loading enrolled Devices…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 280 }} />
-      </div>
+      <V2PageSkeleton
+        title="Devices"
+        testId="v2-devices"
+        subhead="Loading enrolled Devices…"
+        status="Loading your enrolled Devices."
+      >
+        <SkeletonRegister
+          className="df-devices-register"
+          title="Your Devices"
+          heads={["DEVICE", "OS", "STATUS", "LAST SEEN"]}
+          rows={3}
+        />
+      </V2PageSkeleton>
     );
   }
 

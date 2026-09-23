@@ -5084,3 +5084,42 @@ button.df-activity-row {
 .df-opportunity-column[data-staged="true"] .df-count-chip {
   background: var(--df-card-white);
 }
+
+/*
+ * Skeletons outside Administration (the shared V2Skeleton pieces). Each blank
+ * holds the height the real content will take, so nothing moves on arrival.
+ */
+.df-v2 .df-skeleton[data-role="title"] {
+  height: 28px;
+  width: 280px;
+  max-width: 100%;
+}
+
+.df-skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-3);
+  padding: var(--df-space-4);
+}
+
+.df-skeleton-record {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-3);
+}
+
+.df-library-row[data-skeleton="true"] {
+  min-height: 52px;
+  cursor: default;
+}
+
+.df-opportunity-card[data-skeleton="true"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
+  cursor: default;
+}
+
+.df-skeleton-pane {
+  display: contents;
+}

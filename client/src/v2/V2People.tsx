@@ -19,6 +19,7 @@ import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { Button } from "@/components/ui/button";
+import { SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
 
 type WorkspaceMembershipsResponse = { memberships: PeopleMembershipInput[] };
 type BillingSubscription = { purchasedSeatCapacity?: number };
@@ -186,15 +187,12 @@ export function V2PeoplePage() {
 
   if (isLoading) {
     return (
-      <div className="df-page" data-testid="v2-people">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">People</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 280 }} />
-      </div>
+      <V2PageSkeleton title="People" testId="v2-people" status="Loading People for this Workspace.">
+        <SkeletonRegister
+          className="df-people-register"
+          heads={["MEMBER", "WORKSPACE ROLE", "CAPABILITIES", "STATUS"]}
+        />
+      </V2PageSkeleton>
     );
   }
 

@@ -30,6 +30,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { SkeletonRows } from "./V2Skeleton";
 
 /** v1's `/admin`, `/admin/create` and `/admin/user/:id` (#266). */
 export function V2LegacyAdminRedirect() {
@@ -147,7 +148,7 @@ export function V2PlatformPage() {
             ))}
           </div>
           {isLoading ? (
-            <div className="df-card" style={{ minHeight: 240, border: 0 }} />
+            <SkeletonRows columns={3} rows={6} />
           ) : directory.empty ? (
             <p className="df-empty">{directory.emptyCopy}</p>
           ) : (

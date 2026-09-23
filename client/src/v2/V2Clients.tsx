@@ -23,6 +23,7 @@ import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
+import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type ClientWithContacts = CrmClient & { contacts?: CrmContact[] };
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
@@ -163,15 +164,12 @@ export function V2ClientsPage() {
 
   if (isLoading) {
     return (
-      <div className="df-page" data-testid="v2-clients">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Clients</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 280 }} />
-      </div>
+      <V2PageSkeleton title="Clients" testId="v2-clients" status="Loading Clients for this Workspace.">
+        <SkeletonRegister
+          className="df-clients-register"
+          heads={["CLIENT", "COMPANY", "STATUS", "SOURCE", "PROJECTS"]}
+        />
+      </V2PageSkeleton>
     );
   }
 
@@ -474,7 +472,15 @@ export function V2ClientRecordPage() {
       <div className="df-dossier-body df-client-record-body" data-motion={RECORD_MOTION}>
         {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
         {isLoading ? (
-          <div className="df-card" style={{ minHeight: 240 }} />
+          <div className="df-overview" aria-busy="true">
+            <div className="df-stack">
+              <SkeletonSection title="On this Client" lines={3} />
+            </div>
+            <div className="df-stack">
+              <SkeletonSection title="Client details" lines={4} />
+              <SkeletonSection title="Client Projects" lines={2} />
+            </div>
+          </div>
         ) : record.missing || record.unavailable ? (
           <p className="df-empty">{record.emptyCopy}</p>
         ) : (

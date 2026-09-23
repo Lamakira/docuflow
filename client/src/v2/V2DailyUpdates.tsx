@@ -14,6 +14,7 @@ import {
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
+import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type TodayStatus = {
   submitted: TeamDailyUpdateMember[];
@@ -98,15 +99,10 @@ export function V2TeamDailyUpdatesPage() {
 
   if (updatesLoading || kpisLoading || todayLoading) {
     return (
-      <div className="df-page" data-testid="v2-daily-updates">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Daily Updates</h1>
-            <p className="df-subhead">Loading this Workspace…</p>
-          </div>
-        </header>
-        <div className="df-card" style={{ minHeight: 240 }} />
-      </div>
+      <V2PageSkeleton title="Daily Updates" testId="v2-daily-updates" status="Loading Daily Updates for this Workspace.">
+        <SkeletonSection title="Today" tiles={4} />
+        <SkeletonSection title="Updates" lines={4} />
+      </V2PageSkeleton>
     );
   }
 
