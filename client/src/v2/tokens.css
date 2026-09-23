@@ -309,7 +309,6 @@
   background: var(--df-amber-100);
   border-color: transparent;
   border-radius: var(--df-radius-4);
-  box-shadow: inset 3px 0 0 var(--df-amber-500);
   color: var(--df-case-ink);
 }
 

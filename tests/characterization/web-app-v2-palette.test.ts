@@ -187,10 +187,10 @@ describe("where colour goes", () => {
     expect(rule(".df-v2 button.df-btn.bg-destructive")).not.toMatch(/--df-case-ink/);
   });
 
-  it("marks the active rail item with a wash and an amber bar", () => {
+  it("marks the active rail item with an amber wash and no bar", () => {
     const active = rule('.df-rail-item[data-active="true"]');
     expect(active).toMatch(/background:\s*var\(--df-amber-100\)/);
-    expect(active).toMatch(/box-shadow:\s*inset 3px 0 0 var\(--df-amber-500\)/);
+    expect(active).not.toMatch(/box-shadow/);
   });
 
   it("underlines the active tab in amber", () => {
