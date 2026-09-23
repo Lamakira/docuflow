@@ -28,7 +28,10 @@ export type V2SelectOption = {
 };
 
 export type V2FilterSelectProps = {
-  /** The mono prefix on the chip, e.g. PROJECT. */
+  /**
+   * The mono prefix on the chip, e.g. PROJECT. Empty inside a form field whose
+   * own label already names the choice; `ariaLabel` then carries the name.
+   */
   label: string;
   /** What a screen reader announces, when the prefix is not a full name. */
   ariaLabel?: string;
@@ -39,6 +42,8 @@ export type V2FilterSelectProps = {
   /** Draws the chip in ink, for a filter that is narrowing the register. */
   active?: boolean;
   testId?: string;
+  /** Extra classes on the trigger, for a screen's own motion or layout rule. */
+  className?: string;
 };
 
 export function V2FilterSelect({
@@ -50,6 +55,7 @@ export function V2FilterSelect({
   disabled,
   active,
   testId,
+  className,
 }: V2FilterSelectProps) {
   // Radix renders the closed panel into a detached fragment and portals the
   // selected item's text into the trigger. Passing the label outright removes
@@ -58,12 +64,12 @@ export function V2FilterSelect({
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger
-        className="df-filter-chip df-select-trigger"
+        className={className ? `df-filter-chip df-select-trigger ${className}` : "df-filter-chip df-select-trigger"}
         aria-label={ariaLabel ?? label}
         data-active={active ? "true" : "false"}
         data-testid={testId}
       >
-        <span className="df-select-prefix">{label}</span>
+        {label ? <span className="df-select-prefix">{label}</span> : null}
         <SelectValue>{chosen?.label ?? ""}</SelectValue>
       </SelectTrigger>
       {/* Radix portals to document.body, outside `.df-v2`, so the panel

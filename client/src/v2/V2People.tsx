@@ -16,6 +16,7 @@ import {
 } from "./people";
 import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
+import { V2FilterSelect } from "./V2Select";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { Button } from "@/components/ui/button";
 
@@ -276,20 +277,14 @@ export function V2PeoplePage() {
               aria-label="Invitation email"
             />
           </label>
-          <label className="df-filter-input">
-            <select
-              className="df-people-role"
-              aria-label="Workspace Role"
-              value={inviteRole}
-              onChange={(event) => setInviteRole(event.target.value as (typeof PEOPLE_INVITE_ROLES)[number])}
-            >
-              {PEOPLE_INVITE_ROLES.map((role) => (
-                <option key={role} value={role}>
-                  {role}
-                </option>
-              ))}
-            </select>
-          </label>
+          <V2FilterSelect
+            label="ROLE"
+            ariaLabel="Workspace Role"
+            className="df-people-role"
+            value={inviteRole}
+            options={PEOPLE_INVITE_ROLES.map((role) => ({ value: role, label: role }))}
+            onChange={(value) => setInviteRole(value as (typeof PEOPLE_INVITE_ROLES)[number])}
+          />
           <Button variant="default" type="submit" disabled={invite.isPending || !inviteEmail.trim()} className="df-btn">
             Send Invitation
           </Button>
