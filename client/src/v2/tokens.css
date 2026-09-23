@@ -485,6 +485,12 @@
   line-height: 1.55;
 }
 
+.df-subhead-skeleton {
+  display: flex;
+  align-items: center;
+  height: calc(var(--df-text-3) * 1.55);
+}
+
 .df-date-chip {
   font-family: var(--df-font-mono);
   font-weight: 500;

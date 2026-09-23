@@ -122,7 +122,6 @@ export function V2DevicesPage() {
       <V2PageSkeleton
         title="Devices"
         testId="v2-devices"
-        subhead="Loading enrolled Devices…"
         status="Loading your enrolled Devices."
       >
         <SkeletonRegister

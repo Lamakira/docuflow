@@ -24,7 +24,7 @@ import { meterTone, statusTone } from "./palette";
 import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { Button } from "@/components/ui/button";
-import { LOADING_SUBHEAD, SkeletonRegister, SkeletonSection } from "./V2Skeleton";
+import { SkeletonRegister, SkeletonSection, SkeletonSubhead } from "./V2Skeleton";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -197,7 +197,7 @@ export function V2TodayPage() {
           <header className="df-today-head">
             <div>
               <h1 className="df-title">Today</h1>
-              <p className="df-subhead">{LOADING_SUBHEAD}</p>
+              <SkeletonSubhead />
             </div>
           </header>
           <p className="df-sr-only" role="status">

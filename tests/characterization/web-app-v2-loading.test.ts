@@ -24,12 +24,16 @@ describe("v2 waits with real geometry", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("writes the loading subhead in one place", () => {
+  it("shows no loading copy under the title while the skeleton is up", () => {
+    const skeleton = source("V2Skeleton.tsx");
+    expect(skeleton).not.toContain("Loading this Workspace");
+    expect(skeleton).not.toMatch(/subhead\??:\s*string/);
+    expect(skeleton).toMatch(/<h1 className="df-title">\{title\}<\/h1>\s*<SkeletonSubhead \/>/);
     const offenders = sources
-      .filter(({ name }) => name !== "V2Skeleton.tsx")
-      .filter(({ source: text }) => text.includes("Loading this Workspace…"))
+      .filter(({ source: text }) => /<V2PageSkeleton[^>]*\bsubhead=/.test(text) || text.includes("LOADING_SUBHEAD"))
       .map(({ name }) => name);
     expect(offenders).toEqual([]);
+    expect(source("V2Today.tsx")).toContain("<SkeletonSubhead />");
   });
 
   it.each([
