@@ -23,7 +23,7 @@ export function V2PlaceholderPage() {
   return (
     <div className="df-page" data-testid="v2-placeholder">
       <h1 className="df-title">{title}</h1>
-      <p style={{ color: "#59657A", fontSize: 13.5, maxWidth: "62ch", lineHeight: 1.55 }}>
+      <p style={{ color: "var(--df-archive-slate)", fontSize: 13.5, maxWidth: "62ch", lineHeight: 1.55 }}>
         This destination is not in the current batch. It stays on v2 tokens rather than the previous screens.
       </p>
     </div>

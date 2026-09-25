@@ -2,20 +2,58 @@
   --df-case-ink: #0f1524;
   --df-cold-stock: #f3f5f7;
   --df-card-white: #ffffff;
-  --df-amber: #e9a23b;
-  --df-amber-wash: #fcf3e4;
+  /* Amber marks what is active or in progress, and the primary action — never
+     decoration. Text on 500/600 is Case Ink, never white; text on a 50/100
+     tint takes the 800/900 of its own ramp. 600 is the pressed/hover stop. */
+  --df-amber-50: #fdf8ef;
+  --df-amber-100: #fcf3e4;
+  --df-amber-200: #fae3bf;
+  --df-amber-300: #f5cf8e;
+  --df-amber-400: #efb862;
+  --df-amber-500: #e9a23b;
+  --df-amber-600: #d8912f;
+  --df-amber-700: #b0741f;
+  --df-amber-800: #87561a;
+  --df-amber-900: #5f4528;
+  --df-green-50: #eaf2ed;
+  --df-green-200: #cfe8dc;
+  --df-green-500: #1f9d6b;
+  --df-green-700: #16704d;
+  --df-green-900: #0e4531;
+  /* A carmine that leans toward Case Ink rather than toward orange, so the one
+     red still reads as this system's. 500 is dark enough for 8.2:1 on white,
+     which it needs in both its jobs: a fill under white text, and red text on
+     Card White. */
+  --df-carmine-50: #f8e9ea;
+  --df-carmine-200: #edc3c6;
+  --df-carmine-400: #b8323a;
+  --df-carmine-500: #95232a;
+  --df-carmine-900: #5e1419;
+  --df-amber: var(--df-amber-500);
+  --df-amber-wash: var(--df-amber-100);
   --df-archive-slate: #59657a;
-  --df-signed-off: #1f9d6b;
+  --df-signed-off: var(--df-green-500);
   --df-divider: #d8dee6;
   --df-divider-light: #eaedf1;
   --df-muted-ink: #8a94a6;
   --df-placeholder: #c3cad4;
   --df-hover: #edeff3;
-  /* A carmine that leans toward Case Ink rather than toward orange, so the one
-     red in a palette of two chromatic voices still reads as this system's.
-     Dark enough for 8.2:1 on white, which the token needs in both its jobs:
-     a fill under white text, and red text on Card White. */
-  --df-destructive: #95232a;
+  --df-destructive: var(--df-carmine-500);
+  /* shadcn's variable set, re-pointed for v2 only: index.css keeps v1's ink
+     primary. Triplets, because Tailwind reads hsl(var(--primary) / <alpha>).
+     Portalled panels carry `df-v2` themselves, so they inherit this too. The
+     *-border variables are recomputed in :root from v1's values, so they are
+     restated here rather than inherited. */
+  --primary: 36 80% 57%;
+  --primary-foreground: 223 41% 10%;
+  --primary-border: var(--df-amber-600);
+  --accent: 37 80% 94%;
+  --accent-foreground: 223 41% 10%;
+  --accent-border: var(--df-amber-200);
+  --ring: 36 80% 57%;
+  --destructive: 356 62% 36%;
+  --destructive-foreground: 0 0% 100%;
+  --destructive-border: var(--df-carmine-500);
   --df-font-display: "Cabinet Grotesk", sans-serif;
   --df-font-ui: "Switzer", system-ui, sans-serif;
   --df-font-mono: "JetBrains Mono", ui-monospace, monospace;
@@ -91,8 +129,22 @@
   border-radius: var(--df-radius-2);
 }
 
+/* The primary action is the one amber fill on a page, and ink reads on it at
+   8.4:1 where white would not reach 2.2:1. */
 .df-v2 button.df-btn.bg-primary,
-.df-v2 a.df-btn.bg-primary,
+.df-v2 a.df-btn.bg-primary {
+  background: var(--df-amber-500);
+  border-color: var(--df-amber-600);
+  color: var(--df-case-ink);
+}
+
+.df-v2 button.df-btn.bg-primary:hover:not(:disabled),
+.df-v2 a.df-btn.bg-primary:hover,
+.df-v2 button.df-btn.bg-primary:active:not(:disabled),
+.df-v2 a.df-btn.bg-primary:active {
+  background: var(--df-amber-600);
+}
+
 .df-v2 button.df-btn.bg-destructive,
 .df-v2 a.df-btn.bg-destructive,
 .df-v2 button.df-btn.text-destructive:hover,
@@ -254,8 +306,8 @@
 }
 
 .df-rail-item[data-active="true"] {
-  background: var(--df-card-white);
-  border-color: var(--df-divider);
+  background: var(--df-amber-100);
+  border-color: transparent;
   border-radius: var(--df-radius-4);
   color: var(--df-case-ink);
 }
@@ -431,6 +483,12 @@
   font-size: var(--df-text-3);
   max-width: 62ch;
   line-height: 1.55;
+}
+
+.df-subhead-skeleton {
+  display: flex;
+  align-items: center;
+  height: calc(var(--df-text-3) * 1.55);
 }
 
 .df-date-chip {
@@ -1617,12 +1675,6 @@ button.df-activity-row {
   }
 }
 
-.df-status[data-status="ONLINE"] {
-  color: var(--df-signed-off);
-  border-color: #bfe5d5;
-  background: #f1faf6;
-}
-
 .df-refusal-anchor {
   position: relative;
   display: inline-flex;
@@ -1894,14 +1946,31 @@ button.df-activity-row {
   color: var(--df-case-ink);
 }
 
-.df-status[data-status="COMPLETED"] {
-  color: var(--df-signed-off);
-  border-color: #bfe5d5;
-  background: #f1faf6;
-}
-
 .df-status[data-status="ON HOLD"] {
   color: var(--df-archive-slate);
+}
+
+/* The tone comes from palette.ts, never from the word in JSX. Neutral is the
+   absence of a tone: the badge keeps its ink or slate as above. */
+.df-status[data-tone="active"],
+.df-status-word[data-tone="active"] {
+  color: var(--df-amber-800);
+  border-color: var(--df-amber-200);
+  background: var(--df-amber-100);
+}
+
+.df-status[data-tone="positive"],
+.df-status-word[data-tone="positive"] {
+  color: var(--df-green-700);
+  border-color: var(--df-green-200);
+  background: var(--df-green-50);
+}
+
+.df-status[data-tone="alert"],
+.df-status-word[data-tone="alert"] {
+  color: var(--df-carmine-500);
+  border-color: var(--df-carmine-200);
+  background: var(--df-carmine-50);
 }
 
 .df-meter-row {
@@ -1922,6 +1991,15 @@ button.df-activity-row {
   display: block;
   height: 100%;
   border-radius: 99px;
+  background: var(--df-green-500);
+}
+
+.df-meter-fill[data-tone="over"] {
+  background: var(--df-carmine-500);
+}
+
+.df-meter-fill[data-tone="paused"] {
+  background: var(--df-archive-slate);
 }
 
 .df-ghost-link {
@@ -2771,7 +2849,7 @@ button.df-activity-row {
 .df-tab[data-active="true"] {
   color: var(--df-case-ink);
   font-weight: 600;
-  border-bottom-color: var(--df-case-ink);
+  border-bottom-color: var(--df-amber-500);
 }
 
 .df-tab-count {

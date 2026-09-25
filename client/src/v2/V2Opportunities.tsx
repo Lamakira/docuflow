@@ -21,6 +21,7 @@ import type { CrmClient, CrmProjectWithDetails } from "@shared/schema";
 import { opportunityStageFromCombined } from "@shared/projectLifecycle";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
+import { opportunityStageTone } from "./palette";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
@@ -194,7 +195,9 @@ export function V2OpportunityRecordPage() {
           <div className="df-dossier-copy">
             <div className="df-dossier-meta">
               <span className="df-status">OPPORTUNITY</span>
-              <span className="df-status" data-status={record.stage}>{record.stage}</span>
+              <span className="df-status" data-status={record.stage} data-tone={opportunityStageTone(record.stage, record.terminal)}>
+                {record.stage}
+              </span>
             </div>
             <h1 className="df-record-title">{record.title}</h1>
             <div className="df-dossier-provenance">

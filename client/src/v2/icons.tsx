@@ -29,6 +29,12 @@ import type { V2NavId } from "./presentation";
 
 const stroke = { width: 15, height: 15, strokeWidth: 1.4 };
 
+/* Lucide strokes and fills in currentColor, and an SVG presentation attribute
+   cannot be trusted to resolve var(), so the token rides on the CSS colour. */
+function tone(token: string) {
+  return { style: { color: `var(${token})` } };
+}
+
 export const NAV_ICONS: Record<V2NavId, LucideIcon> = {
   today: Calendar,
   opportunities: Target,
@@ -44,59 +50,59 @@ export const NAV_ICONS: Record<V2NavId, LucideIcon> = {
   devices: Monitor,
 };
 
-export function RailIcon({ id, color }: { id: V2NavId; color: string }) {
+export function RailIcon({ id, active }: { id: V2NavId; active: boolean }) {
   const Icon = NAV_ICONS[id];
-  return <Icon {...stroke} color={color} />;
+  return <Icon {...stroke} {...tone(active ? "--df-case-ink" : "--df-archive-slate")} />;
 }
 
 export function CollapseIcon() {
-  return <PanelLeft {...stroke} color="#59657A" />;
+  return <PanelLeft {...stroke} {...tone("--df-archive-slate")} />;
 }
 
 export function SwapIcon() {
-  return <ArrowLeftRight width={14} height={14} strokeWidth={1.4} color="#59657A" />;
+  return <ArrowLeftRight width={14} height={14} strokeWidth={1.4} {...tone("--df-archive-slate")} />;
 }
 
 export function SearchIcon() {
-  return <Search width={14} height={14} strokeWidth={1.4} color="#59657A" />;
+  return <Search width={14} height={14} strokeWidth={1.4} {...tone("--df-archive-slate")} />;
 }
 
 export function MenuIcon() {
-  return <Menu width={18} height={18} strokeWidth={1.5} color="#0F1524" />;
+  return <Menu width={18} height={18} strokeWidth={1.5} {...tone("--df-case-ink")} />;
 }
 
 export function SparkleIcon() {
-  return <Sparkles width={13} height={13} strokeWidth={1.4} color="#0F1524" />;
+  return <Sparkles width={13} height={13} strokeWidth={1.4} {...tone("--df-case-ink")} />;
 }
 
 export function BellIcon() {
-  return <Bell width={15} height={15} strokeWidth={1.4} color="#0F1524" />;
+  return <Bell width={15} height={15} strokeWidth={1.4} {...tone("--df-case-ink")} />;
 }
 
 export function PauseIcon() {
-  return <Pause width={13} height={13} strokeWidth={1.6} color="#0F1524" fill="#0F1524" />;
+  return <Pause width={13} height={13} strokeWidth={1.6} fill="currentColor" {...tone("--df-case-ink")} />;
 }
 
 export function PlayIcon() {
-  return <Play width={13} height={13} strokeWidth={1.6} color="#0F1524" fill="#0F1524" />;
+  return <Play width={13} height={13} strokeWidth={1.6} fill="currentColor" {...tone("--df-case-ink")} />;
 }
 
 export function KebabIcon() {
-  return <MoreVertical width={12} height={12} strokeWidth={1.4} color="#59657A" />;
+  return <MoreVertical width={12} height={12} strokeWidth={1.4} {...tone("--df-archive-slate")} />;
 }
 
 export function CloseIcon() {
-  return <X width={14} height={14} strokeWidth={1.4} color="#59657A" />;
+  return <X width={14} height={14} strokeWidth={1.4} {...tone("--df-archive-slate")} />;
 }
 
 export function CheckIcon() {
-  return <Check width={12} height={12} strokeWidth={1.8} color="#1F9D6B" />;
+  return <Check width={12} height={12} strokeWidth={1.8} {...tone("--df-signed-off")} />;
 }
 
 export function StopIcon() {
-  return <Square width={11} height={11} strokeWidth={1.6} color="#0F1524" fill="#0F1524" />;
+  return <Square width={11} height={11} strokeWidth={1.6} fill="currentColor" {...tone("--df-case-ink")} />;
 }
 
 export function SendIcon() {
-  return <Send width={14} height={14} strokeWidth={1.6} color="#fff" />;
+  return <Send width={14} height={14} strokeWidth={1.6} {...tone("--df-card-white")} />;
 }

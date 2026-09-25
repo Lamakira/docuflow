@@ -19,6 +19,7 @@ import {
   type ClientRegisterRowInput,
 } from "./clients";
 import { motionForSurface } from "./motion";
+import { statusTone } from "./palette";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
@@ -627,7 +628,7 @@ export function V2ClientRecordPage() {
                 record.projects.map((project) => (
                   <Link key={project.id} href={project.href} className="df-register-row">
                     <span className="df-row-title">{project.name}</span>
-                    <span className="df-status-word">{project.status}</span>
+                    <span className="df-status-word" data-tone={statusTone(project.status)}>{project.status}</span>
                   </Link>
                 ))
               )}

@@ -83,6 +83,7 @@ import {
 } from "./administration";
 import { trackingPolicyPath } from "./activity";
 import { motionForSurface } from "./motion";
+import { billingConditionTone } from "./palette";
 import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
 
@@ -714,7 +715,7 @@ export function V2AdministrationPage() {
             </p>
           </div>
           {page.billing.condition ? (
-            <span className="df-status" data-status={page.billing.condition}>
+            <span className="df-status" data-status={page.billing.condition} data-tone={billingConditionTone(page.billing.condition)}>
               {page.billing.condition}
             </span>
           ) : null}

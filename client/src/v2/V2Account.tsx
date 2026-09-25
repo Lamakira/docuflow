@@ -69,7 +69,6 @@ export function V2AccountPage() {
       <V2PageSkeleton
         title={page.title}
         testId="v2-account"
-        subhead="Loading your account…"
         status="Loading your account."
       >
         <SkeletonSection title="Workspaces you own" lines={2} />

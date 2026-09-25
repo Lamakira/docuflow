@@ -370,7 +370,7 @@ export function V2DocumentsPage() {
 
         <div className="df-filter-bar">
           <label className="df-filter-input">
-            <Search width={14} height={14} strokeWidth={1.4} color="#59657A" />
+            <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
             <input
               type="search"
               value={filterQuery}
@@ -402,7 +402,7 @@ export function V2DocumentsPage() {
       {library.preview ? (
         <aside className="df-panel df-folder-preview" data-testid="v2-folder-preview">
           <header className="df-panel-head">
-            <div className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.08em" }}>
+            <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.08em" }}>
               FOLDER PREVIEW
             </div>
             <div style={{ fontFamily: "var(--df-font-display)", fontWeight: 700, fontSize: 18 }}>

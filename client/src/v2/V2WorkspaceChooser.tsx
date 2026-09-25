@@ -19,7 +19,7 @@ export function V2WorkspaceChooser({
   return (
     <div className="df-v2 df-chooser df-gate" data-testid="v2-workspace-chooser">
       <div className="df-gate-card">
-        <div className="df-mono" style={{ fontSize: 10, color: "#59657A", letterSpacing: "0.08em" }}>
+        <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.08em" }}>
           WORKSPACE
         </div>
         <h1 className="df-title df-title-follow-card">
@@ -40,7 +40,7 @@ export function V2WorkspaceChooser({
               </span>
               <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
                 <span style={{ fontWeight: 600, fontSize: 13 }}>{row.workspaceName}</span>
-                <span className="df-mono" style={{ fontSize: 9.5, color: "#59657A" }}>
+                <span className="df-mono" style={{ fontSize: 9.5, color: "var(--df-archive-slate)" }}>
                   {row.workspaceRole}
                   {row.condition ? ` · ${row.condition}` : ""}
                 </span>
@@ -61,7 +61,7 @@ export function V2WorkspaceChooser({
               </span>
               <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
                 <span style={{ fontWeight: 600, fontSize: 13 }}>{row.workspaceName}</span>
-                <span className="df-mono" style={{ fontSize: 9.5, color: "#59657A" }}>
+                <span className="df-mono" style={{ fontSize: 9.5, color: "var(--df-archive-slate)" }}>
                   Invitation · {row.workspaceRole}
                 </span>
               </span>

@@ -103,7 +103,7 @@ export function V2TimerChip({
             style={{
               fontWeight: 500,
               fontSize: strip ? 12 : model.appearance === "paused" ? 12 : 11.5,
-              color: model.appearance === "running" ? "#0F1524" : "#59657A",
+              color: model.appearance === "running" ? "var(--df-case-ink)" : "var(--df-archive-slate)",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -115,7 +115,7 @@ export function V2TimerChip({
           {model.appearance === "running" && model.subtitle ? (
             <span
               className="df-mono"
-              style={{ fontSize: 9.5, color: "#59657A", textTransform: "uppercase" }}
+              style={{ fontSize: 9.5, color: "var(--df-archive-slate)", textTransform: "uppercase" }}
             >
               {model.subtitle}
             </span>
@@ -128,7 +128,7 @@ export function V2TimerChip({
             fontSize: strip ? 15 : 14,
             minWidth: 74,
             textAlign: "right",
-            color: model.appearance === "running" ? "#0F1524" : "#59657A",
+            color: model.appearance === "running" ? "var(--df-case-ink)" : "var(--df-archive-slate)",
           }}
         >
           {model.clock}

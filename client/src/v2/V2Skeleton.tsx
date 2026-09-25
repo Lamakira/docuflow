@@ -10,7 +10,14 @@
 import type { ReactNode } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export const LOADING_SUBHEAD = "Loading this Workspace…";
+/** Holds one subhead line, so the title block keeps its height when the real subhead lands. */
+export function SkeletonSubhead() {
+  return (
+    <div className="df-subhead df-subhead-skeleton">
+      <SkeletonBar width="long" />
+    </div>
+  );
+}
 
 export function SkeletonBar({ width, role }: { width?: "short" | "medium" | "long"; role?: "value" | "title" }) {
   return <Skeleton className="df-skeleton" data-width={width} data-role={role} />;
@@ -211,8 +218,8 @@ export function SkeletonRecordHead() {
 }
 
 /**
- * The page frame while it waits: the destination's own title, the loading
- * subhead, and a status a screen reader announces once. `frame` matches the
+ * The page frame while it waits: the destination's own title, a bar where the
+ * subhead will be, and a status a screen reader announces once. `frame` matches the
  * wrapper the loaded page uses, so the header does not jump on arrival:
  * `page` for most destinations, `library` for the two Document registers, and
  * `fragment` for a pane drawn inside a page that already has its frame.
@@ -221,7 +228,6 @@ export function V2PageSkeleton({
   title,
   testId,
   status,
-  subhead = LOADING_SUBHEAD,
   frame = "page",
   children,
 }: {
@@ -229,7 +235,6 @@ export function V2PageSkeleton({
   testId?: string;
   /** What a screen reader hears, e.g. "Loading Projects for this Workspace." */
   status: string;
-  subhead?: string;
   frame?: "page" | "library" | "fragment";
   children: ReactNode;
 }) {
@@ -238,7 +243,7 @@ export function V2PageSkeleton({
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">{title}</h1>
-          <p className="df-subhead">{subhead}</p>
+          <SkeletonSubhead />
         </div>
       </header>
       <p className="df-sr-only" role="status">
