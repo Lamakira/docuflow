@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { FileText, Folder } from "lucide-react";
-import type { LibraryModel, LibraryRow } from "./library";
+import { groupLibraryRows, type LibraryGroup, type LibraryModel, type LibraryRow } from "./library";
 
-type LibraryGroup =
-  | { kind: "folder"; folder: LibraryRow; children: LibraryRow[] }
-  | { kind: "item"; row: LibraryRow };
+/** The indent stops at four Folders deep; the path still names every one. */
+const MAX_INDENT = 4;
 
 export function useFolderExpandMotion(filterQuery: string) {
   const filtering = filterQuery.trim().length > 0;
@@ -21,22 +20,6 @@ export function useFolderExpandMotion(filterQuery: string) {
   };
 }
 
-export function groupLibraryRows(rows: LibraryRow[]): LibraryGroup[] {
-  const groups: LibraryGroup[] = [];
-  for (const row of rows) {
-    if (row.kind === "folder") {
-      groups.push({ kind: "folder", folder: row, children: [] });
-      continue;
-    }
-    const last = groups[groups.length - 1];
-    if (row.child && last?.kind === "folder") {
-      last.children.push(row);
-    } else {
-      groups.push({ kind: "item", row });
-    }
-  }
-  return groups;
-}
 
 function LibraryRowBody({ row }: { row: LibraryRow }) {
   return (
@@ -80,10 +63,56 @@ function DocumentRow({ row }: { row: LibraryRow }) {
       href={row.href ?? "/documents"}
       className="df-library-row"
       data-child={row.child ? "true" : "false"}
+      data-depth={Math.min(row.depth, MAX_INDENT)}
       data-testid={`v2-document-row-${row.id}`}
     >
       <LibraryRowBody row={row} />
     </Link>
+  );
+}
+
+function LibraryGroupRows({
+  group,
+  instantExpand,
+  onFolderClick,
+}: {
+  group: LibraryGroup;
+  instantExpand: boolean;
+  onFolderClick: (folderId: string) => void;
+}) {
+  if (group.kind === "item") return <DocumentRow row={group.row} />;
+  const open = group.folder.expanded === true;
+  return (
+    <div>
+      <button
+        type="button"
+        className="df-library-row"
+        data-expanded={open ? "true" : "false"}
+        data-selected={group.folder.selected ? "true" : "false"}
+        data-depth={Math.min(group.folder.depth, MAX_INDENT)}
+        data-testid={`v2-folder-row-${group.folder.id}`}
+        aria-expanded={open}
+        onClick={() => onFolderClick(group.folder.id)}
+      >
+        <LibraryRowBody row={group.folder} />
+      </button>
+      <div
+        className="df-accordion"
+        data-open={open ? "true" : "false"}
+        data-motion={instantExpand ? "instant" : "standard"}
+      >
+        <div className="df-accordion-inner">
+          {group.children.map((child) => (
+            <LibraryGroupRows
+              key={child.kind === "folder" ? child.folder.id : child.row.id}
+              group={child}
+              instantExpand={instantExpand}
+              onFolderClick={onFolderClick}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -114,38 +143,14 @@ export function V2LibraryRegister({
       ) : library.empty ? (
         <p className="df-empty">{library.emptyCopy}</p>
       ) : (
-        groups.map((group) => {
-          if (group.kind === "item") {
-            return <DocumentRow key={group.row.id} row={group.row} />;
-          }
-          const open = group.folder.expanded === true;
-          return (
-            <div key={group.folder.id}>
-              <button
-                type="button"
-                className="df-library-row"
-                data-expanded={open ? "true" : "false"}
-                data-selected={group.folder.selected ? "true" : "false"}
-                data-testid={`v2-folder-row-${group.folder.id}`}
-                aria-expanded={open}
-                onClick={() => onFolderClick(group.folder.id)}
-              >
-                <LibraryRowBody row={group.folder} />
-              </button>
-              <div
-                className="df-accordion"
-                data-open={open ? "true" : "false"}
-                data-motion={instantExpand ? "instant" : "standard"}
-              >
-                <div className="df-accordion-inner">
-                  {group.children.map((row) => (
-                    <DocumentRow key={row.id} row={row} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          );
-        })
+        groups.map((group) => (
+          <LibraryGroupRows
+            key={group.kind === "folder" ? group.folder.id : group.row.id}
+            group={group}
+            instantExpand={instantExpand}
+            onFolderClick={onFolderClick}
+          />
+        ))
       )}
       <div className="df-library-foot">
         <span>

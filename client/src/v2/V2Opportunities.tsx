@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type FormEvent,
   type MouseEvent,
   type PointerEvent,
 } from "react";
@@ -25,6 +24,7 @@ import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import {
   canChangeOpportunityStage,
@@ -343,8 +343,7 @@ export function V2OpportunitiesPage() {
     },
   });
 
-  function onCreate(event: FormEvent) {
-    event.preventDefault();
+  function onCreate() {
     const opportunityName = name.trim();
     if (!opportunityName) return;
     if (readOnly) {
@@ -412,39 +411,60 @@ export function V2OpportunitiesPage() {
           <p className="df-subhead">{pipeline.subhead}</p>
         </div>
         <div className="df-library-actions">
-          <Button variant="default" type="button" onClick={() => setCreating((open) => !open)} className="df-btn">
+          <Button
+            variant="default"
+            type="button"
+            onClick={() => {
+              setName("");
+              setClientId("");
+              setWriteRefusal(null);
+              setCreating(true);
+            }}
+            className="df-btn"
+          >
             New Opportunity
           </Button>
         </div>
       </header>
 
-      {creating ? (
-        <form className="df-filter-bar df-opportunities-filter" onSubmit={onCreate}>
-          <label className="df-filter-input">
-            <input
-              type="text"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Opportunity name"
-              aria-label="Opportunity name"
-            />
-          </label>
+      <V2FormDialog
+        open={creating}
+        onOpenChange={setCreating}
+        title="New Opportunity"
+        description="An Opportunity is a sale in the pipeline. It starts as a Lead and moves along the stages on the pipeline."
+        submitLabel="Create Opportunity"
+        pending={createOpportunity.isPending}
+        canSubmit={Boolean(name.trim())}
+        onSubmit={onCreate}
+        refusal={writeRefusal}
+        testId="v2-opportunities-new"
+      >
+        <label className="df-daily-field">
+          NAME
+          <input
+            type="text"
+            value={name}
+            autoFocus
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Opportunity name"
+            aria-label="Opportunity name"
+          />
+        </label>
+        <label className="df-daily-field">
+          CLIENT
           <V2FilterSelect
-            label="CLIENT"
+            label=""
             ariaLabel="Client"
             value={clientId || V2_SELECT_NONE}
             options={[
-              { value: V2_SELECT_NONE, label: "NONE" },
+              { value: V2_SELECT_NONE, label: "No Client yet" },
               ...clients.map((client) => ({ value: client.id, label: client.name })),
             ]}
             onChange={(value) => setClientId(value === V2_SELECT_NONE ? "" : value)}
           />
-          <Button variant="default" type="submit" disabled={createOpportunity.isPending || !name.trim()} className="df-btn">
-            Create
-          </Button>
-        </form>
-      ) : null}
-      {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
+        </label>
+      </V2FormDialog>
+      {writeRefusal && !creating ? <p className="df-refusal">{writeRefusal}</p> : null}
 
       <div className="df-filter-bar df-opportunities-filter">
         <label className="df-filter-input">

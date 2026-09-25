@@ -240,9 +240,11 @@ describe("People from Memberships (#192)", () => {
     expect(pageSource).toContain("Invitation pending");
     expect(pageSource).toContain("Archive");
     expect(pageSource).toContain("df-project-mobile");
-    // The invite refusal hangs from the form that raised it (#245, F3, #249).
+    // A role or condition refusal hangs from the Invite control; a send refusal
+    // lands inside the invite dialog, under the fields (#245, F3, #249, #273).
     expect(pageSource).toContain("V2RefusalPopover");
-    expect(pageSource).toContain("df-refusal-anchor-block");
+    expect(pageSource).toContain('className="df-refusal-anchor"');
+    expect(pageSource).toContain('refusal={refusal?.id === "invite-send" ? refusal.message : null}');
     expect(pageSource).not.toContain("custom role");
     expect(pageSource).not.toContain("reset-password");
   });

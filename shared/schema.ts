@@ -731,13 +731,17 @@ export const companyDocumentFolders = pgTable("company_document_folders", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
+  /** The Folder this one sits in; null at the Workspace root. Deleting a Folder deletes the Folders inside it. */
+  parentId: varchar("parent_id").references((): AnyPgColumn => companyDocumentFolders.id, { onDelete: "cascade" }),
   createdById: varchar("created_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   workspaceId: workspaceIdColumn(),
 }, (table) => [
   index("idx_company_document_folders_created_by").on(table.createdById),
+  index("idx_company_document_folders_parent").on(table.parentId),
   idInWorkspace(table, "company_document_folders"),
+  workspaceScopedFk("company_document_folders_parent_workspace_fk", [table.parentId, table.workspaceId], table),
 ]);
 
 export const companyDocumentFoldersRelations = relations(companyDocumentFolders, ({ one, many }) => ({

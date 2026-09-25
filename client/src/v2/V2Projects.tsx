@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent, type PointerEvent } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import { DragDropContext, Draggable, Droppable, type DraggableProvided, type DropResult } from "@hello-pangea/dnd";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -22,6 +22,7 @@ import {
 } from "./projects";
 import { formatHours, memberName, mobileProjectMeta } from "./today";
 import { useV2Chrome } from "./V2Shell";
+import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect } from "./V2Select";
 import { Button } from "@/components/ui/button";
 import { SkeletonBoard, SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
@@ -344,8 +345,7 @@ export function V2ProjectsPage() {
     },
   });
 
-  function onCreate(event: FormEvent) {
-    event.preventDefault();
+  function onCreate() {
     const projectName = name.trim();
     if (!projectName) return;
     if (readOnly) {
@@ -398,29 +398,46 @@ export function V2ProjectsPage() {
           <p className="df-subhead">{register.subhead}</p>
         </div>
         <div className="df-library-actions">
-          <Button variant="default" type="button" onClick={() => setCreating((open) => !open)} className="df-btn">
+          <Button
+            variant="default"
+            type="button"
+            onClick={() => {
+              setName("");
+              setWriteRefusal(null);
+              setCreating(true);
+            }}
+            className="df-btn"
+          >
             New Project
           </Button>
         </div>
       </header>
 
-      {creating ? (
-        <form className="df-filter-bar" onSubmit={onCreate}>
-          <label className="df-filter-input">
-            <input
-              type="text"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Project name"
-              aria-label="Project name"
-            />
-          </label>
-          <Button variant="default" type="submit" disabled={createProject.isPending || !name.trim()} className="df-btn">
-            Create
-          </Button>
-        </form>
-      ) : null}
-      {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
+      <V2FormDialog
+        open={creating}
+        onOpenChange={setCreating}
+        title="New Project"
+        description="A Project is the delivery work Tasks and Time Entries hang from. Everything past its name is set on its Dossier."
+        submitLabel="Create Project"
+        pending={createProject.isPending}
+        canSubmit={Boolean(name.trim())}
+        onSubmit={onCreate}
+        refusal={writeRefusal}
+        testId="v2-projects-new"
+      >
+        <label className="df-daily-field">
+          NAME
+          <input
+            type="text"
+            value={name}
+            autoFocus
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Project name"
+            aria-label="Project name"
+          />
+        </label>
+      </V2FormDialog>
+      {writeRefusal && !creating ? <p className="df-refusal">{writeRefusal}</p> : null}
 
       <div className="df-filter-bar">
         <label className="df-filter-input">

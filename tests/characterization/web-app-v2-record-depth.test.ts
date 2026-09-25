@@ -332,7 +332,7 @@ describe("A folder can be tidied, not only created (#260, E)", () => {
     expect(library.preview?.folderId).toBe("f-1");
     expect(library.preview?.name).toBe("Policies");
     expect(library.preview?.deleteConsequence).toBe(
-      "Policies and everything filed in it will be deleted, including items you may not be able to see. This cannot be undone.",
+      "Policies and everything filed in it, Folders inside it included, will be deleted, including items you may not be able to see. This cannot be undone.",
     );
     expect(library.preview?.deleteConsequence).not.toMatch(/\d/);
   });

@@ -9,6 +9,8 @@ export type LibraryPerson = {
 export type LibraryFolder = {
   id: string;
   name: string;
+  /** The Folder this one sits in; null or unknown puts it at the Workspace root. */
+  parentId?: string | null;
   createdAt?: Date | string | null;
   updatedAt?: Date | string | null;
   createdBy?: LibraryPerson | null;
@@ -56,6 +58,8 @@ export type LibraryRow = {
   editor: string;
   updated: string;
   child: boolean;
+  /** How many Folders deep the row sits: 0 at the root. */
+  depth: number;
   expanded?: boolean;
   selected?: boolean;
   href?: string;
@@ -87,6 +91,28 @@ export type LibraryModel = {
   itemCount: number;
   preview: LibraryPreview | null;
 };
+
+export type LibraryGroup =
+  | { kind: "folder"; folder: LibraryRow; children: LibraryGroup[] }
+  | { kind: "item"; row: LibraryRow };
+
+/** Rows arrive parents first, each a level deeper than its Folder; this nests them back. */
+export function groupLibraryRows(rows: LibraryRow[]): LibraryGroup[] {
+  const groups: LibraryGroup[] = [];
+  const open: Array<{ depth: number; group: Extract<LibraryGroup, { kind: "folder" }> }> = [];
+  for (const row of rows) {
+    while (open.length > 0 && open[open.length - 1].depth >= row.depth) open.pop();
+    const siblings = open.length > 0 ? open[open.length - 1].group.children : groups;
+    if (row.kind === "folder") {
+      const group = { kind: "folder" as const, folder: row, children: [] as LibraryGroup[] };
+      siblings.push(group);
+      open.push({ depth: row.depth, group });
+      continue;
+    }
+    siblings.push({ kind: "item", row });
+  }
+  return groups;
+}
 
 export const FOLDER_PARENTS = { singular: "FOLDER", plural: "FOLDERS" } as const;
 
@@ -138,32 +164,45 @@ export function composeLibrary(input: LibraryInput): LibraryModel {
     }
   }
 
+  const tree = folderTree(input.folders);
   const rows: LibraryRow[] = [];
-  for (const folder of input.folders) {
-    const children = childrenByFolder.get(folder.id) ?? [];
-    const folderMatches = nameMatches(folder.name, needle);
-    const matchingChildren = needle
-      ? children.filter((document) => nameMatches(document.name, needle))
-      : children;
-    if (needle && !folderMatches && matchingChildren.length === 0) continue;
 
-    const showChildren = expanded.has(folder.id) || (Boolean(needle) && matchingChildren.length > 0);
-    const listedChildren = needle && !folderMatches ? matchingChildren : matchingChildren;
-    rows.push(folderRow(folder, children, showChildren, folder.id === input.selectedFolderId, input.now));
-    for (const document of listedChildren) {
-      rows.push(itemRow(document, folder.name, true, input.now));
+  /** Whether anything at or under this Folder answers the filter. */
+  function subtreeMatches(folder: LibraryFolder): boolean {
+    if (nameMatches(folder.name, needle)) return true;
+    if ((childrenByFolder.get(folder.id) ?? []).some((document) => nameMatches(document.name, needle))) return true;
+    return (tree.children.get(folder.id) ?? []).some(subtreeMatches);
+  }
+
+  function walk(folder: LibraryFolder, depth: number, trail: string[]) {
+    if (needle && !subtreeMatches(folder)) return;
+    const documents = childrenByFolder.get(folder.id) ?? [];
+    const subfolders = tree.children.get(folder.id) ?? [];
+    const listedDocuments = needle ? documents.filter((document) => nameMatches(document.name, needle)) : documents;
+    const listedFolders = needle ? subfolders.filter(subtreeMatches) : subfolders;
+    const showChildren =
+      expanded.has(folder.id) || (Boolean(needle) && listedDocuments.length + listedFolders.length > 0);
+    rows.push(
+      folderRow(folder, documents, subfolders.length, trail, depth, showChildren, folder.id === input.selectedFolderId, input.now),
+    );
+    const inside = [...trail, folder.name];
+    for (const subfolder of listedFolders) walk(subfolder, depth + 1, inside);
+    for (const document of listedDocuments) {
+      rows.push(itemRow(document, inside.join(" / "), depth + 1, input.now));
     }
   }
 
+  for (const folder of tree.roots) walk(folder, 0, []);
+
   for (const document of roots) {
     if (needle && !nameMatches(document.name, needle)) continue;
-    rows.push(itemRow(document, "/", false, input.now));
+    rows.push(itemRow(document, "/", 0, input.now));
   }
 
   const empty = rows.length === 0;
   const selected = input.folders.find((folder) => folder.id === input.selectedFolderId) ?? null;
   const preview = selected
-    ? folderPreview(selected, childrenByFolder.get(selected.id) ?? [])
+    ? folderPreview(selected, childrenByFolder.get(selected.id) ?? [], tree.children.get(selected.id)?.length ?? 0)
     : null;
 
   return {
@@ -193,9 +232,53 @@ function nameMatches(name: string, needle: string): boolean {
   return name.toLowerCase().includes(needle);
 }
 
+type FolderTree = { roots: LibraryFolder[]; children: Map<string, LibraryFolder[]> };
+
+/**
+ * Folders by parent, in the order the route lists them. A Folder whose parent
+ * is missing — deleted, or not visible — reads at the root rather than vanish.
+ */
+function folderTree(folders: LibraryFolder[]): FolderTree {
+  const known = new Set(folders.map((folder) => folder.id));
+  const roots: LibraryFolder[] = [];
+  const children = new Map<string, LibraryFolder[]>();
+  for (const folder of folders) {
+    const parentId = folder.parentId && folder.parentId !== folder.id && known.has(folder.parentId) ? folder.parentId : null;
+    if (!parentId) {
+      roots.push(folder);
+      continue;
+    }
+    const list = children.get(parentId) ?? [];
+    list.push(folder);
+    children.set(parentId, list);
+  }
+  return { roots, children };
+}
+
+export type FolderChoice = { value: string; label: string };
+
+/** Every Folder a new item can go in, parents before children, named by its full path. */
+export function folderChoices(folders: LibraryFolder[]): FolderChoice[] {
+  const tree = folderTree(folders);
+  const choices: FolderChoice[] = [];
+  const seen = new Set<string>();
+  function walk(folder: LibraryFolder, trail: string[]) {
+    if (seen.has(folder.id)) return;
+    seen.add(folder.id);
+    const path = [...trail, folder.name];
+    choices.push({ value: folder.id, label: path.join(" / ") });
+    for (const child of tree.children.get(folder.id) ?? []) walk(child, path);
+  }
+  for (const folder of tree.roots) walk(folder, []);
+  return choices;
+}
+
 function folderRow(
   folder: LibraryFolder,
   children: LibraryDocument[],
+  subfolderCount: number,
+  trail: string[],
+  depth: number,
   expanded: boolean,
   selected: boolean,
   now: Date,
@@ -205,25 +288,27 @@ function folderRow(
   const updatedAt = latestChild
     ? (latestChild.updatedAt ?? latestChild.createdAt ?? folder.updatedAt)
     : folder.updatedAt ?? folder.createdAt;
-  const count = children.length;
+  const count = children.length + subfolderCount;
   const itemLabel = count === 1 ? "1 ITEM" : `${count} ITEMS`;
   return {
     id: folder.id,
     kind: "folder",
     name: folder.name,
-    path: `/ · ${itemLabel}`,
+    path: trail.length > 0 ? `${trail.join(" / ")} / · ${itemLabel}` : `/ · ${itemLabel}`,
     type: "FOLDER",
     access: folderAccess(children),
     editor: editorPerson ? memberName(editorPerson) : "—",
     updated: formatWhen(updatedAt ?? null, now),
-    child: false,
+    child: depth > 0,
+    depth,
     expanded,
     selected,
   };
 }
 
-function itemRow(document: LibraryDocument, parentPath: string, child: boolean, now: Date): LibraryRow {
+function itemRow(document: LibraryDocument, parentPath: string, depth: number, now: Date): LibraryRow {
   const kind: LibraryRowKind = document.storagePath ? "file" : "document";
+  const child = depth > 0;
   return {
     id: document.id,
     kind,
@@ -234,12 +319,13 @@ function itemRow(document: LibraryDocument, parentPath: string, child: boolean, 
     editor: document.uploadedBy ? memberName(document.uploadedBy) : "—",
     updated: formatWhen(document.updatedAt ?? document.createdAt ?? null, now),
     child,
+    depth,
     href: documentHref(document.id),
   };
 }
 
-function folderPreview(folder: LibraryFolder, children: LibraryDocument[]): LibraryPreview {
-  const count = children.length;
+function folderPreview(folder: LibraryFolder, children: LibraryDocument[], subfolderCount: number): LibraryPreview {
+  const count = children.length + subfolderCount;
   const itemLabel = count === 1 ? "1 ITEM" : `${count} ITEMS`;
   return {
     folderId: folder.id,
@@ -247,7 +333,7 @@ function folderPreview(folder: LibraryFolder, children: LibraryDocument[]): Libr
     // The route cascades to every row filed under the folder, including
     // Restricted Documents and Files this register never lists, so the
     // confirmation cannot honestly give a count.
-    deleteConsequence: `${folder.name} and everything filed in it will be deleted, including items you may not be able to see. This cannot be undone.`,
+    deleteConsequence: `${folder.name} and everything filed in it, Folders inside it included, will be deleted, including items you may not be able to see. This cannot be undone.`,
     title: folder.name,
     meta: `${itemLabel} · FOLDER`,
     accessCopy:

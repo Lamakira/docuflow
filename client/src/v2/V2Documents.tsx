@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import type {
   CompanyDocumentFolderWithCreator,
   CompanyDocumentWithUploader,
@@ -10,6 +10,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import {
   composeLibrary,
+  folderChoices,
   folderPath,
   type LibraryDocument,
   type LibraryFolder,
@@ -18,6 +19,8 @@ import {
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
+import { V2FormDialog } from "./V2FormDialog";
+import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -92,6 +95,7 @@ function toFolder(folder: CompanyDocumentFolderWithCreator): LibraryFolder {
   return {
     id: folder.id,
     name: folder.name,
+    parentId: folder.parentId,
     createdAt: folder.createdAt,
     updatedAt: folder.updatedAt,
     createdBy: folder.createdBy
@@ -125,6 +129,12 @@ function toDocument(document: CompanyDocumentWithUploader): LibraryDocument {
   };
 }
 
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function V2DocumentsPage() {
   const now = useMemo(() => new Date(), []);
   const [, navigate] = useLocation();
@@ -134,6 +144,9 @@ export function V2DocumentsPage() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<CreateMode>(() => actionFromSearch());
   const [name, setName] = useState("");
+  const [targetFolderId, setTargetFolderId] = useState<string>(V2_SELECT_NONE);
+  const [uploads, setUploads] = useState<File[]>([]);
+  const [dropOver, setDropOver] = useState(false);
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("");
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
@@ -158,6 +171,11 @@ export function V2DocumentsPage() {
     ownerName,
   };
   const library = composeLibrary(input);
+  const destinations = [
+    { value: V2_SELECT_NONE, label: "Workspace root" },
+    ...folderChoices(input.folders),
+  ];
+  const target = targetFolderId === V2_SELECT_NONE ? null : targetFolderId;
   const folderMotion = useFolderExpandMotion(filterQuery);
   const previewFolderId = library.preview?.folderId ?? null;
   const previewFolderName = library.preview?.name ?? "";
@@ -184,7 +202,7 @@ export function V2DocumentsPage() {
       apiRequest("POST", "/api/company-documents", {
         name: documentName,
         content: { type: "doc", content: [{ type: "paragraph" }] },
-        ...(selectedFolderId ? { folderId: selectedFolderId } : {}),
+        ...(target ? { folderId: target } : {}),
       }),
     onSuccess: (created: { id?: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
@@ -200,9 +218,12 @@ export function V2DocumentsPage() {
   });
 
   const createFolder = useMutation({
-    mutationFn: (folderName: string) => apiRequest("POST", "/api/company-document-folders", { name: folderName }),
-    onSuccess: () => {
+    mutationFn: (folderName: string) =>
+      apiRequest("POST", "/api/company-document-folders", { name: folderName, parentId: target }),
+    onSuccess: (created: { id?: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
+      if (target) setExpandedFolderIds((current) => (current.includes(target) ? current : [...current, target]));
+      if (created?.id) setSelectedFolderId(created.id);
       setCreateMode(null);
       setName("");
       setWriteRefusal(null);
@@ -228,14 +249,12 @@ export function V2DocumentsPage() {
         fileSize: file.size,
         mimeType: file.type || "application/octet-stream",
         storagePath: objectPath,
-        ...(selectedFolderId ? { folderId: selectedFolderId } : {}),
+        ...(target ? { folderId: target } : {}),
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/company-documents"] });
-      setCreateMode(null);
-      setWriteRefusal(null);
     },
     onError: (error: Error) => {
       refuseWrite(error.message);
@@ -291,14 +310,65 @@ export function V2DocumentsPage() {
     );
   }
 
-  function onCreate(event: FormEvent) {
-    event.preventDefault();
+  function openCreate(mode: Exclude<CreateMode, null>) {
+    setTargetFolderId(selectedFolderId ?? V2_SELECT_NONE);
+    setName("");
+    setUploads([]);
+    setWriteRefusal(null);
+    setCreateMode(mode);
+  }
+
+  function onCreate() {
     const trimmed = name.trim();
     if (!trimmed) return;
     if (refuseWrite()) return;
     if (createMode === "folder") createFolder.mutate(trimmed);
     if (createMode === "document") createDocument.mutate(trimmed);
   }
+
+  function addUploads(list: FileList | null) {
+    if (!list || list.length === 0) return;
+    const incoming = Array.from(list);
+    setUploads((current) => [
+      ...current,
+      ...incoming.filter((file) => !current.some((kept) => kept.name === file.name && kept.size === file.size)),
+    ]);
+  }
+
+  function onDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    setDropOver(false);
+    addUploads(event.dataTransfer.files);
+  }
+
+  async function onUpload() {
+    if (uploads.length === 0) return;
+    if (refuseWrite()) return;
+    for (const file of uploads) {
+      try {
+        await uploadFile.mutateAsync(file);
+        setUploads((current) => current.filter((kept) => kept !== file));
+      } catch {
+        return;
+      }
+    }
+    setCreateMode(null);
+    setWriteRefusal(null);
+  }
+
+  const creating = createMode === "document" || createMode === "folder";
+  const destinationField = (
+    <label className="df-daily-field">
+      FOLDER
+      <V2FilterSelect
+        label=""
+        ariaLabel={createMode === "folder" ? "Parent Folder" : "Folder"}
+        value={targetFolderId}
+        options={destinations}
+        onChange={setTargetFolderId}
+      />
+    </label>
+  );
 
   if (isLoading) {
     return (
@@ -322,51 +392,110 @@ export function V2DocumentsPage() {
             <p className="df-subhead">{library.subhead}</p>
           </div>
           <div className="df-library-actions">
-            <Button variant="outline" type="button" onClick={() => setCreateMode("folder")} className="df-btn">
+            <Button variant="outline" type="button" onClick={() => openCreate("folder")} className="df-btn">
               New folder
             </Button>
-            <Button variant="outline" type="button" onClick={() => setCreateMode("upload")} className="df-btn">
+            <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
               Upload File
             </Button>
-            <Button variant="default" type="button" onClick={() => setCreateMode("document")} className="df-btn">
+            <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
               New Document
             </Button>
           </div>
         </header>
 
-        {createMode === "document" || createMode === "folder" ? (
-          <form className="df-filter-bar" onSubmit={onCreate}>
-            <label className="df-filter-input">
-              <input
-                type="text"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={createMode === "folder" ? "Folder name" : "Document name"}
-                aria-label={createMode === "folder" ? "Folder name" : "Document name"}
-              />
-            </label>
-            <Button variant="default" type="submit" disabled={createDocument.isPending || createFolder.isPending || !name.trim()} className="df-btn">
-              Create
-            </Button>
-          </form>
-        ) : null}
-        {createMode === "upload" ? (
-          <div className="df-filter-bar">
-            <label className="df-filter-input">
-              <input
-                type="file"
-                aria-label="Upload File"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  if (refuseWrite()) return;
-                  uploadFile.mutate(file);
-                }}
-              />
-            </label>
-          </div>
-        ) : null}
-        {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
+        <V2FormDialog
+          open={creating}
+          onOpenChange={(open) => {
+            if (!open) setCreateMode(null);
+          }}
+          title={createMode === "folder" ? "New Folder" : "New Document"}
+          description={
+            createMode === "folder"
+              ? "A Folder groups Workspace Documents and Files. It can sit at the root or inside any Folder."
+              : "A Workspace Document belongs to the Workspace, not to a single Project. It opens in the editor once created."
+          }
+          submitLabel={createMode === "folder" ? "Create Folder" : "Create Document"}
+          pending={createDocument.isPending || createFolder.isPending}
+          canSubmit={Boolean(name.trim())}
+          onSubmit={onCreate}
+          refusal={writeRefusal}
+          testId={createMode === "folder" ? "v2-documents-new-folder" : "v2-documents-new-document"}
+        >
+          <label className="df-daily-field">
+            NAME
+            <input
+              type="text"
+              value={name}
+              autoFocus
+              onChange={(event) => setName(event.target.value)}
+              placeholder={createMode === "folder" ? "Folder name" : "Document name"}
+              aria-label={createMode === "folder" ? "Folder name" : "Document name"}
+            />
+          </label>
+          {destinationField}
+        </V2FormDialog>
+
+        <V2FormDialog
+          open={createMode === "upload"}
+          onOpenChange={(open) => {
+            if (!open && !uploadFile.isPending) setCreateMode(null);
+          }}
+          title="Upload Files"
+          description="Files are stored in the Workspace and open in the viewer. Drop several at once; each becomes its own row."
+          submitLabel={uploads.length > 1 ? `Upload ${uploads.length} Files` : "Upload File"}
+          pending={uploadFile.isPending}
+          canSubmit={uploads.length > 0}
+          onSubmit={() => void onUpload()}
+          refusal={writeRefusal}
+          testId="v2-documents-upload"
+        >
+          <label
+            className="df-drop-zone"
+            data-over={dropOver ? "true" : "false"}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDropOver(true);
+            }}
+            onDragLeave={() => setDropOver(false)}
+            onDrop={onDrop}
+          >
+            <strong>Drop files here</strong>
+            <span>or click to choose them</span>
+            <input
+              type="file"
+              multiple
+              aria-label="Choose files to upload"
+              onChange={(event) => {
+                addUploads(event.target.files);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          {uploads.length > 0 ? (
+            <ul className="df-file-list" aria-label="Files to upload">
+              {uploads.map((file) => (
+                <li key={`${file.name}-${file.size}`}>
+                  <span className="df-row-title">{file.name}</span>
+                  <span className="df-mono df-meta">{formatSize(file.size)}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    type="button"
+                    className="df-btn"
+                    aria-label={`Remove ${file.name}`}
+                    disabled={uploadFile.isPending}
+                    onClick={() => setUploads((current) => current.filter((kept) => kept !== file))}
+                  >
+                    <X width={14} height={14} strokeWidth={1.6} />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {destinationField}
+        </V2FormDialog>
+        {writeRefusal && !createMode ? <p className="df-refusal">{writeRefusal}</p> : null}
 
         <div className="df-filter-bar">
           <label className="df-filter-input">

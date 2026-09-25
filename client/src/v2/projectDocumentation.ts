@@ -136,6 +136,7 @@ function projectRow(
     editor: latest?.createdBy ? memberName(latest.createdBy) : "—",
     updated: formatWhen(latest?.updatedAt ?? latest?.createdAt ?? project.updatedAt ?? null, now),
     child: false,
+    depth: 0,
     expanded,
     selected,
   };
@@ -152,6 +153,7 @@ function documentRow(document: ProjectDocumentationDocument, projectName: string
     editor: document.createdBy ? memberName(document.createdBy) : "—",
     updated: formatWhen(document.updatedAt ?? document.createdAt ?? null, now),
     child: true,
+    depth: 1,
     href: projectDocumentHref(document.id),
   };
 }
