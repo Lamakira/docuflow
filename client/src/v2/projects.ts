@@ -2,6 +2,7 @@ import { projectStatusFromCombined } from "@shared/projectLifecycle";
 import { stageColor, stageInk } from "./stageColor";
 import { projectStatusColor } from "./palette";
 import { projectHref } from "./today";
+import { readPage, readPageSize, writePaging } from "./paging";
 
 /**
  * Projects register (#185).
@@ -30,6 +31,11 @@ export type ProjectRegisterInput = {
   /** A Tag id, or `all` (#260). */
   tagFilter: string;
   selectedId: string | null;
+  /**
+   * Filters the server already applied, named for the empty state (#275). The
+   * rows arrive narrowed, so the three filters above stay `""`/`all` then.
+   */
+  activeFilters?: string[];
 };
 
 export type ProjectRegisterRow = {
@@ -52,6 +58,8 @@ export type ProjectRegisterModel = {
   subhead: string;
   empty: boolean;
   emptyCopy: string;
+  /** Empty because of a filter, so the register offers to clear it. */
+  filtered: boolean;
   rows: ProjectRegisterRow[];
   count: number;
 };
@@ -89,6 +97,183 @@ function matchesFilter(
   return haystack.includes(needle);
 }
 
+export const PROJECT_STATUS_OPTIONS = [
+  { value: "planned", label: "PLANNED" },
+  { value: "active", label: "ACTIVE" },
+  { value: "on_hold", label: "ON HOLD" },
+  { value: "in_review", label: "IN REVIEW" },
+  { value: "completed", label: "COMPLETED" },
+  { value: "archived", label: "ARCHIVED" },
+];
+
+export const PROJECT_TYPE_OPTIONS = [
+  { value: "one_time", label: "ONE-TIME" },
+  { value: "monthly", label: "MONTHLY" },
+  { value: "hourly_budget", label: "HOURLY" },
+  { value: "internal", label: "INTERNAL" },
+];
+
+export const PROJECT_DUE_OPTIONS = [
+  { value: "overdue", label: "OVERDUE" },
+  { value: "next_7", label: "NEXT 7 DAYS" },
+  { value: "this_month", label: "THIS MONTH" },
+  { value: "next_month", label: "NEXT MONTH" },
+  { value: "none", label: "NO DUE DATE" },
+];
+
+/**
+ * What narrows the Projects register (#275). `all` is no filter; every field
+ * lives in the URL so a filtered view can be shared.
+ */
+export type ProjectRegisterFilters = {
+  q: string;
+  status: string;
+  client: string;
+  lead: string;
+  tag: string;
+  type: string;
+  due: string;
+  /** A register column the server can order by, or `""` for most recently updated. */
+  sort: ProjectSort | "";
+  dir: "asc" | "desc";
+  page: number;
+  pageSize: number;
+};
+
+/** The register columns the server orders by (`CRM_PROJECT_SORTS`). LEAD and TRACKED MTD are not among them. */
+export const PROJECT_SORTS = ["name", "status", "budget"] as const;
+export type ProjectSort = (typeof PROJECT_SORTS)[number];
+
+const FILTER_PARAMS = ["status", "client", "lead", "tag", "type", "due"] as const;
+
+export function readProjectFilters(search: string): ProjectRegisterFilters {
+  const params = new URLSearchParams(search);
+  const pick = (name: string) => params.get(name)?.trim() || "all";
+  return {
+    q: params.get("q") ?? "",
+    status: pick("status"),
+    client: pick("client"),
+    lead: pick("lead"),
+    tag: pick("tag"),
+    type: pick("type"),
+    due: pick("due"),
+    sort: PROJECT_SORTS.find((sort) => sort === params.get("sort")) ?? "",
+    dir: params.get("dir") === "desc" ? "desc" : "asc",
+    page: readPage(params),
+    pageSize: readPageSize(params),
+  };
+}
+
+/**
+ * The register's query string. Keeps whatever else the URL carries (`view`),
+ * and leaves defaults out so a plain register stays `/projects`.
+ */
+export function writeProjectFilters(search: string, filters: ProjectRegisterFilters): string {
+  const params = new URLSearchParams(search);
+  if (filters.q.trim()) params.set("q", filters.q);
+  else params.delete("q");
+  for (const name of FILTER_PARAMS) {
+    if (filters[name] !== "all") params.set(name, filters[name]);
+    else params.delete(name);
+  }
+  if (filters.sort) params.set("sort", filters.sort);
+  else params.delete("sort");
+  if (filters.sort && filters.dir === "desc") params.set("dir", "desc");
+  else params.delete("dir");
+  writePaging(params, filters.page, filters.pageSize);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export function hasProjectFilters(filters: ProjectRegisterFilters): boolean {
+  return Boolean(filters.q.trim()) || FILTER_PARAMS.some((name) => filters[name] !== "all");
+}
+
+export function clearProjectFilters(filters: ProjectRegisterFilters): ProjectRegisterFilters {
+  return { ...filters, q: "", status: "all", client: "all", lead: "all", tag: "all", type: "all", due: "all", page: 1 };
+}
+
+function startOfDay(value: Date): Date {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function endOfDayOf(value: Date): Date {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 23, 59, 59, 999);
+}
+
+/** The due-date bounds a preset stands for, in the reader's local days. */
+export function projectDueRange(preset: string, now: Date): { from?: Date; to?: Date; none?: true } | null {
+  const today = startOfDay(now);
+  switch (preset) {
+    case "overdue":
+      return { to: new Date(today.getTime() - 1) };
+    case "next_7":
+      return { from: today, to: endOfDayOf(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 6)) };
+    case "this_month":
+      return {
+        from: new Date(today.getFullYear(), today.getMonth(), 1),
+        to: endOfDayOf(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
+      };
+    case "next_month":
+      return {
+        from: new Date(today.getFullYear(), today.getMonth() + 1, 1),
+        to: endOfDayOf(new Date(today.getFullYear(), today.getMonth() + 2, 0)),
+      };
+    case "none":
+      return { none: true };
+    default:
+      return null;
+  }
+}
+
+/**
+ * The server page the register shows: `scope=visible` so a Member's page is
+ * never short of rows the register would hide.
+ */
+export function projectRegisterPath(filters: ProjectRegisterFilters, now: Date): string {
+  const params = new URLSearchParams({
+    scope: "visible",
+    page: String(filters.page),
+    pageSize: String(filters.pageSize),
+  });
+  if (filters.q.trim()) params.set("search", filters.q.trim());
+  if (filters.status !== "all") params.set("projectStatus", filters.status);
+  if (filters.client !== "all") params.set("clientId", filters.client);
+  if (filters.lead !== "all") params.set("leadId", filters.lead);
+  if (filters.tag !== "all") params.set("tagId", filters.tag);
+  if (filters.type !== "all") params.set("projectType", filters.type);
+  const due = projectDueRange(filters.due, now);
+  if (due?.none) params.set("due", "none");
+  if (due?.from) params.set("dueFrom", due.from.toISOString());
+  if (due?.to) params.set("dueTo", due.to.toISOString());
+  if (filters.sort) {
+    params.set("sort", filters.sort);
+    params.set("dir", filters.dir);
+  }
+  return `/api/crm/projects?${params.toString()}`;
+}
+
+/**
+ * Names each filter in force, for the empty state: the reader sees what emptied
+ * the register, not a generic "no match".
+ */
+export function projectFilterLabels(
+  filters: ProjectRegisterFilters,
+  names: { clients: Map<string, string>; leads: Map<string, string>; tags: Map<string, string> },
+): string[] {
+  const optionLabel = (options: Array<{ value: string; label: string }>, value: string) =>
+    options.find((option) => option.value === value)?.label ?? value.toUpperCase();
+  const labels: string[] = [];
+  if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
+  if (filters.status !== "all") labels.push(`STATUS ${optionLabel(PROJECT_STATUS_OPTIONS, filters.status)}`);
+  if (filters.client !== "all") labels.push(`CLIENT ${names.clients.get(filters.client) ?? "—"}`);
+  if (filters.lead !== "all") labels.push(`LEAD ${names.leads.get(filters.lead) ?? "—"}`);
+  if (filters.tag !== "all") labels.push(`TAG ${(names.tags.get(filters.tag) ?? "—").toUpperCase()}`);
+  if (filters.type !== "all") labels.push(`TYPE ${optionLabel(PROJECT_TYPE_OPTIONS, filters.type)}`);
+  if (filters.due !== "all") labels.push(`DUE ${optionLabel(PROJECT_DUE_OPTIONS, filters.due)}`);
+  return labels;
+}
+
 export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegisterModel {
   const subhead = `Projects in ${input.workspaceName}.`;
   const needle = input.filterQuery.trim().toLowerCase();
@@ -111,14 +296,18 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
     }));
 
   const empty = rows.length === 0;
+  const activeFilters = input.activeFilters ?? [];
   return {
     subhead,
     empty,
     emptyCopy: empty
-      ? needle || input.statusFilter !== "all" || input.tagFilter !== "all"
-        ? "No Projects match this filter."
-        : "No Projects in this Workspace yet."
+      ? activeFilters.length > 0
+        ? `No Projects match ${activeFilters.join(" · ")}.`
+        : needle || input.statusFilter !== "all" || input.tagFilter !== "all"
+          ? "No Projects match this filter."
+          : "No Projects in this Workspace yet."
       : "",
+    filtered: empty && (activeFilters.length > 0 || Boolean(needle) || input.statusFilter !== "all" || input.tagFilter !== "all"),
     rows,
     count: rows.length,
   };

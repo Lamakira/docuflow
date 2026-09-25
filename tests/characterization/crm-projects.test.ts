@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { registerUser } from "../helpers/auth";
+import { registerUser, setWorkspaceRole } from "../helpers/auth";
 import { createClient, createCrmProject } from "../helpers/fixtures";
 import { emailsTo } from "../fakes/resend";
 
@@ -14,8 +14,8 @@ import { emailsTo } from "../fakes/resend";
  *  - Name uniqueness is enforced in application code, case-insensitively and
  *    trimmed, and is checked against the first 1000 rows only.
  *  - Projects with no `crmProject` row are hidden from every CRM listing.
- *  - `?search=` filters the page that pagination already selected, and `total`
- *    stays the unfiltered count — so a search can return fewer rows than it says.
+ *  - `?search=` and the register filters narrow the set before it is paged, so
+ *    `total` counts what they kept (#275; `search` used to run after paging).
  *  - `PATCH` splits its payload: `projectName`/`projectDescription` update the
  *    `project` row, everything else the `crmProject` row.
  *  - Moving into a "review" status starts a review clock; moving out of it adds
@@ -160,20 +160,136 @@ describe("CRM projects (characterization)", () => {
     );
   });
 
-  it("applies ?search after pagination, leaving total unfiltered", async () => {
+  it("searches Project, Client name and company before paging, so total counts the matches", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
+    const client = await createClient(user.agent, { name: "Northwind", company: "Alpha Holdings" });
     await createCrmProject(user.agent, { name: "Alpha search" });
     await createCrmProject(user.agent, { name: "Beta other" });
+    await createCrmProject(user.agent, { name: "Gamma", clientId: client.id });
+    await createCrmProject(user.agent, { name: "100%_literal" });
 
-    const res = await user.agent.get("/api/crm/projects").query({ search: "alpha" });
+    const res = await user.agent.get("/api/crm/projects").query({ search: "alpha", pageSize: 1 });
     expect(res.status).toBe(200);
-    expect(res.body.data.map((p: { project: { name: string } }) => p.project.name)).toEqual([
-      "Alpha search",
-    ]);
-    // Quirk: `total` is the count before the search filter runs, so paging on it
-    // over-reports by design.
     expect(res.body.total).toBe(2);
+    expect(res.body.data).toHaveLength(1);
+
+    const byClient = await user.agent.get("/api/crm/projects").query({ search: "northWIND" });
+    expect(byClient.body.data.map((p: { project: { name: string } }) => p.project.name)).toEqual(["Gamma"]);
+
+    // `%` and `_` are matched as themselves, not as wildcards.
+    const literal = await user.agent.get("/api/crm/projects").query({ search: "%_" });
+    expect(literal.body.data.map((p: { project: { name: string } }) => p.project.name)).toEqual(["100%_literal"]);
+  });
+
+  it("narrows by Project Status, Client, Lead, Tag, Project type and due date (#275)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const teammate = await registerUser(app);
+    const client = await createClient(user.agent, { name: "Acme" });
+    const acme = await createCrmProject(user.agent, {
+      name: "Acme site",
+      clientId: client.id,
+      status: "won_in_progress",
+      dueDate: "2026-10-05T00:00:00.000Z",
+    });
+    const led = await createCrmProject(user.agent, {
+      name: "Led by teammate",
+      memberIds: [teammate.id],
+      dueDate: "2026-12-01T00:00:00.000Z",
+    });
+    const undated = await createCrmProject(user.agent, { name: "Undated" });
+    await user.agent.patch(`/api/crm/projects/${undated.crmProject.id}`).send({ projectType: "internal" });
+    const tag = await user.agent.post("/api/crm/tags").send({ name: "Retainer" });
+    await user.agent.post(`/api/crm/projects/${led.crmProject.id}/tags/${tag.body.id}`);
+
+    const names = async (query: Record<string, string>) =>
+      (await user.agent.get("/api/crm/projects").query({ pageSize: 50, ...query })).body.data
+        .map((p: { project: { name: string } }) => p.project.name)
+        .sort();
+
+    expect(await names({ projectStatus: "active" })).toEqual(["Acme site"]);
+    expect(await names({ clientId: client.id })).toEqual(["Acme site"]);
+    expect(await names({ leadId: teammate.id })).toEqual(["Led by teammate"]);
+    expect(await names({ tagId: tag.body.id })).toEqual(["Led by teammate"]);
+    expect(await names({ projectType: "internal" })).toEqual(["Undated"]);
+    expect(await names({ due: "none" })).toEqual(["Undated"]);
+    expect(await names({ dueFrom: "2026-10-01T00:00:00.000Z", dueTo: "2026-10-31T23:59:59.999Z" })).toEqual([
+      "Acme site",
+    ]);
+    // Filters combine, and with the search.
+    expect(await names({ clientId: client.id, projectStatus: "planned" })).toEqual([]);
+    expect(await names({ search: "led", tagId: tag.body.id })).toEqual(["Led by teammate"]);
+    // A date that does not parse is ignored rather than refused.
+    expect(await names({ dueFrom: "not-a-date" })).toHaveLength(3);
+    expect((await names({ clientId: client.id })).length).toBe(1);
+    expect(acme.crmProject.id).toBeTruthy();
+  });
+
+  it("sorts by name, Project Status, or budget used, before paging (#275)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const bravo = await createCrmProject(user.agent, { name: "bravo", status: "won_in_progress", budgetedHours: 10 });
+    const alpha = await createCrmProject(user.agent, { name: "Alpha", status: "won_completed", budgetedHours: 10 });
+    await createCrmProject(user.agent, { name: "Charlie" });
+    await user.agent.patch(`/api/crm/projects/${bravo.crmProject.id}`).send({ actualHours: 9 });
+    await user.agent.patch(`/api/crm/projects/${alpha.crmProject.id}`).send({ actualHours: 2 });
+
+    const names = async (query: Record<string, string>) =>
+      (await user.agent.get("/api/crm/projects").query({ pageSize: 50, ...query })).body.data.map(
+        (p: { project: { name: string } }) => p.project.name,
+      );
+
+    // Case does not decide the order.
+    expect(await names({ sort: "name" })).toEqual(["Alpha", "bravo", "Charlie"]);
+    expect(await names({ sort: "name", dir: "desc" })).toEqual(["Charlie", "bravo", "Alpha"]);
+    // ACTIVE, COMPLETED, PLANNED: alphabetical, as the column reads.
+    expect(await names({ sort: "status" })).toEqual(["bravo", "Alpha", "Charlie"]);
+    expect(await names({ sort: "status", dir: "desc" })).toEqual(["Charlie", "Alpha", "bravo"]);
+    // A Project with no budget sorts last in both directions.
+    expect(await names({ sort: "budget", dir: "desc" })).toEqual(["bravo", "Alpha", "Charlie"]);
+    expect(await names({ sort: "budget" })).toEqual(["Alpha", "bravo", "Charlie"]);
+    // The sort holds across pages.
+    const second = await user.agent.get("/api/crm/projects").query({ sort: "name", page: 2, pageSize: 1 });
+    expect(second.body.data[0].project.name).toBe("bravo");
+    // An unknown column falls back to most recently updated.
+    expect((await names({ sort: "nope" }))[0]).toBe("Alpha");
+  });
+
+  it("pages only what a Member may see with scope=visible, and everything for an Administrator", async () => {
+    const app = await makeApp();
+    const admin = await registerUser(app);
+    await setWorkspaceRole(admin.id, "administrator");
+    const member = await registerUser(app);
+    await setWorkspaceRole(member.id, "member");
+
+    await createCrmProject(admin.agent, { name: "Admin only" });
+    await createCrmProject(admin.agent, { name: "With member", memberIds: [member.id] });
+    const assigned = await createCrmProject(admin.agent, { name: "Assigned, no members" });
+    const assignedElsewhere = await createCrmProject(admin.agent, { name: "Assigned, admin a member" });
+    // The assignee road only counts on a Project nobody is a Member of; the HTTP
+    // assign adds a Member, so the rows are set directly.
+    const { pool } = await import("../../server/db");
+    await pool.query(`DELETE FROM project_members WHERE crm_project_id = $1`, [assigned.crmProject.id]);
+    await pool.query(`UPDATE crm_projects SET assignee_id = $1 WHERE id = ANY($2)`, [
+      member.id,
+      [assigned.crmProject.id, assignedElsewhere.crmProject.id],
+    ]);
+
+    const visible = await member.agent.get("/api/crm/projects").query({ scope: "visible", pageSize: 1 });
+    expect(visible.body.total).toBe(2);
+    const all = await member.agent.get("/api/crm/projects").query({ scope: "visible", pageSize: 50 });
+    expect(all.body.data.map((p: { project: { name: string } }) => p.project.name).sort()).toEqual([
+      "Assigned, no members",
+      "With member",
+    ]);
+
+    // Without the scope the route answers as it always has.
+    const unscoped = await member.agent.get("/api/crm/projects").query({ pageSize: 50 });
+    expect(unscoped.body.total).toBe(4);
+
+    const adminView = await admin.agent.get("/api/crm/projects").query({ scope: "visible", pageSize: 50 });
+    expect(adminView.body.total).toBe(4);
   });
 
   it("returns a single CRM project with its project, client and members inlined", async () => {

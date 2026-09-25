@@ -2507,6 +2507,40 @@ button.df-activity-row {
   justify-content: flex-end;
 }
 
+/* Projects register (#275): the row opens the Dossier, so it reads as one target. */
+.df-v2 .df-projects-register .df-table-row {
+  cursor: pointer;
+  transition: none;
+  animation: none;
+}
+
+.df-v2 .df-projects-register .df-table-row[data-selected="true"] {
+  background: var(--df-cold-stock);
+  box-shadow: inset 2px 0 0 var(--df-case-ink);
+}
+
+.df-v2 .df-row-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The name column takes what is left, and truncates rather than wrapping the row. */
+.df-v2 .df-projects-register .df-table-cell[data-column="name"] {
+  max-width: 0;
+  width: 42%;
+}
+
+.df-v2 .df-projects-register .df-table-cell[data-column="status"],
+.df-v2 .df-projects-register .df-table-cell[data-column="lead"],
+.df-v2 .df-projects-register .df-table-cell[data-column="tracked"] {
+  white-space: nowrap;
+}
+
+.df-v2 .df-projects-register .df-table-head[data-column="tracked"],
+.df-v2 .df-projects-register .df-table-cell[data-column="tracked"] {
+  text-align: right;
+}
+
 /* Overflow menu — the shadcn DropdownMenu wearing the v2 menu panel. Radix
    portals it to the body, so the panel carries `.df-v2` itself. */
 .df-v2 .df-row-menu-trigger {
@@ -3732,6 +3766,32 @@ button.df-activity-row {
   letter-spacing: 0.04em;
   color: var(--df-archive-slate);
   text-transform: uppercase;
+}
+
+.df-register-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--df-space-3);
+}
+
+.df-register-pager-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-2);
+}
+
+/* An empty register that a filter emptied: the sentence, then the way out. */
+.df-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-bottom: var(--df-space-4);
+}
+
+.df-empty-state > .df-btn {
+  margin-left: var(--df-space-4);
 }
 
 /* 400px when there is room for 400px, the full row when there is not, and never

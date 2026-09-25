@@ -153,7 +153,8 @@ import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import { assertSeatAvailable } from "./billing/seats";
 import type { ImportableUser } from "./identity/userImport";
-import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike } from "drizzle-orm";
+import type { CrmProjectListOptions } from "./projects/persistence";
 
 /**
  * Devices and Users carry no `workspace_id` of their own — a Device belongs to
@@ -806,12 +807,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // CRM Projects - Company-wide visibility
-  async getCrmProjects(userId?: string, options?: { 
-    page?: number; 
-    pageSize?: number; 
-    status?: string;
-    search?: string;
-  }): Promise<{ data: CrmProjectWithDetails[]; total: number; page: number; pageSize: number }> {
+  async getCrmProjects(userId?: string, options?: CrmProjectListOptions): Promise<{ data: CrmProjectWithDetails[]; total: number; page: number; pageSize: number }> {
     const page = options?.page || 1;
     const pageSize = options?.pageSize || 10;
     const offset = (page - 1) * pageSize;
@@ -833,14 +829,97 @@ export class DatabaseStorage implements IStorage {
     if (options?.status) {
       conditions.push(eq(crmProjects.status, options.status));
     }
+    if (options?.projectStatus) {
+      conditions.push(eq(crmProjects.projectStatus, options.projectStatus));
+    }
+    if (options?.clientId) {
+      conditions.push(eq(crmProjects.clientId, options.clientId));
+    }
+    if (options?.projectType) {
+      conditions.push(eq(crmProjects.projectType, options.projectType));
+    }
+    if (options?.tagId) {
+      conditions.push(
+        inArray(
+          crmProjects.id,
+          db.select({ id: crmProjectTags.crmProjectId }).from(crmProjectTags).where(eq(crmProjectTags.tagId, options.tagId)),
+        ),
+      );
+    }
+    if (options?.dueNone) {
+      conditions.push(isNull(crmProjects.dueDate));
+    }
+    if (options?.dueFrom) {
+      conditions.push(gte(crmProjects.dueDate, options.dueFrom));
+    }
+    if (options?.dueTo) {
+      conditions.push(lte(crmProjects.dueDate, options.dueTo));
+    }
+    if (options?.leadId) {
+      conditions.push(sql`coalesce(
+        (select ${projectMembers.userId} from ${projectMembers}
+          where ${projectMembers.crmProjectId} = ${crmProjects.id}
+          order by ${projectMembers.createdAt} asc, ${projectMembers.id} asc limit 1),
+        ${crmProjects.assigneeId}
+      ) = ${options.leadId}`);
+    }
+    if (options?.visibleToUserId) {
+      const viewer = options.visibleToUserId;
+      conditions.push(
+        or(
+          inArray(
+            crmProjects.id,
+            db.select({ id: projectMembers.crmProjectId }).from(projectMembers).where(eq(projectMembers.userId, viewer)),
+          ),
+          and(
+            eq(crmProjects.assigneeId, viewer),
+            sql`not exists (select 1 from ${projectMembers} where ${projectMembers.crmProjectId} = ${crmProjects.id})`,
+          ),
+        ),
+      );
+    }
+    const needle = options?.search?.trim();
+    if (needle) {
+      const pattern = `%${needle.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+      conditions.push(
+        or(
+          inArray(crmProjects.projectId, db.select({ id: projects.id }).from(projects).where(ilike(projects.name, pattern))),
+          inArray(
+            crmProjects.clientId,
+            db
+              .select({ id: crmClients.id })
+              .from(crmClients)
+              .where(or(ilike(crmClients.name, pattern), ilike(crmClients.company, pattern))),
+          ),
+        ),
+      );
+    }
 
     // Count total
     const [countResult] = await db.select({ count: count() }).from(crmProjects).where(and(...conditions));
 
     const total = countResult?.count || 0;
 
-    // Get paginated data
-    const crmProjectRows = await db.select().from(crmProjects).where(and(...conditions)).orderBy(desc(crmProjects.updatedAt)).limit(pageSize).offset(offset);
+    // Get paginated data. A sorted column leads; recency and id keep pages stable under ties.
+    const direction = options?.dir === "desc" ? sql`desc nulls last` : sql`asc nulls last`;
+    const sortExpression = {
+      name: sql`lower((select ${projects.name} from ${projects} where ${projects.id} = ${crmProjects.projectId}))`,
+      // Alphabetical by the STATUS label; the raw values order the same way.
+      status: sql`${crmProjects.projectStatus}`,
+      // BUDGET USED: no budget sorts last either way.
+      budget: sql`case when coalesce(${crmProjects.budgetedHours}, 0) > 0
+        then coalesce(${crmProjects.actualHours}, 0)::float / ${crmProjects.budgetedHours} end`,
+    };
+    const order = options?.sort
+      ? [sql`${sortExpression[options.sort]} ${direction}`, desc(crmProjects.updatedAt), asc(crmProjects.id)]
+      : [desc(crmProjects.updatedAt), asc(crmProjects.id)];
+    const crmProjectRows = await db
+      .select()
+      .from(crmProjects)
+      .where(and(...conditions))
+      .orderBy(...order)
+      .limit(pageSize)
+      .offset(offset);
 
     // Get all related data
     const projectMap = new Map(allProjects.map((p) => [p.id, p]));
@@ -904,7 +983,7 @@ export class DatabaseStorage implements IStorage {
       const memberRows = await db.query.projectMembers.findMany({
         where: or(...crmProjectIds.map(id => eq(projectMembers.crmProjectId, id))),
         with: { user: true },
-        orderBy: asc(projectMembers.createdAt),
+        orderBy: [asc(projectMembers.createdAt), asc(projectMembers.id)],
       });
       memberRows.forEach((row) => {
         const { user, ...rest } = row as any;
@@ -950,8 +1029,7 @@ export class DatabaseStorage implements IStorage {
       });
     }
 
-    // Build result with search filter if needed
-    let data: CrmProjectWithDetails[] = crmProjectRows.map((cp) => {
+    const data: CrmProjectWithDetails[] = crmProjectRows.map((cp) => {
       const project = projectMap.get(cp.projectId);
       const client = cp.clientId ? clientMap.get(cp.clientId) : undefined;
       const clientContacts = cp.clientId ? contactsByClient.get(cp.clientId) : undefined;
@@ -970,16 +1048,6 @@ export class DatabaseStorage implements IStorage {
         tags,
       };
     });
-
-    // Filter by search if provided
-    if (options?.search) {
-      const searchLower = options.search.toLowerCase();
-      data = data.filter((item) => 
-        item.project?.name.toLowerCase().includes(searchLower) ||
-        item.client?.name.toLowerCase().includes(searchLower) ||
-        item.client?.company?.toLowerCase().includes(searchLower)
-      );
-    }
 
     return { data, total: Number(total), page, pageSize };
   }
