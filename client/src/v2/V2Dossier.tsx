@@ -40,7 +40,7 @@ import {
   type DossierTimeEntry,
 } from "./dossier";
 import { motionForSurface } from "./motion";
-import { meterTone, statusTone } from "./palette";
+import { meterTone, swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
@@ -764,7 +764,7 @@ export function V2DossierPage() {
                 </div>
                 <div className="df-dossier-title-row">
                   <h1 className="df-record-title">{dossier.identity.title}</h1>
-                  <span className="df-status" data-status={dossier.identity.status} data-tone={statusTone(dossier.identity.status)}>
+                  <span className="df-status" data-status={dossier.identity.status} data-swatch="" style={swatchStyle(dossier.identity.statusColor)}>
                     {dossier.identity.status}
                   </span>
                   {dossier.identity.tags.map((tag) => (
@@ -1166,8 +1166,13 @@ function DossierOverview({
             dossier.history.rows.map((row) => (
               <div key={row.id} className="df-history-row">
                 <div className="df-history-move">
-                  {row.from ? <span className="df-mono df-meta">{row.from} →</span> : null}
-                  <span className="df-status">{row.to}</span>
+                  {row.from && row.fromColor ? (
+                    <>
+                      <span className="df-status" data-swatch="" style={swatchStyle(row.fromColor)}>{row.from}</span>
+                      <span className="df-mono df-meta">→</span>
+                    </>
+                  ) : null}
+                  <span className="df-status" data-swatch="" style={swatchStyle(row.toColor)}>{row.to}</span>
                 </div>
                 <div className="df-mono df-meta">
                   {row.when} · {row.who.toUpperCase()} · HELD {row.held.toUpperCase()}

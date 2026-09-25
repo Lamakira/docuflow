@@ -19,7 +19,7 @@ import {
   type ClientRegisterRowInput,
 } from "./clients";
 import { motionForSurface } from "./motion";
-import { statusTone } from "./palette";
+import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
@@ -276,7 +276,7 @@ export function V2ClientsPage() {
                   </span>
                   <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.company}</span>
                   <span>
-                    <span className="df-status-word">{row.status}</span>
+                    <span className="df-status-word" data-swatch="" style={swatchStyle(row.statusColor)}>{row.status}</span>
                   </span>
                   <span className="df-mono df-meta">{row.source}</span>
                   <span className="df-mono" style={{ fontSize: 12, textAlign: "right" }}>
@@ -443,7 +443,7 @@ export function V2ClientRecordPage() {
               <>
                 <div className="df-dossier-meta">
                   <span className="df-status">{record.identity.kindLabel}</span>
-                  <span className="df-status" data-status={record.identity.status}>
+                  <span className="df-status" data-status={record.identity.status} data-swatch="" style={swatchStyle(record.identity.statusColor)}>
                     {record.identity.status}
                   </span>
                 </div>
@@ -628,7 +628,7 @@ export function V2ClientRecordPage() {
                 record.projects.map((project) => (
                   <Link key={project.id} href={project.href} className="df-register-row">
                     <span className="df-row-title">{project.name}</span>
-                    <span className="df-status-word" data-tone={statusTone(project.status)}>{project.status}</span>
+                    <span className="df-status-word" data-swatch="" style={swatchStyle(project.statusColor)}>{project.status}</span>
                   </Link>
                 ))
               )}

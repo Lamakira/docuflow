@@ -1973,6 +1973,15 @@ button.df-activity-row {
   background: var(--df-carmine-50);
 }
 
+/* A status in its own board colour. palette.ts computes the three shades from
+   the one hue and sets them on the element; the text clears 4.5:1 on the tint. */
+.df-status[data-swatch],
+.df-status-word[data-swatch] {
+  color: var(--df-swatch-ink);
+  border-color: var(--df-swatch-line);
+  background: var(--df-swatch-tint);
+}
+
 .df-meter-row {
   display: flex;
   align-items: center;
@@ -3416,10 +3425,17 @@ button.df-activity-row {
   margin-right: 6px;
 }
 
-.df-filter-chip[data-active="true"] {
-  background: var(--df-case-ink);
-  border-color: var(--df-case-ink);
-  color: #fff;
+/* A narrowing filter reads in amber wash under ink, so its chosen value stays
+   legible. `.df-v2` lifts it over the Select trigger's own surface. */
+.df-v2 .df-filter-chip[data-active="true"] {
+  background: var(--df-amber-100);
+  border-color: var(--df-amber-600);
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-filter-chip[data-active="true"] .df-select-prefix,
+.df-v2 .df-filter-chip[data-active="true"] > svg {
+  color: var(--df-amber-800);
 }
 
 .df-segment {

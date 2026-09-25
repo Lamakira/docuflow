@@ -4,9 +4,10 @@
  *
  * The defaults are v1's, per combined status (`client/src/pages/CrmPage.tsx`).
  * A Project Status takes the colour v1 gave the combined status it reads back
- * from; `archived` holds both lost and cancelled, so it stays neutral. An
- * Opportunity stage an Administrator coloured in the CRM field options keeps
- * that colour.
+ * from; `archived` holds both lost and cancelled, so it stays neutral.
+ * `on_hold` has no combined source in v1, so it takes an orange no other
+ * Project Status wears. An Opportunity stage an Administrator coloured in the
+ * CRM field options keeps that colour.
  */
 
 export const STAGE_FALLBACK_COLOR = "#64748b";
@@ -21,6 +22,7 @@ const STAGE_COLORS: Record<string, string> = {
   lost: "#ef4444",
   planned: "#10b981",
   active: "#14b8a6",
+  on_hold: "#f97316",
   in_review: "#0ea5e9",
   completed: "#84cc16",
   archived: STAGE_FALLBACK_COLOR,

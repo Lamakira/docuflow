@@ -120,7 +120,9 @@ describe("Status history says how long each Project Status held (#260, C)", () =
       {
         id: "h-2",
         from: "WON NOT STARTED",
+        fromColor: "#10b981",
         to: "WON IN PROGRESS",
+        toColor: "#14b8a6",
         when: "20 SEP",
         who: "Pat Ng",
         held: "3 d so far",
@@ -128,7 +130,9 @@ describe("Status history says how long each Project Status held (#260, C)", () =
       {
         id: "h-1",
         from: null,
+        fromColor: null,
         to: "WON NOT STARTED",
+        toColor: "#10b981",
         when: "13 SEP",
         who: "—",
         held: "7 d",

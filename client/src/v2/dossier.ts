@@ -1,6 +1,7 @@
 import { dossierFileDestination } from "./fileViewer";
 import { formatHours, memberInitials, memberName, projectHref } from "./today";
 import { DOSSIER_TAB_IDS, type DossierTabId } from "./presentation";
+import { lifecycleColor, projectStatusColor } from "./palette";
 import { taskStatusLabel } from "./tasks";
 
 export type DossierPerson = {
@@ -199,6 +200,7 @@ export type DossierModel = {
     kindLabel: string;
     title: string;
     status: string;
+    statusColor: string;
     lead: { name: string; initials: string; self: boolean } | null;
     team: Array<{ name: string; initials: string }>;
     updatedLabel: string | null;
@@ -273,7 +275,9 @@ export type DossierModel = {
     rows: Array<{
       id: string;
       from: string | null;
+      fromColor: string | null;
       to: string;
+      toColor: string;
       when: string;
       who: string;
       /** How long the Project sat in `to` — until the next change, or until now. */
@@ -757,7 +761,9 @@ function composeHistory(input: DossierInput): DossierModel["history"] {
     return {
       id: change.id,
       from: change.fromStatus ? lifecycleLabel(change.fromStatus) : null,
+      fromColor: change.fromStatus ? lifecycleColor(change.fromStatus) : null,
       to: lifecycleLabel(change.toStatus),
+      toColor: lifecycleColor(change.toStatus),
       when: at ? formatDayStamp(at) : "",
       who: change.changedBy ? memberName(change.changedBy) : "—",
       held: next || !at ? held : `${held} so far`,
@@ -878,6 +884,7 @@ export function composeDossier(input: DossierInput): DossierModel {
       kindLabel: kindLabel(project),
       title: project.project?.name || "Untitled Project",
       status: statusLabel(project.projectStatus),
+      statusColor: projectStatusColor(project.projectStatus),
       lead: project.assignee
         ? { ...personChip(project.assignee), self: project.assignee.id === input.currentUserId }
         : null,

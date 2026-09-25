@@ -1,5 +1,6 @@
 import { projectStatusFromCombined } from "@shared/projectLifecycle";
 import { stageColor, stageInk } from "./stageColor";
+import { projectStatusColor } from "./palette";
 import { projectHref } from "./today";
 
 /**
@@ -37,6 +38,8 @@ export type ProjectRegisterRow = {
   clientLabel: string;
   kindLabel: string;
   status: string;
+  /** The status's board colour; `swatchStyle` turns it into the badge. */
+  statusColor: string;
   lead: string;
   budgetPercent: number | null;
   trackedMtd: string;
@@ -98,6 +101,7 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
       clientLabel: project.clientName || "—",
       kindLabel: kindLabel(project),
       status: statusLabel(project.projectStatus),
+      statusColor: projectStatusColor(project.projectStatus),
       lead: project.leadName || "—",
       budgetPercent: project.budgetPercent,
       trackedMtd: project.trackedMtd,

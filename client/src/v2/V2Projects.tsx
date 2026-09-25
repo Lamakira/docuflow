@@ -7,7 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import { tagsPath } from "./dossier";
-import { meterTone, statusTone } from "./palette";
+import { meterTone, swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import {
   combinedStatusForProjectStatus,
@@ -590,7 +590,7 @@ export function V2ProjectsPage() {
                     </div>
                   </span>
                   <span>
-                    <span className="df-status-word" data-tone={statusTone(row.status)}>{row.status}</span>
+                    <span className="df-status-word" data-swatch="" style={swatchStyle(row.statusColor)}>{row.status}</span>
                   </span>
                   <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.lead}</span>
                   <span>

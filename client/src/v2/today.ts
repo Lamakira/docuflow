@@ -1,3 +1,5 @@
+import { projectStatusColor } from "./palette";
+
 export type TodayProject = {
   id: string;
   projectStatus: string;
@@ -66,6 +68,8 @@ export type ActiveProjectRow = {
   clientLabel: string;
   kindLabel: string;
   status: string;
+  /** The status's board colour; `swatchStyle` turns it into the badge. */
+  statusColor: string;
   lead: string;
   budgetPercent: number | null;
   trackedMtd: string;
@@ -248,6 +252,7 @@ function composeProjects(input: TodayInput): ActiveProjectRow[] {
         clientLabel: project.client?.name || "—",
         kindLabel: kindLabel(project),
         status: PROJECT_STATUS_LABEL[project.projectStatus] ?? project.projectStatus.replace(/_/g, " ").toUpperCase(),
+        statusColor: projectStatusColor(project.projectStatus),
         lead: project.assignee ? memberName(project.assignee) : "—",
         budgetPercent: budgeted > 0 ? Math.round((actual / budgeted) * 100) : null,
         trackedMtd: formatHours(month.get(project.id) ?? 0),

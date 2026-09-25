@@ -20,7 +20,7 @@ import {
   remindDailyUpdatesPath,
 } from "./dailyUpdate";
 import { motionForSurface } from "./motion";
-import { meterTone, statusTone } from "./palette";
+import { meterTone, swatchStyle } from "./palette";
 import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { Button } from "@/components/ui/button";
@@ -343,7 +343,7 @@ export function V2TodayPage() {
                     </div>
                   </span>
                   <span>
-                    <span className="df-status" data-status={row.status} data-tone={statusTone(row.status)}>
+                    <span className="df-status" data-status={row.status} data-swatch="" style={swatchStyle(row.statusColor)}>
                       {row.status}
                     </span>
                   </span>
