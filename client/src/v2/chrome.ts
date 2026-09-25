@@ -324,7 +324,7 @@ export function composeDeliveryPreference(input: {
   };
 }
 
-export type AccountTheme = "light" | "system";
+export type AccountTheme = "light" | "dark" | "system";
 
 export type AccountMenuStructure = "theme" | "separator" | "platform" | "account" | "signOut";
 
@@ -340,9 +340,8 @@ export type AccountMenuModel = {
 };
 
 export function composeAccountMenu(input: { theme: string; platformAdmin?: boolean }): AccountMenuModel {
-  // Dark is not a palette yet (#249). A stored "dark" preference collapses to Light
-  // so the menu never offers, or appears to have selected, what does not exist.
-  const theme: AccountTheme = input.theme === "system" ? "system" : "light";
+  // System follows the OS (#272); anything unrecognised reads as Light.
+  const theme: AccountTheme = input.theme === "dark" || input.theme === "system" ? input.theme : "light";
   return {
     accountLabel: "Account",
     platformLabel: PLATFORM_CONSOLE_LABEL,
@@ -352,6 +351,7 @@ export function composeAccountMenu(input: { theme: string; platformAdmin?: boole
       : ["theme", "separator", "account", "signOut"],
     themeOptions: [
       { id: "light", label: "Light", selected: theme === "light" },
+      { id: "dark", label: "Dark", selected: theme === "dark" },
       { id: "system", label: "System", selected: theme === "system" },
     ],
   };

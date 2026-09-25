@@ -102,8 +102,13 @@ export function lifecycleColor(combined: string | null | undefined): string {
 
 const WHITE = "#ffffff";
 const CASE_INK = "#0f1524";
+/** The dark palette's card and ink (#272), mirrored from tokens.css. */
+const INK_RAISED = "#161d30";
+const DARK_INK = "#e8ecf2";
 const TINT_SHARE = 0.14;
 const LINE_SHARE = 0.4;
+const DARK_TINT_SHARE = 0.2;
+const DARK_LINE_SHARE = 0.45;
 /** WCAG AA for the small mono type a badge uses. */
 const TEXT_MIN_CONTRAST = 4.5;
 
@@ -136,26 +141,34 @@ export function contrastRatio(a: string, b: string): number {
 export type StatusSwatch = { tint: string; line: string; ink: string };
 
 /**
- * A badge in one hue. The text is the hue itself, pulled toward Case Ink only
+ * A badge in one hue. The text is the hue itself, pulled toward the ink only
  * as far as it takes to read on the tint, so a dark red stays red and a lime
- * turns olive rather than black.
+ * turns olive rather than black. On the dark ground the tint sits on the
+ * raised card and the pull is toward the light ink.
  */
-export function statusSwatch(color: string): StatusSwatch {
-  const tint = mix(color, WHITE, TINT_SHARE);
-  const line = mix(color, WHITE, LINE_SHARE);
+export function statusSwatch(color: string, ground: "light" | "dark" = "light"): StatusSwatch {
+  const dark = ground === "dark";
+  const base = dark ? INK_RAISED : WHITE;
+  const toward = dark ? DARK_INK : CASE_INK;
+  const tint = mix(color, base, dark ? DARK_TINT_SHARE : TINT_SHARE);
+  const line = mix(color, base, dark ? DARK_LINE_SHARE : LINE_SHARE);
   let ink = color;
   for (let step = 1; step <= 20 && contrastRatio(ink, tint) < TEXT_MIN_CONTRAST; step += 1) {
-    ink = mix(CASE_INK, color, step / 20);
+    ink = mix(toward, color, step / 20);
   }
   return { tint, line, ink };
 }
 
-/** The swatch as the custom properties `.df-status[data-swatch]` reads. */
+/** Both swatches as the custom properties `.df-status[data-swatch]` reads. */
 export function swatchStyle(color: string): CSSProperties {
-  const swatch = statusSwatch(color);
+  const light = statusSwatch(color);
+  const dark = statusSwatch(color, "dark");
   return {
-    "--df-swatch-tint": swatch.tint,
-    "--df-swatch-line": swatch.line,
-    "--df-swatch-ink": swatch.ink,
+    "--df-swatch-tint": light.tint,
+    "--df-swatch-line": light.line,
+    "--df-swatch-ink": light.ink,
+    "--df-swatch-tint-dark": dark.tint,
+    "--df-swatch-line-dark": dark.line,
+    "--df-swatch-ink-dark": dark.ink,
   } as CSSProperties;
 }

@@ -17,6 +17,7 @@
   --df-amber-900: #5f4528;
   --df-green-50: #eaf2ed;
   --df-green-200: #cfe8dc;
+  --df-green-400: #4cc393;
   --df-green-500: #1f9d6b;
   --df-green-700: #16704d;
   --df-green-900: #0e4531;
@@ -26,6 +27,7 @@
      Card White. */
   --df-carmine-50: #f8e9ea;
   --df-carmine-200: #edc3c6;
+  --df-carmine-300: #e0676e;
   --df-carmine-400: #b8323a;
   --df-carmine-500: #95232a;
   --df-carmine-900: #5e1419;
@@ -39,6 +41,22 @@
   --df-placeholder: #c3cad4;
   --df-hover: #edeff3;
   --df-destructive: var(--df-carmine-500);
+  /* A tone's wash, its border, and the text on it. The dark palette re-points
+     these rather than the ramps, so a ramp stop always means one colour. */
+  --df-active-line: var(--df-amber-200);
+  --df-active-ink: var(--df-amber-800);
+  --df-positive-wash: var(--df-green-50);
+  --df-positive-line: var(--df-green-200);
+  --df-positive-ink: var(--df-green-700);
+  --df-alert-wash: var(--df-carmine-50);
+  --df-alert-line: var(--df-carmine-200);
+  --df-alert-ink: var(--df-carmine-500);
+  /* Text on a Case Ink surface (a tile, a toast, the active segment). */
+  --df-on-ink: #ffffff;
+  /* Text on a colour fill, the same in both palettes: ink on amber and on the
+     light board hues, white on the saturated ones and on carmine. */
+  --df-fill-ink: #0f1524;
+  --df-fill-paper: #ffffff;
   /* shadcn's variable set, re-pointed for v2 only: index.css keeps v1's ink
      primary. Triplets, because Tailwind reads hsl(var(--primary) / <alpha>).
      Portalled panels carry `df-v2` themselves, so they inherit this too. The
@@ -49,7 +67,7 @@
   --primary-border: var(--df-amber-600);
   --accent: 37 80% 94%;
   --accent-foreground: 223 41% 10%;
-  --accent-border: var(--df-amber-200);
+  --accent-border: var(--df-active-line);
   --ring: 36 80% 57%;
   --destructive: 356 62% 36%;
   --destructive-foreground: 0 0% 100%;
@@ -103,6 +121,73 @@
   isolation: isolate;
 }
 
+/*
+ * The dark palette (#272). ThemeProvider puts `dark` on <html> for Dark, or for
+ * System when the OS asks for it; v1's `.dark` restates its light values, so
+ * only v2 changes. Portalled panels carry `df-v2` and match here as well.
+ * Amber stays the one active colour, and every pair clears 4.5:1: ink 14:1 on
+ * the card, slate 6.8:1, muted 4.7:1, each tone's text over 10:1 on its wash.
+ */
+.dark .df-v2 {
+  --df-case-ink: #e8ecf2;
+  --df-cold-stock: #0f1524;
+  --df-card-white: #161d30;
+  --df-hover: #1c2740;
+  --df-divider: #2a3348;
+  --df-divider-light: #20283b;
+  --df-archive-slate: #9aa6b8;
+  --df-muted-ink: #7c889c;
+  --df-placeholder: #4a5468;
+  --df-amber-wash: #2b2416;
+  --df-active-line: #4a3a1f;
+  --df-active-ink: var(--df-amber-300);
+  --df-positive-wash: #122a21;
+  --df-positive-line: #1f4a37;
+  --df-positive-ink: var(--df-green-200);
+  --df-alert-wash: #2e161b;
+  --df-alert-line: #552730;
+  --df-alert-ink: var(--df-carmine-200);
+  --df-signed-off: var(--df-green-400);
+  --df-destructive: var(--df-carmine-300);
+  --df-on-ink: #0f1524;
+  --background: 223 41% 10%;
+  --foreground: 216 28% 93%;
+  --border: 222 26% 22%;
+  --input: 222 26% 22%;
+  --card: 224 37% 14%;
+  --card-foreground: 216 28% 93%;
+  --card-border: 222 26% 22%;
+  --popover: 224 37% 14%;
+  --popover-foreground: 216 28% 93%;
+  --popover-border: 222 26% 22%;
+  --muted: 222 39% 18%;
+  --muted-foreground: 216 17% 66%;
+  --accent: 40 32% 13%;
+  --accent-foreground: 38 84% 76%;
+  --destructive: 357 66% 64%;
+  --destructive-border: var(--df-carmine-300);
+  color-scheme: dark;
+}
+
+/* A destructive fill keeps carmine 500 under white; only its text and outline
+   lift to carmine 300 on the dark card. */
+.dark .df-v2 button.df-btn.bg-destructive,
+.dark .df-v2 a.df-btn.bg-destructive,
+.dark .df-v2 button.df-btn.text-destructive:hover:not(:disabled),
+.dark .df-v2 a.df-btn.text-destructive:hover {
+  background: var(--df-carmine-500);
+  border-color: var(--df-carmine-500);
+}
+
+.dark .df-v2 .df-btn.text-destructive {
+  border-color: var(--df-carmine-300);
+}
+
+/* Editor highlights are pastel in both palettes, so text on them stays ink. */
+.dark .df-v2 .ProseMirror mark {
+  color: var(--df-fill-ink);
+}
+
 .df-v2 *,
 .df-v2 *::before,
 .df-v2 *::after {
@@ -135,7 +220,7 @@
 .df-v2 a.df-btn.bg-primary {
   background: var(--df-amber-500);
   border-color: var(--df-amber-600);
-  color: var(--df-case-ink);
+  color: var(--df-fill-ink);
 }
 
 .df-v2 button.df-btn.bg-primary:hover:not(:disabled),
@@ -149,7 +234,7 @@
 .df-v2 a.df-btn.bg-destructive,
 .df-v2 button.df-btn.text-destructive:hover,
 .df-v2 a.df-btn.text-destructive:hover {
-  color: var(--df-card-white);
+  color: var(--df-fill-paper);
 }
 
 .df-v2 button.df-btn.text-destructive,
@@ -306,7 +391,7 @@
 }
 
 .df-rail-item[data-active="true"] {
-  background: var(--df-amber-100);
+  background: var(--df-amber-wash);
   border-color: transparent;
   border-radius: var(--df-radius-4);
   color: var(--df-case-ink);
@@ -347,7 +432,7 @@
   justify-content: center;
   flex: none;
   background: var(--df-case-ink);
-  color: #fff;
+  color: var(--df-on-ink);
   font-family: var(--df-font-mono);
   font-weight: 700;
 }
@@ -389,7 +474,7 @@
   font-weight: 500;
   font-size: var(--df-text-1);
   color: var(--df-archive-slate);
-  background: #fff;
+  background: var(--df-card-white);
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-1);
   padding: var(--df-space-1) var(--df-space-1);
@@ -451,14 +536,14 @@
   height: 16px;
   border-radius: 50%;
   background: var(--df-case-ink);
-  color: #fff;
+  color: var(--df-on-ink);
   font-family: var(--df-font-mono);
   font-weight: 500;
   font-size: var(--df-text-1);
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid #fff;
+  border: 2px solid var(--df-card-white);
   padding: 0 var(--df-space-1);
 }
 
@@ -1217,7 +1302,7 @@ button.df-activity-row {
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-1);
   background: var(--df-card-white);
-  color: var(--df-card-white);
+  color: var(--df-on-ink);
   cursor: pointer;
   transition: background-color var(--duration-press) var(--ease-out),
     border-color var(--duration-press) var(--ease-out);
@@ -1945,23 +2030,23 @@ button.df-activity-row {
    absence of a tone: the badge keeps its ink or slate as above. */
 .df-status[data-tone="active"],
 .df-status-word[data-tone="active"] {
-  color: var(--df-amber-800);
-  border-color: var(--df-amber-200);
-  background: var(--df-amber-100);
+  color: var(--df-active-ink);
+  border-color: var(--df-active-line);
+  background: var(--df-amber-wash);
 }
 
 .df-status[data-tone="positive"],
 .df-status-word[data-tone="positive"] {
-  color: var(--df-green-700);
-  border-color: var(--df-green-200);
-  background: var(--df-green-50);
+  color: var(--df-positive-ink);
+  border-color: var(--df-positive-line);
+  background: var(--df-positive-wash);
 }
 
 .df-status[data-tone="alert"],
 .df-status-word[data-tone="alert"] {
-  color: var(--df-carmine-500);
-  border-color: var(--df-carmine-200);
-  background: var(--df-carmine-50);
+  color: var(--df-alert-ink);
+  border-color: var(--df-alert-line);
+  background: var(--df-alert-wash);
 }
 
 /* A status in its own board colour. palette.ts computes the three shades from
@@ -1971,6 +2056,13 @@ button.df-activity-row {
   color: var(--df-swatch-ink);
   border-color: var(--df-swatch-line);
   background: var(--df-swatch-tint);
+}
+
+.dark .df-status[data-swatch],
+.dark .df-status-word[data-swatch] {
+  color: var(--df-swatch-ink-dark);
+  border-color: var(--df-swatch-line-dark);
+  background: var(--df-swatch-tint-dark);
 }
 
 .df-meter-row {
@@ -1991,11 +2083,11 @@ button.df-activity-row {
   display: block;
   height: 100%;
   border-radius: 99px;
-  background: var(--df-green-500);
+  background: var(--df-signed-off);
 }
 
 .df-meter-fill[data-tone="over"] {
-  background: var(--df-carmine-500);
+  background: var(--df-destructive);
 }
 
 .df-meter-fill[data-tone="paused"] {
@@ -2026,7 +2118,7 @@ button.df-activity-row {
   justify-content: center;
   flex: none;
   background: var(--df-archive-slate);
-  color: #fff;
+  color: var(--df-on-ink);
   font-family: var(--df-font-mono);
   font-weight: 700;
   font-size: var(--df-text-1);
@@ -2155,7 +2247,7 @@ button.df-activity-row {
   border-radius: var(--df-radius-2);
   padding: var(--df-space-3) var(--df-space-4);
   box-shadow: 0 12px 30px rgba(15, 21, 36, 0.28);
-  color: #fff;
+  color: var(--df-on-ink);
   opacity: 1;
   transform: translateX(-50%) translateY(0);
   transition:
@@ -2195,7 +2287,7 @@ button.df-activity-row {
   display: flex;
   align-items: center;
   gap: var(--df-space-2);
-  background: #fff;
+  background: var(--df-card-white);
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-3);
   padding: var(--df-space-2) var(--df-space-2);
@@ -2210,7 +2302,7 @@ button.df-activity-row {
 }
 
 .df-menu {
-  background: #fff;
+  background: var(--df-card-white);
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-3);
   box-shadow: 0 8px 24px rgba(15, 21, 36, 0.12);
@@ -2713,7 +2805,7 @@ button.df-activity-row {
 
 .df-drop-zone[data-over="true"] {
   border-color: var(--df-amber-600);
-  background: var(--df-amber-100);
+  background: var(--df-amber-wash);
 }
 
 .df-drop-zone:focus-within {
@@ -2973,7 +3065,7 @@ button.df-activity-row {
   width: 20px;
   height: 20px;
   margin-left: -6px;
-  border: 1.5px solid #fff;
+  border: 1.5px solid var(--df-card-white);
   font-size: var(--df-text-1);
 }
 
@@ -3110,11 +3202,11 @@ button.df-activity-row {
   height: 14px;
   flex: none;
   border-radius: var(--df-radius-1);
-  border: 1.5px solid #c3cad4;
+  border: 1.5px solid var(--df-placeholder);
   background: transparent;
   padding: 0;
   cursor: pointer;
-  color: #fff;
+  color: var(--df-fill-paper);
   font-size: var(--df-text-1);
   line-height: 1;
 }
@@ -3255,7 +3347,7 @@ button.df-activity-row {
   align-self: flex-end;
   max-width: 80%;
   background: var(--df-case-ink);
-  color: #fff;
+  color: var(--df-on-ink);
   border-radius: var(--df-radius-3) var(--df-radius-3) var(--df-radius-1) var(--df-radius-3);
   padding: var(--df-space-2) var(--df-space-3);
   font-size: var(--df-text-2);
@@ -3297,7 +3389,7 @@ button.df-activity-row {
   border-radius: var(--df-radius-2);
   padding: var(--df-space-2) var(--df-space-3);
   font-size: var(--df-text-2);
-  background: #fff;
+  background: var(--df-card-white);
   transition: none;
   animation: none;
 }
@@ -3331,7 +3423,7 @@ button.df-activity-row {
 }
 
 .df-notice-row[data-unread="true"] {
-  background: #fbfcfd;
+  background: color-mix(in srgb, var(--df-cold-stock) 30%, var(--df-card-white));
 }
 
 .df-notice-row[data-enter="true"] {
@@ -3418,7 +3510,7 @@ button.df-activity-row {
   display: flex;
   align-items: flex-end;
   padding: var(--df-space-1);
-  background: repeating-linear-gradient(135deg, #f3f5f7 0 6px, #eaedf1 6px 12px);
+  background: repeating-linear-gradient(135deg, var(--df-cold-stock) 0 6px, var(--df-divider-light) 6px 12px);
   margin-bottom: 6px;
   position: relative;
   overflow: hidden;
@@ -3594,14 +3686,14 @@ button.df-activity-row {
 /* A narrowing filter reads in amber wash under ink, so its chosen value stays
    legible. `.df-v2` lifts it over the Select trigger's own surface. */
 .df-v2 .df-filter-chip[data-active="true"] {
-  background: var(--df-amber-100);
+  background: var(--df-amber-wash);
   border-color: var(--df-amber-600);
   color: var(--df-case-ink);
 }
 
 .df-v2 .df-filter-chip[data-active="true"] .df-select-prefix,
 .df-v2 .df-filter-chip[data-active="true"] > svg {
-  color: var(--df-amber-800);
+  color: var(--df-active-ink);
 }
 
 .df-segment {
@@ -3627,7 +3719,7 @@ button.df-activity-row {
 .df-segment span[data-active="true"],
 .df-segment button[data-active="true"] {
   background: var(--df-case-ink);
-  color: #fff;
+  color: var(--df-on-ink);
 }
 
 .df-segment button {
@@ -3679,7 +3771,7 @@ button.df-activity-row {
 
 .df-library-row[data-child="true"] {
   padding-left: var(--df-space-8);
-  background: #fbfcfd;
+  background: color-mix(in srgb, var(--df-cold-stock) 30%, var(--df-card-white));
 }
 
 .df-library-row[data-child="true"]:hover {
@@ -4485,7 +4577,7 @@ button.df-activity-row {
 }
 
 .df-doc-callout-important {
-  border-color: #f0dcb8;
+  border-color: var(--df-active-line);
   background: var(--df-amber-wash);
 }
 
@@ -4635,7 +4727,7 @@ button.df-activity-row {
 /* shadcn ships its own state classes at this specificity (see V2Select). */
 .df-v2 .df-doc-figure-action {
   background: var(--df-case-ink);
-  color: #fff;
+  color: var(--df-on-ink);
   border: 0;
 }
 
@@ -4712,7 +4804,7 @@ button.df-activity-row {
   display: block;
   margin: 0 auto 14px;
   border: 1px solid var(--df-divider);
-  background: #fff;
+  background: var(--df-fill-paper);
   animation: none;
 }
 
@@ -5377,11 +5469,17 @@ button.df-activity-row {
 }
 
 .df-stage-pill[data-ink="dark"] {
-  color: var(--df-case-ink);
+  color: var(--df-fill-ink);
 }
 
 .df-stage-pill[data-ink="light"] {
-  color: var(--df-card-white);
+  color: var(--df-fill-paper);
+}
+
+/* On the dark card a 7% tint disappears; the column needs twice the hue. */
+.dark .df-opportunity-column[data-staged="true"] {
+  background: color-mix(in srgb, var(--df-stage) 14%, var(--df-card-white));
+  border-color: color-mix(in srgb, var(--df-stage) 35%, var(--df-divider));
 }
 
 .df-opportunity-column[data-staged="true"] .df-count-chip {

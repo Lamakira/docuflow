@@ -67,6 +67,24 @@ function hexOf(name: string): string {
   return (alias ? hexOf(alias[1]) : value).toLowerCase();
 }
 
+function darkBlock(): string {
+  const at = css.search(/\.dark \.df-v2\s*\{/);
+  if (at < 0) throw new Error("missing .dark .df-v2");
+  return css.slice(at, css.indexOf("}", at) + 1);
+}
+
+/** A token as the dark palette resolves it: its own value, else the light one. */
+function darkHexOf(name: string): string {
+  let value: string;
+  try {
+    value = declared(darkBlock(), name);
+  } catch {
+    value = declared(v2Block(), name);
+  }
+  const alias = value.match(/^var\((--df-[a-z0-9-]+)\)$/);
+  return (alias ? darkHexOf(alias[1]) : value).toLowerCase();
+}
+
 function hexToHslTriplet(hex: string): string {
   const r = Number.parseInt(hex.slice(1, 3), 16) / 255;
   const g = Number.parseInt(hex.slice(3, 5), 16) / 255;
@@ -113,11 +131,13 @@ const SCALES: Record<string, string> = {
   "--df-amber-900": "#5f4528",
   "--df-green-50": "#eaf2ed",
   "--df-green-200": "#cfe8dc",
+  "--df-green-400": "#4cc393",
   "--df-green-500": "#1f9d6b",
   "--df-green-700": "#16704d",
   "--df-green-900": "#0e4531",
   "--df-carmine-50": "#f8e9ea",
   "--df-carmine-200": "#edc3c6",
+  "--df-carmine-300": "#e0676e",
   "--df-carmine-400": "#b8323a",
   "--df-carmine-500": "#95232a",
   "--df-carmine-900": "#5e1419",
@@ -168,7 +188,7 @@ describe("shadcn inherits the brand inside v2 only", () => {
   it("sets shadcn's variables nowhere else in tokens.css, and leaves v1's :root on ink", () => {
     for (const entry of rules(css)) {
       if (!/(?:^|[\s;])--(?:primary|accent|ring|destructive)(?:-[a-z]+)?:/.test(entry.body)) continue;
-      expect(entry.selectors).toEqual([".df-v2"]);
+      expect([[".df-v2"], [".dark .df-v2"]]).toContainEqual(entry.selectors);
     }
     expect(indexCss).not.toContain(".df-v2");
     const rootVars = indexCss.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
@@ -187,17 +207,17 @@ describe("where colour goes", () => {
     expect(read("client/src/components/ui/button.tsx")).toMatch(/default:\s*\n?\s*"bg-primary text-primary-foreground/);
     const primary = rule(".df-v2 button.df-btn.bg-primary");
     expect(primary).toMatch(/background:\s*var\(--df-amber-500\)/);
-    expect(primary).toMatch(/color:\s*var\(--df-case-ink\)/);
+    expect(primary).toMatch(/color:\s*var\(--df-fill-ink\)/);
     expect(rule(".df-v2 button.df-btn.bg-primary:hover:not(:disabled)")).toMatch(
       /background:\s*var\(--df-amber-600\)/,
     );
-    expect(rule(".df-v2 button.df-btn.bg-destructive")).toMatch(/color:\s*var\(--df-card-white\)/);
+    expect(rule(".df-v2 button.df-btn.bg-destructive")).toMatch(/color:\s*var\(--df-fill-paper\)/);
     expect(rule(".df-v2 button.df-btn.bg-destructive")).not.toMatch(/--df-case-ink/);
   });
 
   it("marks the active rail item with an amber wash and no bar", () => {
     const active = rule('.df-rail-item[data-active="true"]');
-    expect(active).toMatch(/background:\s*var\(--df-amber-100\)/);
+    expect(active).toMatch(/background:\s*var\(--df-amber-wash\)/);
     expect(active).not.toMatch(/box-shadow/);
   });
 
@@ -206,17 +226,22 @@ describe("where colour goes", () => {
   });
 
   it("gives each status tone its own ramp", () => {
-    expect(rule('.df-status[data-tone="active"]')).toMatch(/background:\s*var\(--df-amber-100\)/);
-    expect(rule('.df-status[data-tone="active"]')).toMatch(/color:\s*var\(--df-amber-800\)/);
-    expect(rule('.df-status-word[data-tone="positive"]')).toMatch(/background:\s*var\(--df-green-50\)/);
-    expect(rule('.df-status-word[data-tone="positive"]')).toMatch(/color:\s*var\(--df-green-700\)/);
-    expect(rule('.df-status[data-tone="alert"]')).toMatch(/background:\s*var\(--df-carmine-50\)/);
-    expect(rule('.df-status[data-tone="alert"]')).toMatch(/color:\s*var\(--df-carmine-500\)/);
+    expect(rule('.df-status[data-tone="active"]')).toMatch(/background:\s*var\(--df-amber-wash\)/);
+    expect(rule('.df-status[data-tone="active"]')).toMatch(/color:\s*var\(--df-active-ink\)/);
+    expect(rule('.df-status-word[data-tone="positive"]')).toMatch(/background:\s*var\(--df-positive-wash\)/);
+    expect(rule('.df-status-word[data-tone="positive"]')).toMatch(/color:\s*var\(--df-positive-ink\)/);
+    expect(rule('.df-status[data-tone="alert"]')).toMatch(/background:\s*var\(--df-alert-wash\)/);
+    expect(rule('.df-status[data-tone="alert"]')).toMatch(/color:\s*var\(--df-alert-ink\)/);
+    expect(hexOf("--df-active-ink")).toBe(SCALES["--df-amber-800"]);
+    expect(hexOf("--df-positive-wash")).toBe(SCALES["--df-green-50"]);
+    expect(hexOf("--df-positive-ink")).toBe(SCALES["--df-green-700"]);
+    expect(hexOf("--df-alert-wash")).toBe(SCALES["--df-carmine-50"]);
+    expect(hexOf("--df-alert-ink")).toBe(SCALES["--df-carmine-500"]);
   });
 
   it("fills budget meters green, and carmine past the budget", () => {
-    expect(rule(".df-meter-fill")).toMatch(/background:\s*var\(--df-green-500\)/);
-    expect(rule('.df-meter-fill[data-tone="over"]')).toMatch(/background:\s*var\(--df-carmine-500\)/);
+    expect(rule(".df-meter-fill")).toMatch(/background:\s*var\(--df-signed-off\)/);
+    expect(rule('.df-meter-fill[data-tone="over"]')).toMatch(/background:\s*var\(--df-destructive\)/);
     for (const name of ["V2Projects.tsx", "V2Today.tsx", "V2Dossier.tsx"]) {
       const src = read(`client/src/v2/${name}`);
       expect(src, name).toContain("data-tone={meterTone(");
@@ -330,7 +355,14 @@ describe("one colour per status (#274)", () => {
 
   it("hands the swatch to CSS as custom properties the badge rule reads", () => {
     const style = swatchStyle("#14b8a6") as Record<string, string>;
-    expect(Object.keys(style).sort()).toEqual(["--df-swatch-ink", "--df-swatch-line", "--df-swatch-tint"]);
+    expect(Object.keys(style).sort()).toEqual([
+      "--df-swatch-ink",
+      "--df-swatch-ink-dark",
+      "--df-swatch-line",
+      "--df-swatch-line-dark",
+      "--df-swatch-tint",
+      "--df-swatch-tint-dark",
+    ]);
     const badge = rule(".df-status[data-swatch]");
     expect(badge).toMatch(/color:\s*var\(--df-swatch-ink\)/);
     expect(badge).toMatch(/background:\s*var\(--df-swatch-tint\)/);
@@ -339,10 +371,100 @@ describe("one colour per status (#274)", () => {
 
   it("keeps a narrowing filter's chosen value legible", () => {
     const active = rule('.df-v2 .df-filter-chip[data-active="true"]');
-    expect(active).toMatch(/background:\s*var\(--df-amber-100\)/);
+    expect(active).toMatch(/background:\s*var\(--df-amber-wash\)/);
     expect(active).toMatch(/color:\s*var\(--df-case-ink\)/);
-    expect(contrast(hexOf("--df-case-ink"), hexOf("--df-amber-100"))).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(hexOf("--df-amber-800"), hexOf("--df-amber-100"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(hexOf("--df-case-ink"), hexOf("--df-amber-wash"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(hexOf("--df-active-ink"), hexOf("--df-amber-wash"))).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe("the dark palette (#272)", () => {
+  it("grounds v2 on Case Ink with raised cards", () => {
+    expect(darkHexOf("--df-cold-stock")).toBe("#0f1524");
+    expect(darkHexOf("--df-card-white")).toBe("#161d30");
+    expect(darkHexOf("--df-case-ink")).toBe("#e8ecf2");
+    expect(declared(darkBlock(), "color-scheme")).toBe("dark");
+  });
+
+  it("keeps every pairing it ships legible on the dark ground", () => {
+    const card = darkHexOf("--df-card-white");
+    for (const text of ["--df-case-ink", "--df-archive-slate", "--df-muted-ink", "--df-destructive", "--df-signed-off"]) {
+      expect(contrast(darkHexOf(text), card), text).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const [ink, wash] of [
+      ["--df-active-ink", "--df-amber-wash"],
+      ["--df-positive-ink", "--df-positive-wash"],
+      ["--df-alert-ink", "--df-alert-wash"],
+      ["--df-case-ink", "--df-amber-wash"],
+      ["--df-on-ink", "--df-case-ink"],
+      ["--df-on-ink", "--df-archive-slate"],
+      ["--df-fill-ink", "--df-amber-500"],
+      ["--df-fill-paper", "--df-carmine-500"],
+    ]) {
+      expect(contrast(darkHexOf(ink), darkHexOf(wash)), `${ink} on ${wash}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("keeps amber as the primary action and the focus ring", () => {
+    expect(darkHexOf("--df-amber")).toBe(SCALES["--df-amber-500"]);
+    expect(() => declared(darkBlock(), "--primary")).toThrow();
+    expect(() => declared(darkBlock(), "--ring")).toThrow();
+  });
+
+  it("re-points shadcn's surfaces at the dark tokens", () => {
+    const block = darkBlock();
+    expect(declared(block, "--background")).toBe(hexToHslTriplet(darkHexOf("--df-cold-stock")));
+    expect(declared(block, "--card")).toBe(hexToHslTriplet(darkHexOf("--df-card-white")));
+    expect(declared(block, "--popover")).toBe(hexToHslTriplet(darkHexOf("--df-card-white")));
+    expect(declared(block, "--foreground")).toBe(hexToHslTriplet(darkHexOf("--df-case-ink")));
+    expect(declared(block, "--border")).toBe(hexToHslTriplet(darkHexOf("--df-divider")));
+    expect(declared(block, "--muted-foreground")).toBe(hexToHslTriplet(darkHexOf("--df-archive-slate")));
+    expect(declared(block, "--accent")).toBe(hexToHslTriplet(darkHexOf("--df-amber-wash")));
+    expect(declared(block, "--accent-foreground")).toBe(hexToHslTriplet(darkHexOf("--df-active-ink")));
+    expect(declared(block, "--destructive")).toBe(hexToHslTriplet(darkHexOf("--df-destructive")));
+  });
+
+  it("keeps a destructive fill carmine 500 under white", () => {
+    expect(rule(".dark .df-v2 button.df-btn.bg-destructive")).toMatch(/background:\s*var\(--df-carmine-500\)/);
+    expect(rule(".dark .df-v2 .df-btn.text-destructive")).toMatch(/border-color:\s*var\(--df-carmine-300\)/);
+  });
+
+  it("gives every status badge a dark swatch that reads on the dark card", () => {
+    const card = darkHexOf("--df-card-white");
+    const every = [
+      ...["planned", "active", "on_hold", "in_review", "completed", "archived"].map(projectStatusColor),
+      ...["lead", "discovering_call_completed", "proposal_sent", "follow_up", "in_negotiation", "won", "lost"].map(
+        (stage) => stageColor(stage),
+      ),
+      ...["lead", "prospect", "client", "client_recurrent"].map(clientStatusColor),
+      ...["open", "in_progress", "done", "archived"].map(taskStatusColor),
+      lifecycleColor("won_cancelled"),
+    ];
+    for (const colour of every) {
+      const swatch = statusSwatch(colour, "dark");
+      expect(contrastRatio(swatch.ink, swatch.tint), colour).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(swatch.ink, card), colour).toBeGreaterThanOrEqual(4.5);
+    }
+    const badge = rule(".dark .df-status[data-swatch]");
+    expect(badge).toMatch(/color:\s*var\(--df-swatch-ink-dark\)/);
+    expect(badge).toMatch(/background:\s*var\(--df-swatch-tint-dark\)/);
+  });
+
+  it("scopes every dark rule to v2, so v1 keeps its look", () => {
+    for (const entry of rules(css)) {
+      for (const selector of entry.selectors) {
+        if (!selector.startsWith(".dark")) continue;
+        expect(selector, selector).toMatch(/^\.dark \.df-/);
+      }
+    }
+    expect(indexCss).not.toContain(".df-v2");
+  });
+
+  it("follows the OS live when the theme is System", () => {
+    const provider = read("client/src/components/ThemeProvider.tsx");
+    expect(provider).toContain('matchMedia("(prefers-color-scheme: dark)")');
+    expect(provider).toContain('addEventListener("change"');
+    expect(provider).toContain('removeEventListener("change"');
   });
 });
 

@@ -1063,7 +1063,7 @@ describe("Administration controls (#212)", () => {
     expect(rule(".df-v2 .df-checkbox")).toMatch(/border-radius/);
     expect(rule('.df-v2 .df-checkbox[data-state="checked"]')).toMatch(/var\(--df-case-ink\)/);
     // The tick must not inherit the ink it sits on.
-    expect(rule(".df-v2 .df-checkbox")).toMatch(/color:\s*var\(--df-card-white\)/);
+    expect(rule(".df-v2 .df-checkbox")).toMatch(/color:\s*var\(--df-on-ink\)/);
     // shadcn ships Tailwind state classes at equal weight; ours must outrank
     // them so the control never depends on stylesheet order.
     expect(css).toContain('.df-v2 .df-checkbox[data-state="checked"]');
