@@ -12,6 +12,14 @@ import {
   readProjectFilters,
   writeProjectFilters,
 } from "../../client/src/v2/projects";
+import {
+  clearClientFilters,
+  clientFilterLabels,
+  clientRegisterPath,
+  composeClientRegister,
+  readClientFilters,
+  writeClientFilters,
+} from "../../client/src/v2/clients";
 
 /**
  * Register filters and paging (#275): the server narrows and pages, the URL
@@ -188,6 +196,90 @@ describe("the Projects screen", () => {
 
   it("draws every filter as a V2FilterSelect chip", () => {
     for (const label of ["STATUS", "CLIENT", "LEAD", "TAG", "TYPE", "DUE"]) {
+      expect(src).toContain(`label="${label}"`);
+    }
+  });
+});
+
+describe("Clients filters in the URL and on the route", () => {
+  it("reads defaults from a bare URL and writes nothing back for them", () => {
+    const filters = readClientFilters("");
+    expect(filters).toEqual({
+      q: "",
+      status: "all",
+      source: "all",
+      open: "all",
+      sort: "",
+      dir: "asc",
+      page: 1,
+      pageSize: DEFAULT_REGISTER_PAGE_SIZE,
+    });
+    expect(writeClientFilters("", filters)).toBe("");
+  });
+
+  it("round-trips every filter, the sort and the page", () => {
+    const filters = readClientFilters("?status=lead&source=none&open=no&q=pier&sort=projects&dir=desc&page=2&size=25");
+    expect(filters).toEqual({
+      q: "pier",
+      status: "lead",
+      source: "none",
+      open: "no",
+      sort: "projects",
+      dir: "desc",
+      page: 2,
+      pageSize: 25,
+    });
+    expect(readClientFilters(writeClientFilters("", filters))).toEqual(filters);
+    expect(readClientFilters("?sort=owner").sort).toBe("");
+  });
+
+  it("maps each filter onto the paged route", () => {
+    const path = clientRegisterPath(readClientFilters("?status=client&source=fiverr&open=yes&q=%20acme%20&sort=company"));
+    expect(path.startsWith("/api/crm/clients?")).toBe(true);
+    expect(Object.fromEntries(new URL(path, "http://x").searchParams)).toEqual({
+      page: "1",
+      pageSize: "50",
+      search: "acme",
+      status: "client",
+      source: "fiverr",
+      openProjects: "yes",
+      sort: "company",
+      dir: "asc",
+    });
+  });
+
+  it("names each filter when the register empties, and clearing keeps the page size", () => {
+    const filters = readClientFilters("?status=client_recurrent&source=none&open=yes&q=pier&size=100&page=3");
+    const register = composeClientRegister({
+      workspaceName: "Harbor Co",
+      clients: [],
+      filterQuery: "",
+      activeFilters: clientFilterLabels(filters),
+      selectedId: null,
+    });
+    expect(register.emptyCopy).toBe("No Clients match “pier” · STATUS CLIENT RECURRENT · SOURCE NONE · OPEN PROJECTS YES.");
+    expect(register.filtered).toBe(true);
+    expect(clearClientFilters(filters)).toMatchObject({ q: "", status: "all", source: "all", open: "all", page: 1, pageSize: 100 });
+  });
+});
+
+describe("the Clients screen", () => {
+  const src = readFileSync(join(v2Dir, "V2Clients.tsx"), "utf8");
+
+  it("pages the register from the server, which counts each Client's Projects", () => {
+    expect(src).toContain("clientRegisterPath(filters)");
+    expect(src).not.toContain("projectCountByClient");
+    expect(src).toContain("<V2RegisterPager");
+  });
+
+  it("draws the desktop register with TanStack Table, sorted by the server", () => {
+    expect(src).toContain('from "@tanstack/react-table"');
+    expect(src).toContain("manualSorting: true");
+    expect(src).toContain('from "@/components/ui/table"');
+  });
+
+  it("draws every filter as a V2FilterSelect chip", () => {
+    for (const label of ["STATUS", "SOURCE", "OPEN PROJECTS"]) {
       expect(src).toContain(`label="${label}"`);
     }
   });

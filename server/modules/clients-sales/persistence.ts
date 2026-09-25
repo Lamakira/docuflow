@@ -26,8 +26,33 @@ import type {
   CrmCustomFieldValue,
 } from "@shared/schema";
 
+/** Every filter narrows the set before it is paged, so `total` counts what the filters kept (#275). */
+export type CrmClientListOptions = {
+  page: number;
+  pageSize: number;
+  /** Client name or company. */
+  search?: string;
+  status?: string;
+  /** `none` is a Client with no source. */
+  source?: string;
+  /** Whether the Client has a Project that is neither completed nor archived. */
+  openProjects?: boolean;
+  /** A register column; name order when unset. */
+  sort?: CrmClientSort;
+  dir?: "asc" | "desc";
+};
+
+export const CRM_CLIENT_SORTS = ["name", "company", "status", "source", "projects"] as const;
+export type CrmClientSort = (typeof CRM_CLIENT_SORTS)[number];
+
+/** A register row: the Client, and how many Projects it has. */
+export type CrmClientRegisterRow = CrmClient & { projectCount: number };
+
 export interface ClientsSalesPersistence {
   getCrmClients(userId: string): Promise<CrmClient[]>;
+  getCrmClientPage(
+    options: CrmClientListOptions
+  ): Promise<{ data: CrmClientRegisterRow[]; total: number; page: number; pageSize: number }>;
   getCrmClient(id: string): Promise<CrmClient | undefined>;
   createCrmClient(client: InsertCrmClient & { ownerId: string }): Promise<CrmClient>;
   updateCrmClient(id: string, data: Partial<InsertCrmClient>): Promise<CrmClient | undefined>;

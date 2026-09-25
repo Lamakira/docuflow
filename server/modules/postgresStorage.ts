@@ -155,6 +155,7 @@ import { assertSeatAvailable } from "./billing/seats";
 import type { ImportableUser } from "./identity/userImport";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike } from "drizzle-orm";
 import type { CrmProjectListOptions } from "./projects/persistence";
+import type { CrmClientListOptions, CrmClientRegisterRow } from "./clients-sales/persistence";
 
 /**
  * Devices and Users carry no `workspace_id` of their own — a Device belongs to
@@ -743,6 +744,59 @@ export class DatabaseStorage implements IStorage {
       .from(crmClients)
       .where(inWorkspace(crmClients))
       .orderBy(asc(crmClients.name));
+  }
+
+  async getCrmClientPage(
+    options: CrmClientListOptions,
+  ): Promise<{ data: CrmClientRegisterRow[]; total: number; page: number; pageSize: number }> {
+    const { page, pageSize } = options;
+    // The Projects register's rows: documentation-only Projects are not delivery work.
+    const clientProjects = sql`from ${crmProjects}
+      where ${crmProjects.clientId} = ${crmClients.id}
+        and ${crmProjects.workspaceId} = ${crmClients.workspaceId}
+        and coalesce(${crmProjects.isDocumentationOnly}, 0) = 0`;
+    const projectCount = sql<number>`(select count(*)::int ${clientProjects})`;
+    const hasOpenProject = sql`exists (select 1 ${clientProjects}
+      and ${crmProjects.projectStatus} not in ('completed', 'archived'))`;
+
+    const conditions: any[] = [inWorkspace(crmClients)];
+    if (options.status) conditions.push(eq(crmClients.status, options.status));
+    if (options.source === "none") conditions.push(isNull(crmClients.source));
+    else if (options.source) conditions.push(eq(crmClients.source, options.source));
+    if (options.openProjects === true) conditions.push(hasOpenProject);
+    if (options.openProjects === false) conditions.push(sql`not ${hasOpenProject}`);
+    const needle = options.search?.trim();
+    if (needle) {
+      const pattern = `%${needle.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+      conditions.push(or(ilike(crmClients.name, pattern), ilike(crmClients.company, pattern)));
+    }
+
+    const [countResult] = await db.select({ count: count() }).from(crmClients).where(and(...conditions));
+
+    const direction = options.dir === "desc" ? sql`desc nulls last` : sql`asc nulls last`;
+    // Status and source values order the same way as their labels.
+    const sortExpression = {
+      name: sql`lower(${crmClients.name})`,
+      company: sql`lower(nullif(${crmClients.company}, ''))`,
+      status: sql`${crmClients.status}`,
+      source: sql`${crmClients.source}`,
+      projects: projectCount,
+    };
+    const lead = options.sort ? sortExpression[options.sort] : sortExpression.name;
+    const rows = await db
+      .select({ client: crmClients, projectCount })
+      .from(crmClients)
+      .where(and(...conditions))
+      .orderBy(sql`${lead} ${direction}`, sql`lower(${crmClients.name}) asc`, asc(crmClients.id))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+
+    return {
+      data: rows.map((row) => ({ ...row.client, projectCount: Number(row.projectCount) })),
+      total: Number(countResult?.count ?? 0),
+      page,
+      pageSize,
+    };
   }
 
   async getCrmClient(id: string): Promise<CrmClient | undefined> {

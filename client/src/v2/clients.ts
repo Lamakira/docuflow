@@ -1,5 +1,6 @@
 import { chromeRefusal } from "./chrome";
 import { clientStatusColor, projectStatusColor } from "./palette";
+import { readPage, readPageSize, writePaging } from "./paging";
 import { projectHref } from "./today";
 
 /**
@@ -22,6 +23,11 @@ export type ClientRegisterInput = {
   clients: ClientRegisterRowInput[];
   filterQuery: string;
   selectedId: string | null;
+  /**
+   * Filters the server already applied, named for the empty state (#275). The
+   * rows arrive narrowed, so `filterQuery` stays `""` then.
+   */
+  activeFilters?: string[];
 };
 
 export type ClientRegisterRow = {
@@ -41,6 +47,8 @@ export type ClientRegisterModel = {
   subhead: string;
   empty: boolean;
   emptyCopy: string;
+  /** Empty because of a filter, so the register offers to clear it. */
+  filtered: boolean;
   rows: ClientRegisterRow[];
   count: number;
 };
@@ -92,17 +100,123 @@ export function composeClientRegister(input: ClientRegisterInput): ClientRegiste
       selected: client.id === input.selectedId,
     }));
   const empty = rows.length === 0;
+  const activeFilters = input.activeFilters ?? [];
   return {
     subhead: `Clients in ${input.workspaceName}.`,
     empty,
     emptyCopy: empty
-      ? needle
-        ? "No Clients match this filter."
-        : "No Clients in this Workspace yet."
+      ? activeFilters.length > 0
+        ? `No Clients match ${activeFilters.join(" · ")}.`
+        : needle
+          ? "No Clients match this filter."
+          : "No Clients in this Workspace yet."
       : "",
+    filtered: empty && (activeFilters.length > 0 || Boolean(needle)),
     rows,
     count: rows.length,
   };
+}
+
+export const CLIENT_STATUS_OPTIONS = [
+  { value: "lead", label: "LEAD" },
+  { value: "prospect", label: "PROSPECT" },
+  { value: "client", label: "CLIENT" },
+  { value: "client_recurrent", label: "CLIENT RECURRENT" },
+];
+
+export const CLIENT_SOURCE_OPTIONS = [
+  { value: "direct", label: "DIRECT" },
+  { value: "fiverr", label: "FIVERR" },
+  { value: "zoho", label: "ZOHO" },
+  { value: "none", label: "NONE" },
+];
+
+export const CLIENT_OPEN_OPTIONS = [
+  { value: "yes", label: "YES" },
+  { value: "no", label: "NO" },
+];
+
+/** What narrows the Clients register (#275). `all` is no filter; every field lives in the URL. */
+export type ClientRegisterFilters = {
+  q: string;
+  status: string;
+  source: string;
+  /** Has a Project that is neither completed nor archived: `yes`, `no` or `all`. */
+  open: string;
+  /** A register column the server can order by, or `""` for name order. */
+  sort: ClientSort | "";
+  dir: "asc" | "desc";
+  page: number;
+  pageSize: number;
+};
+
+/** The register columns the server orders by (`CRM_CLIENT_SORTS`). */
+export const CLIENT_SORTS = ["name", "company", "status", "source", "projects"] as const;
+export type ClientSort = (typeof CLIENT_SORTS)[number];
+
+const CLIENT_FILTER_PARAMS = ["status", "source", "open"] as const;
+
+export function readClientFilters(search: string): ClientRegisterFilters {
+  const params = new URLSearchParams(search);
+  const pick = (name: string) => params.get(name)?.trim() || "all";
+  return {
+    q: params.get("q") ?? "",
+    status: pick("status"),
+    source: pick("source"),
+    open: pick("open"),
+    sort: CLIENT_SORTS.find((sort) => sort === params.get("sort")) ?? "",
+    dir: params.get("dir") === "desc" ? "desc" : "asc",
+    page: readPage(params),
+    pageSize: readPageSize(params),
+  };
+}
+
+/** The register's query string, leaving defaults out so a plain register stays `/clients`. */
+export function writeClientFilters(search: string, filters: ClientRegisterFilters): string {
+  const params = new URLSearchParams(search);
+  params.delete("new");
+  if (filters.q.trim()) params.set("q", filters.q);
+  else params.delete("q");
+  for (const name of CLIENT_FILTER_PARAMS) {
+    if (filters[name] !== "all") params.set(name, filters[name]);
+    else params.delete(name);
+  }
+  if (filters.sort) params.set("sort", filters.sort);
+  else params.delete("sort");
+  if (filters.sort && filters.dir === "desc") params.set("dir", "desc");
+  else params.delete("dir");
+  writePaging(params, filters.page, filters.pageSize);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export function clearClientFilters(filters: ClientRegisterFilters): ClientRegisterFilters {
+  return { ...filters, q: "", status: "all", source: "all", open: "all", page: 1 };
+}
+
+export function clientRegisterPath(filters: ClientRegisterFilters): string {
+  const params = new URLSearchParams({ page: String(filters.page), pageSize: String(filters.pageSize) });
+  if (filters.q.trim()) params.set("search", filters.q.trim());
+  if (filters.status !== "all") params.set("status", filters.status);
+  if (filters.source !== "all") params.set("source", filters.source);
+  if (filters.open !== "all") params.set("openProjects", filters.open);
+  if (filters.sort) {
+    params.set("sort", filters.sort);
+    params.set("dir", filters.dir);
+  }
+  return `/api/crm/clients?${params.toString()}`;
+}
+
+/** Names each filter in force, for the empty state. */
+export function clientFilterLabels(filters: ClientRegisterFilters): string[] {
+  const optionLabel = (options: Array<{ value: string; label: string }>, value: string) =>
+    options.find((option) => option.value === value)?.label ?? value.toUpperCase();
+  const labels: string[] = [];
+  if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
+  if (filters.status !== "all") labels.push(`STATUS ${optionLabel(CLIENT_STATUS_OPTIONS, filters.status)}`);
+  if (filters.source !== "all") labels.push(`SOURCE ${optionLabel(CLIENT_SOURCE_OPTIONS, filters.source)}`);
+  if (filters.open !== "all") labels.push(`OPEN PROJECTS ${optionLabel(CLIENT_OPEN_OPTIONS, filters.open)}`);
+  return labels;
 }
 
 export type ClientRecordContact = {
