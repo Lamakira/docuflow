@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { motionForSurface } from "../../client/src/v2/motion";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
 import {
+  clientSourceChoices,
   clientWriteRefusal,
   composeClientRecord,
   composeClientRegister,
@@ -16,6 +17,44 @@ import {
  * Seams: matchV2Route (flagged app chrome) and compose helpers over existing `/api/*`.
  * Do not assert hex values or the prototype DOM. No new BFF routes.
  */
+
+describe("the Client record's two forms match every other v2 form (#280)", () => {
+  const source = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
+    "utf8",
+  );
+
+  it("edits the Client in a dialog, not an inline form", () => {
+    expect(source).toContain('testId="v2-client-edit"');
+    expect(source).toContain('submitLabel="Save Client"');
+    expect(source).not.toContain('<form className="df-admin-form');
+    expect(source).not.toContain("setEditing((open) => !open)");
+  });
+
+  it("chooses the source with the shared v2 select", () => {
+    expect(source).not.toContain('from "@/components/ui/select"');
+    expect(source).toContain("options={clientSourceChoices(draft.source)}");
+    expect(rule(".df-form-dialog-body > .df-daily-field .df-select-trigger")).toMatch(
+      /justify-content:\s*space-between/,
+    );
+  });
+
+  it("keeps a stored source outside the set as a choice, so the field is never blank", () => {
+    const ids = (current: string | null) => clientSourceChoices(current).map((option) => option.value);
+    expect(ids(null)).toEqual(["direct", "fiverr", "zoho", "none"]);
+    expect(ids("direct")).toEqual(["direct", "fiverr", "zoho", "none"]);
+    expect(clientSourceChoices("referral").at(-1)).toEqual({ value: "referral", label: "REFERRAL" });
+    expect(clientSourceChoices("word_of_mouth").at(-1)?.label).toBe("WORD OF MOUTH");
+  });
+
+  it("gives both forms the same field shape: a label above a typed input", () => {
+    for (const fields of ["CONTACT_FIELDS", "DETAIL_FIELDS"]) {
+      expect(source).toContain(`${fields}.map((field, index) => (`);
+    }
+    expect(source).toMatch(/id: "email", label: "EMAIL", type: "email"/);
+    expect(source).toMatch(/id: "phone", label: "PHONE", type: "tel"/);
+  });
+});
 
 const SAMPLE_NAMES = ["Keystone", "Northwind", "Amina", "Kofi", "Elena", "Jules", "Meridian", "Kaleido"];
 
@@ -158,11 +197,10 @@ describe("Client record controls use the shadcn set (#213)", () => {
     expect(clientSource).not.toContain('type="checkbox"');
     expect(clientSource).not.toContain("<select");
     expect(clientSource).toContain('from "@/components/ui/checkbox"');
-    expect(clientSource).toContain('from "@/components/ui/select"');
+    // Every select is V2FilterSelect, the shadcn Select carrying `.df-v2` through its portal (#280).
+    expect(clientSource).toContain('from "./V2Select"');
     // Radix renders a button, which a wrapping <label> cannot implicitly label.
     expect(clientSource).toContain('htmlFor="df-contact-primary"');
-    // The select panel portals out of `.df-v2` and must carry the class itself.
-    expect(clientSource).toContain('className="df-v2 df-select-content"');
   });
 });
 

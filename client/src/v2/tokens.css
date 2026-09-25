@@ -2640,6 +2640,24 @@ button.df-activity-row {
   width: 32%;
 }
 
+/* People (#280): the Members table is the shared table, one control per row. */
+.df-v2 .df-people-register .df-table-cell[data-column="member"] {
+  max-width: 0;
+  width: 40%;
+}
+
+.df-v2 .df-people-register .df-table-cell[data-column="member"] .df-row-title,
+.df-v2 .df-people-register .df-table-cell[data-column="member"] .df-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.df-v2 .df-people-register .df-table-cell[data-column="role"],
+.df-v2 .df-people-register .df-table-cell[data-column="status"] {
+  white-space: nowrap;
+}
+
 .df-v2 .df-clients-register .df-table-cell[data-column="status"],
 .df-v2 .df-clients-register .df-table-cell[data-column="source"],
 .df-v2 .df-clients-register .df-table-cell[data-column="projects"] {
@@ -2732,6 +2750,8 @@ button.df-activity-row {
    beside the one primary action. */
 .df-v2.df-form-dialog {
   max-width: 480px;
+  max-height: calc(100dvh - 2 * var(--df-space-8));
+  overflow-y: auto;
   padding: var(--df-space-6);
   gap: var(--df-space-5);
   color: var(--df-case-ink);
@@ -2771,9 +2791,18 @@ button.df-activity-row {
   color: var(--df-case-ink);
 }
 
+.df-form-dialog-body > .df-daily-field textarea {
+  font-family: var(--df-font-ui);
+  font-size: var(--df-text-3);
+  letter-spacing: normal;
+  color: var(--df-case-ink);
+}
+
+/* A form field spans the dialog, so its chevron sits at the far end like an input's edge. */
 .df-form-dialog-body > .df-daily-field .df-select-trigger {
   width: 100%;
   height: var(--df-control-h);
+  justify-content: space-between;
   letter-spacing: normal;
 }
 
