@@ -456,6 +456,41 @@ describe("People Capability refusal and Invitation accept motion (#192, #211)", 
   });
 });
 
+describe("the Members table reads like the other registers (#280)", () => {
+  const source = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2People.tsx"),
+    "utf8",
+  );
+
+  it("draws the desktop register with the shared shadcn table, one column per head", () => {
+    expect(source).toContain('from "@/components/ui/table"');
+    expect(source).toContain('<Table className="df-table" data-testid="v2-people-table">');
+    for (const column of ["member", "role", "capabilities", "status", "actions"]) {
+      expect(source).toContain(`className="df-table-head" data-column="${column}"`);
+      expect(source).toContain(`className="df-table-cell" data-column="${column}"`);
+    }
+    expect(source).not.toContain('className="df-register-head');
+  });
+
+  it("puts every row's actions in one row menu, with the refusal hanging from it", () => {
+    expect(source).toContain("<V2RowMenu");
+    expect(source).toContain('label: "Revoke invitation"');
+    expect(source).toContain('label: "Member settings"');
+    expect(source).toMatch(/label: row\.archiveAction === "restore" \? "Restore" : "Archive"/);
+    expect(source).not.toContain("onBlur=");
+    expect(source).not.toContain("Hours/day");
+    const menu = source.slice(source.indexOf("function PeopleRowMenu"));
+    expect(menu).toContain("<V2RefusalPopover");
+  });
+
+  it("edits a Member's hours and Daily Updates access in a dialog", () => {
+    expect(source).toContain('testId="v2-people-settings-dialog"');
+    expect(source).toContain("HOURS PER DAY");
+    expect(source).toContain("Can view Daily Updates");
+    expect(source).toContain('refusal={refusal?.id === "member-settings" ? refusal.message : null}');
+  });
+});
+
 function rule(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));

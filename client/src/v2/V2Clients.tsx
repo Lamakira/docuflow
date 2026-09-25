@@ -5,19 +5,13 @@ import { createColumnHelper, rowSortingFeature, tableFeatures, useTable, type So
 import type { CrmClient, CrmContact, CrmProjectWithDetails } from "@shared/schema";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   clearClientFilters,
   clientFilterLabels,
   clientHref,
   clientRegisterPath,
+  clientSourceChoices,
   clientWriteRefusal,
   composeClientRecord,
   composeClientRegister,
@@ -247,11 +241,18 @@ export function V2ClientRecordRedirect() {
   return <Redirect to="/clients" />;
 }
 
-const CLIENT_SOURCES = [
-  { id: "none", label: "NONE" },
-  { id: "direct", label: "DIRECT" },
-  { id: "zoho", label: "ZOHO" },
-  { id: "fiverr", label: "FIVERR" },
+/** The Client record's two forms share one field shape: a label above a typed input. */
+const CONTACT_FIELDS = [
+  { id: "name", label: "NAME", type: "text", placeholder: "Full name" },
+  { id: "role", label: "ROLE", type: "text", placeholder: "Project lead" },
+  { id: "email", label: "EMAIL", type: "email", placeholder: "name@company.com" },
+  { id: "phone", label: "PHONE", type: "tel", placeholder: "+33 6 12 34 56 78" },
+] as const;
+
+const DETAIL_FIELDS = [
+  { id: "company", label: "COMPANY", type: "text", placeholder: "Company name" },
+  { id: "email", label: "EMAIL", type: "email", placeholder: "name@company.com" },
+  { id: "phone", label: "PHONE", type: "tel", placeholder: "+33 6 12 34 56 78" },
 ] as const;
 
 export function V2ClientsPage() {
@@ -558,7 +559,7 @@ export function V2ClientRecordPage() {
     [projectsResponse, clientId],
   );
 
-  useEffect(() => {
+  function resetDraft() {
     if (!client) return;
     setDraft({
       email: client.email ?? "",
@@ -568,7 +569,15 @@ export function V2ClientRecordPage() {
       source: client.source ?? "",
       fiverrUsername: client.fiverrUsername ?? "",
     });
-  }, [client]);
+  }
+
+  useEffect(resetDraft, [client]);
+
+  function openEdit() {
+    resetDraft();
+    setWriteRefusal(null);
+    setEditing(true);
+  }
 
   function refuse(error?: Error) {
     setWriteRefusal(clientWriteRefusal({ readOnly, workspaceName, errorMessage: error?.message }));
@@ -690,7 +699,7 @@ export function V2ClientRecordPage() {
       </header>
 
       <div className="df-dossier-body df-client-record-body" data-motion={RECORD_MOTION}>
-        {writeRefusal && !addingContact ? <p className="df-refusal">{writeRefusal}</p> : null}
+        {writeRefusal && !addingContact && !editing ? <p className="df-refusal">{writeRefusal}</p> : null}
         {isLoading ? (
           <div className="df-overview" aria-busy="true">
             <div className="df-stack">
@@ -737,13 +746,16 @@ export function V2ClientRecordPage() {
                   refusal={writeRefusal}
                   testId="v2-client-add-contact"
                 >
-                  {(["name", "role", "email", "phone"] as const).map((field, index) => (
-                    <label key={field} className="df-daily-field">
-                      {field.toUpperCase()}
+                  {CONTACT_FIELDS.map((field, index) => (
+                    <label key={field.id} className="df-daily-field">
+                      {field.label}
                       <input
-                        value={contactDraft[field]}
+                        type={field.type}
+                        value={contactDraft[field.id]}
                         autoFocus={index === 0}
-                        onChange={(event) => setContactDraft((value) => ({ ...value, [field]: event.target.value }))}
+                        placeholder={field.placeholder}
+                        aria-label={`Contact ${field.id}`}
+                        onChange={(event) => setContactDraft((value) => ({ ...value, [field.id]: event.target.value }))}
                       />
                     </label>
                   ))}
@@ -815,52 +827,84 @@ export function V2ClientRecordPage() {
               <section className="df-card">
                 <div className="df-card-head">
                   <h2 className="df-card-title">Client details</h2>
-                  <Button variant="outline" type="button" onClick={() => setEditing((open) => !open)} className="df-btn">Edit Client</Button>
+                  <Button variant="outline" type="button" onClick={openEdit} className="df-btn">
+                    Edit Client
+                  </Button>
                 </div>
-                {editing ? (
-                  <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); updateClient.mutate(); }}>
-                    {(["company", "email", "phone"] as const).map((field) => <label key={field} className="df-daily-field">{field.toUpperCase()}<input value={draft[field]} onChange={(event) => setDraft((value) => ({ ...value, [field]: event.target.value }))} /></label>)}
-                    <div className="df-daily-field">
-                      SOURCE
-                      <Select
-                        value={draft.source || "none"}
-                        onValueChange={(next) => setDraft((value) => ({ ...value, source: next === "none" ? "" : next }))}
-                      >
-                        <SelectTrigger className="df-filter-chip df-select-trigger" aria-label="Client source">
-                          <SelectValue />
-                        </SelectTrigger>
-                        {/* Radix portals outside `.df-v2`, so the panel carries the class itself. */}
-                        <SelectContent className="df-v2 df-select-content">
-                          {CLIENT_SOURCES.map((source) => (
-                            <SelectItem key={source.id} value={source.id} className="df-select-item">
-                              {source.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                <V2FormDialog
+                  open={editing}
+                  onOpenChange={setEditing}
+                  title="Edit Client"
+                  description={`How to reach ${record.identity?.title ?? "this Client"}, and where they came from.`}
+                  submitLabel="Save Client"
+                  pending={updateClient.isPending}
+                  canSubmit
+                  onSubmit={() => {
+                    if (readOnly) return refuse();
+                    updateClient.mutate();
+                  }}
+                  refusal={writeRefusal}
+                  testId="v2-client-edit"
+                >
+                  {DETAIL_FIELDS.map((field, index) => (
+                    <label key={field.id} className="df-daily-field">
+                      {field.label}
+                      <input
+                        type={field.type}
+                        value={draft[field.id]}
+                        autoFocus={index === 0}
+                        placeholder={field.placeholder}
+                        aria-label={`Client ${field.id}`}
+                        onChange={(event) => setDraft((value) => ({ ...value, [field.id]: event.target.value }))}
+                      />
+                    </label>
+                  ))}
+                  <label className="df-daily-field">
+                    SOURCE
+                    <V2FilterSelect
+                      label=""
+                      ariaLabel="Client source"
+                      value={draft.source || "none"}
+                      options={clientSourceChoices(draft.source)}
+                      onChange={(next) => setDraft((value) => ({ ...value, source: next === "none" ? "" : next }))}
+                    />
+                  </label>
+                  {draft.source === "fiverr" ? (
+                    <label className="df-daily-field">
+                      FIVERR USERNAME
+                      <input
+                        type="text"
+                        value={draft.fiverrUsername}
+                        placeholder="username"
+                        aria-label="Fiverr username"
+                        onChange={(event) => setDraft((value) => ({ ...value, fiverrUsername: event.target.value }))}
+                      />
+                    </label>
+                  ) : null}
+                  <label className="df-daily-field">
+                    NOTES
+                    <textarea
+                      value={draft.notes}
+                      placeholder="What to know about this Client"
+                      aria-label="Client notes"
+                      onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))}
+                    />
+                  </label>
+                </V2FormDialog>
+                <div className="df-record-fields">
+                  {record.details.map((row) => (
+                    <div
+                      key={row.label}
+                      className="df-record-field"
+                      data-wide={row.wide ? "true" : "false"}
+                    >
+                      <span className="df-record-field-label">{row.label}</span>
+                      <span className="df-record-field-value" data-empty={row.value === "—" ? "true" : "false"}>
+                        {row.value}
+                      </span>
                     </div>
-                    {draft.source === "fiverr" ? <label className="df-daily-field">FIVERR USERNAME<input value={draft.fiverrUsername} onChange={(event) => setDraft((value) => ({ ...value, fiverrUsername: event.target.value }))} /></label> : null}
-                    <label className="df-daily-field">NOTES<textarea value={draft.notes} onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))} /></label>
-                    <Button variant="default" type="submit" disabled={updateClient.isPending} className="df-btn">Save Client</Button>
-                  </form>
-                ) : (
-                  <>
-                    <div className="df-record-fields">
-                      {record.details.map((row) => (
-                        <div
-                          key={row.label}
-                          className="df-record-field"
-                          data-wide={row.wide ? "true" : "false"}
-                        >
-                          <span className="df-record-field-label">{row.label}</span>
-                          <span className="df-record-field-value" data-empty={row.value === "—" ? "true" : "false"}>
-                            {row.value}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
+                  ))}
+                </div>
               </section>
             </div>
 

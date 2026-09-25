@@ -19,7 +19,10 @@ import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { V2FormDialog } from "./V2FormDialog";
+import { V2RowMenu, type V2RowMenuItem } from "./V2RowMenu";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
 
 type WorkspaceMembershipsResponse = { memberships: PeopleMembershipInput[] };
@@ -37,6 +40,8 @@ export function V2PeoplePage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<(typeof PEOPLE_INVITE_ROLES)[number]>("MEMBER");
   const [refusal, setRefusal] = useState<RefusalTarget | null>(null);
+  const [settingsFor, setSettingsFor] = useState<PeopleRow | null>(null);
+  const [settingsDraft, setSettingsDraft] = useState({ hoursPerDay: "", canViewDailyUpdates: false });
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const workspaceRole = current?.workspaceRole ?? "MEMBER";
@@ -145,9 +150,10 @@ export function V2PeoplePage() {
       }),
     onSuccess: () => {
       setRefusal(null);
+      setSettingsFor(null);
       queryClient.invalidateQueries({ queryKey: ["/api/workspace/memberships"] });
     },
-    onError: (error: Error, input) => refuse(input.membershipId, error.message),
+    onError: (error: Error) => refuse("member-settings", error.message),
   });
 
   function guardWrite(id: string): boolean {
@@ -183,6 +189,46 @@ export function V2PeoplePage() {
       return;
     }
     archive.mutate(row);
+  }
+
+  function onOpenSettings(row: PeopleRow) {
+    if (!guardWrite(row.userId)) return;
+    setRefusal(null);
+    setSettingsDraft({
+      hoursPerDay: row.hoursPerDay != null ? String(row.hoursPerDay) : "",
+      canViewDailyUpdates: row.canViewDailyUpdates === 1,
+    });
+    setSettingsFor(row);
+  }
+
+  const settingsHours = Number(settingsDraft.hoursPerDay);
+  const settingsValid =
+    settingsFor?.hoursPerDay == null || (Number.isInteger(settingsHours) && settingsHours >= 1 && settingsHours <= 24);
+
+  function onSaveSettings() {
+    if (!settingsFor) return;
+    if (!guardWrite("member-settings")) return;
+    profile.mutate({
+      membershipId: settingsFor.membershipId,
+      hoursPerDay: settingsFor.hoursPerDay != null ? settingsHours : undefined,
+      canViewDailyUpdates: settingsFor.canViewDailyUpdates != null ? (settingsDraft.canViewDailyUpdates ? 1 : 0) : undefined,
+    });
+  }
+
+  function rowMenuProps(row: PeopleRow) {
+    return {
+      row,
+      canManage,
+      pending: archive.isPending || revoke.isPending || profile.isPending,
+      refusal,
+      onArchive,
+      onRevoke: (id: string) => {
+        if (!guardWrite(id)) return;
+        revoke.mutate(id);
+      },
+      onSettings: onOpenSettings,
+      onDismiss: () => setRefusal(null),
+    };
   }
 
   if (isLoading) {
@@ -313,19 +359,53 @@ export function V2PeoplePage() {
         </label>
       </V2FormDialog>
 
-      <section className="df-card df-people-register" data-testid="v2-people-register">
-        {layout.stackedRegister ? null : (
-          <div className="df-register-head df-desktop-only">
-            <span>MEMBER</span>
-            <span>WORKSPACE ROLE</span>
-            <span>CAPABILITIES</span>
-            <span>STATUS</span>
-            <span />
+      <V2FormDialog
+        open={settingsFor !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          setSettingsFor(null);
+          setRefusal(null);
+        }}
+        title="Member settings"
+        description={`How ${settingsFor?.name ?? "this Member"} works in ${workspaceName}.`}
+        submitLabel="Save settings"
+        pending={profile.isPending}
+        canSubmit={settingsValid}
+        onSubmit={onSaveSettings}
+        refusal={refusal?.id === "member-settings" ? refusal.message : null}
+        testId="v2-people-settings-dialog"
+      >
+        {settingsFor?.hoursPerDay != null ? (
+          <label className="df-daily-field">
+            HOURS PER DAY
+            <input
+              type="number"
+              min={1}
+              max={24}
+              value={settingsDraft.hoursPerDay}
+              autoFocus
+              onChange={(event) => setSettingsDraft((draft) => ({ ...draft, hoursPerDay: event.target.value }))}
+              aria-label={`Hours per day for ${settingsFor.name}`}
+            />
+          </label>
+        ) : null}
+        {settingsFor?.canViewDailyUpdates != null ? (
+          <div className="df-checkbox-row">
+            <Checkbox
+              id="df-member-daily-updates"
+              className="df-checkbox"
+              checked={settingsDraft.canViewDailyUpdates}
+              onCheckedChange={(next) => setSettingsDraft((draft) => ({ ...draft, canViewDailyUpdates: next === true }))}
+            />
+            <label htmlFor="df-member-daily-updates">Can view Daily Updates</label>
           </div>
-        )}
+        ) : null}
+      </V2FormDialog>
+
+      <section className="df-card df-people-register" data-testid="v2-people-register">
         {page.empty ? (
           <p className="df-empty">{page.emptyCopy}</p>
-        ) : (
+        ) : layout.stackedRegister ? (
           page.rows.map((row) => (
             <div
               key={row.kind === "invitation" ? row.invitationId : row.membershipId}
@@ -334,197 +414,151 @@ export function V2PeoplePage() {
               data-motion={row.justAccepted ? ACCEPT_MOTION : "instant"}
             >
               <div className="df-register-row" data-testid={`v2-people-row-${row.userId}`}>
-                {layout.stackedRegister ? (
-                  <span className="df-project-mobile">
-                    <span className="df-avatar" data-self={row.self ? "true" : "false"}>
-                      {row.initials}
-                    </span>
-                    <span style={{ minWidth: 0, flex: 1 }}>
-                      <div className="df-row-title">{row.name}</div>
-                      <div className="df-mono df-meta">
-                        {row.workspaceRole} ·{" "}
-                        {row.status === "INVITATION PENDING" ? "Invitation pending" : row.status}
-                        {row.capabilities !== "—" ? ` · ${row.capabilities}` : ""}
-                      </div>
-                    </span>
-                    <RowActions
-                      row={row}
-                      canManage={canManage}
-                      pending={archive.isPending || revoke.isPending || profile.isPending}
-                      refusal={refusal}
-                      onArchive={onArchive}
-                      onRevoke={(id) => {
-                        if (!guardWrite(id)) return;
-                        revoke.mutate(id);
-                      }}
-                      onProfile={(patch) => {
-                        if (!guardWrite(row.membershipId)) return;
-                        profile.mutate(patch);
-                      }}
-                      onDismiss={() => setRefusal(null)}
-                    />
+                <span className="df-project-mobile">
+                  <span className="df-avatar" data-self={row.self ? "true" : "false"}>
+                    {row.initials}
                   </span>
-                ) : (
-                  <>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <div className="df-row-title">{row.name}</div>
+                    <div className="df-mono df-meta">
+                      {row.workspaceRole} · {statusLabel(row.status)}
+                      {row.capabilities !== "—" ? ` · ${row.capabilities}` : ""}
+                    </div>
+                  </span>
+                  <PeopleRowMenu {...rowMenuProps(row)} />
+                </span>
+              </div>
+            </div>
+          ))
+        ) : (
+          <Table className="df-table" data-testid="v2-people-table">
+            <TableHeader>
+              <TableRow className="df-table-head-row">
+                <TableHead className="df-table-head" data-column="member">MEMBER</TableHead>
+                <TableHead className="df-table-head" data-column="role">WORKSPACE ROLE</TableHead>
+                <TableHead className="df-table-head" data-column="capabilities">CAPABILITIES</TableHead>
+                <TableHead className="df-table-head" data-column="status">STATUS</TableHead>
+                <TableHead className="df-table-head" data-column="actions">
+                  <span className="df-sr-only">Actions</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {page.rows.map((row) => (
+                <TableRow
+                  key={row.kind === "invitation" ? row.invitationId : row.membershipId}
+                  className="df-table-row df-people-row-wrap"
+                  data-just-accepted={row.justAccepted ? "true" : "false"}
+                  data-motion={row.justAccepted ? ACCEPT_MOTION : "instant"}
+                  data-testid={`v2-people-row-${row.userId}`}
+                >
+                  <TableCell className="df-table-cell" data-column="member">
                     <span className="df-people-member">
                       <span className="df-avatar" data-self={row.self ? "true" : "false"}>
                         {row.initials}
                       </span>
                       <span style={{ minWidth: 0 }}>
                         <div className="df-row-title">{row.name}</div>
-                        <div className="df-mono df-meta">{row.email}</div>
+                        <div className="df-mono df-meta" data-case="preserve">
+                          {row.email}
+                        </div>
                       </span>
                     </span>
+                  </TableCell>
+                  <TableCell className="df-table-cell" data-column="role">
                     <span className="df-status">{row.workspaceRole}</span>
+                  </TableCell>
+                  <TableCell className="df-table-cell" data-column="capabilities">
                     <span className="df-mono df-meta">{row.capabilities}</span>
+                  </TableCell>
+                  <TableCell className="df-table-cell" data-column="status">
                     <span className="df-status" data-status={row.status}>
-                      {row.status === "INVITATION PENDING" ? "Invitation pending" : row.status}
+                      {statusLabel(row.status)}
                     </span>
-                    <span className="df-people-action">
-                      <RowActions
-                        row={row}
-                        canManage={canManage}
-                        pending={archive.isPending || revoke.isPending || profile.isPending}
-                        refusal={refusal}
-                        onArchive={onArchive}
-                        onRevoke={(id) => {
-                          if (!guardWrite(id)) return;
-                          revoke.mutate(id);
-                        }}
-                        onProfile={(patch) => {
-                          if (!guardWrite(row.membershipId)) return;
-                          profile.mutate(patch);
-                        }}
-                        onDismiss={() => setRefusal(null)}
-                      />
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-          ))
+                  </TableCell>
+                  <TableCell className="df-table-cell" data-column="actions">
+                    <PeopleRowMenu {...rowMenuProps(row)} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </section>
     </div>
   );
 }
 
-function RowActions({
+type PeopleRow = ReturnType<typeof composePeople>["rows"][number];
+
+function statusLabel(status: string): string {
+  return status === "INVITATION PENDING" ? "Invitation pending" : status;
+}
+
+/**
+ * Every row carries the same one control, so the columns line up and no row
+ * grows taller than another. A refusal hangs from that control (#245, F3).
+ */
+function PeopleRowMenu({
   row,
   canManage,
   pending,
   refusal,
   onArchive,
   onRevoke,
-  onProfile,
+  onSettings,
   onDismiss,
 }: {
-  row: ReturnType<typeof composePeople>["rows"][number];
+  row: PeopleRow;
   canManage: boolean;
   pending: boolean;
   refusal: RefusalTarget | null;
   onArchive: (row: { userId: string; archiveAction: "archive" | "restore" }) => void;
   onRevoke: (id: string) => void;
-  onProfile: (input: { membershipId: string; hoursPerDay?: number; canViewDailyUpdates?: number }) => void;
+  onSettings: (row: PeopleRow) => void;
   onDismiss: () => void;
 }) {
+  const items: V2RowMenuItem[] = [];
+  let controlId = row.userId;
   if (row.kind === "invitation" && row.invitationId) {
-    return (
-      <RefusalAnchor
-        id={row.invitationId}
-        pending={pending}
-        refusal={refusal}
-        onDismiss={onDismiss}
-        label="Revoke"
-        testId={`v2-people-revoke-${row.invitationId}`}
-        onClick={() => onRevoke(row.invitationId!)}
-      />
-    );
+    controlId = row.invitationId;
+    items.push({
+      label: "Revoke invitation",
+      disabled: pending,
+      testId: `v2-people-revoke-${row.invitationId}`,
+      onSelect: () => onRevoke(row.invitationId!),
+    });
+  } else {
+    if (canManage && (row.hoursPerDay != null || row.canViewDailyUpdates != null)) {
+      items.push({
+        label: "Member settings",
+        disabled: pending,
+        testId: `v2-people-settings-${row.userId}`,
+        onSelect: () => onSettings(row),
+      });
+    }
+    if (row.archiveAction) {
+      items.push({
+        label: row.archiveAction === "restore" ? "Restore" : "Archive",
+        disabled: pending,
+        testId: `v2-people-archive-${row.userId}`,
+        onSelect: () => onArchive({ userId: row.userId, archiveAction: row.archiveAction! }),
+      });
+    }
   }
-  const hours =
-    canManage && row.hoursPerDay != null ? (
-      <label className="df-mono df-meta">
-        Hours/day
-        <input
-          type="number"
-          min={1}
-          max={24}
-          defaultValue={row.hoursPerDay}
-          aria-label={`Hours per day for ${row.name}`}
-          onBlur={(event) => {
-            const hoursPerDay = Number(event.target.value);
-            if (hoursPerDay === row.hoursPerDay) return;
-            onProfile({ membershipId: row.membershipId, hoursPerDay });
-          }}
-        />
-      </label>
-    ) : null;
-  const daily =
-    canManage && row.canViewDailyUpdates != null ? (
-      <label className="df-filter-chip">
-        <input
-          type="checkbox"
-          checked={row.canViewDailyUpdates === 1}
-          onChange={(event) =>
-            onProfile({
-              membershipId: row.membershipId,
-              canViewDailyUpdates: event.target.checked ? 1 : 0,
-            })
-          }
-        />
-        View Daily Updates
-      </label>
-    ) : null;
-  const archive = row.archiveAction ? (
-    <RefusalAnchor
-      id={row.userId}
-      pending={pending}
-      refusal={refusal}
-      onDismiss={onDismiss}
-      label={row.archiveAction === "restore" ? "Restore" : "Archive"}
-      testId={`v2-people-archive-${row.userId}`}
-      onClick={() => onArchive({ userId: row.userId, archiveAction: row.archiveAction! })}
-    />
-  ) : null;
-  if (!hours && !daily && !archive) return null;
-  return (
-    <span className="df-people-action">
-      {hours}
-      {daily}
-      {archive}
-    </span>
-  );
-}
-
-function RefusalAnchor({
-  id,
-  pending,
-  refusal,
-  onDismiss,
-  label,
-  testId,
-  onClick,
-}: {
-  id: string;
-  pending: boolean;
-  refusal: RefusalTarget | null;
-  onDismiss: () => void;
-  label: string;
-  testId: string;
-  onClick: () => void;
-}) {
-  const open = refusal?.id === id;
+  if (items.length === 0) return null;
+  const open = refusal?.id === controlId;
   return (
     <V2RefusalPopover
-      controlId={id}
+      controlId={controlId}
       failedControlId={refusal?.id ?? null}
       message={open ? refusal.message : null}
-      testId={`v2-people-refusal-${id}`}
+      testId={`v2-people-refusal-${controlId}`}
       onDismiss={onDismiss}
       trigger={
-        <Button variant="outline" type="button" disabled={pending} data-testid={testId} onClick={onClick} className="df-btn">
-          {label}
-        </Button>
+        <span className="df-row-actions">
+          <V2RowMenu ariaLabel={`Actions on ${row.name}`} testId={`v2-people-menu-${row.userId}`} items={items} />
+        </span>
       }
     />
   );

@@ -131,6 +131,17 @@ export const CLIENT_SOURCE_OPTIONS = [
   { value: "none", label: "NONE" },
 ];
 
+/**
+ * The source choices on Edit Client. A stored source outside the set (seed or
+ * imported data) stays a choice, so the field reads what is saved and a save
+ * does not rewrite it unasked.
+ */
+export function clientSourceChoices(current: string | null | undefined): Array<{ value: string; label: string }> {
+  const source = current?.trim();
+  if (!source || CLIENT_SOURCE_OPTIONS.some((option) => option.value === source)) return CLIENT_SOURCE_OPTIONS;
+  return [...CLIENT_SOURCE_OPTIONS, { value: source, label: sourceLabel(source) }];
+}
+
 export const CLIENT_OPEN_OPTIONS = [
   { value: "yes", label: "YES" },
   { value: "no", label: "NO" },

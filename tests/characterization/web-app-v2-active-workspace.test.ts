@@ -304,6 +304,18 @@ describe("v2 Active Workspace (#183)", () => {
     );
     expect(shellSource).toContain("myInvitationsPath");
   });
+
+  it("retries the Membership read, so one early 401 does not leave every page reading Member (#280)", () => {
+    const shellSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Shell.tsx"),
+      "utf8",
+    );
+    const at = shellSource.indexOf('queryKey: ["/api/memberships"]');
+    expect(at).toBeGreaterThan(-1);
+    const query = shellSource.slice(at, shellSource.indexOf("});", at));
+    expect(query).toMatch(/retry:\s*[1-9]/);
+    expect(query).toContain("retryDelay");
+  });
 });
 
 function rule(selector: string): string {

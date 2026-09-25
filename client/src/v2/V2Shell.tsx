@@ -95,6 +95,11 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
   });
   const { data: memberships } = useQuery<MembershipsResponse>({
     queryKey: ["/api/memberships"],
+    // Every Workspace Role check reads this. The first read can land before the
+    // identity session does, and with the app's retry: false and staleTime:
+    // Infinity a failed read would stick until a full reload.
+    retry: 3,
+    retryDelay: (attempt) => 500 * 2 ** attempt,
   });
   const { data: invitations = [] } = useQuery<PendingInvitationOption[]>({
     queryKey: [myInvitationsPath()],
