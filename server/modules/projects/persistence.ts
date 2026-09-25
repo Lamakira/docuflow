@@ -39,7 +39,13 @@ export type CrmProjectListOptions = {
   dueNone?: boolean;
   /** Only the Projects this User may see as a Member: one they belong to, or are assigned when it has no Members. */
   visibleToUserId?: string;
+  /** A register column; most recently updated first when unset. */
+  sort?: CrmProjectSort;
+  dir?: "asc" | "desc";
 };
+
+export const CRM_PROJECT_SORTS = ["name", "status", "budget"] as const;
+export type CrmProjectSort = (typeof CRM_PROJECT_SORTS)[number];
 
 export interface ProjectsPersistence {
   getProjects(userId: string): Promise<Project[]>;

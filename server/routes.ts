@@ -29,6 +29,7 @@ import {
   registerWorkspaceLifecycleRoutes,
 } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
+import { CRM_PROJECT_SORTS } from "./modules/projects/persistence";
 import { SeatExhaustedError } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
 import mammoth from "mammoth";
@@ -1514,6 +1515,8 @@ Instructions:
         dueTo: date("dueTo"),
         dueNone: text("due") === "none",
         visibleToUserId,
+        sort: CRM_PROJECT_SORTS.find((sort) => sort === text("sort")),
+        dir: text("dir") === "desc" ? "desc" : "asc",
       });
       res.json(result);
     } catch (error) {

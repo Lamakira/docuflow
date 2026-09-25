@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEve
 import { DragDropContext, Draggable, Droppable, type DraggableProvided, type DropResult } from "@hello-pangea/dnd";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { createColumnHelper, rowSortingFeature, tableFeatures, useTable, type SortingState } from "@tanstack/react-table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { CrmClient, CrmProjectWithDetails, CrmTag } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -23,11 +25,14 @@ import {
   writeProjectFilters,
   PROJECT_BOARD_COLUMNS,
   PROJECT_DUE_OPTIONS,
+  PROJECT_SORTS,
   PROJECT_STATUS_OPTIONS,
   PROJECT_TYPE_OPTIONS,
   type ProjectBoardCard,
   type ProjectRegisterFilters,
+  type ProjectRegisterRow,
   type ProjectRegisterRowInput,
+  type ProjectSort,
 } from "./projects";
 import { composePaging } from "./paging";
 import { formatHours, memberName, mobileProjectMeta } from "./today";
@@ -204,6 +209,178 @@ function ProjectBoardCardView({
         </div>
       )}
     </article>
+  );
+}
+
+const projectTableFeatures = tableFeatures({ rowSortingFeature });
+const projectColumn = createColumnHelper<typeof projectTableFeatures, ProjectRegisterRow>();
+
+function isSortable(id: string): id is ProjectSort {
+  return (PROJECT_SORTS as readonly string[]).includes(id);
+}
+
+/**
+ * The desktop register (#275): TanStack Table holds the columns and the sort
+ * state, the server holds the order — `manualSorting` trusts the page as it
+ * arrives. The whole row opens the Dossier; the name is also a link, for the
+ * keyboard and for opening in a new tab.
+ */
+function ProjectRegisterTable({
+  rows,
+  sort,
+  dir,
+  onSort,
+  onOpen,
+}: {
+  rows: ProjectRegisterRow[];
+  sort: ProjectSort | "";
+  dir: "asc" | "desc";
+  onSort: (sort: ProjectSort | "", dir: "asc" | "desc") => void;
+  onOpen: (row: ProjectRegisterRow) => void;
+}) {
+  const sorting: SortingState = sort ? [{ id: sort, desc: dir === "desc" }] : [];
+  const columns = useMemo(
+    () =>
+      projectColumn.columns([
+        projectColumn.accessor("name", {
+          header: "PROJECT / CLIENT",
+          cell: ({ row }) => (
+            <span style={{ minWidth: 0, display: "block" }}>
+              <Link
+                href={row.original.href}
+                className="df-row-title df-row-link"
+                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}
+              >
+                {row.original.name}
+              </Link>
+              <span className="df-mono df-meta" style={{ display: "block" }}>
+                {row.original.clientLabel} · {row.original.kindLabel}
+                {row.original.tags.length > 0 ? ` · ${row.original.tags.join(" · ").toUpperCase()}` : ""}
+              </span>
+            </span>
+          ),
+        }),
+        projectColumn.accessor("status", {
+          header: "STATUS",
+          cell: ({ row }) => (
+            <span className="df-status-word" data-swatch="" style={swatchStyle(row.original.statusColor)}>{row.original.status}</span>
+          ),
+        }),
+        projectColumn.accessor("lead", {
+          header: "LEAD",
+          enableSorting: false,
+          cell: ({ row }) => <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.original.lead}</span>,
+        }),
+        projectColumn.accessor("budgetPercent", {
+          id: "budget",
+          header: "BUDGET USED",
+          cell: ({ row }) =>
+            row.original.budgetPercent == null ? (
+              <span className="df-mono df-meta">—</span>
+            ) : (
+              <span className="df-meter-row">
+                <span className="df-meter">
+                  {/* Per-instance: the fill width is this project's budget share. */}
+                  <span
+                    className="df-meter-fill"
+                    data-tone={meterTone(row.original.budgetPercent, row.original.status)}
+                    style={{ width: `${Math.min(100, row.original.budgetPercent)}%` }}
+                  />
+                </span>
+                <span className="df-mono" style={{ fontSize: 11, width: 36 }}>
+                  {row.original.budgetPercent}%
+                </span>
+              </span>
+            ),
+        }),
+        projectColumn.accessor("trackedMtd", {
+          id: "tracked",
+          header: "TRACKED MTD",
+          enableSorting: false,
+          cell: ({ row }) => <span className="df-mono" style={{ fontSize: 12 }}>{row.original.trackedMtd}</span>,
+        }),
+      ]),
+    [],
+  );
+
+  const table = useTable({
+    features: projectTableFeatures,
+    columns,
+    data: rows,
+    manualSorting: true,
+    enableMultiSort: false,
+    state: { sorting },
+    onSortingChange: (updater) => {
+      const next = typeof updater === "function" ? updater(sorting) : updater;
+      const first = next[0];
+      if (first && isSortable(first.id)) onSort(first.id, first.desc ? "desc" : "asc");
+      else onSort("", "asc");
+    },
+  });
+
+  function onRowClick(event: MouseEvent<HTMLTableRowElement>, row: ProjectRegisterRow) {
+    if ((event.target as HTMLElement).closest("a, button")) return;
+    if (event.metaKey || event.ctrlKey) {
+      window.open(row.href, "_blank", "noopener,noreferrer");
+      return;
+    }
+    onOpen(row);
+  }
+
+  return (
+    <Table className="df-table" data-testid="v2-projects-table">
+      <TableHeader>
+        {table.getHeaderGroups().map((group) => (
+          <TableRow key={group.id} className="df-table-head-row">
+            {group.headers.map((header) => {
+              const sortable = header.column.getCanSort();
+              const direction = header.column.getIsSorted();
+              return (
+                <TableHead
+                  key={header.id}
+                  className="df-table-head"
+                  data-column={header.column.id}
+                  aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : undefined}
+                >
+                  {header.isPlaceholder ? null : sortable ? (
+                    <button
+                      type="button"
+                      className="df-table-sort"
+                      data-sorted={direction || "none"}
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      <table.FlexRender header={header} />
+                      <span aria-hidden="true">
+                        {direction === "asc" ? "↑" : direction === "desc" ? "↓" : ""}
+                      </span>
+                    </button>
+                  ) : (
+                    <table.FlexRender header={header} />
+                  )}
+                </TableHead>
+              );
+            })}
+          </TableRow>
+        ))}
+      </TableHeader>
+      <TableBody>
+        {table.getRowModel().rows.map((row) => (
+          <TableRow
+            key={row.id}
+            className="df-table-row"
+            data-selected={row.original.selected ? "true" : "false"}
+            data-testid={`v2-project-row-${row.original.id}`}
+            onClick={(event) => onRowClick(event, row.original)}
+          >
+            {row.getAllCells().map((cell) => (
+              <TableCell key={cell.id} className="df-table-cell" data-column={cell.column.id}>
+                <table.FlexRender cell={cell} />
+              </TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -678,15 +855,6 @@ export function V2ProjectsPage() {
 
       {boardView ? null : (
       <section className="df-card df-projects-register" data-testid="v2-projects-register">
-        {layout.stackedRegister ? null : (
-          <div className="df-register-head df-desktop-only">
-            <span>PROJECT / CLIENT</span>
-            <span>STATUS</span>
-            <span>LEAD</span>
-            <span>BUDGET USED</span>
-            <span style={{ textAlign: "right" }}>TRACKED MTD</span>
-          </div>
-        )}
         {register.empty ? (
           <div className="df-empty-state">
             <p className="df-empty">{register.emptyCopy}</p>
@@ -704,7 +872,7 @@ export function V2ProjectsPage() {
               </Button>
             ) : null}
           </div>
-        ) : (
+        ) : layout.stackedRegister ? (
           register.rows.map((row) => (
             <Link
               key={row.id}
@@ -715,54 +883,25 @@ export function V2ProjectsPage() {
               onPointerDown={() => setSelectedId(row.id)}
               onClick={() => setSelectedId(row.id)}
             >
-              {layout.stackedRegister ? (
-                <span className="df-project-mobile">
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <div className="df-row-title">{row.name}</div>
-                    <div className="df-mono df-meta">{mobileProjectMeta(row)}</div>
-                  </span>
+              <span className="df-project-mobile">
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <div className="df-row-title">{row.name}</div>
+                  <div className="df-mono df-meta">{mobileProjectMeta(row)}</div>
                 </span>
-              ) : (
-                <>
-                  <span style={{ minWidth: 0 }}>
-                    <div className="df-row-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {row.name}
-                    </div>
-                    <div className="df-mono df-meta">
-                      {row.clientLabel} · {row.kindLabel}
-                      {row.tags.length > 0 ? ` · ${row.tags.join(" · ").toUpperCase()}` : ""}
-                    </div>
-                  </span>
-                  <span>
-                    <span className="df-status-word" data-swatch="" style={swatchStyle(row.statusColor)}>{row.status}</span>
-                  </span>
-                  <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.lead}</span>
-                  <span>
-                    {row.budgetPercent == null ? (
-                      <span className="df-mono df-meta">—</span>
-                    ) : (
-                      <span className="df-meter-row">
-                        <span className="df-meter">
-                          {/* Per-instance: the fill width is this project's budget share. */}
-                          <span
-                            className="df-meter-fill"
-                            data-tone={meterTone(row.budgetPercent, row.status)}
-                            style={{ width: `${Math.min(100, row.budgetPercent)}%` }}
-                          />
-                        </span>
-                        <span className="df-mono" style={{ fontSize: 11, width: 36 }}>
-                          {row.budgetPercent}%
-                        </span>
-                      </span>
-                    )}
-                  </span>
-                  <span className="df-mono" style={{ fontSize: 12, textAlign: "right" }}>
-                    {row.trackedMtd}
-                  </span>
-                </>
-              )}
+              </span>
             </Link>
           ))
+        ) : (
+          <ProjectRegisterTable
+            rows={register.rows}
+            sort={filters.sort}
+            dir={filters.dir}
+            onSort={(sort, dir) => setFilters({ ...filters, sort, dir, page: 1 })}
+            onOpen={(row) => {
+              setSelectedId(row.id);
+              setLocation(row.href);
+            }}
+          />
         )}
         <V2RegisterPager
           paging={paging}

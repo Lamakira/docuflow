@@ -900,12 +900,26 @@ export class DatabaseStorage implements IStorage {
 
     const total = countResult?.count || 0;
 
-    // Get paginated data
+    // Get paginated data. A sorted column leads; recency and id keep pages stable under ties.
+    const direction = options?.dir === "desc" ? sql`desc nulls last` : sql`asc nulls last`;
+    const sortExpression = {
+      name: sql`lower((select ${projects.name} from ${projects} where ${projects.id} = ${crmProjects.projectId}))`,
+      // Project Status in lifecycle order, as the register's STATUS filter lists it.
+      status: sql`case ${crmProjects.projectStatus}
+        when 'planned' then 0 when 'active' then 1 when 'on_hold' then 2
+        when 'in_review' then 3 when 'completed' then 4 when 'archived' then 5 else 6 end`,
+      // BUDGET USED: no budget sorts last either way.
+      budget: sql`case when coalesce(${crmProjects.budgetedHours}, 0) > 0
+        then coalesce(${crmProjects.actualHours}, 0)::float / ${crmProjects.budgetedHours} end`,
+    };
+    const order = options?.sort
+      ? [sql`${sortExpression[options.sort]} ${direction}`, desc(crmProjects.updatedAt), asc(crmProjects.id)]
+      : [desc(crmProjects.updatedAt), asc(crmProjects.id)];
     const crmProjectRows = await db
       .select()
       .from(crmProjects)
       .where(and(...conditions))
-      .orderBy(desc(crmProjects.updatedAt), asc(crmProjects.id))
+      .orderBy(...order)
       .limit(pageSize)
       .offset(offset);
 

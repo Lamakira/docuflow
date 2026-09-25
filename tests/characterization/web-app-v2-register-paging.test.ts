@@ -64,6 +64,8 @@ describe("Projects filters in the URL", () => {
       tag: "t1",
       type: "monthly",
       due: "overdue",
+      sort: "",
+      dir: "asc",
       page: 3,
       pageSize: 25,
     });
@@ -74,6 +76,16 @@ describe("Projects filters in the URL", () => {
 
   it("ignores a page size it does not offer", () => {
     expect(readProjectFilters("?size=7").pageSize).toBe(DEFAULT_REGISTER_PAGE_SIZE);
+  });
+
+  it("carries the sort in the URL and on to the route, and drops a column the server cannot order by", () => {
+    const filters = readProjectFilters("?sort=budget&dir=desc");
+    expect(filters).toMatchObject({ sort: "budget", dir: "desc" });
+    expect(writeProjectFilters("", filters)).toBe("?sort=budget&dir=desc");
+    const params = new URL(projectRegisterPath(filters, NOW), "http://x").searchParams;
+    expect([params.get("sort"), params.get("dir")]).toEqual(["budget", "desc"]);
+    expect(readProjectFilters("?sort=lead").sort).toBe("");
+    expect(writeProjectFilters("", readProjectFilters("?sort=name&dir=asc"))).toBe("?sort=name");
   });
 
   it("clearing keeps the page size and goes back to page one", () => {
@@ -166,6 +178,12 @@ describe("the Projects screen", () => {
     expect(src).toContain("projectRegisterPath(filters, now)");
     expect(src).not.toContain("loadProjectList(projectsAllPath())");
     expect(src).toContain("<V2RegisterPager");
+  });
+
+  it("draws the desktop register with TanStack Table, sorted by the server", () => {
+    expect(src).toContain('from "@tanstack/react-table"');
+    expect(src).toContain("manualSorting: true");
+    expect(src).toContain('from "@/components/ui/table"');
   });
 
   it("draws every filter as a V2FilterSelect chip", () => {

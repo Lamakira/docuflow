@@ -226,6 +226,35 @@ describe("CRM projects (characterization)", () => {
     expect(acme.crmProject.id).toBeTruthy();
   });
 
+  it("sorts by name, Project Status in lifecycle order, or budget used, before paging (#275)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const bravo = await createCrmProject(user.agent, { name: "bravo", status: "won_in_progress", budgetedHours: 10 });
+    const alpha = await createCrmProject(user.agent, { name: "Alpha", status: "won_completed", budgetedHours: 10 });
+    await createCrmProject(user.agent, { name: "Charlie" });
+    await user.agent.patch(`/api/crm/projects/${bravo.crmProject.id}`).send({ actualHours: 9 });
+    await user.agent.patch(`/api/crm/projects/${alpha.crmProject.id}`).send({ actualHours: 2 });
+
+    const names = async (query: Record<string, string>) =>
+      (await user.agent.get("/api/crm/projects").query({ pageSize: 50, ...query })).body.data.map(
+        (p: { project: { name: string } }) => p.project.name,
+      );
+
+    // Case does not decide the order.
+    expect(await names({ sort: "name" })).toEqual(["Alpha", "bravo", "Charlie"]);
+    expect(await names({ sort: "name", dir: "desc" })).toEqual(["Charlie", "bravo", "Alpha"]);
+    // planned, then active, then completed — not alphabetical.
+    expect(await names({ sort: "status" })).toEqual(["Charlie", "bravo", "Alpha"]);
+    // A Project with no budget sorts last in both directions.
+    expect(await names({ sort: "budget", dir: "desc" })).toEqual(["bravo", "Alpha", "Charlie"]);
+    expect(await names({ sort: "budget" })).toEqual(["Alpha", "bravo", "Charlie"]);
+    // The sort holds across pages.
+    const second = await user.agent.get("/api/crm/projects").query({ sort: "name", page: 2, pageSize: 1 });
+    expect(second.body.data[0].project.name).toBe("bravo");
+    // An unknown column falls back to most recently updated.
+    expect((await names({ sort: "nope" }))[0]).toBe("Alpha");
+  });
+
   it("pages only what a Member may see with scope=visible, and everything for an Administrator", async () => {
     const app = await makeApp();
     const admin = await registerUser(app);

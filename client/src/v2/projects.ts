@@ -133,9 +133,16 @@ export type ProjectRegisterFilters = {
   tag: string;
   type: string;
   due: string;
+  /** A register column the server can order by, or `""` for most recently updated. */
+  sort: ProjectSort | "";
+  dir: "asc" | "desc";
   page: number;
   pageSize: number;
 };
+
+/** The register columns the server orders by (`CRM_PROJECT_SORTS`). LEAD and TRACKED MTD are not among them. */
+export const PROJECT_SORTS = ["name", "status", "budget"] as const;
+export type ProjectSort = (typeof PROJECT_SORTS)[number];
 
 const FILTER_PARAMS = ["status", "client", "lead", "tag", "type", "due"] as const;
 
@@ -150,6 +157,8 @@ export function readProjectFilters(search: string): ProjectRegisterFilters {
     tag: pick("tag"),
     type: pick("type"),
     due: pick("due"),
+    sort: PROJECT_SORTS.find((sort) => sort === params.get("sort")) ?? "",
+    dir: params.get("dir") === "desc" ? "desc" : "asc",
     page: readPage(params),
     pageSize: readPageSize(params),
   };
@@ -167,6 +176,10 @@ export function writeProjectFilters(search: string, filters: ProjectRegisterFilt
     if (filters[name] !== "all") params.set(name, filters[name]);
     else params.delete(name);
   }
+  if (filters.sort) params.set("sort", filters.sort);
+  else params.delete("sort");
+  if (filters.sort && filters.dir === "desc") params.set("dir", "desc");
+  else params.delete("dir");
   writePaging(params, filters.page, filters.pageSize);
   const query = params.toString();
   return query ? `?${query}` : "";
@@ -233,6 +246,10 @@ export function projectRegisterPath(filters: ProjectRegisterFilters, now: Date):
   if (due?.none) params.set("due", "none");
   if (due?.from) params.set("dueFrom", due.from.toISOString());
   if (due?.to) params.set("dueTo", due.to.toISOString());
+  if (filters.sort) {
+    params.set("sort", filters.sort);
+    params.set("dir", filters.dir);
+  }
   return `/api/crm/projects?${params.toString()}`;
 }
 
