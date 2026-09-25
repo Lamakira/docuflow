@@ -16,6 +16,7 @@ import {
   composeProjectTasks,
   taskPath,
   tasksPath,
+  TASK_STATUS_OPTIONS,
   type ProjectTasksInput,
 } from "../../client/src/v2/tasks";
 import {
@@ -710,6 +711,22 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     // Switzer 12.5px, with shadcn's own classes overridden.
     expect(rule(".df-v2.df-row-menu")).toMatch(/animation:\s*none/);
     expect(rule(".df-v2 .df-menu-item")).toMatch(/var\(--df-font-ui\)/);
+  });
+
+  it("sets a Task's status on its row, with the Dossier's control and wording (#279)", () => {
+    expect(TASK_STATUS_OPTIONS.map((option) => option.value)).toEqual(["open", "in_progress", "done"]);
+    // One status list, so the two screens cannot drift apart.
+    const dossierSource = read("client/src/v2/V2Dossier.tsx");
+    for (const source of [tableSource, dossierSource]) {
+      expect(source).toContain("options={TASK_STATUS_OPTIONS}");
+      expect(source).toContain('label="STATUS"');
+    }
+    expect(dossierSource).not.toMatch(/const TASK_STATUS_OPTIONS/);
+    // The PATCH goes through `onSetStatus`, which refuses in a Read-only Workspace.
+    expect(tableSource).toContain("onChange={(status) => onSetStatus(row.original.id, status)}");
+    expect(timeSource).toMatch(/function onSetStatus[\s\S]*?showRefusalIfReadOnly\(\)/);
+    // Archiving and restoring stay in the row menu.
+    expect(tableSource).toContain('label: "Restore"');
   });
 
   it("gives a Task row real controls, not three quiet annotations", () => {

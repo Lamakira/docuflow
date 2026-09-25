@@ -42,6 +42,7 @@ import {
 import { motionForSurface } from "./motion";
 import { meterTone, swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
+import { TASK_STATUS_OPTIONS } from "./tasks";
 import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
@@ -91,12 +92,6 @@ async function uploadNoteAttachment(file: File): Promise<NoteAttachment> {
 const LIVE_PROJECT_STATUSES = new Set(["active", "on_hold", "in_review", "completed"]);
 const TAB_MOTION = motionForSurface("dossier-tab-swap").enterExit;
 const FILE_OPEN_MOTION = motionForSurface("dossier-file-open").enterExit;
-const TASK_STATUS_OPTIONS = [
-  { value: "open", label: "To do" },
-  { value: "in_progress", label: "In progress" },
-  { value: "done", label: "Done" },
-] as const;
-
 function startOfMonth(value: Date): Date {
   return new Date(value.getFullYear(), value.getMonth(), 1);
 }
@@ -1290,7 +1285,7 @@ function DossierTasks({
               label="STATUS"
               ariaLabel={`Task status for ${row.title}`}
               value={row.statusValue}
-              options={TASK_STATUS_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+              options={TASK_STATUS_OPTIONS}
               onChange={(status) => onComplete(row.id, status)}
             />
             {row.flag ? (
