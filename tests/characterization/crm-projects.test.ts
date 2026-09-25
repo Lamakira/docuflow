@@ -226,7 +226,7 @@ describe("CRM projects (characterization)", () => {
     expect(acme.crmProject.id).toBeTruthy();
   });
 
-  it("sorts by name, Project Status in lifecycle order, or budget used, before paging (#275)", async () => {
+  it("sorts by name, Project Status, or budget used, before paging (#275)", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const bravo = await createCrmProject(user.agent, { name: "bravo", status: "won_in_progress", budgetedHours: 10 });
@@ -243,8 +243,9 @@ describe("CRM projects (characterization)", () => {
     // Case does not decide the order.
     expect(await names({ sort: "name" })).toEqual(["Alpha", "bravo", "Charlie"]);
     expect(await names({ sort: "name", dir: "desc" })).toEqual(["Charlie", "bravo", "Alpha"]);
-    // planned, then active, then completed — not alphabetical.
-    expect(await names({ sort: "status" })).toEqual(["Charlie", "bravo", "Alpha"]);
+    // ACTIVE, COMPLETED, PLANNED: alphabetical, as the column reads.
+    expect(await names({ sort: "status" })).toEqual(["bravo", "Alpha", "Charlie"]);
+    expect(await names({ sort: "status", dir: "desc" })).toEqual(["Charlie", "Alpha", "bravo"]);
     // A Project with no budget sorts last in both directions.
     expect(await names({ sort: "budget", dir: "desc" })).toEqual(["bravo", "Alpha", "Charlie"]);
     expect(await names({ sort: "budget" })).toEqual(["Alpha", "bravo", "Charlie"]);

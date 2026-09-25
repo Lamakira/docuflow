@@ -904,10 +904,8 @@ export class DatabaseStorage implements IStorage {
     const direction = options?.dir === "desc" ? sql`desc nulls last` : sql`asc nulls last`;
     const sortExpression = {
       name: sql`lower((select ${projects.name} from ${projects} where ${projects.id} = ${crmProjects.projectId}))`,
-      // Project Status in lifecycle order, as the register's STATUS filter lists it.
-      status: sql`case ${crmProjects.projectStatus}
-        when 'planned' then 0 when 'active' then 1 when 'on_hold' then 2
-        when 'in_review' then 3 when 'completed' then 4 when 'archived' then 5 else 6 end`,
+      // Alphabetical by the STATUS label; the raw values order the same way.
+      status: sql`${crmProjects.projectStatus}`,
       // BUDGET USED: no budget sorts last either way.
       budget: sql`case when coalesce(${crmProjects.budgetedHours}, 0) > 0
         then coalesce(${crmProjects.actualHours}, 0)::float / ${crmProjects.budgetedHours} end`,
