@@ -28,7 +28,7 @@ describe("a stage's colour", () => {
   });
 
   it("gives each Project Status the colour v1 gave its combined status", () => {
-    expect(stageColor("planned")).toBe("#10b981");
+    expect(stageColor("planned")).toBe("#6366f1");
     expect(stageColor("active")).toBe("#14b8a6");
     expect(stageColor("in_review")).toBe("#0ea5e9");
     expect(stageColor("completed")).toBe("#84cc16");
@@ -60,7 +60,7 @@ describe("the Projects board wears Project Status colours", () => {
   it("colours every column, empty ones included", () => {
     const board = composeProjectBoard({ workspaceName: "Harbor Co", projects: [], filterQuery: "", changingId: null });
     expect(board.columns.map((column) => [column.id, column.color, column.ink])).toEqual([
-      ["planned", "#10b981", "dark"],
+      ["planned", "#6366f1", "light"],
       ["active", "#14b8a6", "dark"],
       ["in_review", "#0ea5e9", "dark"],
       ["completed", "#84cc16", "dark"],

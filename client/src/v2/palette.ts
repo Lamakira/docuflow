@@ -54,12 +54,16 @@ export function meterTone(percent: number | null | undefined, status?: string | 
   return "within";
 }
 
-/** v1's contact status colours (`client/src/pages/CrmPage.tsx`). */
+/**
+ * v1's contact status colours (`client/src/pages/CrmPage.tsx`), except `lead`,
+ * which matches the Opportunity stage, and `client_recurrent`, whose teal sat
+ * too close to `client` green.
+ */
 const CLIENT_STATUS_COLORS: Record<string, string> = {
-  lead: "#64748b",
+  lead: "#ec4899",
   prospect: "#8b5cf6",
   client: "#22c55e",
-  client_recurrent: "#14b8a6",
+  client_recurrent: "#3b82f6",
 };
 
 /** v1 never coloured a Task status; these borrow the board hues for the same meaning. */

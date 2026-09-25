@@ -315,7 +315,7 @@ describe("Client record from live Client reads (#186)", () => {
     expect(record.contacts.map((row) => row.name)).toEqual(["Sam Lee", "Pat Ng"]);
     expect(record.projects).toEqual([
       { id: "prj-live", name: "Harbour rebuild", status: "ACTIVE", statusColor: "#14b8a6", href: "/projects/prj-live" },
-      { id: "prj-other", name: "Other dock", status: "PLANNED", statusColor: "#10b981", href: "/projects/prj-other" },
+      { id: "prj-other", name: "Other dock", status: "PLANNED", statusColor: "#6366f1", href: "/projects/prj-other" },
     ]);
     expect(record.notes).toBe("Pier contract.");
     expect(JSON.stringify(record)).not.toContain("Keystone");

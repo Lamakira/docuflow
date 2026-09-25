@@ -74,13 +74,13 @@ export async function seedCrmDefaults(
     // Projects fields
     { moduleId: projectsModule.id, name: "Project Name", slug: "name", fieldType: "text" as const, displayOrder: 1, isRequired: 1, isEnabled: 1, isSystem: 1 },
     { moduleId: projectsModule.id, name: "Status", slug: "status", fieldType: "select" as const, options: [
-      '{"label":"lead","color":"#64748b"}',
+      '{"label":"lead","color":"#ec4899"}',
       '{"label":"discovering_call_completed","color":"#8b5cf6"}',
       '{"label":"proposal_sent","color":"#f59e0b"}',
       '{"label":"follow_up","color":"#06b6d4"}',
       '{"label":"in_negotiation","color":"#3b82f6"}',
       '{"label":"won","color":"#22c55e"}',
-      '{"label":"won_not_started","color":"#10b981"}',
+      '{"label":"won_not_started","color":"#6366f1"}',
       '{"label":"won_in_progress","color":"#14b8a6"}',
       '{"label":"won_in_review","color":"#0ea5e9"}',
       '{"label":"won_completed","color":"#84cc16"}',
@@ -104,10 +104,10 @@ export async function seedCrmDefaults(
     { moduleId: contactsModule.id, name: "First Name", slug: "first_name", fieldType: "text" as const, displayOrder: 1, isRequired: 1, isEnabled: 1, isSystem: 1 },
     { moduleId: contactsModule.id, name: "Last Name", slug: "last_name", fieldType: "text" as const, displayOrder: 2, isRequired: 1, isEnabled: 1, isSystem: 1 },
     { moduleId: contactsModule.id, name: "Status", slug: "status", fieldType: "select" as const, options: [
-      '{"label":"lead","color":"#64748b"}',
+      '{"label":"lead","color":"#ec4899"}',
       '{"label":"prospect","color":"#8b5cf6"}',
       '{"label":"client","color":"#22c55e"}',
-      '{"label":"client_recurrent","color":"#14b8a6"}'
+      '{"label":"client_recurrent","color":"#3b82f6"}'
     ], displayOrder: 3, isRequired: 1, isEnabled: 1, isSystem: 1 },
     { moduleId: contactsModule.id, name: "Email", slug: "email", fieldType: "email" as const, displayOrder: 4, isRequired: 0, isEnabled: 1, isSystem: 1 },
     { moduleId: contactsModule.id, name: "Phone", slug: "phone", fieldType: "phone" as const, displayOrder: 5, isRequired: 0, isEnabled: 1, isSystem: 1 },

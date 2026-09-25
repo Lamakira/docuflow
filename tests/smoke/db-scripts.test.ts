@@ -86,13 +86,13 @@ describe("db:seed", () => {
     const status = fields.find((f) => f.slug === "status");
 
     expect(status?.options).toEqual([
-      '{"label":"lead","color":"#64748b"}',
+      '{"label":"lead","color":"#ec4899"}',
       '{"label":"discovering_call_completed","color":"#8b5cf6"}',
       '{"label":"proposal_sent","color":"#f59e0b"}',
       '{"label":"follow_up","color":"#06b6d4"}',
       '{"label":"in_negotiation","color":"#3b82f6"}',
       '{"label":"won","color":"#22c55e"}',
-      '{"label":"won_not_started","color":"#10b981"}',
+      '{"label":"won_not_started","color":"#6366f1"}',
       '{"label":"won_in_progress","color":"#14b8a6"}',
       '{"label":"won_in_review","color":"#0ea5e9"}',
       '{"label":"won_completed","color":"#84cc16"}',
