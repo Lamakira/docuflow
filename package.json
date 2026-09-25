@@ -9,6 +9,8 @@
   },
   "scripts": {
     "dev": "NODE_ENV=development tsx --import ./server/telemetryEsmHook.mjs --env-file-if-exists=.env server/index.ts",
+    "dev:all": "bash scripts/dev-all.sh",
+    "dev:all:web": "bash scripts/dev-all.sh --no-worker",
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node --env-file-if-exists=.env dist/index.cjs",
     "check": "tsc",
