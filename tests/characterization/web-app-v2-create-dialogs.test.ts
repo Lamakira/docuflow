@@ -24,6 +24,7 @@ describe("create actions open a dialog", () => {
     "V2Opportunities.tsx": ["v2-opportunities-new"],
     "V2Projects.tsx": ["v2-projects-new"],
     "V2Clients.tsx": ["v2-clients-new", "v2-client-add-contact"],
+    "V2Administration.tsx": ["v2-administration-new-service-account", "v2-administration-new-webhook-endpoint"],
     "V2Documents.tsx": ["v2-documents-new-folder", "v2-documents-new-document", "v2-documents-upload"],
     "V2ProjectDocumentation.tsx": ["v2-project-documentation-new-project", "v2-project-documentation-new-document"],
     "V2People.tsx": ["v2-people-invite-dialog"],
@@ -34,7 +35,7 @@ describe("create actions open a dialog", () => {
       const src = read(name);
       expect(src, name).toContain("<V2FormDialog");
       for (const testId of testIds) expect(src, `${name} ${testId}`).toContain(testId);
-      expect(src, name).not.toMatch(/set(?:Creating|Inviting|AddingContact)\(\(open\) => !open\)/);
+      expect(src, name).not.toMatch(/set(?:Creating\w*|Inviting|AddingContact)\(\(open\) => !open\)/);
       expect(src, name).not.toMatch(/<form className="df-filter-bar[^"]*" onSubmit=\{on(?:Create|Invite)\}/);
     }
   });

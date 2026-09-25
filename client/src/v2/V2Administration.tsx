@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   PUBLIC_API_CAPABILITIES,
@@ -86,6 +86,7 @@ import { motionForSurface } from "./motion";
 import { billingConditionTone } from "./palette";
 import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
+import { V2FormDialog } from "./V2FormDialog";
 
 type WorkspaceMembershipsResponse = {
   memberships: Array<{
@@ -609,15 +610,13 @@ export function V2AdministrationPage() {
     setTimezoneError(null);
   }
 
-  function onCreateAccount(event: FormEvent) {
-    event.preventDefault();
+  function onCreateAccount() {
     if (!guardWrite()) return;
     if (!accountName.trim()) return;
     createAccount.mutate();
   }
 
-  function onCreateEndpoint(event: FormEvent) {
-    event.preventDefault();
+  function onCreateEndpoint() {
     if (!guardWrite()) return;
     if (!endpointUrl.trim() || eventTypes.length === 0) return;
     createEndpoint.mutate();
@@ -658,7 +657,7 @@ export function V2AdministrationPage() {
         </div>
       </header>
 
-      {shownRefusal ? <p className="df-refusal">{shownRefusal}</p> : null}
+      {shownRefusal && !creatingAccount && !creatingEndpoint ? <p className="df-refusal">{shownRefusal}</p> : null}
 
       <AdministrationAnalytics
         analytics={analytics}
@@ -833,50 +832,60 @@ export function V2AdministrationPage() {
         <div className="df-card-head">
           <h2 className="df-card-title">Service Accounts</h2>
           {page.serviceAccounts.createAllowed ? (
-            <Button variant="outline" type="button" onClick={() => setCreatingAccount((open) => !open)} className="df-btn">
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => {
+                setActionRefusal(null);
+                setCreatingAccount(true);
+              }}
+              className="df-btn"
+            >
               New Service Account
             </Button>
           ) : null}
         </div>
-        {creatingAccount ? (
-          <form className="df-admin-form df-daily-form" onSubmit={onCreateAccount}>
-            <label className="df-daily-field">
-              Name
-              <input
-                type="text"
-                value={accountName}
-                aria-label="Service Account name"
-                onChange={(event) => setAccountName(event.target.value)}
+        <V2FormDialog
+          open={creatingAccount}
+          onOpenChange={setCreatingAccount}
+          title="New Service Account"
+          description="An integration that calls the public API with its own key. The key is shown once, right after it is created."
+          submitLabel={createAccount.isPending ? "Creating…" : "Create Service Account"}
+          pending={createAccount.isPending}
+          canSubmit={Boolean(accountName.trim())}
+          onSubmit={onCreateAccount}
+          refusal={actionRefusal}
+          testId="v2-administration-new-service-account"
+        >
+          <label className="df-daily-field">
+            NAME
+            <input
+              type="text"
+              value={accountName}
+              autoFocus
+              aria-label="Service Account name"
+              onChange={(event) => setAccountName(event.target.value)}
+            />
+          </label>
+          <fieldset className="df-daily-field">
+            <legend>CAPABILITIES</legend>
+            {PUBLIC_API_CAPABILITIES.map((capability) => (
+              <CheckRow
+                key={capability.id}
+                id={`df-capability-${capability.id}`}
+                label={capability.name}
+                checked={accountCapabilities.includes(capability.id)}
+                onChange={(next) => {
+                  setAccountCapabilities((currentCaps) =>
+                    next
+                      ? [...currentCaps, capability.id]
+                      : currentCaps.filter((id) => id !== capability.id),
+                  );
+                }}
               />
-            </label>
-            <fieldset className="df-daily-field">
-              <legend>Capabilities</legend>
-              {PUBLIC_API_CAPABILITIES.map((capability) => (
-                <CheckRow
-                  key={capability.id}
-                  id={`df-capability-${capability.id}`}
-                  label={capability.name}
-                  checked={accountCapabilities.includes(capability.id)}
-                  onChange={(next) => {
-                    setAccountCapabilities((currentCaps) =>
-                      next
-                        ? [...currentCaps, capability.id]
-                        : currentCaps.filter((id) => id !== capability.id),
-                    );
-                  }}
-                />
-              ))}
-            </fieldset>
-            <div className="df-form-actions">
-              <Button variant="outline" type="button" onClick={() => setCreatingAccount(false)} className="df-btn">
-                Cancel
-              </Button>
-              <Button variant="default" type="submit" disabled={createAccount.isPending || !accountName.trim()} className="df-btn">
-                {createAccount.isPending ? "Creating…" : "Create Service Account"}
-              </Button>
-            </div>
-          </form>
-        ) : null}
+            ))}
+          </fieldset>
+        </V2FormDialog>
         {layout.stackedRegister ? null : (
           <div className="df-register-head df-desktop-only">
             <span>NAME</span>
@@ -924,50 +933,60 @@ export function V2AdministrationPage() {
         <div className="df-card-head">
           <h2 className="df-card-title">Webhook Endpoints</h2>
           {page.webhookEndpoints.createAllowed ? (
-            <Button variant="outline" type="button" onClick={() => setCreatingEndpoint((open) => !open)} className="df-btn">
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => {
+                setActionRefusal(null);
+                setCreatingEndpoint(true);
+              }}
+              className="df-btn"
+            >
               New Webhook Endpoint
             </Button>
           ) : null}
         </div>
-        {creatingEndpoint ? (
-          <form className="df-admin-form df-daily-form" onSubmit={onCreateEndpoint}>
-            <label className="df-daily-field">
-              URL
-              <input
-                type="url"
-                value={endpointUrl}
-                aria-label="Webhook Endpoint URL"
-                onChange={(event) => setEndpointUrl(event.target.value)}
+        <V2FormDialog
+          open={creatingEndpoint}
+          onOpenChange={setCreatingEndpoint}
+          title="New Webhook Endpoint"
+          description="A URL that receives the chosen events. Its signing secret is shown once, right after it is created."
+          submitLabel={createEndpoint.isPending ? "Creating…" : "Create Webhook Endpoint"}
+          pending={createEndpoint.isPending}
+          canSubmit={Boolean(endpointUrl.trim()) && eventTypes.length > 0}
+          onSubmit={onCreateEndpoint}
+          refusal={actionRefusal}
+          testId="v2-administration-new-webhook-endpoint"
+        >
+          <label className="df-daily-field">
+            URL
+            <input
+              type="url"
+              value={endpointUrl}
+              autoFocus
+              aria-label="Webhook Endpoint URL"
+              onChange={(event) => setEndpointUrl(event.target.value)}
+            />
+          </label>
+          <fieldset className="df-daily-field">
+            <legend>EVENT TYPES</legend>
+            {WEBHOOK_EVENT_TYPES.map((type) => (
+              <CheckRow
+                key={type}
+                id={`df-event-${type}`}
+                label={type}
+                checked={eventTypes.includes(type)}
+                onChange={(next) => {
+                  setEventTypes((currentTypes) =>
+                    next
+                      ? [...currentTypes, type]
+                      : currentTypes.filter((value) => value !== type),
+                  );
+                }}
               />
-            </label>
-            <fieldset className="df-daily-field">
-              <legend>Event types</legend>
-              {WEBHOOK_EVENT_TYPES.map((type) => (
-                <CheckRow
-                  key={type}
-                  id={`df-event-${type}`}
-                  label={type}
-                  checked={eventTypes.includes(type)}
-                  onChange={(next) => {
-                    setEventTypes((currentTypes) =>
-                      next
-                        ? [...currentTypes, type]
-                        : currentTypes.filter((value) => value !== type),
-                    );
-                  }}
-                />
-              ))}
-            </fieldset>
-            <div className="df-form-actions">
-              <Button variant="outline" type="button" onClick={() => setCreatingEndpoint(false)} className="df-btn">
-                Cancel
-              </Button>
-              <Button variant="default" type="submit" disabled={createEndpoint.isPending || !endpointUrl.trim() || eventTypes.length === 0} className="df-btn">
-                {createEndpoint.isPending ? "Creating…" : "Create Webhook Endpoint"}
-              </Button>
-            </div>
-          </form>
-        ) : null}
+            ))}
+          </fieldset>
+        </V2FormDialog>
         {layout.stackedRegister ? null : (
           <div className="df-register-head df-desktop-only">
             <span>URL</span>
