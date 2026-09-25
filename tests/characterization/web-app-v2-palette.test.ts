@@ -4,18 +4,26 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   billingConditionTone,
+  clientStatusColor,
+  contrastRatio,
+  lifecycleColor,
   meterTone,
-  opportunityStageTone,
+  projectStatusColor,
+  statusSwatch,
   statusTone,
+  swatchStyle,
+  taskStatusColor,
 } from "../../client/src/v2/palette";
+import { stageColor } from "../../client/src/v2/stageColor";
 
 /**
- * The v2 palette, built on the brand amber. Amber marks what is active or in
- * progress and the primary action; green what is finished; carmine what is
- * overdue, blocked, or refused. Colour lands in six places only: the primary
- * Button, the active rail item, the active tab, status badges, budget meters,
- * and the focus ring / running timer.
- * Seams: statusTone / opportunityStageTone / billingConditionTone / meterTone.
+ * The v2 palette, built on the brand amber. Amber marks the primary action;
+ * green what is finished; carmine what is overdue, blocked, or refused.
+ * Colour lands in six places only: the primary Button, the active rail item,
+ * the active tab, status badges, budget meters, and the focus ring / running
+ * timer. A Project, Opportunity, Client, or Task status wears its board
+ * colour, one per status (#274).
+ * Seams: statusSwatch / *StatusColor / statusTone / billingConditionTone / meterTone.
  */
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -224,17 +232,14 @@ describe("where colour goes", () => {
 
   it("reads the tone from the composer, not from a word in JSX", () => {
     const toned: Record<string, string> = {
-      "V2Projects.tsx": "statusTone(",
-      "V2Today.tsx": "statusTone(",
-      "V2Dossier.tsx": "statusTone(",
-      "V2TaskTable.tsx": "statusTone(",
-      "V2Clients.tsx": "statusTone(",
       "V2Devices.tsx": "statusTone(",
-      "V2Opportunities.tsx": "opportunityStageTone(",
       "V2Administration.tsx": "billingConditionTone(",
     };
     for (const [name, call] of Object.entries(toned)) {
       expect(read(`client/src/v2/${name}`), name).toContain(`data-tone={${call}`);
+    }
+    for (const name of ["V2Projects.tsx", "V2Today.tsx", "V2Dossier.tsx", "V2TaskTable.tsx", "V2Clients.tsx", "V2Opportunities.tsx"]) {
+      expect(read(`client/src/v2/${name}`), name).toContain('data-swatch="" style={swatchStyle(');
     }
     for (const name of readdirSync(v2Dir).filter((file) => file.endsWith(".tsx"))) {
       expect(read(`client/src/v2/${name}`), name).not.toContain("function meterFill");
@@ -243,7 +248,7 @@ describe("where colour goes", () => {
 });
 
 describe("status and meter tones", () => {
-  it("tones Project and Task statuses by what they mean", () => {
+  it("tones Device and review statuses by what they mean", () => {
     for (const status of ["ACTIVE", "IN PROGRESS", "IN REVIEW"]) expect(statusTone(status), status).toBe("active");
     for (const status of ["COMPLETED", "DONE", "APPROVED", "SIGNED OFF", "ONLINE"]) {
       expect(statusTone(status), status).toBe("positive");
@@ -252,13 +257,6 @@ describe("status and meter tones", () => {
     for (const status of ["PLANNED", "TO DO", "ON HOLD", "ARCHIVED", "OFFLINE", "", null]) {
       expect(statusTone(status), String(status)).toBe("neutral");
     }
-  });
-
-  it("tones every open Opportunity stage as in progress, and says how a closed one ended", () => {
-    expect(opportunityStageTone("PROPOSAL SENT", false)).toBe("active");
-    expect(opportunityStageTone("A STAGE THE WORKSPACE NAMED", false)).toBe("active");
-    expect(opportunityStageTone("WON", true)).toBe("positive");
-    expect(opportunityStageTone("LOST", true)).toBe("alert");
   });
 
   it("tones a blocked or overdue Workspace in carmine and leaves the rest neutral", () => {
@@ -277,6 +275,74 @@ describe("status and meter tones", () => {
     expect(meterTone(40, "ON HOLD")).toBe("paused");
     expect(meterTone(40, "ARCHIVED")).toBe("paused");
     expect(meterTone(null)).toBe("within");
+  });
+});
+
+describe("one colour per status (#274)", () => {
+  const PROJECT = ["planned", "active", "on_hold", "in_review", "completed", "archived"];
+  const OPPORTUNITY = ["lead", "discovering_call_completed", "proposal_sent", "follow_up", "in_negotiation", "won", "lost"];
+  const CLIENT = ["lead", "prospect", "client", "client_recurrent"];
+  const TASK = ["open", "in_progress", "done", "archived"];
+
+  it("gives every status in a vocabulary a colour no sibling wears", () => {
+    const vocabularies: Array<[string, string[]]> = [
+      ["project", PROJECT.map(projectStatusColor)],
+      ["opportunity", OPPORTUNITY.map((stage) => stageColor(stage))],
+      ["client", CLIENT.map(clientStatusColor)],
+      ["task", TASK.map(taskStatusColor)],
+    ];
+    for (const [name, colours] of vocabularies) {
+      expect(new Set(colours).size, name).toBe(colours.length);
+    }
+    expect(projectStatusColor("active")).not.toBe(projectStatusColor("in_review"));
+  });
+
+  it("wears the board column's colour, and v1's for a Client", () => {
+    for (const status of PROJECT) expect(projectStatusColor(status)).toBe(stageColor(status));
+    expect(projectStatusColor("on_hold")).toBe("#f97316");
+    expect(clientStatusColor("prospect")).toBe("#8b5cf6");
+    expect(clientStatusColor("client")).toBe("#22c55e");
+  });
+
+  it("colours Status history by the combined lifecycle it records", () => {
+    expect(lifecycleColor("proposal_sent")).toBe(stageColor("proposal_sent"));
+    expect(lifecycleColor("won_in_progress")).toBe(stageColor("active"));
+    expect(lifecycleColor("won_in_review")).toBe(stageColor("in_review"));
+    expect(lifecycleColor("won_cancelled")).toBe("#f43f5e");
+    expect(lifecycleColor(null)).toBe(stageColor(""));
+  });
+
+  it("keeps the badge text at 4.5:1 on its tint, in the badge's own hue", () => {
+    const every = [
+      ...PROJECT.map(projectStatusColor),
+      ...OPPORTUNITY.map((stage) => stageColor(stage)),
+      ...CLIENT.map(clientStatusColor),
+      ...TASK.map(taskStatusColor),
+      lifecycleColor("won_cancelled"),
+    ];
+    for (const colour of every) {
+      const swatch = statusSwatch(colour);
+      expect(contrastRatio(swatch.ink, swatch.tint), colour).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(swatch.ink, "#ffffff"), colour).toBeGreaterThanOrEqual(4.5);
+      expect(swatch.ink, colour).not.toBe(hexOf("--df-case-ink"));
+    }
+  });
+
+  it("hands the swatch to CSS as custom properties the badge rule reads", () => {
+    const style = swatchStyle("#14b8a6") as Record<string, string>;
+    expect(Object.keys(style).sort()).toEqual(["--df-swatch-ink", "--df-swatch-line", "--df-swatch-tint"]);
+    const badge = rule(".df-status[data-swatch]");
+    expect(badge).toMatch(/color:\s*var\(--df-swatch-ink\)/);
+    expect(badge).toMatch(/background:\s*var\(--df-swatch-tint\)/);
+    expect(rule(".df-status-word[data-swatch]")).toMatch(/border-color:\s*var\(--df-swatch-line\)/);
+  });
+
+  it("keeps a narrowing filter's chosen value legible", () => {
+    const active = rule('.df-v2 .df-filter-chip[data-active="true"]');
+    expect(active).toMatch(/background:\s*var\(--df-amber-100\)/);
+    expect(active).toMatch(/color:\s*var\(--df-case-ink\)/);
+    expect(contrast(hexOf("--df-case-ink"), hexOf("--df-amber-100"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(hexOf("--df-amber-800"), hexOf("--df-amber-100"))).toBeGreaterThanOrEqual(4.5);
   });
 });
 

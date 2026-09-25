@@ -53,6 +53,8 @@ export type OpportunityCard = {
 };
 
 export type OpportunityRecordInput = OpportunityPipelineRowInput & {
+  /** The Workspace's stages, so the record wears the colour its column does. */
+  stages?: OpportunityStageOption[];
 };
 
 export type OpportunityRecordModel = {
@@ -60,6 +62,7 @@ export type OpportunityRecordModel = {
   title: string;
   clientLabel: string;
   stage: string;
+  stageColor: string;
   terminal: boolean;
 };
 
@@ -81,6 +84,7 @@ export function composeOpportunityRecord(input: OpportunityRecordInput): Opportu
     title: input.name || "Untitled Opportunity",
     clientLabel: input.clientName?.trim() || "—",
     stage: stageLabel(stage).toUpperCase(),
+    stageColor: stageColor(stage, input.stages?.find((option) => option.id === stage)?.color),
     terminal: isOpportunityTerminal(stage),
   };
 }

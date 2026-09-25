@@ -2,25 +2,30 @@
  * Colour on the boards (v1 parity). A column wears its stage or Project Status
  * colour as a filled pill over a light tint of the same hue.
  *
- * The defaults are v1's, per combined status (`client/src/pages/CrmPage.tsx`).
+ * The defaults are v1's, per combined status (`client/src/pages/CrmPage.tsx`),
+ * except where two sat too close to tell apart as a tint: `lead` was slate,
+ * which read as no colour at all, and `planned` was an emerald beside the
+ * `active` teal.
  * A Project Status takes the colour v1 gave the combined status it reads back
- * from; `archived` holds both lost and cancelled, so it stays neutral. An
- * Opportunity stage an Administrator coloured in the CRM field options keeps
- * that colour.
+ * from; `archived` holds both lost and cancelled, so it stays neutral.
+ * `on_hold` has no combined source in v1, so it takes an orange no other
+ * Project Status wears. An Opportunity stage an Administrator coloured in the
+ * CRM field options keeps that colour.
  */
 
 export const STAGE_FALLBACK_COLOR = "#64748b";
 
 const STAGE_COLORS: Record<string, string> = {
-  lead: "#64748b",
+  lead: "#ec4899",
   discovering_call_completed: "#8b5cf6",
   proposal_sent: "#f59e0b",
   follow_up: "#06b6d4",
   in_negotiation: "#3b82f6",
   won: "#22c55e",
   lost: "#ef4444",
-  planned: "#10b981",
+  planned: "#6366f1",
   active: "#14b8a6",
+  on_hold: "#f97316",
   in_review: "#0ea5e9",
   completed: "#84cc16",
   archived: STAGE_FALLBACK_COLOR,

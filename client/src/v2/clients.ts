@@ -1,4 +1,5 @@
 import { chromeRefusal } from "./chrome";
+import { clientStatusColor, projectStatusColor } from "./palette";
 import { projectHref } from "./today";
 
 /**
@@ -28,6 +29,8 @@ export type ClientRegisterRow = {
   name: string;
   company: string;
   status: string;
+  /** The status's board colour; `swatchStyle` turns it into the badge. */
+  statusColor: string;
   source: string;
   projectCount: number;
   href: string;
@@ -82,6 +85,7 @@ export function composeClientRegister(input: ClientRegisterInput): ClientRegiste
       name: client.name || "Untitled Client",
       company: client.company || "—",
       status: statusLabel(client.status),
+      statusColor: clientStatusColor(client.status),
       source: sourceLabel(client.source),
       projectCount: client.projectCount,
       href: clientHref(client.id),
@@ -151,6 +155,7 @@ export type ClientRecordIdentity = {
   title: string;
   kindLabel: string;
   status: string;
+  statusColor: string;
   company: string;
   email: string | null;
   source: string;
@@ -177,7 +182,7 @@ export type ClientRecordModel = {
   identity: ClientRecordIdentity | null;
   contacts: ClientRecordContactRow[];
   contactsEmptyCopy: string;
-  projects: Array<{ id: string; name: string; status: string; href: string }>;
+  projects: Array<{ id: string; name: string; status: string; statusColor: string; href: string }>;
   projectsEmptyCopy: string;
   notes: string | null;
   /** What the editor just wrote, readable without reopening the editor (#213). */
@@ -202,6 +207,7 @@ function identityFrom(client: ClientIdentitySeed): ClientRecordIdentity {
     title: client.name || "Untitled Client",
     kindLabel: "CLIENT",
     status: statusLabel(client.status),
+    statusColor: clientStatusColor(client.status),
     company: client.company || "—",
     email: client.email ?? null,
     source: sourceLabel(client.source),
@@ -268,6 +274,7 @@ export function composeClientRecord(input: ClientRecordInput): ClientRecordModel
     id: project.id,
     name: project.name || "Untitled Project",
     status: projectStatusLabel(project.projectStatus),
+    statusColor: projectStatusColor(project.projectStatus),
     href: projectHref(project.id),
   }));
 

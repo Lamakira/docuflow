@@ -21,7 +21,7 @@ import type { CrmClient, CrmProjectWithDetails } from "@shared/schema";
 import { opportunityStageFromCombined } from "@shared/projectLifecycle";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
-import { opportunityStageTone } from "./palette";
+import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
@@ -173,6 +173,14 @@ export function V2OpportunityRecordPage() {
       return response.json();
     },
   });
+  const { data: fields = [] } = useQuery<ModuleField[]>({
+    queryKey: ["/api/modules/projects/fields"],
+  });
+  const statusField = fields.find((field) => field.slug === "status");
+  const stages = useMemo(
+    () => composeOpportunityStages(stageOptionsFromFieldOptions(statusField?.options)),
+    [statusField],
+  );
 
   if (match.kind !== "opportunity-record") return null;
   if (isLoading) {
@@ -187,7 +195,7 @@ export function V2OpportunityRecordPage() {
     return <div className="df-page"><p className="df-empty">This Opportunity could not be loaded.</p></div>;
   }
 
-  const record = composeOpportunityRecord(toPipelineRow(row));
+  const record = composeOpportunityRecord({ ...toPipelineRow(row), stages });
   return (
     <div className="df-page" data-testid="v2-opportunity-record">
       <header className="df-dossier-head">
@@ -195,7 +203,7 @@ export function V2OpportunityRecordPage() {
           <div className="df-dossier-copy">
             <div className="df-dossier-meta">
               <span className="df-status">OPPORTUNITY</span>
-              <span className="df-status" data-status={record.stage} data-tone={opportunityStageTone(record.stage, record.terminal)}>
+              <span className="df-status" data-status={record.stage} data-swatch="" style={swatchStyle(record.stageColor)}>
                 {record.stage}
               </span>
             </div>
