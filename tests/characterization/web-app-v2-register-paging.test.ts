@@ -20,6 +20,14 @@ import {
   readClientFilters,
   writeClientFilters,
 } from "../../client/src/v2/clients";
+import {
+  clearDocumentationFilters,
+  composeProjectDocumentation,
+  documentationFilterLabels,
+  documentationRegisterPath,
+  readDocumentationFilters,
+  writeDocumentationFilters,
+} from "../../client/src/v2/projectDocumentation";
 
 /**
  * Register filters and paging (#275): the server narrows and pages, the URL
@@ -260,6 +268,96 @@ describe("Clients filters in the URL and on the route", () => {
     expect(register.emptyCopy).toBe("No Clients match “pier” · STATUS CLIENT RECURRENT · SOURCE NONE · OPEN PROJECTS YES.");
     expect(register.filtered).toBe(true);
     expect(clearClientFilters(filters)).toMatchObject({ q: "", status: "all", source: "all", open: "all", page: 1, pageSize: 100 });
+  });
+});
+
+describe("Project Documentation filters in the URL and on the route", () => {
+  it("shows documentation-enabled Projects by default, and writes nothing back for it", () => {
+    const filters = readDocumentationFilters("");
+    expect(filters).toEqual({
+      q: "",
+      project: "all",
+      client: "all",
+      documentation: "enabled",
+      page: 1,
+      pageSize: DEFAULT_REGISTER_PAGE_SIZE,
+    });
+    expect(writeDocumentationFilters("", filters)).toBe("");
+    expect(readDocumentationFilters("?docs=nope").documentation).toBe("enabled");
+  });
+
+  it("round-trips every filter and the page, and maps them onto the paged route", () => {
+    const filters = readDocumentationFilters("?project=p1&client=c1&docs=all&q=%20run%20&page=2&size=100");
+    expect(readDocumentationFilters(writeDocumentationFilters("", filters))).toEqual(filters);
+    const path = documentationRegisterPath(filters);
+    expect(path.startsWith("/api/projects/documentable?")).toBe(true);
+    expect(Object.fromEntries(new URL(path, "http://x").searchParams)).toEqual({
+      scope: "visible",
+      page: "2",
+      pageSize: "100",
+      documentation: "all",
+      search: "run",
+      projectId: "p1",
+      clientId: "c1",
+    });
+  });
+
+  it("names each filter when the register empties, and clearing goes back to enabled", () => {
+    const filters = readDocumentationFilters("?project=p1&client=c1&docs=disabled&q=run&size=25");
+    const activeFilters = documentationFilterLabels(filters, {
+      projects: new Map([["p1", "Acme site"]]),
+      clients: new Map([["c1", "Acme"]]),
+    });
+    const library = composeProjectDocumentation({
+      now: NOW,
+      workspaceName: "Harbor Co",
+      projects: [],
+      documents: [],
+      expandedProjectIds: [],
+      selectedProjectId: null,
+      filterQuery: "",
+      activeFilters,
+    });
+    expect(library.emptyCopy).toBe("No Projects match “run” · PROJECT Acme site · CLIENT Acme · DOCUMENTATION DISABLED.");
+    expect(library.filtered).toBe(true);
+    expect(clearDocumentationFilters(filters)).toMatchObject({
+      q: "",
+      project: "all",
+      client: "all",
+      documentation: "enabled",
+      page: 1,
+      pageSize: 25,
+    });
+  });
+
+  it("says a Project's documentation is off when the filter brings one in", () => {
+    const library = composeProjectDocumentation({
+      now: NOW,
+      workspaceName: "Harbor Co",
+      projects: [{ id: "p1", documentProjectId: "p1", name: "Legacy", visible: true, documentationEnabled: false }],
+      documents: [],
+      expandedProjectIds: [],
+      selectedProjectId: null,
+      filterQuery: "",
+    });
+    expect(library.rows[0].path).toBe("/ · 0 ITEMS · DOCUMENTATION OFF");
+  });
+});
+
+describe("the Project Documentation screen", () => {
+  const src = readFileSync(join(v2Dir, "V2ProjectDocumentation.tsx"), "utf8");
+
+  it("pages Projects from the server with their Documents, rather than one read per Project", () => {
+    expect(src).toContain("documentationRegisterPath(filters)");
+    expect(src).not.toContain("Promise.all");
+    expect(src).not.toContain("loadCrmProjects");
+    expect(src).toContain("<V2RegisterPager");
+  });
+
+  it("draws every filter as a V2FilterSelect chip", () => {
+    for (const label of ["PROJECT", "CLIENT", "DOCUMENTATION"]) {
+      expect(src).toContain(`label="${label}"`);
+    }
   });
 });
 

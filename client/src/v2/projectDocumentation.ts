@@ -1,4 +1,5 @@
 import { chromeRefusal } from "./chrome";
+import { readPage, readPageSize, writePaging } from "./paging";
 import { memberName } from "./today";
 import { projectDocumentHref, type LibraryModel, type LibraryPerson, type LibraryRow } from "./library";
 
@@ -32,6 +33,8 @@ export type ProjectDocumentationInput = {
   filterQuery: string;
   capabilityMiss?: boolean;
   ownerName?: string | null;
+  /** Filters the server already applied, named for the empty state (#275). */
+  activeFilters?: string[];
 };
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
@@ -57,7 +60,9 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
   }
   const needle = input.filterQuery.trim().toLowerCase();
   const expanded = new Set(input.expandedProjectIds);
-  const visibleProjects = input.projects.filter((project) => project.visible && project.documentationEnabled);
+  // The server decides which Projects the page holds, documentation off included
+  // when the DOCUMENTATION filter asks for them (#275).
+  const visibleProjects = input.projects.filter((project) => project.visible);
   const allowedProjectIds = new Set(visibleProjects.map((project) => project.documentProjectId));
   const visibleDocs = input.documents.filter(
     (document) => allowedProjectIds.has(document.projectId) && isVisibleDocument(document.access),
@@ -87,14 +92,18 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
   }
 
   const empty = rows.length === 0;
+  const activeFilters = input.activeFilters ?? [];
   return {
     subhead,
     empty,
     emptyCopy: empty
-      ? needle
-        ? "No Project Documents match this filter."
-        : "No Project Documents you can access."
+      ? activeFilters.length > 0
+        ? `No Projects match ${activeFilters.join(" · ")}.`
+        : needle
+          ? "No Project Documents match this filter."
+          : "No Project Documents you can access."
       : "",
+    filtered: empty && (activeFilters.length > 0 || Boolean(needle)),
     refusal: null,
     rows,
     folderCount: visibleProjects.length,
@@ -130,7 +139,7 @@ function projectRow(
     // is the word the reader gets, and this row is a Project (#245, F4).
     kind: "folder",
     name: project.name,
-    path: `/ · ${itemLabel}`,
+    path: project.documentationEnabled ? `/ · ${itemLabel}` : `/ · ${itemLabel} · DOCUMENTATION OFF`,
     type: "PROJECT",
     access: "ASSIGNED",
     editor: latest?.createdBy ? memberName(latest.createdBy) : "—",
@@ -184,5 +193,91 @@ function formatWhen(updatedAt: Date | string | null, now: Date): string {
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   if (sameDay(value, yesterday)) return "YDA";
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
+}
+
+export const DOCUMENTATION_OPTIONS = [
+  { value: "enabled", label: "ENABLED" },
+  { value: "disabled", label: "DISABLED" },
+  { value: "all", label: "ALL" },
+];
+
+export type DocumentationSetting = "enabled" | "disabled" | "all";
+
+/**
+ * What narrows the Project Documentation register (#275). `all` is no filter
+ * for Project and Client; the register shows documentation-enabled Projects
+ * unless DOCUMENTATION says otherwise.
+ */
+export type ProjectDocumentationFilters = {
+  q: string;
+  project: string;
+  client: string;
+  documentation: DocumentationSetting;
+  page: number;
+  pageSize: number;
+};
+
+export function readDocumentationFilters(search: string): ProjectDocumentationFilters {
+  const params = new URLSearchParams(search);
+  const pick = (name: string) => params.get(name)?.trim() || "all";
+  const documentation = params.get("docs");
+  return {
+    q: params.get("q") ?? "",
+    project: pick("project"),
+    client: pick("client"),
+    documentation: documentation === "disabled" || documentation === "all" ? documentation : "enabled",
+    page: readPage(params),
+    pageSize: readPageSize(params),
+  };
+}
+
+/** The register's query string, leaving defaults out so a plain register stays bare. */
+export function writeDocumentationFilters(search: string, filters: ProjectDocumentationFilters): string {
+  const params = new URLSearchParams(search);
+  if (filters.q.trim()) params.set("q", filters.q);
+  else params.delete("q");
+  for (const name of ["project", "client"] as const) {
+    if (filters[name] !== "all") params.set(name, filters[name]);
+    else params.delete(name);
+  }
+  if (filters.documentation !== "enabled") params.set("docs", filters.documentation);
+  else params.delete("docs");
+  writePaging(params, filters.page, filters.pageSize);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export function clearDocumentationFilters(filters: ProjectDocumentationFilters): ProjectDocumentationFilters {
+  return { ...filters, q: "", project: "all", client: "all", documentation: "enabled", page: 1 };
+}
+
+/** The server page, scoped like the Projects register so a Member's page is never short. */
+export function documentationRegisterPath(filters: ProjectDocumentationFilters): string {
+  const params = new URLSearchParams({
+    scope: "visible",
+    page: String(filters.page),
+    pageSize: String(filters.pageSize),
+    documentation: filters.documentation,
+  });
+  if (filters.q.trim()) params.set("search", filters.q.trim());
+  if (filters.project !== "all") params.set("projectId", filters.project);
+  if (filters.client !== "all") params.set("clientId", filters.client);
+  return `/api/projects/documentable?${params.toString()}`;
+}
+
+/** Names each filter in force, for the empty state. The default DOCUMENTATION ENABLED is not a filter. */
+export function documentationFilterLabels(
+  filters: ProjectDocumentationFilters,
+  names: { projects: Map<string, string>; clients: Map<string, string> },
+): string[] {
+  const labels: string[] = [];
+  if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
+  if (filters.project !== "all") labels.push(`PROJECT ${names.projects.get(filters.project) ?? "—"}`);
+  if (filters.client !== "all") labels.push(`CLIENT ${names.clients.get(filters.client) ?? "—"}`);
+  if (filters.documentation !== "enabled") {
+    const label = DOCUMENTATION_OPTIONS.find((option) => option.value === filters.documentation)?.label;
+    labels.push(`DOCUMENTATION ${label}`);
+  }
+  return labels;
 }
 
