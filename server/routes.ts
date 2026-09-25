@@ -1486,10 +1486,35 @@ Instructions:
       
       const page = parseInt(req.query.page as string) || 1;
       const pageSize = parseInt(req.query.pageSize as string) || 10;
-      const status = req.query.status as string | undefined;
-      const search = req.query.search as string | undefined;
-      
-      const result = await storage.getCrmProjects(userId, { page, pageSize, status, search });
+      const text = (name: string) => {
+        const value = req.query[name];
+        return typeof value === "string" && value.trim() ? value.trim() : undefined;
+      };
+      const date = (name: string) => {
+        const value = text(name);
+        const parsed = value ? new Date(value) : null;
+        return parsed && !Number.isNaN(parsed.getTime()) ? parsed : undefined;
+      };
+      // `scope=visible` pages what this Member may see, so a page is never short
+      // of rows the browser would hide. Owners and Administrators see every one.
+      const visibleToUserId =
+        text("scope") === "visible" && !(await canManageAdministration()) ? userId : undefined;
+
+      const result = await storage.getCrmProjects(userId, {
+        page,
+        pageSize,
+        status: text("status"),
+        projectStatus: text("projectStatus"),
+        search: text("search"),
+        clientId: text("clientId"),
+        leadId: text("leadId"),
+        tagId: text("tagId"),
+        projectType: text("projectType"),
+        dueFrom: date("dueFrom"),
+        dueTo: date("dueTo"),
+        dueNone: text("due") === "none",
+        visibleToUserId,
+      });
       res.json(result);
     } catch (error) {
       console.error("Error fetching CRM projects:", error);

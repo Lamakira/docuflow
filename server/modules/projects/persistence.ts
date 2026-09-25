@@ -17,6 +17,30 @@ import type {
   ProjectDailyUpdateWithDetails,
 } from "@shared/schema";
 
+/** Every filter narrows the set before it is paged, so `total` counts what the filters kept (#275). */
+export type CrmProjectListOptions = {
+  page?: number;
+  pageSize?: number;
+  /** The combined lifecycle (`lead`, `won_in_progress`, …). */
+  status?: string;
+  /** Project Status (`planned`, `active`, …), what the v2 register groups by. */
+  projectStatus?: string;
+  /** Project name, Client name or company. */
+  search?: string;
+  clientId?: string;
+  /** The first Project Member, or the assignee when there is none — the register's LEAD column. */
+  leadId?: string;
+  tagId?: string;
+  projectType?: string;
+  /** Inclusive bounds on the due date. */
+  dueFrom?: Date;
+  dueTo?: Date;
+  /** Only Projects with no due date. */
+  dueNone?: boolean;
+  /** Only the Projects this User may see as a Member: one they belong to, or are assigned when it has no Members. */
+  visibleToUserId?: string;
+};
+
 export interface ProjectsPersistence {
   getProjects(userId: string): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
@@ -29,12 +53,7 @@ export interface ProjectsPersistence {
 
   getCrmProjects(
     userId: string,
-    options?: {
-      page?: number;
-      pageSize?: number;
-      status?: string;
-      search?: string;
-    }
+    options?: CrmProjectListOptions
   ): Promise<{ data: CrmProjectWithDetails[]; total: number; page: number; pageSize: number }>;
   getCrmProject(id: string): Promise<CrmProjectWithDetails | undefined>;
   getCrmProjectByProjectId(projectId: string): Promise<CrmProject | undefined>;

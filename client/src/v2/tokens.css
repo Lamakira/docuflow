@@ -3734,6 +3734,32 @@ button.df-activity-row {
   text-transform: uppercase;
 }
 
+.df-register-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--df-space-3);
+}
+
+.df-register-pager-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-2);
+}
+
+/* An empty register that a filter emptied: the sentence, then the way out. */
+.df-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-bottom: var(--df-space-4);
+}
+
+.df-empty-state > .df-btn {
+  margin-left: var(--df-space-4);
+}
+
 /* 400px when there is room for 400px, the full row when there is not, and never
    wider than what contains it (#245, F2). A fixed width had no answer for the
    case where the row was too narrow, so the panel was clipped mid-sentence and
