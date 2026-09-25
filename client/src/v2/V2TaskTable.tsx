@@ -30,8 +30,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { swatchStyle, taskStatusColor } from "./palette";
-import type { TaskManagerRow } from "./tasks";
+import { TASK_STATUS_OPTIONS, type TaskManagerRow } from "./tasks";
 import { V2RowMenu } from "./V2RowMenu";
+import { V2FilterSelect } from "./V2Select";
 import { Button } from "@/components/ui/button";
 
 const features = tableFeatures({
@@ -101,11 +102,23 @@ export function V2TaskTable(props: V2TaskTableProps) {
         helper.accessor("statusValue", {
           header: "STATUS",
           sortFn: "text",
-          cell: ({ row }) => (
-            <span className="df-status-word" data-swatch="" style={swatchStyle(taskStatusColor(row.original.statusValue))}>
-              {row.original.status}
-            </span>
-          ),
+          // A live Task's status is set here as on the Dossier (#279); an
+          // archived one is restored from the row menu instead. A Read-only
+          // Workspace keeps the control, and the write answers with the refusal.
+          cell: ({ row }) =>
+            !row.original.archived ? (
+              <V2FilterSelect
+                label="STATUS"
+                ariaLabel={`Task status for ${row.original.name}`}
+                value={row.original.statusValue}
+                options={TASK_STATUS_OPTIONS}
+                onChange={(status) => onSetStatus(row.original.id, status)}
+              />
+            ) : (
+              <span className="df-status-word" data-swatch="" style={swatchStyle(taskStatusColor(row.original.statusValue))}>
+                {row.original.status}
+              </span>
+            ),
         }),
         helper.display({
           id: "actions",

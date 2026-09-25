@@ -14,6 +14,13 @@ const TASK_STATUS_LABEL: Record<string, string> = {
   archived: "ARCHIVED",
 };
 
+/** The statuses a Member sets on a live Task; archiving has its own action. */
+export const TASK_STATUS_OPTIONS = [
+  { value: "open", label: "To do" },
+  { value: "in_progress", label: "In progress" },
+  { value: "done", label: "Done" },
+];
+
 export function taskStatusLabel(status: string): string {
   return TASK_STATUS_LABEL[status] ?? status.replace(/_/g, " ").toUpperCase();
 }
