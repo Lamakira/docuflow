@@ -171,7 +171,7 @@ describe("Notifications inbox (#210)", () => {
 describe("Account menu (#210)", () => {
   it("holds theme and sign out, and does not duplicate Devices or a Clerk password field", () => {
     const menu = composeAccountMenu({ theme: "system" });
-    expect(menu.themeOptions.map((option) => option.id)).toEqual(["light", "system"]);
+    expect(menu.themeOptions.map((option) => option.id)).toEqual(["light", "dark", "system"]);
     expect(menu.themeOptions.find((option) => option.id === "system")?.selected).toBe(true);
     expect(menu.signOutLabel).toBe("Sign out");
     expect(JSON.stringify(menu).toLowerCase()).not.toContain("password");
@@ -184,13 +184,14 @@ describe("Account menu (#210)", () => {
     expect(railSource).not.toMatch(/href="\/devices"/);
   });
 
-  it("drops Dark so the menu only offers themes that exist (#249)", () => {
+  it("offers Dark now that v2 has a dark palette (#272)", () => {
     const storedDark = composeAccountMenu({ theme: "dark" });
-    expect(storedDark.themeOptions.map((option) => option.id)).toEqual(["light", "system"]);
-    expect(storedDark.themeOptions.find((option) => option.id === "light")?.selected).toBe(true);
+    expect(storedDark.themeOptions.map((option) => option.id)).toEqual(["light", "dark", "system"]);
+    expect(storedDark.themeOptions.find((option) => option.id === "dark")?.selected).toBe(true);
+    expect(composeAccountMenu({ theme: "sepia" }).themeOptions.find((option) => option.selected)?.id).toBe("light");
     expect(storedDark.structure).toEqual(["theme", "separator", "account", "signOut"]);
     expect(railSource).toContain("account.structure");
-    expect(railSource).toMatch(/theme === ["']dark["']/);
+    expect(railSource).not.toMatch(/setTheme\(["']light["']\)/);
   });
 });
 

@@ -127,8 +127,9 @@ describe("shadcn wears the DocuFlow palette (#249)", () => {
     expect(rootVars).not.toMatch(/--accent:\s*254\.21/);
   });
 
-  it("does not invent a v2 dark palette", () => {
+  it("hangs the v2 dark palette on ThemeProvider's class, inside .df-v2 only (#272)", () => {
     expect(tokensCss).not.toMatch(/\.dark\s*\{/);
+    expect(tokensCss).toMatch(/\.dark \.df-v2\s*\{/);
     expect(tokensCss).not.toMatch(/prefers-color-scheme:\s*dark/);
   });
 });

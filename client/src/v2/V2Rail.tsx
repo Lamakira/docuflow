@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useTheme } from "@/components/ThemeProvider";
 import { useAuth } from "@/hooks/useAuth";
@@ -13,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { composeAccountMenu } from "./chrome";
+import { composeAccountMenu, type AccountTheme } from "./chrome";
 import { isPlatformAdmin } from "./platform";
 import {
   CloseIcon,
@@ -60,10 +59,6 @@ export function V2Rail({
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
   const account = composeAccountMenu({ theme, platformAdmin: isPlatformAdmin(user) });
-
-  useEffect(() => {
-    if (theme === "dark") setTheme("light");
-  }, [theme, setTheme]);
   const activeId = navIdForPath(location);
   const initials = workspaceInitials(workspaceName);
   const displayName =
@@ -239,7 +234,7 @@ export function V2Rail({
                   <DropdownMenuRadioGroup
                     key={part}
                     value={account.themeOptions.find((option) => option.selected)?.id ?? "light"}
-                    onValueChange={(value) => setTheme(value === "system" ? "system" : "light")}
+                    onValueChange={(value) => setTheme(value as AccountTheme)}
                   >
                     {account.themeOptions.map((option) => (
                       <DropdownMenuRadioItem
