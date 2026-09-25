@@ -74,6 +74,47 @@ describe("company documents and folders (characterization)", () => {
     expect(missing.body).toEqual({ message: "Folder not found" });
   });
 
+  it("nests a folder inside another at any depth, and deletes the nested ones with their parent (#273)", async () => {
+    const app = await makeApp();
+    const admin = await registerAdmin(app);
+
+    const top = await createFolder(admin.agent, { name: "Handbook" });
+    const middle = await admin.agent
+      .post("/api/company-document-folders")
+      .send({ name: "People", parentId: top.id });
+    expect(middle.status).toBe(201);
+    expect(middle.body.parentId).toBe(top.id);
+    const deep = await admin.agent
+      .post("/api/company-document-folders")
+      .send({ name: "Leave", parentId: middle.body.id });
+    expect(deep.status).toBe(201);
+    expect(deep.body.parentId).toBe(middle.body.id);
+    expect((top as { parentId?: string | null }).parentId).toBeNull();
+
+    const unknown = await admin.agent
+      .post("/api/company-document-folders")
+      .send({ name: "Orphan", parentId: "00000000-0000-0000-0000-000000000000" });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body).toEqual({ message: "The parent Folder does not exist in this Workspace" });
+
+    // A rename never moves a folder: PATCH drops parentId.
+    const renamed = await admin.agent
+      .patch(`/api/company-document-folders/${deep.body.id}`)
+      .send({ name: "Leave policy", parentId: null });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.parentId).toBe(middle.body.id);
+
+    const document = await admin.agent
+      .post("/api/company-documents")
+      .send({ name: "Parental leave", content: tiptap("Twelve weeks."), folderId: deep.body.id });
+    expect(document.status).toBe(201);
+
+    expect((await admin.agent.delete(`/api/company-document-folders/${top.id}`)).status).toBe(204);
+    const left = await admin.agent.get("/api/company-document-folders");
+    expect(left.body).toEqual([]);
+    expect((await admin.agent.get(`/api/company-documents/${document.body.id}`)).status).toBe(404);
+  });
+
   it("creates a native TipTap document and lists it by folder", async () => {
     const app = await makeApp();
     const user = await registerUser(app);

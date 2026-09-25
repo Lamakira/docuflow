@@ -1681,15 +1681,6 @@ button.df-activity-row {
   justify-content: flex-end;
 }
 
-/* An anchor around a full-width region rather than around a button: the popover
-   still hangs 8px under what raised it, and the region keeps the column and the
-   gap its children had when the page held them directly. */
-.df-refusal-anchor-block {
-  display: flex;
-  flex-direction: column;
-  gap: var(--df-space-5);
-}
-
 /* shadcn Popover wearing the refusal texture (#249). The primitive owns
    position; this class only restyles. The left edge still carries the
    difference from a confirmation (#245, F3). */
@@ -2591,6 +2582,129 @@ button.df-activity-row {
   border-radius: var(--df-radius-3);
   font-family: var(--df-font-ui);
   box-shadow: 0 20px 50px rgba(15, 21, 36, 0.18);
+}
+
+/* A create dialog (#273): title, what the record is, the fields, then Cancel
+   beside the one primary action. */
+.df-v2.df-form-dialog {
+  max-width: 480px;
+  padding: var(--df-space-6);
+  gap: var(--df-space-5);
+  color: var(--df-case-ink);
+}
+
+.df-form-dialog-title {
+  font-family: var(--df-font-display);
+  font-weight: 700;
+  font-size: var(--df-text-5);
+  margin: 0;
+}
+
+.df-form-dialog-copy {
+  font-size: var(--df-text-3);
+  line-height: 1.55;
+  color: var(--df-archive-slate);
+}
+
+.df-form-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-4);
+}
+
+.df-form-dialog-body > .df-daily-field {
+  font-family: var(--df-font-mono);
+  font-size: var(--df-text-1);
+  letter-spacing: 0.07em;
+  color: var(--df-archive-slate);
+}
+
+.df-form-dialog-body > .df-daily-field input {
+  height: var(--df-control-h);
+  font-family: var(--df-font-ui);
+  font-size: var(--df-text-3);
+  letter-spacing: normal;
+  color: var(--df-case-ink);
+}
+
+.df-form-dialog-body > .df-daily-field .df-select-trigger {
+  width: 100%;
+  height: var(--df-control-h);
+  letter-spacing: normal;
+}
+
+.df-form-dialog-actions {
+  gap: var(--df-space-2);
+  padding-top: var(--df-space-2);
+}
+
+/* Upload File: a drop zone that is also the file picker, then what was chosen. */
+.df-drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--df-space-2);
+  padding: var(--df-space-7) var(--df-space-5);
+  border: 1px dashed var(--df-divider);
+  border-radius: var(--df-radius-2);
+  background: var(--df-cold-stock);
+  color: var(--df-archive-slate);
+  font-size: var(--df-text-3);
+  text-align: center;
+  cursor: pointer;
+}
+
+.df-drop-zone strong {
+  color: var(--df-case-ink);
+  font-weight: 600;
+}
+
+.df-drop-zone[data-over="true"] {
+  border-color: var(--df-amber-600);
+  background: var(--df-amber-100);
+}
+
+.df-drop-zone:focus-within {
+  outline: 2px solid var(--df-amber);
+  outline-offset: 2px;
+}
+
+.df-drop-zone input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.df-file-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--df-divider-light);
+  border-radius: var(--df-radius-2);
+}
+
+.df-file-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-3);
+  padding: var(--df-space-2) var(--df-space-3);
+  border-bottom: 1px solid var(--df-divider-light);
+  font-size: var(--df-text-3);
+}
+
+.df-file-list li:last-child {
+  border-bottom: 0;
+}
+
+.df-file-list .df-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .df-v2.df-context-sheet {
@@ -3525,6 +3639,23 @@ button.df-activity-row {
   background: var(--df-cold-stock);
   border-left: 2px solid var(--df-case-ink);
   padding-left: var(--df-space-4);
+}
+
+/* A Folder can sit inside a Folder at any depth; the indent stops at four. */
+.df-library-row[data-depth="1"] {
+  padding-left: var(--df-space-8);
+}
+
+.df-library-row[data-depth="2"] {
+  padding-left: calc(var(--df-space-8) + var(--df-space-6));
+}
+
+.df-library-row[data-depth="3"] {
+  padding-left: calc(var(--df-space-8) + var(--df-space-6) * 2);
+}
+
+.df-library-row[data-depth="4"] {
+  padding-left: calc(var(--df-space-8) + var(--df-space-6) * 3);
 }
 
 .df-accordion {

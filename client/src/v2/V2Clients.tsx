@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { CrmClient, CrmContact, CrmProjectWithDetails } from "@shared/schema";
@@ -23,6 +23,7 @@ import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { V2FormDialog } from "./V2FormDialog";
 import { Button } from "@/components/ui/button";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
@@ -152,8 +153,7 @@ export function V2ClientsPage() {
     },
   });
 
-  function onCreate(event: FormEvent) {
-    event.preventDefault();
+  function onCreate() {
     const clientName = name.trim();
     if (!clientName) return;
     if (readOnly) {
@@ -196,29 +196,45 @@ export function V2ClientsPage() {
           <p className="df-subhead">{register.subhead}</p>
         </div>
         <div className="df-library-actions">
-          <Button variant="default" type="button" onClick={() => setCreating((open) => !open)} className="df-btn">
+          <Button
+            variant="default"
+            type="button"
+            onClick={() => {
+              setWriteRefusal(null);
+              setCreating(true);
+            }}
+            className="df-btn"
+          >
             New Client
           </Button>
         </div>
       </header>
 
-      {creating ? (
-        <form className="df-filter-bar df-clients-filter" onSubmit={onCreate}>
-          <label className="df-filter-input">
-            <input
-              type="text"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Client name"
-              aria-label="Client name"
-            />
-          </label>
-          <Button variant="default" type="submit" disabled={createClient.isPending || !name.trim()} className="df-btn">
-            Create
-          </Button>
-        </form>
-      ) : null}
-      {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
+      <V2FormDialog
+        open={creating}
+        onOpenChange={setCreating}
+        title="New Client"
+        description="A Client is who the Projects are delivered for. Company, contacts and source are set on its record."
+        submitLabel="Create Client"
+        pending={createClient.isPending}
+        canSubmit={Boolean(name.trim())}
+        onSubmit={onCreate}
+        refusal={writeRefusal}
+        testId="v2-clients-new"
+      >
+        <label className="df-daily-field">
+          NAME
+          <input
+            type="text"
+            value={name}
+            autoFocus
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Client name"
+            aria-label="Client name"
+          />
+        </label>
+      </V2FormDialog>
+      {writeRefusal && !creating ? <p className="df-refusal">{writeRefusal}</p> : null}
 
       <div className="df-filter-bar df-clients-filter">
         <label className="df-filter-input">
@@ -471,7 +487,7 @@ export function V2ClientRecordPage() {
       </header>
 
       <div className="df-dossier-body df-client-record-body" data-motion={RECORD_MOTION}>
-        {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
+        {writeRefusal && !addingContact ? <p className="df-refusal">{writeRefusal}</p> : null}
         {isLoading ? (
           <div className="df-overview" aria-busy="true">
             <div className="df-stack">
@@ -491,25 +507,53 @@ export function V2ClientRecordPage() {
                 <div className="df-card-head">
                   <h2 className="df-card-title">On this Client</h2>
                   <span className="df-mono df-meta">{record.contacts.length}</span>
-                  <Button variant="outline" type="button" onClick={() => setAddingContact((open) => !open)} className="df-btn">Add contact</Button>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={() => {
+                      setWriteRefusal(null);
+                      setAddingContact(true);
+                    }}
+                    className="df-btn"
+                  >
+                    Add contact
+                  </Button>
                 </div>
-                {addingContact ? (
-                  <form className="df-admin-form df-daily-form" onSubmit={(event) => { event.preventDefault(); if (readOnly) return refuse(); if (contactDraft.name.trim()) createContact.mutate(); }}>
-                    {(["name", "role", "email", "phone"] as const).map((field) => (
-                      <label key={field} className="df-daily-field">{field.toUpperCase()}<input value={contactDraft[field]} onChange={(event) => setContactDraft((value) => ({ ...value, [field]: event.target.value }))} /></label>
-                    ))}
-                    <div className="df-checkbox-row">
-                      <Checkbox
-                        id="df-contact-primary"
-                        className="df-checkbox"
-                        checked={contactDraft.isPrimary}
-                        onCheckedChange={(next) => setContactDraft((value) => ({ ...value, isPrimary: next === true }))}
+                <V2FormDialog
+                  open={addingContact}
+                  onOpenChange={setAddingContact}
+                  title="Add contact"
+                  description={`A person to reach at ${record.identity?.title ?? "this Client"}.`}
+                  submitLabel="Create contact"
+                  pending={createContact.isPending}
+                  canSubmit={Boolean(contactDraft.name.trim())}
+                  onSubmit={() => {
+                    if (readOnly) return refuse();
+                    createContact.mutate();
+                  }}
+                  refusal={writeRefusal}
+                  testId="v2-client-add-contact"
+                >
+                  {(["name", "role", "email", "phone"] as const).map((field, index) => (
+                    <label key={field} className="df-daily-field">
+                      {field.toUpperCase()}
+                      <input
+                        value={contactDraft[field]}
+                        autoFocus={index === 0}
+                        onChange={(event) => setContactDraft((value) => ({ ...value, [field]: event.target.value }))}
                       />
-                      <label htmlFor="df-contact-primary">Primary contact</label>
-                    </div>
-                    <Button variant="default" type="submit" disabled={!contactDraft.name.trim() || createContact.isPending} className="df-btn">Create contact</Button>
-                  </form>
-                ) : null}
+                    </label>
+                  ))}
+                  <div className="df-checkbox-row">
+                    <Checkbox
+                      id="df-contact-primary"
+                      className="df-checkbox"
+                      checked={contactDraft.isPrimary}
+                      onCheckedChange={(next) => setContactDraft((value) => ({ ...value, isPrimary: next === true }))}
+                    />
+                    <label htmlFor="df-contact-primary">Primary contact</label>
+                  </div>
+                </V2FormDialog>
                 {record.contacts.length === 0 ? (
                   <p className="df-empty">{record.contactsEmptyCopy}</p>
                 ) : layout.stackedRegister ? (

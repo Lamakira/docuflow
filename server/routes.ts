@@ -2214,16 +2214,23 @@ Instructions:
       const createSchema = z.object({
         name: z.string().min(1, "Folder name is required"),
         description: z.string().optional(),
+        parentId: z.string().min(1).nullable().optional(),
       });
       
       const parsed = createSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
+
+      const parentId = parsed.data.parentId ?? null;
+      if (parentId && !(await storage.getCompanyDocumentFolder(parentId))) {
+        return res.status(400).json({ message: "The parent Folder does not exist in this Workspace" });
+      }
       
       const folder = await storage.createCompanyDocumentFolder({
         name: parsed.data.name,
         description: parsed.data.description || null,
+        parentId,
         createdById: userId,
       });
       

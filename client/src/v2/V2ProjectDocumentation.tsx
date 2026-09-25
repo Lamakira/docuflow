@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
@@ -12,6 +12,8 @@ import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { useV2Chrome } from "./V2Shell";
+import { V2FormDialog } from "./V2FormDialog";
+import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
 import { SkeletonLibrary, V2PageSkeleton } from "./V2Skeleton";
 
@@ -80,6 +82,7 @@ export function V2ProjectDocumentationPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<"document" | "project" | null>(null);
   const [name, setName] = useState("");
+  const [targetProjectId, setTargetProjectId] = useState<string>(V2_SELECT_NONE);
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
@@ -96,10 +99,7 @@ export function V2ProjectDocumentationPage() {
   const crmByProjectId = new Map(
     (data?.crm ?? []).map((project) => [project.project?.id, project] as const),
   );
-  const library = composeProjectDocumentation({
-    now,
-    workspaceName,
-    projects: (data?.projects ?? []).map((project) => {
+  const projectInputs = (data?.projects ?? []).map((project) => {
       const crm = crmByProjectId.get(project.id);
       const memberIds = crm
         ? (crm.members ?? [])
@@ -119,7 +119,11 @@ export function V2ProjectDocumentationPage() {
         }),
         updatedAt: project.updatedAt,
       };
-    }),
+    });
+  const library = composeProjectDocumentation({
+    now,
+    workspaceName,
+    projects: projectInputs,
     documents: (data?.documents ?? []).map((document) => ({
       id: document.id,
       title: document.title,
@@ -139,7 +143,13 @@ export function V2ProjectDocumentationPage() {
   });
   const folderMotion = useFolderExpandMotion(filterQuery);
 
-  const selectedDocumentProjectId = selectedProjectId;
+  const projectOptions = [
+    { value: V2_SELECT_NONE, label: "Choose a Project" },
+    ...projectInputs
+      .filter((project) => project.visible)
+      .map((project) => ({ value: project.id, label: project.name })),
+  ];
+  const selectedDocumentProjectId = targetProjectId === V2_SELECT_NONE ? null : targetProjectId;
 
   function refuseWrite(errorMessage?: string) {
     if (readOnly) {
@@ -208,8 +218,14 @@ export function V2ProjectDocumentationPage() {
     );
   }
 
-  function onCreate(event: FormEvent) {
-    event.preventDefault();
+  function openCreate(mode: "document" | "project") {
+    setName("");
+    setWriteRefusal(null);
+    setTargetProjectId(selectedProjectId ?? V2_SELECT_NONE);
+    setCreateMode(mode);
+  }
+
+  function onCreate() {
     const trimmed = name.trim();
     if (!trimmed) return;
     if (refuseWrite()) return;
@@ -245,32 +261,58 @@ export function V2ProjectDocumentationPage() {
             <p className="df-subhead">{library.subhead}</p>
           </div>
           <div className="df-library-actions">
-            <Button variant="outline" type="button" onClick={() => setCreateMode("project")} className="df-btn">
+            <Button variant="outline" type="button" onClick={() => openCreate("project")} className="df-btn">
               New project
             </Button>
-            <Button variant="default" type="button" onClick={() => setCreateMode("document")} className="df-btn">
+            <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
               New Document
             </Button>
           </div>
         </header>
 
-        {createMode ? (
-          <form className="df-filter-bar" onSubmit={onCreate}>
-            <label className="df-filter-input">
-              <input
-                type="text"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={createMode === "project" ? "Project name" : "Document name"}
-                aria-label={createMode === "project" ? "Project name" : "Document name"}
+        <V2FormDialog
+          open={createMode !== null}
+          onOpenChange={(open) => {
+            if (!open) setCreateMode(null);
+          }}
+          title={createMode === "project" ? "New Project" : "New Document"}
+          description={
+            createMode === "project"
+              ? "A documentation-only Project: a row in Projects that holds Project Documents and never enters the pipeline."
+              : "A Project Document belongs to one Project and opens in the editor once created."
+          }
+          submitLabel={createMode === "project" ? "Create Project" : "Create Document"}
+          pending={createDocument.isPending || createProject.isPending}
+          canSubmit={Boolean(name.trim()) && (createMode === "project" || Boolean(selectedDocumentProjectId))}
+          onSubmit={onCreate}
+          refusal={writeRefusal}
+          testId={createMode === "project" ? "v2-project-documentation-new-project" : "v2-project-documentation-new-document"}
+        >
+          <label className="df-daily-field">
+            NAME
+            <input
+              type="text"
+              value={name}
+              autoFocus
+              onChange={(event) => setName(event.target.value)}
+              placeholder={createMode === "project" ? "Project name" : "Document name"}
+              aria-label={createMode === "project" ? "Project name" : "Document name"}
+            />
+          </label>
+          {createMode === "document" ? (
+            <label className="df-daily-field">
+              PROJECT
+              <V2FilterSelect
+                label=""
+                ariaLabel="Project"
+                value={targetProjectId}
+                options={projectOptions}
+                onChange={setTargetProjectId}
               />
             </label>
-            <Button variant="default" type="submit" disabled={createDocument.isPending || createProject.isPending || !name.trim()} className="df-btn">
-              Create
-            </Button>
-          </form>
-        ) : null}
-        {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
+          ) : null}
+        </V2FormDialog>
+        {writeRefusal && !createMode ? <p className="df-refusal">{writeRefusal}</p> : null}
 
         <div className="df-filter-bar">
           <label className="df-filter-input">

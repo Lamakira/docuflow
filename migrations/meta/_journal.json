@@ -239,6 +239,13 @@
       "when": 1789550348840,
       "tag": "0033_yummy_crusher_hogan",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790343701450,
+      "tag": "0034_kind_fat_cobra",
+      "breakpoints": true
     }
   ]
 }

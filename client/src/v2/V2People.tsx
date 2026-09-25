@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -18,6 +18,7 @@ import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
 import { V2RefusalPopover } from "./V2RefusalPopover";
+import { V2FormDialog } from "./V2FormDialog";
 import { Button } from "@/components/ui/button";
 import { SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
 
@@ -124,7 +125,7 @@ export function V2PeoplePage() {
       setInviting(false);
       queryClient.invalidateQueries({ queryKey: [workspaceInvitationsPath()] });
     },
-    onError: (error: Error) => refuse("invite", error.message),
+    onError: (error: Error) => refuse("invite-send", error.message),
   });
 
   const revoke = useMutation({
@@ -167,9 +168,8 @@ export function V2PeoplePage() {
     return true;
   }
 
-  function onInvite(event: FormEvent) {
-    event.preventDefault();
-    if (!guardWrite("invite")) return;
+  function onInvite() {
+    if (!guardWrite("invite-send")) return;
     if (!inviteEmail.trim()) return;
     invite.mutate();
   }
@@ -247,52 +247,71 @@ export function V2PeoplePage() {
             Show archived
           </label>
         ) : null}
-        <Button variant="default" type="button" data-testid="v2-people-invite" onClick={() => { if (!guardWrite("invite")) return; setInviting((open) => !open); }} className="df-btn">
-          Invite
-        </Button>
+        {/* A Workspace Role or condition refusal hangs from the Invite control (#245, F3, #249). */}
+        <V2RefusalPopover
+          controlId="invite"
+          failedControlId={refusal?.id ?? null}
+          message={refusal?.id === "invite" ? refusal.message : null}
+          testId="v2-people-refusal-invite"
+          onDismiss={() => setRefusal(null)}
+          trigger={
+            <span className="df-refusal-anchor">
+              <Button
+                variant="default"
+                type="button"
+                data-testid="v2-people-invite"
+                onClick={() => {
+                  if (!guardWrite("invite")) return;
+                  setInviteEmail("");
+                  setRefusal(null);
+                  setInviting(true);
+                }}
+                className="df-btn"
+              >
+                Invite
+              </Button>
+            </span>
+          }
+        />
       </div>
 
-      {/*
-        The invite refusal hangs from this anchor (#245, F3, #249).
-      */}
-      {inviting || refusal?.id === "invite" ? (
-      <V2RefusalPopover
-        controlId="invite"
-        failedControlId={refusal?.id ?? null}
-        message={refusal?.id === "invite" ? refusal.message : null}
-        testId="v2-people-refusal-invite"
-        onDismiss={() => setRefusal(null)}
-        trigger={
-      <div className="df-refusal-anchor-block">
-      {inviting ? (
-        <form className="df-filter-bar df-people-filter" onSubmit={onInvite}>
-          <label className="df-filter-input">
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={(event) => setInviteEmail(event.target.value)}
-              placeholder="Email"
-              aria-label="Invitation email"
-            />
-          </label>
+      <V2FormDialog
+        open={inviting}
+        onOpenChange={(open) => {
+          setInviting(open);
+          if (!open) setRefusal(null);
+        }}
+        title="Invite to Workspace"
+        description={page.invitePreview}
+        submitLabel="Send Invitation"
+        pending={invite.isPending}
+        canSubmit={Boolean(inviteEmail.trim())}
+        onSubmit={onInvite}
+        refusal={refusal?.id === "invite-send" ? refusal.message : null}
+        testId="v2-people-invite-dialog"
+      >
+        <label className="df-daily-field">
+          EMAIL
+          <input
+            type="email"
+            value={inviteEmail}
+            autoFocus
+            onChange={(event) => setInviteEmail(event.target.value)}
+            placeholder="name@company.com"
+            aria-label="Invitation email"
+          />
+        </label>
+        <label className="df-daily-field">
+          WORKSPACE ROLE
           <V2FilterSelect
-            label="ROLE"
+            label=""
             ariaLabel="Workspace Role"
-            className="df-people-role"
             value={inviteRole}
             options={PEOPLE_INVITE_ROLES.map((role) => ({ value: role, label: role }))}
             onChange={(value) => setInviteRole(value as (typeof PEOPLE_INVITE_ROLES)[number])}
           />
-          <Button variant="default" type="submit" disabled={invite.isPending || !inviteEmail.trim()} className="df-btn">
-            Send Invitation
-          </Button>
-        </form>
-      ) : null}
-      {inviting ? <p className="df-empty df-people-seats">{page.invitePreview}</p> : null}
-      </div>
-        }
-      />
-      ) : null}
+        </label>
+      </V2FormDialog>
 
       <section className="df-card df-people-register" data-testid="v2-people-register">
         {layout.stackedRegister ? null : (
