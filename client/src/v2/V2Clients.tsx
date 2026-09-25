@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, Redirect, useLocation } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { Link, Redirect, useLocation, useSearch } from "wouter";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { createColumnHelper, rowSortingFeature, tableFeatures, useTable, type SortingState } from "@tanstack/react-table";
 import type { CrmClient, CrmContact, CrmProjectWithDetails } from "@shared/schema";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -12,30 +14,56 @@ import {
 } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
+  clearClientFilters,
+  clientFilterLabels,
   clientHref,
+  clientRegisterPath,
   clientWriteRefusal,
   composeClientRecord,
   composeClientRegister,
+  readClientFilters,
+  writeClientFilters,
+  CLIENT_OPEN_OPTIONS,
+  CLIENT_SORTS,
+  CLIENT_SOURCE_OPTIONS,
+  CLIENT_STATUS_OPTIONS,
+  type ClientRegisterFilters,
+  type ClientRegisterRow,
   type ClientRegisterRowInput,
+  type ClientSort,
 } from "./clients";
+import { composePaging } from "./paging";
 import { motionForSurface } from "./motion";
 import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2FormDialog } from "./V2FormDialog";
+import { V2FilterSelect } from "./V2Select";
+import { V2RegisterPager } from "./V2RegisterPager";
 import { Button } from "@/components/ui/button";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type ClientWithContacts = CrmClient & { contacts?: CrmContact[] };
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
+type ClientPage = { data: Array<CrmClient & { projectCount: number }>; total: number };
 
 const RECORD_MOTION = motionForSurface("client-register-record").enterExit;
+const SEARCH_SETTLE_MS = 250;
 
-async function loadClients(): Promise<CrmClient[]> {
-  const res = await fetch("/api/crm/clients", { credentials: "include" });
+async function loadClientPage(path: string): Promise<ClientPage> {
+  const res = await fetch(path, { credentials: "include" });
   if (!res.ok) throw new Error("Failed to fetch Clients");
   return res.json();
+}
+
+/** The register row a record was opened from, so its identity shows before the record loads. */
+function registerSeed(clientId: string): CrmClient | undefined {
+  for (const [, page] of queryClient.getQueriesData<ClientPage>({ queryKey: ["/api/crm/clients", "register-page"] })) {
+    const row = page?.data.find((client) => client.id === clientId);
+    if (row) return row;
+  }
+  return undefined;
 }
 
 async function loadProjects(): Promise<ProjectsResponse> {
@@ -60,25 +88,156 @@ async function loadProjects(): Promise<ProjectsResponse> {
   return { data: rows, total };
 }
 
-function projectCountByClient(projects: CrmProjectWithDetails[]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const project of projects) {
-    const clientId = project.clientId ?? project.client?.id;
-    if (!clientId) continue;
-    counts.set(clientId, (counts.get(clientId) ?? 0) + 1);
-  }
-  return counts;
-}
-
-function toRegisterClient(client: CrmClient, projectCount: number): ClientRegisterRowInput {
+function toRegisterClient(client: CrmClient & { projectCount: number }): ClientRegisterRowInput {
   return {
     id: client.id,
     name: client.name,
     company: client.company,
     status: client.status,
     source: client.source,
-    projectCount,
+    projectCount: client.projectCount,
   };
+}
+
+const clientTableFeatures = tableFeatures({ rowSortingFeature });
+const clientColumn = createColumnHelper<typeof clientTableFeatures, ClientRegisterRow>();
+
+function isClientSort(id: string): id is ClientSort {
+  return (CLIENT_SORTS as readonly string[]).includes(id);
+}
+
+/**
+ * The desktop register (#275), drawn like the Projects one: TanStack Table
+ * holds the columns and the sort state, the server holds the order.
+ */
+function ClientRegisterTable({
+  rows,
+  sort,
+  dir,
+  onSort,
+  onOpen,
+}: {
+  rows: ClientRegisterRow[];
+  sort: ClientSort | "";
+  dir: "asc" | "desc";
+  onSort: (sort: ClientSort | "", dir: "asc" | "desc") => void;
+  onOpen: (row: ClientRegisterRow) => void;
+}) {
+  const sorting: SortingState = sort ? [{ id: sort, desc: dir === "desc" }] : [];
+  const columns = useMemo(
+    () =>
+      clientColumn.columns([
+        clientColumn.accessor("name", {
+          header: "CLIENT",
+          cell: ({ row }) => (
+            <Link
+              href={row.original.href}
+              className="df-row-title df-row-link"
+              style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}
+            >
+              {row.original.name}
+            </Link>
+          ),
+        }),
+        clientColumn.accessor("company", {
+          header: "COMPANY",
+          cell: ({ row }) => <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.original.company}</span>,
+        }),
+        clientColumn.accessor("status", {
+          header: "STATUS",
+          cell: ({ row }) => (
+            <span className="df-status-word" data-swatch="" style={swatchStyle(row.original.statusColor)}>{row.original.status}</span>
+          ),
+        }),
+        clientColumn.accessor("source", {
+          header: "SOURCE",
+          cell: ({ row }) => <span className="df-mono df-meta">{row.original.source}</span>,
+        }),
+        clientColumn.accessor("projectCount", {
+          id: "projects",
+          header: "PROJECTS",
+          cell: ({ row }) => <span className="df-mono" style={{ fontSize: 12 }}>{row.original.projectCount}</span>,
+        }),
+      ]),
+    [],
+  );
+
+  const table = useTable({
+    features: clientTableFeatures,
+    columns,
+    data: rows,
+    manualSorting: true,
+    enableMultiSort: false,
+    state: { sorting },
+    onSortingChange: (updater) => {
+      const next = typeof updater === "function" ? updater(sorting) : updater;
+      const first = next[0];
+      if (first && isClientSort(first.id)) onSort(first.id, first.desc ? "desc" : "asc");
+      else onSort("", "asc");
+    },
+  });
+
+  function onRowClick(event: MouseEvent<HTMLTableRowElement>, row: ClientRegisterRow) {
+    if ((event.target as HTMLElement).closest("a, button")) return;
+    if (event.metaKey || event.ctrlKey) {
+      window.open(row.href, "_blank", "noopener,noreferrer");
+      return;
+    }
+    onOpen(row);
+  }
+
+  return (
+    <Table className="df-table" data-testid="v2-clients-table">
+      <TableHeader>
+        {table.getHeaderGroups().map((group) => (
+          <TableRow key={group.id} className="df-table-head-row">
+            {group.headers.map((header) => {
+              const direction = header.column.getIsSorted();
+              return (
+                <TableHead
+                  key={header.id}
+                  className="df-table-head"
+                  data-column={header.column.id}
+                  aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : undefined}
+                >
+                  {header.isPlaceholder ? null : (
+                    <button
+                      type="button"
+                      className="df-table-sort"
+                      data-sorted={direction || "none"}
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      <table.FlexRender header={header} />
+                      <span aria-hidden="true">
+                        {direction === "asc" ? "↑" : direction === "desc" ? "↓" : ""}
+                      </span>
+                    </button>
+                  )}
+                </TableHead>
+              );
+            })}
+          </TableRow>
+        ))}
+      </TableHeader>
+      <TableBody>
+        {table.getRowModel().rows.map((row) => (
+          <TableRow
+            key={row.id}
+            className="df-table-row"
+            data-selected={row.original.selected ? "true" : "false"}
+            data-testid={`v2-client-row-${row.original.id}`}
+            onClick={(event) => onRowClick(event, row.original)}
+          >
+            {row.getAllCells().map((cell) => (
+              <TableCell key={cell.id} className="df-table-cell" data-column={cell.column.id}>
+                <table.FlexRender cell={cell} />
+              </TableCell>
+            ))}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
 }
 
 export function V2ClientRecordRedirect() {
@@ -97,8 +256,10 @@ const CLIENT_SOURCES = [
 
 export function V2ClientsPage() {
   const { layout, memberships } = useV2Chrome();
+  const search = useSearch();
   const [, setLocation] = useLocation();
-  const [filterQuery, setFilterQuery] = useState("");
+  const filters = readClientFilters(search);
+  const [filterQuery, setFilterQuery] = useState(filters.q);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(
     () => new URLSearchParams(window.location.search).get("new") === "1",
@@ -112,20 +273,43 @@ export function V2ClientsPage() {
 
   const ownerName = useWorkspaceOwnerName();
 
-  const { data: clients = [], isLoading, isError } = useQuery<CrmClient[]>({
-    queryKey: ["/api/crm/clients", "register"],
-    queryFn: loadClients,
+  function setFilters(next: ClientRegisterFilters) {
+    setLocation(`/clients${writeClientFilters(search, next)}`, { replace: true });
+  }
+
+  // The search box answers each keystroke; the URL, and so the server page,
+  // follows once typing settles.
+  useEffect(() => {
+    if (filterQuery === filters.q) return;
+    const timer = window.setTimeout(() => setFilters({ ...filters, q: filterQuery, page: 1 }), SEARCH_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [filterQuery]);
+
+  const registerPath = clientRegisterPath(filters);
+  const { data: clientPage, isLoading, isError } = useQuery<ClientPage>({
+    queryKey: ["/api/crm/clients", "register-page", registerPath],
+    placeholderData: keepPreviousData,
+    queryFn: () => loadClientPage(registerPath),
   });
-  const { data: projectsResponse } = useQuery<ProjectsResponse>({
-    queryKey: ["/api/crm/projects", "register"],
-    queryFn: loadProjects,
+  const paging = composePaging({
+    page: filters.page,
+    pageSize: filters.pageSize,
+    total: clientPage?.total ?? 0,
+    noun: { one: "CLIENT", many: "CLIENTS" },
   });
 
-  const counts = projectCountByClient(projectsResponse?.data ?? []);
+  // A shared link past the last page lands on the last one instead of nothing.
+  useEffect(() => {
+    if (!clientPage || filters.page <= paging.pageCount) return;
+    setFilters({ ...filters, page: paging.pageCount });
+  }, [clientPage, filters.page, paging.pageCount]);
+
+  // The server already narrowed these rows; the composer only names what did it.
   const register = composeClientRegister({
     workspaceName,
-    clients: clients.map((client) => toRegisterClient(client, counts.get(client.id) ?? 0)),
-    filterQuery,
+    clients: (clientPage?.data ?? []).map(toRegisterClient),
+    filterQuery: "",
+    activeFilters: clientFilterLabels(filters),
     selectedId,
   });
 
@@ -246,21 +430,51 @@ export function V2ClientsPage() {
             aria-label="Filter Clients"
           />
         </label>
+        <V2FilterSelect
+          label="STATUS"
+          ariaLabel="Filter by Client status"
+          value={filters.status}
+          active={filters.status !== "all"}
+          options={[{ value: "all", label: "ALL" }, ...CLIENT_STATUS_OPTIONS]}
+          onChange={(status) => setFilters({ ...filters, status, page: 1 })}
+        />
+        <V2FilterSelect
+          label="SOURCE"
+          ariaLabel="Filter by source"
+          value={filters.source}
+          active={filters.source !== "all"}
+          options={[{ value: "all", label: "ALL" }, ...CLIENT_SOURCE_OPTIONS]}
+          onChange={(source) => setFilters({ ...filters, source, page: 1 })}
+        />
+        <V2FilterSelect
+          label="OPEN PROJECTS"
+          ariaLabel="Filter by open Projects"
+          value={filters.open}
+          active={filters.open !== "all"}
+          options={[{ value: "all", label: "ANY" }, ...CLIENT_OPEN_OPTIONS]}
+          onChange={(open) => setFilters({ ...filters, open, page: 1 })}
+        />
       </div>
 
       <section className="df-card df-clients-register" data-testid="v2-clients-register">
-        {layout.stackedRegister ? null : (
-          <div className="df-register-head df-desktop-only">
-            <span>CLIENT</span>
-            <span>COMPANY</span>
-            <span>STATUS</span>
-            <span>SOURCE</span>
-            <span style={{ textAlign: "right" }}>PROJECTS</span>
-          </div>
-        )}
         {register.empty ? (
-          <p className="df-empty">{register.emptyCopy}</p>
-        ) : (
+          <div className="df-empty-state">
+            <p className="df-empty">{register.emptyCopy}</p>
+            {register.filtered ? (
+              <Button
+                variant="outline"
+                type="button"
+                className="df-btn"
+                onClick={() => {
+                  setFilterQuery("");
+                  setFilters(clearClientFilters(filters));
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
+        ) : layout.stackedRegister ? (
           register.rows.map((row) => (
             <Link
               key={row.id}
@@ -271,43 +485,34 @@ export function V2ClientsPage() {
               onPointerDown={() => setSelectedId(row.id)}
               onClick={() => setSelectedId(row.id)}
             >
-              {layout.stackedRegister ? (
-                <span className="df-project-mobile">
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <div className="df-row-title">{row.name}</div>
-                    <div className="df-mono df-meta">
-                      {row.company} · {row.status}
-                    </div>
-                  </span>
+              <span className="df-project-mobile">
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <div className="df-row-title">{row.name}</div>
+                  <div className="df-mono df-meta">
+                    {row.company} · {row.status}
+                  </div>
                 </span>
-              ) : (
-                <>
-                  <span style={{ minWidth: 0 }}>
-                    <div
-                      className="df-row-title"
-                      style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                    >
-                      {row.name}
-                    </div>
-                  </span>
-                  <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.company}</span>
-                  <span>
-                    <span className="df-status-word" data-swatch="" style={swatchStyle(row.statusColor)}>{row.status}</span>
-                  </span>
-                  <span className="df-mono df-meta">{row.source}</span>
-                  <span className="df-mono" style={{ fontSize: 12, textAlign: "right" }}>
-                    {row.projectCount}
-                  </span>
-                </>
-              )}
+              </span>
             </Link>
           ))
+        ) : (
+          <ClientRegisterTable
+            rows={register.rows}
+            sort={filters.sort}
+            dir={filters.dir}
+            onSort={(sort, dir) => setFilters({ ...filters, sort, dir, page: 1 })}
+            onOpen={(row) => {
+              setSelectedId(row.id);
+              setLocation(row.href);
+            }}
+          />
         )}
-        <div className="df-library-foot">
-          <span>
-            {register.count} {register.count === 1 ? "CLIENT" : "CLIENTS"}
-          </span>
-        </div>
+        <V2RegisterPager
+          paging={paging}
+          ariaLabel="Clients pages"
+          onPage={(page) => setFilters({ ...filters, page })}
+          onPageSize={(pageSize) => setFilters({ ...filters, pageSize, page: 1 })}
+        />
       </section>
     </div>
   );
@@ -327,9 +532,7 @@ export function V2ClientRecordPage() {
   const [contactDraft, setContactDraft] = useState({ name: "", role: "", email: "", phone: "", isPrimary: false });
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
-  const seed = (queryClient.getQueryData<CrmClient[]>(["/api/crm/clients", "register"]) ?? []).find(
-    (row) => row.id === clientId,
-  );
+  const seed = registerSeed(clientId);
 
   const { data: client, isLoading, isError } = useQuery<ClientWithContacts | null>({
     queryKey: ["/api/crm/clients", clientId],

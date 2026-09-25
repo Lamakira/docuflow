@@ -30,6 +30,7 @@ import {
 } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
 import { CRM_PROJECT_SORTS } from "./modules/projects/persistence";
+import { CRM_CLIENT_SORTS } from "./modules/clients-sales/persistence";
 import { SeatExhaustedError } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
 import mammoth from "mammoth";
@@ -1301,8 +1302,27 @@ Instructions:
   app.get("/api/crm/clients", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const clients = await storage.getCrmClients(userId);
-      res.json(clients);
+      // Without `page` the route answers the whole list, as every picker reads it.
+      if (req.query.page === undefined) {
+        const clients = await storage.getCrmClients(userId);
+        return res.json(clients);
+      }
+      const text = (name: string) => {
+        const value = req.query[name];
+        return typeof value === "string" && value.trim() ? value.trim() : undefined;
+      };
+      const open = text("openProjects");
+      const result = await storage.getCrmClientPage({
+        page: Math.max(1, parseInt(text("page") ?? "", 10) || 1),
+        pageSize: Math.min(200, Math.max(1, parseInt(text("pageSize") ?? "", 10) || 50)),
+        search: text("search"),
+        status: text("status"),
+        source: text("source"),
+        openProjects: open === "yes" ? true : open === "no" ? false : undefined,
+        sort: CRM_CLIENT_SORTS.find((sort) => sort === text("sort")),
+        dir: text("dir") === "desc" ? "desc" : "asc",
+      });
+      res.json(result);
     } catch (error) {
       console.error("Error fetching CRM clients:", error);
       res.status(500).json({ message: "Failed to fetch clients" });

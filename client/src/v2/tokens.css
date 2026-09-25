@@ -2507,14 +2507,16 @@ button.df-activity-row {
   justify-content: flex-end;
 }
 
-/* Projects register (#275): the row opens the Dossier, so it reads as one target. */
-.df-v2 .df-projects-register .df-table-row {
+/* Projects and Clients registers (#275): the row opens its record, so it reads as one target. */
+.df-v2 .df-projects-register .df-table-row,
+.df-v2 .df-clients-register .df-table-row {
   cursor: pointer;
   transition: none;
   animation: none;
 }
 
-.df-v2 .df-projects-register .df-table-row[data-selected="true"] {
+.df-v2 .df-projects-register .df-table-row[data-selected="true"],
+.df-v2 .df-clients-register .df-table-row[data-selected="true"] {
   background: var(--df-cold-stock);
   box-shadow: inset 2px 0 0 var(--df-case-ink);
 }
@@ -2538,6 +2540,22 @@ button.df-activity-row {
 
 .df-v2 .df-projects-register .df-table-head[data-column="tracked"],
 .df-v2 .df-projects-register .df-table-cell[data-column="tracked"] {
+  text-align: right;
+}
+
+.df-v2 .df-clients-register .df-table-cell[data-column="name"] {
+  max-width: 0;
+  width: 32%;
+}
+
+.df-v2 .df-clients-register .df-table-cell[data-column="status"],
+.df-v2 .df-clients-register .df-table-cell[data-column="source"],
+.df-v2 .df-clients-register .df-table-cell[data-column="projects"] {
+  white-space: nowrap;
+}
+
+.df-v2 .df-clients-register .df-table-head[data-column="projects"],
+.df-v2 .df-clients-register .df-table-cell[data-column="projects"] {
   text-align: right;
 }
 
