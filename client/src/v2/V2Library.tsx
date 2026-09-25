@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { FileText, Folder } from "lucide-react";
 import { groupLibraryRows, type LibraryGroup, type LibraryModel, type LibraryRow } from "./library";
@@ -121,11 +121,17 @@ export function V2LibraryRegister({
   testId,
   instantExpand,
   onFolderClick,
+  emptyAction,
+  footer,
 }: {
   library: LibraryModel;
   testId: string;
   instantExpand: boolean;
   onFolderClick: (folderId: string) => void;
+  /** Offered under the empty copy, such as clearing the filters that emptied it. */
+  emptyAction?: ReactNode;
+  /** Replaces the item count, such as a pager. */
+  footer?: ReactNode;
 }) {
   const groups = groupLibraryRows(library.rows);
 
@@ -141,7 +147,14 @@ export function V2LibraryRegister({
       {library.refusal ? (
         <p className="df-refusal">{library.refusal}</p>
       ) : library.empty ? (
-        <p className="df-empty">{library.emptyCopy}</p>
+        emptyAction ? (
+          <div className="df-empty-state">
+            <p className="df-empty">{library.emptyCopy}</p>
+            {emptyAction}
+          </div>
+        ) : (
+          <p className="df-empty">{library.emptyCopy}</p>
+        )
       ) : (
         groups.map((group) => (
           <LibraryGroupRows
@@ -152,12 +165,14 @@ export function V2LibraryRegister({
           />
         ))
       )}
-      <div className="df-library-foot">
-        <span>
-          {library.itemCount} {library.itemCount === 1 ? "ITEM" : "ITEMS"} · {library.folderCount}{" "}
-          {library.folderCount === 1 ? library.parentNoun.singular : library.parentNoun.plural}
-        </span>
-      </div>
+      {footer ?? (
+        <div className="df-library-foot">
+          <span>
+            {library.itemCount} {library.itemCount === 1 ? "ITEM" : "ITEMS"} · {library.folderCount}{" "}
+            {library.folderCount === 1 ? library.parentNoun.singular : library.parentNoun.plural}
+          </span>
+        </div>
+      )}
     </section>
   );
 }

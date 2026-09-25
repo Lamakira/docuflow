@@ -1,5 +1,6 @@
 import type { ProjectWriter } from "../writers";
 import type {
+  Document,
   Project,
   InsertProject,
   CrmProject,
@@ -47,6 +48,43 @@ export type CrmProjectListOptions = {
 export const CRM_PROJECT_SORTS = ["name", "status", "budget"] as const;
 export type CrmProjectSort = (typeof CRM_PROJECT_SORTS)[number];
 
+/** The Project Documentation register, paged by Project (#275). */
+export type ProjectDocumentationListOptions = {
+  page: number;
+  pageSize: number;
+  /** A Project name, or the title of one of its Documents. */
+  search?: string;
+  /** The `projects` id. */
+  projectId?: string;
+  clientId?: string;
+  documentation: "enabled" | "disabled" | "all";
+  /** As `CrmProjectListOptions.visibleToUserId`. */
+  visibleToUserId?: string;
+};
+
+/** A Document as the register lists it: no content. */
+export type ProjectDocumentationDocument = Pick<
+  Document,
+  "id" | "title" | "projectId" | "parentId" | "position" | "createdById" | "createdAt" | "updatedAt"
+>;
+
+export type ProjectDocumentationEntry = {
+  project: Project;
+  crmProjectId: string;
+  clientId: string | null;
+  documentationEnabled: boolean;
+  documents: ProjectDocumentationDocument[];
+};
+
+export type ProjectDocumentationPage = {
+  data: ProjectDocumentationEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Every Project the reader may see, whatever the filters, for the PROJECT chip and the New Document picker. */
+  projects: Array<{ id: string; name: string; documentationEnabled: boolean }>;
+};
+
 export interface ProjectsPersistence {
   getProjects(userId: string): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
@@ -72,6 +110,7 @@ export interface ProjectsPersistence {
   deleteCrmProject(id: string): Promise<void>;
   toggleDocumentation(crmProjectId: string, enabled: boolean): Promise<CrmProject | undefined>;
   getDocumentationEnabledProjects(userId?: string): Promise<Project[]>;
+  getProjectDocumentationPage(options: ProjectDocumentationListOptions): Promise<ProjectDocumentationPage>;
 
   getTasks(options: { crmProjectId: string; includeArchived?: boolean }): Promise<Task[]>;
   getTask(id: string): Promise<Task | undefined>;

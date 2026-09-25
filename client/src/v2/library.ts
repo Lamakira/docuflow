@@ -90,6 +90,8 @@ export type LibraryModel = {
   parentNoun: { singular: string; plural: string };
   itemCount: number;
   preview: LibraryPreview | null;
+  /** Empty because of a filter, so the register offers to clear it (#275). */
+  filtered?: boolean;
 };
 
 export type LibraryGroup =

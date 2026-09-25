@@ -218,8 +218,27 @@ export async function registerRoutes(
   app.get("/api/projects/documentable", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const projects = await storage.getDocumentationEnabledProjects(userId);
-      res.json(projects);
+      // Without `page` the route answers every documentation-enabled Project, as before.
+      if (req.query.page === undefined) {
+        const projects = await storage.getDocumentationEnabledProjects(userId);
+        return res.json(projects);
+      }
+      const text = (name: string) => {
+        const value = req.query[name];
+        return typeof value === "string" && value.trim() ? value.trim() : undefined;
+      };
+      const documentation = text("documentation");
+      const result = await storage.getProjectDocumentationPage({
+        page: Math.max(1, parseInt(text("page") ?? "", 10) || 1),
+        pageSize: Math.min(200, Math.max(1, parseInt(text("pageSize") ?? "", 10) || 50)),
+        search: text("search"),
+        projectId: text("projectId"),
+        clientId: text("clientId"),
+        documentation: documentation === "disabled" || documentation === "all" ? documentation : "enabled",
+        // As on the Projects register: a Member's page holds only what they may see.
+        visibleToUserId: text("scope") === "visible" && !(await canManageAdministration()) ? userId : undefined,
+      });
+      res.json(result);
     } catch (error) {
       console.error("Error fetching documentable projects:", error);
       res.status(500).json({ message: "Failed to fetch documentable projects" });

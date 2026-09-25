@@ -1,83 +1,64 @@
-import { useMemo, useState } from "react";
-import { useLocation } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useSearch } from "wouter";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
-import type { CrmProjectWithDetails, Document, Project, SafeUser } from "@shared/schema";
+import type { CrmClient, Document, Project, SafeUser } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useAuth } from "@/hooks/useAuth";
 import { chromeRefusal } from "./chrome";
-import { composeProjectDocumentation } from "./projectDocumentation";
-import { projectVisibleTo } from "./projects";
-import { memberName } from "./today";
+import {
+  clearDocumentationFilters,
+  composeProjectDocumentation,
+  documentationFilterLabels,
+  documentationRegisterPath,
+  readDocumentationFilters,
+  writeDocumentationFilters,
+  DOCUMENTATION_OPTIONS,
+  type DocumentationSetting,
+  type ProjectDocumentationFilters,
+} from "./projectDocumentation";
+import { composePaging } from "./paging";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { useV2Chrome } from "./V2Shell";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
+import { V2RegisterPager } from "./V2RegisterPager";
 import { Button } from "@/components/ui/button";
 import { SkeletonLibrary, V2PageSkeleton } from "./V2Skeleton";
 
-type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
-
-type LibraryPayload = {
-  capabilityMiss: boolean;
-  /** `/api/projects/documentable` returns Projects. Calling them folders here is
-      what sent a leak investigation through `documents` and `company_documents`
-      before the row turned out to be in `projects` (#245, F4). */
-  projects: Project[];
-  crm: CrmProjectWithDetails[];
-  documents: Document[];
+/**
+ * `/api/projects/documentable` pages Projects. Calling them folders here is
+ * what sent a leak investigation through `documents` and `company_documents`
+ * before the row turned out to be in `projects` (#245, F4).
+ */
+type DocumentationPage = {
+  data: Array<{
+    project: Project;
+    documentationEnabled: boolean;
+    documents: Array<Pick<Document, "id" | "title" | "projectId" | "parentId" | "createdById" | "createdAt" | "updatedAt">>;
+  }>;
+  total: number;
+  projects: Array<{ id: string; name: string; documentationEnabled: boolean }>;
 };
 
-async function loadCrmProjects(): Promise<CrmProjectWithDetails[]> {
-  const pageSize = 200;
-  const rows: CrmProjectWithDetails[] = [];
-  let page = 1;
-  let total = 0;
-  for (;;) {
-    const res = await fetch(`/api/crm/projects?page=${page}&pageSize=${pageSize}`, {
-      credentials: "include",
-    });
-    if (res.status === 401 || res.status === 403 || !res.ok) return rows;
-    const body = (await res.json()) as ProjectsResponse;
-    const batch = body.data ?? [];
-    total = body.total ?? rows.length + batch.length;
-    rows.push(...batch);
-    if (rows.length >= total || batch.length === 0) break;
-    page += 1;
-  }
-  return rows;
-}
+type LibraryPayload = { capabilityMiss: boolean; page: DocumentationPage | null };
 
-async function loadProjectLibrary(): Promise<LibraryPayload> {
-  const documentableRes = await fetch("/api/projects/documentable", { credentials: "include" });
-  if (documentableRes.status === 401 || documentableRes.status === 403) {
-    return { capabilityMiss: true, projects: [], crm: [], documents: [] };
-  }
-  if (!documentableRes.ok) throw new Error("Failed to fetch Project Documentation");
-  const projects = (await documentableRes.json()) as Project[];
-  const crm = await loadCrmProjects();
-  const nested = await Promise.all(
-    projects.map(async (project) => {
-      const res = await fetch(`/api/projects/${project.id}/documents`, { credentials: "include" });
-      if (!res.ok) return [] as Document[];
-      return (await res.json()) as Document[];
-    }),
-  );
-  return {
-    capabilityMiss: false,
-    projects,
-    crm,
-    documents: nested.flat(),
-  };
+const SEARCH_SETTLE_MS = 250;
+
+async function loadDocumentationPage(path: string): Promise<LibraryPayload> {
+  const res = await fetch(path, { credentials: "include" });
+  if (res.status === 401 || res.status === 403) return { capabilityMiss: true, page: null };
+  if (!res.ok) throw new Error("Failed to fetch Project Documentation");
+  return { capabilityMiss: false, page: (await res.json()) as DocumentationPage };
 }
 
 export function V2ProjectDocumentationPage() {
   const now = useMemo(() => new Date(), []);
+  const search = useSearch();
   const [, navigate] = useLocation();
-  const { user } = useAuth();
   const { memberships } = useV2Chrome();
-  const [filterQuery, setFilterQuery] = useState("");
+  const filters = readDocumentationFilters(search);
+  const [filterQuery, setFilterQuery] = useState(filters.q);
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<"document" | "project" | null>(null);
@@ -89,42 +70,69 @@ export function V2ProjectDocumentationPage() {
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const readOnly = current?.condition === "Read-only";
 
+  function setFilters(next: ProjectDocumentationFilters) {
+    navigate(`/project-documentation${writeDocumentationFilters(search, next)}`, { replace: true });
+  }
+
+  // The search box answers each keystroke; the URL, and so the server page,
+  // follows once typing settles.
+  useEffect(() => {
+    if (filterQuery === filters.q) return;
+    const timer = window.setTimeout(() => setFilters({ ...filters, q: filterQuery, page: 1 }), SEARCH_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [filterQuery]);
+
+  const registerPath = documentationRegisterPath(filters);
   const { data, isLoading } = useQuery<LibraryPayload>({
-    queryKey: ["/api/projects/documentable", "project-documentation"],
-    queryFn: loadProjectLibrary,
+    queryKey: ["/api/projects/documentable", "register-page", registerPath],
+    placeholderData: keepPreviousData,
+    queryFn: () => loadDocumentationPage(registerPath),
   });
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
+  const { data: clients = [] } = useQuery<CrmClient[]>({ queryKey: ["/api/crm/clients"] });
   const ownerName = useWorkspaceOwnerName();
 
-  const crmByProjectId = new Map(
-    (data?.crm ?? []).map((project) => [project.project?.id, project] as const),
-  );
-  const projectInputs = (data?.projects ?? []).map((project) => {
-      const crm = crmByProjectId.get(project.id);
-      const memberIds = crm
-        ? (crm.members ?? [])
-            .map((row) => row.userId || row.user?.id)
-            .filter((id): id is string => Boolean(id))
-        : [project.ownerId];
-      return {
-        id: project.id,
-        documentProjectId: project.id,
-        name: project.name || "Untitled Project",
-        documentationEnabled: true,
-        visible: projectVisibleTo({
-          role: current?.workspaceRole?.toLowerCase() || null,
-          userId: user?.id ?? "",
-          memberIds,
-          assigneeId: crm?.assigneeId ?? crm?.assignee?.id ?? project.ownerId,
-        }),
-        updatedAt: project.updatedAt,
-      };
-    });
+  const page = data?.page ?? null;
+  const paging = composePaging({
+    page: filters.page,
+    pageSize: filters.pageSize,
+    total: page?.total ?? 0,
+    noun: { one: "PROJECT", many: "PROJECTS" },
+  });
+
+  // A shared link past the last page lands on the last one instead of nothing.
+  useEffect(() => {
+    if (!page || filters.page <= paging.pageCount) return;
+    setFilters({ ...filters, page: paging.pageCount });
+  }, [page, filters.page, paging.pageCount]);
+
+  const choices = page?.projects ?? [];
+  const projectChipOptions = choices
+    .filter((project) => filters.documentation === "all" || project.documentationEnabled === (filters.documentation === "enabled"))
+    .map((project) => ({ value: project.id, label: project.name || "Untitled Project" }));
+  const clientOptions = [...clients]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((client) => ({ value: client.id, label: client.name }));
+  const activeFilters = documentationFilterLabels(filters, {
+    projects: new Map(choices.map((project) => [project.id, project.name])),
+    clients: new Map(clientOptions.map((option) => [option.value, option.label])),
+  });
+
+  // The server already scoped the page to what the reader may see.
+  const projectInputs = (page?.data ?? []).map((entry) => ({
+    id: entry.project.id,
+    documentProjectId: entry.project.id,
+    name: entry.project.name || "Untitled Project",
+    documentationEnabled: entry.documentationEnabled,
+    visible: true,
+    updatedAt: entry.project.updatedAt,
+  }));
   const library = composeProjectDocumentation({
     now,
     workspaceName,
     projects: projectInputs,
-    documents: (data?.documents ?? []).map((document) => ({
+    activeFilters,
+    documents: (page?.data ?? []).flatMap((entry) => entry.documents).map((document) => ({
       id: document.id,
       title: document.title,
       projectId: document.projectId,
@@ -137,7 +145,7 @@ export function V2ProjectDocumentationPage() {
     })),
     expandedProjectIds,
     selectedProjectId,
-    filterQuery,
+    filterQuery: filters.q,
     capabilityMiss: data?.capabilityMiss === true,
     ownerName,
   });
@@ -145,9 +153,9 @@ export function V2ProjectDocumentationPage() {
 
   const projectOptions = [
     { value: V2_SELECT_NONE, label: "Choose a Project" },
-    ...projectInputs
-      .filter((project) => project.visible)
-      .map((project) => ({ value: project.id, label: project.name })),
+    ...choices
+      .filter((project) => project.documentationEnabled)
+      .map((project) => ({ value: project.id, label: project.name || "Untitled Project" })),
   ];
   const selectedDocumentProjectId = targetProjectId === V2_SELECT_NONE ? null : targetProjectId;
 
@@ -325,6 +333,36 @@ export function V2ProjectDocumentationPage() {
               aria-label="Filter this library"
             />
           </label>
+          {projectChipOptions.length === 0 && filters.project === "all" ? null : (
+            <V2FilterSelect
+              label="PROJECT"
+              ariaLabel="Filter by Project"
+              value={filters.project}
+              active={filters.project !== "all"}
+              options={[{ value: "all", label: "ALL" }, ...projectChipOptions]}
+              onChange={(project) => setFilters({ ...filters, project, page: 1 })}
+            />
+          )}
+          {clientOptions.length === 0 ? null : (
+            <V2FilterSelect
+              label="CLIENT"
+              ariaLabel="Filter by Client"
+              value={filters.client}
+              active={filters.client !== "all"}
+              options={[{ value: "all", label: "ALL" }, ...clientOptions]}
+              onChange={(client) => setFilters({ ...filters, client, page: 1 })}
+            />
+          )}
+          <V2FilterSelect
+            label="DOCUMENTATION"
+            ariaLabel="Filter by documentation"
+            value={filters.documentation}
+            active={filters.documentation !== "enabled"}
+            options={DOCUMENTATION_OPTIONS}
+            onChange={(documentation) =>
+              setFilters({ ...filters, documentation: documentation as DocumentationSetting, project: "all", page: 1 })
+            }
+          />
         </div>
 
         <V2LibraryRegister
@@ -332,6 +370,31 @@ export function V2ProjectDocumentationPage() {
           testId="v2-project-documentation-register"
           instantExpand={folderMotion.instantExpand}
           onFolderClick={onFolderClick}
+          emptyAction={
+            library.filtered ? (
+              <Button
+                variant="outline"
+                type="button"
+                className="df-btn"
+                onClick={() => {
+                  setFilterQuery("");
+                  setFilters(clearDocumentationFilters(filters));
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : null
+          }
+          footer={
+            library.refusal ? undefined : (
+              <V2RegisterPager
+                paging={paging}
+                ariaLabel="Project Documentation pages"
+                onPage={(next) => setFilters({ ...filters, page: next })}
+                onPageSize={(pageSize) => setFilters({ ...filters, pageSize, page: 1 })}
+              />
+            )
+          }
         />
       </div>
     </div>

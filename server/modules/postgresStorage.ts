@@ -154,7 +154,11 @@ import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import { assertSeatAvailable } from "./billing/seats";
 import type { ImportableUser } from "./identity/userImport";
 import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike } from "drizzle-orm";
-import type { CrmProjectListOptions } from "./projects/persistence";
+import type {
+  CrmProjectListOptions,
+  ProjectDocumentationListOptions,
+  ProjectDocumentationPage,
+} from "./projects/persistence";
 import type { CrmClientListOptions, CrmClientRegisterRow } from "./clients-sales/persistence";
 
 /**
@@ -1490,6 +1494,107 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(projects.updatedAt));
     
     return result.map(r => r.project);
+  }
+
+  async getProjectDocumentationPage(options: ProjectDocumentationListOptions): Promise<ProjectDocumentationPage> {
+    const { page, pageSize } = options;
+    const scope: any[] = [inWorkspace(projects), inWorkspace(crmProjects)];
+    if (options.visibleToUserId) {
+      const viewer = options.visibleToUserId;
+      scope.push(
+        or(
+          inArray(
+            crmProjects.id,
+            db.select({ id: projectMembers.crmProjectId }).from(projectMembers).where(eq(projectMembers.userId, viewer)),
+          ),
+          and(
+            eq(crmProjects.assigneeId, viewer),
+            sql`not exists (select 1 from ${projectMembers} where ${projectMembers.crmProjectId} = ${crmProjects.id})`,
+          ),
+        ),
+      );
+    }
+
+    const conditions = [...scope];
+    if (options.documentation === "enabled") conditions.push(eq(crmProjects.documentationEnabled, 1));
+    if (options.documentation === "disabled") conditions.push(sql`coalesce(${crmProjects.documentationEnabled}, 0) = 0`);
+    if (options.projectId) conditions.push(eq(projects.id, options.projectId));
+    if (options.clientId) conditions.push(eq(crmProjects.clientId, options.clientId));
+    const needle = options.search?.trim();
+    if (needle) {
+      const pattern = `%${needle.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+      conditions.push(
+        or(
+          ilike(projects.name, pattern),
+          inArray(
+            projects.id,
+            db
+              .select({ id: documents.projectId })
+              .from(documents)
+              .where(and(ilike(documents.title, pattern), inWorkspace(documents))),
+          ),
+        ),
+      );
+    }
+
+    const [countResult] = await db
+      .select({ count: count() })
+      .from(projects)
+      .innerJoin(crmProjects, eq(projects.id, crmProjects.projectId))
+      .where(and(...conditions));
+    const rows = await db
+      .select()
+      .from(projects)
+      .innerJoin(crmProjects, eq(projects.id, crmProjects.projectId))
+      .where(and(...conditions))
+      .orderBy(desc(projects.updatedAt), asc(projects.id))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize);
+
+    const ids = rows.map((row) => row.projects.id);
+    const docs = ids.length
+      ? await db
+          .select({
+            id: documents.id,
+            title: documents.title,
+            projectId: documents.projectId,
+            parentId: documents.parentId,
+            position: documents.position,
+            createdById: documents.createdById,
+            createdAt: documents.createdAt,
+            updatedAt: documents.updatedAt,
+          })
+          .from(documents)
+          .where(and(inArray(documents.projectId, ids), inWorkspace(documents)))
+          .orderBy(asc(documents.position), asc(documents.id))
+      : [];
+    const docsByProject = new Map<string, typeof docs>();
+    for (const doc of docs) {
+      const list = docsByProject.get(doc.projectId) ?? [];
+      list.push(doc);
+      docsByProject.set(doc.projectId, list);
+    }
+
+    const choices = await db
+      .select({ id: projects.id, name: projects.name, documentationEnabled: crmProjects.documentationEnabled })
+      .from(projects)
+      .innerJoin(crmProjects, eq(projects.id, crmProjects.projectId))
+      .where(and(...scope))
+      .orderBy(sql`lower(${projects.name})`, asc(projects.id));
+
+    return {
+      data: rows.map((row) => ({
+        project: row.projects,
+        crmProjectId: row.crm_projects.id,
+        clientId: row.crm_projects.clientId,
+        documentationEnabled: row.crm_projects.documentationEnabled === 1,
+        documents: docsByProject.get(row.projects.id) ?? [],
+      })),
+      total: Number(countResult?.count ?? 0),
+      page,
+      pageSize,
+      projects: choices.map((choice) => ({ ...choice, documentationEnabled: choice.documentationEnabled === 1 })),
+    };
   }
 
   async getMainAdmin(): Promise<SafeUser | undefined> {
