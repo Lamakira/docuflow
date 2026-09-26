@@ -1621,6 +1621,82 @@ button.df-activity-row {
   font-size: var(--df-text-2);
 }
 
+/* Pipeline & lists: one row per option — its colour, its name, its actions. */
+.df-pipeline-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.df-pipeline-option {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-3);
+  max-width: 720px;
+  padding: var(--df-space-2) var(--df-space-3);
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-2);
+}
+
+.df-v2[data-chrome="mobile"] .df-pipeline-option {
+  flex-wrap: wrap;
+}
+
+.df-v2 .df-pipeline-label {
+  flex: 1;
+  min-width: 0;
+  height: var(--df-control-h);
+  padding: 0 var(--df-space-3);
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-2);
+  background: var(--df-card-white);
+  color: var(--df-case-ink);
+  font-family: var(--df-font-ui);
+  font-size: var(--df-text-3);
+}
+
+.df-pipeline-outcome {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-2);
+}
+
+.df-pipeline-builtin {
+  padding: 0 var(--df-space-3);
+  color: var(--df-case-ink);
+  font-size: var(--df-text-3);
+}
+
+.df-v2 .df-pipeline-colour {
+  width: var(--df-control-h);
+  padding: 0;
+  justify-content: center;
+}
+
+/* The fill is the swatch's line shade: the full hue, legible on either ground. */
+.df-pipeline-swatch {
+  width: var(--df-space-4);
+  height: var(--df-space-4);
+  border-radius: 999px;
+  border: 1px solid var(--df-swatch-ink);
+  background: var(--df-swatch-line);
+}
+
+.dark .df-pipeline-swatch {
+  border-color: var(--df-swatch-ink-dark);
+  background: var(--df-swatch-line-dark);
+}
+
+.df-v2.df-colour-picker {
+  width: 200px;
+  padding: var(--df-space-1);
+}
+
 .df-policy-saved[data-motion="standard"] {
   opacity: 1;
   transform: none;
@@ -2521,6 +2597,7 @@ button.df-activity-row {
 .df-people-action .df-btn,
 .df-devices-confirm .df-btn,
 .df-policy-timezone .df-btn,
+.df-pipeline-option .df-btn,
 .df-card-head .df-btn {
   height: var(--df-control-h);
   padding-top: 0;
