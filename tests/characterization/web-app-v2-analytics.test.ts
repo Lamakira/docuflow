@@ -301,6 +301,19 @@ describe("Administration shows one configuration section at a time (#281)", () =
     expect(panel("billing")).not.toContain("<CancelControl");
   });
 
+  it("starts every tab's content one page gap below the strip", () => {
+    // Radix keeps inactive panels mounted as empty `[hidden]` divs. A panel's
+    // own display outranks the UA rule, so without this each hidden panel ahead
+    // of the active one added a gap and the space grew with the tab's position.
+    expect(rule(".df-v2 .df-admin-panel")).toMatch(/display:\s*flex/);
+    expect(rule(".df-v2 .df-admin-panel[hidden]")).toMatch(/display:\s*none/);
+    // Same distance as Time and Activity, whose strip sits in the page column.
+    expect(rule(".df-admin-tabs")).toMatch(/gap:\s*var\(--df-space-5\)/);
+    expect(rule(".df-page")).toMatch(/gap:\s*var\(--df-space-5\)/);
+    expect(rule(".df-v2 .df-admin-panel")).toMatch(/margin:\s*0/);
+    expect(adminSource).not.toContain("forceMount");
+  });
+
   it("returns a Stripe customer to the Billing tab", () => {
     expect(adminSource).toContain('administrationTabHref("billing")');
   });

@@ -3225,6 +3225,12 @@ button.df-activity-row {
   margin: 0;
 }
 
+/* Radix keeps inactive panels mounted as empty `[hidden]` divs; the display
+   above outranks the UA rule, so each one would add a gap under the tabs. */
+.df-v2 .df-admin-panel[hidden] {
+  display: none;
+}
+
 .df-danger-zone {
   border-color: var(--df-alert-line);
 }
