@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { composeDossier, DOSSIER_FIELD, type DossierInput } from "../../client/src/v2/dossier";
+import { matchV2Route } from "../../client/src/v2/presentation";
 import {
   budgetLabel,
   composeBudgetForm,
@@ -216,7 +217,8 @@ describe("Dossier Settings reads as labelled groups (#277)", () => {
 });
 
 describe("every Dossier tab empties into a designed empty state (#277)", () => {
-  const TABS = ["tasks", "notes", "files", "documents", "reminders", "time"] as const;
+  // `evidence` is the Activity tab's model.
+  const TABS = ["tasks", "notes", "files", "documents", "reminders", "time", "evidence", "updates"] as const;
 
   it("says what each tab holds and offers the action that adds the first item", () => {
     const dossier = composeDossier(input());
@@ -231,11 +233,42 @@ describe("every Dossier tab empties into a designed empty state (#277)", () => {
       label: "Create the first Task",
       target: DOSSIER_FIELD.taskName,
     });
-    expect(dossier.notes.emptyState.action).toMatchObject({ kind: "focus", target: DOSSIER_FIELD.note });
-    expect(dossier.reminders.emptyState.action).toMatchObject({ kind: "focus", target: DOSSIER_FIELD.reminderTitle });
+    expect(dossier.notes.emptyState.action).toEqual({ kind: "compose", label: "Write the first note" });
+    expect(dossier.reminders.emptyState.action).toEqual({ kind: "compose", label: "Add a Reminder" });
     expect(dossier.time.emptyState.action).toEqual({ kind: "start-timer", label: "Start Timer" });
+    expect(dossier.evidence.emptyState.action).toEqual({ kind: "start-timer", label: "Start Timer" });
     expect(dossier.files.emptyState.action).toMatchObject({ kind: "link", href: "/projects/prj-live/notes" });
     expect(dossier.documents.emptyState.action).toEqual({ kind: "new-document", label: "New Document" });
+    expect(dossier.updates.emptyState.action).toEqual({
+      kind: "link",
+      label: "Write a Daily Update",
+      href: "/daily-update?project=prj-live",
+    });
+  });
+
+  it("explains Activity and Daily Updates in the glossary's words", () => {
+    const dossier = composeDossier(input());
+    expect(dossier.evidence.emptyState.title).toBe("No Activity Evidence yet");
+    expect(dossier.evidence.emptyState.copy).toMatch(/Screenshots, activity levels and idle periods/);
+    expect(dossier.evidence.emptyState.copy).toContain("Tracking Policy");
+    expect(dossier.updates.emptyState.title).toBe("No Daily Updates yet");
+    expect(dossier.updates.emptyState.copy).toMatch(/progress, blockers and next plans/);
+  });
+
+  it("offers Start Timer only while the reader's Timer is not already on this Project", () => {
+    const running = composeDossier(input({ timerRunningHere: true }));
+    expect(running.evidence.emptyState.action).toBeNull();
+    expect(running.time.emptyState.action).toBeNull();
+    expect(dossierSource).toContain("timerRunningHere: isRunning && activeEntry?.crmProjectId === projectId");
+  });
+
+  it("writes a Daily Update on the v2 form, opened on this Project", () => {
+    const { href } = composeDossier(input()).updates.emptyState.action as { href: string };
+    expect(matchV2Route(href).kind).toBe("daily-update");
+    const dailyUpdateSource = read("client/src/v2/V2DailyUpdate.tsx");
+    expect(dailyUpdateSource).toContain('new URLSearchParams(window.location.search).get("project")');
+    // A Project the reader cannot pick is not silently submitted.
+    expect(dailyUpdateSource).toContain("projects.some((project) => project.id === pickedProjectId)");
   });
 
   it("sends an empty Documents tab to Settings while Documentation is off", () => {
@@ -246,14 +279,21 @@ describe("every Dossier tab empties into a designed empty state (#277)", () => {
     expect(off.documents.emptyState.action).toMatchObject({ kind: "link", href: "/projects/prj-live/settings" });
   });
 
-  it("renders all six through one shared component, not six bare lines", () => {
+  it("renders every tab through one shared component, not bare lines", () => {
     expect(dossierSource).toContain('from "./V2EmptyState"');
-    // The Overview's Documents summary card keeps its one-line empty copy; the tabs do not.
+    // The Overview's summary cards keep their one-line empty copy; the tabs do not.
     const tabBodies = dossierSource.slice(dossierSource.indexOf("function DossierTasks("));
     for (const tab of TABS) {
       expect(dossierSource, tab).toContain(`state={dossier.${tab}.emptyState}`);
       expect(tabBodies, tab).not.toContain(`<p className="df-empty">{dossier.${tab}.emptyCopy}</p>`);
     }
+    expect(tabBodies).not.toContain('<p className="df-empty">{dossier.updates.copy}</p>');
+    // The Tracking Policy footnote sits under Activity Evidence, not under the empty state.
+    const activity = dossierSource.slice(
+      dossierSource.indexOf("function DossierActivity("),
+      dossierSource.indexOf("function DossierUpdates("),
+    );
+    expect(activity).toMatch(/\) : \(\s*<>[\s\S]*df-evidence-grid[\s\S]*dossier\.evidence\.footnote[\s\S]*<\/>/);
     // Each focus target is a real field on its tab.
     for (const key of ["taskName", "note", "reminderTitle"] as const) {
       expect(dossierSource).toContain(`id={DOSSIER_FIELD.${key}}`);
@@ -272,6 +312,88 @@ describe("every Dossier tab empties into a designed empty state (#277)", () => {
     expect(rule(".df-empty-panel-copy")).toMatch(/var\(--df-archive-slate\)/);
     for (const selector of [".df-empty-panel", ".df-empty-panel-icon", ".df-empty-panel-title", ".df-empty-panel-copy"]) {
       expect(rule(selector), selector).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    }
+  });
+});
+
+describe("an empty Notes, Reminders or Documents tab offers its add once (#277)", () => {
+  const body = (name: string, next: string) =>
+    dossierSource.slice(dossierSource.indexOf(`function ${name}(`), dossierSource.indexOf(`function ${next}(`));
+  const notes = body("DossierNotes", "ReminderRow");
+  const reminders = body("DossierReminders", "DossierDocuments");
+  const documents = body("DossierDocuments", "DossierFiles");
+
+  it("shows only the empty state until its action opens the composer, then focuses the first field", () => {
+    for (const [tab, source] of [["notes", notes], ["reminders", reminders]] as const) {
+      expect(source, tab).toContain(`dossier.${tab}.empty && !composing ? (`);
+      expect(source, tab).toContain("onCompose={() => setComposing(true)}");
+      expect(source, tab).toContain("autoFocus={composing}");
+    }
+    // Documents already works this way: New Document hides while the tab is empty and the
+    // empty state's action opens the same dialog.
+    expect(documents).toContain("dossier.documents.canCreate && !dossier.documents.empty");
+    expect(documents).toContain("onNewDocument={onNewDocument}");
+  });
+
+  it("gives the compose action the primary fill, since no form sits above it", () => {
+    expect(dossierSource).toMatch(
+      /action\?\.kind === "compose" && onCompose\) \{\s*control = \(\s*<Button variant="default"/,
+    );
+  });
+
+  it("keeps the Reminder composer at a reading measure with a normal-size button in the form footer", () => {
+    expect(reminders).toMatch(
+      /<div className="df-form-actions">\s*<Button variant="default" type="submit"[^>]*>Add reminder<\/Button>\s*<\/div>/,
+    );
+    expect(reminders).toContain('className="df-admin-form df-daily-form"');
+    expect(rule(".df-admin-form > .df-daily-field,\n.df-policy-form .df-daily-form > .df-daily-field")).toMatch(
+      /max-width:\s*560px/,
+    );
+    expect(rule(".df-form-actions")).toMatch(/justify-content:\s*flex-end/);
+  });
+});
+
+describe("deleting a note or a Reminder asks first (#277)", () => {
+  const body = (name: string, next: string) =>
+    dossierSource.slice(dossierSource.indexOf(`function ${name}(`), dossierSource.indexOf(`function ${next}(`));
+
+  it("names the note or Reminder and says the delete cannot be undone", () => {
+    const dossier = composeDossier(
+      input({
+        tab: "notes",
+        notes: [
+          { id: "n1", content: "Client approved the revised scope for phase two, pending the signed change order.", createdAt: null },
+          { id: "n2", content: "", createdAt: null, audioUrl: "/objects/voice.webm" },
+        ],
+        reminders: [{ id: "r1", title: "Chase signature", note: null, dueAt: new Date(2026, 8, 10, 9, 0), status: "upcoming" }],
+      }),
+    );
+    const [typed, voice] = dossier.notes.rows;
+    expect(typed.deleteConsequence).toMatch(/^“Client approved the revised scope for phase two, pending the…”/);
+    expect(typed.deleteConsequence).toContain("recording and attached Files");
+    expect(typed.deleteConsequence).toContain("cannot be undone");
+    expect(voice.deleteConsequence).toMatch(/^This note will be deleted/);
+    expect(dossier.reminders.rows[0].deleteConsequence).toMatch(/^Chase signature will be deleted/);
+    expect(dossier.reminders.rows[0].deleteConsequence).toContain("cannot be undone");
+  });
+
+  it("puts each delete behind an AlertDialog with Keep and a destructive Delete, like Delete Project", () => {
+    const cases = [
+      { source: body("DossierNotes", "ReminderRow"), item: "note", run: "onDeleteNote(note.id)", model: "note" },
+      { source: body("ReminderRow", "DossierReminders"), item: "Reminder", run: "onDelete(reminder.id)", model: "reminder" },
+    ];
+    for (const { source, item, run, model } of cases) {
+      expect(source, item).toMatch(
+        /<AlertDialog>\s*<AlertDialogTrigger asChild>\s*<Button variant="destructiveOutline"[^>]*>\s*Delete\s*<\/Button>/,
+      );
+      expect(source, item).toContain(`<AlertDialogTitle>Delete ${item}</AlertDialogTitle>`);
+      expect(source, item).toContain(`<AlertDialogDescription>{${model}.deleteConsequence}</AlertDialogDescription>`);
+      expect(source, item).toMatch(new RegExp(`<AlertDialogCancel className="df-btn" autoFocus>\\s*Keep ${item}`));
+      expect(source, item).toMatch(
+        new RegExp(`<AlertDialogAction\\s+className="df-btn bg-destructive[^"]*"\\s+onClick=\\{\\(\\) => ${run.replace(/[().]/g, "\\$&")}\\}\\s*>\\s*Delete ${item}`),
+      );
+      // The only path to the delete is the dialog's action.
+      expect(source.split(run).length - 1, item).toBe(1);
     }
   });
 });

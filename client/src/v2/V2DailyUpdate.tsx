@@ -32,7 +32,10 @@ export function V2DailyUpdatePage() {
   const readOnly = current?.condition === "Read-only";
   const date = todayKey(now);
 
-  const [crmProjectId, setCrmProjectId] = useState("");
+  // A Project Dossier opens this form on its Project (`?project=`).
+  const [pickedProjectId, setPickedProjectId] = useState(
+    () => new URLSearchParams(window.location.search).get("project") ?? "",
+  );
   const [status, setStatus] = useState("");
   const [progress, setProgress] = useState("");
   const [nextSteps, setNextSteps] = useState("");
@@ -63,6 +66,7 @@ export function V2DailyUpdatePage() {
     id: project.id,
     name: project.project?.name || "Untitled Project",
   }));
+  const crmProjectId = projects.some((project) => project.id === pickedProjectId) ? pickedProjectId : "";
   const page = composeDailyUpdatePage({
     now,
     workspaceName,
@@ -84,7 +88,7 @@ export function V2DailyUpdatePage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/daily-updates"] });
-      setCrmProjectId("");
+      setPickedProjectId("");
       setStatus("");
       setProgress("");
       setNextSteps("");
@@ -180,7 +184,7 @@ export function V2DailyUpdatePage() {
                   { value: V2_SELECT_NONE, label: "Choose a Project", disabled: true },
                   ...projects.map((project) => ({ value: project.id, label: project.name })),
                 ]}
-                onChange={(value) => setCrmProjectId(value === V2_SELECT_NONE ? "" : value)}
+                onChange={(value) => setPickedProjectId(value === V2_SELECT_NONE ? "" : value)}
               />
             </label>
             <label className="df-daily-field">

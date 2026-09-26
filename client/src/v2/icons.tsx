@@ -107,11 +107,21 @@ export function TaskCheckIcon() {
   return <Check width={11} height={11} strokeWidth={3} aria-hidden {...tone("--df-fill-paper")} />;
 }
 
-export type EmptyStateIconId = "tasks" | "time" | "notes" | "reminders" | "documents" | "files";
+export type EmptyStateIconId =
+  | "tasks"
+  | "time"
+  | "activity"
+  | "updates"
+  | "notes"
+  | "reminders"
+  | "documents"
+  | "files";
 
 const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
   tasks: ListChecks,
   time: Clock,
+  activity: Activity,
+  updates: Send,
   notes: StickyNote,
   reminders: Bell,
   documents: FileText,

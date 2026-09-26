@@ -116,6 +116,7 @@ export type DossierReminderRow = {
   canComplete: boolean;
   canReopen: boolean;
   draft: { title: string; note: string; dueAt: string };
+  deleteConsequence: string;
 };
 
 export type DossierFileRow = {
@@ -162,6 +163,8 @@ export type DossierInput = {
   screenshots: DossierScreenshot[];
   users: Array<DossierPerson & { id: string }>;
   trackingTaskId: string | null;
+  /** The reader's Timer is already running on this Project, with or without a Task. */
+  timerRunningHere?: boolean;
   clientActiveProjectCount: number;
   timeEntries: DossierTimeEntry[];
   dailyUpdates: DossierDailyUpdate[];
@@ -185,11 +188,13 @@ export type DossierTab = {
 
 /**
  * What an empty Dossier tab offers (#277): `focus` moves to the tab's own add
- * field, `link` goes to the tab that holds the add, and the other two are the
- * page's own Start Timer and New Document.
+ * field, `compose` opens the add form the empty tab keeps hidden, `link` goes
+ * to the surface that holds the add, and the other two are the page's own
+ * Start Timer and New Document.
  */
 export type DossierEmptyAction =
   | { kind: "focus"; label: string; target: string }
+  | { kind: "compose"; label: string }
   | { kind: "link"; label: string; href: string }
   | { kind: "start-timer"; label: string }
   | { kind: "new-document"; label: string };
@@ -277,6 +282,7 @@ export type DossierModel = {
   updates: {
     kind: "empty" | "records" | "refusal";
     copy: string;
+    emptyState: DossierEmptyState;
     rows: Array<{
       id: string;
       prose: string | null;
@@ -297,7 +303,7 @@ export type DossierModel = {
     emptyState: DossierEmptyState;
   };
   notes: {
-    rows: Array<{ id: string; content: string; meta: string; audioUrl: string | null; audioRecordingId: string | null; transcriptStatus: string | null; audioTranscript: string | null }>;
+    rows: Array<{ id: string; content: string; meta: string; audioUrl: string | null; audioRecordingId: string | null; transcriptStatus: string | null; audioTranscript: string | null; deleteConsequence: string }>;
     empty: boolean;
     emptyCopy: string;
     emptyState: DossierEmptyState;
@@ -349,6 +355,7 @@ export type DossierModel = {
     tiles: Array<{ id: string; kind: "screenshot" | "idle"; caption: string }>;
     empty: boolean;
     emptyCopy: string;
+    emptyState: DossierEmptyState;
     footnote: string;
   };
   budgetTime: {
@@ -613,9 +620,19 @@ function composeTime(input: DossierInput): DossierModel["time"] {
     emptyState: {
       title: "No time tracked yet",
       copy: "Time Entries tracked on this Project land here, with who tracked them and on which Task.",
-      action: { kind: "start-timer", label: "Start Timer" },
+      action: startTimerAction(input),
     },
   };
+}
+
+/** Start Timer is offered only while the reader's Timer is not already on this Project. */
+function startTimerAction(input: DossierInput): DossierEmptyAction | null {
+  return input.timerRunningHere ? null : { kind: "start-timer", label: "Start Timer" };
+}
+
+/** The v2 Daily Update form, opened on this Project. */
+export function dailyUpdateHref(crmProjectId: string): string {
+  return `/daily-update?${new URLSearchParams({ project: crmProjectId })}`;
 }
 
 function composeUpdateRow(update: DossierDailyUpdate): DossierModel["updates"]["rows"][number] {
@@ -636,10 +653,18 @@ function composeUpdateRow(update: DossierDailyUpdate): DossierModel["updates"]["
 }
 
 function composeUpdates(input: DossierInput): DossierModel["updates"] {
+  const emptyState: DossierEmptyState = {
+    title: "No Daily Updates yet",
+    copy: "Each Member's Daily Update gives the day's progress, blockers and next plans by Project. The ones that cover this Project land here.",
+    action: input.project
+      ? { kind: "link", label: "Write a Daily Update", href: dailyUpdateHref(input.project.id) }
+      : null,
+  };
   if (input.dailyUpdateCapabilityMiss) {
     return {
       kind: "refusal",
       copy: capabilityRefusal(VIEW_DAILY_UPDATES_CAPABILITY, input.ownerName),
+      emptyState,
       rows: [],
     };
   }
@@ -653,12 +678,14 @@ function composeUpdates(input: DossierInput): DossierModel["updates"] {
     return {
       kind: "empty",
       copy: "No Daily Update on this Project yet.",
+      emptyState,
       rows: [],
     };
   }
   return {
     kind: "records",
     copy: "",
+    emptyState,
     rows: list.map(composeUpdateRow),
   };
 }
@@ -726,6 +753,7 @@ function composeReminders(input: DossierInput): DossierModel["reminders"] {
         note: reminder.note ?? "",
         dueAt: datetimeLocalValue(reminder.dueAt),
       },
+      deleteConsequence: `${reminder.title} will be deleted from this Project and will not come back at its due time. This cannot be undone.`,
     };
   });
   return {
@@ -735,9 +763,16 @@ function composeReminders(input: DossierInput): DossierModel["reminders"] {
     emptyState: {
       title: "No Reminders yet",
       copy: "A Reminder brings something on this Project back at the time you choose: a call to make, a signature to chase.",
-      action: { kind: "focus", label: "Add a Reminder", target: DOSSIER_FIELD.reminderTitle },
+      action: { kind: "compose", label: "Add a Reminder" },
     },
   };
+}
+
+/** A note has no title, so a confirmation names it by its opening words. */
+function noteName(content: string | null | undefined): string {
+  const text = (content ?? "").trim().replace(/\s+/g, " ");
+  if (!text) return "This note";
+  return `“${text.length > 60 ? `${text.slice(0, 60).trimEnd()}…` : text}”`;
 }
 
 function composeNotes(input: DossierInput): DossierModel["notes"] {
@@ -749,6 +784,7 @@ function composeNotes(input: DossierInput): DossierModel["notes"] {
     audioRecordingId: note.audioRecordingId ?? null,
     transcriptStatus: note.transcriptStatus ?? null,
     audioTranscript: note.audioTranscript ?? null,
+    deleteConsequence: `${noteName(note.content)} will be deleted from this Project, with its recording and attached Files. This cannot be undone.`,
   }));
   return {
     rows,
@@ -757,7 +793,7 @@ function composeNotes(input: DossierInput): DossierModel["notes"] {
     emptyState: {
       title: "No notes yet",
       copy: "Notes keep what was said and decided on this Project: typed, recorded as audio, or with Files attached.",
-      action: { kind: "focus", label: "Write the first note", target: DOSSIER_FIELD.note },
+      action: { kind: "compose", label: "Write the first note" },
     },
   };
 }
@@ -1095,6 +1131,11 @@ export function composeDossier(input: DossierInput): DossierModel {
       }),
       empty: screenshots.length === 0,
       emptyCopy: "No Activity Evidence for this Project you can access.",
+      emptyState: {
+        title: "No Activity Evidence yet",
+        copy: "Screenshots, activity levels and idle periods recorded while tracking this Project land here. Members see their own; Tracking Policy decides who else may review it.",
+        action: startTimerAction(input),
+      },
       footnote: "Members can see their own Activity Evidence. Tracking Policy decides who else may review it.",
     },
     budgetTime: {
