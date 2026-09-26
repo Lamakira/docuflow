@@ -28,6 +28,7 @@ describe("create actions open a dialog", () => {
     "V2Documents.tsx": ["v2-documents-new-folder", "v2-documents-new-document", "v2-documents-upload"],
     "V2ProjectDocumentation.tsx": ["v2-project-documentation-new-project", "v2-project-documentation-new-document"],
     "V2People.tsx": ["v2-people-invite-dialog", "v2-people-settings-dialog"],
+    "V2Dossier.tsx": ["v2-dossier-new-document"],
   };
 
   it("renders each one in V2FormDialog, and no inline create form is left", () => {

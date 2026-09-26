@@ -717,9 +717,12 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     expect(TASK_STATUS_OPTIONS.map((option) => option.value)).toEqual(["open", "in_progress", "done"]);
     // One status list, so the two screens cannot drift apart.
     const dossierSource = read("client/src/v2/V2Dossier.tsx");
+    // The control reads its sentence-case value alone, in the case the row's
+    // buttons use; the column head or the aria-label names it (#277).
     for (const source of [tableSource, dossierSource]) {
       expect(source).toContain("options={TASK_STATUS_OPTIONS}");
-      expect(source).toContain('label="STATUS"');
+      expect(source).toMatch(/label=""\s+ariaLabel=\{`Task status for /);
+      expect(source).not.toContain('label="STATUS"');
     }
     expect(dossierSource).not.toMatch(/const TASK_STATUS_OPTIONS/);
     // The PATCH goes through `onSetStatus`, which refuses in a Read-only Workspace.

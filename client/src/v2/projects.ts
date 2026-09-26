@@ -1,7 +1,7 @@
 import { projectStatusFromCombined } from "@shared/projectLifecycle";
 import { stageColor, stageInk } from "./stageColor";
 import { projectStatusColor } from "./palette";
-import { projectHref } from "./today";
+import { budgetedHoursTotal, projectHref } from "./today";
 import { readPage, readPageSize, writePaging } from "./paging";
 
 /**
@@ -140,7 +140,7 @@ export type ProjectRegisterFilters = {
   pageSize: number;
 };
 
-/** The register columns the server orders by (`CRM_PROJECT_SORTS`). LEAD and TRACKED MTD are not among them. */
+/** The register columns the server orders by (`CRM_PROJECT_SORTS`). PROJECT MANAGER and TRACKED MTD are not among them. */
 export const PROJECT_SORTS = ["name", "status", "budget"] as const;
 export type ProjectSort = (typeof PROJECT_SORTS)[number];
 
@@ -267,7 +267,7 @@ export function projectFilterLabels(
   if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
   if (filters.status !== "all") labels.push(`STATUS ${optionLabel(PROJECT_STATUS_OPTIONS, filters.status)}`);
   if (filters.client !== "all") labels.push(`CLIENT ${names.clients.get(filters.client) ?? "—"}`);
-  if (filters.lead !== "all") labels.push(`LEAD ${names.leads.get(filters.lead) ?? "—"}`);
+  if (filters.lead !== "all") labels.push(`PROJECT MANAGER ${names.leads.get(filters.lead) ?? "—"}`);
   if (filters.tag !== "all") labels.push(`TAG ${(names.tags.get(filters.tag) ?? "—").toUpperCase()}`);
   if (filters.type !== "all") labels.push(`TYPE ${optionLabel(PROJECT_TYPE_OPTIONS, filters.type)}`);
   if (filters.due !== "all") labels.push(`DUE ${optionLabel(PROJECT_DUE_OPTIONS, filters.due)}`);
@@ -480,4 +480,104 @@ export function projectVisibleTo(input: {
   if (input.memberIds.includes(input.userId)) return true;
   if (input.memberIds.length === 0 && input.assigneeId && input.assigneeId === input.userId) return true;
   return false;
+}
+
+/**
+ * A Project's budget (#277) is `budgetedHours` plus `budgetedMinutes`, written
+ * through the routes v1's Project page used: `POST /api/crm/projects` and
+ * `PATCH /api/crm/projects/:id`. A zero or blank budget is no budget.
+ */
+export type ProjectBudgetDraft = { hours: string; minutes: string };
+
+export type ProjectBudget = { budgetedHours: number | null; budgetedMinutes: number };
+
+export type ProjectBudgetForm = {
+  issue: string | null;
+  dirty: boolean;
+  canSave: boolean;
+  note: string;
+  payload: ProjectBudget | null;
+};
+
+export const EMPTY_PROJECT_BUDGET_DRAFT: ProjectBudgetDraft = { hours: "", minutes: "" };
+
+const BUDGET_HOURS_MAX = 99_999;
+
+type SavedBudget = { budgetedHours: number | null; budgetedMinutes?: number | null };
+
+function savedBudget(project: SavedBudget | null | undefined): ProjectBudget {
+  const hours = Math.max(0, project?.budgetedHours ?? 0);
+  const minutes = Math.max(0, project?.budgetedMinutes ?? 0);
+  return hours === 0 && minutes === 0
+    ? { budgetedHours: null, budgetedMinutes: 0 }
+    : { budgetedHours: hours, budgetedMinutes: minutes };
+}
+
+export function projectBudgetDraft(project: SavedBudget | null | undefined): ProjectBudgetDraft {
+  const budget = savedBudget(project);
+  if (budget.budgetedHours == null) return EMPTY_PROJECT_BUDGET_DRAFT;
+  return {
+    hours: String(budget.budgetedHours),
+    minutes: budget.budgetedMinutes > 0 ? String(budget.budgetedMinutes) : "",
+  };
+}
+
+export function readProjectBudget(
+  draft: ProjectBudgetDraft,
+): { budget: ProjectBudget; issue: null } | { budget: null; issue: string } {
+  const hoursText = draft.hours.trim();
+  const minutesText = draft.minutes.trim();
+  const whole = /^\d+$/;
+  if (hoursText && (!whole.test(hoursText) || Number(hoursText) > BUDGET_HOURS_MAX)) {
+    return { budget: null, issue: "Budget hours must be a whole number from 0 to 99,999." };
+  }
+  if (minutesText && (!whole.test(minutesText) || Number(minutesText) > 59)) {
+    return { budget: null, issue: "Budget minutes must be a whole number from 0 to 59." };
+  }
+  return { budget: savedBudget({ budgetedHours: Number(hoursText || 0), budgetedMinutes: Number(minutesText || 0) }), issue: null };
+}
+
+export function projectBudgetPercent(project: SavedBudget & { actualHours: number | null }): number | null {
+  const budgeted = budgetedHoursTotal(project);
+  return budgeted > 0 ? Math.round(((project.actualHours ?? 0) / budgeted) * 100) : null;
+}
+
+export function budgetLabel(project: SavedBudget | null | undefined): string {
+  const budget = savedBudget(project);
+  if (budget.budgetedHours == null) return "No budget";
+  const parts = [
+    budget.budgetedHours > 0 ? `${budget.budgetedHours} h` : null,
+    budget.budgetedMinutes > 0 ? `${budget.budgetedMinutes} min` : null,
+  ].filter(Boolean);
+  return parts.join(" ");
+}
+
+/** The Dossier Settings budget form: what would be written, and whether it changes anything. */
+export function composeBudgetForm(draft: ProjectBudgetDraft, saved: SavedBudget | null | undefined): ProjectBudgetForm {
+  const read = readProjectBudget(draft);
+  const current = savedBudget(saved);
+  if (!read.budget) {
+    return { issue: read.issue, dirty: true, canSave: false, note: read.issue, payload: null };
+  }
+  const dirty =
+    read.budget.budgetedHours !== current.budgetedHours || read.budget.budgetedMinutes !== current.budgetedMinutes;
+  return {
+    issue: null,
+    dirty,
+    canSave: dirty,
+    note: dirty ? "Unsaved changes." : current.budgetedHours == null ? "No budget set." : `Budget ${budgetLabel(current)}.`,
+    payload: read.budget,
+  };
+}
+
+/** What New Project posts; null while the name is blank or the budget does not read. */
+export function newProjectPayload(
+  name: string,
+  draft: ProjectBudgetDraft,
+): { name: string; budgetedHours?: number; budgetedMinutes?: number } | null {
+  const trimmed = name.trim();
+  const read = readProjectBudget(draft);
+  if (!trimmed || !read.budget) return null;
+  if (read.budget.budgetedHours == null) return { name: trimmed };
+  return { name: trimmed, budgetedHours: read.budget.budgetedHours, budgetedMinutes: read.budget.budgetedMinutes };
 }

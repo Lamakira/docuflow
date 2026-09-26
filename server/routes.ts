@@ -1600,6 +1600,7 @@ Instructions:
         actualFinishDate: z.string().nullable().optional(),
         comments: z.string().nullable().optional(),
         budgetedHours: z.number().nullable().optional(),
+        budgetedMinutes: z.number().int().min(0).max(59).nullable().optional(),
         actualHours: z.number().nullable().optional(),
         documentationEnabled: z.boolean().optional(),
         isDocumentationOnly: z.boolean().optional(),
@@ -1638,6 +1639,7 @@ Instructions:
           actualFinishDate: parsed.data.actualFinishDate ? new Date(parsed.data.actualFinishDate) : null,
           comments: parsed.data.comments || null,
           budgetedHours: parsed.data.budgetedHours ?? null,
+          budgetedMinutes: parsed.data.budgetedMinutes ?? 0,
           actualHours: parsed.data.actualHours ?? null,
           documentationEnabled: parsed.data.documentationEnabled ? 1 : 0,
           isDocumentationOnly: parsed.data.isDocumentationOnly ? 1 : 0,
@@ -1702,6 +1704,7 @@ Instructions:
           actualFinishDate: null,
           comments: sourceProject.comments || null,
           budgetedHours: sourceProject.budgetedHours ?? null,
+          budgetedMinutes: sourceProject.budgetedMinutes ?? 0,
           actualHours: null, // Reset actual hours
           documentationEnabled: sourceProject.documentationEnabled || 0,
           isDocumentationOnly: sourceProject.isDocumentationOnly || 0,
@@ -1777,6 +1780,7 @@ Instructions:
         actualFinishDate: z.string().nullable().optional(),
         comments: z.string().nullable().optional(),
         budgetedHours: z.number().nullable().optional(),
+        budgetedMinutes: z.number().int().min(0).max(59).nullable().optional(),
         actualHours: z.number().nullable().optional(),
         projectDescription: z.string().nullable().optional(),
       }).partial();

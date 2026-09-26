@@ -2776,6 +2776,14 @@ button.df-activity-row {
   gap: var(--df-space-4);
 }
 
+/* Two short fields that read as one value, e.g. a budget's hours and minutes. */
+.df-field-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--df-space-4);
+}
+
+.df-form-dialog-body > .df-field-pair > .df-daily-field,
 .df-form-dialog-body > .df-daily-field {
   font-family: var(--df-font-mono);
   font-size: var(--df-text-1);
@@ -2783,6 +2791,7 @@ button.df-activity-row {
   color: var(--df-archive-slate);
 }
 
+.df-form-dialog-body > .df-field-pair > .df-daily-field input,
 .df-form-dialog-body > .df-daily-field input {
   height: var(--df-control-h);
   font-family: var(--df-font-ui);
@@ -3226,9 +3235,14 @@ button.df-activity-row {
   font-size: var(--df-text-3);
 }
 
-.df-v2 .df-check {
-  width: 14px;
-  height: 14px;
+/* `.df-v2 button:not(.df-btn)` resets font and colour and outranks a single
+   class, so the badge names its element. The tick is an icon centred on a grid,
+   never a glyph riding the text baseline. */
+.df-v2 button.df-check {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
   flex: none;
   border-radius: var(--df-radius-1);
   border: 1.5px solid var(--df-placeholder);
@@ -3236,13 +3250,53 @@ button.df-activity-row {
   padding: 0;
   cursor: pointer;
   color: var(--df-fill-paper);
-  font-size: var(--df-text-1);
-  line-height: 1;
+  line-height: 0;
 }
 
-.df-check[data-checked="true"] {
+.df-v2 button.df-check > svg {
+  display: block;
+}
+
+/* Must outrank `.df-v2 button.df-check` above, or its transparent background
+   wins and the paper tick vanishes on the card. */
+.df-v2 button.df-check[data-checked="true"] {
   background: var(--df-signed-off);
   border-color: var(--df-signed-off);
+}
+
+/* Task row (#277): the status control and Start Timer share one height, one
+   radius, one padding and sentence case, and sit on the row's centre line with
+   the badge and the title. */
+.df-task-controls {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--df-space-2);
+}
+
+.df-v2 .df-task-controls > .df-select-trigger,
+.df-v2 .df-task-controls > button.df-btn,
+.df-v2 .df-task-controls > .df-flag {
+  display: inline-flex;
+  align-items: center;
+  height: var(--df-control-h);
+  padding: 0 var(--df-space-3);
+  border-radius: var(--df-radius-2);
+}
+
+.df-v2 .df-task-controls > .df-select-trigger,
+.df-v2 .df-task-controls > button.df-btn {
+  border: 1px solid var(--df-divider);
+  box-shadow: none;
+  font-family: var(--df-font-ui);
+  font-weight: 500;
+  font-size: var(--df-text-2);
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-task-controls > .df-select-trigger {
+  min-width: 128px;
+  justify-content: space-between;
 }
 
 .df-flag {
@@ -3931,6 +3985,50 @@ button.df-activity-row {
 
 .df-empty-state > .df-btn {
   margin-left: var(--df-space-4);
+}
+
+/* A record list with nothing in it yet (#277): what it holds, then the action
+   that adds the first one. Read, never animated in. */
+.df-empty-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--df-space-2);
+  padding: var(--df-space-8) var(--df-space-6);
+  text-align: center;
+  animation: none;
+  transition: none;
+}
+
+.df-empty-panel-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--df-space-1);
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-3);
+  background: var(--df-cold-stock);
+}
+
+.df-empty-panel-title {
+  margin: 0;
+  font-family: var(--df-font-display);
+  font-weight: 700;
+  font-size: var(--df-text-4);
+  color: var(--df-case-ink);
+}
+
+.df-empty-panel-copy {
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--df-text-3);
+  line-height: 1.55;
+  color: var(--df-archive-slate);
+}
+
+.df-empty-panel-action {
+  margin-top: var(--df-space-3);
 }
 
 /* 400px when there is room for 400px, the full row when there is not, and never
@@ -5164,19 +5262,8 @@ button.df-activity-row {
   padding: var(--df-space-4);
 }
 
-.df-inset-follow {
-  padding: 0 var(--df-space-5) var(--df-space-4);
-}
-
 .df-inset-meta {
   padding: 0 var(--df-space-5) var(--df-space-2);
-}
-
-.df-settings-fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--df-space-2);
-  padding: var(--df-space-2) var(--df-space-5) var(--df-space-4);
 }
 
 .df-blocker .df-prose,
@@ -5392,31 +5479,148 @@ button.df-activity-row {
   gap: var(--df-space-2);
 }
 
-.df-settings-section {
+/* Dossier Settings (#277): one card per group. Every row in every group puts
+   its label in the same fixed column, so labels and values line up down the
+   whole tab rather than spreading to the card's two edges. */
+.df-settings-stack {
   display: flex;
   flex-direction: column;
-  gap: var(--df-space-2);
-  padding: var(--df-space-4) var(--df-space-5) 0;
-  border-top: 1px solid var(--df-divider-light);
-  margin-top: var(--df-space-4);
+  gap: var(--df-space-4);
 }
 
-.df-settings-section > .df-contact-row {
-  padding-left: 0;
-  padding-right: 0;
+.df-settings-grid {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--df-space-4);
+}
+
+.df-settings-row {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--df-space-4);
+  min-height: calc(var(--df-control-h) + 2 * var(--df-space-3));
+  padding: var(--df-space-3) 0;
+  margin: 0;
+  border-bottom: 1px solid var(--df-divider-light);
+}
+
+.df-settings-row:last-child {
+  border-bottom: 0;
+}
+
+.df-settings-label {
+  font-family: var(--df-font-mono);
+  font-weight: 500;
+  font-size: var(--df-text-1);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--df-archive-slate);
+}
+
+/* A list sits on the label's first line, not its middle. */
+.df-settings-row:has(> .df-settings-list) {
+  align-items: start;
+}
+
+.df-settings-row:has(> .df-settings-list) > .df-settings-label {
+  line-height: var(--df-control-h);
+}
+
+.df-settings-value {
+  min-width: 0;
+  font-size: var(--df-text-3);
+  color: var(--df-case-ink);
+}
+
+.df-settings-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--df-space-2);
+}
+
+.df-settings-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.df-settings-list > .df-contact-row {
+  padding: var(--df-space-2) 0;
   justify-content: space-between;
 }
 
-.df-settings-section > .df-filter-bar {
-  padding-left: 0;
-  padding-right: 0;
+.df-settings-list > .df-settings-inline {
+  padding-top: var(--df-space-2);
 }
 
-.df-settings-actions {
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: var(--df-space-3);
-  padding-bottom: var(--df-space-4);
+.df-settings-list > .df-empty {
+  line-height: var(--df-control-h);
+}
+
+.df-settings-value input {
+  height: var(--df-control-h);
+  min-width: 0;
+  flex: 1 1 200px;
+  max-width: 360px;
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-2);
+  padding: 0 var(--df-space-3);
+  background: var(--df-card-white);
+  color: var(--df-case-ink);
+  font-family: var(--df-font-ui);
+  font-size: var(--df-text-3);
+}
+
+.df-settings-value input.df-settings-number {
+  flex: none;
+  width: 88px;
+}
+
+.df-settings-value input::placeholder {
+  color: var(--df-placeholder);
+}
+
+.df-settings-value .df-select-trigger {
+  height: var(--df-control-h);
+  min-width: 220px;
+  justify-content: space-between;
+  border-radius: var(--df-radius-2);
+}
+
+.df-settings-unit {
+  font-family: var(--df-font-mono);
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+  margin-right: var(--df-space-2);
+}
+
+.df-settings-copy {
+  color: var(--df-archive-slate);
+  margin-right: auto;
+}
+
+.df-settings-card > form > .df-form-actions {
+  border-top-color: var(--df-divider-light);
+}
+
+.df-settings-danger {
+  border-color: var(--df-alert-line);
+}
+
+.df-settings-danger > .df-card-head {
+  border-bottom-color: var(--df-alert-line);
+}
+
+.df-settings-danger .df-card-title {
+  color: var(--df-destructive);
+}
+
+@media (max-width: 720px) {
+  .df-settings-row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--df-space-2);
+  }
 }
 
 .df-doc-row > .df-doc-link {

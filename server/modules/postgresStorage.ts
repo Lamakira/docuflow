@@ -1293,6 +1293,7 @@ export class DatabaseStorage implements IStorage {
       documentationEnabled: crmData?.documentationEnabled || 0,
       isDocumentationOnly: crmData?.isDocumentationOnly || 0,
       budgetedHours: crmData?.budgetedHours ?? null,
+      budgetedMinutes: crmData?.budgetedMinutes ?? 0,
       actualHours: crmData?.actualHours ?? null,
     });
 

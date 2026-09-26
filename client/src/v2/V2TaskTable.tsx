@@ -108,7 +108,7 @@ export function V2TaskTable(props: V2TaskTableProps) {
           cell: ({ row }) =>
             !row.original.archived ? (
               <V2FilterSelect
-                label="STATUS"
+                label=""
                 ariaLabel={`Task status for ${row.original.name}`}
                 value={row.original.statusValue}
                 options={TASK_STATUS_OPTIONS}

@@ -62,6 +62,7 @@ function toTodayProject(project: CrmProjectWithDetails): TodayProject {
     projectStatus: project.projectStatus,
     projectType: project.projectType,
     budgetedHours: project.budgetedHours,
+    budgetedMinutes: project.budgetedMinutes,
     actualHours: project.actualHours,
     project: project.project ? { id: project.project.id, name: project.project.name } : null,
     client: project.client ? { name: project.client.name } : null,
@@ -206,7 +207,7 @@ export function V2TodayPage() {
           <SkeletonSection title="Needs attention" lines={3} />
           <SkeletonRegister
             title="Active Projects"
-            heads={["PROJECT / CLIENT", "STATUS", "LEAD", "BUDGET USED", "TRACKED MTD"]}
+            heads={["PROJECT / CLIENT", "STATUS", "PROJECT MANAGER", "BUDGET USED", "TRACKED MTD"]}
             rows={4}
           />
           <div className="df-split">
@@ -308,7 +309,7 @@ export function V2TodayPage() {
         <div className="df-register-head df-desktop-only">
           <span>PROJECT / CLIENT</span>
           <span>STATUS</span>
-          <span>LEAD</span>
+          <span>PROJECT MANAGER</span>
           <span>BUDGET USED</span>
           <span style={{ textAlign: "right" }}>TRACKED MTD</span>
         </div>

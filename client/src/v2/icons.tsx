@@ -8,10 +8,12 @@ import {
   Folder,
   Grid2x2,
   HelpCircle,
+  ListChecks,
   Menu,
   Monitor,
   MoreVertical,
   PanelLeft,
+  Paperclip,
   Check,
   Pause,
   Play,
@@ -20,6 +22,7 @@ import {
   Square,
   Settings,
   Sparkles,
+  StickyNote,
   Target,
   Users,
   X,
@@ -97,6 +100,37 @@ export function CloseIcon() {
 
 export function CheckIcon() {
   return <Check width={12} height={12} strokeWidth={1.8} {...tone("--df-signed-off")} />;
+}
+
+/** The tick inside a done Task's green badge: paper on the fill, in both palettes. */
+export function TaskCheckIcon() {
+  return <Check width={11} height={11} strokeWidth={3} aria-hidden {...tone("--df-fill-paper")} />;
+}
+
+export type EmptyStateIconId =
+  | "tasks"
+  | "time"
+  | "activity"
+  | "updates"
+  | "notes"
+  | "reminders"
+  | "documents"
+  | "files";
+
+const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
+  tasks: ListChecks,
+  time: Clock,
+  activity: Activity,
+  updates: Send,
+  notes: StickyNote,
+  reminders: Bell,
+  documents: FileText,
+  files: Paperclip,
+};
+
+export function EmptyStateIcon({ id }: { id: EmptyStateIconId }) {
+  const Icon = EMPTY_STATE_ICONS[id];
+  return <Icon width={18} height={18} strokeWidth={1.5} aria-hidden {...tone("--df-archive-slate")} />;
 }
 
 export function StopIcon() {

@@ -470,17 +470,18 @@ describe("Project Dossier remaining tabs from live records (#188)", () => {
 
   it("Settings expose BFF Project fields and Project Assignment, not custom Workspace Roles or Timesheets", () => {
     const dossier = composeDossier(emptyInput({ tab: "settings", project: liveProject() }));
-    expect(dossier.settings.fields).toEqual(
-      expect.arrayContaining([
-        { label: "NAME", value: "Ledger rebuild" },
-        { label: "CLIENT", value: "Harbor Co" },
-        { label: "KIND", value: "CLIENT PROJECT" },
-        { label: "STATUS", value: "ACTIVE" },
-        { label: "LEAD", value: "Sam Lee" },
-        { label: "BUDGET", value: "120.0 h" },
-        { label: "DOCUMENTATION", value: "ON" },
-      ]),
-    );
+    expect(dossier.settings.identity).toEqual([
+      { label: "CLIENT", value: "Harbor Co" },
+      { label: "KIND", value: "CLIENT PROJECT", chip: true },
+    ]);
+    expect(dossier.settings.lifecycle.rows.map((row) => [row.label, row.value])).toEqual([
+      ["STATUS", "ACTIVE"],
+      ["START", "01 AUG"],
+      ["DUE", "30 OCT"],
+      ["LAST CHANGE", "—"],
+    ]);
+    expect(dossier.settings.budget.draft).toEqual({ hours: "120", minutes: "" });
+    expect(dossier.settings.documentation.row).toMatchObject({ label: "DOCUMENTATION", value: "ON" });
     expect(dossier.settings.lead?.id).toBe("user-1");
     expect(dossier.settings.members.map((member) => member.id)).toEqual(["user-1", "user-2"]);
     expect(JSON.stringify(dossier.settings)).not.toContain("Timesheet");

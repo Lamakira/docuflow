@@ -5,6 +5,7 @@ export type TodayProject = {
   projectStatus: string;
   projectType: string | null;
   budgetedHours: number | null;
+  budgetedMinutes?: number | null;
   actualHours: number | null;
   project?: { id: string; name: string } | null;
   client?: { name: string } | null;
@@ -129,6 +130,11 @@ export function formatHours(seconds: number): string {
   return `${(Math.max(0, seconds) / 3600).toFixed(1)} h`;
 }
 
+/** A Project's budget is `budgetedHours` plus `budgetedMinutes`; either may be empty. */
+export function budgetedHoursTotal(project: { budgetedHours: number | null; budgetedMinutes?: number | null }): number {
+  return Math.max(0, project.budgetedHours ?? 0) + Math.max(0, project.budgetedMinutes ?? 0) / 60;
+}
+
 export function memberName(user: { firstName?: string | null; lastName?: string | null; email?: string | null }): string {
   const name = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
   return name || user.email || "Member";
@@ -244,7 +250,7 @@ function composeProjects(input: TodayInput): ActiveProjectRow[] {
   return input.projects
     .filter((project) => LIVE_PROJECT_STATUSES.has(project.projectStatus))
     .map((project) => {
-      const budgeted = project.budgetedHours ?? 0;
+      const budgeted = budgetedHoursTotal(project);
       const actual = project.actualHours ?? 0;
       return {
         id: project.id,
