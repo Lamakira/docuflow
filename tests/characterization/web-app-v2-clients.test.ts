@@ -6,6 +6,8 @@ import { motionForSurface } from "../../client/src/v2/motion";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
 import {
   clientSourceChoices,
+  clientSourceOptions,
+  CLIENT_SOURCE_OPTIONS,
   clientWriteRefusal,
   composeClientRecord,
   composeClientRegister,
@@ -36,7 +38,7 @@ describe("the Client record's two forms match every other v2 form (#280)", () =>
 
   it("chooses the source with the shared v2 select", () => {
     expect(source).not.toContain('from "@/components/ui/select"');
-    expect(source).toContain("options={withSourceMarks(clientSourceChoices(draft.source))}");
+    expect(source).toContain("options={withSourceMarks(clientSourceChoices(draft.source, sourceOptions))}");
     expect(rule(".df-form-dialog-body > .df-daily-field .df-select-trigger")).toMatch(
       /justify-content:\s*space-between/,
     );
@@ -44,10 +46,33 @@ describe("the Client record's two forms match every other v2 form (#280)", () =>
 
   it("keeps a stored source outside the set as a choice, so the field is never blank", () => {
     const ids = (current: string | null) => clientSourceChoices(current).map((option) => option.value);
-    expect(ids(null)).toEqual(["direct", "fiverr", "zoho", "none"]);
-    expect(ids("direct")).toEqual(["direct", "fiverr", "zoho", "none"]);
+    expect(ids(null)).toEqual(["fiverr", "zoho", "direct", "none"]);
+    expect(ids("direct")).toEqual(["fiverr", "zoho", "direct", "none"]);
     expect(clientSourceChoices("referral").at(-1)).toEqual({ value: "referral", label: "REFERRAL" });
     expect(clientSourceChoices("word_of_mouth").at(-1)?.label).toBe("WORD OF MOUTH");
+  });
+
+  it("offers the Workspace's saved Source list, falling back to the defaults", () => {
+    const saved = [
+      { slug: "first_name", options: null },
+      {
+        slug: "source",
+        options: ['{"id":"direct","label":"Direct","color":"#3b82f6"}', '{"id":"referral","label":"Referral","color":"#22c55e"}', "Fiverr"],
+      },
+    ];
+    const options = clientSourceOptions(saved);
+    expect(options).toEqual([
+      { value: "direct", label: "DIRECT" },
+      { value: "referral", label: "REFERRAL" },
+      { value: "fiverr", label: "FIVERR" },
+      { value: "none", label: "NONE" },
+    ]);
+    expect(clientSourceOptions([{ slug: "source", options: [] }])).toEqual(CLIENT_SOURCE_OPTIONS);
+    expect(clientSourceOptions(undefined)).toEqual(CLIENT_SOURCE_OPTIONS);
+    // A stored source the saved list dropped still reads back.
+    expect(clientSourceChoices("zoho", options).map((option) => option.value)).toEqual(["direct", "referral", "fiverr", "none", "zoho"]);
+    expect(clientSourceChoices("referral", options)).toBe(options);
+    expect(source).toContain('queryKey: ["/api/modules/contacts/fields"]');
   });
 
   it("gives both forms the same field shape: a label above a typed input", () => {
@@ -103,7 +128,7 @@ describe("a Client Source wears one mark everywhere v2 shows it", () => {
     expect(clientsSource).toContain("<SourceMark value={row.original.sourceValue} />");
     expect(clientsSource).toContain("<SourceMark value={record.identity.sourceValue} />");
     expect(clientsSource).toContain("<SourceMark value={record.identity?.sourceValue} />");
-    expect(clientsSource).toContain('options={withSourceMarks([{ value: "all", label: "ALL" }, ...CLIENT_SOURCE_OPTIONS])}');
+    expect(clientsSource).toContain('options={withSourceMarks([{ value: "all", label: "ALL" }, ...sourceOptions])}');
     expect(selectSource).toContain("icon?: ReactNode;");
     expect(selectSource).toContain("<OptionText option={option} />");
     // Pipeline & lists: a marked Source has no colour picker; any other keeps one.

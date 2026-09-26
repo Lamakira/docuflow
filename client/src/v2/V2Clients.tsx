@@ -19,7 +19,8 @@ import {
   writeClientFilters,
   CLIENT_OPEN_OPTIONS,
   CLIENT_SORTS,
-  CLIENT_SOURCE_OPTIONS,
+  clientSourceOptions,
+  type ClientSourceOption,
   CLIENT_STATUS_OPTIONS,
   type ClientRegisterFilters,
   type ClientRegisterRow,
@@ -96,6 +97,15 @@ function toRegisterClient(client: CrmClient & { projectCount: number }): ClientR
 }
 
 /** Source choices wear the same mark the register and the record do. */
+/** The Workspace's saved Source list, or the defaults while none is saved. */
+function useClientSourceOptions(): ClientSourceOption[] {
+  const { data: fields } = useQuery<Array<{ slug: string; options?: string[] | null }>>({
+    queryKey: ["/api/modules/contacts/fields"],
+    retry: false,
+  });
+  return useMemo(() => clientSourceOptions(fields), [fields]);
+}
+
 function withSourceMarks(options: V2SelectOption[]): V2SelectOption[] {
   return options.map((option) => (sourceIcon(option.value) ? { ...option, icon: <SourceMark value={option.value} /> } : option));
 }
@@ -299,6 +309,7 @@ export function V2ClientsPage() {
   }, [filterQuery]);
 
   const registerPath = clientRegisterPath(filters);
+  const sourceOptions = useClientSourceOptions();
   const { data: clientPage, isLoading, isError } = useQuery<ClientPage>({
     queryKey: ["/api/crm/clients", "register-page", registerPath],
     placeholderData: keepPreviousData,
@@ -456,7 +467,7 @@ export function V2ClientsPage() {
           ariaLabel="Filter by source"
           value={filters.source}
           active={filters.source !== "all"}
-          options={withSourceMarks([{ value: "all", label: "ALL" }, ...CLIENT_SOURCE_OPTIONS])}
+          options={withSourceMarks([{ value: "all", label: "ALL" }, ...sourceOptions])}
           onChange={(source) => setFilters({ ...filters, source, page: 1 })}
         />
         <V2FilterSelect
@@ -546,6 +557,7 @@ export function V2ClientRecordPage() {
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
   const seed = registerSeed(clientId);
+  const sourceOptions = useClientSourceOptions();
 
   const { data: client, isLoading, isError } = useQuery<ClientWithContacts | null>({
     queryKey: ["/api/crm/clients", clientId],
@@ -880,7 +892,7 @@ export function V2ClientRecordPage() {
                       label=""
                       ariaLabel="Client source"
                       value={draft.source || "none"}
-                      options={withSourceMarks(clientSourceChoices(draft.source))}
+                      options={withSourceMarks(clientSourceChoices(draft.source, sourceOptions))}
                       onChange={(next) => setDraft((value) => ({ ...value, source: next === "none" ? "" : next }))}
                     />
                   </label>
