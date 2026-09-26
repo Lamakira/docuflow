@@ -119,9 +119,11 @@ import { db } from "../db";
 import {
   currentWorkspaceContext,
   inWorkspace,
+  requireWorkspaceContext,
   runWithWorkspaceContext,
   stampWorkspace,
 } from "../workspaceContext";
+import type { OptionRenameColumn } from "./clients-sales/persistence";
 
 import type { DocumentWriter, ProjectWriter } from "./writers";
 import type { IStorage } from "./index";
@@ -132,6 +134,7 @@ import {
   projectStatusFromCombined,
 } from "@shared/projectLifecycle";
 import { isUploadedFile } from "@shared/documentFile";
+import { BUILT_IN_LISTS, defaultFieldOptions, type OptionRename } from "@shared/pipelineLists";
 import {
   deleteIndexArtifacts,
   listIndexArtifacts,
@@ -153,7 +156,7 @@ import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import { assertSeatAvailable } from "./billing/seats";
 import type { ImportableUser } from "./identity/userImport";
-import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike, type AnyColumn } from "drizzle-orm";
 import type {
   CrmProjectListOptions,
   ProjectDocumentationListOptions,
@@ -2355,46 +2358,133 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async updateCrmFieldValuesOnOptionRename(fieldId: string, oldLabel: string, newLabel: string): Promise<void> {
-    // Update all field values that have the old option label to use the new label
-    await db
-      .update(crmCustomFieldValues)
-      .set({ value: newLabel, updatedAt: new Date() })
-      .where(and(
-        eq(crmCustomFieldValues.fieldId, fieldId),
-        eq(crmCustomFieldValues.value, oldLabel)
-      ));
-  }
+  async updateCrmModuleFieldOptions(
+    id: string,
+    data: Partial<InsertCrmModuleField>,
+    renames: OptionRename[],
+    columns: OptionRenameColumn[],
+  ): Promise<CrmModuleField | undefined> {
+    return db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(crmModuleFields)
+        .set({ ...data, options: data.options as string[] | null | undefined, updatedAt: new Date() })
+        .where(and(inWorkspace(crmModuleFields), eq(crmModuleFields.id, id)))
+        .returning();
+      if (!updated || renames.length === 0) return updated;
 
-  async updateCrmProjectsColumnOnOptionRename(column: "status" | "projectType", oldLabel: string, newLabel: string): Promise<void> {
-    // Update crmProjects table directly for system fields
-    if (column === "status") {
-      await db
-        .update(crmProjects)
-        .set({ status: newLabel, updatedAt: new Date() })
-        .where(eq(crmProjects.status, oldLabel));
-      if (!isOpportunityTerminal(oldLabel) && !isOpportunityTerminal(newLabel)) {
-        await db
-          .update(opportunities)
-          .set({ stage: newLabel, updatedAt: new Date() })
-          .where(eq(opportunities.stage, oldLabel));
+      // One CASE per column, so a swap (a → b, b → a) never merges the two.
+      const renamed = (column: AnyColumn, pairs: OptionRename[]) =>
+        sql`CASE ${sql.join(pairs.map((pair) => sql`WHEN ${column} = ${pair.from} THEN ${pair.to}`), sql` `)} ELSE ${column} END`;
+      const froms = (pairs: OptionRename[]) => pairs.map((pair) => pair.from);
+      const now = new Date();
+
+      await tx
+        .update(crmCustomFieldValues)
+        .set({ value: renamed(crmCustomFieldValues.value, renames), updatedAt: now })
+        .where(and(
+          inWorkspace(crmCustomFieldValues),
+          eq(crmCustomFieldValues.fieldId, id),
+          inArray(crmCustomFieldValues.value, froms(renames)),
+        ));
+
+      for (const column of columns) {
+        if (column === "projects.status") {
+          await tx
+            .update(crmProjects)
+            .set({ status: renamed(crmProjects.status, renames), updatedAt: now })
+            .where(and(inWorkspace(crmProjects), inArray(crmProjects.status, froms(renames))));
+          const stages = renames.filter((pair) => !isOpportunityTerminal(pair.from) && !isOpportunityTerminal(pair.to));
+          if (stages.length > 0) {
+            await tx
+              .update(opportunities)
+              .set({ stage: renamed(opportunities.stage, stages), updatedAt: now })
+              .where(and(inWorkspace(opportunities), inArray(opportunities.stage, froms(stages))));
+          }
+        } else if (column === "projects.projectType") {
+          await tx
+            .update(crmProjects)
+            .set({ projectType: renamed(crmProjects.projectType, renames), updatedAt: now })
+            .where(and(inWorkspace(crmProjects), inArray(crmProjects.projectType, froms(renames))));
+        } else if (column === "clients.status") {
+          await tx
+            .update(crmClients)
+            .set({ status: renamed(crmClients.status, renames), updatedAt: now })
+            .where(and(inWorkspace(crmClients), inArray(crmClients.status, froms(renames))));
+        } else if (column === "clients.source") {
+          await tx
+            .update(crmClients)
+            .set({ source: renamed(crmClients.source, renames), updatedAt: now })
+            .where(and(inWorkspace(crmClients), inArray(crmClients.source, froms(renames))));
+        }
       }
-    } else if (column === "projectType") {
-      await db
-        .update(crmProjects)
-        .set({ projectType: newLabel, updatedAt: new Date() })
-        .where(eq(crmProjects.projectType, oldLabel));
-    }
+      return updated;
+    });
   }
 
-  async updateCrmClientsColumnOnOptionRename(column: "status", oldLabel: string, newLabel: string): Promise<void> {
-    // Update crmClients table directly for system fields
-    if (column === "status") {
-      await db
-        .update(crmClients)
-        .set({ status: newLabel, updatedAt: new Date() })
-        .where(eq(crmClients.status, oldLabel));
-    }
+  async ensureCrmSystemLists(): Promise<CrmModuleWithFields[]> {
+    await db.transaction(async (tx) => {
+      // Two Administrators saving a first change at once must not create two fields.
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`crm-system-lists:${requireWorkspaceContext().workspaceId}`}))`);
+      const moduleIds = new Map<string, string>();
+      for (const list of BUILT_IN_LISTS) {
+        const spec = list.module;
+        let moduleId = moduleIds.get(spec.slug);
+        if (!moduleId) {
+          const [existing] = await tx
+            .select()
+            .from(crmModules)
+            .where(and(inWorkspace(crmModules), eq(crmModules.slug, spec.slug)));
+          if (existing) {
+            if (existing.isSystem !== 1) {
+              await tx
+                .update(crmModules)
+                .set({ isSystem: 1, updatedAt: new Date() })
+                .where(and(inWorkspace(crmModules), eq(crmModules.id, existing.id)));
+            }
+            moduleId = existing.id;
+          } else {
+            const [created] = await tx
+              .insert(crmModules)
+              .values(stampWorkspace({ ...spec, id: randomUUID(), isEnabled: 1, isSystem: 1 }))
+              .returning();
+            moduleId = created.id;
+          }
+          moduleIds.set(spec.slug, moduleId);
+        }
+
+        const [field] = await tx
+          .select()
+          .from(crmModuleFields)
+          .where(and(
+            inWorkspace(crmModuleFields),
+            eq(crmModuleFields.moduleId, moduleId),
+            eq(crmModuleFields.slug, list.field.slug),
+          ))
+          .orderBy(asc(crmModuleFields.createdAt))
+          .limit(1);
+        if (!field) {
+          await tx.insert(crmModuleFields).values(stampWorkspace({
+            ...list.field,
+            id: randomUUID(),
+            moduleId,
+            fieldType: "select",
+            options: defaultFieldOptions(list),
+            isEnabled: 1,
+            isSystem: 1,
+          }));
+        } else if (field.isSystem !== 1 || !field.options?.length) {
+          await tx
+            .update(crmModuleFields)
+            .set({
+              isSystem: 1,
+              ...(field.options?.length ? {} : { options: defaultFieldOptions(list) }),
+              updatedAt: new Date(),
+            })
+            .where(and(inWorkspace(crmModuleFields), eq(crmModuleFields.id, field.id)));
+        }
+      }
+    });
+    return this.getCrmModules();
   }
 
   // Time Tracking methods

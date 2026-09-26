@@ -23,6 +23,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -56,7 +57,25 @@ import {
 } from "./administration";
 import { trackingPolicyPath } from "./activity";
 import { motionForSurface } from "./motion";
-import { billingConditionTone } from "./palette";
+import { billingConditionTone, swatchStyle } from "./palette";
+import { SourceMark } from "./icons";
+import { sourceIcon } from "./sourceIcons";
+import {
+  PIPELINE_COLOURS,
+  PIPELINE_LISTS_INTRO,
+  PIPELINE_LIST_QUERY_KEYS,
+  addPipelineOption,
+  adminModulesPath,
+  composePipelineLists,
+  movePipelineOption,
+  recolourPipelineOption,
+  removePipelineOption,
+  renamePipelineOption,
+  savePipelineList,
+  type PipelineEdit,
+  type PipelineListId,
+  type PipelineListModel,
+} from "./pipelineLists";
 import {
   ADMINISTRATION_TAB_IDS,
   administrationTabHref,
@@ -66,18 +85,7 @@ import {
 import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
 import { V2FormDialog } from "./V2FormDialog";
-import { V2FilterSelect } from "./V2Select";
 import { AnalyticsRegister, FigureBand, readBehindAdministration } from "./V2Analytics";
-
-const CRM_FIELD_TYPES = [
-  { value: "text", label: "TEXT" },
-  { value: "textarea", label: "LONG TEXT" },
-  { value: "number", label: "NUMBER" },
-  { value: "date", label: "DATE" },
-  { value: "select", label: "SELECT" },
-  { value: "multiselect", label: "MULTISELECT" },
-  { value: "checkbox", label: "CHECKBOX" },
-];
 
 type WorkspaceMembershipsResponse = {
   memberships: Array<{
@@ -141,10 +149,7 @@ export function V2AdministrationPage() {
   const [timezoneInput, setTimezoneInput] = useState("");
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
   const [policySaved, setPolicySaved] = useState(false);
-  const [moduleName, setModuleName] = useState("");
-  const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
-  const [fieldName, setFieldName] = useState("");
-  const [fieldType, setFieldType] = useState("text");
+  const [pipelineIssue, setPipelineIssue] = useState<{ id: PipelineListId; reason: string } | null>(null);
 
   const { data: people, isLoading: peopleLoading } = useQuery<WorkspaceMembershipsResponse>({
     queryKey: ["/api/workspace/memberships"],
@@ -164,9 +169,9 @@ export function V2AdministrationPage() {
     },
   });
   const { data: crmModules = [], isLoading: crmModulesLoading } = useQuery<CrmModuleWithFields[]>({
-    queryKey: ["/api/admin/modules"],
+    queryKey: [adminModulesPath()],
     enabled: canManage,
-    queryFn: () => readBehindAdministration<CrmModuleWithFields[]>("/api/admin/modules").then((rows) => rows ?? []),
+    queryFn: () => readBehindAdministration<CrmModuleWithFields[]>(adminModulesPath()).then((rows) => rows ?? []),
   });
   const { data: endpoints = [], isLoading: endpointsLoading } = useQuery<WebhookEndpointInput[]>({
     queryKey: [webhookEndpointsPath()],
@@ -380,47 +385,29 @@ export function V2AdministrationPage() {
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
-  const createCrmModule = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/admin/modules", {
-      name: moduleName.trim(),
-      slug: moduleName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""),
-      description: "",
-      icon: "",
-      isEnabled: 1,
-    }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/modules"] }); setModuleName(""); },
+  const pipelineLists = composePipelineLists(crmModules);
+  const savePipeline = useMutation({
+    mutationFn: ({ list, edit }: { list: PipelineListModel; edit: { options: string[] } }) =>
+      savePipelineList(list, edit, (method, path, body) => apiRequest(method, path, body)),
+    onSuccess: () => setActionRefusal(null),
     onError: (error: Error) => refuseWrite(error.message),
-  });
-  const updateCrmModule = useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: Record<string, unknown> }) => apiRequest("PATCH", `/api/admin/modules/${id}`, patch),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/admin/modules"] }),
-    onError: (error: Error) => refuseWrite(error.message),
-  });
-  const deleteCrmModule = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/admin/modules/${id}`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/modules"] }); setSelectedModuleId(null); },
-    onError: (error: Error) => refuseWrite(error.message),
-  });
-  const selectedModule = crmModules.find((module) => module.id === selectedModuleId) ?? null;
-  const createCrmField = useMutation({
-    mutationFn: () => {
-      if (!selectedModule) throw new Error("Choose a CRM module");
-      const slug = fieldName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-      return apiRequest("POST", `/api/admin/modules/${selectedModule.id}/fields`, { name: fieldName.trim(), slug, fieldType, isEnabled: 1, isRequired: 0 });
+    // A failed step may still have written the module or field before it.
+    onSettled: () => {
+      for (const queryKey of PIPELINE_LIST_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/modules"] }); setFieldName(""); },
-    onError: (error: Error) => refuseWrite(error.message),
   });
-  const updateCrmField = useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: Record<string, unknown> }) => apiRequest("PATCH", `/api/admin/fields/${id}`, patch),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/modules"] }); queryClient.invalidateQueries({ queryKey: ["/api/modules/projects/fields"] }); queryClient.invalidateQueries({ queryKey: ["/api/modules/contacts/fields"] }); },
-    onError: (error: Error) => refuseWrite(error.message),
-  });
-  const deleteCrmField = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/admin/fields/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/admin/modules"] }),
-    onError: (error: Error) => refuseWrite(error.message),
-  });
+
+  /** Whether the edit went to the server; a refused one leaves the row as it was. */
+  function onPipelineEdit(list: PipelineListModel, edit: PipelineEdit): boolean {
+    if (!guardWrite()) return false;
+    if (!edit.ok) {
+      setPipelineIssue({ id: list.id, reason: edit.reason });
+      return false;
+    }
+    setPipelineIssue(null);
+    savePipeline.mutate({ list, edit: { options: edit.options } });
+    return true;
+  }
 
   function guardWrite(): boolean {
     if (condition === "Read-only") {
@@ -629,41 +616,17 @@ export function V2AdministrationPage() {
           </section>
         </TabsContent>
 
-        <TabsContent value="crm-fields" className="df-admin-panel" data-testid="v2-administration-panel-crm-fields">
-          <section className="df-card df-admin-register" data-testid="v2-administration-crm-modules">
-            <div className="df-card-head"><div className="df-card-head-text"><h2 className="df-card-title">CRM modules &amp; fields</h2><p className="df-card-sub">Configure the Work record schema used by Clients and Projects.</p></div></div>
-            <form className="df-admin-form df-inline-form" onSubmit={(event) => { event.preventDefault(); if (!guardWrite() || !moduleName.trim()) return; createCrmModule.mutate(); }}>
-              <label className="df-daily-field">MODULE NAME<input value={moduleName} onChange={(event) => setModuleName(event.target.value)} /></label>
-              <Button variant="default" type="submit" disabled={!moduleName.trim() || createCrmModule.isPending} className="df-btn">Add module</Button>
-            </form>
-            {crmModules.length === 0 ? <p className="df-empty">No CRM modules configured.</p> : crmModules.map((module) => (
-              <div key={module.id} className="df-register-row" data-testid={`v2-crm-module-${module.id}`}>
-                <span><Button variant="outline" type="button" onClick={() => setSelectedModuleId(module.id)} className="df-btn">Open</Button><input aria-label={`Module name for ${module.name}`} defaultValue={module.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === module.name || !guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { name } }); }} /></span>
-                <span className="df-mono df-meta">{module.slug}</span>
-                <span className="df-status">{module.isEnabled ? "ACTIVE" : "INACTIVE"}</span>
-                <span className="df-people-action">
-                  <Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { isEnabled: module.isEnabled ? 0 : 1 } }); }} className="df-btn">{module.isEnabled ? "Disable" : "Enable"}</Button>
-                  {module.isSystem !== 1 ? <DestructiveConfirm label="Delete" title={`Delete ${module.name}`} consequence="The module and every field in it are removed from Clients and Projects. This cannot be undone." confirmLabel="Delete module" keepLabel="Keep module" pending={deleteCrmModule.isPending} testId={`v2-crm-module-delete-${module.id}`} onConfirm={() => { if (!guardWrite()) return; deleteCrmModule.mutate(module.id); }} /> : null}
-                </span>
-              </div>
-            ))}
-            {selectedModule ? (
-              <div className="df-daily-form">
-                <div className="df-card-head"><h3 className="df-card-title">{selectedModule.name} fields</h3></div>
-                <form className="df-admin-form df-inline-form" onSubmit={(event) => { event.preventDefault(); if (!guardWrite() || !fieldName.trim()) return; createCrmField.mutate(); }}>
-                  <label className="df-daily-field">FIELD NAME<input value={fieldName} onChange={(event) => setFieldName(event.target.value)} /></label>
-                  <label className="df-daily-field">TYPE<V2FilterSelect label="" ariaLabel="CRM field type" value={fieldType} options={CRM_FIELD_TYPES} onChange={setFieldType} testId="v2-administration-crm-field-type" /></label>
-                  <Button variant="default" type="submit" disabled={!fieldName.trim() || createCrmField.isPending} className="df-btn">Add field</Button>
-                </form>
-                {(selectedModule.fields ?? []).map((field) => (
-                  <div key={field.id} className="df-register-row" data-testid={`v2-crm-field-${field.id}`}>
-                    <span><input aria-label={`Field name for ${field.name}`} defaultValue={field.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === field.name || !guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { name } }); }} />{field.fieldType === "select" || field.fieldType === "multiselect" ? <textarea aria-label={`Options for ${field.name}`} defaultValue={(field.options ?? []).join("\n")} onBlur={(event) => { const options = event.target.value.split("\n").map((option) => option.trim()).filter(Boolean); if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { options } }); }} /> : null}</span><span className="df-mono df-meta">{field.fieldType} · {field.slug}</span><span className="df-status">{field.isEnabled ? "ACTIVE" : "INACTIVE"}</span>
-                    <span className="df-people-action"><Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { isEnabled: field.isEnabled ? 0 : 1 } }); }} className="df-btn">{field.isEnabled ? "Disable" : "Enable"}</Button>{field.isSystem !== 1 ? <DestructiveConfirm label="Delete" title={`Delete ${field.name}`} consequence="The field and the values recorded in it are removed from every record. This cannot be undone." confirmLabel="Delete field" keepLabel="Keep field" pending={deleteCrmField.isPending} testId={`v2-crm-field-delete-${field.id}`} onConfirm={() => { if (!guardWrite()) return; deleteCrmField.mutate(field.id); }} /> : null}</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </section>
+        <TabsContent value="pipeline-lists" className="df-admin-panel" data-testid="v2-administration-panel-pipeline-lists">
+          <p className="df-policy-hint" data-testid="v2-administration-pipeline-lists">{PIPELINE_LISTS_INTRO}</p>
+          {pipelineLists.map((list) => (
+            <PipelineListCard
+              key={list.id}
+              list={list}
+              pending={savePipeline.isPending}
+              issue={pipelineIssue?.id === list.id ? pipelineIssue.reason : null}
+              onEdit={(edit) => onPipelineEdit(list, edit)}
+            />
+          ))}
         </TabsContent>
 
         <TabsContent value="billing" className="df-admin-panel" data-testid="v2-administration-panel-billing">
@@ -1529,5 +1492,172 @@ function DestructiveConfirm({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+/**
+ * One of the three lists on Pipeline & lists. Every control writes at once,
+ * the way a timezone is added; there is no draft to lose.
+ */
+function PipelineListCard({
+  list,
+  pending,
+  issue,
+  onEdit,
+}: {
+  list: PipelineListModel;
+  pending: boolean;
+  issue: string | null;
+  onEdit: (edit: PipelineEdit) => boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  return (
+    <section className="df-card df-policy-form" data-testid={`v2-administration-list-${list.id}`}>
+      <div className="df-card-head">
+        <div className="df-card-head-text">
+          <h2 className="df-card-title">{list.title}</h2>
+          <p className="df-card-sub">{list.sub}</p>
+        </div>
+        {list.saved ? null : <span className="df-status">DEFAULTS</span>}
+      </div>
+      <div className="df-daily-form">
+        {list.unsavedNote ? <p className="df-policy-hint">{list.unsavedNote}</p> : null}
+        <ol className="df-pipeline-options" aria-label={list.title}>
+          {list.rows.map((row) => (
+            <li key={row.id} className="df-pipeline-option" data-testid={`v2-pipeline-option-${list.id}-${row.value}`}>
+              {/* A brand's colour is not the Workspace's to choose, so a Source
+                  with its own mark has no picker. */}
+              {list.id === "source" && sourceIcon(row.value) ? (
+                <span className="df-pipeline-mark" data-testid={`v2-pipeline-mark-${row.value}`}>
+                  <SourceMark value={row.value} />
+                </span>
+              ) : (
+                <ColourPicker
+                  label={row.label}
+                  color={row.color}
+                  disabled={pending}
+                  onChoose={(color) => onEdit(recolourPipelineOption(list, row.index, color))}
+                />
+              )}
+              {row.outcome ? (
+                <span className="df-pipeline-outcome">
+                  <span className="df-status" data-swatch="" style={swatchStyle(row.color)}>{row.label}</span>
+                  <span className="df-mono df-meta">FIXED OUTCOME</span>
+                </span>
+              ) : row.builtIn ? (
+                <span className="df-pipeline-outcome">
+                  <span className="df-pipeline-builtin">{row.label}</span>
+                  <span className="df-mono df-meta">BUILT IN</span>
+                </span>
+              ) : (
+                <Input
+                  key={row.label}
+                  className="df-pipeline-label"
+                  aria-label={`Name of ${row.label}`}
+                  defaultValue={row.label}
+                  disabled={pending}
+                  onBlur={(event) => {
+                    const next = event.target.value.trim();
+                    if (next === row.label) return;
+                    if (!onEdit(renamePipelineOption(list, row.index, next))) event.target.value = row.label;
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") event.currentTarget.value = row.label;
+                    if (event.key === "Enter" || event.key === "Escape") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
+              )}
+              {row.outcome ? null : (
+                <span className="df-row-actions">
+                  <Button variant="outline" type="button" className="df-btn" disabled={pending || !row.canMoveUp} aria-label={`Move ${row.label} up`} onClick={() => onEdit(movePipelineOption(list, row.index, -1))}>
+                    Up
+                  </Button>
+                  <Button variant="outline" type="button" className="df-btn" disabled={pending || !row.canMoveDown} aria-label={`Move ${row.label} down`} onClick={() => onEdit(movePipelineOption(list, row.index, 1))}>
+                    Down
+                  </Button>
+                  {row.canRemove ? (
+                    <DestructiveConfirm
+                      label="Remove"
+                      title={`Remove ${row.label}`}
+                      consequence={row.removeConsequence}
+                      confirmLabel={`Remove ${list.noun}`}
+                      keepLabel={`Keep ${list.noun}`}
+                      pending={pending}
+                      testId={`v2-pipeline-remove-${list.id}-${row.value}`}
+                      onConfirm={() => onEdit(removePipelineOption(list, row.index))}
+                    />
+                  ) : null}
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
+        <form
+          className="df-admin-form df-inline-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (onEdit(addPipelineOption(list, draft))) setDraft("");
+          }}
+        >
+          <label className="df-daily-field">
+            New {list.noun}
+            <Input value={draft} disabled={pending} onChange={(event) => setDraft(event.target.value)} />
+          </label>
+          <Button variant="default" type="submit" disabled={pending || !draft.trim()} className="df-btn">
+            Add {list.noun}
+          </Button>
+        </form>
+        {issue ? <p className="df-refusal" role="alert">{issue}</p> : null}
+        <p className="df-policy-hint">{list.renameNote}</p>
+      </div>
+    </section>
+  );
+}
+
+/** The colours an option may wear, each drawn as the pill it would make. */
+function ColourPicker({
+  label,
+  color,
+  disabled,
+  onChoose,
+}: {
+  label: string;
+  color: string;
+  disabled: boolean;
+  onChoose: (color: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const known = PIPELINE_COLOURS.some((colour) => colour.hex === color.toLowerCase());
+  const colours = known ? PIPELINE_COLOURS : [{ name: "Current", hex: color }, ...PIPELINE_COLOURS];
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" type="button" disabled={disabled} className="df-btn df-pipeline-colour" aria-label={`Colour of ${label}`}>
+          <span className="df-pipeline-swatch" style={swatchStyle(color)} aria-hidden="true" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="df-v2 df-select-content df-colour-picker">
+        <Command>
+          <CommandList>
+            {colours.map((colour) => (
+              <CommandItem
+                key={colour.hex}
+                value={colour.name}
+                className="df-select-item"
+                onSelect={() => {
+                  setOpen(false);
+                  if (colour.hex !== color) onChoose(colour.hex);
+                }}
+              >
+                <span className="df-status" data-swatch="" style={swatchStyle(colour.hex)}>{colour.name}</span>
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }

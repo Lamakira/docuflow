@@ -19,7 +19,8 @@ import {
   writeClientFilters,
   CLIENT_OPEN_OPTIONS,
   CLIENT_SORTS,
-  CLIENT_SOURCE_OPTIONS,
+  clientSourceOptions,
+  type ClientSourceOption,
   CLIENT_STATUS_OPTIONS,
   type ClientRegisterFilters,
   type ClientRegisterRow,
@@ -33,7 +34,9 @@ import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2FormDialog } from "./V2FormDialog";
-import { V2FilterSelect } from "./V2Select";
+import { V2FilterSelect, type V2SelectOption } from "./V2Select";
+import { SourceMark } from "./icons";
+import { sourceIcon } from "./sourceIcons";
 import { V2RegisterPager } from "./V2RegisterPager";
 import { Button } from "@/components/ui/button";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
@@ -93,6 +96,20 @@ function toRegisterClient(client: CrmClient & { projectCount: number }): ClientR
   };
 }
 
+/** Source choices wear the same mark the register and the record do. */
+/** The Workspace's saved Source list, or the defaults while none is saved. */
+function useClientSourceOptions(): ClientSourceOption[] {
+  const { data: fields } = useQuery<Array<{ slug: string; options?: string[] | null }>>({
+    queryKey: ["/api/modules/contacts/fields"],
+    retry: false,
+  });
+  return useMemo(() => clientSourceOptions(fields), [fields]);
+}
+
+function withSourceMarks(options: V2SelectOption[]): V2SelectOption[] {
+  return options.map((option) => (sourceIcon(option.value) ? { ...option, icon: <SourceMark value={option.value} /> } : option));
+}
+
 const clientTableFeatures = tableFeatures({ rowSortingFeature });
 const clientColumn = createColumnHelper<typeof clientTableFeatures, ClientRegisterRow>();
 
@@ -145,7 +162,12 @@ function ClientRegisterTable({
         }),
         clientColumn.accessor("source", {
           header: "SOURCE",
-          cell: ({ row }) => <span className="df-mono df-meta">{row.original.source}</span>,
+          cell: ({ row }) => (
+            <span className="df-source-cell">
+              <SourceMark value={row.original.sourceValue} />
+              <span className="df-mono df-meta">{row.original.source}</span>
+            </span>
+          ),
         }),
         clientColumn.accessor("projectCount", {
           id: "projects",
@@ -287,6 +309,7 @@ export function V2ClientsPage() {
   }, [filterQuery]);
 
   const registerPath = clientRegisterPath(filters);
+  const sourceOptions = useClientSourceOptions();
   const { data: clientPage, isLoading, isError } = useQuery<ClientPage>({
     queryKey: ["/api/crm/clients", "register-page", registerPath],
     placeholderData: keepPreviousData,
@@ -444,7 +467,7 @@ export function V2ClientsPage() {
           ariaLabel="Filter by source"
           value={filters.source}
           active={filters.source !== "all"}
-          options={[{ value: "all", label: "ALL" }, ...CLIENT_SOURCE_OPTIONS]}
+          options={withSourceMarks([{ value: "all", label: "ALL" }, ...sourceOptions])}
           onChange={(source) => setFilters({ ...filters, source, page: 1 })}
         />
         <V2FilterSelect
@@ -534,6 +557,7 @@ export function V2ClientRecordPage() {
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
   const seed = registerSeed(clientId);
+  const sourceOptions = useClientSourceOptions();
 
   const { data: client, isLoading, isError } = useQuery<ClientWithContacts | null>({
     queryKey: ["/api/crm/clients", clientId],
@@ -683,7 +707,10 @@ export function V2ClientRecordPage() {
                   {record.identity.email ? (
                     <span className="df-mono df-meta">{record.identity.email}</span>
                   ) : null}
-                  <span className="df-mono df-meta">{record.identity.source}</span>
+                  <span className="df-source-cell">
+                    <SourceMark value={record.identity.sourceValue} />
+                    <span className="df-mono df-meta">{record.identity.source}</span>
+                  </span>
                   {record.identity.phone ? <span className="df-mono df-meta">{record.identity.phone}</span> : null}
                   {record.identity.fiverrUsername ? <span className="df-mono df-meta">FIVERR @{record.identity.fiverrUsername}</span> : null}
                 </div>
@@ -865,7 +892,7 @@ export function V2ClientRecordPage() {
                       label=""
                       ariaLabel="Client source"
                       value={draft.source || "none"}
-                      options={clientSourceChoices(draft.source)}
+                      options={withSourceMarks(clientSourceChoices(draft.source, sourceOptions))}
                       onChange={(next) => setDraft((value) => ({ ...value, source: next === "none" ? "" : next }))}
                     />
                   </label>
@@ -900,7 +927,14 @@ export function V2ClientRecordPage() {
                     >
                       <span className="df-record-field-label">{row.label}</span>
                       <span className="df-record-field-value" data-empty={row.value === "—" ? "true" : "false"}>
-                        {row.value}
+                        {row.label === "SOURCE" && sourceIcon(record.identity?.sourceValue) ? (
+                          <span className="df-source-cell">
+                            <SourceMark value={record.identity?.sourceValue} />
+                            {row.value}
+                          </span>
+                        ) : (
+                          row.value
+                        )}
                       </span>
                     </div>
                   ))}

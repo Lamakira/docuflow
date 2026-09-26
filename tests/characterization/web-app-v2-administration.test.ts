@@ -4,7 +4,32 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { motionForSurface } from "../../client/src/v2/motion";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
-import { DEFAULT_SCREENSHOT_POLICY, type ScreenshotPolicy } from "@shared/schema";
+import {
+  DEFAULT_SCREENSHOT_POLICY,
+  crmProjectStatusValues,
+  crmProjectTypeValues,
+  type CrmModuleWithFields,
+  type ScreenshotPolicy,
+} from "@shared/schema";
+import {
+  FALLBACK_OPEN_STAGES,
+  composeOpportunityStages,
+  stageOptionsFromFieldOptions,
+} from "../../client/src/v2/opportunities";
+import {
+  PIPELINE_LISTS,
+  PIPELINE_LIST_QUERY_KEYS,
+  addPipelineOption,
+  composePipelineLists,
+  movePipelineOption,
+  optionValue,
+  recolourPipelineOption,
+  removePipelineOption,
+  renamePipelineOption,
+  savePipelineList,
+  type PipelineListModel,
+} from "../../client/src/v2/pipelineLists";
+import { diffFieldOptions, builtInList, serializeFieldOption } from "@shared/pipelineLists";
 import {
   addAllowedTimezone,
   analyticsActivityPath,
@@ -113,16 +138,293 @@ describe("Administration routing (#193)", () => {
   });
 });
 
-describe("Administration CRM modules and fields (#213)", () => {
-  it("rewrites the v1 modules tab into live v2 Administration controls", () => {
-    expect(pageSource).toContain('queryKey: ["/api/admin/modules"]');
-    expect(pageSource).toContain('apiRequest("POST", "/api/admin/modules"');
-    expect(pageSource).toContain('apiRequest("PATCH", `/api/admin/modules/${id}`');
-    expect(pageSource).toContain('apiRequest("DELETE", `/api/admin/modules/${id}`');
-    expect(pageSource).toContain('apiRequest("POST", `/api/admin/modules/${selectedModule.id}/fields`');
-    expect(pageSource).toContain('apiRequest("PATCH", `/api/admin/fields/${id}`');
-    expect(pageSource).toContain('apiRequest("DELETE", `/api/admin/fields/${id}`');
-    expect(pageSource).toContain('data-testid="v2-administration-crm-modules"');
+/** The rows `scripts/seed-defaults.ts` writes into the demo Workspace. */
+const SEEDED_STATUS = [
+  '{"label":"lead","color":"#ec4899"}',
+  '{"label":"discovering_call_completed","color":"#8b5cf6"}',
+  '{"label":"proposal_sent","color":"#f59e0b"}',
+  '{"label":"follow_up","color":"#06b6d4"}',
+  '{"label":"in_negotiation","color":"#3b82f6"}',
+  '{"label":"won","color":"#22c55e"}',
+  '{"label":"won_not_started","color":"#6366f1"}',
+  '{"label":"won_in_progress","color":"#14b8a6"}',
+  '{"label":"won_in_review","color":"#0ea5e9"}',
+  '{"label":"won_completed","color":"#84cc16"}',
+  '{"label":"lost","color":"#ef4444"}',
+  '{"label":"won_cancelled","color":"#f43f5e"}',
+];
+
+function seededModules(): CrmModuleWithFields[] {
+  return [
+    {
+      id: "mod-projects",
+      slug: "projects",
+      isSystem: 1,
+      fields: [
+        { id: "fld-status", slug: "status", fieldType: "select", isSystem: 1, options: SEEDED_STATUS },
+        { id: "fld-type", slug: "project_type", fieldType: "select", isSystem: 1, options: ["one_time", "monthly", "hourly_budget", "internal"] },
+        { id: "fld-name", slug: "name", fieldType: "text", isSystem: 1, options: null },
+      ],
+    },
+    { id: "mod-contacts", slug: "contacts", isSystem: 1, fields: [{ id: "fld-first", slug: "first_name", fieldType: "text", isSystem: 1, options: null }] },
+  ] as unknown as CrmModuleWithFields[];
+}
+
+function listOf(modules: CrmModuleWithFields[], id: PipelineListModel["id"]): PipelineListModel {
+  const list = composePipelineLists(modules).find((candidate) => candidate.id === id);
+  if (!list) throw new Error(`missing list ${id}`);
+  return list;
+}
+
+function values(options: string[]): string[] {
+  return options.map((raw) => {
+    try {
+      return optionValue(JSON.parse(raw).label);
+    } catch {
+      return optionValue(raw);
+    }
+  });
+}
+
+describe("Pipeline & lists replaces the CRM field builder", () => {
+  it("shows exactly the three lists records read, on the real module and field slugs", () => {
+    expect(PIPELINE_LISTS.map((list) => [list.id, list.title, list.builtIn.module.slug, list.builtIn.field.slug])).toEqual([
+      ["opportunity-stages", "Opportunity stages", "projects", "status"],
+      ["project-type", "Project type", "projects", "project_type"],
+      ["source", "Source", "contacts", "source"],
+    ]);
+    expect(composePipelineLists(seededModules()).map((list) => list.id)).toEqual([
+      "opportunity-stages",
+      "project-type",
+      "source",
+    ]);
+  });
+
+  it("offers a Workspace with no modules the values each consumer falls back to", () => {
+    const [stages, types, sources] = composePipelineLists([]);
+    for (const list of [stages, types, sources]) {
+      expect(list.saved).toBe(false);
+      expect(list.unsavedNote).toContain("The first change saves the list.");
+      expect(list.fieldId).toBeNull();
+      // A default's id is its value, as the server stores the defaults.
+      expect(list.entries.every((entry) => entry.id === entry.value)).toBe(true);
+    }
+    // The same values the seed, the schema and v1's fallbacks store.
+    expect(stages.entries.map((entry) => entry.value)).toEqual([...crmProjectStatusValues]);
+    expect(types.entries.map((entry) => entry.value)).toEqual([...crmProjectTypeValues]);
+    expect(sources.entries.map((entry) => entry.value)).toEqual(["fiverr", "zoho", "direct"]);
+    // Saved, the defaults draw the board Opportunities already falls back to.
+    const board = composeOpportunityStages(stageOptionsFromFieldOptions(stages.entries.map(serializeFieldOption)));
+    expect(board.filter((stage) => !stage.terminal).map((stage) => stage.id)).toEqual(
+      FALLBACK_OPEN_STAGES.map((stage) => stage.id),
+    );
+    expect(board.filter((stage) => stage.terminal).map((stage) => stage.id)).toEqual(["won", "lost"]);
+  });
+
+  it("lists open stages as editable, Lead as built in, and Won and Lost as fixed outcomes", () => {
+    const stages = listOf(seededModules(), "opportunity-stages");
+    expect(stages.saved).toBe(true);
+    expect(stages.fieldId).toBe("fld-status");
+    expect(stages.rows.map((row) => [row.value, row.outcome, row.builtIn])).toEqual([
+      ["lead", false, true],
+      ["discovering_call_completed", false, false],
+      ["proposal_sent", false, false],
+      ["follow_up", false, false],
+      ["in_negotiation", false, false],
+      ["won", true, true],
+      ["lost", true, true],
+    ]);
+    const lead = stages.rows[0];
+    expect(lead).toMatchObject({ canMoveUp: false, canMoveDown: true, canRemove: false, color: "#ec4899" });
+    expect(renamePipelineOption(stages, lead.index, "Prospect")).toEqual({ ok: false, reason: "“lead” is built in and keeps its name." });
+    expect(removePipelineOption(stages, lead.index)).toEqual({ ok: false, reason: "“lead” is built in and cannot be removed." });
+    expect(movePipelineOption(stages, lead.index, 1).ok).toBe(true);
+    expect(stages.rows[1].canRemove).toBe(true);
+    expect(stages.rows[4].canMoveDown).toBe(false);
+    const won = stages.rows[5];
+    expect(won).toMatchObject({ canMoveUp: false, canMoveDown: false, canRemove: false });
+    expect(renamePipelineOption(stages, won.index, "Closed")).toEqual({ ok: false, reason: "Won and Lost keep their names." });
+    expect(removePipelineOption(stages, won.index).ok).toBe(false);
+    // Only a colour changes on an outcome; its id travels with it.
+    const recoloured = recolourPipelineOption(stages, won.index, "#14b8a6");
+    expect(recoloured.ok && JSON.parse(recoloured.options[won.index])).toEqual({ id: "won", label: "won", color: "#14b8a6" });
+  });
+
+  it("locks every Project type and Fiverr, which the code reads by name", () => {
+    const types = listOf(seededModules(), "project-type");
+    expect(types.rows.every((row) => row.builtIn && !row.canRemove)).toBe(true);
+    expect(types.rows.every((row) => row.canMoveUp || row.canMoveDown)).toBe(true);
+    const sources = listOf([], "source");
+    expect(sources.rows.map((row) => [row.value, row.builtIn, row.canRemove])).toEqual([
+      ["fiverr", true, false],
+      ["zoho", false, true],
+      ["direct", false, true],
+    ]);
+  });
+
+  it("adds a stage ahead of Won and refuses a duplicate or a terminal name", () => {
+    const stages = listOf(seededModules(), "opportunity-stages");
+    const added = addPipelineOption(stages, "  Contract review ");
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    expect(values(added.options).slice(4, 7)).toEqual(["in_negotiation", "contract_review", "won"]);
+    expect(added.options).toHaveLength(SEEDED_STATUS.length + 1);
+    // A new option has no id yet; the server gives it one.
+    expect(JSON.parse(added.options[5])).toEqual({ label: "Contract review", color: expect.any(String) });
+    expect(addPipelineOption(stages, "Follow-up")).toEqual({ ok: false, reason: "“Follow-up” is already in this list." });
+    expect(addPipelineOption(stages, "Won")).toEqual({ ok: false, reason: "Won and Lost are fixed outcomes. Name an open stage." });
+    expect(addPipelineOption(stages, "Won - Paid").ok).toBe(true);
+    expect(addPipelineOption(stages, "Won - In progress").ok).toBe(false);
+    expect(addPipelineOption(stages, "   ")).toEqual({ ok: false, reason: "Name the stage." });
+    expect(addPipelineOption(stages, "!!!")).toEqual({ ok: false, reason: "Use at least one letter or number." });
+
+    const types = listOf(seededModules(), "project-type");
+    const retainer = addPipelineOption(types, "Retainer");
+    expect(retainer.ok && values(retainer.options)).toEqual(["one_time", "monthly", "hourly_budget", "internal", "retainer"]);
+  });
+
+  it("renames, moves and removes an option in place, keeping each id and at least one option", () => {
+    const stages = listOf(seededModules(), "opportunity-stages");
+    const renamed = renamePipelineOption(stages, 2, "Proposal out");
+    expect(renamed.ok && JSON.parse(renamed.options[2])).toEqual({ id: "proposal_sent", label: "Proposal out", color: "#f59e0b" });
+    expect(renamePipelineOption(stages, 2, "Follow up").ok).toBe(false);
+
+    const moved = movePipelineOption(stages, 2, -1);
+    expect(moved.ok && values(moved.options).slice(0, 4)).toEqual(["lead", "proposal_sent", "discovering_call_completed", "follow_up"]);
+    expect(movePipelineOption(stages, 0, -1).ok).toBe(false);
+
+    const removed = removePipelineOption(stages, 2);
+    expect(removed.ok && values(removed.options).slice(0, 4)).toEqual(["lead", "discovering_call_completed", "follow_up", "in_negotiation"]);
+
+    const lone = listOf(
+      [{ id: "mod-projects", slug: "projects", fields: [{ id: "fld-type", slug: "project_type", isSystem: 1, options: ['{"label":"Solo","color":"#3b82f6"}'] }] }] as unknown as CrmModuleWithFields[],
+      "project-type",
+    );
+    expect(lone.rows[0].canRemove).toBe(false);
+    expect(removePipelineOption(lone, 0)).toEqual({ ok: false, reason: "Keep at least one type." });
+  });
+
+  it("reads only a kept id with a new value as a rename, whatever moved around it", () => {
+    const stages = listOf(seededModules(), "opportunity-stages");
+    const list = builtInList("projects", "status");
+    const rename = renamePipelineOption(stages, 2, "Proposal out");
+    const move = movePipelineOption(stages, 2, 1);
+    const remove = removePipelineOption(stages, 1);
+    const insert = addPipelineOption(stages, "Qualified");
+    if (!rename.ok || !move.ok || !remove.ok || !insert.ok) throw new Error("edit refused");
+
+    const read = (next: string[]) => diffFieldOptions(SEEDED_STATUS, next, list);
+    expect(read(rename.options)).toMatchObject({ ok: true, renames: [{ from: "proposal_sent", to: "proposal_out" }] });
+    for (const next of [move.options, remove.options, insert.options]) {
+      expect(read(next)).toMatchObject({ ok: true, renames: [] });
+    }
+  });
+
+  it("asks the server for the built-in lists on a Workspace's first save, then sends one PATCH", async () => {
+    const calls: Array<[string, string, Record<string, unknown>]> = [];
+    const send = async (method: "POST" | "PATCH", path: string, body: Record<string, unknown>) => {
+      calls.push([method, path, body]);
+      if (method === "POST") {
+        return [{ id: "mod-new", slug: "projects", fields: [{ id: "fld-new", slug: "status" }] }];
+      }
+      return {};
+    };
+    const stages = listOf([], "opportunity-stages");
+    const renamed = renamePipelineOption(stages, 2, "Proposal out");
+    if (!renamed.ok) throw new Error("edit refused");
+    await savePipelineList(stages, renamed, send);
+
+    expect(calls).toEqual([
+      ["POST", "/api/admin/system-lists/ensure", {}],
+      ["PATCH", "/api/admin/fields/fld-new", { options: renamed.options }],
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("isSystem");
+  });
+
+  it("writes a saved list with one PATCH, and refuses when the server made no list", async () => {
+    const calls: Array<[string, string, Record<string, unknown>]> = [];
+    const send = async (method: "POST" | "PATCH", path: string, body: Record<string, unknown>) => {
+      calls.push([method, path, body]);
+      return method === "POST" ? [] : {};
+    };
+    const stages = listOf(seededModules(), "opportunity-stages");
+    const moved = movePipelineOption(stages, 1, 1);
+    if (!moved.ok) throw new Error("edit refused");
+    await savePipelineList(stages, moved, send);
+    expect(calls).toEqual([["PATCH", "/api/admin/fields/fld-status", { options: moved.options }]]);
+
+    const sources = listOf(seededModules(), "source");
+    const added = addPipelineOption(sources, "Referral");
+    if (!added.ok) throw new Error("edit refused");
+    await expect(savePipelineList(sources, added, send)).rejects.toThrow("The list could not be created.");
+  });
+
+  it("says honestly what a rename and a removal do to records", () => {
+    const [stages, types, sources] = composePipelineLists(seededModules());
+    expect(stages.renameNote).toBe(
+      "Renaming a stage moves every Opportunity already at it. Built-in stages keep their names and cannot be removed.",
+    );
+    expect(types.renameNote).toBe(
+      "Renaming a type updates every Project that already has it. Built-in types keep their names and cannot be removed.",
+    );
+    expect(sources.renameNote).toBe(
+      "Renaming a source updates every Client already recorded with it. Fiverr is built in: it keeps its name and cannot be removed.",
+    );
+
+    expect(stages.rows[2].removeConsequence).toBe(
+      "No Opportunity is changed. Opportunities already at “proposal_sent” stay there and still show on the board, but no Opportunity can be moved to it. Adding “proposal_sent” back restores it.",
+    );
+    expect(types.rows[0].removeConsequence).toContain("No Project is changed.");
+    expect(sources.rows[0].removeConsequence).toContain("No Client is changed.");
+    for (const list of [stages, types, sources]) {
+      for (const row of list.rows) expect(row.removeConsequence).not.toMatch(/removed from|cannot be undone/i);
+    }
+  });
+
+  it("refreshes every screen that reads the lists after a save", () => {
+    expect(PIPELINE_LIST_QUERY_KEYS).toEqual([
+      ["/api/admin/modules"],
+      ["/api/modules/projects/fields"],
+      ["/api/modules/contacts/fields"],
+    ]);
+    // The same keys Opportunities and the v1 Project and Client pages read.
+    const opportunitiesSource = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Opportunities.tsx"),
+      "utf8",
+    );
+    expect(opportunitiesSource).toContain('queryKey: ["/api/modules/projects/fields"]');
+    expect(pageSource).toContain("for (const queryKey of PIPELINE_LIST_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });");
+  });
+
+  it("drops the module builder, the field-type select, the Enable toggle and the old copy", () => {
+    const start = pageSource.indexOf('<TabsContent value="pipeline-lists"');
+    const panel = pageSource.slice(start, pageSource.indexOf("</TabsContent>", start));
+    expect(panel).toContain("{PIPELINE_LISTS_INTRO}");
+    expect(pageSource).not.toContain("Add module");
+    expect(pageSource).not.toContain("Add field");
+    expect(pageSource).not.toContain("CRM_FIELD_TYPES");
+    expect(pageSource).not.toContain('ariaLabel="CRM field type"');
+    expect(pageSource).not.toContain("isEnabled ? 0 : 1");
+    expect(pageSource).not.toContain("removed from Clients and Projects");
+    expect(pageSource).not.toContain('apiRequest("DELETE", `/api/admin/modules/');
+    expect(pageSource).not.toContain('apiRequest("DELETE", `/api/admin/fields/');
+    // shadcn controls, not bare ones.
+    expect(pageSource).toContain('import { Input } from "@/components/ui/input";');
+    const card = pageSource.slice(pageSource.indexOf("function PipelineListCard("));
+    expect(card).not.toMatch(/<input\b/);
+    expect(card).not.toMatch(/<textarea\b/);
+    expect(card).toContain("<ColourPicker");
+    expect(card).toContain("<PopoverContent");
+    expect(card).toContain("BUILT IN");
+  });
+
+  it("styles the rows in tokens that hold in the dark palette", () => {
+    for (const selector of [".df-pipeline-option", ".df-v2 .df-pipeline-label", ".df-pipeline-builtin", ".df-pipeline-swatch", ".dark .df-pipeline-swatch"]) {
+      expect(rule(selector)).not.toMatch(/#[0-9a-f]{3,6}\b/i);
+    }
+    expect(rule(".df-pipeline-option")).toMatch(/gap:\s*var\(--df-space-3\)/);
+    expect(rule(".df-pipeline-option")).toMatch(/padding:\s*var\(--df-space-2\) var\(--df-space-3\)/);
+    expect(rule(".dark .df-pipeline-swatch")).toMatch(/var\(--df-swatch-line-dark\)/);
   });
 });
 
@@ -1121,17 +1423,16 @@ describe("Administration controls (#212)", () => {
     );
   });
 
-  it("uses the v2 filter select for the range and the CRM field type, not a native one", () => {
+  it("uses the v2 filter select for the range, and no native select anywhere", () => {
+    expect(analyticsSource).toContain('from "./V2Select"');
+    expect(analyticsSource).toContain("<V2FilterSelect");
     for (const source of [pageSource, analyticsSource]) {
-      expect(source).toContain('from "./V2Select"');
-      expect(source).toContain("<V2FilterSelect");
       // Every select goes through V2FilterSelect, never the bare shadcn parts.
       expect(source).not.toContain('from "@/components/ui/select"');
       expect(source).not.toContain("<select");
       expect(source).not.toContain("<option");
     }
     expect(analyticsSource).toContain('ariaLabel="Analytics range"');
-    expect(pageSource).toContain('ariaLabel="CRM field type"');
     // Radix portals the panel to document.body, outside `.df-v2`, so it must
     // carry the class itself or every --df-* token stops resolving.
     expect(selectSource).toContain('className="df-v2 df-select-content"');

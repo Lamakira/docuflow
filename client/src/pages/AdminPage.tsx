@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { parseFieldOptions, serializeFieldOption } from "@shared/pipelineLists";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useRoute, Link } from "wouter";
@@ -1556,27 +1557,18 @@ const OPTION_COLORS = [
 ];
 
 interface OptionWithColor {
+  /** Kept through edits so the server reads a changed name as a rename. */
+  id?: string;
   label: string;
   color: string;
 }
 
 function parseOptions(options: string[] | null): OptionWithColor[] {
-  if (!options || options.length === 0) return [];
-  return options.map(opt => {
-    try {
-      const parsed = JSON.parse(opt);
-      if (parsed && typeof parsed === 'object' && parsed.label) {
-        return { label: parsed.label, color: parsed.color || "#64748b" };
-      }
-    } catch {
-      // Legacy format: just a string
-    }
-    return { label: opt, color: "#64748b" };
-  });
+  return parseFieldOptions(options).map(opt => ({ id: opt.id, label: opt.label, color: opt.color || "#64748b" }));
 }
 
 function serializeOptions(options: OptionWithColor[]): string[] {
-  return options.map(opt => JSON.stringify({ label: opt.label, color: opt.color }));
+  return options.map(opt => serializeFieldOption(opt));
 }
 
 function FieldDetailView({ field, module, onBack }: { field: CrmModuleField; module: CrmModuleWithFields; onBack: () => void }) {
