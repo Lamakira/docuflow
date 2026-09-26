@@ -1,7 +1,8 @@
 import { dossierFileDestination } from "./fileViewer";
-import { formatHours, memberInitials, memberName, projectHref } from "./today";
+import { budgetedHoursTotal, formatHours, memberInitials, memberName, projectHref } from "./today";
 import { DOSSIER_TAB_IDS, type DossierTabId } from "./presentation";
 import { lifecycleColor, projectStatusColor } from "./palette";
+import { budgetLabel, projectBudgetDraft, projectBudgetPercent, type ProjectBudgetDraft } from "./projects";
 import { taskStatusLabel } from "./tasks";
 
 export type DossierPerson = {
@@ -16,6 +17,7 @@ export type DossierProject = {
   projectStatus: string;
   projectType: string | null;
   budgetedHours: number | null;
+  budgetedMinutes?: number | null;
   actualHours: number | null;
   updatedAt?: Date | string | null;
   startDate?: Date | string | null;
@@ -181,6 +183,38 @@ export type DossierTab = {
   active: boolean;
 };
 
+/**
+ * What an empty Dossier tab offers (#277): `focus` moves to the tab's own add
+ * field, `link` goes to the tab that holds the add, and the other two are the
+ * page's own Start Timer and New Document.
+ */
+export type DossierEmptyAction =
+  | { kind: "focus"; label: string; target: string }
+  | { kind: "link"; label: string; href: string }
+  | { kind: "start-timer"; label: string }
+  | { kind: "new-document"; label: string };
+
+export type DossierEmptyState = {
+  title: string;
+  copy: string;
+  action: DossierEmptyAction | null;
+};
+
+export type DossierSettingRow = {
+  label: string;
+  value: string;
+  /** Drawn as a status chip; `swatch` is its board colour, when it has one. */
+  chip?: boolean;
+  swatch?: string;
+};
+
+/** The add fields an empty tab's action moves focus to. */
+export const DOSSIER_FIELD = {
+  taskName: "df-dossier-task-name",
+  note: "df-dossier-note",
+  reminderTitle: "df-dossier-reminder-title",
+} as const;
+
 export type DossierTaskRow = {
   id: string;
   title: string;
@@ -224,6 +258,7 @@ export type DossierModel = {
     rows: DossierTaskRow[];
     empty: boolean;
     emptyCopy: string;
+    emptyState: DossierEmptyState;
     assignees: Array<{ id: string; name: string }>;
   };
   time: {
@@ -237,6 +272,7 @@ export type DossierModel = {
     }>;
     empty: boolean;
     emptyCopy: string;
+    emptyState: DossierEmptyState;
   };
   updates: {
     kind: "empty" | "records" | "refusal";
@@ -252,24 +288,36 @@ export type DossierModel = {
     rows: DossierFileRow[];
     empty: boolean;
     emptyCopy: string;
+    emptyState: DossierEmptyState;
   };
   reminders: {
     rows: DossierReminderRow[];
     empty: boolean;
     emptyCopy: string;
+    emptyState: DossierEmptyState;
   };
   notes: {
     rows: Array<{ id: string; content: string; meta: string; audioUrl: string | null; audioRecordingId: string | null; transcriptStatus: string | null; audioTranscript: string | null }>;
     empty: boolean;
     emptyCopy: string;
+    emptyState: DossierEmptyState;
   };
+  /** Settings as labelled groups (#277), each one a card of its own. */
   settings: {
-    fields: Array<{ label: string; value: string }>;
+    identity: DossierSettingRow[];
+    lifecycle: { rows: DossierSettingRow[]; note: string };
+    budget: {
+      draft: ProjectBudgetDraft;
+      saved: { budgetedHours: number | null; budgetedMinutes: number };
+      consumed: string;
+    };
     lead: { id: string; name: string } | null;
     members: Array<{ id: string; name: string }>;
     /** Rows in `project_members`, each one a member a reader could take off. */
     memberRows: Array<{ id: string; name: string; self: boolean; action: string; consequence: string }>;
     documentationEnabled: boolean;
+    documentation: { row: DossierSettingRow; copy: string; action: string };
+    deleteConsequence: string;
   };
   history: {
     rows: Array<{
@@ -321,6 +369,9 @@ export type DossierModel = {
     count: number;
     empty: boolean;
     emptyCopy: string;
+    emptyState: DossierEmptyState;
+    /** New Document writes a Document only where Documentation is on. */
+    canCreate: boolean;
   };
   client: {
     name: string;
@@ -559,6 +610,11 @@ function composeTime(input: DossierInput): DossierModel["time"] {
     rows,
     empty: rows.length === 0,
     emptyCopy: "No Time Entries on this Project you can access.",
+    emptyState: {
+      title: "No time tracked yet",
+      copy: "Time Entries tracked on this Project land here, with who tracked them and on which Task.",
+      action: { kind: "start-timer", label: "Start Timer" },
+    },
   };
 }
 
@@ -633,6 +689,13 @@ function composeFiles(input: DossierInput): DossierModel["files"] {
     }),
     empty: files.length === 0,
     emptyCopy: "No Files on this Project you can access.",
+    emptyState: {
+      title: "No Files yet",
+      copy: "Files attached to this Project's notes are gathered here, so the scope, the contract and the screenshots sit in one place.",
+      action: input.project
+        ? { kind: "link", label: "Attach a File to a note", href: `${projectHref(input.project.id)}/notes` }
+        : null,
+    },
   };
 }
 
@@ -665,7 +728,16 @@ function composeReminders(input: DossierInput): DossierModel["reminders"] {
       },
     };
   });
-  return { rows, empty: rows.length === 0, emptyCopy: "No Reminders on this Project yet." };
+  return {
+    rows,
+    empty: rows.length === 0,
+    emptyCopy: "No Reminders on this Project yet.",
+    emptyState: {
+      title: "No Reminders yet",
+      copy: "A Reminder brings something on this Project back at the time you choose: a call to make, a signature to chase.",
+      action: { kind: "focus", label: "Add a Reminder", target: DOSSIER_FIELD.reminderTitle },
+    },
+  };
 }
 
 function composeNotes(input: DossierInput): DossierModel["notes"] {
@@ -678,13 +750,46 @@ function composeNotes(input: DossierInput): DossierModel["notes"] {
     transcriptStatus: note.transcriptStatus ?? null,
     audioTranscript: note.audioTranscript ?? null,
   }));
-  return { rows, empty: rows.length === 0, emptyCopy: "No notes on this Project yet." };
+  return {
+    rows,
+    empty: rows.length === 0,
+    emptyCopy: "No notes on this Project yet.",
+    emptyState: {
+      title: "No notes yet",
+      copy: "Notes keep what was said and decided on this Project: typed, recorded as audio, or with Files attached.",
+      action: { kind: "focus", label: "Write the first note", target: DOSSIER_FIELD.note },
+    },
+  };
 }
 
-function composeSettings(input: DossierInput): DossierModel["settings"] {
+function composeSettings(input: DossierInput, history: DossierModel["history"]): DossierModel["settings"] {
   const project = input.project;
+  const documentationEnabled = Boolean(project?.documentationEnabled);
+  const documentation = {
+    row: { label: "DOCUMENTATION", value: documentationEnabled ? "ON" : "OFF", chip: true },
+    copy: documentationEnabled
+      ? "This Project's Documents are written on its Documents tab and listed under Project Documentation."
+      : "Turn Documentation on to write Project Documents for this Project.",
+    action: documentationEnabled ? "Turn Documentation off" : "Turn Documentation on",
+  };
+  const lifecycleNote =
+    "Project Status moves on the Projects board. Every change is kept in Status history on the Overview.";
   if (!project) {
-    return { fields: [], lead: null, members: [], memberRows: [], documentationEnabled: false };
+    return {
+      identity: [],
+      lifecycle: { rows: [], note: lifecycleNote },
+      budget: {
+        draft: projectBudgetDraft(null),
+        saved: { budgetedHours: null, budgetedMinutes: 0 },
+        consumed: "No budget set",
+      },
+      lead: null,
+      members: [],
+      memberRows: [],
+      documentationEnabled,
+      documentation,
+      deleteConsequence: "",
+    };
   }
   const lead = project.assignee?.id
     ? { id: project.assignee.id, name: memberName(project.assignee) }
@@ -692,20 +797,32 @@ function composeSettings(input: DossierInput): DossierModel["settings"] {
   const members = projectAssignees(project);
   const start = parseDate(project.startDate ?? null);
   const due = parseDate(project.dueDate ?? null);
-  const fields: Array<{ label: string; value: string }> = [
-    { label: "NAME", value: project.project?.name || "Untitled Project" },
-    { label: "CLIENT", value: project.client?.name || "—" },
-    { label: "KIND", value: kindLabel(project) },
-    { label: "STATUS", value: statusLabel(project.projectStatus) },
-    { label: "LEAD", value: lead?.name || "—" },
-    { label: "BUDGET", value: project.budgetedHours != null && project.budgetedHours > 0 ? hoursLabel(project.budgetedHours) : "—" },
-    { label: "START", value: start ? formatDayStamp(start) : "—" },
-    { label: "DUE", value: due ? formatDayStamp(due) : "—" },
-    { label: "DOCUMENTATION", value: project.documentationEnabled ? "ON" : "OFF" },
-  ];
+  const name = project.project?.name || "Untitled Project";
+  const lastChange = history.rows[0];
   // Custom CRM field values are not shown here: `crm_custom_field_values`
   // holds them but no route exposes it, so there is nothing honest to render.
   // Composing one needs a BFF route, which #213 does not carry.
+  const identity: DossierSettingRow[] = [
+    { label: "CLIENT", value: project.client?.name || "No Client" },
+    { label: "KIND", value: kindLabel(project), chip: true },
+  ];
+  const lifecycle: DossierSettingRow[] = [
+    {
+      label: "STATUS",
+      value: statusLabel(project.projectStatus),
+      chip: true,
+      swatch: projectStatusColor(project.projectStatus),
+    },
+    { label: "START", value: start ? formatDayStamp(start) : "—" },
+    { label: "DUE", value: due ? formatDayStamp(due) : "—" },
+    { label: "LAST CHANGE", value: lastChange ? `${lastChange.when} · ${lastChange.who}` : "—" },
+  ];
+  const budgeted = budgetedHoursTotal(project);
+  const percent = projectBudgetPercent(project);
+  const consumed =
+    budgeted > 0
+      ? `${hoursLabel(project.actualHours ?? 0)} of ${budgetLabel(project)} · ${percent}% used`
+      : "No budget set";
   const memberRows: DossierModel["settings"]["memberRows"] = [];
   const seen = new Set<string>();
   for (const member of project.members ?? []) {
@@ -724,11 +841,19 @@ function composeSettings(input: DossierInput): DossierModel["settings"] {
     });
   }
   return {
-    fields,
+    identity,
+    lifecycle: { rows: lifecycle, note: lifecycleNote },
+    budget: {
+      draft: projectBudgetDraft(project),
+      saved: { budgetedHours: project.budgetedHours ?? null, budgetedMinutes: project.budgetedMinutes ?? 0 },
+      consumed,
+    },
     lead,
     members,
     memberRows,
-    documentationEnabled: Boolean(project.documentationEnabled),
+    documentationEnabled,
+    documentation,
+    deleteConsequence: `${name} and everything filed under it — its Tasks, Time Entries, Notes, Reminders and Project Documents — will be deleted for everyone in this Workspace. This cannot be undone.`,
   };
 }
 
@@ -826,15 +951,15 @@ export function composeDossier(input: DossierInput): DossierModel {
   const files = composeFiles(input);
   const reminders = composeReminders(input);
   const notes = composeNotes(input);
-  const settings = composeSettings(input);
   const history = composeHistory(input);
+  const settings = composeSettings(input, history);
   const tags = composeTags(input);
   const order = documentOrder(documents);
   const assignees = projectAssignees(project);
   const trackedMtd = formatHours(input.monthSeconds);
-  const budgeted = project?.budgetedHours ?? 0;
+  const budgeted = project ? budgetedHoursTotal(project) : 0;
   const actual = project?.actualHours ?? 0;
-  const budgetPercent = budgeted > 0 ? Math.round((actual / budgeted) * 100) : null;
+  const budgetPercent = project ? projectBudgetPercent(project) : null;
   const screenshots = input.screenshots.filter((shot) => !shot.deletedAt);
   const usersById = new Map(input.users.map((user) => [user.id, user]));
 
@@ -941,6 +1066,11 @@ export function composeDossier(input: DossierInput): DossierModel {
       rows: nextActions.rows,
       empty: nextActions.empty,
       emptyCopy: nextActions.emptyCopy,
+      emptyState: {
+        title: "No Tasks yet",
+        copy: "Tasks are the steps of this Project. Each one carries its own status and timer, so tracked time lands on the right step.",
+        action: { kind: "focus", label: "Create the first Task", target: DOSSIER_FIELD.taskName },
+      },
       assignees,
     },
     time,
@@ -985,6 +1115,18 @@ export function composeDossier(input: DossierInput): DossierModel {
       count: documents.length,
       empty: documents.length === 0,
       emptyCopy: "No Project Documents you can access.",
+      emptyState: settings.documentationEnabled
+        ? {
+            title: "No Project Documents yet",
+            copy: "Project Documents are the pages written for this Project: the scope, the handover, the runbook.",
+            action: { kind: "new-document", label: "New Document" },
+          }
+        : {
+            title: "Documentation is off",
+            copy: "This Project holds no Project Documents while Documentation is off. Turn it on in Settings to write the first one.",
+            action: project ? { kind: "link", label: "Open Settings", href: `${projectHref(project.id)}/settings` } : null,
+          },
+      canCreate: settings.documentationEnabled,
     },
     client,
     filed,

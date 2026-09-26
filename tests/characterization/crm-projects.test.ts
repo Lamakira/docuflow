@@ -72,6 +72,41 @@ describe("CRM projects (characterization)", () => {
     expect(invalid.body.message).toBe("Invalid data");
   });
 
+  it("keeps a budget's minutes on create, patch and clone (#277)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+
+    const created = await user.agent
+      .post("/api/crm/projects")
+      .send({ name: "Budgeted", budgetedHours: 120, budgetedMinutes: 30 });
+    expect(created.status).toBe(201);
+    expect(created.body.crmProject).toMatchObject({ budgetedHours: 120, budgetedMinutes: 30 });
+
+    const bare = await createCrmProject(user.agent, { name: "Unbudgeted" });
+    expect(bare.crmProject).toMatchObject({ budgetedHours: null, budgetedMinutes: 0 });
+
+    const id = created.body.crmProject.id;
+    const patched = await user.agent.patch(`/api/crm/projects/${id}`).send({ budgetedHours: 8, budgetedMinutes: 45 });
+    expect(patched.status).toBe(200);
+    expect(patched.body).toMatchObject({ budgetedHours: 8, budgetedMinutes: 45 });
+
+    const clone = await user.agent.post(`/api/crm/projects/${id}/clone`);
+    expect(clone.status).toBe(201);
+    expect(clone.body.crmProject).toMatchObject({ budgetedHours: 8, budgetedMinutes: 45 });
+
+    const cleared = await user.agent.patch(`/api/crm/projects/${id}`).send({ budgetedHours: null, budgetedMinutes: 0 });
+    expect(cleared.body).toMatchObject({ budgetedHours: null, budgetedMinutes: 0 });
+
+    for (const budgetedMinutes of [60, -1, 1.5]) {
+      const rejected = await user.agent.patch(`/api/crm/projects/${id}`).send({ budgetedMinutes });
+      expect(rejected.status, String(budgetedMinutes)).toBe(400);
+    }
+    const rejectedCreate = await user.agent
+      .post("/api/crm/projects")
+      .send({ name: "Too many minutes", budgetedMinutes: 60 });
+    expect(rejectedCreate.status).toBe(400);
+  });
+
   it("rejects a duplicate name regardless of case or surrounding space", async () => {
     const app = await makeApp();
     const user = await registerUser(app);

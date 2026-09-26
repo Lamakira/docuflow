@@ -21,6 +21,7 @@ import { V2AudioRecorder, V2NoteAudioPlayer } from "./V2NoteAudio";
 import { chromeRefusal } from "./chrome";
 import {
   composeDossier,
+  DOSSIER_FIELD,
   documentDuplicatePath,
   documentsReorderPath,
   projectClonePath,
@@ -33,19 +34,25 @@ import {
   tagsPath,
   type DossierDailyUpdate,
   type DossierDocument,
+  type DossierEmptyState,
   type DossierInput,
   type DossierModel,
   type DossierProject,
+  type DossierSettingRow,
   type DossierTask,
   type DossierTimeEntry,
 } from "./dossier";
+import { TaskCheckIcon, type EmptyStateIconId } from "./icons";
 import { motionForSurface } from "./motion";
 import { meterTone, swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
+import { composeBudgetForm, projectBudgetDraft, type ProjectBudgetDraft } from "./projects";
 import { TASK_STATUS_OPTIONS } from "./tasks";
 import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { V2EmptyState } from "./V2EmptyState";
+import { V2FormDialog } from "./V2FormDialog";
 import { V2RowMenu } from "./V2RowMenu";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
@@ -115,6 +122,7 @@ function toDossierProject(project: CrmProjectWithDetails): DossierProject {
     projectStatus: project.projectStatus,
     projectType: project.projectType,
     budgetedHours: project.budgetedHours,
+    budgetedMinutes: project.budgetedMinutes,
     actualHours: project.actualHours,
     updatedAt: project.updatedAt,
     startDate: project.startDate,
@@ -260,6 +268,9 @@ export function V2DossierPage() {
   const [noteAttachments, setNoteAttachments] = useState<NoteAttachment[]>([]);
   const [attachingNote, setAttachingNote] = useState(false);
   const [tagName, setTagName] = useState("");
+  const [budgetDraft, setBudgetDraft] = useState<ProjectBudgetDraft>(projectBudgetDraft(null));
+  const [creatingDocument, setCreatingDocument] = useState(false);
+  const [documentName, setDocumentName] = useState("");
   const [, navigate] = useLocation();
 
   const { data: project, isLoading: projectLoading } = useQuery<CrmProjectWithDetails | null>({
@@ -368,6 +379,9 @@ export function V2DossierPage() {
     setProjectName(project?.project?.name ?? "");
     setWriteRefusal(null);
   }, [project?.id, project?.project?.name]);
+  useEffect(() => {
+    setBudgetDraft(projectBudgetDraft(project));
+  }, [project?.id, project?.budgetedHours, project?.budgetedMinutes]);
 
   const ownerName = useWorkspaceOwnerName();
 
@@ -427,6 +441,49 @@ export function V2DossierPage() {
     onError: (error: Error) => {
       refuseWrite(error.message);
     },
+  });
+
+  const saveBudget = useMutation({
+    mutationFn: (budget: { budgetedHours: number | null; budgetedMinutes: number }) =>
+      apiRequest("PATCH", `/api/crm/projects/${projectId}`, budget),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      invalidateProject();
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => {
+      refuseWrite(error.message);
+    },
+  });
+
+  const deleteProject = useMutation({
+    mutationFn: () => apiRequest("DELETE", `/api/crm/projects/${projectId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      invalidateProject();
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects/all-kanban"] });
+      setWriteRefusal(null);
+      navigate("/projects");
+    },
+    onError: (error: Error) => refuseWrite(error.message),
+  });
+
+  const createDocument = useMutation({
+    mutationFn: (title: string) => {
+      if (!projectRecordId) throw new Error("This Project has no Documents yet.");
+      return apiRequest("POST", `/api/projects/${projectRecordId}/documents`, {
+        title,
+        content: { type: "doc", content: [{ type: "paragraph" }] },
+      });
+    },
+    onSuccess: (created: { id?: string }) => {
+      invalidateDocuments();
+      setCreatingDocument(false);
+      setDocumentName("");
+      setWriteRefusal(null);
+      if (created?.id) navigate(`/document/${created.id}`);
+    },
+    onError: (error: Error) => refuseWrite(error.message, "Manage Project Documents"),
   });
 
   const addMember = useMutation({
@@ -717,6 +774,27 @@ export function V2DossierPage() {
     addMember.mutate(memberId);
   }
 
+  function onSaveBudget(event: FormEvent) {
+    event.preventDefault();
+    const form = composeBudgetForm(budgetDraft, dossier.settings.budget.saved);
+    if (!form.canSave || !form.payload) return;
+    if (refuseWrite()) return;
+    saveBudget.mutate(form.payload);
+  }
+
+  function onNewDocument() {
+    if (refuseWrite()) return;
+    setDocumentName("");
+    setWriteRefusal(null);
+    setCreatingDocument(true);
+  }
+
+  function onCreateDocument() {
+    const title = documentName.trim();
+    if (!title || refuseWrite()) return;
+    createDocument.mutate(title);
+  }
+
   if (match.kind !== "dossier") {
     return null;
   }
@@ -857,8 +935,36 @@ export function V2DossierPage() {
         ) : null}
       </header>
 
+      <V2FormDialog
+        open={creatingDocument}
+        onOpenChange={(open) => {
+          setCreatingDocument(open);
+          if (!open) setWriteRefusal(null);
+        }}
+        title="New Document"
+        description="A Project Document belongs to this Project and opens in the editor once created."
+        submitLabel="Create Document"
+        pending={createDocument.isPending}
+        canSubmit={Boolean(documentName.trim())}
+        onSubmit={onCreateDocument}
+        refusal={writeRefusal}
+        testId="v2-dossier-new-document"
+      >
+        <label className="df-daily-field">
+          NAME
+          <input
+            type="text"
+            value={documentName}
+            autoFocus
+            onChange={(event) => setDocumentName(event.target.value)}
+            placeholder="Document name"
+            aria-label="Document name"
+          />
+        </label>
+      </V2FormDialog>
+
       <div className="df-dossier-body">
-        {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
+        {writeRefusal && !creatingDocument ? <p className="df-refusal">{writeRefusal}</p> : null}
         {dossier.identity ? (
           <div
             key={dossier.tab}
@@ -880,6 +986,14 @@ export function V2DossierPage() {
                 setSelectedProjectId(projectId);
                 handleStart(projectId, taskId);
               },
+              onStartTimer,
+              onNewDocument,
+              budgetDraft,
+              setBudgetDraft,
+              onSaveBudget,
+              budgetPending: saveBudget.isPending,
+              onDeleteProject: () => { if (!refuseWrite()) deleteProject.mutate(); },
+              deletePending: deleteProject.isPending,
               projectName,
               setProjectName,
               onSaveName,
@@ -954,6 +1068,14 @@ function renderDossierTab(props: {
   createPending: boolean;
   onComplete: (id: string, status: string) => void;
   onStartTask: (taskId: string) => void;
+  onStartTimer: () => void;
+  onNewDocument: () => void;
+  budgetDraft: ProjectBudgetDraft;
+  setBudgetDraft: (draft: ProjectBudgetDraft) => void;
+  onSaveBudget: (event: FormEvent) => void;
+  budgetPending: boolean;
+  onDeleteProject: () => void;
+  deletePending: boolean;
   projectName: string;
   setProjectName: (value: string) => void;
   onSaveName: (event: FormEvent) => void;
@@ -1000,7 +1122,7 @@ function renderDossierTab(props: {
 }): ReactNode {
   const { dossier } = props;
   if (dossier.tab === "tasks") return <DossierTasks {...props} />;
-  if (dossier.tab === "time") return <DossierTime dossier={dossier} />;
+  if (dossier.tab === "time") return <DossierTime dossier={dossier} onStartTimer={props.onStartTimer} />;
   if (dossier.tab === "activity") return <DossierActivity dossier={dossier} />;
   if (dossier.tab === "updates") return <DossierUpdates dossier={dossier} />;
   if (dossier.tab === "notes") return <DossierNotes {...props} />;
@@ -1040,7 +1162,7 @@ function DossierOverview({
                   aria-label={row.done ? "Mark Task as To do" : "Mark Task as Done"}
                   onClick={() => onComplete(row.id, row.done ? "open" : "done")}
                 >
-                  {row.done ? "✓" : null}
+                  {row.done ? <TaskCheckIcon /> : null}
                 </button>
                 <span className="df-task-title">{row.title}</span>
                 {row.flag ? (
@@ -1250,6 +1372,7 @@ function DossierTasks({
       <form className="df-filter-bar df-inset-bar" onSubmit={onCreateTask}>
         <label className="df-filter-input">
           <input
+            id={DOSSIER_FIELD.taskName}
             type="text"
             value={taskName}
             onChange={(event) => setTaskName(event.target.value)}
@@ -1267,7 +1390,7 @@ function DossierTasks({
         </p>
       ) : null}
       {dossier.tasks.empty ? (
-        <p className="df-empty">{dossier.tasks.emptyCopy}</p>
+        <DossierEmptyStateView state={dossier.tasks.emptyState} icon="tasks" testId="v2-dossier-tasks-empty" />
       ) : (
         dossier.tasks.rows.map((row) => (
           <div key={row.id} className="df-task-row" data-done={row.done ? "true" : "false"}>
@@ -1278,25 +1401,27 @@ function DossierTasks({
               aria-label={row.done ? "Mark Task as To do" : "Mark Task as Done"}
               onClick={() => onComplete(row.id, row.done ? "open" : "done")}
             >
-              {row.done ? "✓" : null}
+              {row.done ? <TaskCheckIcon /> : null}
             </button>
             <span className="df-task-title">{row.title}</span>
-            <V2FilterSelect
-              label="STATUS"
-              ariaLabel={`Task status for ${row.title}`}
-              value={row.statusValue}
-              options={TASK_STATUS_OPTIONS}
-              onChange={(status) => onComplete(row.id, status)}
-            />
-            {row.flag ? (
-              <span className="df-flag" data-flag={row.flag}>
-                {row.flag}
-              </span>
-            ) : (
-              <Button variant="outline" type="button" onClick={() => onStartTask(row.id)} className="df-btn">
-                Start Timer
-              </Button>
-            )}
+            <span className="df-task-controls">
+              <V2FilterSelect
+                label=""
+                ariaLabel={`Task status for ${row.title}`}
+                value={row.statusValue}
+                options={TASK_STATUS_OPTIONS}
+                onChange={(status) => onComplete(row.id, status)}
+              />
+              {row.flag ? (
+                <span className="df-flag" data-flag={row.flag}>
+                  {row.flag}
+                </span>
+              ) : (
+                <Button variant="outline" type="button" onClick={() => onStartTask(row.id)} className="df-btn">
+                  Start Timer
+                </Button>
+              )}
+            </span>
           </div>
         ))
       )}
@@ -1304,7 +1429,57 @@ function DossierTasks({
   );
 }
 
-function DossierTime({ dossier }: { dossier: DossierModel }) {
+/** Turns an empty tab's composed action into the one Button it offers. */
+function DossierEmptyStateView({
+  state,
+  icon,
+  testId,
+  onStartTimer,
+  onNewDocument,
+}: {
+  state: DossierEmptyState;
+  icon: EmptyStateIconId;
+  testId: string;
+  onStartTimer?: () => void;
+  onNewDocument?: () => void;
+}) {
+  const { action } = state;
+  let control: ReactNode = null;
+  if (action?.kind === "focus") {
+    // The tab's own add form sits above and owns the primary fill.
+    control = (
+      <Button
+        variant="outline"
+        type="button"
+        className="df-btn"
+        onClick={() => document.getElementById(action.target)?.focus()}
+      >
+        {action.label}
+      </Button>
+    );
+  } else if (action?.kind === "link") {
+    control = (
+      <Button asChild variant="default" className="df-btn">
+        <Link href={action.href}>{action.label}</Link>
+      </Button>
+    );
+  } else if (action?.kind === "start-timer" && onStartTimer) {
+    control = (
+      <Button variant="default" type="button" className="df-btn" onClick={onStartTimer}>
+        {action.label}
+      </Button>
+    );
+  } else if (action?.kind === "new-document" && onNewDocument) {
+    control = (
+      <Button variant="default" type="button" className="df-btn" onClick={onNewDocument}>
+        {action.label}
+      </Button>
+    );
+  }
+  return <V2EmptyState icon={icon} title={state.title} copy={state.copy} action={control} testId={testId} />;
+}
+
+function DossierTime({ dossier, onStartTimer }: { dossier: DossierModel; onStartTimer: () => void }) {
   return (
     <section className="df-card">
       <div className="df-card-head">
@@ -1312,7 +1487,12 @@ function DossierTime({ dossier }: { dossier: DossierModel }) {
         <span className="df-count-chip">{dossier.time.rows.length}</span>
       </div>
       {dossier.time.empty ? (
-        <p className="df-empty">{dossier.time.emptyCopy}</p>
+        <DossierEmptyStateView
+          state={dossier.time.emptyState}
+          icon="time"
+          testId="v2-dossier-time-empty"
+          onStartTimer={onStartTimer}
+        />
       ) : (
         dossier.time.rows.map((row) => (
           <div key={row.id} className="df-register-row">
@@ -1420,7 +1600,7 @@ function DossierNotes({
           <V2AudioRecorder onRecordingComplete={onAudio} onCancel={() => setRecordingNote(false)} isUploading={uploadingAudio} />
         ) : (
           <div className="df-inline-form">
-            <label className="df-daily-field" style={{ flex: 1 }}>NOTE<textarea value={noteContent} onChange={(event) => setNoteContent(event.target.value)} aria-label="Project note" /></label>
+            <label className="df-daily-field" style={{ flex: 1 }}>NOTE<textarea id={DOSSIER_FIELD.note} value={noteContent} onChange={(event) => setNoteContent(event.target.value)} aria-label="Project note" /></label>
             <Button variant="outline" type="button" onClick={() => setRecordingNote(true)} className="df-btn">Record audio</Button>
             {/* A File attached here lands on the Files tab once the note is added (#260). */}
             <Button asChild variant="outline" className="df-btn" aria-disabled={attachingNote}>
@@ -1462,7 +1642,7 @@ function DossierNotes({
           </div>
         ) : null}
       </div>
-      {dossier.notes.empty ? <p className="df-empty">{dossier.notes.emptyCopy}</p> : dossier.notes.rows.map((note) => (
+      {dossier.notes.empty ? <DossierEmptyStateView state={dossier.notes.emptyState} icon="notes" testId="v2-dossier-notes-empty" /> : dossier.notes.rows.map((note) => (
         <article key={note.id} className="df-update-body">
           <div className="df-mono df-meta">{note.meta}</div>
           <p className="df-prose">{note.content}</p>
@@ -1609,13 +1789,13 @@ function DossierReminders({
     <section className="df-card">
       <div className="df-card-head"><h2 className="df-card-title">Reminders</h2><span className="df-count-chip">{dossier.reminders.rows.length}</span></div>
       <form className="df-admin-form df-daily-form" onSubmit={onCreateReminder}>
-        <label className="df-daily-field">TITLE<input value={reminderTitle} onChange={(event) => setReminderTitle(event.target.value)} /></label>
+        <label className="df-daily-field">TITLE<input id={DOSSIER_FIELD.reminderTitle} value={reminderTitle} onChange={(event) => setReminderTitle(event.target.value)} /></label>
         <label className="df-daily-field">NOTE<textarea value={reminderNote} onChange={(event) => setReminderNote(event.target.value)} /></label>
         <label className="df-daily-field">DUE<input type="datetime-local" value={reminderDueAt} onChange={(event) => setReminderDueAt(event.target.value)} /></label>
         <Button variant="default" type="submit" disabled={!reminderTitle.trim() || !reminderDueAt} className="df-btn">Add reminder</Button>
       </form>
       {dossier.reminders.empty ? (
-        <p className="df-empty">{dossier.reminders.emptyCopy}</p>
+        <DossierEmptyStateView state={dossier.reminders.emptyState} icon="reminders" testId="v2-dossier-reminders-empty" />
       ) : (
         dossier.reminders.rows.map((reminder) => (
           <ReminderRow
@@ -1639,19 +1819,33 @@ function DossierDocuments({
   dossier,
   onDuplicateDocument,
   onMoveDocument,
+  onNewDocument,
 }: {
   dossier: DossierModel;
   onDuplicateDocument: (id: string) => void;
   onMoveDocument: (id: string, parentId: string | null, position: number) => void;
+  onNewDocument: () => void;
 }) {
   return (
     <section className="df-card">
       <div className="df-card-head">
         <h2 className="df-card-title">Project Documents</h2>
-        <span className="df-count-chip">{dossier.documents.count} DOCS</span>
+        <span className="df-cluster">
+          <span className="df-count-chip">{dossier.documents.count} DOCS</span>
+          {dossier.documents.canCreate && !dossier.documents.empty ? (
+            <Button variant="outline" type="button" onClick={onNewDocument} className="df-btn">
+              New Document
+            </Button>
+          ) : null}
+        </span>
       </div>
       {dossier.documents.empty ? (
-        <p className="df-empty">{dossier.documents.emptyCopy}</p>
+        <DossierEmptyStateView
+          state={dossier.documents.emptyState}
+          icon="documents"
+          testId="v2-dossier-documents-empty"
+          onNewDocument={onNewDocument}
+        />
       ) : (
         dossier.documents.rows.map((row) => {
           const { parentId, up, down } = row.order;
@@ -1694,7 +1888,7 @@ function DossierFiles({ dossier }: { dossier: DossierModel }) {
         <span className="df-count-chip">{dossier.files.rows.length}</span>
       </div>
       {dossier.files.empty ? (
-        <p className="df-empty">{dossier.files.emptyCopy}</p>
+        <DossierEmptyStateView state={dossier.files.emptyState} icon="files" testId="v2-dossier-files-empty" />
       ) : (
         dossier.files.rows.map((row) => {
           const body = (
@@ -1738,6 +1932,62 @@ function DossierFiles({ dossier }: { dossier: DossierModel }) {
   );
 }
 
+/** One label and its value, on the two columns every Settings group shares. */
+function SettingRow({ row }: { row: DossierSettingRow }) {
+  return (
+    <div className="df-settings-row">
+      <span className="df-settings-label">{row.label}</span>
+      <span className="df-settings-value">
+        {row.chip ? (
+          row.swatch ? (
+            <span className="df-status" data-swatch="" style={swatchStyle(row.swatch)}>
+              {row.value}
+            </span>
+          ) : (
+            <span className="df-status">{row.value}</span>
+          )
+        ) : (
+          row.value
+        )}
+      </span>
+    </div>
+  );
+}
+
+function SettingsCard({
+  title,
+  sub,
+  testId,
+  danger,
+  action,
+  children,
+}: {
+  title: string;
+  sub: string;
+  testId: string;
+  danger?: boolean;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className={danger ? "df-card df-settings-card df-settings-danger" : "df-card df-settings-card"} data-testid={testId}>
+      <div className="df-card-head">
+        <div className="df-card-head-text">
+          <h2 className="df-card-title">{title}</h2>
+          <p className="df-card-sub">{sub}</p>
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * Settings as labelled groups (#277): identity, lifecycle, budget, team,
+ * documentation and the danger zone, each a card. Every group draws its rows
+ * on the same two columns, so labels and values line up down the whole tab.
+ */
 function DossierSettings({
   dossier,
   projectName,
@@ -1759,6 +2009,12 @@ function DossierSettings({
   onSetTagAttached,
   onEditTag,
   onDeleteTag,
+  budgetDraft,
+  setBudgetDraft,
+  onSaveBudget,
+  budgetPending,
+  onDeleteProject,
+  deletePending,
 }: {
   dossier: DossierModel;
   projectName: string;
@@ -1780,68 +2036,166 @@ function DossierSettings({
   onSetTagAttached: (id: string, attached: boolean) => void;
   onEditTag: (id: string, draft: { name: string; color: string }) => void;
   onDeleteTag: (id: string) => void;
+  budgetDraft: ProjectBudgetDraft;
+  setBudgetDraft: (draft: ProjectBudgetDraft) => void;
+  onSaveBudget: (event: FormEvent) => void;
+  budgetPending: boolean;
+  onDeleteProject: () => void;
+  deletePending: boolean;
 }) {
-  const assigned = new Set(dossier.settings.members.map((member) => member.id));
+  const { settings } = dossier;
+  const assigned = new Set(settings.members.map((member) => member.id));
   const available = users.filter((member) => !assigned.has(member.id));
+  const budgetForm = composeBudgetForm(budgetDraft, settings.budget.saved);
   return (
-    <section className="df-card">
-      <div className="df-card-head">
-        <h2 className="df-card-title">Settings</h2>
-      </div>
-      <form className="df-filter-bar df-inset-bar" onSubmit={onSaveName}>
-        <label className="df-filter-input">
-          <input
-            type="text"
-            value={projectName}
-            onChange={(event) => setProjectName(event.target.value)}
-            aria-label="Project name"
-          />
-        </label>
-        <Button variant="default" type="submit" disabled={!projectName.trim()} className="df-btn">
-          Save name
-        </Button>
-      </form>
-      <div className="df-settings-fields">
-        {dossier.settings.fields.map((field) => (
-          <div key={field.label} className="df-kv">
-            <span>{field.label}</span>
-            <span>{field.value}</span>
+    <div className="df-settings-stack">
+      <SettingsCard
+        title="Identity"
+        sub="What this Project is called, who it is for, and the Tags it is filed under."
+        testId="v2-dossier-settings-identity"
+        action={
+          <Button variant="outline" type="button" onClick={onClone} disabled={clonePending} className="df-btn">
+            {clonePending ? "Cloning…" : "Clone Project"}
+          </Button>
+        }
+      >
+        <div className="df-settings-grid">
+          <form className="df-settings-row" onSubmit={onSaveName}>
+            <label className="df-settings-label" htmlFor="df-dossier-project-name">
+              NAME
+            </label>
+            <span className="df-settings-value df-settings-inline">
+              <input
+                id="df-dossier-project-name"
+                type="text"
+                value={projectName}
+                onChange={(event) => setProjectName(event.target.value)}
+                aria-label="Project name"
+              />
+              <Button variant="default" type="submit" disabled={!projectName.trim()} className="df-btn">
+                Save name
+              </Button>
+            </span>
+          </form>
+          {settings.identity.map((row) => (
+            <SettingRow key={row.label} row={row} />
+          ))}
+          <div className="df-settings-row" data-testid="v2-dossier-tags">
+            <span className="df-settings-label">TAGS</span>
+            <div className="df-settings-value df-settings-list">
+              {dossier.tags.emptyCopy ? <p className="df-empty df-flush">{dossier.tags.emptyCopy}</p> : null}
+              {dossier.tags.vocabulary.map((tag) => (
+                <TagRow
+                  key={tag.id}
+                  tag={tag}
+                  onSetAttached={onSetTagAttached}
+                  onEdit={onEditTag}
+                  onDelete={onDeleteTag}
+                />
+              ))}
+              <form className="df-settings-inline" onSubmit={onCreateTag}>
+                <input
+                  type="text"
+                  value={tagName}
+                  onChange={(event) => setTagName(event.target.value)}
+                  placeholder="New Tag"
+                  aria-label="New Tag name"
+                />
+                <Button variant="outline" type="submit" disabled={!tagName.trim()} className="df-btn">
+                  Create Tag
+                </Button>
+              </form>
+            </div>
           </div>
-        ))}
-      </div>
-      <form className="df-filter-bar df-inset-follow" onSubmit={(event) => event.preventDefault()}>
-        <V2FilterSelect
-          label="LEAD"
-          ariaLabel="Project lead"
-          value={dossier.settings.lead?.id ?? V2_SELECT_NONE}
-          options={[
-            { value: V2_SELECT_NONE, label: "NONE" },
-            ...users.map((member) => ({ value: member.id, label: memberName(member) })),
-          ]}
-          onChange={(value) => onAssignLead(value === V2_SELECT_NONE ? "" : value)}
-        />
-      </form>
-      <form className="df-filter-bar df-inset-follow" onSubmit={onAddMember}>
-        <V2FilterSelect
-          label="MEMBER"
-          ariaLabel="Add Project Assignment"
-          value={memberId || V2_SELECT_NONE}
-          options={[
-            { value: V2_SELECT_NONE, label: "ADD MEMBER", disabled: true },
-            ...available.map((member) => ({ value: member.id, label: memberName(member) })),
-          ]}
-          onChange={(value) => setMemberId(value === V2_SELECT_NONE ? "" : value)}
-        />
-        <Button variant="outline" type="submit" disabled={memberPending || !memberId} className="df-btn">
-          Assign
-        </Button>
-      </form>
-      <div className="df-settings-section" data-testid="v2-dossier-members">
-        <div className="df-mono df-meta">MEMBERS</div>
-        {dossier.settings.memberRows.length === 0 ? (
+        </div>
+      </SettingsCard>
+
+      <SettingsCard title="Lifecycle" sub={settings.lifecycle.note} testId="v2-dossier-settings-lifecycle">
+        <div className="df-settings-grid">
+          {settings.lifecycle.rows.map((row) => (
+            <SettingRow key={row.label} row={row} />
+          ))}
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Budget"
+        sub="The time this Project is planned to take. The budget meters on the header and the Overview read it."
+        testId="v2-dossier-settings-budget"
+      >
+        <form onSubmit={onSaveBudget}>
+          <div className="df-settings-grid">
+            <div className="df-settings-row">
+              <span className="df-settings-label">BUDGET</span>
+              <span className="df-settings-value df-settings-inline">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  className="df-settings-number"
+                  value={budgetDraft.hours}
+                  onChange={(event) => setBudgetDraft({ ...budgetDraft, hours: event.target.value })}
+                  placeholder="0"
+                  aria-label="Budget hours"
+                />
+                <span className="df-settings-unit">h</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={59}
+                  step={1}
+                  className="df-settings-number"
+                  value={budgetDraft.minutes}
+                  onChange={(event) => setBudgetDraft({ ...budgetDraft, minutes: event.target.value })}
+                  placeholder="0"
+                  aria-label="Budget minutes"
+                />
+                <span className="df-settings-unit">min</span>
+              </span>
+            </div>
+            <SettingRow row={{ label: "CONSUMED", value: settings.budget.consumed }} />
+          </div>
+          <div className="df-form-actions">
+            <p className={budgetForm.issue ? "df-form-note df-refusal-inline" : "df-form-note"} role="status">
+              {budgetForm.note}
+            </p>
+            <Button variant="default" type="submit" disabled={!budgetForm.canSave || budgetPending} className="df-btn">
+              {budgetPending ? "Saving…" : "Save budget"}
+            </Button>
+          </div>
+        </form>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Team"
+        sub="Who leads this Project and who is assigned to it."
+        testId="v2-dossier-settings-team"
+      >
+        <div className="df-settings-grid">
+          <div className="df-settings-row">
+            <span className="df-settings-label">LEAD</span>
+            <span className="df-settings-value">
+              <V2FilterSelect
+                label=""
+                ariaLabel="Project lead"
+                value={settings.lead?.id ?? V2_SELECT_NONE}
+                options={[
+                  { value: V2_SELECT_NONE, label: "No lead" },
+                  ...users.map((member) => ({ value: member.id, label: memberName(member) })),
+                ]}
+                onChange={(value) => onAssignLead(value === V2_SELECT_NONE ? "" : value)}
+              />
+            </span>
+          </div>
+          <div className="df-settings-row" data-testid="v2-dossier-members">
+            <span className="df-settings-label">MEMBERS</span>
+            <div className="df-settings-value df-settings-list">
+        {settings.memberRows.length === 0 ? (
           <p className="df-empty df-flush">No Members assigned to this Project.</p>
         ) : (
-          dossier.settings.memberRows.map((member) => (
+          settings.memberRows.map((member) => (
             <div key={member.id} className="df-contact-row">
               <span className="df-row-title">{member.name}</span>
               <AlertDialog>
@@ -1876,48 +2230,94 @@ function DossierSettings({
             </div>
           ))
         )}
-      </div>
-      <div className="df-settings-section" data-testid="v2-dossier-tags">
-        <div className="df-mono df-meta">TAGS</div>
-        {dossier.tags.emptyCopy ? <p className="df-empty df-flush">{dossier.tags.emptyCopy}</p> : null}
-        {dossier.tags.vocabulary.map((tag) => (
-          <TagRow
-            key={tag.id}
-            tag={tag}
-            onSetAttached={onSetTagAttached}
-            onEdit={onEditTag}
-            onDelete={onDeleteTag}
-          />
-        ))}
-        <form className="df-filter-bar df-inset-follow" onSubmit={onCreateTag}>
-          <label className="df-filter-input">
-            <input
-              type="text"
-              value={tagName}
-              onChange={(event) => setTagName(event.target.value)}
-              placeholder="New Tag"
-              aria-label="New Tag name"
-            />
-          </label>
-          <Button variant="outline" type="submit" disabled={!tagName.trim()} className="df-btn">
-            Create Tag
-          </Button>
-        </form>
-      </div>
-      <div className="df-settings-section df-settings-actions">
-        <Button
-          variant="outline"
-          type="button"
-          onClick={() => onToggleDocumentation(!dossier.settings.documentationEnabled)}
-          className="df-btn"
-        >
-          {dossier.settings.documentationEnabled ? "Turn Documentation off" : "Turn Documentation on"}
-        </Button>
-        <Button variant="outline" type="button" onClick={onClone} disabled={clonePending} className="df-btn">
-          {clonePending ? "Cloning…" : "Clone Project"}
-        </Button>
-      </div>
-    </section>
+            </div>
+          </div>
+          <form className="df-settings-row" onSubmit={onAddMember}>
+            <span className="df-settings-label">ADD MEMBER</span>
+            <span className="df-settings-value df-settings-inline">
+              <V2FilterSelect
+                label=""
+                ariaLabel="Add Project Assignment"
+                value={memberId || V2_SELECT_NONE}
+                options={[
+                  { value: V2_SELECT_NONE, label: "Choose a Member", disabled: true },
+                  ...available.map((member) => ({ value: member.id, label: memberName(member) })),
+                ]}
+                onChange={(value) => setMemberId(value === V2_SELECT_NONE ? "" : value)}
+              />
+              <Button variant="outline" type="submit" disabled={memberPending || !memberId} className="df-btn">
+                Assign
+              </Button>
+            </span>
+          </form>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard title="Documentation" sub={settings.documentation.copy} testId="v2-dossier-settings-documentation">
+        <div className="df-settings-grid">
+          <div className="df-settings-row">
+            <span className="df-settings-label">{settings.documentation.row.label}</span>
+            <span className="df-settings-value df-settings-inline">
+              <span className="df-status">{settings.documentation.row.value}</span>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => onToggleDocumentation(!settings.documentationEnabled)}
+                className="df-btn"
+              >
+                {settings.documentation.action}
+              </Button>
+            </span>
+          </div>
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Danger zone"
+        sub="What happens here cannot be undone."
+        testId="v2-dossier-settings-danger"
+        danger
+      >
+        <div className="df-settings-grid">
+          <div className="df-settings-row">
+            <span className="df-settings-label">DELETE</span>
+            <span className="df-settings-value df-settings-inline">
+              <span className="df-settings-copy">Delete this Project and everything filed under it.</span>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructiveOutline"
+                    type="button"
+                    className="df-btn"
+                    disabled={deletePending}
+                    data-testid="v2-dossier-delete-project"
+                  >
+                    {deletePending ? "Deleting…" : "Delete Project"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="df-v2 df-alert">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Project</AlertDialogTitle>
+                    <AlertDialogDescription>{settings.deleteConsequence}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="df-btn" autoFocus>
+                      Keep Project
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={onDeleteProject}
+                    >
+                      Delete Project
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </span>
+          </div>
+        </div>
+      </SettingsCard>
+    </div>
   );
 }
 

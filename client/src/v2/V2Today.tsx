@@ -62,6 +62,7 @@ function toTodayProject(project: CrmProjectWithDetails): TodayProject {
     projectStatus: project.projectStatus,
     projectType: project.projectType,
     budgetedHours: project.budgetedHours,
+    budgetedMinutes: project.budgetedMinutes,
     actualHours: project.actualHours,
     project: project.project ? { id: project.project.id, name: project.project.name } : null,
     client: project.client ? { name: project.client.name } : null,

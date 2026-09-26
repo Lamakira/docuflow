@@ -14,6 +14,10 @@ import { matchV2Route } from "./presentation";
 import {
   combinedStatusForProjectStatus,
   composeProjectBoard,
+  newProjectPayload,
+  projectBudgetPercent,
+  readProjectBudget,
+  EMPTY_PROJECT_BUDGET_DRAFT,
   composeProjectRegister,
   clearProjectFilters,
   projectFilterLabels,
@@ -106,8 +110,6 @@ function toRegisterProject(
   monthSeconds: number,
   viewer: { userId: string; role: string | null },
 ): ProjectRegisterRowInput {
-  const budgeted = project.budgetedHours ?? 0;
-  const actual = project.actualHours ?? 0;
   const memberIds = (project.members ?? [])
     .map((row) => row.userId || row.user?.id)
     .filter((id): id is string => Boolean(id));
@@ -118,7 +120,7 @@ function toRegisterProject(
     projectType: project.projectType,
     projectStatus: project.projectStatus,
     leadName: leadName(project),
-    budgetPercent: budgeted > 0 ? Math.round((actual / budgeted) * 100) : null,
+    budgetPercent: projectBudgetPercent(project),
     trackedMtd: formatHours(monthSeconds),
     tags: (project.tags ?? []).map((tag) => ({ id: tag.id, name: tag.name })),
     visible: projectVisibleTo({
@@ -400,6 +402,7 @@ export function V2ProjectsPage() {
     () => new URLSearchParams(window.location.search).get("new") === "1",
   );
   const [name, setName] = useState("");
+  const [budgetDraft, setBudgetDraft] = useState(EMPTY_PROJECT_BUDGET_DRAFT);
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
   const monthStart = useMemo(() => startOfMonth(now), [now]);
@@ -588,7 +591,8 @@ export function V2ProjectsPage() {
   }
 
   const createProject = useMutation({
-    mutationFn: (projectName: string) => apiRequest("POST", "/api/crm/projects", { name: projectName }),
+    mutationFn: (payload: NonNullable<ReturnType<typeof newProjectPayload>>) =>
+      apiRequest("POST", "/api/crm/projects", payload),
     onSuccess: (response: { crmProject?: { id?: string } }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
       queryClient.invalidateQueries({ queryKey: [projectsAllPath()] });
@@ -596,6 +600,7 @@ export function V2ProjectsPage() {
       const createdId = response?.crmProject?.id ?? null;
       setSelectedId(createdId);
       setName("");
+      setBudgetDraft(EMPTY_PROJECT_BUDGET_DRAFT);
       setCreating(false);
       setWriteRefusal(null);
     },
@@ -604,9 +609,11 @@ export function V2ProjectsPage() {
     },
   });
 
+  const budgetIssue = readProjectBudget(budgetDraft).issue;
+
   function onCreate() {
-    const projectName = name.trim();
-    if (!projectName) return;
+    const payload = newProjectPayload(name, budgetDraft);
+    if (!payload) return;
     if (readOnly) {
       setWriteRefusal(
         chromeRefusal({
@@ -617,7 +624,7 @@ export function V2ProjectsPage() {
       );
       return;
     }
-    createProject.mutate(projectName);
+    createProject.mutate(payload);
   }
 
   if (isLoading || (boardView && boardLoading)) {
@@ -662,6 +669,7 @@ export function V2ProjectsPage() {
             type="button"
             onClick={() => {
               setName("");
+              setBudgetDraft(EMPTY_PROJECT_BUDGET_DRAFT);
               setWriteRefusal(null);
               setCreating(true);
             }}
@@ -676,12 +684,12 @@ export function V2ProjectsPage() {
         open={creating}
         onOpenChange={setCreating}
         title="New Project"
-        description="A Project is the delivery work Tasks and Time Entries hang from. Everything past its name is set on its Dossier."
+        description="A Project is the delivery work Tasks and Time Entries hang from. Its budget can wait for its Dossier's Settings, like everything else past its name."
         submitLabel="Create Project"
         pending={createProject.isPending}
-        canSubmit={Boolean(name.trim())}
+        canSubmit={newProjectPayload(name, budgetDraft) !== null}
         onSubmit={onCreate}
-        refusal={writeRefusal}
+        refusal={budgetIssue ?? writeRefusal}
         testId="v2-projects-new"
       >
         <label className="df-daily-field">
@@ -695,6 +703,35 @@ export function V2ProjectsPage() {
             aria-label="Project name"
           />
         </label>
+        <div className="df-field-pair">
+          <label className="df-daily-field">
+            BUDGET HOURS
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={budgetDraft.hours}
+              onChange={(event) => setBudgetDraft((draft) => ({ ...draft, hours: event.target.value }))}
+              placeholder="No budget"
+              aria-label="Budget hours"
+            />
+          </label>
+          <label className="df-daily-field">
+            MINUTES
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={59}
+              step={1}
+              value={budgetDraft.minutes}
+              onChange={(event) => setBudgetDraft((draft) => ({ ...draft, minutes: event.target.value }))}
+              placeholder="0"
+              aria-label="Budget minutes"
+            />
+          </label>
+        </div>
       </V2FormDialog>
       {writeRefusal && !creating ? <p className="df-refusal">{writeRefusal}</p> : null}
 
