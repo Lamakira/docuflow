@@ -173,9 +173,9 @@ describe("v2 chrome behind the client flag (#171)", () => {
 });
 
 /**
- * Administration is the one destination a Workspace Role can put out of reach
- * (#257, ADR-0025). A Capability never hides a destination: Clients stays,
- * because a Member may read the register.
+ * Analytics and Administration are the destinations a Workspace Role can put
+ * out of reach (#257, #281, ADR-0025). A Capability never hides a destination:
+ * Clients stays, because a Member may read the register.
  */
 describe("the rail offers only destinations the Workspace Role can reach (#257)", () => {
   const railNavItems = (): V2NavItem[] => [
@@ -209,8 +209,21 @@ describe("the rail offers only destinations the Workspace Role can reach (#257)"
     expect(labelsInReach("MEMBER")).toContain("Clients");
   });
 
-  it("carries a reach predicate on the administration entry alone", () => {
-    expect(railNavItems().filter((item) => item.reach).map((item) => item.id)).toEqual(["administration"]);
+  it("offers Analytics on the rail to the Workspace Roles that could see it inside Administration (#281)", () => {
+    expect(labelsInReach("MEMBER")).not.toContain("Analytics");
+    expect(labelsInReach("OWNER")).toContain("Analytics");
+    expect(labelsInReach("ADMINISTRATOR")).toContain("Analytics");
+    // Beside Administration, in the operator section under People.
+    const operator = V2_NAV.find((section) => section.items.some((item) => item.id === "administration"));
+    expect(operator?.items.map((item) => item.id)).toEqual(["people", "analytics", "administration"]);
+    expect(navIdForPath("/analytics")).toBe("analytics");
+  });
+
+  it("carries a reach predicate on the Analytics and Administration entries alone", () => {
+    expect(railNavItems().filter((item) => item.reach).map((item) => item.id)).toEqual([
+      "analytics",
+      "administration",
+    ]);
   });
 
   it("filters where the rail maps V2_NAV, and a typed /administration still resolves", () => {

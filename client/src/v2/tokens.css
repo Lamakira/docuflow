@@ -1523,6 +1523,27 @@ button.df-activity-row {
   color: var(--df-archive-slate);
 }
 
+/* What a breakdown's rows are, said before the rows (#281). */
+.df-analytics-group-caption {
+  margin: 0;
+  padding: var(--df-space-1) var(--df-space-5) var(--df-space-2);
+  font-size: var(--df-text-2);
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+  max-width: 68ch;
+}
+
+/* Recorded time's totals, read as a sentence above the figures that carry them. */
+.df-recorded-sentence {
+  margin: 0;
+  padding: var(--df-space-4) var(--df-space-4) 0;
+  font-size: var(--df-text-4);
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--df-case-ink);
+  max-width: 68ch;
+}
+
 .df-analytics-register .df-register-head[data-columns="2"],
 .df-analytics-register .df-register-row[data-columns="2"] {
   grid-template-columns: 1.7fr 0.9fr;
@@ -3160,6 +3181,80 @@ button.df-activity-row {
 .df-tab-count {
   font-size: var(--df-text-1);
   font-weight: 400;
+}
+
+/* The shadcn Tabs wearing the v2 tab strip (#281). Radix marks the chosen tab
+   with data-state, not data-active, and shadcn's pill height, fill, radius and
+   shadow must lose to the strip whatever order the sheets load in. */
+.df-v2 .df-tabs[role="tablist"] {
+  height: auto;
+  justify-content: flex-start;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--df-archive-slate);
+}
+
+.df-v2 .df-tab[role="tab"] {
+  padding: var(--df-space-2) var(--df-space-3);
+  border-radius: 0;
+  font-size: var(--df-text-3);
+  background: transparent;
+  box-shadow: none;
+  transition: none;
+}
+
+.df-v2 .df-tab[data-state="active"] {
+  color: var(--df-case-ink);
+  font-weight: 600;
+  border-bottom-color: var(--df-amber-500);
+  background: transparent;
+  box-shadow: none;
+}
+
+.df-admin-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-5);
+}
+
+.df-v2 .df-admin-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-5);
+  margin: 0;
+}
+
+/* Radix keeps inactive panels mounted as empty `[hidden]` divs; the display
+   above outranks the UA rule, so each one would add a gap under the tabs. */
+.df-v2 .df-admin-panel[hidden] {
+  display: none;
+}
+
+.df-danger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--df-space-4);
+  padding: var(--df-space-4);
+  border-top: 1px solid var(--df-alert-line);
+}
+
+.df-danger-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-1);
+  min-width: 0;
+  max-width: 68ch;
+}
+
+.df-danger-copy .df-meta {
+  line-height: 1.45;
+}
+
+.df-v2[data-chrome="mobile"] .df-danger-row {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .df-dossier-body {

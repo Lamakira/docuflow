@@ -15,8 +15,8 @@ import {
 } from "@shared/schema";
 import { chromeRefusal } from "./chrome";
 import { formatRelativeTime } from "./devices";
-import { formatHours } from "./today";
-import type { WorkspaceCondition } from "./workspace";
+import { formatHours, memberName } from "./today";
+import { workspaceRoleInCopy, type WorkspaceCondition, type WorkspaceMemberRow } from "./workspace";
 
 /**
  * Administration is a destination governed by the Workspace Role (#238), not a
@@ -24,26 +24,31 @@ import type { WorkspaceCondition } from "./workspace";
  */
 export const ADMINISTRATION_DESTINATION = "Administration";
 
+/** Analytics left Administration for the rail (#281); the same Workspace Roles reach it. */
+export const ANALYTICS_DESTINATION = "Analytics";
+
 /** Who governs it, said the way a reader would say it. */
 const ADMINISTRATION_ROLES = "the Owner and Administrators";
 
 /**
- * The single refusal every Administration surface shows. It names the
- * destination, the authority that actually governs it, and the Workspace Role
- * the reader actually holds.
+ * The single refusal every Administration or Analytics surface shows. It names
+ * the destination, the authority that actually governs it, and the Workspace
+ * Role the reader actually holds.
  */
 export function administrationRefusal(input: {
   workspaceRole: string;
   ownerName?: string | null;
+  destination?: typeof ADMINISTRATION_DESTINATION | typeof ANALYTICS_DESTINATION;
 }): string {
+  const destination = input.destination ?? ADMINISTRATION_DESTINATION;
   if (canManageAdministration(input.workspaceRole)) {
     // The Role qualifies and the read was refused anyway. Blaming the Role here
     // would be a second false reason, so say only what is known.
-    return `${ADMINISTRATION_DESTINATION} could not be opened for your Membership in this Workspace.`;
+    return `${destination} could not be opened for your Membership in this Workspace.`;
   }
   return chromeRefusal({
     kind: "workspace-role",
-    destination: ADMINISTRATION_DESTINATION,
+    destination,
     roles: ADMINISTRATION_ROLES,
     workspaceRole: input.workspaceRole,
     ownerName: input.ownerName,
@@ -106,6 +111,15 @@ export type AdministrationInput = {
   webhookEndpoints: WebhookEndpointInput[];
   billing: BillingInput | null;
   revealedSecret: RevealedSecretInput | null;
+  /** Active Memberships, for the Workspace and Members & Roles tabs (#281). */
+  members?: WorkspaceMemberRow[];
+};
+
+export type AdministrationMemberRow = {
+  id: string;
+  name: string;
+  email: string;
+  workspaceRole: string;
 };
 
 export type ServiceAccountRow = {
@@ -183,6 +197,14 @@ export type AdministrationModel =
         createAllowed: boolean;
       };
       billing: BillingModel;
+      workspace: { figures: AnalyticsFigure[] };
+      members: {
+        empty: boolean;
+        emptyCopy: string;
+        /** Who reaches what, and where a Workspace Role is changed. */
+        note: string;
+        rows: AdministrationMemberRow[];
+      };
     };
 
 export function serviceAccountsPath(): string {
@@ -443,6 +465,19 @@ export function composeAdministration(input: AdministrationInput): Administratio
       enable: disabled,
     };
   });
+  const billing = composeBilling(input);
+  const memberRows: AdministrationMemberRow[] = (input.members ?? []).map((row, index) => ({
+    id: row.email || `member-${index}`,
+    name: memberName(row),
+    email: row.email ?? "",
+    workspaceRole: workspaceRoleInCopy(row.workspaceRole),
+  }));
+  const workspaceFigures: AnalyticsFigure[] = [
+    { label: "WORKSPACE", value: input.workspaceName },
+    { label: "OWNER", value: input.ownerName ?? "—" },
+    { label: "YOUR WORKSPACE ROLE", value: workspaceRoleInCopy(input.workspaceRole) },
+    ...(input.members ? [{ label: "MEMBERS", value: String(input.members.length) }] : []),
+  ];
 
   return {
     kind: "ready",
@@ -473,7 +508,14 @@ export function composeAdministration(input: AdministrationInput): Administratio
       rows: webhookRows,
       createAllowed: !readOnly,
     },
-    billing: composeBilling(input),
+    billing,
+    workspace: { figures: workspaceFigures },
+    members: {
+      empty: memberRows.length === 0,
+      emptyCopy: "No active Memberships in this Workspace.",
+      note: `Analytics and Administration are open to ${ADMINISTRATION_ROLES}. A Workspace Role is changed in People.`,
+      rows: memberRows,
+    },
   };
 }
 
@@ -671,6 +713,8 @@ export type AnalyticsEvidenceQualityInput = {
 
 export type AnalyticsInput = {
   now: Date;
+  /** Names whose time Recorded time sums; "this Workspace" when absent. */
+  workspaceName?: string;
   workspaceRole: string;
   ownerName: string | null;
   range: AnalyticsRange;
@@ -763,6 +807,35 @@ export type AnalyticsProductivityDayRow = {
   tracked: string;
 };
 
+/** One breakdown of Recorded time: whose, or where, the hours belong (#281). */
+export type RecordedTimeSection = {
+  label: string;
+  /** One sentence saying what the rows are, read before the rows. */
+  caption: string;
+  head: string[];
+  emptyCopy: string;
+};
+
+export type RecordedTimeModel = {
+  empty: boolean;
+  emptyCopy: string;
+  /** What is measured, over which range, and for whom — one sentence. */
+  measures: string;
+  /** The totals read as a sentence; `null` when nothing was recorded. */
+  sentence: string | null;
+  summary: AnalyticsFigure[];
+  sections: {
+    members: RecordedTimeSection;
+    projects: RecordedTimeSection;
+    tasks: RecordedTimeSection;
+    days: RecordedTimeSection;
+  };
+  rows: AnalyticsProductivityRow[];
+  projects: AnalyticsProductivityProjectRow[];
+  tasks: AnalyticsProductivityTaskRow[];
+  days: AnalyticsProductivityDayRow[];
+};
+
 export type AnalyticsScreenshotMemberRow = {
   id: string;
   who: string;
@@ -810,15 +883,7 @@ export type AnalyticsModel =
         stalledDevices: AnalyticsAlertDeviceRow[];
         runningWithoutEvidence: AnalyticsAlertRunningRow[];
       };
-      recordedTime: {
-        empty: boolean;
-        emptyCopy: string;
-        footnote: string;
-        rows: AnalyticsProductivityRow[];
-        projects: AnalyticsProductivityProjectRow[];
-        tasks: AnalyticsProductivityTaskRow[];
-        days: AnalyticsProductivityDayRow[];
-      };
+      recordedTime: RecordedTimeModel;
       screenshots: {
         empty: boolean;
         emptyCopy: string;
@@ -837,6 +902,36 @@ export type AnalyticsModel =
 
 function formatDay(value: Date): string {
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
+}
+
+const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+/** A `YYYY-MM-DD` bucket read as the calendar day it names, not as UTC midnight. */
+function formatBucketDay(value: string): string {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  const date = new Date(year, month - 1, day);
+  return `${WEEKDAYS[date.getDay()]} ${day} ${MONTHS[month - 1]}`;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+function recordedTimeSentence(input: {
+  members: number;
+  totalSeconds: number;
+  idleSeconds: number;
+  entries: number;
+  projects: number;
+}): string {
+  const who = plural(input.members, "Member", "Members");
+  const lead =
+    `${who} recorded ${formatHours(input.totalSeconds)} on ${plural(input.entries, "Time Entry", "Time Entries")}` +
+    ` across ${plural(input.projects, "Project", "Projects")}.`;
+  const idle =
+    input.idleSeconds > 0 ? `${formatHours(input.idleSeconds)} of it was idle.` : "None of it was idle.";
+  return `${lead} ${idle}`;
 }
 
 function formatPercent(value: number | null): string {
@@ -867,6 +962,7 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
       refusal: administrationRefusal({
         workspaceRole: input.workspaceRole,
         ownerName: input.ownerName,
+        destination: ANALYTICS_DESTINATION,
       }),
     };
   }
@@ -978,9 +1074,73 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
   );
   const productivityDays: AnalyticsProductivityDayRow[] = (productivity?.dailyTrend ?? []).map((row) => ({
     id: row.date,
-    day: row.date,
+    day: formatBucketDay(row.date),
     tracked: formatHours(row.totalSeconds),
   }));
+  const recordedSeconds = (productivity?.byUser ?? []).reduce((sum, row) => sum + row.totalSeconds, 0);
+  const recordedIdleSeconds = (productivity?.byUser ?? []).reduce((sum, row) => sum + row.idleSeconds, 0);
+  const recordedEntries = (productivity?.byUser ?? []).reduce((sum, row) => sum + row.entriesCount, 0);
+  const recordedEmpty =
+    productivityRows.length === 0 &&
+    productivityProjects.length === 0 &&
+    productivityTasks.length === 0 &&
+    productivityDays.length === 0;
+  const rangeLabel = `${formatDay(input.range.start)} – ${formatDay(input.range.end)}`;
+  const recordedTime: RecordedTimeModel = {
+    empty: recordedEmpty,
+    emptyCopy: "No tracked time in this range.",
+    measures:
+      `Time Entries that started between ${formatDay(input.range.start)} and ${formatDay(input.range.end)}, ` +
+      `for every Member of ${input.workspaceName?.trim() || "this Workspace"}. ` +
+      "A running Timer counts once it stops.",
+    sentence: recordedEmpty
+      ? null
+      : recordedTimeSentence({
+          members: productivityRows.length,
+          totalSeconds: recordedSeconds,
+          idleSeconds: recordedIdleSeconds,
+          entries: recordedEntries,
+          projects: productivityProjects.length,
+        }),
+    summary: recordedEmpty
+      ? []
+      : [
+          { label: "RECORDED", value: formatHours(recordedSeconds) },
+          { label: "OF WHICH IDLE", value: formatHours(recordedIdleSeconds) },
+          { label: "TIME ENTRIES", value: String(recordedEntries) },
+          { label: "MEMBERS", value: String(productivityRows.length) },
+        ],
+    sections: {
+      members: {
+        label: "PER MEMBER",
+        caption: "Who recorded the time, and how much of it was idle.",
+        head: ["MEMBER", "RECORDED", "OF WHICH IDLE", "TIME ENTRIES"],
+        emptyCopy: "No tracked time by Member in this range.",
+      },
+      projects: {
+        label: "PER PROJECT",
+        caption: "The Project each Time Entry was recorded against.",
+        head: ["PROJECT", "RECORDED", "TIME ENTRIES"],
+        emptyCopy: "No tracked time by Project in this range.",
+      },
+      tasks: {
+        label: "PER TASK",
+        caption: "Time Entries linked to a Task. Time without a Task is left out of this list.",
+        head: ["TASK", "RECORDED"],
+        emptyCopy: "No tracked time by Task in this range.",
+      },
+      days: {
+        label: "PER DAY",
+        caption: "The day each Time Entry started.",
+        head: ["DAY", "RECORDED"],
+        emptyCopy: "No tracked time by day in this range.",
+      },
+    },
+    rows: productivityRows,
+    projects: productivityProjects,
+    tasks: productivityTasks,
+    days: productivityDays,
+  };
 
   const shots = input.screenshots;
   const screenshotHours: AnalyticsScreenshotHourRow[] = (shots?.hourlyDistribution ?? [])
@@ -1002,7 +1162,7 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
 
   return {
     kind: "ready",
-    rangeLabel: `${formatDay(input.range.start)} – ${formatDay(input.range.end)}`,
+    rangeLabel,
     overview,
     activity: {
       empty: activityRows.length === 0,
@@ -1028,19 +1188,7 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
       stalledDevices,
       runningWithoutEvidence,
     },
-    recordedTime: {
-      empty:
-        productivityRows.length === 0 &&
-        productivityProjects.length === 0 &&
-        productivityTasks.length === 0 &&
-        productivityDays.length === 0,
-      emptyCopy: "No tracked time in this range.",
-      footnote: "Recorded totals only.",
-      rows: productivityRows,
-      projects: productivityProjects,
-      tasks: productivityTasks,
-      days: productivityDays,
-    },
+    recordedTime,
     screenshots: {
       empty: (shots?.totalCount ?? 0) === 0 && (shots?.byUser.length ?? 0) === 0,
       emptyCopy: "No Activity Evidence in this range.",

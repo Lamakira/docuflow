@@ -12,6 +12,7 @@ export { V2TeamDailyUpdatesPage } from "./V2DailyUpdates";
 export { V2ActivityPage } from "./V2Activity";
 export { V2PeoplePage } from "./V2People";
 export { V2AdministrationPage } from "./V2Administration";
+export { V2AnalyticsPage } from "./V2Analytics";
 export { V2DevicesPage } from "./V2Devices";
 export { V2HelpPage } from "./V2Help";
 
