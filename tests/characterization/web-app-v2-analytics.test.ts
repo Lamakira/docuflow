@@ -234,11 +234,9 @@ describe("Administration shows one configuration section at a time (#281)", () =
       "tracking-policy",
       "crm-fields",
       "integrations",
-      "danger-zone",
     ]);
     expect(administrationTabHref("workspace")).toBe("/administration");
     expect(administrationTabHref("billing")).toBe("/administration/billing");
-    expect(administrationTabHref("danger-zone")).toBe("/administration/danger-zone");
     expect(appSource).toMatch(/path="\/administration\/:tab\?"/);
   });
 
@@ -256,6 +254,18 @@ describe("Administration shows one configuration section at a time (#281)", () =
       { label: "ADMINISTRATION", href: "/administration" },
       { label: "TRACKING POLICY" },
     ]);
+    // Danger zone folded back into Billing; its old address opens Billing.
+    expect(matchV2Route("/administration/danger-zone")).toMatchObject({
+      kind: "administration",
+      tab: "billing",
+      href: "/administration/billing",
+    });
+    expect(appSource).toMatch(
+      /<Route path="\/administration\/danger-zone">\s*<Redirect to="\/administration\/billing" \/>/,
+    );
+    expect(appSource.indexOf('path="/administration/danger-zone"')).toBeLessThan(
+      appSource.indexOf('path="/administration/:tab?"'),
+    );
     // A tab that does not exist lands on Workspace rather than an empty page.
     expect(adminSource).toContain('navigate(administrationTabHref("workspace"), { replace: true })');
   });
@@ -269,10 +279,9 @@ describe("Administration shows one configuration section at a time (#281)", () =
       "Tracking Policy",
       "CRM fields",
       "Integrations",
-      "Danger zone",
     ]);
     expect(owner.filter((tab) => tab.active).map((tab) => tab.id)).toEqual(["billing"]);
-    expect(administrationTabs("workspace", "ADMINISTRATOR")).toHaveLength(7);
+    expect(administrationTabs("workspace", "ADMINISTRATOR")).toHaveLength(6);
     expect(administrationTabs("workspace", "MEMBER")).toEqual([]);
   });
 
@@ -297,8 +306,8 @@ describe("Administration shows one configuration section at a time (#281)", () =
     expect(panel("integrations")).toContain('data-testid="v2-administration-secret"');
     expect(panel("tracking-policy")).toContain('data-testid="v2-administration-tracking-policy"');
     expect(panel("tracking-policy")).toContain('data-testid="v2-administration-timezones"');
-    expect(panel("danger-zone")).toContain("<CancelControl");
-    expect(panel("billing")).not.toContain("<CancelControl");
+    expect(panel("billing")).toContain("<CancelControl");
+    expect(adminSource).not.toContain('value="danger-zone"');
   });
 
   it("starts every tab's content one page gap below the strip", () => {
@@ -325,7 +334,8 @@ describe("Administration shows one configuration section at a time (#281)", () =
     expect(rule('.df-v2 .df-tabs[role="tablist"]')).toMatch(/background:\s*transparent/);
     expect(rule('.df-v2 .df-tab[role="tab"]')).toMatch(/padding:\s*var\(--df-space-2\) var\(--df-space-3\)/);
     expect(rule(".df-v2 .df-admin-panel")).toMatch(/gap:\s*var\(--df-space-5\)/);
-    expect(rule(".df-danger-zone")).toMatch(/border-color:\s*var\(--df-alert-line\)/);
+    expect(rule(".df-danger-row")).toMatch(/border-top:\s*1px solid var\(--df-alert-line\)/);
+    expect(rule(".df-danger-row")).toMatch(/padding:\s*var\(--df-space-4\)/);
     for (const selector of [
       '.df-v2 .df-tabs[role="tablist"]',
       '.df-v2 .df-tab[role="tab"]',
@@ -337,7 +347,7 @@ describe("Administration shows one configuration section at a time (#281)", () =
   });
 });
 
-describe("The Workspace, Members & Roles and Danger zone tabs (#281)", () => {
+describe("The Workspace, Members & Roles and Billing tabs (#281)", () => {
   it("states who owns the Workspace and the Role the reader holds", () => {
     const page = composeAdministration(
       adminInput({
@@ -375,7 +385,7 @@ describe("The Workspace, Members & Roles and Danger zone tabs (#281)", () => {
     expect(adminSource).toContain('<Link href="/people"');
   });
 
-  it("moves Cancel at period end to Danger zone and says so on Billing", () => {
+  it("keeps Cancel at period end on Billing, in its own row below the routine actions", () => {
     const page = composeAdministration(
       adminInput({
         billing: {
@@ -392,17 +402,21 @@ describe("The Workspace, Members & Roles and Danger zone tabs (#281)", () => {
     );
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
-    expect(page.dangerZone.actions.map((action) => action.id)).toEqual(["cancel"]);
-    expect(adminSource).toContain('action.tone !== "destructive"');
-    expect(adminSource).toContain("Ending the Subscription is under");
-  });
+    const cancel = page.billing.actions.find((action) => action.tone === "destructive");
+    expect(cancel?.id).toBe("cancel");
+    expect(cancel?.consequence).toBeTruthy();
+    expect(page).not.toHaveProperty("dangerZone");
 
-  it("says why Danger zone is empty rather than drawing a blank card", () => {
-    const page = composeAdministration(adminInput());
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.dangerZone.actions).toEqual([]);
-    expect(page.dangerZone.emptyCopy).toContain("Cancel at period end is offered while a paid Subscription is active");
+    const start = adminSource.indexOf('<TabsContent value="billing"');
+    const billing = adminSource.slice(start, adminSource.indexOf("</TabsContent>", start));
+    const routine = billing.indexOf('className="df-billing-actions"');
+    const row = billing.indexOf('data-testid="v2-administration-billing-cancel"');
+    expect(routine).toBeGreaterThan(-1);
+    expect(row).toBeGreaterThan(routine);
+    expect(billing.slice(row)).toContain("{action.consequence}");
+    expect(billing.slice(row)).toContain("<CancelControl");
+    expect(adminSource).not.toContain("Ending the Subscription is under");
+    expect(adminSource).not.toContain("Danger zone");
   });
 });
 

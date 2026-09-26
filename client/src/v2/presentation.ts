@@ -114,7 +114,6 @@ export const ADMINISTRATION_TAB_IDS = [
   "tracking-policy",
   "crm-fields",
   "integrations",
-  "danger-zone",
 ] as const;
 
 export type AdministrationTabId = (typeof ADMINISTRATION_TAB_IDS)[number];
@@ -128,7 +127,6 @@ export const ADMINISTRATION_TAB_LABEL: Record<AdministrationTabId, string> = {
   "tracking-policy": "Tracking Policy",
   "crm-fields": "CRM fields",
   integrations: "Integrations",
-  "danger-zone": "Danger zone",
 };
 
 const TIME_TAB_CRUMB: Record<TimeTabId, string> = {
@@ -172,6 +170,8 @@ export function administrationTabHref(tab: AdministrationTabId): string {
 }
 
 export function parseAdministrationPath(pathname: string): AdministrationTabId | null {
+  // Danger zone folded back into Billing; its address still opens there.
+  if (pathname.replace(/\/+$/, "") === "/administration/danger-zone") return "billing";
   return parseTabPath(pathname, "administration", ADMINISTRATION_TAB_SET, "workspace") as AdministrationTabId | null;
 }
 

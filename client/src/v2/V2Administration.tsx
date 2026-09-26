@@ -727,16 +727,6 @@ export function V2AdministrationPage() {
               </form>
             ) : null}
 
-            {page.dangerZone.actions.length > 0 ? (
-              <p className="df-admin-billing-note">
-                Ending the Subscription is under{" "}
-                <Link href={administrationTabHref("danger-zone")} className="df-ghost-link">
-                  Danger zone
-                </Link>
-                .
-              </p>
-            ) : null}
-
             <div className="df-billing-actions">
               {page.billing.actions.filter((action) => action.tone !== "destructive").map((action) => {
                 if (action.id === "seats") return null;
@@ -754,6 +744,25 @@ export function V2AdministrationPage() {
                 );
               })}
             </div>
+
+            {/* The one action that ends the Subscription sits apart from the
+                routine ones, with its cost stated before it runs (#245 F1). */}
+            {page.billing.actions.filter((action) => action.tone === "destructive").map((action) => (
+              <div key={action.id} className="df-danger-row" data-testid="v2-administration-billing-cancel">
+                <div className="df-danger-copy">
+                  <span className="df-row-title">{action.label}</span>
+                  <span className="df-meta">{action.consequence}</span>
+                </div>
+                <CancelControl
+                  action={action}
+                  pending={cancelAtPeriodEnd.isPending}
+                  onConfirm={() => {
+                    if (!guardWrite()) return;
+                    cancelAtPeriodEnd.mutate();
+                  }}
+                />
+              </div>
+            ))}
           </section>
         </TabsContent>
 
@@ -1250,37 +1259,6 @@ export function V2AdministrationPage() {
               </section>
             </>
           )}
-        </TabsContent>
-
-        <TabsContent value="danger-zone" className="df-admin-panel" data-testid="v2-administration-panel-danger-zone">
-          <section className="df-card df-danger-zone" data-testid="v2-administration-danger-zone">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Danger zone</h2>
-                <p className="df-card-sub">What cannot be taken back from here. Each action says what it costs before it runs.</p>
-              </div>
-            </div>
-            {page.dangerZone.actions.length === 0 ? (
-              <p className="df-empty">{page.dangerZone.emptyCopy}</p>
-            ) : (
-              page.dangerZone.actions.map((action) => (
-                <div key={action.id} className="df-danger-row">
-                  <div className="df-danger-copy">
-                    <span className="df-row-title">{action.label}</span>
-                    <span className="df-meta">{action.consequence}</span>
-                  </div>
-                  <CancelControl
-                    action={action}
-                    pending={cancelAtPeriodEnd.isPending}
-                    onConfirm={() => {
-                      if (!guardWrite()) return;
-                      cancelAtPeriodEnd.mutate();
-                    }}
-                  />
-                </div>
-              ))
-            )}
-          </section>
         </TabsContent>
       </Tabs>
     </div>

@@ -205,11 +205,6 @@ export type AdministrationModel =
         note: string;
         rows: AdministrationMemberRow[];
       };
-      /**
-       * What cannot be taken back from here. The destructive billing action
-       * lives on its own tab, away from the routine ones (#245 F1, #281).
-       */
-      dangerZone: { actions: BillingAction[]; emptyCopy: string };
     };
 
 export function serviceAccountsPath(): string {
@@ -520,10 +515,6 @@ export function composeAdministration(input: AdministrationInput): Administratio
       emptyCopy: "No active Memberships in this Workspace.",
       note: `Analytics and Administration are open to ${ADMINISTRATION_ROLES}. A Workspace Role is changed in People.`,
       rows: memberRows,
-    },
-    dangerZone: {
-      actions: billing.actions.filter((action) => action.tone === "destructive"),
-      emptyCopy: "Nothing to end right now. Cancel at period end is offered while a paid Subscription is active and not already ending.",
     },
   };
 }

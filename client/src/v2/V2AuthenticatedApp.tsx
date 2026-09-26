@@ -85,6 +85,9 @@ export function V2AuthenticatedApp() {
           <Route path="/activity/:tab?" component={V2ActivityPage} />
           <Route path="/people" component={V2PeoplePage} />
           <Route path="/invitations/:token" component={V2InvitationAcceptPage} />
+          <Route path="/administration/danger-zone">
+            <Redirect to="/administration/billing" />
+          </Route>
           <Route path="/administration/:tab?" component={V2AdministrationPage} />
           <Route path="/analytics" component={V2AnalyticsPage} />
           <Route path="/devices" component={V2DevicesPage} />
