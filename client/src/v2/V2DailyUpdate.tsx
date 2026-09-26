@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   dailyUpdateBlockedStatuses,
   dailyUpdateBlockageTypeOptions,
@@ -119,6 +120,7 @@ export function V2DailyUpdatePage() {
   if (projectsLoading || submissionsLoading) {
     return (
       <V2PageSkeleton title="Daily Update" testId="v2-daily-update" status="Loading your Daily Update.">
+        <SkeletonSection title="Today" lines={3} />
         <SkeletonSection title="Submitted today" lines={2} />
         <SkeletonSection title="Submit today's update" lines={4} />
       </V2PageSkeleton>
@@ -140,7 +142,37 @@ export function V2DailyUpdatePage() {
       {page.kind === "refusal" ? <p className="df-refusal">{page.refusal}</p> : null}
       {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
 
-      {page.kind === "empty" ? <p className="df-empty">{page.emptyCopy}</p> : null}
+      <section className="df-card" data-testid="v2-daily-update-today">
+        <div className="df-card-head">
+          <div>
+            <h2 className="df-card-title">Today</h2>
+            <p className="df-card-sub">{page.today.copy}</p>
+          </div>
+        </div>
+        <div className="df-settings-grid">
+          {page.today.rows.map((row) => (
+            <div key={row.label} className="df-settings-row">
+              <span className="df-settings-label">{row.label}</span>
+              <span className="df-settings-value">
+                {row.label === "STATUS" ? (
+                  <span className="df-status" data-submitted={page.today.submitted ? "true" : "false"}>
+                    {row.value}
+                  </span>
+                ) : (
+                  row.value
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+        {page.today.action ? (
+          <div className="df-form-actions">
+            <Button asChild variant="default" className="df-btn">
+              <Link href={page.today.action.href}>{page.today.action.label}</Link>
+            </Button>
+          </div>
+        ) : null}
+      </section>
 
       {page.submissions.length > 0 ? (
         <section className="df-card" data-testid="v2-daily-update-submitted">
@@ -239,9 +271,11 @@ export function V2DailyUpdatePage() {
               />
               Waiting on the Client
             </label>
-            <Button variant="default" type="submit" disabled={submit.isPending || !crmProjectId || !status || (blocked && !blockageType)} className="df-btn">
-              Submit
-            </Button>
+            <div className="df-form-actions">
+              <Button variant="default" type="submit" disabled={submit.isPending || !crmProjectId || !status || (blocked && !blockageType)} className="df-btn">
+                Submit
+              </Button>
+            </div>
           </div>
         </form>
       ) : null}

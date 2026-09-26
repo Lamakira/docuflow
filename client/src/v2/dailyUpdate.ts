@@ -24,6 +24,8 @@ export type DailyUpdateSubmissionInput = {
   blockageType?: string | null;
   waitingOnClient?: boolean;
   crmProject?: { project?: { name?: string | null } | null } | null;
+  createdAt?: Date | string | null;
+  updateDate?: Date | string | null;
 };
 
 export type DailyUpdatePageInput = {
@@ -43,15 +45,62 @@ export type DailyUpdateSubmissionRow = {
   blocker: string | null;
 };
 
+/** Where today's Daily Update stands, as labelled rows rather than one bare line. */
+export type DailyUpdateToday = {
+  submitted: boolean;
+  copy: string;
+  rows: Array<{ label: string; value: string }>;
+  action: { label: string; href: string } | null;
+};
+
 export type DailyUpdatePageModel = {
   dateChip: string;
   subhead: string;
   kind: "empty" | "submitted" | "refusal";
-  emptyCopy: string;
+  today: DailyUpdateToday;
   refusal: string | null;
   submissions: DailyUpdateSubmissionRow[];
   canSubmit: boolean;
 };
+
+const DAILY_UPDATE_DEFINITION =
+  "A Daily Update is your one submission for this workday: progress grouped by Project, blockers and next plans.";
+
+function latestClock(submissions: DailyUpdateSubmissionInput[], now: Date): string {
+  const times = submissions
+    .map((submission) => submission.createdAt ?? submission.updateDate ?? null)
+    .map((value) => (value ? new Date(value) : null))
+    .filter((value): value is Date => value !== null && !Number.isNaN(value.getTime()))
+    .sort((a, b) => b.getTime() - a.getTime());
+  return times[0] ? formatWhen(times[0], now) : "";
+}
+
+function composeToday(
+  input: DailyUpdatePageInput,
+  submissions: DailyUpdateSubmissionRow[],
+  canSubmit: boolean,
+): DailyUpdateToday {
+  const submitted = submissions.length > 0;
+  const clock = submitted ? latestClock(input.submissions, input.now) : "";
+  const covered = Array.from(new Set(submissions.map((row) => row.project)));
+  const next = input.readOnly
+    ? ""
+    : !canSubmit
+      ? " There is no Project in this Workspace to report on yet."
+      : submitted
+        ? " Worked on another Project today? Add it below."
+        : " Fill it in below, one Project at a time.";
+  return {
+    submitted,
+    copy: `${DAILY_UPDATE_DEFINITION}${next}`,
+    rows: [
+      { label: "WORKDAY", value: formatDateChip(input.now) },
+      { label: "STATUS", value: submitted ? (clock ? `Submitted at ${clock}` : "Submitted") : "Not submitted yet" },
+      { label: "PROJECTS COVERED", value: covered.length > 0 ? covered.join(", ") : "None yet" },
+    ],
+    action: !input.readOnly && !canSubmit ? { label: "Open Projects", href: "/projects" } : null,
+  };
+}
 
 function statusLabel(status: string): string {
   return dailyUpdateStatusOptions.find((option) => option.value === status)?.label ?? status;
@@ -101,7 +150,7 @@ export function composeDailyUpdatePage(input: DailyUpdatePageInput): DailyUpdate
       dateChip: formatDateChip(input.now),
       subhead: `Today's Daily Update in ${input.workspaceName}.`,
       kind: "refusal",
-      emptyCopy: "",
+      today: composeToday(input, submissions, false),
       refusal: chromeRefusal({
         kind: "workspace-condition",
         workspaceName: input.workspaceName,
@@ -116,11 +165,7 @@ export function composeDailyUpdatePage(input: DailyUpdatePageInput): DailyUpdate
     dateChip: formatDateChip(input.now),
     subhead: `Today's Daily Update in ${input.workspaceName}.`,
     kind: empty ? "empty" : "submitted",
-    emptyCopy: empty
-      ? canSubmit
-        ? "No Daily Update submitted for today yet."
-        : "No Projects to file a Daily Update against yet."
-      : "",
+    today: composeToday(input, submissions, canSubmit),
     refusal: null,
     submissions,
     canSubmit,

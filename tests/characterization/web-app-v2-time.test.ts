@@ -208,12 +208,57 @@ describe("Daily Update from live writes (#190)", () => {
 
     expect(page.kind).toBe("empty");
     expect(page.submissions).toEqual([]);
-    expect(page.emptyCopy.toLowerCase()).toContain("daily update");
     expect(page.canSubmit).toBe(true);
     expect(page.refusal).toBeNull();
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
     }
+  });
+
+  it("says where today's Daily Update stands, as labelled rows, and what a Daily Update is", () => {
+    const empty = composeDailyUpdatePage(emptyDaily());
+    expect(empty.today.submitted).toBe(false);
+    expect(empty.today.rows).toEqual([
+      { label: "WORKDAY", value: "THU 10 SEP" },
+      { label: "STATUS", value: "Not submitted yet" },
+      { label: "PROJECTS COVERED", value: "None yet" },
+    ]);
+    expect(empty.today.copy).toMatch(/^A Daily Update is your one submission for this workday: progress grouped by Project, blockers and next plans\./);
+    expect(empty.today.copy).toContain("Fill it in below");
+    // The form below is the way to write it; no button repeats it.
+    expect(empty.today.action).toBeNull();
+
+    const submitted = composeDailyUpdatePage(
+      emptyDaily({
+        submissions: [
+          { id: "du-1", crmProjectId: "prj-1", status: "on_track", createdAt: new Date(2026, 8, 10, 9, 41) },
+          { id: "du-2", crmProjectId: "prj-2", status: "on_track", createdAt: new Date(2026, 8, 10, 11, 5), crmProject: { project: { name: "Pier survey" } } },
+        ],
+      }),
+    );
+    expect(submitted.today.submitted).toBe(true);
+    expect(submitted.today.rows[1]).toEqual({ label: "STATUS", value: "Submitted at 11:05" });
+    expect(submitted.today.rows[2]).toEqual({ label: "PROJECTS COVERED", value: "Harbour rebuild, Pier survey" });
+    expect(submitted.today.copy).toContain("Add it below");
+
+    const noProjects = composeDailyUpdatePage(emptyDaily({ projects: [] }));
+    expect(noProjects.canSubmit).toBe(false);
+    expect(noProjects.today.copy).toContain("no Project in this Workspace to report on yet");
+    expect(noProjects.today.action).toEqual({ label: "Open Projects", href: "/projects" });
+    expect(matchV2Route("/projects").kind).toBe("projects");
+
+    const readOnly = composeDailyUpdatePage(emptyDaily({ readOnly: true, projects: [] }));
+    expect(readOnly.today.action).toBeNull();
+  });
+
+  it("draws Today as a card of labelled rows, never a bare line, and keeps Submit a normal-size footer button", () => {
+    expect(dailyPageSource).toContain('data-testid="v2-daily-update-today"');
+    expect(dailyPageSource).toContain('<h2 className="df-card-title">Today</h2>');
+    expect(dailyPageSource).toContain('<p className="df-card-sub">{page.today.copy}</p>');
+    expect(dailyPageSource).toMatch(/page\.today\.rows\.map[\s\S]*?df-settings-row[\s\S]*?df-settings-label/);
+    expect(dailyPageSource).not.toContain("page.emptyCopy");
+    expect(dailyPageSource).not.toMatch(/<p className="df-empty">/);
+    expect(dailyPageSource).toMatch(/<div className="df-form-actions">\s*<Button variant="default" type="submit"[^>]*>\s*Submit/);
   });
 
   it("already-submitted Workday lists today's records and still allows another Project", () => {

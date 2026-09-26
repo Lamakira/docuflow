@@ -271,6 +271,8 @@ export function V2DossierPage() {
   const [budgetDraft, setBudgetDraft] = useState<ProjectBudgetDraft>(projectBudgetDraft(null));
   const [creatingDocument, setCreatingDocument] = useState(false);
   const [documentName, setDocumentName] = useState("");
+  const [creatingNote, setCreatingNote] = useState(false);
+  const [creatingReminder, setCreatingReminder] = useState(false);
   const [, navigate] = useLocation();
 
   const { data: project, isLoading: projectLoading } = useQuery<CrmProjectWithDetails | null>({
@@ -514,6 +516,7 @@ export function V2DossierPage() {
       setNoteAttachments([]);
       setRecordingNote(false);
       setWriteRefusal(null);
+      setCreatingNote(false);
     },
     onError: (error: Error) => refuseWrite(error.message, "Manage Project Notes"),
   });
@@ -532,6 +535,7 @@ export function V2DossierPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] });
       setReminderTitle(""); setReminderNote(""); setReminderDueAt(""); setWriteRefusal(null);
+      setCreatingReminder(false);
     },
     onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
   });
@@ -796,6 +800,32 @@ export function V2DossierPage() {
     createDocument.mutate(title);
   }
 
+  function onNewNote() {
+    if (refuseWrite()) return;
+    setWriteRefusal(null);
+    setCreatingNote(true);
+  }
+
+  function onCreateNote() {
+    const content = noteContent.trim();
+    if (!content || refuseWrite()) return;
+    createNote.mutate({
+      content,
+      ...(noteAttachments.length > 0 ? { attachments: noteAttachments } : {}),
+    });
+  }
+
+  function onNewReminder() {
+    if (refuseWrite()) return;
+    setWriteRefusal(null);
+    setCreatingReminder(true);
+  }
+
+  function onCreateReminder() {
+    if (!reminderTitle.trim() || !reminderDueAt || refuseWrite()) return;
+    createReminder.mutate();
+  }
+
   if (match.kind !== "dossier") {
     return null;
   }
@@ -964,8 +994,128 @@ export function V2DossierPage() {
         </label>
       </V2FormDialog>
 
+      <V2FormDialog
+        open={creatingNote}
+        onOpenChange={(open) => {
+          setCreatingNote(open);
+          if (!open) {
+            setRecordingNote(false);
+            setWriteRefusal(null);
+          }
+        }}
+        title="New Note"
+        description="A note keeps what was said or decided on this Project: typed, recorded as audio, or with Files attached."
+        submitLabel="Add note"
+        pending={createNote.isPending}
+        canSubmit={Boolean(noteContent.trim()) && !attachingNote && !recordingNote}
+        onSubmit={onCreateNote}
+        refusal={writeRefusal}
+        testId="v2-dossier-new-note"
+      >
+        {recordingNote ? (
+          <V2AudioRecorder onRecordingComplete={uploadAudioNote} onCancel={() => setRecordingNote(false)} isUploading={uploadingAudio} />
+        ) : (
+          <label className="df-daily-field">
+            NOTE
+            <textarea
+              id={DOSSIER_FIELD.note}
+              value={noteContent}
+              autoFocus
+              onChange={(event) => setNoteContent(event.target.value)}
+              aria-label="Project note"
+            />
+          </label>
+        )}
+        <div className="df-cluster">
+          <Button variant="outline" type="button" onClick={() => setRecordingNote(true)} disabled={recordingNote} className="df-btn">
+            Record audio
+          </Button>
+          {/* A File attached here lands on the Files tab once the note is added (#260). */}
+          <Button asChild variant="outline" className="df-btn" aria-disabled={attachingNote}>
+            <label>
+              {attachingNote ? "Attaching…" : "Attach file"}
+              <input
+                type="file"
+                multiple
+                hidden
+                disabled={attachingNote}
+                aria-label="Attach file to note"
+                onChange={(event) => {
+                  attachNoteFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </Button>
+        </div>
+        {noteAttachments.length > 0 ? (
+          <div className="df-note-attachments" data-testid="v2-dossier-note-attachments">
+            {noteAttachments.map((attachment) => (
+              <span key={attachment.url} className="df-tag-chip">
+                {attachment.filename}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  className="df-chip-remove"
+                  aria-label={`Remove ${attachment.filename}`}
+                  onClick={() =>
+                    setNoteAttachments((current) => current.filter((item) => item.url !== attachment.url))
+                  }
+                >
+                  ×
+                </Button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </V2FormDialog>
+
+      <V2FormDialog
+        open={creatingReminder}
+        onOpenChange={(open) => {
+          setCreatingReminder(open);
+          if (!open) setWriteRefusal(null);
+        }}
+        title="New Reminder"
+        description="A Reminder brings something on this Project back at the time you choose: a call to make, a signature to chase."
+        submitLabel="Add reminder"
+        pending={createReminder.isPending}
+        canSubmit={Boolean(reminderTitle.trim() && reminderDueAt)}
+        onSubmit={onCreateReminder}
+        refusal={writeRefusal}
+        testId="v2-dossier-new-reminder"
+      >
+        <label className="df-daily-field">
+          TITLE
+          <input
+            id={DOSSIER_FIELD.reminderTitle}
+            type="text"
+            value={reminderTitle}
+            autoFocus
+            onChange={(event) => setReminderTitle(event.target.value)}
+            aria-label="Reminder title"
+          />
+        </label>
+        <label className="df-daily-field">
+          NOTE
+          <textarea value={reminderNote} onChange={(event) => setReminderNote(event.target.value)} aria-label="Reminder note" />
+        </label>
+        <label className="df-daily-field">
+          DUE
+          <input
+            type="datetime-local"
+            value={reminderDueAt}
+            onChange={(event) => setReminderDueAt(event.target.value)}
+            aria-label="Reminder due date"
+          />
+        </label>
+      </V2FormDialog>
+
       <div className="df-dossier-body">
-        {writeRefusal && !creatingDocument ? <p className="df-refusal">{writeRefusal}</p> : null}
+        {writeRefusal && !creatingDocument && !creatingNote && !creatingReminder ? (
+          <p className="df-refusal">{writeRefusal}</p>
+        ) : null}
         {dossier.identity ? (
           <div
             key={dossier.tab}
@@ -1004,32 +1154,9 @@ export function V2DossierPage() {
               onAddMember,
               users,
               memberPending: addMember.isPending,
-              noteContent,
-              setNoteContent,
-              onCreateNote: () => {
-                if (!noteContent.trim() || refuseWrite()) return;
-                createNote.mutate({
-                  content: noteContent.trim(),
-                  ...(noteAttachments.length > 0 ? { attachments: noteAttachments } : {}),
-                });
-              },
-              noteAttachments,
-              onAttachNoteFiles: attachNoteFiles,
-              onDropNoteAttachment: (url) =>
-                setNoteAttachments((current) => current.filter((attachment) => attachment.url !== url)),
-              attachingNote,
+              onNewNote,
               onDeleteNote: (id) => { if (!refuseWrite()) deleteNote.mutate(id); },
-              recordingNote,
-              setRecordingNote,
-              onAudio: uploadAudioNote,
-              uploadingAudio,
-              reminderTitle,
-              setReminderTitle,
-              reminderNote,
-              setReminderNote,
-              reminderDueAt,
-              setReminderDueAt,
-              onCreateReminder: (event) => { event.preventDefault(); if (!reminderTitle.trim() || !reminderDueAt || refuseWrite()) return; createReminder.mutate(); },
+              onNewReminder,
               onSetReminderStatus: (id, status) => { if (!refuseWrite()) setReminderStatus.mutate({ id, status }); },
               onEditReminder: (id, draft) => { if (!refuseWrite()) updateReminder.mutate({ id, ...draft }); },
               onDeleteReminder: (id) => { if (!refuseWrite()) deleteReminder.mutate(id); },
@@ -1086,28 +1213,12 @@ function renderDossierTab(props: {
   onAddMember: (event: FormEvent) => void;
   users: SafeUser[];
   memberPending: boolean;
-  noteContent: string;
-  setNoteContent: (value: string) => void;
-  onCreateNote: () => void;
+  onNewNote: () => void;
   onDeleteNote: (id: string) => void;
-  recordingNote: boolean;
-  setRecordingNote: (value: boolean) => void;
-  onAudio: (blob: Blob) => void;
-  uploadingAudio: boolean;
-  reminderTitle: string;
-  setReminderTitle: (value: string) => void;
-  reminderNote: string;
-  setReminderNote: (value: string) => void;
-  reminderDueAt: string;
-  setReminderDueAt: (value: string) => void;
-  onCreateReminder: (event: FormEvent) => void;
+  onNewReminder: () => void;
   onSetReminderStatus: (id: string, status: string) => void;
   onEditReminder: (id: string, draft: { title: string; note: string; dueAt: string }) => void;
   onDeleteReminder: (id: string) => void;
-  noteAttachments: NoteAttachment[];
-  onAttachNoteFiles: (files: FileList | null) => void;
-  onDropNoteAttachment: (url: string) => void;
-  attachingNote: boolean;
   onRemoveMember: (id: string) => void;
   onToggleDocumentation: (enabled: boolean) => void;
   onClone: () => void;
@@ -1580,95 +1691,37 @@ function DossierUpdates({ dossier }: { dossier: DossierModel }) {
   );
 }
 
+/** Notes are written in the New Note dialog; the tab lists them. */
 function DossierNotes({
   dossier,
-  noteContent,
-  setNoteContent,
-  onCreateNote,
+  onNewNote,
   onDeleteNote,
-  recordingNote,
-  setRecordingNote,
-  onAudio,
-  uploadingAudio,
-  noteAttachments,
-  onAttachNoteFiles,
-  onDropNoteAttachment,
-  attachingNote,
 }: {
   dossier: DossierModel;
-  noteContent: string;
-  setNoteContent: (value: string) => void;
-  onCreateNote: () => void;
+  onNewNote: () => void;
   onDeleteNote: (id: string) => void;
-  recordingNote: boolean;
-  setRecordingNote: (value: boolean) => void;
-  onAudio: (blob: Blob) => void;
-  uploadingAudio: boolean;
-  noteAttachments: NoteAttachment[];
-  onAttachNoteFiles: (files: FileList | null) => void;
-  onDropNoteAttachment: (url: string) => void;
-  attachingNote: boolean;
 }) {
-  const [composing, setComposing] = useState(false);
   return (
     <section className="df-card">
-      <div className="df-card-head"><h2 className="df-card-title">Project notes</h2><span className="df-count-chip">{dossier.notes.rows.length}</span></div>
-      {dossier.notes.empty && !composing ? (
+      <div className="df-card-head">
+        <h2 className="df-card-title">Project notes</h2>
+        <span className="df-cluster">
+          <span className="df-count-chip">{dossier.notes.rows.length}</span>
+          {!dossier.notes.empty ? (
+            <Button variant="outline" type="button" onClick={onNewNote} className="df-btn">
+              New Note
+            </Button>
+          ) : null}
+        </span>
+      </div>
+      {dossier.notes.empty ? (
         <DossierEmptyStateView
           state={dossier.notes.emptyState}
           icon="notes"
           testId="v2-dossier-notes-empty"
-          onCompose={() => setComposing(true)}
+          onCompose={onNewNote}
         />
-      ) : (
-        <div className="df-daily-form">
-          {recordingNote ? (
-            <V2AudioRecorder onRecordingComplete={onAudio} onCancel={() => setRecordingNote(false)} isUploading={uploadingAudio} />
-          ) : (
-            <div className="df-inline-form">
-              <label className="df-daily-field" style={{ flex: 1 }}>NOTE<textarea id={DOSSIER_FIELD.note} value={noteContent} autoFocus={composing} onChange={(event) => setNoteContent(event.target.value)} aria-label="Project note" /></label>
-              <Button variant="outline" type="button" onClick={() => setRecordingNote(true)} className="df-btn">Record audio</Button>
-              {/* A File attached here lands on the Files tab once the note is added (#260). */}
-              <Button asChild variant="outline" className="df-btn" aria-disabled={attachingNote}>
-                <label>
-                  {attachingNote ? "Attaching…" : "Attach file"}
-                  <input
-                    type="file"
-                    multiple
-                    hidden
-                    disabled={attachingNote}
-                    aria-label="Attach file to note"
-                    onChange={(event) => {
-                      onAttachNoteFiles(event.target.files);
-                      event.target.value = "";
-                    }}
-                  />
-                </label>
-              </Button>
-              <Button variant="default" type="button" onClick={onCreateNote} disabled={!noteContent.trim() || attachingNote} className="df-btn">Add note</Button>
-            </div>
-          )}
-          {noteAttachments.length > 0 ? (
-            <div className="df-note-attachments" data-testid="v2-dossier-note-attachments">
-              {noteAttachments.map((attachment) => (
-                <span key={attachment.url} className="df-tag-chip">
-                  {attachment.filename}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    type="button"
-                    className="df-chip-remove"
-                    aria-label={`Remove ${attachment.filename}`}
-                    onClick={() => onDropNoteAttachment(attachment.url)}
-                  >
-                    ×
-                  </Button>
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      )}
+      ) : null}
       {dossier.notes.rows.map((note) => (
         <article key={note.id} className="df-update-body">
           <div className="df-mono df-meta">{note.meta}</div>
@@ -1831,52 +1884,41 @@ function ReminderRow({
   );
 }
 
+/** Reminders are added in the New Reminder dialog; the tab lists them. */
 function DossierReminders({
   dossier,
-  reminderTitle,
-  setReminderTitle,
-  reminderNote,
-  setReminderNote,
-  reminderDueAt,
-  setReminderDueAt,
-  onCreateReminder,
+  onNewReminder,
   onSetReminderStatus,
   onEditReminder,
   onDeleteReminder,
 }: {
   dossier: DossierModel;
-  reminderTitle: string;
-  setReminderTitle: (value: string) => void;
-  reminderNote: string;
-  setReminderNote: (value: string) => void;
-  reminderDueAt: string;
-  setReminderDueAt: (value: string) => void;
-  onCreateReminder: (event: FormEvent) => void;
+  onNewReminder: () => void;
   onSetReminderStatus: (id: string, status: string) => void;
   onEditReminder: (id: string, draft: { title: string; note: string; dueAt: string }) => void;
   onDeleteReminder: (id: string) => void;
 }) {
-  const [composing, setComposing] = useState(false);
   return (
     <section className="df-card">
-      <div className="df-card-head"><h2 className="df-card-title">Reminders</h2><span className="df-count-chip">{dossier.reminders.rows.length}</span></div>
-      {dossier.reminders.empty && !composing ? (
+      <div className="df-card-head">
+        <h2 className="df-card-title">Reminders</h2>
+        <span className="df-cluster">
+          <span className="df-count-chip">{dossier.reminders.rows.length}</span>
+          {!dossier.reminders.empty ? (
+            <Button variant="outline" type="button" onClick={onNewReminder} className="df-btn">
+              New Reminder
+            </Button>
+          ) : null}
+        </span>
+      </div>
+      {dossier.reminders.empty ? (
         <DossierEmptyStateView
           state={dossier.reminders.emptyState}
           icon="reminders"
           testId="v2-dossier-reminders-empty"
-          onCompose={() => setComposing(true)}
+          onCompose={onNewReminder}
         />
-      ) : (
-        <form className="df-admin-form df-daily-form" onSubmit={onCreateReminder} data-testid="v2-dossier-reminder-form">
-          <label className="df-daily-field">TITLE<input id={DOSSIER_FIELD.reminderTitle} type="text" value={reminderTitle} autoFocus={composing} onChange={(event) => setReminderTitle(event.target.value)} /></label>
-          <label className="df-daily-field">NOTE<textarea value={reminderNote} onChange={(event) => setReminderNote(event.target.value)} /></label>
-          <label className="df-daily-field">DUE<input type="datetime-local" value={reminderDueAt} onChange={(event) => setReminderDueAt(event.target.value)} /></label>
-          <div className="df-form-actions">
-            <Button variant="default" type="submit" disabled={!reminderTitle.trim() || !reminderDueAt} className="df-btn">Add reminder</Button>
-          </div>
-        </form>
-      )}
+      ) : null}
       {dossier.reminders.rows.map((reminder) => (
         <ReminderRow
           key={reminder.id}

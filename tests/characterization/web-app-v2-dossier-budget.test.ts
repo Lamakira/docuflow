@@ -316,40 +316,77 @@ describe("every Dossier tab empties into a designed empty state (#277)", () => {
   });
 });
 
-describe("an empty Notes, Reminders or Documents tab offers its add once (#277)", () => {
+describe("Notes, Reminders and Documents all create through a dialog (#277)", () => {
   const body = (name: string, next: string) =>
     dossierSource.slice(dossierSource.indexOf(`function ${name}(`), dossierSource.indexOf(`function ${next}(`));
   const notes = body("DossierNotes", "ReminderRow");
   const reminders = body("DossierReminders", "DossierDocuments");
   const documents = body("DossierDocuments", "DossierFiles");
+  const dialog = (testId: string) => {
+    const end = dossierSource.indexOf("</V2FormDialog>", dossierSource.indexOf(`testId="${testId}"`));
+    return dossierSource.slice(dossierSource.lastIndexOf("<V2FormDialog", end), end);
+  };
+  const noteDialog = dialog("v2-dossier-new-note");
+  const reminderDialog = dialog("v2-dossier-new-reminder");
 
-  it("shows only the empty state until its action opens the composer, then focuses the first field", () => {
+  it("keeps no inline composer in the Notes or Reminders tab", () => {
     for (const [tab, source] of [["notes", notes], ["reminders", reminders]] as const) {
-      expect(source, tab).toContain(`dossier.${tab}.empty && !composing ? (`);
-      expect(source, tab).toContain("onCompose={() => setComposing(true)}");
-      expect(source, tab).toContain("autoFocus={composing}");
+      expect(source, tab).not.toContain("<form");
+      expect(source, tab).not.toContain("<textarea");
+      expect(source, tab).not.toContain("composing");
     }
-    // Documents already works this way: New Document hides while the tab is empty and the
+    expect(notes).not.toContain("df-inline-form");
+  });
+
+  it("opens the dialog from the empty state, and from a New button in the header once there are records", () => {
+    const cases = [
+      { source: notes, tab: "notes", label: "New Note", open: "onNewNote" },
+      { source: reminders, tab: "reminders", label: "New Reminder", open: "onNewReminder" },
+    ];
+    for (const { source, tab, label, open } of cases) {
+      expect(source, tab).toContain(`onCompose={${open}}`);
+      expect(source, tab).toMatch(
+        new RegExp(`\\{!dossier\\.${tab}\\.empty \\? \\(\\s*<Button variant="outline" type="button" onClick=\\{${open}\\} className="df-btn">\\s*${label}`),
+      );
+    }
+    // Documents works the same way: New Document hides while the tab is empty and the
     // empty state's action opens the same dialog.
     expect(documents).toContain("dossier.documents.canCreate && !dossier.documents.empty");
     expect(documents).toContain("onNewDocument={onNewDocument}");
   });
 
-  it("gives the compose action the primary fill, since no form sits above it", () => {
+  it("holds the note, Record audio and Attach file in the New Note dialog, with Add note in its footer", () => {
+    expect(noteDialog).toContain('title="New Note"');
+    expect(noteDialog).toContain('submitLabel="Add note"');
+    expect(noteDialog).toContain("onSubmit={onCreateNote}");
+    expect(noteDialog).toMatch(/id=\{DOSSIER_FIELD\.note\}[\s\S]*?autoFocus/);
+    expect(noteDialog).toContain("<V2AudioRecorder");
+    expect(noteDialog).toContain("Record audio");
+    expect(noteDialog).toContain('aria-label="Attach file to note"');
+    expect(noteDialog).toContain("canSubmit={Boolean(noteContent.trim()) && !attachingNote && !recordingNote}");
+  });
+
+  it("holds Title, Note and Due in the New Reminder dialog and focuses Title", () => {
+    expect(reminderDialog).toContain('title="New Reminder"');
+    expect(reminderDialog).toContain('submitLabel="Add reminder"');
+    expect(reminderDialog).toContain("onSubmit={onCreateReminder}");
+    expect(reminderDialog).toMatch(/id=\{DOSSIER_FIELD\.reminderTitle\}[\s\S]*?autoFocus/);
+    expect(reminderDialog).toContain('type="datetime-local"');
+    expect(reminderDialog).toContain('aria-label="Reminder note"');
+  });
+
+  it("closes each dialog once the record is written, and keeps a refusal inside it", () => {
+    expect(dossierSource).toMatch(/const createNote = useMutation\([\s\S]*?onSuccess:[\s\S]*?setCreatingNote\(false\)/);
+    expect(dossierSource).toMatch(/const createReminder = useMutation\([\s\S]*?onSuccess:[\s\S]*?setCreatingReminder\(false\)/);
+    expect(noteDialog).toContain("refusal={writeRefusal}");
+    expect(reminderDialog).toContain("refusal={writeRefusal}");
+    expect(dossierSource).toContain("writeRefusal && !creatingDocument && !creatingNote && !creatingReminder");
+  });
+
+  it("gives the compose action the primary fill", () => {
     expect(dossierSource).toMatch(
       /action\?\.kind === "compose" && onCompose\) \{\s*control = \(\s*<Button variant="default"/,
     );
-  });
-
-  it("keeps the Reminder composer at a reading measure with a normal-size button in the form footer", () => {
-    expect(reminders).toMatch(
-      /<div className="df-form-actions">\s*<Button variant="default" type="submit"[^>]*>Add reminder<\/Button>\s*<\/div>/,
-    );
-    expect(reminders).toContain('className="df-admin-form df-daily-form"');
-    expect(rule(".df-admin-form > .df-daily-field,\n.df-policy-form .df-daily-form > .df-daily-field")).toMatch(
-      /max-width:\s*560px/,
-    );
-    expect(rule(".df-form-actions")).toMatch(/justify-content:\s*flex-end/);
   });
 });
 

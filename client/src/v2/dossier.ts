@@ -188,7 +188,7 @@ export type DossierTab = {
 
 /**
  * What an empty Dossier tab offers (#277): `focus` moves to the tab's own add
- * field, `compose` opens the add form the empty tab keeps hidden, `link` goes
+ * field, `compose` opens the tab's New dialog, `link` goes
  * to the surface that holds the add, and the other two are the page's own
  * Start Timer and New Document.
  */
