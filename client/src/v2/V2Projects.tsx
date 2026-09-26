@@ -269,7 +269,7 @@ function ProjectRegisterTable({
           ),
         }),
         projectColumn.accessor("lead", {
-          header: "LEAD",
+          header: "PROJECT MANAGER",
           enableSorting: false,
           cell: ({ row }) => <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.original.lead}</span>,
         }),
@@ -635,7 +635,7 @@ export function V2ProjectsPage() {
         ) : (
           <SkeletonRegister
             className="df-projects-register"
-            heads={["PROJECT / CLIENT", "STATUS", "LEAD", "BUDGET USED", "TRACKED MTD"]}
+            heads={["PROJECT / CLIENT", "STATUS", "PROJECT MANAGER", "BUDGET USED", "TRACKED MTD"]}
           />
         )}
       </V2PageSkeleton>
@@ -767,8 +767,8 @@ export function V2ProjectsPage() {
             )}
             {leadOptions.length === 0 ? null : (
               <V2FilterSelect
-                label="LEAD"
-                ariaLabel="Filter by Lead"
+                label="PROJECT MANAGER"
+                ariaLabel="Filter by Project Manager"
                 value={filters.lead}
                 active={filters.lead !== "all"}
                 options={[{ value: "all", label: "ALL" }, ...leadOptions]}

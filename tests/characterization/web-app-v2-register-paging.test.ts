@@ -203,7 +203,7 @@ describe("the Projects screen", () => {
   });
 
   it("draws every filter as a V2FilterSelect chip", () => {
-    for (const label of ["STATUS", "CLIENT", "LEAD", "TAG", "TYPE", "DUE"]) {
+    for (const label of ["STATUS", "CLIENT", "PROJECT MANAGER", "TAG", "TYPE", "DUE"]) {
       expect(src).toContain(`label="${label}"`);
     }
   });

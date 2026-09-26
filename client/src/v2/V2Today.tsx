@@ -207,7 +207,7 @@ export function V2TodayPage() {
           <SkeletonSection title="Needs attention" lines={3} />
           <SkeletonRegister
             title="Active Projects"
-            heads={["PROJECT / CLIENT", "STATUS", "LEAD", "BUDGET USED", "TRACKED MTD"]}
+            heads={["PROJECT / CLIENT", "STATUS", "PROJECT MANAGER", "BUDGET USED", "TRACKED MTD"]}
             rows={4}
           />
           <div className="df-split">
@@ -309,7 +309,7 @@ export function V2TodayPage() {
         <div className="df-register-head df-desktop-only">
           <span>PROJECT / CLIENT</span>
           <span>STATUS</span>
-          <span>LEAD</span>
+          <span>PROJECT MANAGER</span>
           <span>BUDGET USED</span>
           <span style={{ textAlign: "right" }}>TRACKED MTD</span>
         </div>

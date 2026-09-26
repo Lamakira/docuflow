@@ -882,7 +882,7 @@ export function V2DossierPage() {
                 <div className="df-dossier-provenance">
                   {dossier.identity.lead ? (
                     <span className="df-prov">
-                      <span className="df-mono df-meta">LEAD</span>
+                      <span className="df-mono df-meta">PROJECT MANAGER</span>
                       <span className="df-avatar" data-self={dossier.identity.lead.self ? "true" : "false"}>
                         {dossier.identity.lead.initials}
                       </span>
@@ -2291,19 +2291,19 @@ function DossierSettings({
 
       <SettingsCard
         title="Team"
-        sub="Who leads this Project and who is assigned to it."
+        sub="The Project Manager accountable for this Project, and the Members assigned to it."
         testId="v2-dossier-settings-team"
       >
         <div className="df-settings-grid">
           <div className="df-settings-row">
-            <span className="df-settings-label">LEAD</span>
+            <span className="df-settings-label">PROJECT MANAGER</span>
             <span className="df-settings-value">
               <V2FilterSelect
                 label=""
-                ariaLabel="Project lead"
+                ariaLabel="Project Manager"
                 value={settings.lead?.id ?? V2_SELECT_NONE}
                 options={[
-                  { value: V2_SELECT_NONE, label: "No lead" },
+                  { value: V2_SELECT_NONE, label: "No Project Manager" },
                   ...users.map((member) => ({ value: member.id, label: memberName(member) })),
                 ]}
                 onChange={(value) => onAssignLead(value === V2_SELECT_NONE ? "" : value)}

@@ -110,6 +110,10 @@ _Avoid_: Internal client, personal project
 The relationship granting a member responsibility for and default visibility into a project. It does not grant workspace-level authority.
 _Avoid_: Project role, workspace permission
 
+**Project Manager**:
+The one member accountable for a project, chosen in the project's Settings. Being Project Manager grants no workspace-level authority.
+_Avoid_: Lead, Project lead, Project owner
+
 **Task**:
 An assignable unit of work belonging to exactly one project.
 _Avoid_: Reminder, project, unscoped task
@@ -170,7 +174,7 @@ _Avoid_: Time report, payroll record
 
 **Timesheet Approver**:
 The member designated to approve another member's Timesheets, independently of project responsibility. Authorized backups and workspace administrators provide coverage.
-_Avoid_: Project lead, payroll owner
+_Avoid_: Project Manager, payroll owner
 
 ## Knowledge
 

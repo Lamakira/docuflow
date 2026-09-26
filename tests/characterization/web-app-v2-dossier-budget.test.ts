@@ -179,7 +179,7 @@ describe("Dossier Settings reads as labelled groups (#277)", () => {
   });
 
   it("uses the v2 select inside a field, with no prefix and a name for screen readers", () => {
-    expect(dossierSource).toMatch(/<V2FilterSelect\s+label=""\s+ariaLabel="Project lead"/);
+    expect(dossierSource).toMatch(/<V2FilterSelect\s+label=""\s+ariaLabel="Project Manager"/);
     expect(dossierSource).toMatch(/<V2FilterSelect\s+label=""\s+ariaLabel="Add Project Assignment"/);
   });
 
@@ -432,6 +432,33 @@ describe("deleting a note or a Reminder asks first (#277)", () => {
       // The only path to the delete is the dialog's action.
       expect(source.split(run).length - 1, item).toBe(1);
     }
+  });
+});
+
+describe("the Project's person in charge is its Project Manager, never a Lead (#277)", () => {
+  const today = read("client/src/v2/V2Today.tsx");
+  const projectsModel = read("client/src/v2/projects.ts");
+
+  it("labels the Dossier header, the Settings Team card, the Projects register and Today alike", () => {
+    expect(dossierSource).toContain('<span className="df-mono df-meta">PROJECT MANAGER</span>');
+    expect(dossierSource).toContain('<span className="df-settings-label">PROJECT MANAGER</span>');
+    expect(dossierSource).toContain('label: "No Project Manager"');
+    expect(dossierSource).toContain('sub="The Project Manager accountable for this Project, and the Members assigned to it."');
+    expect(projectsSource).toContain('header: "PROJECT MANAGER"');
+    expect(projectsSource).toContain('ariaLabel="Filter by Project Manager"');
+    expect(projectsModel).toContain("`PROJECT MANAGER ${names.leads.get(filters.lead)");
+    expect(today).toContain("<span>PROJECT MANAGER</span>");
+    for (const [name, source] of [["V2Dossier", dossierSource], ["V2Projects", projectsSource], ["V2Today", today]] as const) {
+      expect(source, name).not.toMatch(/"LEAD"|>LEAD<|"Project lead"|"No lead"|Filter by Lead|leads this Project/);
+    }
+  });
+
+  it("defines Project Manager in the glossary and retires Lead for it", () => {
+    const glossary = read("CONTEXT.md");
+    expect(glossary).toMatch(
+      /\*\*Project Manager\*\*:\nThe one member accountable for a project, chosen in the project's Settings\.[^\n]*\n_Avoid_: Lead, Project lead, Project owner/,
+    );
+    expect(glossary).not.toContain("_Avoid_: Project lead, payroll owner");
   });
 });
 

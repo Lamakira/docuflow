@@ -140,7 +140,7 @@ export type ProjectRegisterFilters = {
   pageSize: number;
 };
 
-/** The register columns the server orders by (`CRM_PROJECT_SORTS`). LEAD and TRACKED MTD are not among them. */
+/** The register columns the server orders by (`CRM_PROJECT_SORTS`). PROJECT MANAGER and TRACKED MTD are not among them. */
 export const PROJECT_SORTS = ["name", "status", "budget"] as const;
 export type ProjectSort = (typeof PROJECT_SORTS)[number];
 
@@ -267,7 +267,7 @@ export function projectFilterLabels(
   if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
   if (filters.status !== "all") labels.push(`STATUS ${optionLabel(PROJECT_STATUS_OPTIONS, filters.status)}`);
   if (filters.client !== "all") labels.push(`CLIENT ${names.clients.get(filters.client) ?? "—"}`);
-  if (filters.lead !== "all") labels.push(`LEAD ${names.leads.get(filters.lead) ?? "—"}`);
+  if (filters.lead !== "all") labels.push(`PROJECT MANAGER ${names.leads.get(filters.lead) ?? "—"}`);
   if (filters.tag !== "all") labels.push(`TAG ${(names.tags.get(filters.tag) ?? "—").toUpperCase()}`);
   if (filters.type !== "all") labels.push(`TYPE ${optionLabel(PROJECT_TYPE_OPTIONS, filters.type)}`);
   if (filters.due !== "all") labels.push(`DUE ${optionLabel(PROJECT_DUE_OPTIONS, filters.due)}`);
