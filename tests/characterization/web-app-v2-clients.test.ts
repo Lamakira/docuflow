@@ -11,6 +11,9 @@ import {
   composeClientRegister,
   type ClientRegisterInput,
 } from "../../client/src/v2/clients";
+import { Handshake } from "lucide-react";
+import { SiFiverr, SiZoho } from "react-icons/si";
+import { sourceIcon } from "../../client/src/v2/sourceIcons";
 
 /**
  * Clients live register and Client record (#186).
@@ -33,7 +36,7 @@ describe("the Client record's two forms match every other v2 form (#280)", () =>
 
   it("chooses the source with the shared v2 select", () => {
     expect(source).not.toContain('from "@/components/ui/select"');
-    expect(source).toContain("options={clientSourceChoices(draft.source)}");
+    expect(source).toContain("options={withSourceMarks(clientSourceChoices(draft.source))}");
     expect(rule(".df-form-dialog-body > .df-daily-field .df-select-trigger")).toMatch(
       /justify-content:\s*space-between/,
     );
@@ -53,6 +56,69 @@ describe("the Client record's two forms match every other v2 form (#280)", () =>
     }
     expect(source).toMatch(/id: "email", label: "EMAIL", type: "email"/);
     expect(source).toMatch(/id: "phone", label: "PHONE", type: "tel"/);
+  });
+});
+
+describe("a Client Source wears one mark everywhere v2 shows it", () => {
+  const clientsSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
+    "utf8",
+  );
+  const adminSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Administration.tsx"),
+    "utf8",
+  );
+  const selectSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Select.tsx"),
+    "utf8",
+  );
+
+  it("draws Fiverr and Zoho with their brand marks and Direct with a neutral lucide one", () => {
+    expect(sourceIcon("fiverr")).toEqual({ Icon: SiFiverr, hue: "#1dbf73" });
+    expect(sourceIcon("zoho")).toEqual({ Icon: SiZoho, hue: "#e42527" });
+    expect(sourceIcon(" Direct ")).toEqual({ Icon: Handshake, hue: null });
+    // A Source an Administrator added keeps its colour dot.
+    expect(sourceIcon("referral")).toBeNull();
+    expect(sourceIcon("none")).toBeNull();
+    expect(sourceIcon(null)).toBeNull();
+  });
+
+  it("carries the stored value to the register row and the record", () => {
+    const register = composeClientRegister({
+      workspaceName: "Harbor Co",
+      clients: [
+        { id: "c-1", name: "Harbor", company: null, status: "client", source: "fiverr", projectCount: 0 },
+        { id: "c-2", name: "Pier", company: null, status: "lead", source: null, projectCount: 0 },
+      ],
+      filterQuery: "",
+      selectedId: null,
+    } as ClientRegisterInput);
+    expect(register.rows.map((row) => [row.source, row.sourceValue])).toEqual([
+      ["FIVERR", "fiverr"],
+      ["—", null],
+    ]);
+  });
+
+  it("uses the shared SourceMark on the register, the record, the details and both Source selects", () => {
+    expect(clientsSource).toContain("<SourceMark value={row.original.sourceValue} />");
+    expect(clientsSource).toContain("<SourceMark value={record.identity.sourceValue} />");
+    expect(clientsSource).toContain("<SourceMark value={record.identity?.sourceValue} />");
+    expect(clientsSource).toContain('options={withSourceMarks([{ value: "all", label: "ALL" }, ...CLIENT_SOURCE_OPTIONS])}');
+    expect(selectSource).toContain("icon?: ReactNode;");
+    expect(selectSource).toContain("<OptionText option={option} />");
+    // Pipeline & lists: a marked Source has no colour picker; any other keeps one.
+    expect(adminSource).toMatch(/list\.id === "source" && sourceIcon\(row\.value\) \?\s*\(\s*<span className="df-pipeline-mark"/);
+    expect(adminSource).toContain("<SourceMark value={row.value} />");
+  });
+
+  it("colours a brand mark with the contrast-checked swatch ink on either ground", () => {
+    expect(rule(".df-source-icon")).toMatch(/color:\s*var\(--df-archive-slate\)/);
+    expect(rule(".df-source-icon[data-brand]")).toMatch(/color:\s*var\(--df-swatch-ink\)/);
+    expect(rule(".dark .df-source-icon[data-brand]")).toMatch(/color:\s*var\(--df-swatch-ink-dark\)/);
+    for (const selector of [".df-source-icon", ".df-source-icon[data-brand]", ".dark .df-source-icon[data-brand]", ".df-pipeline-mark"]) {
+      expect(rule(selector)).not.toMatch(/#[0-9a-f]{3,6}\b/i);
+    }
+    expect(rule(".df-pipeline-mark")).toMatch(/width:\s*var\(--df-control-h\)/);
   });
 });
 

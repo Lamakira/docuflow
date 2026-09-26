@@ -58,6 +58,8 @@ import {
 import { trackingPolicyPath } from "./activity";
 import { motionForSurface } from "./motion";
 import { billingConditionTone, swatchStyle } from "./palette";
+import { SourceMark } from "./icons";
+import { sourceIcon } from "./sourceIcons";
 import {
   PIPELINE_COLOURS,
   PIPELINE_LISTS_INTRO,
@@ -1523,12 +1525,20 @@ function PipelineListCard({
         <ol className="df-pipeline-options" aria-label={list.title}>
           {list.rows.map((row) => (
             <li key={row.id} className="df-pipeline-option" data-testid={`v2-pipeline-option-${list.id}-${row.value}`}>
-              <ColourPicker
-                label={row.label}
-                color={row.color}
-                disabled={pending}
-                onChoose={(color) => onEdit(recolourPipelineOption(list, row.index, color))}
-              />
+              {/* A brand's colour is not the Workspace's to choose, so a Source
+                  with its own mark has no picker. */}
+              {list.id === "source" && sourceIcon(row.value) ? (
+                <span className="df-pipeline-mark" data-testid={`v2-pipeline-mark-${row.value}`}>
+                  <SourceMark value={row.value} />
+                </span>
+              ) : (
+                <ColourPicker
+                  label={row.label}
+                  color={row.color}
+                  disabled={pending}
+                  onChoose={(color) => onEdit(recolourPipelineOption(list, row.index, color))}
+                />
+              )}
               {row.outcome ? (
                 <span className="df-pipeline-outcome">
                   <span className="df-status" data-swatch="" style={swatchStyle(row.color)}>{row.label}</span>

@@ -7,6 +7,7 @@
  * not have to be spelled out twelve lines at a time.
  */
 
+import type { ReactNode } from "react";
 import {
   Select,
   SelectContent,
@@ -25,7 +26,20 @@ export type V2SelectOption = {
   value: string;
   label: string;
   disabled?: boolean;
+  /** A mark drawn before the label, in the panel and on the chip. */
+  icon?: ReactNode;
 };
+
+function OptionText({ option }: { option: V2SelectOption | undefined }) {
+  if (!option) return null;
+  if (!option.icon) return <>{option.label}</>;
+  return (
+    <span className="df-select-option">
+      {option.icon}
+      {option.label}
+    </span>
+  );
+}
 
 export type V2FilterSelectProps = {
   /**
@@ -70,7 +84,7 @@ export function V2FilterSelect({
         data-testid={testId}
       >
         {label ? <span className="df-select-prefix">{label}</span> : null}
-        <SelectValue>{chosen?.label ?? ""}</SelectValue>
+        <SelectValue>{chosen ? <OptionText option={chosen} /> : ""}</SelectValue>
       </SelectTrigger>
       {/* Radix portals to document.body, outside `.df-v2`, so the panel
           carries the class itself or the --df-* tokens do not resolve. */}
@@ -82,7 +96,7 @@ export function V2FilterSelect({
             disabled={option.disabled}
             className="df-select-item"
           >
-            {option.label}
+            <OptionText option={option} />
           </SelectItem>
         ))}
       </SelectContent>

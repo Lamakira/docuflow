@@ -1692,6 +1692,43 @@ button.df-activity-row {
   background: var(--df-swatch-line-dark);
 }
 
+/* A Source's mark sits where the colour picker would, in the same square. */
+.df-pipeline-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--df-control-h);
+  height: var(--df-control-h);
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-2);
+}
+
+/* A Client Source mark. A brand takes its hue as the contrast-checked swatch
+   ink for the ground; Direct takes the neutral ink. */
+.df-source-icon {
+  flex: none;
+  width: var(--df-space-4);
+  height: var(--df-space-4);
+  color: var(--df-archive-slate);
+}
+
+.df-source-icon[data-brand] {
+  color: var(--df-swatch-ink);
+}
+
+.dark .df-source-icon[data-brand] {
+  color: var(--df-swatch-ink-dark);
+}
+
+.df-source-cell,
+.df-select-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--df-space-2);
+  min-width: 0;
+}
+
 .df-v2.df-colour-picker {
   width: 200px;
   padding: var(--df-space-1);

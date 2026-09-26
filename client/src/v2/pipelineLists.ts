@@ -64,7 +64,7 @@ export const PIPELINE_LISTS: PipelineListSpec[] = [
   {
     id: "source",
     title: "Source",
-    sub: "Where a Client came from, as offered on the Client record.",
+    sub: "Where a Client came from, as offered on the Client record. Fiverr, Zoho and Direct show their own mark; any other source wears the colour picked here.",
     noun: "source",
     builtIn: builtIn("source"),
   },

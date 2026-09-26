@@ -38,6 +38,8 @@ export type ClientRegisterRow = {
   /** The status's board colour; `swatchStyle` turns it into the badge. */
   statusColor: string;
   source: string;
+  /** The stored value, for `SourceMark`. */
+  sourceValue: string | null;
   projectCount: number;
   href: string;
   selected: boolean;
@@ -95,6 +97,7 @@ export function composeClientRegister(input: ClientRegisterInput): ClientRegiste
       status: statusLabel(client.status),
       statusColor: clientStatusColor(client.status),
       source: sourceLabel(client.source),
+      sourceValue: client.source || null,
       projectCount: client.projectCount,
       href: clientHref(client.id),
       selected: client.id === input.selectedId,
@@ -284,6 +287,8 @@ export type ClientRecordIdentity = {
   company: string;
   email: string | null;
   source: string;
+  /** The stored value, for `SourceMark`. */
+  sourceValue: string | null;
   phone: string | null;
   phoneFormat: string | null;
   fiverrUsername: string | null;
@@ -336,6 +341,7 @@ function identityFrom(client: ClientIdentitySeed): ClientRecordIdentity {
     company: client.company || "—",
     email: client.email ?? null,
     source: sourceLabel(client.source),
+    sourceValue: client.source || null,
     phone: client.phone ?? null,
     phoneFormat: client.phoneFormat ?? null,
     fiverrUsername: client.fiverrUsername ?? null,
