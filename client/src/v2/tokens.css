@@ -3257,7 +3257,9 @@ button.df-activity-row {
   display: block;
 }
 
-.df-check[data-checked="true"] {
+/* Must outrank `.df-v2 button.df-check` above, or its transparent background
+   wins and the paper tick vanishes on the card. */
+.df-v2 button.df-check[data-checked="true"] {
   background: var(--df-signed-off);
   border-color: var(--df-signed-off);
 }

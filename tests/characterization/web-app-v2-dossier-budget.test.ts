@@ -472,7 +472,36 @@ describe("a Task row sits on one axis with matching controls (#277)", () => {
     const check = rule(".df-v2 button.df-check");
     expect(check).toMatch(/place-items:\s*center/);
     expect(check).toMatch(/color:\s*var\(--df-fill-paper\)/);
-    expect(rule('.df-check[data-checked="true"]')).toMatch(/var\(--df-signed-off\)/);
+  });
+
+  it("fills a Done Task's badge green in both palettes, over the unchecked badge's transparent fill", () => {
+    // Both Task lists (Overview Next actions and the Tasks tab) draw this one badge.
+    expect(dossierSource.match(/className="df-check"\s+data-checked=\{row\.done \? "true" : "false"\}/g)).toHaveLength(2);
+
+    const base = ".df-v2 button.df-check";
+    const checked = '.df-v2 button.df-check[data-checked="true"]';
+    expect(rule(base)).toMatch(/background:\s*transparent/);
+    const done = rule(checked);
+    expect(done).toMatch(/background:\s*var\(--df-signed-off\)/);
+    expect(done).toMatch(/border-color:\s*var\(--df-signed-off\)/);
+
+    // The regression: the unchecked rule gained an element selector (#277) and
+    // outranked a bare `.df-check[data-checked]`, so Done drew as an empty box.
+    // The Done rule must win on specificity, or tie and come later.
+    const specificity = (selector: string) => [
+      (selector.match(/#[\w-]+/g) ?? []).length,
+      (selector.match(/\.[\w-]+|\[[^\]]+\]|:(?!not\()[\w-]+/g) ?? []).length,
+      (selector.replace(/[.#][\w-]+|\[[^\]]+\]|:[\w-]+(\([^)]*\))?/g, " ").match(/[a-z][\w-]*/gi) ?? []).length,
+    ];
+    const [a, b] = [specificity(checked), specificity(base)];
+    const cmp = a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+    expect(cmp > 0 || (cmp === 0 && css.indexOf(`${checked} {`) > css.indexOf(`${base} {`))).toBe(true);
+    expect(css).not.toMatch(/(^|\n)\.df-check\[data-checked="true"\]\s*\{/);
+
+    // Dark palette redefines the fill; the paper tick stays white on it.
+    const dark = css.slice(css.indexOf("--df-signed-off: var(--df-green-500)") + 1);
+    expect(dark).toMatch(/--df-signed-off:\s*var\(--df-green-400\)/);
+    expect(done).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });
 
   it("gives the status control and Start Timer one height, radius, padding and case", () => {
