@@ -103,6 +103,34 @@ export type ActivityTabId = (typeof ACTIVITY_TAB_IDS)[number];
 
 const ACTIVITY_TAB_SET = new Set<string>(ACTIVITY_TAB_IDS);
 
+/**
+ * Administration shows one configuration section at a time (#281). Workspace
+ * is the destination itself; every other section is a tab segment under it.
+ */
+export const ADMINISTRATION_TAB_IDS = [
+  "workspace",
+  "billing",
+  "members",
+  "tracking-policy",
+  "crm-fields",
+  "integrations",
+  "danger-zone",
+] as const;
+
+export type AdministrationTabId = (typeof ADMINISTRATION_TAB_IDS)[number];
+
+const ADMINISTRATION_TAB_SET = new Set<string>(ADMINISTRATION_TAB_IDS);
+
+export const ADMINISTRATION_TAB_LABEL: Record<AdministrationTabId, string> = {
+  workspace: "Workspace",
+  billing: "Billing",
+  members: "Members & Roles",
+  "tracking-policy": "Tracking Policy",
+  "crm-fields": "CRM fields",
+  integrations: "Integrations",
+  "danger-zone": "Danger zone",
+};
+
 const TIME_TAB_CRUMB: Record<TimeTabId, string> = {
   entries: "TIME ENTRIES",
   stats: "TIME STATS",
@@ -139,6 +167,27 @@ export function activityTabHref(tab: ActivityTabId): string {
   return tabHref("/activity", tab, "register");
 }
 
+export function administrationTabHref(tab: AdministrationTabId): string {
+  return tabHref("/administration", tab, "workspace");
+}
+
+export function parseAdministrationPath(pathname: string): AdministrationTabId | null {
+  return parseTabPath(pathname, "administration", ADMINISTRATION_TAB_SET, "workspace") as AdministrationTabId | null;
+}
+
+export type AdministrationTab = { id: AdministrationTabId; label: string; href: string; active: boolean };
+
+/** No tab for a Workspace Role Administration refuses: the page names the refusal instead. */
+export function administrationTabs(active: AdministrationTabId, workspaceRole: string): AdministrationTab[] {
+  if (!canManageAdministration(workspaceRole)) return [];
+  return ADMINISTRATION_TAB_IDS.map((id) => ({
+    id,
+    label: ADMINISTRATION_TAB_LABEL[id],
+    href: administrationTabHref(id),
+    active: id === active,
+  }));
+}
+
 export type V2Match =
   | { kind: "today"; title: "Today"; href: "/" }
   | { kind: "auth-redirect"; title: "Today"; href: "/" }
@@ -158,7 +207,8 @@ export type V2Match =
   | { kind: "activity"; title: "Activity"; href: string; tab: ActivityTabId }
   | { kind: "people"; title: "People"; href: "/people" }
   | { kind: "invitation-accept"; title: "Invitation"; href: string }
-  | { kind: "administration"; title: "Administration"; href: "/administration" }
+  | { kind: "administration"; title: "Administration"; href: string; tab: AdministrationTabId }
+  | { kind: "analytics"; title: "Analytics"; href: "/analytics" }
   | { kind: "devices"; title: "Devices"; href: "/devices" }
   | { kind: "file-viewer"; title: "File"; href: "/files" }
   | { kind: "help"; title: "Help Center"; href: "/help"; slug?: string }
@@ -177,6 +227,7 @@ export type V2NavId =
   | "time"
   | "activity"
   | "people"
+  | "analytics"
   | "administration"
   | "help"
   | "devices";
@@ -188,7 +239,8 @@ export type V2NavItem = {
   countKey?: "projects" | "people";
   /**
    * Workspace Role reach. Absent means every Role can reach the destination.
-   * Only Administration carries one (#257): a Capability never hides a destination.
+   * Only Analytics and Administration carry one (#257, #281): a Capability
+   * never hides a destination.
    */
   reach?: (workspaceRole: string) => boolean;
 };
@@ -228,6 +280,12 @@ export const V2_NAV: V2NavSection[] = [
     separated: true,
     items: [
       { id: "people", label: "People", href: "/people", countKey: "people" },
+      {
+        id: "analytics",
+        label: "Analytics",
+        href: "/analytics",
+        reach: canManageAdministration,
+      },
       {
         id: "administration",
         label: "Administration",
@@ -439,8 +497,23 @@ export function matchV2Route(path: string): V2Match {
     return { kind: "daily-updates", title: "Daily Updates", href: "/daily-updates" };
   }
 
-  if (pathname === "/administration" || pathname === "/admin" || pathname.startsWith("/admin/")) {
-    return { kind: "administration", title: "Administration", href: "/administration" };
+  // v1 Analytics lived under /admin; it is its own destination now (#281).
+  if (pathname === "/analytics" || pathname === "/admin/analytics") {
+    return { kind: "analytics", title: "Analytics", href: "/analytics" };
+  }
+
+  const administrationTab = parseAdministrationPath(pathname);
+  if (administrationTab) {
+    return {
+      kind: "administration",
+      title: "Administration",
+      href: administrationTabHref(administrationTab),
+      tab: administrationTab,
+    };
+  }
+
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    return { kind: "administration", title: "Administration", href: "/administration", tab: "workspace" };
   }
 
   if (isDevicesPath(pathname)) {
@@ -532,6 +605,7 @@ export function navIdForPath(path: string): V2NavId | null {
   if (match.kind === "people") return "people";
   if (match.kind === "invitation-accept") return null;
   if (match.kind === "administration") return "administration";
+  if (match.kind === "analytics") return "analytics";
   if (match.kind === "devices") return "devices";
   if (match.kind === "help") return "help";
   // A File reached from a Dossier is not the Workspace Documents destination.
@@ -640,9 +714,22 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     ];
   }
   if (match.kind === "administration") {
+    if (match.tab === "workspace") {
+      return [
+        { label: workspace, href: "/" },
+        { label: "ADMINISTRATION" },
+      ];
+    }
     return [
       { label: workspace, href: "/" },
-      { label: "ADMINISTRATION" },
+      { label: "ADMINISTRATION", href: "/administration" },
+      { label: ADMINISTRATION_TAB_LABEL[match.tab].toUpperCase() },
+    ];
+  }
+  if (match.kind === "analytics") {
+    return [
+      { label: workspace, href: "/" },
+      { label: "ANALYTICS" },
     ];
   }
   if (match.kind === "devices") {

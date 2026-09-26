@@ -13,6 +13,7 @@ import {
   V2ActivityPage,
   V2PeoplePage,
   V2AdministrationPage,
+  V2AnalyticsPage,
   V2DevicesPage,
   V2HelpPage,
 } from "./V2Pages";
@@ -84,7 +85,8 @@ export function V2AuthenticatedApp() {
           <Route path="/activity/:tab?" component={V2ActivityPage} />
           <Route path="/people" component={V2PeoplePage} />
           <Route path="/invitations/:token" component={V2InvitationAcceptPage} />
-          <Route path="/administration" component={V2AdministrationPage} />
+          <Route path="/administration/:tab?" component={V2AdministrationPage} />
+          <Route path="/analytics" component={V2AnalyticsPage} />
           <Route path="/devices" component={V2DevicesPage} />
           <Route path="/account" component={V2AccountPage} />
           <Route path="/platform" component={V2PlatformPage} />
@@ -98,7 +100,7 @@ export function V2AuthenticatedApp() {
             <Redirect to="/daily-updates" />
           </Route>
           <Route path="/admin/analytics">
-            <Redirect to="/administration#alerts" />
+            <Redirect to="/analytics" />
           </Route>
           {/* v1's User directory: the platform console for a platform admin (#266). */}
           <Route path="/admin/user/:id" component={V2LegacyAdminRedirect} />

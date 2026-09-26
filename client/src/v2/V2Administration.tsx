@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useParams } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   PUBLIC_API_CAPABILITIES,
@@ -22,28 +23,12 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   addAllowedTimezone,
   timezoneSuggestions,
   administrationWriteRefusal,
-  analyticsActivityPath,
-  analyticsAlertsPath,
-  analyticsCoveragePath,
-  analyticsDevicesPath,
-  analyticsEvidenceQualityPath,
-  analyticsOverviewPath,
-  analyticsProductivityPath,
-  analyticsScreenshotsPath,
-  analyticsRange,
-  ANALYTICS_RANGE_PRESETS,
   billingCancelPath,
   billingCheckoutPath,
   billingPaymentMethodPath,
@@ -51,7 +36,6 @@ import {
   billingSubscriptionPath,
   canManageAdministration,
   composeAdministration,
-  composeAnalytics,
   composeTrackingPolicyEditor,
   hostedBillingSession,
   normalizeScreenshotPolicy,
@@ -64,17 +48,6 @@ import {
   webhookDisablePath,
   webhookEnablePath,
   webhookEndpointsPath,
-  type AnalyticsActivityInput,
-  type AnalyticsAlertsInput,
-  type AnalyticsCoverageInput,
-  type AnalyticsDeviceInput,
-  type AnalyticsEvidenceQualityInput,
-  type AnalyticsProductivityInput,
-  type AnalyticsScreenshotsInput,
-  type AnalyticsFigure,
-  type AnalyticsModel,
-  type AnalyticsOverviewInput,
-  type AnalyticsRangePreset,
   type BillingAction,
   type BillingInput,
   type RevealedSecretInput,
@@ -84,9 +57,27 @@ import {
 import { trackingPolicyPath } from "./activity";
 import { motionForSurface } from "./motion";
 import { billingConditionTone } from "./palette";
+import {
+  ADMINISTRATION_TAB_IDS,
+  administrationTabHref,
+  administrationTabs,
+  type AdministrationTabId,
+} from "./presentation";
 import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
 import { V2FormDialog } from "./V2FormDialog";
+import { V2FilterSelect } from "./V2Select";
+import { AnalyticsRegister, FigureBand, readBehindAdministration } from "./V2Analytics";
+
+const CRM_FIELD_TYPES = [
+  { value: "text", label: "TEXT" },
+  { value: "textarea", label: "LONG TEXT" },
+  { value: "number", label: "NUMBER" },
+  { value: "date", label: "DATE" },
+  { value: "select", label: "SELECT" },
+  { value: "multiselect", label: "MULTISELECT" },
+  { value: "checkbox", label: "CHECKBOX" },
+];
 
 type WorkspaceMembershipsResponse = {
   memberships: Array<{
@@ -105,22 +96,31 @@ type WorkspaceSettingsResponse = {
   allowedTimezones: string[] | null;
 };
 
+/** Stripe hands the customer back to the tab that sent them. */
 function returnUrl(): string {
-  return `${window.location.origin}/administration`;
+  return `${window.location.origin}${administrationTabHref("billing")}`;
 }
 
-/**
- * Reads behind the Administration gate. A 403 is that gate, so it becomes `null`
- * and composes into the named Capability refusal rather than an empty surface.
- */
-async function readBehindAdministration<T>(path: string): Promise<T | null> {
-  const res = await fetch(path, { credentials: "include" });
-  if (res.status === 403) return null;
-  if (!res.ok) throw new Error(`Failed to read ${path}`);
-  return res.json();
+function isAdministrationTab(value: string): value is AdministrationTabId {
+  return (ADMINISTRATION_TAB_IDS as readonly string[]).includes(value);
 }
 
 export function V2AdministrationPage() {
+  const params = useParams<{ tab?: string }>();
+  const [, navigate] = useLocation();
+  const requested = params.tab ?? "workspace";
+  const tab: AdministrationTabId = isAdministrationTab(requested) ? requested : "workspace";
+
+  // Analytics left Administration for the rail (#281). An old deep link to its
+  // warnings, or a tab that does not exist, still lands somewhere real.
+  useEffect(() => {
+    if (window.location.hash === "#alerts") {
+      navigate("/analytics#alerts", { replace: true });
+      return;
+    }
+    if (!isAdministrationTab(requested)) navigate(administrationTabHref("workspace"), { replace: true });
+  }, [navigate, requested]);
+
   const { layout, memberships } = useV2Chrome();
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
@@ -136,8 +136,6 @@ export function V2AdministrationPage() {
   const [seatQuantity, setSeatQuantity] = useState("");
   const [revealedSecret, setRevealedSecret] = useState<RevealedSecretInput | null>(null);
   const [actionRefusal, setActionRefusal] = useState<string | null>(null);
-  const [rangePreset, setRangePreset] = useState<AnalyticsRangePreset>("7d");
-  const [rangeAnchor] = useState(() => new Date());
   const [policyDraft, setPolicyDraft] = useState<ScreenshotPolicy>(() => normalizeScreenshotPolicy(null));
   const [timezoneDraft, setTimezoneDraft] = useState<string[]>([]);
   const [timezoneInput, setTimezoneInput] = useState("");
@@ -147,8 +145,6 @@ export function V2AdministrationPage() {
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
   const [fieldName, setFieldName] = useState("");
   const [fieldType, setFieldType] = useState("text");
-
-  const range = useMemo(() => analyticsRange(rangePreset, rangeAnchor), [rangePreset, rangeAnchor]);
 
   const { data: people, isLoading: peopleLoading } = useQuery<WorkspaceMembershipsResponse>({
     queryKey: ["/api/workspace/memberships"],
@@ -192,62 +188,6 @@ export function V2AdministrationPage() {
     },
   });
 
-  const { data: overview, isLoading: overviewLoading, isError: overviewFailed } = useQuery<AnalyticsOverviewInput | null>({
-    queryKey: [analyticsOverviewPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsOverviewInput>(analyticsOverviewPath(range)),
-  });
-  const { data: activity, isLoading: activityLoading, isError: activityFailed } = useQuery<AnalyticsActivityInput | null>({
-    queryKey: [analyticsActivityPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsActivityInput>(analyticsActivityPath(range)),
-  });
-  const { data: coverage, isLoading: coverageLoading, isError: coverageFailed } = useQuery<AnalyticsCoverageInput | null>({
-    queryKey: [analyticsCoveragePath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsCoverageInput>(analyticsCoveragePath(range)),
-  });
-  const {
-    data: analyticsDevices,
-    isLoading: analyticsDevicesLoading,
-    isError: analyticsDevicesFailed,
-  } = useQuery<AnalyticsDeviceInput[] | null>({
-    queryKey: [analyticsDevicesPath()],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsDeviceInput[]>(analyticsDevicesPath()),
-  });
-  const { data: alerts, isLoading: alertsLoading, isError: alertsFailed } = useQuery<AnalyticsAlertsInput | null>({
-    queryKey: [analyticsAlertsPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsAlertsInput>(analyticsAlertsPath(range)),
-  });
-  const {
-    data: recordedTime,
-    isLoading: recordedTimeLoading,
-    isError: recordedTimeFailed,
-  } = useQuery<AnalyticsProductivityInput | null>({
-    queryKey: [analyticsProductivityPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsProductivityInput>(analyticsProductivityPath(range)),
-  });
-  const {
-    data: screenshots,
-    isLoading: screenshotsLoading,
-    isError: screenshotsFailed,
-  } = useQuery<AnalyticsScreenshotsInput | null>({
-    queryKey: [analyticsScreenshotsPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsScreenshotsInput>(analyticsScreenshotsPath(range)),
-  });
-  const {
-    data: evidenceQuality,
-    isLoading: evidenceQualityLoading,
-    isError: evidenceQualityFailed,
-  } = useQuery<AnalyticsEvidenceQualityInput | null>({
-    queryKey: [analyticsEvidenceQualityPath(range)],
-    enabled: canManage,
-    queryFn: () => readBehindAdministration<AnalyticsEvidenceQualityInput>(analyticsEvidenceQualityPath(range)),
-  });
   const { data: workspaceSettings, isLoading: workspaceSettingsLoading } =
     useQuery<WorkspaceSettingsResponse | null>({
       queryKey: [workspaceSettingsPath()],
@@ -255,14 +195,6 @@ export function V2AdministrationPage() {
       queryFn: () => readBehindAdministration<WorkspaceSettingsResponse>(workspaceSettingsPath()),
     });
 
-  // Warnings ride with the analytics already on this page. The three
-  // reporting reads must not hold a stalled Device off the screen.
-  const analyticsLoading =
-    overviewLoading || activityLoading || coverageLoading || analyticsDevicesLoading || alertsLoading;
-  const analyticsRefused =
-    overview === null || activity === null || coverage === null || analyticsDevices === null || alerts === null;
-  const analyticsFailed =
-    overviewFailed || activityFailed || coverageFailed || analyticsDevicesFailed || alertsFailed;
   const settingsRefused = workspaceSettings === null;
   // A policy that has not been read is not the default policy — saving defaults
   // over a real Tracking Policy would silently reset every Device.
@@ -277,12 +209,6 @@ export function V2AdministrationPage() {
     setTimezoneDraft(workspaceSettings.allowedTimezones ?? []);
   }, [workspaceSettings]);
 
-  useEffect(() => {
-    if (analyticsLoading) return;
-    if (window.location.hash !== "#alerts") return;
-    document.getElementById("alerts")?.scrollIntoView();
-  }, [analyticsLoading]);
-
   const ownerName = workspaceOwnerName(people?.memberships ?? []);
   const page = composeAdministration({
     workspaceName,
@@ -293,7 +219,9 @@ export function V2AdministrationPage() {
     webhookEndpoints: endpoints,
     billing: billing ?? null,
     revealedSecret,
+    members: people?.memberships,
   });
+  const tabs = administrationTabs(tab, workspaceRole);
 
   // The field starts from the capacity the Workspace already holds, so it never
   // contradicts the BILLABLE SEATS figure above it, and the submit is not
@@ -307,22 +235,6 @@ export function V2AdministrationPage() {
     setSeatQuantity(seatQuantityDefault);
   }, [seatQuantityDefault]);
 
-  const analytics = composeAnalytics({
-    now: rangeAnchor,
-    workspaceRole,
-    ownerName,
-    range,
-    overview: overview ?? null,
-    activity: activity ?? null,
-    coverage: coverage ?? null,
-    devices: analyticsDevices ?? [],
-    alerts: alerts ?? null,
-    productivity: recordedTime ?? null,
-    screenshots: screenshots ?? null,
-    evidenceQuality: evidenceQuality ?? null,
-    refused: analyticsRefused,
-    readFailed: analyticsFailed,
-  });
   const trackingPolicy = composeTrackingPolicyEditor({
     workspaceName,
     workspaceRole,
@@ -659,637 +571,718 @@ export function V2AdministrationPage() {
 
       {shownRefusal && !creatingAccount && !creatingEndpoint ? <p className="df-refusal">{shownRefusal}</p> : null}
 
-      <AdministrationAnalytics
-        analytics={analytics}
-        loading={analyticsLoading}
-        stacked={layout.stackedRegister}
-        rangePreset={rangePreset}
-        onRangeChange={setRangePreset}
-        recordedTimeRead={reportRead(recordedTimeLoading, recordedTimeFailed, recordedTime)}
-        screenshotsRead={reportRead(screenshotsLoading, screenshotsFailed, screenshots)}
-        evidenceQualityRead={reportRead(evidenceQualityLoading, evidenceQualityFailed, evidenceQuality)}
-      />
-
-      <section className="df-card df-admin-register" data-testid="v2-administration-crm-modules">
-        <div className="df-card-head"><div className="df-card-head-text"><h2 className="df-card-title">CRM modules &amp; fields</h2><p className="df-card-sub">Configure the Work record schema used by Clients and Projects.</p></div></div>
-        <form className="df-admin-form df-inline-form" onSubmit={(event) => { event.preventDefault(); if (!guardWrite() || !moduleName.trim()) return; createCrmModule.mutate(); }}>
-          <label className="df-daily-field">MODULE NAME<input value={moduleName} onChange={(event) => setModuleName(event.target.value)} /></label>
-          <Button variant="default" type="submit" disabled={!moduleName.trim() || createCrmModule.isPending} className="df-btn">Add module</Button>
-        </form>
-        {crmModules.length === 0 ? <p className="df-empty">No CRM modules configured.</p> : crmModules.map((module) => (
-          <div key={module.id} className="df-register-row" data-testid={`v2-crm-module-${module.id}`}>
-            <span><Button variant="outline" type="button" onClick={() => setSelectedModuleId(module.id)} className="df-btn">Open</Button><input aria-label={`Module name for ${module.name}`} defaultValue={module.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === module.name || !guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { name } }); }} /></span>
-            <span className="df-mono df-meta">{module.slug}</span>
-            <span className="df-status">{module.isEnabled ? "ACTIVE" : "INACTIVE"}</span>
-            <span className="df-people-action">
-              <Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { isEnabled: module.isEnabled ? 0 : 1 } }); }} className="df-btn">{module.isEnabled ? "Disable" : "Enable"}</Button>
-              {module.isSystem !== 1 ? <Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; deleteCrmModule.mutate(module.id); }} className="df-btn">Delete</Button> : null}
-            </span>
-          </div>
-        ))}
-        {selectedModule ? (
-          <div className="df-daily-form">
-            <div className="df-card-head"><h3 className="df-card-title">{selectedModule.name} fields</h3></div>
-            <form className="df-admin-form df-inline-form" onSubmit={(event) => { event.preventDefault(); if (!guardWrite() || !fieldName.trim()) return; createCrmField.mutate(); }}>
-              <label className="df-daily-field">FIELD NAME<input value={fieldName} onChange={(event) => setFieldName(event.target.value)} /></label>
-              <label className="df-daily-field">TYPE<Select value={fieldType} onValueChange={setFieldType}><SelectTrigger className="df-filter-chip df-select-trigger" aria-label="CRM field type"><SelectValue /></SelectTrigger><SelectContent className="df-v2 df-select-content">{[["text", "TEXT"], ["textarea", "LONG TEXT"], ["number", "NUMBER"], ["date", "DATE"], ["select", "SELECT"], ["multiselect", "MULTISELECT"], ["checkbox", "CHECKBOX"]].map(([value, label]) => <SelectItem key={value} value={value} className="df-select-item">{label}</SelectItem>)}</SelectContent></Select></label>
-              <Button variant="default" type="submit" disabled={!fieldName.trim() || createCrmField.isPending} className="df-btn">Add field</Button>
-            </form>
-            {(selectedModule.fields ?? []).map((field) => (
-              <div key={field.id} className="df-register-row" data-testid={`v2-crm-field-${field.id}`}>
-                <span><input aria-label={`Field name for ${field.name}`} defaultValue={field.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === field.name || !guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { name } }); }} />{field.fieldType === "select" || field.fieldType === "multiselect" ? <textarea aria-label={`Options for ${field.name}`} defaultValue={(field.options ?? []).join("\n")} onBlur={(event) => { const options = event.target.value.split("\n").map((option) => option.trim()).filter(Boolean); if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { options } }); }} /> : null}</span><span className="df-mono df-meta">{field.fieldType} · {field.slug}</span><span className="df-status">{field.isEnabled ? "ACTIVE" : "INACTIVE"}</span>
-                <span className="df-people-action"><Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { isEnabled: field.isEnabled ? 0 : 1 } }); }} className="df-btn">{field.isEnabled ? "Disable" : "Enable"}</Button>{field.isSystem !== 1 ? <Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; deleteCrmField.mutate(field.id); }} className="df-btn">Delete</Button> : null}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </section>
-
-      <section className="df-card df-policy-form" data-testid="v2-administration-billing">
-        <div className="df-card-head">
-          <div className="df-card-head-text">
-            <h2 className="df-card-title">Billing</h2>
-            <p className="df-card-sub">
-              Plan, Billable Seats, and the term for this Workspace. Card details stay with Stripe.
-            </p>
-          </div>
-          {page.billing.condition ? (
-            <span className="df-status" data-status={page.billing.condition} data-tone={billingConditionTone(page.billing.condition)}>
-              {page.billing.condition}
-            </span>
-          ) : null}
-        </div>
-
-        {page.billing.available ? (
-          <div className="df-figure-band" data-testid="v2-administration-billing-figures">
-            {page.billing.figures.map((figure) => (
-              <div key={figure.label} className="df-analytics-figure">
-                <span className="df-analytics-figure-label">{figure.label}</span>
-                <span className="df-analytics-figure-value df-admin-billing-figure">
-                  {figure.value}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="df-empty">{page.billing.seats}</p>
-        )}
-
-        {page.billing.entitlementNote ? (
-          <p className="df-admin-billing-note">{page.billing.entitlementNote}</p>
-        ) : null}
-
-        {page.billing.actions.some((action) => action.id === "seats") ? (
-          <form
-            className="df-admin-form df-inline-form df-admin-seat-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!guardWrite()) return;
-              if (!seatQuantity) return;
-              changeSeats.mutate();
-            }}
-          >
-            <label className="df-daily-field">
-              Seat quantity
-              <input
-                type="number"
-                min={1}
-                value={seatQuantity}
-                aria-label="Seat quantity"
-                onChange={(event) => setSeatQuantity(event.target.value)}
-              />
-            </label>
-            <Button variant="outline" type="submit" disabled={changeSeats.isPending || !seatQuantity} className="df-btn">
-              {changeSeats.isPending ? "Changing…" : "Change seats"}
-            </Button>
-          </form>
-        ) : null}
-
-        <div className="df-billing-actions">
-          {page.billing.actions.map((action) => {
-            if (action.id === "seats") return null;
-            if (action.id === "checkout") {
-              return (
-                <Button variant="default" key={action.id} type="button" disabled={startCheckout.isPending} onClick={() => startCheckout.mutate()} className="df-btn">
-                  {action.label}
-                </Button>
-              );
-            }
-            if (action.id === "payment-method") {
-              return (
-                <Button variant="outline" key={action.id} type="button" disabled={updatePaymentMethod.isPending} onClick={() => updatePaymentMethod.mutate()} className="df-btn">
-                  {action.label}
-                </Button>
-              );
-            }
-            // Ending the subscription is not reachable by the reflex that
-            // reaches the buttons beside it: it is styled apart, and it states
-            // what it costs before it runs (#245, F1).
-            return (
-              <CancelControl
-                key={action.id}
-                action={action}
-                pending={cancelAtPeriodEnd.isPending}
-                onConfirm={() => {
-                  if (!guardWrite()) return;
-                  cancelAtPeriodEnd.mutate();
-                }}
-              />
-            );
-          })}
-        </div>
-      </section>
-
-      {page.secretOnce ? (
-        <section
-          className="df-card df-secret-once"
-          data-motion={SECRET_MOTION}
-          data-testid="v2-administration-secret"
-          role="status"
-        >
-          <div className="df-card-head">
-            <h2 className="df-card-title">Secret</h2>
-            <Button variant="outline" type="button" onClick={() => setRevealedSecret(null)} className="df-btn">
-              Dismiss
-            </Button>
-          </div>
-          <div className="df-daily-form">
-            <p className="df-empty df-flush">
-              {page.secretOnce.label}
-            </p>
-            <code className="df-admin-secret">{page.secretOnce.plaintext}</code>
-            <p className="df-empty df-flush">
-              {page.secretOnce.confirmation}
-            </p>
-            <Button variant="outline" type="button" onClick={() => { void navigator.clipboard.writeText(page.secretOnce!.plaintext); }} className="df-btn">
-              Copy
-            </Button>
-          </div>
-        </section>
-      ) : null}
-
-      <section className="df-card df-admin-register" data-testid="v2-administration-service-accounts">
-        <div className="df-card-head">
-          <h2 className="df-card-title">Service Accounts</h2>
-          {page.serviceAccounts.createAllowed ? (
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => {
-                setActionRefusal(null);
-                setCreatingAccount(true);
-              }}
-              className="df-btn"
+      {/* One configuration section at a time (#281). The tab lives in the path,
+          so a deep link opens the section it names. Manual activation: arrowing
+          across the tabs moves focus, not history. */}
+      <Tabs
+        value={tab}
+        onValueChange={(next) => navigate(administrationTabHref(next as AdministrationTabId))}
+        activationMode="manual"
+        className="df-admin-tabs"
+      >
+        <TabsList className="df-tabs" aria-label="Administration">
+          {tabs.map((item) => (
+            <TabsTrigger
+              key={item.id}
+              value={item.id}
+              className="df-tab"
+              data-testid={`v2-administration-tab-${item.id}`}
             >
-              New Service Account
-            </Button>
-          ) : null}
-        </div>
-        <V2FormDialog
-          open={creatingAccount}
-          onOpenChange={setCreatingAccount}
-          title="New Service Account"
-          description="An integration that calls the public API with its own key. The key is shown once, right after it is created."
-          submitLabel={createAccount.isPending ? "Creating…" : "Create Service Account"}
-          pending={createAccount.isPending}
-          canSubmit={Boolean(accountName.trim())}
-          onSubmit={onCreateAccount}
-          refusal={actionRefusal}
-          testId="v2-administration-new-service-account"
-        >
-          <label className="df-daily-field">
-            NAME
-            <input
-              type="text"
-              value={accountName}
-              autoFocus
-              aria-label="Service Account name"
-              onChange={(event) => setAccountName(event.target.value)}
-            />
-          </label>
-          <fieldset className="df-daily-field">
-            <legend>CAPABILITIES</legend>
-            {PUBLIC_API_CAPABILITIES.map((capability) => (
-              <CheckRow
-                key={capability.id}
-                id={`df-capability-${capability.id}`}
-                label={capability.name}
-                checked={accountCapabilities.includes(capability.id)}
-                onChange={(next) => {
-                  setAccountCapabilities((currentCaps) =>
-                    next
-                      ? [...currentCaps, capability.id]
-                      : currentCaps.filter((id) => id !== capability.id),
-                  );
-                }}
-              />
-            ))}
-          </fieldset>
-        </V2FormDialog>
-        {layout.stackedRegister ? null : (
-          <div className="df-register-head df-desktop-only">
-            <span>NAME</span>
-            <span>CAPABILITIES</span>
-            <span>STATUS</span>
-            <span />
-          </div>
-        )}
-        {page.serviceAccounts.empty ? (
-          <p className="df-empty">{page.serviceAccounts.emptyCopy}</p>
-        ) : (
-          page.serviceAccounts.rows.map((row) => (
-            <div key={row.id} className="df-register-row" data-testid={`v2-administration-sa-${row.id}`}>
-              {layout.stackedRegister ? (
-                <span className="df-project-mobile">
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <div className="df-row-title">{row.name}</div>
-                    <div className="df-mono df-meta">
-                      {row.status}
-                      {row.capabilities !== "—" ? ` · ${row.capabilities}` : ""}
-                    </div>
-                  </span>
-                  <AccountActions
-                    row={row}
-                    onRotate={onRotateAccount}
-                    onRevoke={onRevokeAccount}
-                  />
-                </span>
-              ) : (
-                <>
-                  <span className="df-row-title">{row.name}</span>
-                  <span className="df-mono df-meta">{row.capabilities}</span>
-                  <span className="df-status" data-status={row.status}>
-                    {row.status}
-                  </span>
-                  <AccountActions row={row} onRotate={onRotateAccount} onRevoke={onRevokeAccount} />
-                </>
-              )}
-            </div>
-          ))
-        )}
-      </section>
+              {item.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      <section className="df-card df-admin-register" data-testid="v2-administration-webhooks">
-        <div className="df-card-head">
-          <h2 className="df-card-title">Webhook Endpoints</h2>
-          {page.webhookEndpoints.createAllowed ? (
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => {
-                setActionRefusal(null);
-                setCreatingEndpoint(true);
-              }}
-              className="df-btn"
-            >
-              New Webhook Endpoint
-            </Button>
-          ) : null}
-        </div>
-        <V2FormDialog
-          open={creatingEndpoint}
-          onOpenChange={setCreatingEndpoint}
-          title="New Webhook Endpoint"
-          description="A URL that receives the chosen events. Its signing secret is shown once, right after it is created."
-          submitLabel={createEndpoint.isPending ? "Creating…" : "Create Webhook Endpoint"}
-          pending={createEndpoint.isPending}
-          canSubmit={Boolean(endpointUrl.trim()) && eventTypes.length > 0}
-          onSubmit={onCreateEndpoint}
-          refusal={actionRefusal}
-          testId="v2-administration-new-webhook-endpoint"
-        >
-          <label className="df-daily-field">
-            URL
-            <input
-              type="url"
-              value={endpointUrl}
-              autoFocus
-              aria-label="Webhook Endpoint URL"
-              onChange={(event) => setEndpointUrl(event.target.value)}
-            />
-          </label>
-          <fieldset className="df-daily-field">
-            <legend>EVENT TYPES</legend>
-            {WEBHOOK_EVENT_TYPES.map((type) => (
-              <CheckRow
-                key={type}
-                id={`df-event-${type}`}
-                label={type}
-                checked={eventTypes.includes(type)}
-                onChange={(next) => {
-                  setEventTypes((currentTypes) =>
-                    next
-                      ? [...currentTypes, type]
-                      : currentTypes.filter((value) => value !== type),
-                  );
-                }}
-              />
-            ))}
-          </fieldset>
-        </V2FormDialog>
-        {layout.stackedRegister ? null : (
-          <div className="df-register-head df-desktop-only">
-            <span>URL</span>
-            <span>EVENTS</span>
-            <span>STATUS</span>
-            <span />
-          </div>
-        )}
-        {page.webhookEndpoints.empty ? (
-          <p className="df-empty">{page.webhookEndpoints.emptyCopy}</p>
-        ) : (
-          page.webhookEndpoints.rows.map((row) => (
-            <div key={row.id} className="df-register-row" data-testid={`v2-administration-wh-${row.id}`}>
-              {layout.stackedRegister ? (
-                <span className="df-project-mobile">
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <div className="df-row-title">{row.url}</div>
-                    <div className="df-mono df-meta">
-                      {row.status} · {row.eventTypes}
-                    </div>
-                  </span>
-                  <EndpointActions
-                    row={row}
-                    onRotate={onRotateEndpoint}
-                    onDisable={onDisableEndpoint}
-                    onEnable={onEnableEndpoint}
-                  />
-                </span>
-              ) : (
-                <>
-                  <span className="df-row-title">{row.url}</span>
-                  <span className="df-mono df-meta">{row.eventTypes}</span>
-                  <span className="df-status" data-status={row.status}>
-                    {row.status}
-                  </span>
-                  <EndpointActions
-                    row={row}
-                    onRotate={onRotateEndpoint}
-                    onDisable={onDisableEndpoint}
-                    onEnable={onEnableEndpoint}
-                  />
-                </>
-              )}
-            </div>
-          ))
-        )}
-      </section>
-
-      {trackingPolicy.kind === "refusal" || trackingPolicy.kind === "unreadable" ? (
-        <section className="df-card" data-testid="v2-administration-tracking-policy">
-          <div className="df-card-head">
-            <h2 className="df-card-title">Tracking Policy</h2>
-          </div>
-          <p className="df-refusal">
-            {trackingPolicy.kind === "refusal" ? trackingPolicy.refusal : trackingPolicy.note}
-          </p>
-        </section>
-      ) : (
-        <>
-          <section className="df-card df-policy-form" data-testid="v2-administration-tracking-policy">
+        <TabsContent value="workspace" className="df-admin-panel" data-testid="v2-administration-panel-workspace">
+          <section className="df-card" data-testid="v2-administration-workspace">
             <div className="df-card-head">
               <div className="df-card-head-text">
-                <h2 className="df-card-title">Tracking Policy</h2>
-                <p className="df-card-sub">{trackingPolicy.footnote}</p>
+                <h2 className="df-card-title">Workspace</h2>
+                <p className="df-card-sub">Who owns {workspaceName}, and the Workspace Role you hold in it.</p>
               </div>
             </div>
-            <div className="df-daily-form">
-              {trackingPolicy.writeRefusal ? (
-                <p className="df-refusal">{trackingPolicy.writeRefusal}</p>
-              ) : null}
-              <CheckRow
-                id="df-policy-capture"
-                label="Capture Activity Evidence"
-                checked={policyDraft.screenshotsEnabled}
-                disabled={!trackingPolicy.editable}
-                onChange={(next) => editPolicy({ screenshotsEnabled: next })}
-              />
-              {policyDraft.screenshotsEnabled ? (
-                <div className="df-policy-group">
-                  <p className="df-policy-hint">
-                    A capture lands at a random moment between these two intervals.
-                  </p>
-                  <div className="df-policy-grid">
-                <label className="df-daily-field">
-                  Minimum interval (minutes)
-                  <input
-                    type="number"
-                    min={3}
-                    max={15}
-                    value={policyDraft.captureIntervalMinMin}
-                    disabled={!trackingPolicy.editable}
-                    aria-label="Minimum capture interval"
-                    onChange={(event) =>
-                      editPolicy({
-                        captureIntervalMinMin: policyNumber(
-                          event.target.value,
-                          policyDraft.captureIntervalMinMin,
-                        ),
-                      })
-                    }
-                  />
-                </label>
-                <label className="df-daily-field">
-                  Maximum interval (minutes)
-                  <input
-                    type="number"
-                    min={3}
-                    max={15}
-                    value={policyDraft.captureIntervalMaxMin}
-                    disabled={!trackingPolicy.editable}
-                    aria-label="Maximum capture interval"
-                    onChange={(event) =>
-                      editPolicy({
-                        captureIntervalMaxMin: policyNumber(
-                          event.target.value,
-                          policyDraft.captureIntervalMaxMin,
-                        ),
-                      })
-                    }
-                  />
-                </label>
-                  </div>
-                </div>
-              ) : null}
-              <CheckRow
-                id="df-policy-active-hours"
-                label="Restrict captures to active hours"
-                checked={policyDraft.activeHoursEnabled}
-                disabled={!trackingPolicy.editable}
-                onChange={(next) => editPolicy({ activeHoursEnabled: next })}
-              />
-              {policyDraft.activeHoursEnabled ? (
-                <div className="df-policy-group">
-                  <div className="df-policy-grid">
-                  <label className="df-daily-field">
-                    Start
-                    <input
-                      type="time"
-                      value={policyDraft.activeHoursStart}
-                      disabled={!trackingPolicy.editable}
-                      aria-label="Active hours start"
-                      onChange={(event) => editPolicy({ activeHoursStart: event.target.value })}
-                    />
-                  </label>
-                  <label className="df-daily-field">
-                    End
-                    <input
-                      type="time"
-                      value={policyDraft.activeHoursEnd}
-                      disabled={!trackingPolicy.editable}
-                      aria-label="Active hours end"
-                      onChange={(event) => editPolicy({ activeHoursEnd: event.target.value })}
-                    />
-                  </label>
-                  </div>
-                </div>
-              ) : null}
-              <CheckRow
-                id="df-policy-idle"
-                label="Prompt on idle"
-                checked={policyDraft.idlePromptEnabled}
-                disabled={!trackingPolicy.editable}
-                onChange={(next) => editPolicy({ idlePromptEnabled: next })}
-              />
-              {policyDraft.idlePromptEnabled ? (
-                <div className="df-policy-group">
-                  <div className="df-policy-grid">
-                  <label className="df-daily-field">
-                    Idle timeout (minutes)
-                    <input
-                      type="number"
-                      min={1}
-                      max={60}
-                      value={policyDraft.idleTimeoutMinutes}
-                      disabled={!trackingPolicy.editable}
-                      aria-label="Idle timeout"
-                      onChange={(event) =>
-                        editPolicy({
-                          idleTimeoutMinutes: policyNumber(
-                            event.target.value,
-                            policyDraft.idleTimeoutMinutes,
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="df-daily-field">
-                    Auto-stop countdown (seconds)
-                    <input
-                      type="number"
-                      min={15}
-                      max={120}
-                      value={policyDraft.idleCountdownSeconds}
-                      disabled={!trackingPolicy.editable}
-                      aria-label="Idle countdown"
-                      onChange={(event) =>
-                        editPolicy({
-                          idleCountdownSeconds: policyNumber(
-                            event.target.value,
-                            policyDraft.idleCountdownSeconds,
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            <div className="df-form-actions">
-              {trackingPolicy.issue ? (
-                <p className="df-form-note df-refusal-inline">{trackingPolicy.issue}</p>
-              ) : trackingPolicy.savedNote ? (
-                <p
-                  className="df-form-note df-policy-saved"
-                  data-motion={POLICY_SAVED_MOTION}
-                  role="status"
-                  data-testid="v2-administration-policy-saved"
-                >
-                  {trackingPolicy.savedNote}
-                </p>
-              ) : (
-                <p className="df-form-note">
-                  {trackingPolicy.dirty ? "Unsaved changes." : "No change to save."}
-                </p>
-              )}
-              <Button variant="default" type="button" disabled={!trackingPolicy.canSave || saveTrackingPolicy.isPending} onClick={() => { if (!guardWrite()) return; saveTrackingPolicy.mutate(); }} className="df-btn">
-                {saveTrackingPolicy.isPending ? "Saving…" : "Save Tracking Policy"}
+            <FigureBand figures={page.workspace.figures} testId="v2-administration-workspace-figures" />
+          </section>
+        </TabsContent>
+
+        <TabsContent value="members" className="df-admin-panel" data-testid="v2-administration-panel-members">
+          <section className="df-card df-admin-register" data-testid="v2-administration-members">
+            <div className="df-card-head">
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Members &amp; Roles</h2>
+                <p className="df-card-sub">{page.members.note}</p>
+              </div>
+              <Button asChild variant="outline" className="df-btn">
+                <Link href="/people" data-testid="v2-administration-members-people">
+                  Open People
+                </Link>
               </Button>
             </div>
+            <AnalyticsRegister
+              stacked={layout.stackedRegister}
+              head={["MEMBER", "EMAIL", "WORKSPACE ROLE"]}
+              rows={page.members.rows.map((row) => ({ id: row.id, cells: [row.name, row.email, row.workspaceRole] }))}
+              empty={page.members.empty}
+              emptyCopy={page.members.emptyCopy}
+              testId="v2-administration-member"
+            />
           </section>
+        </TabsContent>
 
-          <section className="df-card df-policy-form" data-testid="v2-administration-timezones">
+        <TabsContent value="crm-fields" className="df-admin-panel" data-testid="v2-administration-panel-crm-fields">
+          <section className="df-card df-admin-register" data-testid="v2-administration-crm-modules">
+            <div className="df-card-head"><div className="df-card-head-text"><h2 className="df-card-title">CRM modules &amp; fields</h2><p className="df-card-sub">Configure the Work record schema used by Clients and Projects.</p></div></div>
+            <form className="df-admin-form df-inline-form" onSubmit={(event) => { event.preventDefault(); if (!guardWrite() || !moduleName.trim()) return; createCrmModule.mutate(); }}>
+              <label className="df-daily-field">MODULE NAME<input value={moduleName} onChange={(event) => setModuleName(event.target.value)} /></label>
+              <Button variant="default" type="submit" disabled={!moduleName.trim() || createCrmModule.isPending} className="df-btn">Add module</Button>
+            </form>
+            {crmModules.length === 0 ? <p className="df-empty">No CRM modules configured.</p> : crmModules.map((module) => (
+              <div key={module.id} className="df-register-row" data-testid={`v2-crm-module-${module.id}`}>
+                <span><Button variant="outline" type="button" onClick={() => setSelectedModuleId(module.id)} className="df-btn">Open</Button><input aria-label={`Module name for ${module.name}`} defaultValue={module.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === module.name || !guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { name } }); }} /></span>
+                <span className="df-mono df-meta">{module.slug}</span>
+                <span className="df-status">{module.isEnabled ? "ACTIVE" : "INACTIVE"}</span>
+                <span className="df-people-action">
+                  <Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; updateCrmModule.mutate({ id: module.id, patch: { isEnabled: module.isEnabled ? 0 : 1 } }); }} className="df-btn">{module.isEnabled ? "Disable" : "Enable"}</Button>
+                  {module.isSystem !== 1 ? <DestructiveConfirm label="Delete" title={`Delete ${module.name}`} consequence="The module and every field in it are removed from Clients and Projects. This cannot be undone." confirmLabel="Delete module" keepLabel="Keep module" pending={deleteCrmModule.isPending} testId={`v2-crm-module-delete-${module.id}`} onConfirm={() => { if (!guardWrite()) return; deleteCrmModule.mutate(module.id); }} /> : null}
+                </span>
+              </div>
+            ))}
+            {selectedModule ? (
+              <div className="df-daily-form">
+                <div className="df-card-head"><h3 className="df-card-title">{selectedModule.name} fields</h3></div>
+                <form className="df-admin-form df-inline-form" onSubmit={(event) => { event.preventDefault(); if (!guardWrite() || !fieldName.trim()) return; createCrmField.mutate(); }}>
+                  <label className="df-daily-field">FIELD NAME<input value={fieldName} onChange={(event) => setFieldName(event.target.value)} /></label>
+                  <label className="df-daily-field">TYPE<V2FilterSelect label="" ariaLabel="CRM field type" value={fieldType} options={CRM_FIELD_TYPES} onChange={setFieldType} testId="v2-administration-crm-field-type" /></label>
+                  <Button variant="default" type="submit" disabled={!fieldName.trim() || createCrmField.isPending} className="df-btn">Add field</Button>
+                </form>
+                {(selectedModule.fields ?? []).map((field) => (
+                  <div key={field.id} className="df-register-row" data-testid={`v2-crm-field-${field.id}`}>
+                    <span><input aria-label={`Field name for ${field.name}`} defaultValue={field.name} onBlur={(event) => { const name = event.target.value.trim(); if (!name || name === field.name || !guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { name } }); }} />{field.fieldType === "select" || field.fieldType === "multiselect" ? <textarea aria-label={`Options for ${field.name}`} defaultValue={(field.options ?? []).join("\n")} onBlur={(event) => { const options = event.target.value.split("\n").map((option) => option.trim()).filter(Boolean); if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { options } }); }} /> : null}</span><span className="df-mono df-meta">{field.fieldType} · {field.slug}</span><span className="df-status">{field.isEnabled ? "ACTIVE" : "INACTIVE"}</span>
+                    <span className="df-people-action"><Button variant="outline" type="button" onClick={() => { if (!guardWrite()) return; updateCrmField.mutate({ id: field.id, patch: { isEnabled: field.isEnabled ? 0 : 1 } }); }} className="df-btn">{field.isEnabled ? "Disable" : "Enable"}</Button>{field.isSystem !== 1 ? <DestructiveConfirm label="Delete" title={`Delete ${field.name}`} consequence="The field and the values recorded in it are removed from every record. This cannot be undone." confirmLabel="Delete field" keepLabel="Keep field" pending={deleteCrmField.isPending} testId={`v2-crm-field-delete-${field.id}`} onConfirm={() => { if (!guardWrite()) return; deleteCrmField.mutate(field.id); }} /> : null}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </TabsContent>
+
+        <TabsContent value="billing" className="df-admin-panel" data-testid="v2-administration-panel-billing">
+          <section className="df-card df-policy-form" data-testid="v2-administration-billing">
             <div className="df-card-head">
               <div className="df-card-head-text">
-                <h2 className="df-card-title">Screencasts timezones</h2>
+                <h2 className="df-card-title">Billing</h2>
                 <p className="df-card-sub">
-                  Curate the timezones the Screencasts selector offers.
+                  Plan, Billable Seats, and the term for this Workspace. Card details stay with Stripe.
                 </p>
               </div>
+              {page.billing.condition ? (
+                <span className="df-status" data-status={page.billing.condition} data-tone={billingConditionTone(page.billing.condition)}>
+                  {page.billing.condition}
+                </span>
+              ) : null}
             </div>
-            <div className="df-daily-form">
+
+            {page.billing.available ? (
+              <div className="df-figure-band" data-testid="v2-administration-billing-figures">
+                {page.billing.figures.map((figure) => (
+                  <div key={figure.label} className="df-analytics-figure">
+                    <span className="df-analytics-figure-label">{figure.label}</span>
+                    <span className="df-analytics-figure-value df-admin-billing-figure">
+                      {figure.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="df-empty">{page.billing.seats}</p>
+            )}
+
+            {page.billing.entitlementNote ? (
+              <p className="df-admin-billing-note">{page.billing.entitlementNote}</p>
+            ) : null}
+
+            {page.billing.actions.some((action) => action.id === "seats") ? (
               <form
-                className="df-admin-form df-inline-form"
+                className="df-admin-form df-inline-form df-admin-seat-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  onAddTimezone();
+                  if (!guardWrite()) return;
+                  if (!seatQuantity) return;
+                  changeSeats.mutate();
                 }}
               >
                 <label className="df-daily-field">
-                  IANA timezone
+                  Seat quantity
                   <input
-                    type="text"
-                    value={timezoneInput}
-                    placeholder="Europe/Paris"
-                    disabled={!trackingPolicy.editable}
-                    aria-label="IANA timezone"
-                    onChange={(event) => {
-                      setTimezoneInput(event.target.value);
-                      setTimezoneError(null);
-                    }}
+                    type="number"
+                    min={1}
+                    value={seatQuantity}
+                    aria-label="Seat quantity"
+                    onChange={(event) => setSeatQuantity(event.target.value)}
                   />
                 </label>
-                <TimezonePicker
-                  zones={timezoneSuggestions(timezoneDraft)}
-                  disabled={!trackingPolicy.editable}
-                  onChoose={(zone) => onAddTimezone(zone)}
-                />
-                <Button variant="outline" type="submit" disabled={!trackingPolicy.editable} className="df-btn">
-                  Add
+                <Button variant="outline" type="submit" disabled={changeSeats.isPending || !seatQuantity} className="df-btn">
+                  {changeSeats.isPending ? "Changing…" : "Change seats"}
                 </Button>
               </form>
-              {timezoneError ? <p className="df-refusal">{timezoneError}</p> : null}
-              {trackingPolicy.timezones.empty ? (
-                <p className="df-empty">{trackingPolicy.timezones.emptyCopy}</p>
-              ) : (
-                trackingPolicy.timezones.rows.map((timezone) => (
-                  <div
-                    key={timezone}
-                    className="df-policy-timezone"
-                    data-testid={`v2-administration-timezone-${timezone}`}
-                  >
-                    <span>{timezone}</span>
-                    <Button variant="outline" type="button" disabled={!trackingPolicy.editable} onClick={() => setTimezoneDraft((current) => removeAllowedTimezone(current, timezone))} className="df-btn">
-                      Remove
-                    </Button>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="df-form-actions">
-              <p className="df-form-note">
-                {trackingPolicy.timezones.dirty
-                  ? "Unsaved changes."
-                  : "No change to save."}
+            ) : null}
+
+            {page.dangerZone.actions.length > 0 ? (
+              <p className="df-admin-billing-note">
+                Ending the Subscription is under{" "}
+                <Link href={administrationTabHref("danger-zone")} className="df-ghost-link">
+                  Danger zone
+                </Link>
+                .
               </p>
-              <Button variant="default" type="button" disabled={!trackingPolicy.timezones.canSave || saveTimezones.isPending} onClick={() => { if (!guardWrite()) return; saveTimezones.mutate(); }} className="df-btn">
-                {saveTimezones.isPending ? "Saving…" : "Save timezones"}
-              </Button>
+            ) : null}
+
+            <div className="df-billing-actions">
+              {page.billing.actions.filter((action) => action.tone !== "destructive").map((action) => {
+                if (action.id === "seats") return null;
+                if (action.id === "checkout") {
+                  return (
+                    <Button variant="default" key={action.id} type="button" disabled={startCheckout.isPending} onClick={() => startCheckout.mutate()} className="df-btn">
+                      {action.label}
+                    </Button>
+                  );
+                }
+                return (
+                  <Button variant="outline" key={action.id} type="button" disabled={updatePaymentMethod.isPending} onClick={() => updatePaymentMethod.mutate()} className="df-btn">
+                    {action.label}
+                  </Button>
+                );
+              })}
             </div>
           </section>
-        </>
-      )}
+        </TabsContent>
+
+        <TabsContent value="integrations" className="df-admin-panel" data-testid="v2-administration-panel-integrations">
+          {page.secretOnce ? (
+            <section
+              className="df-card df-secret-once"
+              data-motion={SECRET_MOTION}
+              data-testid="v2-administration-secret"
+              role="status"
+            >
+              <div className="df-card-head">
+                <h2 className="df-card-title">Secret</h2>
+                <Button variant="outline" type="button" onClick={() => setRevealedSecret(null)} className="df-btn">
+                  Dismiss
+                </Button>
+              </div>
+              <div className="df-daily-form">
+                <p className="df-empty df-flush">
+                  {page.secretOnce.label}
+                </p>
+                <code className="df-admin-secret">{page.secretOnce.plaintext}</code>
+                <p className="df-empty df-flush">
+                  {page.secretOnce.confirmation}
+                </p>
+                <Button variant="outline" type="button" onClick={() => { void navigator.clipboard.writeText(page.secretOnce!.plaintext); }} className="df-btn">
+                  Copy
+                </Button>
+              </div>
+            </section>
+          ) : null}
+
+          <section className="df-card df-admin-register" data-testid="v2-administration-service-accounts">
+            <div className="df-card-head">
+              <h2 className="df-card-title">Service Accounts</h2>
+              {page.serviceAccounts.createAllowed ? (
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => {
+                    setActionRefusal(null);
+                    setCreatingAccount(true);
+                  }}
+                  className="df-btn"
+                >
+                  New Service Account
+                </Button>
+              ) : null}
+            </div>
+            <V2FormDialog
+              open={creatingAccount}
+              onOpenChange={setCreatingAccount}
+              title="New Service Account"
+              description="An integration that calls the public API with its own key. The key is shown once, right after it is created."
+              submitLabel={createAccount.isPending ? "Creating…" : "Create Service Account"}
+              pending={createAccount.isPending}
+              canSubmit={Boolean(accountName.trim())}
+              onSubmit={onCreateAccount}
+              refusal={actionRefusal}
+              testId="v2-administration-new-service-account"
+            >
+              <label className="df-daily-field">
+                NAME
+                <input
+                  type="text"
+                  value={accountName}
+                  autoFocus
+                  aria-label="Service Account name"
+                  onChange={(event) => setAccountName(event.target.value)}
+                />
+              </label>
+              <fieldset className="df-daily-field">
+                <legend>CAPABILITIES</legend>
+                {PUBLIC_API_CAPABILITIES.map((capability) => (
+                  <CheckRow
+                    key={capability.id}
+                    id={`df-capability-${capability.id}`}
+                    label={capability.name}
+                    checked={accountCapabilities.includes(capability.id)}
+                    onChange={(next) => {
+                      setAccountCapabilities((currentCaps) =>
+                        next
+                          ? [...currentCaps, capability.id]
+                          : currentCaps.filter((id) => id !== capability.id),
+                      );
+                    }}
+                  />
+                ))}
+              </fieldset>
+            </V2FormDialog>
+            {layout.stackedRegister ? null : (
+              <div className="df-register-head df-desktop-only">
+                <span>NAME</span>
+                <span>CAPABILITIES</span>
+                <span>STATUS</span>
+                <span />
+              </div>
+            )}
+            {page.serviceAccounts.empty ? (
+              <p className="df-empty">{page.serviceAccounts.emptyCopy}</p>
+            ) : (
+              page.serviceAccounts.rows.map((row) => (
+                <div key={row.id} className="df-register-row" data-testid={`v2-administration-sa-${row.id}`}>
+                  {layout.stackedRegister ? (
+                    <span className="df-project-mobile">
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <div className="df-row-title">{row.name}</div>
+                        <div className="df-mono df-meta">
+                          {row.status}
+                          {row.capabilities !== "—" ? ` · ${row.capabilities}` : ""}
+                        </div>
+                      </span>
+                      <AccountActions
+                        row={row}
+                        onRotate={onRotateAccount}
+                        onRevoke={onRevokeAccount}
+                      />
+                    </span>
+                  ) : (
+                    <>
+                      <span className="df-row-title">{row.name}</span>
+                      <span className="df-mono df-meta">{row.capabilities}</span>
+                      <span className="df-status" data-status={row.status}>
+                        {row.status}
+                      </span>
+                      <AccountActions row={row} onRotate={onRotateAccount} onRevoke={onRevokeAccount} />
+                    </>
+                  )}
+                </div>
+              ))
+            )}
+          </section>
+
+          <section className="df-card df-admin-register" data-testid="v2-administration-webhooks">
+            <div className="df-card-head">
+              <h2 className="df-card-title">Webhook Endpoints</h2>
+              {page.webhookEndpoints.createAllowed ? (
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => {
+                    setActionRefusal(null);
+                    setCreatingEndpoint(true);
+                  }}
+                  className="df-btn"
+                >
+                  New Webhook Endpoint
+                </Button>
+              ) : null}
+            </div>
+            <V2FormDialog
+              open={creatingEndpoint}
+              onOpenChange={setCreatingEndpoint}
+              title="New Webhook Endpoint"
+              description="A URL that receives the chosen events. Its signing secret is shown once, right after it is created."
+              submitLabel={createEndpoint.isPending ? "Creating…" : "Create Webhook Endpoint"}
+              pending={createEndpoint.isPending}
+              canSubmit={Boolean(endpointUrl.trim()) && eventTypes.length > 0}
+              onSubmit={onCreateEndpoint}
+              refusal={actionRefusal}
+              testId="v2-administration-new-webhook-endpoint"
+            >
+              <label className="df-daily-field">
+                URL
+                <input
+                  type="url"
+                  value={endpointUrl}
+                  autoFocus
+                  aria-label="Webhook Endpoint URL"
+                  onChange={(event) => setEndpointUrl(event.target.value)}
+                />
+              </label>
+              <fieldset className="df-daily-field">
+                <legend>EVENT TYPES</legend>
+                {WEBHOOK_EVENT_TYPES.map((type) => (
+                  <CheckRow
+                    key={type}
+                    id={`df-event-${type}`}
+                    label={type}
+                    checked={eventTypes.includes(type)}
+                    onChange={(next) => {
+                      setEventTypes((currentTypes) =>
+                        next
+                          ? [...currentTypes, type]
+                          : currentTypes.filter((value) => value !== type),
+                      );
+                    }}
+                  />
+                ))}
+              </fieldset>
+            </V2FormDialog>
+            {layout.stackedRegister ? null : (
+              <div className="df-register-head df-desktop-only">
+                <span>URL</span>
+                <span>EVENTS</span>
+                <span>STATUS</span>
+                <span />
+              </div>
+            )}
+            {page.webhookEndpoints.empty ? (
+              <p className="df-empty">{page.webhookEndpoints.emptyCopy}</p>
+            ) : (
+              page.webhookEndpoints.rows.map((row) => (
+                <div key={row.id} className="df-register-row" data-testid={`v2-administration-wh-${row.id}`}>
+                  {layout.stackedRegister ? (
+                    <span className="df-project-mobile">
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <div className="df-row-title">{row.url}</div>
+                        <div className="df-mono df-meta">
+                          {row.status} · {row.eventTypes}
+                        </div>
+                      </span>
+                      <EndpointActions
+                        row={row}
+                        onRotate={onRotateEndpoint}
+                        onDisable={onDisableEndpoint}
+                        onEnable={onEnableEndpoint}
+                      />
+                    </span>
+                  ) : (
+                    <>
+                      <span className="df-row-title">{row.url}</span>
+                      <span className="df-mono df-meta">{row.eventTypes}</span>
+                      <span className="df-status" data-status={row.status}>
+                        {row.status}
+                      </span>
+                      <EndpointActions
+                        row={row}
+                        onRotate={onRotateEndpoint}
+                        onDisable={onDisableEndpoint}
+                        onEnable={onEnableEndpoint}
+                      />
+                    </>
+                  )}
+                </div>
+              ))
+            )}
+          </section>
+        </TabsContent>
+
+        <TabsContent value="tracking-policy" className="df-admin-panel" data-testid="v2-administration-panel-tracking-policy">
+          {trackingPolicy.kind === "refusal" || trackingPolicy.kind === "unreadable" ? (
+            <section className="df-card" data-testid="v2-administration-tracking-policy">
+              <div className="df-card-head">
+                <h2 className="df-card-title">Tracking Policy</h2>
+              </div>
+              <p className="df-refusal">
+                {trackingPolicy.kind === "refusal" ? trackingPolicy.refusal : trackingPolicy.note}
+              </p>
+            </section>
+          ) : (
+            <>
+              <section className="df-card df-policy-form" data-testid="v2-administration-tracking-policy">
+                <div className="df-card-head">
+                  <div className="df-card-head-text">
+                    <h2 className="df-card-title">Tracking Policy</h2>
+                    <p className="df-card-sub">{trackingPolicy.footnote}</p>
+                  </div>
+                </div>
+                <div className="df-daily-form">
+                  {trackingPolicy.writeRefusal ? (
+                    <p className="df-refusal">{trackingPolicy.writeRefusal}</p>
+                  ) : null}
+                  <CheckRow
+                    id="df-policy-capture"
+                    label="Capture Activity Evidence"
+                    checked={policyDraft.screenshotsEnabled}
+                    disabled={!trackingPolicy.editable}
+                    onChange={(next) => editPolicy({ screenshotsEnabled: next })}
+                  />
+                  {policyDraft.screenshotsEnabled ? (
+                    <div className="df-policy-group">
+                      <p className="df-policy-hint">
+                        A capture lands at a random moment between these two intervals.
+                      </p>
+                      <div className="df-policy-grid">
+                    <label className="df-daily-field">
+                      Minimum interval (minutes)
+                      <input
+                        type="number"
+                        min={3}
+                        max={15}
+                        value={policyDraft.captureIntervalMinMin}
+                        disabled={!trackingPolicy.editable}
+                        aria-label="Minimum capture interval"
+                        onChange={(event) =>
+                          editPolicy({
+                            captureIntervalMinMin: policyNumber(
+                              event.target.value,
+                              policyDraft.captureIntervalMinMin,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="df-daily-field">
+                      Maximum interval (minutes)
+                      <input
+                        type="number"
+                        min={3}
+                        max={15}
+                        value={policyDraft.captureIntervalMaxMin}
+                        disabled={!trackingPolicy.editable}
+                        aria-label="Maximum capture interval"
+                        onChange={(event) =>
+                          editPolicy({
+                            captureIntervalMaxMin: policyNumber(
+                              event.target.value,
+                              policyDraft.captureIntervalMaxMin,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                      </div>
+                    </div>
+                  ) : null}
+                  <CheckRow
+                    id="df-policy-active-hours"
+                    label="Restrict captures to active hours"
+                    checked={policyDraft.activeHoursEnabled}
+                    disabled={!trackingPolicy.editable}
+                    onChange={(next) => editPolicy({ activeHoursEnabled: next })}
+                  />
+                  {policyDraft.activeHoursEnabled ? (
+                    <div className="df-policy-group">
+                      <div className="df-policy-grid">
+                      <label className="df-daily-field">
+                        Start
+                        <input
+                          type="time"
+                          value={policyDraft.activeHoursStart}
+                          disabled={!trackingPolicy.editable}
+                          aria-label="Active hours start"
+                          onChange={(event) => editPolicy({ activeHoursStart: event.target.value })}
+                        />
+                      </label>
+                      <label className="df-daily-field">
+                        End
+                        <input
+                          type="time"
+                          value={policyDraft.activeHoursEnd}
+                          disabled={!trackingPolicy.editable}
+                          aria-label="Active hours end"
+                          onChange={(event) => editPolicy({ activeHoursEnd: event.target.value })}
+                        />
+                      </label>
+                      </div>
+                    </div>
+                  ) : null}
+                  <CheckRow
+                    id="df-policy-idle"
+                    label="Prompt on idle"
+                    checked={policyDraft.idlePromptEnabled}
+                    disabled={!trackingPolicy.editable}
+                    onChange={(next) => editPolicy({ idlePromptEnabled: next })}
+                  />
+                  {policyDraft.idlePromptEnabled ? (
+                    <div className="df-policy-group">
+                      <div className="df-policy-grid">
+                      <label className="df-daily-field">
+                        Idle timeout (minutes)
+                        <input
+                          type="number"
+                          min={1}
+                          max={60}
+                          value={policyDraft.idleTimeoutMinutes}
+                          disabled={!trackingPolicy.editable}
+                          aria-label="Idle timeout"
+                          onChange={(event) =>
+                            editPolicy({
+                              idleTimeoutMinutes: policyNumber(
+                                event.target.value,
+                                policyDraft.idleTimeoutMinutes,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="df-daily-field">
+                        Auto-stop countdown (seconds)
+                        <input
+                          type="number"
+                          min={15}
+                          max={120}
+                          value={policyDraft.idleCountdownSeconds}
+                          disabled={!trackingPolicy.editable}
+                          aria-label="Idle countdown"
+                          onChange={(event) =>
+                            editPolicy({
+                              idleCountdownSeconds: policyNumber(
+                                event.target.value,
+                                policyDraft.idleCountdownSeconds,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="df-form-actions">
+                  {trackingPolicy.issue ? (
+                    <p className="df-form-note df-refusal-inline">{trackingPolicy.issue}</p>
+                  ) : trackingPolicy.savedNote ? (
+                    <p
+                      className="df-form-note df-policy-saved"
+                      data-motion={POLICY_SAVED_MOTION}
+                      role="status"
+                      data-testid="v2-administration-policy-saved"
+                    >
+                      {trackingPolicy.savedNote}
+                    </p>
+                  ) : (
+                    <p className="df-form-note">
+                      {trackingPolicy.dirty ? "Unsaved changes." : "No change to save."}
+                    </p>
+                  )}
+                  <Button variant="default" type="button" disabled={!trackingPolicy.canSave || saveTrackingPolicy.isPending} onClick={() => { if (!guardWrite()) return; saveTrackingPolicy.mutate(); }} className="df-btn">
+                    {saveTrackingPolicy.isPending ? "Saving…" : "Save Tracking Policy"}
+                  </Button>
+                </div>
+              </section>
+
+              <section className="df-card df-policy-form" data-testid="v2-administration-timezones">
+                <div className="df-card-head">
+                  <div className="df-card-head-text">
+                    <h2 className="df-card-title">Screencasts timezones</h2>
+                    <p className="df-card-sub">
+                      Curate the timezones the Screencasts selector offers.
+                    </p>
+                  </div>
+                </div>
+                <div className="df-daily-form">
+                  <form
+                    className="df-admin-form df-inline-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      onAddTimezone();
+                    }}
+                  >
+                    <label className="df-daily-field">
+                      IANA timezone
+                      <input
+                        type="text"
+                        value={timezoneInput}
+                        placeholder="Europe/Paris"
+                        disabled={!trackingPolicy.editable}
+                        aria-label="IANA timezone"
+                        onChange={(event) => {
+                          setTimezoneInput(event.target.value);
+                          setTimezoneError(null);
+                        }}
+                      />
+                    </label>
+                    <TimezonePicker
+                      zones={timezoneSuggestions(timezoneDraft)}
+                      disabled={!trackingPolicy.editable}
+                      onChoose={(zone) => onAddTimezone(zone)}
+                    />
+                    <Button variant="outline" type="submit" disabled={!trackingPolicy.editable} className="df-btn">
+                      Add
+                    </Button>
+                  </form>
+                  {timezoneError ? <p className="df-refusal">{timezoneError}</p> : null}
+                  {trackingPolicy.timezones.empty ? (
+                    <p className="df-empty">{trackingPolicy.timezones.emptyCopy}</p>
+                  ) : (
+                    trackingPolicy.timezones.rows.map((timezone) => (
+                      <div
+                        key={timezone}
+                        className="df-policy-timezone"
+                        data-testid={`v2-administration-timezone-${timezone}`}
+                      >
+                        <span>{timezone}</span>
+                        <Button variant="outline" type="button" disabled={!trackingPolicy.editable} onClick={() => setTimezoneDraft((current) => removeAllowedTimezone(current, timezone))} className="df-btn">
+                          Remove
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="df-form-actions">
+                  <p className="df-form-note">
+                    {trackingPolicy.timezones.dirty
+                      ? "Unsaved changes."
+                      : "No change to save."}
+                  </p>
+                  <Button variant="default" type="button" disabled={!trackingPolicy.timezones.canSave || saveTimezones.isPending} onClick={() => { if (!guardWrite()) return; saveTimezones.mutate(); }} className="df-btn">
+                    {saveTimezones.isPending ? "Saving…" : "Save timezones"}
+                  </Button>
+                </div>
+              </section>
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="danger-zone" className="df-admin-panel" data-testid="v2-administration-panel-danger-zone">
+          <section className="df-card df-danger-zone" data-testid="v2-administration-danger-zone">
+            <div className="df-card-head">
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Danger zone</h2>
+                <p className="df-card-sub">What cannot be taken back from here. Each action says what it costs before it runs.</p>
+              </div>
+            </div>
+            {page.dangerZone.actions.length === 0 ? (
+              <p className="df-empty">{page.dangerZone.emptyCopy}</p>
+            ) : (
+              page.dangerZone.actions.map((action) => (
+                <div key={action.id} className="df-danger-row">
+                  <div className="df-danger-copy">
+                    <span className="df-row-title">{action.label}</span>
+                    <span className="df-meta">{action.consequence}</span>
+                  </div>
+                  <CancelControl
+                    action={action}
+                    pending={cancelAtPeriodEnd.isPending}
+                    onConfirm={() => {
+                      if (!guardWrite()) return;
+                      cancelAtPeriodEnd.mutate();
+                    }}
+                  />
+                </div>
+              ))
+            )}
+          </section>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -1303,9 +1296,7 @@ function AdministrationSkeleton() {
       testId="v2-administration"
       status="Loading Administration for this Workspace."
     >
-      <SkeletonSection title="Analytics" className="df-analytics-register" tiles={8} />
-      <SkeletonSection title="Activity" className="df-analytics-register" columns={4} rows={3} dataColumns />
-      <SkeletonSection title="Billing" className="df-analytics-register" tiles={4} />
+      <SkeletonSection title="Workspace" className="df-analytics-register" tiles={4} />
     </V2PageSkeleton>
   );
 }
@@ -1341,470 +1332,6 @@ function CheckRow({
   );
 }
 
-/**
- * One card per section, the way every other register in v2 reads: the card head
- * owns the title and its one line of context, a toolbar sits above the data
- * rather than inside it, and figures get their own padded band. A card carries
- * no padding of its own, so each band brings the house 18px gutter.
- */
-type ReportRead = "loading" | "failed" | "ready";
-
-function reportRead(loading: boolean, failed: boolean, data: unknown): ReportRead {
-  if (loading) return "loading";
-  if (failed || data === null) return "failed";
-  return "ready";
-}
-
-function AdministrationAnalytics({
-  analytics,
-  loading,
-  stacked,
-  rangePreset,
-  onRangeChange,
-  recordedTimeRead,
-  screenshotsRead,
-  evidenceQualityRead,
-}: {
-  analytics: AnalyticsModel;
-  loading: boolean;
-  stacked: boolean;
-  rangePreset: AnalyticsRangePreset;
-  onRangeChange: (preset: AnalyticsRangePreset) => void;
-  recordedTimeRead: ReportRead;
-  screenshotsRead: ReportRead;
-  evidenceQualityRead: ReportRead;
-}) {
-  if (analytics.kind !== "ready") {
-    return (
-      <section className="df-card" data-testid="v2-administration-analytics">
-        <div className="df-card-head">
-          <div className="df-card-head-text">
-            <h2 className="df-card-title">Analytics</h2>
-          </div>
-        </div>
-        <p
-          className="df-refusal"
-          data-testid={
-            analytics.kind === "refusal"
-              ? "v2-administration-analytics-refusal"
-              : "v2-administration-analytics-unreadable"
-          }
-        >
-          {analytics.kind === "refusal" ? analytics.refusal : analytics.note}
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <>
-      <section className="df-card" data-testid="v2-administration-analytics">
-        <div className="df-card-head">
-          <div className="df-card-head-text">
-            <h2 className="df-card-title">Analytics</h2>
-            <p className="df-card-sub">Recorded Workspace totals for {analytics.rangeLabel}.</p>
-          </div>
-        </div>
-        <div className="df-toolbar">
-          <Select
-            value={rangePreset}
-            onValueChange={(next) => onRangeChange(next as AnalyticsRangePreset)}
-          >
-            <SelectTrigger
-              className="df-filter-chip df-select-trigger"
-              aria-label="Analytics range"
-              data-active={rangePreset !== "7d" ? "true" : "false"}
-              data-testid="v2-administration-range"
-            >
-              <span className="df-select-prefix">RANGE</span>
-              <SelectValue />
-            </SelectTrigger>
-            {/* Radix portals to document.body, outside `.df-v2`, so the panel
-                carries the class itself or the --df-* tokens do not resolve. */}
-            <SelectContent className="df-v2 df-select-content">
-              {ANALYTICS_RANGE_PRESETS.map((preset) => (
-                <SelectItem key={preset.id} value={preset.id} className="df-select-item">
-                  {preset.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button asChild variant="outline" className="df-btn">
-            <a
-              href={analytics.export.href}
-              download={analytics.export.filename}
-              data-testid="v2-administration-analytics-export"
-            >
-              {analytics.export.label}
-            </a>
-          </Button>
-        </div>
-        {loading ? (
-          <p className="df-empty">Reading analytics for this range…</p>
-        ) : (
-          <FigureBand figures={analytics.overview} testId="v2-administration-overview" />
-        )}
-      </section>
-
-      {loading ? null : (
-        <>
-          <section
-            id="alerts"
-            className="df-card df-analytics-register"
-            data-testid="v2-administration-alerts"
-          >
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Warnings</h2>
-                <p className="df-card-sub">
-                  Operational warnings for this range, including any Device that has stopped reporting.
-                </p>
-              </div>
-            </div>
-            {analytics.alerts.empty ? (
-              <p className="df-empty">{analytics.alerts.emptyCopy}</p>
-            ) : (
-              <>
-                {analytics.alerts.stalledDevices.length > 0 ? (
-                  <>
-                  <p className="df-analytics-group-label">STALLED DEVICES</p>
-                  <AnalyticsRegister
-                    stacked={stacked}
-                    head={["DEVICE", "MEMBER", "LAST SEEN"]}
-                    rows={analytics.alerts.stalledDevices.map((row) => ({
-                      id: row.id,
-                      cells: [row.name, row.who, row.lastSeen],
-                    }))}
-                    empty={false}
-                    emptyCopy=""
-                    testId="v2-administration-alert-device"
-                  />
-                  </>
-                ) : null}
-                {analytics.alerts.highIdle.length > 0 ? (
-                  <>
-                  <p className="df-analytics-group-label">HIGH IDLE</p>
-                  <AnalyticsRegister
-                    stacked={stacked}
-                    head={["MEMBER", "TRACKED", "IDLE"]}
-                    rows={analytics.alerts.highIdle.map((row) => ({
-                      id: row.id,
-                      cells: [row.who, row.tracked, row.idle],
-                    }))}
-                    empty={false}
-                    emptyCopy=""
-                    testId="v2-administration-alert-idle"
-                  />
-                  </>
-                ) : null}
-                {analytics.alerts.runningWithoutEvidence.length > 0 ? (
-                  <>
-                  <p className="df-analytics-group-label">RUNNING WITHOUT EVIDENCE</p>
-                  <AnalyticsRegister
-                    stacked={stacked}
-                    head={["MEMBER", "STARTED"]}
-                    rows={analytics.alerts.runningWithoutEvidence.map((row) => ({
-                      id: row.id,
-                      cells: [row.who, row.started],
-                    }))}
-                    empty={false}
-                    emptyCopy=""
-                    testId="v2-administration-alert-running"
-                  />
-                  </>
-                ) : null}
-              </>
-            )}
-          </section>
-
-          <section className="df-card df-analytics-register" data-testid="v2-administration-activity">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Activity</h2>
-                <p className="df-card-sub">{analytics.activity.footnote}</p>
-              </div>
-            </div>
-            <AnalyticsRegister
-              stacked={stacked}
-              head={["MEMBER", "TRACKED", "IDLE", "IDLE EVENTS"]}
-              rows={analytics.activity.rows.map((row) => ({
-                id: row.userId,
-                cells: [row.who, row.tracked, row.idle, row.idleEvents],
-              }))}
-              empty={analytics.activity.empty}
-              emptyCopy={analytics.activity.emptyCopy}
-              testId="v2-administration-activity"
-            />
-          </section>
-
-          <section className="df-card df-analytics-register" data-testid="v2-administration-coverage">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Evidence coverage</h2>
-                <p className="df-card-sub">
-                  How much of the tracked time carries Activity Evidence. Observational only.
-                </p>
-              </div>
-            </div>
-            <FigureBand figures={analytics.coverage.summary} testId="v2-administration-coverage" />
-            <AnalyticsRegister
-              stacked={stacked}
-              head={["MEMBER", "TRACKED", "ENTRIES", "EVIDENCE", "COVERAGE"]}
-              rows={analytics.coverage.rows.map((row) => ({
-                id: row.userId,
-                cells: [row.who, row.tracked, row.entries, row.evidence, row.coverage],
-              }))}
-              empty={analytics.coverage.empty}
-              emptyCopy={analytics.coverage.emptyCopy}
-              testId="v2-administration-coverage-row"
-            />
-          </section>
-
-          <section className="df-card df-analytics-register" data-testid="v2-administration-devices">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Workspace Devices</h2>
-                <p className="df-card-sub">Every Device paired in this Workspace.</p>
-              </div>
-            </div>
-            <AnalyticsRegister
-              stacked={stacked}
-              head={["DEVICE", "MEMBER", "PLATFORM", "LAST SEEN", "STATUS"]}
-              rows={analytics.devices.rows.map((row) => ({
-                id: row.id,
-                cells: [row.name, row.who, row.platform, row.lastSeen, row.status],
-              }))}
-              empty={analytics.devices.empty}
-              emptyCopy={analytics.devices.emptyCopy}
-              testId="v2-administration-device"
-            />
-          </section>
-
-          {recordedTimeRead === "loading" ? null : (
-          <section className="df-card df-analytics-register" data-testid="v2-administration-recorded-time">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Recorded time</h2>
-                {recordedTimeRead === "ready" ? (
-                  <p className="df-card-sub">{analytics.recordedTime.footnote}</p>
-                ) : null}
-              </div>
-            </div>
-            {recordedTimeRead === "failed" ? (
-              <p className="df-refusal">
-                Recorded time could not be read for this range. Nothing here is a count of zero.
-              </p>
-            ) : analytics.recordedTime.empty ? (
-              <p className="df-empty">{analytics.recordedTime.emptyCopy}</p>
-            ) : (
-              <>
-                <p className="df-analytics-group-label">MEMBERS</p>
-                <AnalyticsRegister
-                  stacked={stacked}
-                  head={["MEMBER", "TRACKED", "IDLE", "ENTRIES"]}
-                  rows={analytics.recordedTime.rows.map((row) => ({
-                    id: row.id,
-                    cells: [row.who, row.tracked, row.idle, row.entries],
-                  }))}
-                  empty={analytics.recordedTime.rows.length === 0}
-                  emptyCopy="No tracked time by Member in this range."
-                  testId="v2-administration-recorded-time-member"
-                />
-                <p className="df-analytics-group-label">PROJECTS</p>
-                <AnalyticsRegister
-                  stacked={stacked}
-                  head={["PROJECT", "TRACKED", "ENTRIES"]}
-                  rows={analytics.recordedTime.projects.map((row) => ({
-                    id: row.id,
-                    cells: [row.name, row.tracked, row.entries],
-                  }))}
-                  empty={analytics.recordedTime.projects.length === 0}
-                  emptyCopy="No tracked time by Project in this range."
-                  testId="v2-administration-recorded-time-project"
-                />
-                <p className="df-analytics-group-label">TASKS</p>
-                <AnalyticsRegister
-                  stacked={stacked}
-                  head={["TASK", "TRACKED"]}
-                  rows={analytics.recordedTime.tasks.map((row) => ({
-                    id: row.id,
-                    cells: [row.name, row.tracked],
-                  }))}
-                  empty={analytics.recordedTime.tasks.length === 0}
-                  emptyCopy="No tracked time by Task in this range."
-                  testId="v2-administration-recorded-time-task"
-                />
-                <p className="df-analytics-group-label">DAYS</p>
-                <AnalyticsRegister
-                  stacked={stacked}
-                  head={["DAY", "TRACKED"]}
-                  rows={analytics.recordedTime.days.map((row) => ({
-                    id: row.id,
-                    cells: [row.day, row.tracked],
-                  }))}
-                  empty={analytics.recordedTime.days.length === 0}
-                  emptyCopy="No tracked time by day in this range."
-                  testId="v2-administration-recorded-time-day"
-                />
-              </>
-            )}
-          </section>
-          )}
-
-          {screenshotsRead === "loading" ? null : (
-          <section className="df-card df-analytics-register" data-testid="v2-administration-screenshots">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Activity Evidence</h2>
-                <p className="df-card-sub">Captures in this range. Observational only.</p>
-              </div>
-            </div>
-            {screenshotsRead === "failed" ? (
-              <p className="df-refusal">
-                Activity Evidence could not be read for this range. Nothing here is a count of zero.
-              </p>
-            ) : (
-            <>
-            <FigureBand figures={analytics.screenshots.summary} testId="v2-administration-screenshots" />
-            {analytics.screenshots.empty ? (
-              <p className="df-empty">{analytics.screenshots.emptyCopy}</p>
-            ) : (
-              <>
-                <p className="df-analytics-group-label">BY MEMBER</p>
-                <AnalyticsRegister
-                  stacked={stacked}
-                  head={["MEMBER", "EVIDENCE"]}
-                  rows={analytics.screenshots.byMember.map((row) => ({
-                    id: row.id,
-                    cells: [row.who, row.evidence],
-                  }))}
-                  empty={analytics.screenshots.byMember.length === 0}
-                  emptyCopy="No Activity Evidence by Member in this range."
-                  testId="v2-administration-screenshot-member"
-                />
-                <p className="df-analytics-group-label">BY HOUR</p>
-                <AnalyticsRegister
-                  stacked={stacked}
-                  head={["HOUR", "EVIDENCE"]}
-                  rows={analytics.screenshots.hours.map((row) => ({
-                    id: row.id,
-                    cells: [row.hour, row.evidence],
-                  }))}
-                  empty={analytics.screenshots.hours.length === 0}
-                  emptyCopy="No hourly Activity Evidence in this range."
-                  testId="v2-administration-screenshot-hour"
-                />
-              </>
-            )}
-            </>
-            )}
-          </section>
-          )}
-
-          {evidenceQualityRead === "loading" ? null : (
-          <section className="df-card df-analytics-register" data-testid="v2-administration-evidence-quality">
-            <div className="df-card-head">
-              <div className="df-card-head-text">
-                <h2 className="df-card-title">Evidence quality</h2>
-                {evidenceQualityRead === "ready" ? (
-                  <p className="df-card-sub">{analytics.evidenceQuality.footnote}</p>
-                ) : null}
-              </div>
-            </div>
-            {evidenceQualityRead === "failed" ? (
-              <p className="df-refusal">
-                Evidence quality could not be read for this range. Nothing here is a count of zero.
-              </p>
-            ) : (
-            <AnalyticsRegister
-              stacked={stacked}
-              head={["MEMBER", "GRADE", "EVIDENCE", "EVENTS"]}
-              rows={analytics.evidenceQuality.rows.map((row) => ({
-                id: row.id,
-                cells: [row.who, row.grade, row.evidence, row.events],
-              }))}
-              empty={analytics.evidenceQuality.empty}
-              emptyCopy={analytics.evidenceQuality.emptyCopy}
-              testId="v2-administration-evidence-quality"
-            />
-            )}
-          </section>
-          )}
-        </>
-      )}
-    </>
-  );
-}
-
-function FigureBand({ figures, testId }: { figures: AnalyticsFigure[]; testId: string }) {
-  if (figures.length === 0) return null;
-  return (
-    <div className="df-figure-band" data-testid={testId}>
-      {figures.map((figure) => (
-        <div key={figure.label} className="df-analytics-figure">
-          <span className="df-analytics-figure-label">{figure.label}</span>
-          <span className="df-analytics-figure-value">{figure.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function AnalyticsRegister({
-  stacked,
-  head,
-  rows,
-  empty,
-  emptyCopy,
-  testId,
-}: {
-  stacked: boolean;
-  head: string[];
-  rows: Array<{ id: string; cells: string[] }>;
-  empty: boolean;
-  emptyCopy: string;
-  testId: string;
-}) {
-  if (empty) return <p className="df-empty">{emptyCopy}</p>;
-  return (
-    <>
-      {stacked ? null : (
-        <div className="df-register-head df-desktop-only" data-columns={head.length}>
-          {head.map((label) => (
-            <span key={label}>{label}</span>
-          ))}
-        </div>
-      )}
-      {rows.map((row) => (
-        <div
-          key={row.id}
-          className="df-register-row"
-          data-columns={head.length}
-          data-testid={`${testId}-${row.id}`}
-        >
-          {stacked ? (
-            <span className="df-project-mobile">
-              <span style={{ minWidth: 0, flex: 1 }}>
-                <div className="df-row-title">{row.cells[0]}</div>
-                <div className="df-mono df-meta">{row.cells.slice(1).join(" · ")}</div>
-              </span>
-            </span>
-          ) : (
-            <>
-              <span className="df-row-title">{row.cells[0]}</span>
-              {row.cells.slice(1).map((cell, index) => (
-                <span key={head[index + 1]} className="df-mono df-meta">
-                  {cell}
-                </span>
-              ))}
-            </>
-          )}
-        </div>
-      ))}
-    </>
-  );
-}
-
 function AccountActions({
   row,
   onRotate,
@@ -1822,9 +1349,16 @@ function AccountActions({
         </Button>
       ) : null}
       {row.revoke ? (
-        <Button variant="outline" type="button" onClick={() => onRevoke(row.id)} className="df-btn">
-          Revoke
-        </Button>
+        <DestructiveConfirm
+          label="Revoke"
+          title={`Revoke ${row.name}`}
+          consequence="Its key stops working at once, and every call the integration makes with it is refused. A revoked Service Account cannot be restored."
+          confirmLabel="Revoke Service Account"
+          keepLabel="Keep Service Account"
+          pending={false}
+          testId={`v2-administration-sa-revoke-${row.id}`}
+          onConfirm={() => onRevoke(row.id)}
+        />
       ) : null}
     </span>
   );
@@ -1960,6 +1494,59 @@ function CancelControl({
             onClick={onConfirm}
           >
             {pending ? "Cancelling…" : action.label}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/**
+ * A destructive row action asks first (#281): the trigger reads as destructive,
+ * and the dismissal is focused so the keyboard does not agree by reflex.
+ */
+function DestructiveConfirm({
+  label,
+  title,
+  consequence,
+  confirmLabel,
+  keepLabel,
+  pending,
+  testId,
+  onConfirm,
+}: {
+  label: string;
+  title: string;
+  consequence: string;
+  confirmLabel: string;
+  keepLabel: string;
+  pending: boolean;
+  testId: string;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button type="button" variant="destructiveOutline" className="df-btn" disabled={pending} data-testid={testId}>
+          {label}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent className="df-v2 df-alert">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{consequence}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel className="df-btn" autoFocus>
+            {keepLabel}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            disabled={pending}
+            data-testid={`${testId}-confirm`}
+            onClick={onConfirm}
+          >
+            {confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

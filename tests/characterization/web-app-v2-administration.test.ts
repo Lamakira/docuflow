@@ -61,6 +61,16 @@ const pageSource = readFileSync(
   "utf8",
 );
 
+const analyticsSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Analytics.tsx"),
+  "utf8",
+);
+
+const selectSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Select.tsx"),
+  "utf8",
+);
+
 const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/tokens.css"),
   "utf8",
@@ -90,14 +100,15 @@ describe("Administration routing (#193)", () => {
       "ADMINISTRATION",
     ]);
     expect(appSource).toContain("V2AdministrationPage");
-    expect(appSource).toMatch(/path="\/administration"/);
+    expect(appSource).toMatch(/path="\/administration\/:tab\?"/);
     expect(appSource).not.toContain('data-testid="v2-placeholder"');
   });
 
   it("rewrites v1 /admin here under the v2 flag", () => {
     expect(matchV2Route("/admin")).toMatchObject({ kind: "administration", href: "/administration" });
     expect(matchV2Route("/admin/create")).toMatchObject({ kind: "administration", href: "/administration" });
-    expect(matchV2Route("/admin/analytics")).toMatchObject({ kind: "administration", href: "/administration" });
+    // v1 Analytics is its own destination now (#281), not a section of this one.
+    expect(matchV2Route("/admin/analytics")).toMatchObject({ kind: "analytics", href: "/analytics" });
     expect(appSource).toMatch(/path="\/admin"/);
   });
 });
@@ -145,7 +156,7 @@ describe("Administration from operator routes (#193)", () => {
     );
     expect(refused.kind).toBe("refusal");
     if (refused.kind !== "refusal") return;
-    expect(refused.refusal).toBe("Administration could not be opened for your Membership in this Workspace.");
+    expect(refused.refusal).toBe("Analytics could not be opened for your Membership in this Workspace.");
     expect(refused.refusal).not.toContain("User Test");
     expect(refused.refusal).not.toContain("Capability");
   });
@@ -546,7 +557,8 @@ describe("Administration analytics (#212)", () => {
 
     expect(page.kind).toBe("refusal");
     if (page.kind !== "refusal") return;
-    expect(page.refusal).toBe("Administration is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.");
+    // Analytics is its own destination (#281), so the refusal names it.
+    expect(page.refusal).toBe("Analytics is open to the Owner and Administrators. Your Workspace Role is Member. Sam Lee (Owner) can change it.");
     expect(page.refusal.toLowerCase()).not.toContain("permission denied");
     expect(page.refusal.toLowerCase()).not.toContain("403");
   });
@@ -555,7 +567,7 @@ describe("Administration analytics (#212)", () => {
     const analytics = composeAnalytics(emptyAnalytics({ refused: true }));
     expect(analytics.kind).toBe("refusal");
     if (analytics.kind !== "refusal") return;
-    expect(analytics.refusal).toBe("Administration could not be opened for your Membership in this Workspace.");
+    expect(analytics.refusal).toBe("Analytics could not be opened for your Membership in this Workspace.");
 
     const policy = composeTrackingPolicyEditor(editorInput({ refused: true }));
     expect(policy.kind).toBe("refusal");
@@ -811,8 +823,9 @@ describe("Administration analytics (#212)", () => {
       { id: "prj-1", name: "Harbor", tracked: "10.0 h", entries: "4" },
     ]);
     expect(page.recordedTime.tasks).toEqual([{ id: "task-1", name: "Survey", tracked: "2.0 h" }]);
-    expect(page.recordedTime.days).toEqual([{ id: "2026-09-10", day: "2026-09-10", tracked: "10.0 h" }]);
-    expect(page.recordedTime.footnote.toLowerCase()).not.toContain("rank");
+    // The day bucket reads as the calendar day it names (#281).
+    expect(page.recordedTime.days).toEqual([{ id: "2026-09-10", day: "THU 10 SEP", tracked: "10.0 h" }]);
+    expect(page.recordedTime.measures.toLowerCase()).not.toContain("rank");
     expect(JSON.stringify(page.recordedTime)).not.toContain("score");
 
     expect(page.screenshots.summary).toEqual([
@@ -921,10 +934,12 @@ describe("Administration analytics (#212)", () => {
       "idleEvents",
     ]);
     expect(pageSource).not.toMatch(/IDLE SHARE|idleShare|score|ranking/i);
+    expect(analyticsSource).not.toMatch(/IDLE SHARE|idleShare|score|ranking/i);
   });
 
   it("does not decorate analytics with animated charts or counting figures", () => {
     expect(pageSource).not.toMatch(/recharts|chart\.js|ResponsiveContainer/i);
+    expect(analyticsSource).not.toMatch(/recharts|chart\.js|ResponsiveContainer/i);
     expect(rule(".df-analytics-figure")).toMatch(/animation:\s*none/);
     expect(rule(".df-analytics-figure")).toMatch(/transition:\s*none/);
   });
@@ -1080,8 +1095,10 @@ describe("Administration controls (#212)", () => {
     // The old placeholder was a bare card with a hardcoded height.
     expect(pageSource).not.toContain("minHeight: 280");
     // Section titles are known before any fetch, so the wait states them.
-    expect(pageSource).toContain('<SkeletonSection title="Analytics"');
-    expect(pageSource).toContain('<SkeletonSection title="Billing"');
+    expect(pageSource).toContain('<SkeletonSection title="Workspace"');
+    expect(analyticsSource).toContain('from "./V2Skeleton"');
+    expect(analyticsSource).toContain('<SkeletonSection title="Analytics"');
+    expect(analyticsSource).toContain('<SkeletonSection title="Warnings"');
     // The wait reuses the real bands and rows, so nothing moves on arrival.
     expect(skeletonSource).toContain('className="df-figure-band"');
     expect(skeletonSource).toContain('className="df-register-row"');
@@ -1104,13 +1121,20 @@ describe("Administration controls (#212)", () => {
     );
   });
 
-  it("uses the shadcn select for the range, not a native one", () => {
-    expect(pageSource).toContain('from "@/components/ui/select"');
-    expect(pageSource).not.toContain("<select");
-    expect(pageSource).not.toContain("<option");
+  it("uses the v2 filter select for the range and the CRM field type, not a native one", () => {
+    for (const source of [pageSource, analyticsSource]) {
+      expect(source).toContain('from "./V2Select"');
+      expect(source).toContain("<V2FilterSelect");
+      // Every select goes through V2FilterSelect, never the bare shadcn parts.
+      expect(source).not.toContain('from "@/components/ui/select"');
+      expect(source).not.toContain("<select");
+      expect(source).not.toContain("<option");
+    }
+    expect(analyticsSource).toContain('ariaLabel="Analytics range"');
+    expect(pageSource).toContain('ariaLabel="CRM field type"');
     // Radix portals the panel to document.body, outside `.df-v2`, so it must
     // carry the class itself or every --df-* token stops resolving.
-    expect(pageSource).toContain('className="df-v2 df-select-content"');
+    expect(selectSource).toContain('className="df-v2 df-select-content"');
     expect(rule(".df-v2.df-select-content")).toMatch(/var\(--df-card-white\)/);
     // shadcn's own `h-9 w-full border-input` must lose to the chip.
     expect(rule(".df-v2 .df-select-trigger")).toMatch(/width:\s*auto/);
@@ -1231,9 +1255,9 @@ describe("The Billing card reads as one card (#245, F1)", () => {
     expect(pageSource).not.toMatch(/onClick=\{\(\) => cancelAtPeriodEnd\.mutate\(\)\}/);
 
     // The write gate still runs on the press that actually cancels.
-    const confirmBody = pageSource.slice(pageSource.indexOf("onConfirm={() => {"));
-    expect(confirmBody.slice(0, 200)).toContain("if (!guardWrite()) return;");
-    expect(confirmBody.slice(0, 200)).toContain("cancelAtPeriodEnd.mutate()");
+    const confirmBody = pageSource.slice(pageSource.indexOf("<CancelControl"));
+    expect(confirmBody.slice(0, 320)).toContain("if (!guardWrite()) return;");
+    expect(confirmBody.slice(0, 320)).toContain("cancelAtPeriodEnd.mutate()");
   });
 
   it("puts the entitlement status in the figure band, in the domain's words", () => {

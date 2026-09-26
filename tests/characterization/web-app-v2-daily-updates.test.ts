@@ -79,7 +79,7 @@ describe("Team Daily Update routing (#209)", () => {
     ]);
     expect(matchV2Route("/daily-update").kind).toBe("daily-update");
     expect(matchV2Route("/admin").kind).toBe("administration");
-    expect(matchV2Route("/admin/analytics").kind).toBe("administration");
+    expect(matchV2Route("/admin/analytics").kind).toBe("analytics");
     expect(appSource).toContain("V2TeamDailyUpdatesPage");
     expect(appSource).toMatch(/path="\/daily-updates"/);
     expect(appSource).toMatch(/path="\/admin\/daily-updates"/);
