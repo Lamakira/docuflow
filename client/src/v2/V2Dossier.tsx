@@ -48,7 +48,15 @@ import { meterTone, swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { composeBudgetForm, projectBudgetDraft, type ProjectBudgetDraft } from "./projects";
 import { TASK_STATUS_OPTIONS } from "./tasks";
-import { memberName } from "./today";
+import { memberName, projectHref } from "./today";
+import { formatFileSize, projectFileHref } from "./fileViewer";
+import { projectFilesPath } from "./projectDocumentation";
+import { V2UploadDialog, fileTitle, storeUpload } from "./V2UploadDialog";
+
+/** What `GET /api/projects/:projectId/files` answers (#278). */
+type ProjectFileRecord = { id: string; name: string; fileName: string; fileSize: number | null };
+
+type ProjectFileRow = { id: string; title: string; meta: string; href: string };
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2EmptyState } from "./V2EmptyState";
@@ -270,6 +278,7 @@ export function V2DossierPage() {
   const [tagName, setTagName] = useState("");
   const [budgetDraft, setBudgetDraft] = useState<ProjectBudgetDraft>(projectBudgetDraft(null));
   const [creatingDocument, setCreatingDocument] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const [documentName, setDocumentName] = useState("");
   const [creatingNote, setCreatingNote] = useState(false);
   const [creatingReminder, setCreatingReminder] = useState(false);
@@ -302,6 +311,24 @@ export function V2DossierPage() {
         res.json(),
       ),
   });
+
+  const { data: projectFileRecords = [] } = useQuery<ProjectFileRecord[]>({
+    queryKey: [projectRecordId ? projectFilesPath(projectRecordId) : "project-files"],
+    enabled: Boolean(projectRecordId),
+  });
+  const projectFiles: ProjectFileRow[] = projectRecordId
+    ? projectFileRecords.map((file) => ({
+        id: file.id,
+        title: file.name,
+        meta: ["FILE", formatFileSize(file.fileSize)].filter(Boolean).join(" · "),
+        href: projectFileHref({
+          projectId: projectRecordId,
+          id: file.id,
+          name: file.name,
+          back: `${projectHref(projectId)}/documents`,
+        }),
+      }))
+    : [];
 
   const { data: dailyUpdates } = useQuery<DailyUpdatesQuery>({
     queryKey: ["/api/admin/daily-updates", projectId],
@@ -484,6 +511,26 @@ export function V2DossierPage() {
       setDocumentName("");
       setWriteRefusal(null);
       if (created?.id) navigate(`/document/${created.id}`);
+    },
+    onError: (error: Error) => refuseWrite(error.message, "Manage Project Documents"),
+  });
+
+  const uploadProjectFile = useMutation({
+    mutationFn: async (file: File) => {
+      if (!projectRecordId) throw new Error("This Project has no Documents yet.");
+      const objectPath = await storeUpload(file);
+      return apiRequest("POST", projectFilesPath(projectRecordId), {
+        name: fileTitle(file),
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type || "application/octet-stream",
+        storagePath: objectPath,
+      });
+    },
+    onSuccess: () => {
+      if (projectRecordId) queryClient.invalidateQueries({ queryKey: [projectFilesPath(projectRecordId)] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"] });
+      setWriteRefusal(null);
     },
     onError: (error: Error) => refuseWrite(error.message, "Manage Project Documents"),
   });
@@ -994,6 +1041,20 @@ export function V2DossierPage() {
         </label>
       </V2FormDialog>
 
+      <V2UploadDialog
+        open={uploadingFiles}
+        onOpenChange={(open) => {
+          setUploadingFiles(open);
+          if (!open) setWriteRefusal(null);
+        }}
+        description="A Project File belongs to this Project and is listed with its Project Documents, visible to Members assigned to it."
+        upload={(file) => uploadProjectFile.mutateAsync(file)}
+        pending={uploadProjectFile.isPending}
+        beforeUpload={() => refuseWrite()}
+        refusal={writeRefusal}
+        testId="v2-dossier-upload-file"
+      />
+
       <V2FormDialog
         open={creatingNote}
         onOpenChange={(open) => {
@@ -1113,7 +1174,7 @@ export function V2DossierPage() {
       </V2FormDialog>
 
       <div className="df-dossier-body">
-        {writeRefusal && !creatingDocument && !creatingNote && !creatingReminder ? (
+        {writeRefusal && !creatingDocument && !creatingNote && !creatingReminder && !uploadingFiles ? (
           <p className="df-refusal">{writeRefusal}</p>
         ) : null}
         {dossier.identity ? (
@@ -1139,6 +1200,11 @@ export function V2DossierPage() {
               },
               onStartTimer,
               onNewDocument,
+              projectFiles,
+              onUploadFile: () => {
+                setWriteRefusal(null);
+                setUploadingFiles(true);
+              },
               budgetDraft,
               setBudgetDraft,
               onSaveBudget,
@@ -1198,6 +1264,8 @@ function renderDossierTab(props: {
   onStartTask: (taskId: string) => void;
   onStartTimer: () => void;
   onNewDocument: () => void;
+  projectFiles: ProjectFileRow[];
+  onUploadFile: () => void;
   budgetDraft: ProjectBudgetDraft;
   setBudgetDraft: (draft: ProjectBudgetDraft) => void;
   onSaveBudget: (event: FormEvent) => void;
@@ -1941,11 +2009,15 @@ function DossierDocuments({
   onDuplicateDocument,
   onMoveDocument,
   onNewDocument,
+  projectFiles,
+  onUploadFile,
 }: {
   dossier: DossierModel;
   onDuplicateDocument: (id: string) => void;
   onMoveDocument: (id: string, parentId: string | null, position: number) => void;
   onNewDocument: () => void;
+  projectFiles: ProjectFileRow[];
+  onUploadFile: () => void;
 }) {
   return (
     <section className="df-card">
@@ -1953,6 +2025,16 @@ function DossierDocuments({
         <h2 className="df-card-title">Project Documents</h2>
         <span className="df-cluster">
           <span className="df-count-chip">{dossier.documents.count} DOCS</span>
+          {projectFiles.length > 0 ? (
+            <span className="df-count-chip">
+              {projectFiles.length} {projectFiles.length === 1 ? "FILE" : "FILES"}
+            </span>
+          ) : null}
+          {dossier.documents.canCreate ? (
+            <Button variant="outline" type="button" onClick={onUploadFile} className="df-btn">
+              Upload File
+            </Button>
+          ) : null}
           {dossier.documents.canCreate && !dossier.documents.empty ? (
             <Button variant="outline" type="button" onClick={onNewDocument} className="df-btn">
               New Document
@@ -1960,6 +2042,18 @@ function DossierDocuments({
           ) : null}
         </span>
       </div>
+      {projectFiles.map((file) => (
+        <Link
+          key={file.id}
+          href={file.href}
+          className="df-doc-row df-file-row"
+          data-motion={FILE_OPEN_MOTION}
+          data-testid={`v2-dossier-project-file-${file.id}`}
+        >
+          <span className="df-row-title">{file.title}</span>
+          <span className="df-mono df-meta">{file.meta}</span>
+        </Link>
+      ))}
       {dossier.documents.empty ? (
         <DossierEmptyStateView
           state={dossier.documents.emptyState}

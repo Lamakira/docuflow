@@ -45,9 +45,6 @@ export function V2AuthenticatedApp() {
           <Route path="/documents/upload">
             <Redirect to="/documents?upload=1" />
           </Route>
-          <Route path="/documents/access">
-            <Redirect to="/documents" />
-          </Route>
           <Route path="/documents/:id" component={V2DocumentPage} />
           <Route path="/company-documents/:id/edit" component={V2DocumentPage} />
           <Route path="/company-documents/:id/view" component={V2DocumentPage} />

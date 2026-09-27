@@ -203,6 +203,7 @@ describe("migration journal", () => {
       "0032_concerned_ultimates",
       "0033_yummy_crusher_hogan",
       "0034_kind_fat_cobra",
+      "0035_perpetual_tattoo",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -245,6 +246,7 @@ describe("migration journal", () => {
       { version: "0032_concerned_ultimates", baselined: false },
       { version: "0033_yummy_crusher_hogan", baselined: false },
       { version: "0034_kind_fat_cobra", baselined: false },
+      { version: "0035_perpetual_tattoo", baselined: false },
     ]);
   });
 

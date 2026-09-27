@@ -10,6 +10,7 @@ import {
   composeProjectDocumentation,
   documentationFilterLabels,
   documentationRegisterPath,
+  projectFilesPath,
   readDocumentationFilters,
   writeDocumentationFilters,
   DOCUMENTATION_OPTIONS,
@@ -21,6 +22,7 @@ import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { useV2Chrome } from "./V2Shell";
 import { V2FormDialog } from "./V2FormDialog";
+import { V2UploadDialog, fileTitle, storeUpload } from "./V2UploadDialog";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { V2RegisterPager } from "./V2RegisterPager";
 import { Button } from "@/components/ui/button";
@@ -36,6 +38,14 @@ type DocumentationPage = {
     project: Project;
     documentationEnabled: boolean;
     documents: Array<Pick<Document, "id" | "title" | "projectId" | "parentId" | "createdById" | "createdAt" | "updatedAt">>;
+    files?: Array<{
+      id: string;
+      name: string;
+      projectId: string;
+      uploadedById: string | null;
+      createdAt: string | null;
+      updatedAt: string | null;
+    }>;
   }>;
   total: number;
   projects: Array<{ id: string; name: string; documentationEnabled: boolean }>;
@@ -61,7 +71,7 @@ export function V2ProjectDocumentationPage() {
   const [filterQuery, setFilterQuery] = useState(filters.q);
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [createMode, setCreateMode] = useState<"document" | "project" | null>(null);
+  const [createMode, setCreateMode] = useState<"document" | "project" | "upload" | null>(null);
   const [name, setName] = useState("");
   const [targetProjectId, setTargetProjectId] = useState<string>(V2_SELECT_NONE);
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
@@ -143,6 +153,14 @@ export function V2ProjectDocumentationPage() {
         ? users.find((member) => member.id === document.createdById) ?? null
         : null,
     })),
+    files: (page?.data ?? []).flatMap((entry) => entry.files ?? []).map((file) => ({
+      id: file.id,
+      name: file.name,
+      projectId: file.projectId,
+      updatedAt: file.updatedAt,
+      createdAt: file.createdAt,
+      createdBy: file.uploadedById ? users.find((member) => member.id === file.uploadedById) ?? null : null,
+    })),
     expandedProjectIds,
     selectedProjectId,
     filterQuery: filters.q,
@@ -196,6 +214,30 @@ export function V2ProjectDocumentationPage() {
     },
   });
 
+  const uploadFile = useMutation({
+    mutationFn: async (file: File) => {
+      if (!selectedDocumentProjectId) throw new Error("Select a Project first.");
+      const objectPath = await storeUpload(file);
+      return apiRequest("POST", projectFilesPath(selectedDocumentProjectId), {
+        name: fileTitle(file),
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type || "application/octet-stream",
+        storagePath: objectPath,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"] });
+      if (selectedDocumentProjectId) {
+        queryClient.invalidateQueries({ queryKey: [projectFilesPath(selectedDocumentProjectId)] });
+      }
+      setWriteRefusal(null);
+    },
+    onError: (error: Error) => {
+      refuseWrite(error.message);
+    },
+  });
+
   // The control creates a row in `projects`, and the screen says so (#245, F4).
   const createProject = useMutation({
     mutationFn: (projectName: string) =>
@@ -226,7 +268,7 @@ export function V2ProjectDocumentationPage() {
     );
   }
 
-  function openCreate(mode: "document" | "project") {
+  function openCreate(mode: "document" | "project" | "upload") {
     setName("");
     setWriteRefusal(null);
     setTargetProjectId(selectedProjectId ?? V2_SELECT_NONE);
@@ -272,6 +314,9 @@ export function V2ProjectDocumentationPage() {
             <Button variant="outline" type="button" onClick={() => openCreate("project")} className="df-btn">
               New project
             </Button>
+            <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+              Upload File
+            </Button>
             <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
               New Document
             </Button>
@@ -279,7 +324,7 @@ export function V2ProjectDocumentationPage() {
         </header>
 
         <V2FormDialog
-          open={createMode !== null}
+          open={createMode === "document" || createMode === "project"}
           onOpenChange={(open) => {
             if (!open) setCreateMode(null);
           }}
@@ -320,6 +365,31 @@ export function V2ProjectDocumentationPage() {
             </label>
           ) : null}
         </V2FormDialog>
+
+        <V2UploadDialog
+          open={createMode === "upload"}
+          onOpenChange={(open) => {
+            if (!open) setCreateMode(null);
+          }}
+          description="A Project File belongs to one Project and is listed with its Project Documents, visible to Members assigned to that Project."
+          upload={(file) => uploadFile.mutateAsync(file)}
+          pending={uploadFile.isPending}
+          canUpload={Boolean(selectedDocumentProjectId)}
+          beforeUpload={() => refuseWrite()}
+          refusal={writeRefusal}
+          testId="v2-project-documentation-upload"
+        >
+          <label className="df-daily-field">
+            PROJECT
+            <V2FilterSelect
+              label=""
+              ariaLabel="Project"
+              value={targetProjectId}
+              options={projectOptions}
+              onChange={setTargetProjectId}
+            />
+          </label>
+        </V2UploadDialog>
         {writeRefusal && !createMode ? <p className="df-refusal">{writeRefusal}</p> : null}
 
         <div className="df-filter-bar">

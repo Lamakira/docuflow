@@ -50,6 +50,8 @@ export interface FinalizeUploadInput {
   fileSize?: number | null;
   uploadedById: string;
   folderId?: string | null;
+  /** A Project File (#278): listed with that Project's Documents. */
+  projectId?: string | null;
   description?: string | null;
 }
 
@@ -117,6 +119,7 @@ class KnowledgeObjectStorage implements KnowledgeObjectStoragePort {
       mimeType: input.mimeType,
       storagePath: objectPath,
       folderId: input.folderId ?? null,
+      projectId: input.projectId ?? null,
       uploadedById: input.uploadedById,
       scanStatus: "uploaded",
     });

@@ -1352,6 +1352,23 @@ button.df-activity-row {
   color: var(--df-muted-ink);
 }
 
+/* Manage access (#278): the Members a Restricted item names, scrolling inside
+   the dialog rather than pushing its actions off screen. */
+.df-access-members {
+  display: grid;
+  gap: var(--df-space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.df-access-members legend {
+  padding: 0;
+  margin-bottom: var(--df-space-2);
+}
+
 /* Skeleton — the shadcn control wearing v2 tokens.
    A destination's section titles are known before any fetch; only the values
    are not. So the skeleton carries the real geometry and only the values are

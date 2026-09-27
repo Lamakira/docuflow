@@ -383,12 +383,17 @@ export const opportunityTerminalStages = ["won", "lost"] as const;
 export type OpportunityTerminalStage = typeof opportunityTerminalStages[number];
 
 /**
- * Document Access for Workspace Documents and Files. Defaults to everyone in
- * the Workspace. Role/member folder restriction is a later ticket.
+ * Document Access levels on a Workspace Document, File, or Folder (#278).
+ * `workspace` is Everyone and also what an item inside a Folder takes by
+ * default: the Folder's access still applies, so the item is never more open
+ * than the Folder it sits in. `restricted` names Members in
+ * `document_access_members`; `administrators` is the Owner and Administrators.
  */
-export const documentAccessValues = ["workspace"] as const;
+export const documentAccessValues = ["workspace", "restricted", "administrators"] as const;
 export type DocumentAccess = (typeof documentAccessValues)[number];
 export const DOCUMENT_ACCESS_WORKSPACE: DocumentAccess = "workspace";
+export const DOCUMENT_ACCESS_RESTRICTED: DocumentAccess = "restricted";
+export const DOCUMENT_ACCESS_ADMINISTRATORS: DocumentAccess = "administrators";
 
 /**
  * Fail-closed File scan (#116, ADR-0012). Existing Files are `available`.
@@ -734,6 +739,8 @@ export const companyDocumentFolders = pgTable("company_document_folders", {
   /** The Folder this one sits in; null at the Workspace root. Deleting a Folder deletes the Folders inside it. */
   parentId: varchar("parent_id").references((): AnyPgColumn => companyDocumentFolders.id, { onDelete: "cascade" }),
   createdById: varchar("created_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  /** Document Access (#278). Everything filed inside is at least this closed. */
+  access: varchar("access", { length: 50 }).notNull().default(DOCUMENT_ACCESS_WORKSPACE),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   workspaceId: workspaceIdColumn(),
@@ -756,6 +763,7 @@ export const companyDocumentFoldersRelations = relations(companyDocumentFolders,
 export const insertCompanyDocumentFolderSchema = createInsertSchema(companyDocumentFolders).omit({
   id: true,
   workspaceId: true,
+  access: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -766,6 +774,10 @@ export type InsertCompanyDocumentFolder = z.infer<typeof insertCompanyDocumentFo
 // Company document folder with creator info
 export type CompanyDocumentFolderWithCreator = CompanyDocumentFolder & {
   createdBy?: SafeUser;
+  /** The level that applies once every enclosing Folder is counted (#278). */
+  effectiveAccess?: DocumentAccess;
+  /** Whether the reader may change this Folder's access: its creator or an Administrator. */
+  canManageAccess?: boolean;
 };
 
 // Company Documents table - company terms, policies, and other documents
@@ -817,6 +829,10 @@ export type InsertCompanyDocument = z.infer<typeof insertCompanyDocumentSchema>;
 export type CompanyDocumentWithUploader = CompanyDocument & {
   uploadedBy?: SafeUser;
   folder?: CompanyDocumentFolder;
+  /** The level that applies once every enclosing Folder is counted (#278). */
+  effectiveAccess?: DocumentAccess;
+  /** Whether the reader may change this item's access: its owner or an Administrator. */
+  canManageAccess?: boolean;
 };
 
 // Files — uploaded binaries. Native pages stay on company_documents / documents.
@@ -830,6 +846,8 @@ export const files = pgTable("files", {
   mimeType: varchar("mime_type", { length: 100 }),
   storagePath: varchar("storage_path", { length: 1000 }).notNull(),
   folderId: varchar("folder_id").references(() => companyDocumentFolders.id, { onDelete: "cascade" }),
+  /** Set on a Project File (#278): it is listed with that Project's Documents, never in Workspace Documents. */
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   access: varchar("access", { length: 50 }).notNull().default(DOCUMENT_ACCESS_WORKSPACE),
   scanStatus: varchar("scan_status", { length: 20 }).notNull().default(FILE_SCAN_AVAILABLE),
@@ -840,9 +858,33 @@ export const files = pgTable("files", {
 }, (table) => [
   index("idx_files_uploaded_by").on(table.uploadedById),
   index("idx_files_folder").on(table.folderId),
+  index("idx_files_project").on(table.projectId),
   idInWorkspace(table, "files"),
   workspaceScopedFk("files_folder_workspace_fk", [table.folderId, table.workspaceId], companyDocumentFolders),
+  workspaceScopedFk("files_project_workspace_fk", [table.projectId, table.workspaceId], projects),
 ]);
+
+/**
+ * The Members named on a Restricted Folder or Workspace Document (#278). One
+ * of `folder_id` / `document_id` is set; deleting the item drops its names.
+ */
+export const documentAccessMembers = pgTable("document_access_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  folderId: varchar("folder_id").references(() => companyDocumentFolders.id, { onDelete: "cascade" }),
+  documentId: varchar("document_id").references(() => companyDocuments.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  workspaceId: workspaceIdColumn(),
+}, (table) => [
+  uniqueIndex("idx_document_access_members_folder_user").on(table.folderId, table.userId),
+  uniqueIndex("idx_document_access_members_document_user").on(table.documentId, table.userId),
+  index("idx_document_access_members_user").on(table.userId),
+  idInWorkspace(table, "document_access_members"),
+  workspaceScopedFk("document_access_members_folder_workspace_fk", [table.folderId, table.workspaceId], companyDocumentFolders),
+  workspaceScopedFk("document_access_members_document_workspace_fk", [table.documentId, table.workspaceId], companyDocuments),
+]);
+
+export type DocumentAccessMember = typeof documentAccessMembers.$inferSelect;
 
 export const filesRelations = relations(files, ({ one }) => ({
   uploadedBy: one(users, {

@@ -220,9 +220,12 @@ describe("chat and embeddings (characterization)", () => {
 
   it("keeps restricted Workspace Documents out of the prompt and citations", async () => {
     const app = await makeApp();
+    // The member who added a Restricted Document keeps sight of it (#278), so
+    // the reader here is someone else.
+    const author = await registerUser(app);
     const user = await registerUser(app);
-    const folder = await createFolder(user.agent, { name: "Payroll" });
-    const hidden = await user.agent.post("/api/company-documents").send({
+    const folder = await createFolder(author.agent, { name: "Payroll" });
+    const hidden = await author.agent.post("/api/company-documents").send({
       name: "Payroll bands",
       folderId: folder.id,
       content: tiptap("secret compensation bands"),

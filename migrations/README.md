@@ -41,6 +41,7 @@ journal is not part of it and is never applied.
 | 0029 | `0029_pale_roland_deschain.sql` | Nullable `users.active_workspace_id` (#183). Persisted Active Workspace preference; not tenancy. ON DELETE SET NULL. |
 | 0030 | `0030_solid_thundra.sql` | Delivery Preference jsonb on `memberships` (#210). |
 | 0031 | `0031_typical_rage.sql` | Workspace `invitations` (#211). Pending consumes no seat; acceptance creates a Membership. |
+| 0035 | `0035_perpetual_tattoo.sql` | Document Access levels (#278): `company_document_folders.access`, `document_access_members` for Restricted items, and `files.project_id` for Project Files. Maps `everyone` to `workspace` and any unknown level to `administrators`. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
@@ -194,6 +195,9 @@ Two rules, from ADR-0017:
   `0029` adds `users.active_workspace_id` as pure DDL (#183); the preference is
   written by `PUT /api/memberships/active`.
   `0031` adds `invitations` as pure DDL (#211); send/accept write the rows.
+  `0035` normalises the existing `access` values in the journal (#278): two
+  bounded `UPDATE`s on `company_documents` and `files`, so no reader ever sees
+  a level the access checks do not know.
 - **Expand and contract.** Add the new shape, move the reads and writes, drop
   the old one in a later deploy. Rollback is redeploying the previous image,
   never a down migration, so no migration may make the previous image unable to

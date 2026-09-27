@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
-import { Link, useLocation } from "wouter";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 import type {
   CompanyDocumentFolderWithCreator,
   CompanyDocumentWithUploader,
@@ -9,10 +9,18 @@ import type {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import {
+  clearLibraryFilters,
   composeLibrary,
   folderChoices,
   folderPath,
+  libraryOwnerOptions,
+  readLibraryFilters,
+  writeLibraryFilters,
+  LIBRARY_ACCESS_OPTIONS,
+  LIBRARY_TYPE_OPTIONS,
+  LIBRARY_UPDATED_OPTIONS,
   type LibraryDocument,
+  type LibraryFilters,
   type LibraryFolder,
   type LibraryInput,
 } from "./library";
@@ -20,6 +28,8 @@ import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { V2FormDialog } from "./V2FormDialog";
+import { V2ManageAccessDialog } from "./V2ManageAccessDialog";
+import { V2UploadDialog, fileTitle, storeUpload } from "./V2UploadDialog";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +52,8 @@ type LibraryPayload = {
 };
 
 type CreateMode = "document" | "folder" | "upload" | null;
+
+const SEARCH_SETTLE_MS = 250;
 
 function actionFromSearch(): CreateMode {
   const params = new URLSearchParams(window.location.search);
@@ -105,6 +117,9 @@ function toFolder(folder: CompanyDocumentFolderWithCreator): LibraryFolder {
           email: folder.createdBy.email,
         }
       : null,
+    access: folder.access,
+    effectiveAccess: folder.effectiveAccess,
+    canManageAccess: folder.canManageAccess,
   };
 }
 
@@ -114,9 +129,12 @@ function toDocument(document: CompanyDocumentWithUploader): LibraryDocument {
     name: document.name,
     folderId: document.folderId,
     access: document.access,
+    effectiveAccess: document.effectiveAccess,
+    canManageAccess: document.canManageAccess,
     content: document.content,
     storagePath: document.storagePath,
     fileName: document.fileName,
+    uploadedById: document.uploadedById,
     uploadedBy: document.uploadedBy
       ? {
           firstName: document.uploadedBy.firstName,
@@ -129,29 +147,38 @@ function toDocument(document: CompanyDocumentWithUploader): LibraryDocument {
   };
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export function V2DocumentsPage() {
   const now = useMemo(() => new Date(), []);
+  const search = useSearch();
   const [, navigate] = useLocation();
   const { memberships } = useV2Chrome();
-  const [filterQuery, setFilterQuery] = useState("");
+  const filters = readLibraryFilters(search);
+  const [filterQuery, setFilterQuery] = useState(filters.q);
   const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<CreateMode>(() => actionFromSearch());
+  const [managingFolderId, setManagingFolderId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [targetFolderId, setTargetFolderId] = useState<string>(V2_SELECT_NONE);
-  const [uploads, setUploads] = useState<File[]>([]);
-  const [dropOver, setDropOver] = useState(false);
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [folderName, setFolderName] = useState("");
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const readOnly = current?.condition === "Read-only";
+  const readOnlyRefusal = readOnly
+    ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" })
+    : null;
+
+  function setFilters(next: LibraryFilters) {
+    navigate(`/documents${writeLibraryFilters(search, next)}`, { replace: true });
+  }
+
+  // The filter box answers each keystroke; the URL follows once typing settles.
+  useEffect(() => {
+    if (filterQuery === filters.q) return;
+    const timer = window.setTimeout(() => setFilters({ ...filters, q: filterQuery }), SEARCH_SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [filterQuery]);
 
   const { data, isLoading } = useQuery<LibraryPayload>({
     queryKey: ["/api/company-document-folders", "workspace-library"],
@@ -159,18 +186,21 @@ export function V2DocumentsPage() {
   });
   const ownerName = useWorkspaceOwnerName();
 
+  const documents = (data?.documents ?? []).map(toDocument);
   const input: LibraryInput = {
     now,
     workspaceName,
     folders: (data?.folders ?? []).map(toFolder),
-    documents: (data?.documents ?? []).map(toDocument),
+    documents,
     expandedFolderIds,
     selectedFolderId,
     filterQuery,
     capabilityMiss: data?.capabilityMiss === true,
     ownerName,
+    filters: { type: filters.type, owner: filters.owner, access: filters.access, updated: filters.updated },
   };
   const library = composeLibrary(input);
+  const ownerOptions = libraryOwnerOptions(documents);
   const destinations = [
     { value: V2_SELECT_NONE, label: "Workspace root" },
     ...folderChoices(input.folders),
@@ -185,10 +215,8 @@ export function V2DocumentsPage() {
   }, [previewFolderId, previewFolderName]);
 
   function refuseWrite(errorMessage?: string) {
-    if (readOnly) {
-      setWriteRefusal(
-        chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }),
-      );
+    if (readOnlyRefusal) {
+      setWriteRefusal(readOnlyRefusal);
       return true;
     }
     if (errorMessage) {
@@ -235,16 +263,9 @@ export function V2DocumentsPage() {
 
   const uploadFile = useMutation({
     mutationFn: async (file: File) => {
-      const urlResponse = await apiRequest("POST", "/api/company-documents/upload-url");
-      const { uploadURL, objectPath } = urlResponse as { uploadURL: string; objectPath: string };
-      const uploadResponse = await fetch(uploadURL, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-      if (!uploadResponse.ok) throw new Error(`Failed to upload ${file.name}`);
+      const objectPath = await storeUpload(file);
       return apiRequest("POST", "/api/company-documents", {
-        name: file.name.replace(/\.[^/.]+$/, ""),
+        name: fileTitle(file),
         fileName: file.name,
         fileSize: file.size,
         mimeType: file.type || "application/octet-stream",
@@ -255,6 +276,7 @@ export function V2DocumentsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/company-documents"] });
+      setWriteRefusal(null);
     },
     onError: (error: Error) => {
       refuseWrite(error.message);
@@ -313,7 +335,6 @@ export function V2DocumentsPage() {
   function openCreate(mode: Exclude<CreateMode, null>) {
     setTargetFolderId(selectedFolderId ?? V2_SELECT_NONE);
     setName("");
-    setUploads([]);
     setWriteRefusal(null);
     setCreateMode(mode);
   }
@@ -324,36 +345,6 @@ export function V2DocumentsPage() {
     if (refuseWrite()) return;
     if (createMode === "folder") createFolder.mutate(trimmed);
     if (createMode === "document") createDocument.mutate(trimmed);
-  }
-
-  function addUploads(list: FileList | null) {
-    if (!list || list.length === 0) return;
-    const incoming = Array.from(list);
-    setUploads((current) => [
-      ...current,
-      ...incoming.filter((file) => !current.some((kept) => kept.name === file.name && kept.size === file.size)),
-    ]);
-  }
-
-  function onDrop(event: DragEvent<HTMLLabelElement>) {
-    event.preventDefault();
-    setDropOver(false);
-    addUploads(event.dataTransfer.files);
-  }
-
-  async function onUpload() {
-    if (uploads.length === 0) return;
-    if (refuseWrite()) return;
-    for (const file of uploads) {
-      try {
-        await uploadFile.mutateAsync(file);
-        setUploads((current) => current.filter((kept) => kept !== file));
-      } catch {
-        return;
-      }
-    }
-    setCreateMode(null);
-    setWriteRefusal(null);
   }
 
   const creating = createMode === "document" || createMode === "folder";
@@ -436,65 +427,20 @@ export function V2DocumentsPage() {
           {destinationField}
         </V2FormDialog>
 
-        <V2FormDialog
+        <V2UploadDialog
           open={createMode === "upload"}
           onOpenChange={(open) => {
-            if (!open && !uploadFile.isPending) setCreateMode(null);
+            if (!open) setCreateMode(null);
           }}
-          title="Upload Files"
           description="Files are stored in the Workspace and open in the viewer. Drop several at once; each becomes its own row."
-          submitLabel={uploads.length > 1 ? `Upload ${uploads.length} Files` : "Upload File"}
+          upload={(file) => uploadFile.mutateAsync(file)}
           pending={uploadFile.isPending}
-          canSubmit={uploads.length > 0}
-          onSubmit={() => void onUpload()}
+          beforeUpload={() => refuseWrite()}
           refusal={writeRefusal}
           testId="v2-documents-upload"
         >
-          <label
-            className="df-drop-zone"
-            data-over={dropOver ? "true" : "false"}
-            onDragOver={(event) => {
-              event.preventDefault();
-              setDropOver(true);
-            }}
-            onDragLeave={() => setDropOver(false)}
-            onDrop={onDrop}
-          >
-            <strong>Drop files here</strong>
-            <span>or click to choose them</span>
-            <input
-              type="file"
-              multiple
-              aria-label="Choose files to upload"
-              onChange={(event) => {
-                addUploads(event.target.files);
-                event.target.value = "";
-              }}
-            />
-          </label>
-          {uploads.length > 0 ? (
-            <ul className="df-file-list" aria-label="Files to upload">
-              {uploads.map((file) => (
-                <li key={`${file.name}-${file.size}`}>
-                  <span className="df-row-title">{file.name}</span>
-                  <span className="df-mono df-meta">{formatSize(file.size)}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    type="button"
-                    className="df-btn"
-                    aria-label={`Remove ${file.name}`}
-                    disabled={uploadFile.isPending}
-                    onClick={() => setUploads((current) => current.filter((kept) => kept !== file))}
-                  >
-                    <X width={14} height={14} strokeWidth={1.6} />
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
           {destinationField}
-        </V2FormDialog>
+        </V2UploadDialog>
         {writeRefusal && !createMode ? <p className="df-refusal">{writeRefusal}</p> : null}
 
         <div className="df-filter-bar">
@@ -508,16 +454,40 @@ export function V2DocumentsPage() {
               aria-label="Filter this library"
             />
           </label>
-          <span className="df-filter-chip">TYPE: ALL</span>
-          <span className="df-filter-chip">OWNER: ANY</span>
-          <span className="df-filter-chip" data-active="true">
-            ACCESS: EVERYONE
-          </span>
-          <span className="df-filter-chip">UPDATED: 90 d</span>
-          <div className="df-segment" role="group" aria-label="Library density">
-            <span data-active="true">LIST</span>
-            <span>GRID</span>
-          </div>
+          <V2FilterSelect
+            label="TYPE"
+            ariaLabel="Filter by type"
+            value={filters.type}
+            active={filters.type !== "all"}
+            options={LIBRARY_TYPE_OPTIONS}
+            onChange={(type) => setFilters({ ...filters, type: type as LibraryFilters["type"] })}
+          />
+          {ownerOptions.length === 0 && filters.owner === "all" ? null : (
+            <V2FilterSelect
+              label="OWNER"
+              ariaLabel="Filter by owner"
+              value={filters.owner}
+              active={filters.owner !== "all"}
+              options={[{ value: "all", label: "ANY" }, ...ownerOptions]}
+              onChange={(owner) => setFilters({ ...filters, owner })}
+            />
+          )}
+          <V2FilterSelect
+            label="ACCESS"
+            ariaLabel="Filter by access"
+            value={filters.access}
+            active={filters.access !== "all"}
+            options={LIBRARY_ACCESS_OPTIONS}
+            onChange={(access) => setFilters({ ...filters, access: access as LibraryFilters["access"] })}
+          />
+          <V2FilterSelect
+            label="UPDATED"
+            ariaLabel="Filter by last update"
+            value={filters.updated}
+            active={filters.updated !== "all"}
+            options={LIBRARY_UPDATED_OPTIONS}
+            onChange={(updated) => setFilters({ ...filters, updated: updated as LibraryFilters["updated"] })}
+          />
         </div>
 
         <V2LibraryRegister
@@ -525,6 +495,21 @@ export function V2DocumentsPage() {
           testId="v2-documents-register"
           instantExpand={folderMotion.instantExpand}
           onFolderClick={onFolderClick}
+          emptyAction={
+            library.filtered ? (
+              <Button
+                variant="outline"
+                type="button"
+                className="df-btn"
+                onClick={() => {
+                  setFilterQuery("");
+                  setFilters(clearLibraryFilters());
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : null
+          }
         />
       </div>
 
@@ -603,11 +588,30 @@ export function V2DocumentsPage() {
             <Button variant="default" type="button" style={{ flex: 1 }} onClick={() => { if (!selectedFolderId) return; setExpandedFolderIds((current) => current.includes(selectedFolderId) ? current : [...current, selectedFolderId], ); }} className="df-btn">
               Open folder
             </Button>
-            <Button asChild variant="outline" className="df-btn"><Link href="/documents/access">
-              Manage access
-            </Link></Button>
+            {library.preview.canManageAccess ? (
+              <Button
+                variant="outline"
+                type="button"
+                className="df-btn"
+                data-testid="v2-folder-manage-access"
+                onClick={() => setManagingFolderId(library.preview?.folderId ?? null)}
+              >
+                Manage access
+              </Button>
+            ) : null}
           </footer>
         </aside>
+      ) : null}
+      {managingFolderId ? (
+        <V2ManageAccessDialog
+          kind="folder"
+          id={managingFolderId}
+          open
+          onOpenChange={(open) => {
+            if (!open) setManagingFolderId(null);
+          }}
+          readOnlyRefusal={readOnlyRefusal}
+        />
       ) : null}
     </div>
   );

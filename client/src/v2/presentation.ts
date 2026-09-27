@@ -350,7 +350,7 @@ function parseClientRecordPath(pathname: string): string | null {
   return null;
 }
 
-const DOCUMENT_LIBRARY_ACTIONS = new Set(["new", "new-folder", "upload", "access"]);
+const DOCUMENT_LIBRARY_ACTIONS = new Set(["new", "new-folder", "upload"]);
 
 function parseWorkspaceDocumentPath(pathname: string): string | null {
   const parts = pathname.split("/").filter(Boolean);

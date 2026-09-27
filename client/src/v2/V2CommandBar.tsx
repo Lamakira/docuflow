@@ -109,7 +109,13 @@ export function V2CommandBar({
 }
 
 type WorkspaceDocumentSearch = {
-  documents?: Array<{ id: string; name: string; access?: string | null; folder?: { name: string } | null }>;
+  documents?: Array<{
+    id: string;
+    name: string;
+    access?: string | null;
+    effectiveAccess?: string | null;
+    folder?: { name: string } | null;
+  }>;
   folders?: Array<{ id: string; name: string }>;
   filteredByAccess?: boolean;
   restrictedHidden?: number;
@@ -164,6 +170,7 @@ async function loadSearch(
         id: document.id,
         name: document.name,
         access: document.access,
+        effectiveAccess: document.effectiveAccess,
         folderName: document.folder?.name,
       })),
       folders: knowledge.folders ?? [],

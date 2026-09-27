@@ -1,4 +1,5 @@
 import { chromeRefusal } from "./chrome";
+import { projectFileHref } from "./fileViewer";
 import { readPage, readPageSize, writePaging } from "./paging";
 import { memberName } from "./today";
 import { projectDocumentHref, type LibraryModel, type LibraryPerson, type LibraryRow } from "./library";
@@ -23,11 +24,26 @@ export type ProjectDocumentationDocument = {
   createdBy?: LibraryPerson | null;
 };
 
+export function projectFilesPath(projectId: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/files`;
+}
+
+/** A File added to one Project (#278), listed with that Project's Documents. */
+export type ProjectDocumentationFile = {
+  id: string;
+  name: string;
+  projectId: string;
+  updatedAt?: Date | string | null;
+  createdAt?: Date | string | null;
+  createdBy?: LibraryPerson | null;
+};
+
 export type ProjectDocumentationInput = {
   now: Date;
   workspaceName: string;
   projects: ProjectDocumentationProject[];
   documents: ProjectDocumentationDocument[];
+  files?: ProjectDocumentationFile[];
   expandedProjectIds: string[];
   selectedProjectId: string | null;
   filterQuery: string;
@@ -67,27 +83,37 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
   const visibleDocs = input.documents.filter(
     (document) => allowedProjectIds.has(document.projectId) && isVisibleDocument(document.access),
   );
-  const childrenByProject = new Map<string, ProjectDocumentationDocument[]>();
-  for (const document of visibleDocs) {
-    const list = childrenByProject.get(document.projectId) ?? [];
-    list.push(document);
-    childrenByProject.set(document.projectId, list);
+  const visibleFiles = (input.files ?? []).filter((file) => allowedProjectIds.has(file.projectId));
+  const childrenByProject = new Map<string, ProjectDocumentationChild[]>();
+  const children: ProjectDocumentationChild[] = [
+    ...visibleDocs.map((document) => ({ kind: "document" as const, name: document.title, item: document })),
+    ...visibleFiles.map((file) => ({ kind: "file" as const, name: file.name, item: file })),
+  ];
+  for (const child of children) {
+    const list = childrenByProject.get(child.item.projectId) ?? [];
+    list.push(child);
+    childrenByProject.set(child.item.projectId, list);
   }
 
   const rows: LibraryRow[] = [];
   for (const project of visibleProjects) {
-    const children = childrenByProject.get(project.documentProjectId) ?? [];
+    const projectChildren = childrenByProject.get(project.documentProjectId) ?? [];
     const folderMatches = nameMatches(project.name, needle);
     const matchingChildren = needle
-      ? children.filter((document) => nameMatches(document.title, needle))
-      : children;
+      ? projectChildren.filter((child) => nameMatches(child.name, needle))
+      : projectChildren;
     if (needle && !folderMatches && matchingChildren.length === 0) continue;
 
     const showChildren = expanded.has(project.id) || (Boolean(needle) && matchingChildren.length > 0);
-    const listedChildren = needle && !folderMatches ? matchingChildren : matchingChildren;
-    rows.push(projectRow(project, children, showChildren, project.id === input.selectedProjectId, input.now));
-    for (const document of listedChildren) {
-      rows.push(documentRow(document, project.name, input.now));
+    rows.push(
+      projectRow(project, projectChildren.map((child) => child.item), showChildren, project.id === input.selectedProjectId, input.now),
+    );
+    for (const child of matchingChildren) {
+      rows.push(
+        child.kind === "file"
+          ? fileRow(child.item, project.name, input.now)
+          : documentRow(child.item, project.name, input.now),
+      );
     }
   }
 
@@ -108,7 +134,7 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
     rows,
     folderCount: visibleProjects.length,
     parentNoun: { singular: "PROJECT", plural: "PROJECTS" },
-    itemCount: visibleDocs.length + visibleProjects.length,
+    itemCount: visibleDocs.length + visibleFiles.length + visibleProjects.length,
     preview: null,
   };
 }
@@ -123,9 +149,19 @@ function nameMatches(name: string, needle: string): boolean {
   return name.toLowerCase().includes(needle);
 }
 
+type ProjectDocumentationChild =
+  | { kind: "document"; name: string; item: ProjectDocumentationDocument }
+  | { kind: "file"; name: string; item: ProjectDocumentationFile };
+
+type Dated = {
+  updatedAt?: Date | string | null;
+  createdAt?: Date | string | null;
+  createdBy?: LibraryPerson | null;
+};
+
 function projectRow(
   project: ProjectDocumentationProject,
-  children: ProjectDocumentationDocument[],
+  children: Dated[],
   expanded: boolean,
   selected: boolean,
   now: Date,
@@ -167,7 +203,23 @@ function documentRow(document: ProjectDocumentationDocument, projectName: string
   };
 }
 
-function timestamp(document: ProjectDocumentationDocument): number {
+function fileRow(file: ProjectDocumentationFile, projectName: string, now: Date): LibraryRow {
+  return {
+    id: file.id,
+    kind: "file",
+    name: file.name,
+    path: `${projectName} /`,
+    type: "FILE",
+    access: "ASSIGNED",
+    editor: file.createdBy ? memberName(file.createdBy) : "—",
+    updated: formatWhen(file.updatedAt ?? file.createdAt ?? null, now),
+    child: true,
+    depth: 1,
+    href: projectFileHref({ projectId: file.projectId, id: file.id, name: file.name, back: "/project-documentation" }),
+  };
+}
+
+function timestamp(document: Dated): number {
   const value = parseDate(document.updatedAt ?? document.createdAt ?? null);
   return value ? value.getTime() : 0;
 }

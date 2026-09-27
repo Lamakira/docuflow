@@ -1,3 +1,4 @@
+import { isReadableDocument } from "@shared/documentAccess";
 import { chromeRefusal } from "./chrome";
 import { documentHref } from "./library";
 
@@ -16,6 +17,9 @@ export type DocumentEditorRecord = {
   fileSize?: number | null;
   mimeType?: string | null;
   access?: string | null;
+  effectiveAccess?: string | null;
+  /** Whether this reader may open Manage access: the Document's owner or an Administrator (#278). */
+  canManageAccess?: boolean;
   projectId?: string | null;
 };
 
@@ -85,7 +89,7 @@ export function composeDocumentEditor(input: DocumentEditorInput): DocumentEdito
   }
 
   const record = input.document;
-  if (input.missing || !record || !isVisibleDocument(record.access)) {
+  if (input.missing || !record || !isReadableDocument(record)) {
     return {
       missing: true,
       mode: "missing",
@@ -111,11 +115,6 @@ export function composeDocumentEditor(input: DocumentEditorInput): DocumentEdito
     backHref,
     backLabel,
   };
-}
-
-function isVisibleDocument(access: string | null | undefined): boolean {
-  const value = (access ?? "workspace").toLowerCase();
-  return value === "workspace" || value === "everyone";
 }
 
 function saveLabel(state: DocumentEditorSaveState): string {
