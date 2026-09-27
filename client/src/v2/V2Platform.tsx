@@ -6,6 +6,7 @@ import type { SafeUser } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
+import { isStandingRefusal, notify } from "./notify";
 import {
   composePlatformDirectory,
   isPlatformAdmin,
@@ -50,7 +51,6 @@ export function V2PlatformPage() {
   const [filterQuery, setFilterQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const allowed = isPlatformAdmin(user);
 
   const { data: users = [], isLoading } = useQuery<SafeUser[]>({
@@ -106,10 +106,10 @@ export function V2PlatformPage() {
       // Dropping your own platform role closes this console on the next read.
       if (userId === user?.id) queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       setRefusal(null);
-      setNotice(action.done);
+      if (action.done) notify.success(action.done);
     },
     onError: (error: Error) => {
-      setNotice(null);
+      if (!isStandingRefusal(error)) return notify.error(error);
       setRefusal(chromeRefusal({ kind: "generic", message: error.message }));
     },
   });
@@ -185,7 +185,6 @@ export function V2PlatformPage() {
                 onClick={() => {
                   setSelectedId((current) => togglePreviewSelection(current, row.id));
                   setRefusal(null);
-                  setNotice(null);
                 }}
               >
                 <span style={{ minWidth: 0 }}>
@@ -229,7 +228,6 @@ export function V2PlatformPage() {
               <span>{detail.joined}</span>
             </div>
             {detail.note ? <p className="df-empty df-flush">{detail.note}</p> : null}
-            {notice ? <p className="df-prose df-prose-follow">{notice}</p> : null}
           </div>
           {detail.actions.length > 0 ? (
             <footer className="df-panel-foot df-platform-actions">

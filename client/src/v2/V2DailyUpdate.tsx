@@ -10,6 +10,7 @@ import {
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
+import { isStandingRefusal, notify } from "./notify";
 import { composeDailyUpdatePage } from "./dailyUpdate";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
@@ -96,8 +97,10 @@ export function V2DailyUpdatePage() {
       setBlockageType("");
       setWaitingOnClient(false);
       setWriteRefusal(null);
+      notify.success("Daily Update submitted");
     },
     onError: (error: Error) => {
+      if (!readOnly && !isStandingRefusal(error)) return notify.error(error);
       setWriteRefusal(
         readOnly
           ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" })

@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useDebouncedCallback } from "@/hooks/useDebounce";
 import { useAuth } from "@/hooks/useAuth";
 import { chromeRefusal } from "./chrome";
+import { isStandingRefusal, notify } from "./notify";
 import { composeFileViewer } from "./fileViewer";
 import {
   composeDocumentEditor,
@@ -176,7 +177,11 @@ export function V2DocumentPage() {
         );
         return;
       }
-      setWriteRefusal(chromeRefusal({ kind: "generic", message: error.message }));
+      if (isStandingRefusal(error)) {
+        setWriteRefusal(chromeRefusal({ kind: "generic", message: error.message }));
+        return;
+      }
+      notify.error(error, { fallback: "Document could not be saved.", id: `v2-document-save-${documentId}` });
     },
   });
 
@@ -301,12 +306,7 @@ export function V2DocumentPage() {
               cleanup();
               resolve({ url: attached.objectPath, filename: file.name, filesize: file.size, filetype });
             } catch (error) {
-              setWriteRefusal(
-                chromeRefusal({
-                  kind: "generic",
-                  message: error instanceof Error ? error.message : "Failed to attach File",
-                }),
-              );
+              notify.error(error, { fallback: "File could not be attached." });
               cleanup();
               resolve(null);
             }

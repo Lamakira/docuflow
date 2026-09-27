@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
+import { isStandingRefusal, notify } from "./notify";
 import {
   PEOPLE_INVITE_ROLES,
   composePeople,
@@ -91,6 +92,7 @@ export function V2PeoplePage() {
   });
 
   function refuse(id: string, errorMessage: string) {
+    if (!isStandingRefusal(errorMessage) && !/seat/i.test(errorMessage)) return notify.error(errorMessage);
     setRefusal({
       id,
       message: peopleWriteRefusal({
@@ -110,10 +112,11 @@ export function V2PeoplePage() {
         isArchived: row.archiveAction === "archive",
       });
     },
-    onSuccess: () => {
+    onSuccess: (_result, row) => {
       setRefusal(null);
       queryClient.invalidateQueries({ queryKey: ["/api/workspace/memberships"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      notify.success(row.archiveAction === "archive" ? "Membership archived" : "Membership restored");
     },
     onError: (error: Error, row) => refuse(row.userId, error.message),
   });
@@ -129,6 +132,7 @@ export function V2PeoplePage() {
       setInviteEmail("");
       setInviting(false);
       queryClient.invalidateQueries({ queryKey: [workspaceInvitationsPath()] });
+      notify.success("Invitation sent");
     },
     onError: (error: Error) => refuse("invite-send", error.message),
   });
@@ -138,6 +142,7 @@ export function V2PeoplePage() {
     onSuccess: () => {
       setRefusal(null);
       queryClient.invalidateQueries({ queryKey: [workspaceInvitationsPath()] });
+      notify.success("Invitation revoked");
     },
     onError: (error: Error, id) => refuse(id, error.message),
   });
@@ -152,6 +157,7 @@ export function V2PeoplePage() {
       setRefusal(null);
       setSettingsFor(null);
       queryClient.invalidateQueries({ queryKey: ["/api/workspace/memberships"] });
+      notify.success("Member settings saved");
     },
     onError: (error: Error) => refuse("member-settings", error.message),
   });

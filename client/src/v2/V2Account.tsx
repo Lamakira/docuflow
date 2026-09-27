@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
+import { isStandingRefusal, notify } from "./notify";
 import { V2FilterSelect } from "./V2Select";
 import {
   accountDeletionPath,
@@ -45,14 +46,20 @@ export function V2AccountPage() {
     await queryClient.invalidateQueries({ queryKey: ["/api/memberships"] });
   }
 
+  function refuse(error: Error) {
+    if (!isStandingRefusal(error)) return notify.error(error);
+    setRefusal(error.message);
+  }
+
   const start = useMutation({
     mutationFn: () => apiRequest("POST", accountDeletionPath()),
     onSuccess: async () => {
       setConfirmation("");
       setRefusal(null);
       await refresh();
+      notify.success("Account deletion scheduled");
     },
-    onError: (error: Error) => setRefusal(error.message),
+    onError: refuse,
   });
 
   const cancel = useMutation({
@@ -60,8 +67,9 @@ export function V2AccountPage() {
     onSuccess: async () => {
       setRefusal(null);
       await refresh();
+      notify.success("Account deletion cancelled");
     },
-    onError: (error: Error) => setRefusal(error.message),
+    onError: refuse,
   });
 
   if (isLoading) {
@@ -188,13 +196,19 @@ function OwnedWorkspaceCard({
   const [successorId, setSuccessorId] = useState(members[0]?.userId ?? "");
   const [confirmName, setConfirmName] = useState("");
 
+  function refuse(error: Error) {
+    if (!isStandingRefusal(error)) return notify.error(error);
+    onRefusal(error.message);
+  }
+
   const transfer = useMutation({
     mutationFn: () => apiRequest("POST", workspaceOwnerPath(row.workspaceId), { userId: successorId }),
     onSuccess: async () => {
       onRefusal(null);
       await onDone();
+      notify.success("Ownership transferred");
     },
-    onError: (error: Error) => onRefusal(error.message),
+    onError: refuse,
   });
 
   const remove = useMutation({
@@ -202,8 +216,9 @@ function OwnedWorkspaceCard({
     onSuccess: async () => {
       onRefusal(null);
       await onDone();
+      notify.success("Workspace deleted");
     },
-    onError: (error: Error) => onRefusal(error.message),
+    onError: refuse,
   });
 
   return (

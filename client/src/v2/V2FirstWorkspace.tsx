@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { SafeUser } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
+import { notify } from "./notify";
 import {
   WORKSPACE_NAME_MAX,
   composeFirstWorkspace,
@@ -47,6 +48,7 @@ export function V2FirstWorkspace({ belongedBefore = false }: { belongedBefore?: 
       // The new Workspace is now the active one, so every Workspace-scoped read
       // in the shell is stale — the same sweep a Workspace switch does.
       await queryClient.invalidateQueries();
+      notify.success("Workspace created");
       setLocation("/");
     } catch (error) {
       setStatus("error");

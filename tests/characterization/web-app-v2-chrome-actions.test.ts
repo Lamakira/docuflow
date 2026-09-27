@@ -10,7 +10,6 @@ import {
   composeSearch,
   selectCommandPanel,
   timerChipCommands,
-  toastModel,
 } from "../../client/src/v2/chrome";
 import { motionForSurface } from "../../client/src/v2/motion";
 import { timerChipModel } from "../../client/src/v2/presentation";
@@ -207,24 +206,14 @@ describe("v2 chrome actions (#184)", () => {
     expect(composeRefusalPlacement({ failedControlId: null, controlId: "invite" }).open).toBe(false);
   });
 
-  it("enters and exits toasts from the same bottom edge, interruptible, with optional UNDO", () => {
-    const toast = toastModel({ message: "Timer paused", undo: true });
-    expect(toast.edge).toBe("bottom");
-    expect(toast.undoLabel).toBe("UNDO");
-    expect(toast.message).toBe("Timer paused");
-
-    const motion = motionForSurface("toast");
-    expect(motion.enterExit).toBe("standard");
-    expect(motion.movement).toBe("allowed");
-
-    const reduced = motionForSurface("toast", { reducedMotion: true });
-    expect(reduced.movement).toBe("none");
-    expect(reduced.keepOpacity).toBe(true);
-
-    expect(rule(".df-toast")).toMatch(/translateY\(100%\)|translateY\(0\)/);
-    expect(css).toMatch(/\.df-toast[^{]*\{[^}]*@starting-style|@starting-style\s*\{[^}]*\.df-toast/);
-    expect(rule('.df-toast[data-state="leaving"]')).toMatch(/translateY\(100%\)/);
-    expect(reducedMotionCss()).toMatch(/\.df-toast[^{]*\{[^}]*transform:\s*none|translateX\(-50%\)/);
+  it("signs off Timer Commands in the one top-center v2 toast, not a bottom-edge host", () => {
+    const timerSource = source("V2TimerChip.tsx");
+    expect(timerSource).toContain('notify.success("Timer paused")');
+    expect(timerSource).toContain('notify.success("Timer started")');
+    expect(timerSource).toContain('notify.info("Choose a Project before starting the Timer.")');
+    expect(timerSource).not.toContain("onToast");
+    expect(source("V2Shell.tsx")).not.toMatch(/V2ToastHost|showToast/);
+    expect(css).not.toMatch(/\.df-toast\[data-state/);
     expect(css).not.toMatch(/@keyframes[^{]*toast/);
   });
 });
@@ -236,8 +225,6 @@ function rule(selector: string): string {
   return match[1];
 }
 
-function reducedMotionCss(): string {
-  return [...css.matchAll(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)\s*\{([\s\S]*?)\n\}/g)]
-    .map((match) => match[1])
-    .join("\n");
+function source(file: string): string {
+  return readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2", file), "utf8");
 }

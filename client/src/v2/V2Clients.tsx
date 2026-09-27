@@ -28,6 +28,7 @@ import {
   type ClientSort,
 } from "./clients";
 import { composePaging } from "./paging";
+import { isStandingRefusal, notify } from "./notify";
 import { motionForSurface } from "./motion";
 import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
@@ -344,12 +345,14 @@ export function V2ClientsPage() {
       setName("");
       setCreating(false);
       setWriteRefusal(null);
+      notify.success("Client created");
       if (created?.id) {
         setSelectedId(created.id);
         setLocation(clientHref(created.id));
       }
     },
     onError: (error: Error) => {
+      if (!isStandingRefusal(error)) return notify.error(error, { fallback: "Client could not be created." });
       setWriteRefusal(
         clientWriteRefusal({
           readOnly,
@@ -543,7 +546,7 @@ export function V2ClientsPage() {
 }
 
 export function V2ClientRecordPage() {
-  const { layout, memberships, showToast } = useV2Chrome();
+  const { layout, memberships } = useV2Chrome();
   const [location] = useLocation();
   const match = matchV2Route(location);
   const clientId = match.kind === "client-record" ? match.clientId : "";
@@ -607,6 +610,11 @@ export function V2ClientRecordPage() {
     setWriteRefusal(clientWriteRefusal({ readOnly, workspaceName, errorMessage: error?.message }));
   }
 
+  function onWriteError(error: Error) {
+    if (!isStandingRefusal(error)) return notify.error(error);
+    refuse(error);
+  }
+
   const updateClient = useMutation({
     mutationFn: () => apiRequest("PATCH", `/api/crm/clients/${clientId}`, {
       email: draft.email || null,
@@ -621,9 +629,9 @@ export function V2ClientRecordPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/clients"] });
       setEditing(false);
       setWriteRefusal(null);
-      showToast("Client saved.");
+      notify.success("Client saved");
     },
-    onError: (error: Error) => refuse(error),
+    onError: onWriteError,
   });
 
   const createContact = useMutation({
@@ -639,8 +647,9 @@ export function V2ClientRecordPage() {
       setContactDraft({ name: "", role: "", email: "", phone: "", isPrimary: false });
       setAddingContact(false);
       setWriteRefusal(null);
+      notify.success("Contact added");
     },
-    onError: (error: Error) => refuse(error),
+    onError: onWriteError,
   });
 
   const record = composeClientRecord({

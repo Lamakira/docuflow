@@ -25,6 +25,7 @@ import { V2InvitationAcceptPage } from "./V2InvitationAccept";
 import { V2OpportunitiesPage, V2OpportunityRecordPage } from "./V2Opportunities";
 import { V2ProjectRecordRedirect, V2LegacyProjectPage, V2ProjectsPage } from "./V2Projects";
 import { V2Shell } from "./V2Shell";
+import { V2Toaster } from "./V2Toast";
 
 export function V2AuthenticatedApp() {
   return (
@@ -147,6 +148,7 @@ export function V2AuthenticatedApp() {
           <Route component={V2PlaceholderPage} />
         </Switch>
       </V2Shell>
+      <V2Toaster />
     </TimeTrackerProvider>
   );
 }

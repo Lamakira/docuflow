@@ -44,6 +44,7 @@ import {
 } from "./dossier";
 import { TaskCheckIcon, type EmptyStateIconId } from "./icons";
 import { motionForSurface } from "./motion";
+import { isStandingRefusal, notify } from "./notify";
 import { meterTone, swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { composeBudgetForm, projectBudgetDraft, type ProjectBudgetDraft } from "./projects";
@@ -425,6 +426,10 @@ export function V2DossierPage() {
       );
       return true;
     }
+    if (errorMessage && !isStandingRefusal(errorMessage)) {
+      notify.error(errorMessage);
+      return false;
+    }
     if (errorMessage) {
       setWriteRefusal(
         /permission denied|not authorized|access denied|forbidden/i.test(errorMessage)
@@ -454,6 +459,7 @@ export function V2DossierPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
       setTaskName("");
       setWriteRefusal(null);
+      notify.success("Task created");
     },
     onError: (error: Error) => {
       refuseWrite(error.message, "Manage Tasks");
@@ -463,9 +469,10 @@ export function V2DossierPage() {
   const patchProject = useMutation({
     mutationFn: (data: { projectName?: string; assigneeId?: string | null }) =>
       apiRequest("PATCH", `/api/crm/projects/${projectId}`, data),
-    onSuccess: () => {
+    onSuccess: (_result, data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId] });
       setWriteRefusal(null);
+      notify.success(data.projectName !== undefined ? "Project renamed" : "Project Manager saved");
     },
     onError: (error: Error) => {
       refuseWrite(error.message);
@@ -479,6 +486,7 @@ export function V2DossierPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
       invalidateProject();
       setWriteRefusal(null);
+      notify.success("Budget saved");
     },
     onError: (error: Error) => {
       refuseWrite(error.message);
@@ -492,6 +500,7 @@ export function V2DossierPage() {
       invalidateProject();
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects/all-kanban"] });
       setWriteRefusal(null);
+      notify.success("Project deleted");
       navigate("/projects");
     },
     onError: (error: Error) => refuseWrite(error.message),
@@ -510,6 +519,7 @@ export function V2DossierPage() {
       setCreatingDocument(false);
       setDocumentName("");
       setWriteRefusal(null);
+      notify.success("Document created");
       if (created?.id) navigate(`/document/${created.id}`);
     },
     onError: (error: Error) => refuseWrite(error.message, "Manage Project Documents"),
@@ -542,6 +552,7 @@ export function V2DossierPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId] });
       setMemberId("");
       setWriteRefusal(null);
+      notify.success("Member assigned");
     },
     onError: (error: Error) => {
       refuseWrite(error.message);
@@ -564,12 +575,16 @@ export function V2DossierPage() {
       setRecordingNote(false);
       setWriteRefusal(null);
       setCreatingNote(false);
+      notify.success("Note added");
     },
     onError: (error: Error) => refuseWrite(error.message, "Manage Project Notes"),
   });
   const deleteNote = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/crm/projects/${projectId}/notes/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "notes"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "notes"] });
+      notify.success("Note deleted");
+    },
     onError: (error: Error) => refuseWrite(error.message, "Manage Project Notes"),
   });
   const createReminder = useMutation({
@@ -583,6 +598,7 @@ export function V2DossierPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] });
       setReminderTitle(""); setReminderNote(""); setReminderDueAt(""); setWriteRefusal(null);
       setCreatingReminder(false);
+      notify.success("Reminder created");
     },
     onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
   });
@@ -594,12 +610,18 @@ export function V2DossierPage() {
   const updateReminder = useMutation({
     mutationFn: ({ id, title, note, dueAt }: { id: string; title: string; note: string; dueAt: string }) =>
       apiRequest("PATCH", `/api/reminders/${id}`, { title, note, dueAt: new Date(dueAt).toISOString() }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] });
+      notify.success("Reminder saved");
+    },
     onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
   });
   const deleteReminder = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/reminders/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId, "reminders"] });
+      notify.success("Reminder deleted");
+    },
     onError: (error: Error) => refuseWrite(error.message, "Manage Reminders"),
   });
 
@@ -613,6 +635,7 @@ export function V2DossierPage() {
     onSuccess: () => {
       invalidateProject();
       setWriteRefusal(null);
+      notify.success("Member unassigned");
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -634,6 +657,7 @@ export function V2DossierPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects/all"] });
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects/all-kanban"] });
       setWriteRefusal(null);
+      notify.success("Project duplicated");
       if (created?.crmProject?.id) navigate(`/projects/${created.crmProject.id}/settings`);
     },
     onError: (error: Error) => refuseWrite(error.message),
@@ -666,6 +690,7 @@ export function V2DossierPage() {
       invalidateTags();
       setTagName("");
       setWriteRefusal(null);
+      notify.success("Tag created");
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -676,6 +701,7 @@ export function V2DossierPage() {
     onSuccess: () => {
       invalidateTags();
       setWriteRefusal(null);
+      notify.success("Tag saved");
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -685,6 +711,7 @@ export function V2DossierPage() {
     onSuccess: () => {
       invalidateTags();
       setWriteRefusal(null);
+      notify.success("Tag deleted");
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -699,6 +726,7 @@ export function V2DossierPage() {
     onSuccess: () => {
       invalidateDocuments();
       setWriteRefusal(null);
+      notify.success("Document duplicated");
     },
     onError: (error: Error) => refuseWrite(error.message, "Manage Project Documents"),
   });
@@ -725,7 +753,7 @@ export function V2DossierPage() {
       setNoteAttachments((current) => [...current, ...uploaded]);
       setWriteRefusal(null);
     } catch (error) {
-      refuseWrite(error instanceof Error ? error.message : "Failed to upload File");
+      refuseWrite(error instanceof Error ? error.message : "File could not be uploaded.");
     } finally {
       setAttachingNote(false);
     }
@@ -741,7 +769,7 @@ export function V2DossierPage() {
       const audio = await apiRequest("POST", "/api/audio/upload", { audioUrl: uploadSlot.objectPath });
       createNote.mutate({ content: "Voice note", audioUrl: audio.audioUrl, audioRecordingId: audio.id, transcriptStatus: audio.transcriptStatus });
     } catch (error) {
-      refuseWrite(error instanceof Error ? error.message : "Failed to upload audio");
+      refuseWrite(error instanceof Error ? error.message : "Voice note could not be uploaded.");
     } finally {
       setUploadingAudio(false);
     }

@@ -14,6 +14,7 @@ import {
   type InstallerRow,
 } from "./devices";
 import { motionForSurface } from "./motion";
+import { copyToClipboard, isStandingRefusal, notify } from "./notify";
 import { statusTone } from "./palette";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
@@ -62,12 +63,13 @@ export function V2DevicesPage() {
     devices: data?.data ?? [],
   });
 
-  function refuseWrite(message: string) {
+  function refuseWrite(error: Error) {
+    if (!isStandingRefusal(error)) return notify.error(error);
     setActionRefusal(
       devicesWriteRefusal({
         kind: "error",
         workspaceName,
-        errorMessage: message,
+        errorMessage: error.message,
       }),
     );
   }
@@ -80,7 +82,7 @@ export function V2DevicesPage() {
     },
     onError: (error: Error) => {
       setPairing((currentPairing) => ({ ...currentPairing, pending: false }));
-      refuseWrite(error.message);
+      refuseWrite(error);
     },
   });
 
@@ -91,8 +93,9 @@ export function V2DevicesPage() {
       queryClient.invalidateQueries({ queryKey: [agentDevicesPath()] });
       setRevokeKey(null);
       setActionRefusal(null);
+      notify.success("Device revoked");
     },
-    onError: (error: Error) => refuseWrite(error.message),
+    onError: refuseWrite,
   });
 
   function onPair() {
@@ -176,7 +179,7 @@ export function V2DevicesPage() {
                   <Button variant="outline" type="button" onClick={onPair} disabled={pair.isPending} className="df-btn">
                     New code
                   </Button>
-                  <Button variant="default" type="button" onClick={() => void navigator.clipboard.writeText(page.pairing.code!)} className="df-btn">
+                  <Button variant="default" type="button" onClick={() => copyToClipboard(page.pairing.code!, "Pairing code copied")} className="df-btn">
                     Copy code
                   </Button>
                 </div>

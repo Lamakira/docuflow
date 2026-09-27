@@ -13,6 +13,7 @@ import {
   type AccessStateView,
 } from "./manageAccess";
 import { V2FormDialog } from "./V2FormDialog";
+import { isStandingRefusal, notify } from "./notify";
 import { V2FilterSelect } from "./V2Select";
 import type { AccessLevel } from "@shared/documentAccess";
 
@@ -66,8 +67,10 @@ export function V2ManageAccessDialog({
       queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/company-documents"] });
       onOpenChange(false);
+      notify.success("Document Access saved");
     },
     onError: (error: Error) => {
+      if (!isStandingRefusal(error)) return notify.error(error);
       setRefusal(chromeRefusal({ kind: "generic", message: error.message }));
     },
   });

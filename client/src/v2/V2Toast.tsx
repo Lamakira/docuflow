@@ -1,60 +1,37 @@
-import { useEffect, useRef } from "react";
-import { motionForSurface } from "./motion";
-import { toastModel } from "./chrome";
-import { CheckIcon } from "./icons";
+import { Toaster } from "@/components/ui/sonner";
 
-export type V2Toast = {
-  id: number;
-  message: string;
-  undo?: () => void;
-  state: "in" | "leaving";
-};
+/** Sonner reads these on its own list, so they resolve against the v2 palette in both themes. */
+const V2_TOASTER_STYLE = {
+  "--normal-bg": "var(--df-card-white)",
+  "--normal-text": "var(--df-case-ink)",
+  "--normal-border": "var(--df-divider)",
+  "--success-bg": "var(--df-positive-wash)",
+  "--success-border": "var(--df-positive-line)",
+  "--success-text": "var(--df-positive-ink)",
+  "--info-bg": "var(--df-card-white)",
+  "--info-border": "var(--df-divider)",
+  "--info-text": "var(--df-case-ink)",
+  "--warning-bg": "var(--df-amber-wash)",
+  "--warning-border": "var(--df-active-line)",
+  "--warning-text": "var(--df-active-ink)",
+  "--error-bg": "var(--df-alert-wash)",
+  "--error-border": "var(--df-alert-line)",
+  "--error-text": "var(--df-alert-ink)",
+  "--border-radius": "var(--df-radius-3)",
+  fontFamily: "var(--df-font-ui)",
+} as React.CSSProperties;
 
-const TOAST_MS = 3200;
-
-export function V2ToastHost({
-  toast,
-  onDismiss,
-  onGone,
-}: {
-  toast: V2Toast | null;
-  onDismiss: () => void;
-  onGone: () => void;
-}) {
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
-  const motion = motionForSurface("toast").enterExit;
-  const model = toast ? toastModel({ message: toast.message, undo: Boolean(toast.undo) }) : null;
-
-  useEffect(() => {
-    if (!toast || toast.state === "leaving") return;
-    const timer = window.setTimeout(onDismiss, TOAST_MS);
-    return () => window.clearTimeout(timer);
-  }, [toast?.id, toast?.state, onDismiss]);
-
-  if (!toast || !model) return null;
-
+export function V2Toaster() {
   return (
-    <div
-      className="df-toast"
-      data-testid="v2-toast"
-      data-edge={model.edge}
-      data-state={toast.state}
-      data-motion={motion}
-      role="status"
-      aria-live="polite"
-      onTransitionEnd={(event) => {
-        if (event.propertyName !== "opacity" && event.propertyName !== "transform") return;
-        if (toastRef.current?.state === "leaving") onGone();
-      }}
-    >
-      <CheckIcon />
-      <span className="df-toast-message">{model.message}</span>
-      {model.undoLabel && toast.undo ? (
-        <button type="button" className="df-toast-undo" onClick={toast.undo}>
-          {model.undoLabel}
-        </button>
-      ) : null}
+    <div className="df-v2 df-toaster" data-testid="v2-toaster">
+      <Toaster
+        position="top-center"
+        richColors
+        offset="var(--df-space-4)"
+        mobileOffset="var(--df-space-3)"
+        style={V2_TOASTER_STYLE}
+        toastOptions={{ className: "df-toast" }}
+      />
     </div>
   );
 }

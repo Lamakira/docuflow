@@ -30,6 +30,7 @@ import {
   addAllowedTimezone,
   timezoneSuggestions,
   administrationWriteRefusal,
+  TRACKING_POLICY_SAVED,
   billingCancelPath,
   billingCheckoutPath,
   billingPaymentMethodPath,
@@ -57,6 +58,7 @@ import {
 } from "./administration";
 import { trackingPolicyPath } from "./activity";
 import { motionForSurface } from "./motion";
+import { copyToClipboard, isStandingRefusal, notify } from "./notify";
 import { billingConditionTone, swatchStyle } from "./palette";
 import { CheckIcon, SourceMark } from "./icons";
 import { sourceIcon } from "./sourceIcons";
@@ -101,7 +103,6 @@ type WorkspaceMembershipsResponse = {
 };
 
 const SECRET_MOTION = motionForSurface("secret-once").enterExit;
-const POLICY_SAVED_MOTION = motionForSurface("tracking-policy-save").enterExit;
 
 type WorkspaceSettingsResponse = {
   screenshotPolicy: ScreenshotPolicy | null;
@@ -152,7 +153,6 @@ export function V2AdministrationPage() {
   const [timezoneDraft, setTimezoneDraft] = useState<string[]>([]);
   const [timezoneInput, setTimezoneInput] = useState("");
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
-  const [policySaved, setPolicySaved] = useState(false);
   const [pipelineStatus, setPipelineStatus] = useState<PipelineFeedback | null>(null);
   const pipelineSaves = useRef(0);
 
@@ -254,11 +254,11 @@ export function V2AdministrationPage() {
     draft: policyDraft,
     savedTimezones,
     draftTimezones: timezoneDraft,
-    justSaved: policySaved,
     refused: settingsRefused,
   });
 
   function refuseWrite(message: string) {
+    if (!isStandingRefusal(message)) return notify.error(message);
     setActionRefusal(
       administrationWriteRefusal({
         kind: "error",
@@ -292,6 +292,7 @@ export function V2AdministrationPage() {
       setAccountName("");
       setAccountCapabilities([]);
       setActionRefusal(null);
+      notify.success("Service Account created");
       if (created.plaintextKey) {
         setRevealedSecret({
           kind: "service-account",
@@ -316,6 +317,7 @@ export function V2AdministrationPage() {
       setEndpointUrl("");
       setEventTypes([]);
       setActionRefusal(null);
+      notify.success("Webhook Endpoint created");
       if (created.plaintextSecret) {
         setRevealedSecret({
           kind: "webhook-endpoint",
@@ -349,6 +351,7 @@ export function V2AdministrationPage() {
       queryClient.invalidateQueries({ queryKey: [billingSubscriptionPath()] });
       setSeatQuantity("");
       setActionRefusal(null);
+      notify.success("Seats updated");
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -368,7 +371,7 @@ export function V2AdministrationPage() {
       queryClient.invalidateQueries({ queryKey: [workspaceSettingsPath()] });
       queryClient.invalidateQueries({ queryKey: [trackingPolicyPath()] });
       setActionRefusal(null);
-      setPolicySaved(true);
+      notify.success(TRACKING_POLICY_SAVED);
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -378,6 +381,7 @@ export function V2AdministrationPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [workspaceSettingsPath()] });
       setActionRefusal(null);
+      notify.success("Screencasts timezones saved");
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -387,6 +391,7 @@ export function V2AdministrationPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [billingSubscriptionPath()] });
       setActionRefusal(null);
+      notify.success("Subscription set to cancel at period end");
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -402,11 +407,7 @@ export function V2AdministrationPage() {
     },
     onError: (error: Error, { feedback }) => {
       refuseWrite(error.message);
-      setPipelineStatus((current) =>
-        current?.id === feedback.id
-          ? pipelineFeedback(feedback.id, feedback.listId, feedback.rowId, { phase: "failed", reason: error.message })
-          : current,
-      );
+      setPipelineStatus((current) => (current?.id === feedback.id ? null : current));
     },
     // A failed step may still have written the module or field before it.
     onSettled: () => {
@@ -456,6 +457,7 @@ export function V2AdministrationPage() {
       const rotated = await apiRequest("POST", rotateServiceAccountPath(id));
       queryClient.invalidateQueries({ queryKey: [serviceAccountsPath()] });
       setActionRefusal(null);
+      notify.success("Service Account key rotated");
       if (rotated.plaintextKey) {
         setRevealedSecret({
           kind: "service-account",
@@ -465,7 +467,7 @@ export function V2AdministrationPage() {
         });
       }
     } catch (error) {
-      refuseWrite(error instanceof Error ? error.message : "Rotate failed");
+      refuseWrite(error instanceof Error ? error.message : "Key could not be rotated.");
     }
   }
 
@@ -475,8 +477,9 @@ export function V2AdministrationPage() {
       await apiRequest("POST", revokeServiceAccountPath(id));
       queryClient.invalidateQueries({ queryKey: [serviceAccountsPath()] });
       setActionRefusal(null);
+      notify.success("Service Account revoked");
     } catch (error) {
-      refuseWrite(error instanceof Error ? error.message : "Revoke failed");
+      refuseWrite(error instanceof Error ? error.message : "Service Account could not be revoked.");
     }
   }
 
@@ -486,6 +489,7 @@ export function V2AdministrationPage() {
       const rotated = await apiRequest("POST", rotateWebhookEndpointPath(id));
       queryClient.invalidateQueries({ queryKey: [webhookEndpointsPath()] });
       setActionRefusal(null);
+      notify.success("Webhook Endpoint secret rotated");
       if (rotated.plaintextSecret) {
         setRevealedSecret({
           kind: "webhook-endpoint",
@@ -495,7 +499,7 @@ export function V2AdministrationPage() {
         });
       }
     } catch (error) {
-      refuseWrite(error instanceof Error ? error.message : "Rotate failed");
+      refuseWrite(error instanceof Error ? error.message : "Secret could not be rotated.");
     }
   }
 
@@ -505,8 +509,9 @@ export function V2AdministrationPage() {
       await apiRequest("POST", webhookDisablePath(id));
       queryClient.invalidateQueries({ queryKey: [webhookEndpointsPath()] });
       setActionRefusal(null);
+      notify.success("Webhook Endpoint disabled");
     } catch (error) {
-      refuseWrite(error instanceof Error ? error.message : "Disable failed");
+      refuseWrite(error instanceof Error ? error.message : "Webhook Endpoint could not be disabled.");
     }
   }
 
@@ -516,13 +521,13 @@ export function V2AdministrationPage() {
       await apiRequest("POST", webhookEnablePath(id));
       queryClient.invalidateQueries({ queryKey: [webhookEndpointsPath()] });
       setActionRefusal(null);
+      notify.success("Webhook Endpoint enabled");
     } catch (error) {
-      refuseWrite(error instanceof Error ? error.message : "Enable failed");
+      refuseWrite(error instanceof Error ? error.message : "Webhook Endpoint could not be enabled.");
     }
   }
 
   function editPolicy(patch: Partial<ScreenshotPolicy>) {
-    setPolicySaved(false);
     setPolicyDraft((current) => ({ ...current, ...patch }));
   }
 
@@ -784,7 +789,7 @@ export function V2AdministrationPage() {
                 <p className="df-empty df-flush">
                   {page.secretOnce.confirmation}
                 </p>
-                <Button variant="outline" type="button" onClick={() => { void navigator.clipboard.writeText(page.secretOnce!.plaintext); }} className="df-btn">
+                <Button variant="outline" type="button" onClick={() => copyToClipboard(page.secretOnce!.plaintext, "Secret copied")} className="df-btn">
                   Copy
                 </Button>
               </div>
@@ -1172,15 +1177,6 @@ export function V2AdministrationPage() {
                 <div className="df-form-actions">
                   {trackingPolicy.issue ? (
                     <p className="df-form-note df-refusal-inline">{trackingPolicy.issue}</p>
-                  ) : trackingPolicy.savedNote ? (
-                    <p
-                      className="df-form-note df-policy-saved"
-                      data-motion={POLICY_SAVED_MOTION}
-                      role="status"
-                      data-testid="v2-administration-policy-saved"
-                    >
-                      {trackingPolicy.savedNote}
-                    </p>
                   ) : (
                     <p className="df-form-note">
                       {trackingPolicy.dirty ? "Unsaved changes." : "No change to save."}

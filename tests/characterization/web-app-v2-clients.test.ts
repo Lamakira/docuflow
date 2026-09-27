@@ -288,7 +288,7 @@ describe("Client editor shows what it saved (#213)", () => {
   it("names the card for what it edits, and signs off the save", () => {
     // The card edits the whole Client; calling it "Notes" described one field.
     expect(clientSource).toContain("Client details");
-    expect(clientSource).toContain('showToast("Client saved.")');
+    expect(clientSource).toContain('notify.success("Client saved")');
   });
 });
 
