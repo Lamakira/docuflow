@@ -1645,6 +1645,56 @@ button.df-activity-row {
   flex-wrap: wrap;
 }
 
+/* A row and its status slot. The slot's column is always there, so a hint or
+   a "Saved" appearing never moves the row. */
+.df-pipeline-item {
+  display: grid;
+  grid-template-columns: minmax(0, 720px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--df-space-3);
+}
+
+.df-v2[data-chrome="mobile"] .df-pipeline-item {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.df-pipeline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--df-space-1);
+  min-width: 0;
+  min-height: var(--df-space-4);
+  margin: 0;
+  font-family: var(--df-font-mono);
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+}
+
+.df-pipeline-status[data-phase="saved"] {
+  color: var(--df-positive-ink);
+  animation: df-pipeline-saved 2000ms var(--ease-out) forwards;
+}
+
+.df-pipeline-status[data-phase="failed"] {
+  display: block;
+}
+
+@keyframes df-pipeline-saved {
+  0%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .df-pipeline-status[data-phase="saved"] {
+    animation: none;
+  }
+}
+
 .df-v2 .df-pipeline-label {
   flex: 1;
   min-width: 0;

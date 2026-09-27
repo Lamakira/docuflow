@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -58,7 +58,7 @@ import {
 import { trackingPolicyPath } from "./activity";
 import { motionForSurface } from "./motion";
 import { billingConditionTone, swatchStyle } from "./palette";
-import { SourceMark } from "./icons";
+import { CheckIcon, SourceMark } from "./icons";
 import { sourceIcon } from "./sourceIcons";
 import {
   PIPELINE_COLOURS,
@@ -72,8 +72,12 @@ import {
   removePipelineOption,
   renamePipelineOption,
   savePipelineList,
+  PIPELINE_RENAME_HINT,
+  PIPELINE_SAVED_MS,
+  feedbackFor,
+  pipelineFeedback,
+  type PipelineFeedback,
   type PipelineEdit,
-  type PipelineListId,
   type PipelineListModel,
 } from "./pipelineLists";
 import {
@@ -149,7 +153,8 @@ export function V2AdministrationPage() {
   const [timezoneInput, setTimezoneInput] = useState("");
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
   const [policySaved, setPolicySaved] = useState(false);
-  const [pipelineIssue, setPipelineIssue] = useState<{ id: PipelineListId; reason: string } | null>(null);
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineFeedback | null>(null);
+  const pipelineSaves = useRef(0);
 
   const { data: people, isLoading: peopleLoading } = useQuery<WorkspaceMembershipsResponse>({
     queryKey: ["/api/workspace/memberships"],
@@ -387,25 +392,53 @@ export function V2AdministrationPage() {
   });
   const pipelineLists = composePipelineLists(crmModules);
   const savePipeline = useMutation({
-    mutationFn: ({ list, edit }: { list: PipelineListModel; edit: { options: string[] } }) =>
+    mutationFn: ({ list, edit }: { list: PipelineListModel; edit: { options: string[] }; feedback: PipelineFeedback }) =>
       savePipelineList(list, edit, (method, path, body) => apiRequest(method, path, body)),
-    onSuccess: () => setActionRefusal(null),
-    onError: (error: Error) => refuseWrite(error.message),
+    onSuccess: (_data, { feedback }) => {
+      setActionRefusal(null);
+      setPipelineStatus((current) =>
+        current?.id === feedback.id ? pipelineFeedback(feedback.id, feedback.listId, feedback.rowId, { phase: "saved" }) : current,
+      );
+    },
+    onError: (error: Error, { feedback }) => {
+      refuseWrite(error.message);
+      setPipelineStatus((current) =>
+        current?.id === feedback.id
+          ? pipelineFeedback(feedback.id, feedback.listId, feedback.rowId, { phase: "failed", reason: error.message })
+          : current,
+      );
+    },
     // A failed step may still have written the module or field before it.
     onSettled: () => {
       for (const queryKey of PIPELINE_LIST_QUERY_KEYS) queryClient.invalidateQueries({ queryKey });
     },
   });
 
-  /** Whether the edit went to the server; a refused one leaves the row as it was. */
-  function onPipelineEdit(list: PipelineListModel, edit: PipelineEdit): boolean {
+  useEffect(() => {
+    if (pipelineStatus?.phase !== "saved") return;
+    const shown = pipelineStatus.id;
+    const timer = window.setTimeout(
+      () => setPipelineStatus((current) => (current?.id === shown ? null : current)),
+      PIPELINE_SAVED_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [pipelineStatus]);
+
+  /**
+   * Whether the edit went to the server; a refused one leaves the row as it
+   * was. `rowId` is the row the feedback sits beside, or null for the list.
+   */
+  function onPipelineEdit(list: PipelineListModel, edit: PipelineEdit, rowId: string | null): boolean {
     if (!guardWrite()) return false;
+    pipelineSaves.current += 1;
+    const id = pipelineSaves.current;
     if (!edit.ok) {
-      setPipelineIssue({ id: list.id, reason: edit.reason });
+      setPipelineStatus(pipelineFeedback(id, list.id, rowId, { phase: "failed", reason: edit.reason }));
       return false;
     }
-    setPipelineIssue(null);
-    savePipeline.mutate({ list, edit: { options: edit.options } });
+    const feedback = pipelineFeedback(id, list.id, rowId, { phase: "saving" });
+    setPipelineStatus(feedback);
+    savePipeline.mutate({ list, edit: { options: edit.options }, feedback });
     return true;
   }
 
@@ -623,8 +656,8 @@ export function V2AdministrationPage() {
               key={list.id}
               list={list}
               pending={savePipeline.isPending}
-              issue={pipelineIssue?.id === list.id ? pipelineIssue.reason : null}
-              onEdit={(edit) => onPipelineEdit(list, edit)}
+              feedback={pipelineStatus?.listId === list.id ? pipelineStatus : null}
+              onEdit={(edit, rowId) => onPipelineEdit(list, edit, rowId)}
             />
           ))}
         </TabsContent>
@@ -1502,15 +1535,17 @@ function DestructiveConfirm({
 function PipelineListCard({
   list,
   pending,
-  issue,
+  feedback,
   onEdit,
 }: {
   list: PipelineListModel;
   pending: boolean;
-  issue: string | null;
-  onEdit: (edit: PipelineEdit) => boolean;
+  feedback: PipelineFeedback | null;
+  onEdit: (edit: PipelineEdit, rowId: string | null) => boolean;
 }) {
   const [draft, setDraft] = useState("");
+  const [naming, setNaming] = useState<string | null>(null);
+  const listStatus = feedbackFor(feedback, list.id, null);
   return (
     <section className="df-card df-policy-form" data-testid={`v2-administration-list-${list.id}`}>
       <div className="df-card-head">
@@ -1523,83 +1558,98 @@ function PipelineListCard({
       <div className="df-daily-form">
         {list.unsavedNote ? <p className="df-policy-hint">{list.unsavedNote}</p> : null}
         <ol className="df-pipeline-options" aria-label={list.title}>
-          {list.rows.map((row) => (
-            <li key={row.id} className="df-pipeline-option" data-testid={`v2-pipeline-option-${list.id}-${row.value}`}>
-              {/* A brand's colour is not the Workspace's to choose, so a Source
-                  with its own mark has no picker. */}
-              {list.id === "source" && sourceIcon(row.value) ? (
-                <span className="df-pipeline-mark" data-testid={`v2-pipeline-mark-${row.value}`}>
-                  <SourceMark value={row.value} />
-                </span>
-              ) : (
-                <ColourPicker
-                  label={row.label}
-                  color={row.color}
-                  disabled={pending}
-                  onChoose={(color) => onEdit(recolourPipelineOption(list, row.index, color))}
-                />
-              )}
-              {row.outcome ? (
-                <span className="df-pipeline-outcome">
-                  <span className="df-status" data-swatch="" style={swatchStyle(row.color)}>{row.label}</span>
-                  <span className="df-mono df-meta">FIXED OUTCOME</span>
-                </span>
-              ) : row.builtIn ? (
-                <span className="df-pipeline-outcome">
-                  <span className="df-pipeline-builtin">{row.label}</span>
-                  <span className="df-mono df-meta">BUILT IN</span>
-                </span>
-              ) : (
-                <Input
-                  key={row.label}
-                  className="df-pipeline-label"
-                  aria-label={`Name of ${row.label}`}
-                  defaultValue={row.label}
-                  disabled={pending}
-                  onBlur={(event) => {
-                    const next = event.target.value.trim();
-                    if (next === row.label) return;
-                    if (!onEdit(renamePipelineOption(list, row.index, next))) event.target.value = row.label;
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") event.currentTarget.value = row.label;
-                    if (event.key === "Enter" || event.key === "Escape") {
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    }
-                  }}
-                />
-              )}
-              {row.outcome ? null : (
-                <span className="df-row-actions">
-                  <Button variant="outline" type="button" className="df-btn" disabled={pending || !row.canMoveUp} aria-label={`Move ${row.label} up`} onClick={() => onEdit(movePipelineOption(list, row.index, -1))}>
-                    Up
-                  </Button>
-                  <Button variant="outline" type="button" className="df-btn" disabled={pending || !row.canMoveDown} aria-label={`Move ${row.label} down`} onClick={() => onEdit(movePipelineOption(list, row.index, 1))}>
-                    Down
-                  </Button>
-                  {row.canRemove ? (
-                    <DestructiveConfirm
-                      label="Remove"
-                      title={`Remove ${row.label}`}
-                      consequence={row.removeConsequence}
-                      confirmLabel={`Remove ${list.noun}`}
-                      keepLabel={`Keep ${list.noun}`}
-                      pending={pending}
-                      testId={`v2-pipeline-remove-${list.id}-${row.value}`}
-                      onConfirm={() => onEdit(removePipelineOption(list, row.index))}
+          {list.rows.map((row) => {
+            const rowStatus = feedbackFor(feedback, list.id, row.id);
+            const hintId = `v2-pipeline-hint-${list.id}-${row.id}`;
+            return (
+              <li key={row.id} className="df-pipeline-item" data-testid={`v2-pipeline-option-${list.id}-${row.value}`}>
+                <div className="df-pipeline-option">
+                  {/* A brand's colour is not the Workspace's to choose, so a Source
+                      with its own mark has no picker. */}
+                  {list.id === "source" && sourceIcon(row.value) ? (
+                    <span className="df-pipeline-mark" data-testid={`v2-pipeline-mark-${row.value}`}>
+                      <SourceMark value={row.value} />
+                    </span>
+                  ) : (
+                    <ColourPicker
+                      label={row.label}
+                      color={row.color}
+                      disabled={pending}
+                      onChoose={(color) => onEdit(recolourPipelineOption(list, row.index, color), row.id)}
                     />
-                  ) : null}
-                </span>
-              )}
-            </li>
-          ))}
+                  )}
+                  {row.outcome ? (
+                    <span className="df-pipeline-outcome">
+                      <span className="df-status" data-swatch="" style={swatchStyle(row.color)}>{row.label}</span>
+                      <span className="df-mono df-meta">FIXED OUTCOME</span>
+                    </span>
+                  ) : row.builtIn ? (
+                    <span className="df-pipeline-outcome">
+                      <span className="df-pipeline-builtin">{row.label}</span>
+                      <span className="df-mono df-meta">BUILT IN</span>
+                    </span>
+                  ) : (
+                    <Input
+                      // A refused save remounts the field, so it reads the saved name again.
+                      key={`${row.label}:${rowStatus?.phase === "failed" ? rowStatus.id : 0}`}
+                      className="df-pipeline-label"
+                      aria-label={`Name of ${row.label}`}
+                      aria-describedby={hintId}
+                      defaultValue={row.label}
+                      disabled={pending}
+                      onFocus={() => setNaming(row.id)}
+                      onBlur={(event) => {
+                        setNaming(null);
+                        const next = event.target.value.trim();
+                        if (next === row.label) return;
+                        if (!onEdit(renamePipelineOption(list, row.index, next), row.id)) event.target.value = row.label;
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") event.currentTarget.value = row.label;
+                        if (event.key === "Enter" || event.key === "Escape") {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  )}
+                  {row.outcome ? null : (
+                    <span className="df-row-actions">
+                      <Button variant="outline" type="button" className="df-btn" disabled={pending || !row.canMoveUp} aria-label={`Move ${row.label} up`} onClick={() => onEdit(movePipelineOption(list, row.index, -1), row.id)}>
+                        Up
+                      </Button>
+                      <Button variant="outline" type="button" className="df-btn" disabled={pending || !row.canMoveDown} aria-label={`Move ${row.label} down`} onClick={() => onEdit(movePipelineOption(list, row.index, 1), row.id)}>
+                        Down
+                      </Button>
+                      {row.canRemove ? (
+                        <DestructiveConfirm
+                          label="Remove"
+                          title={`Remove ${row.label}`}
+                          consequence={row.removeConsequence}
+                          confirmLabel={`Remove ${list.noun}`}
+                          keepLabel={`Keep ${list.noun}`}
+                          pending={pending}
+                          testId={`v2-pipeline-remove-${list.id}-${row.value}`}
+                          onConfirm={() => onEdit(removePipelineOption(list, row.index), null)}
+                        />
+                      ) : null}
+                    </span>
+                  )}
+                </div>
+                <PipelineStatus
+                  status={rowStatus}
+                  hintId={hintId}
+                  hint={naming === row.id ? PIPELINE_RENAME_HINT : null}
+                />
+              </li>
+            );
+          })}
         </ol>
         <form
           className="df-admin-form df-inline-form"
           onSubmit={(event) => {
             event.preventDefault();
-            if (onEdit(addPipelineOption(list, draft))) setDraft("");
+            if (onEdit(addPipelineOption(list, draft), null)) setDraft("");
           }}
         >
           <label className="df-daily-field">
@@ -1610,10 +1660,42 @@ function PipelineListCard({
             Add {list.noun}
           </Button>
         </form>
-        {issue ? <p className="df-refusal" role="alert">{issue}</p> : null}
+        <PipelineStatus status={listStatus} />
         <p className="df-policy-hint">{list.renameNote}</p>
+        {/* One polite voice per list, so a save is heard once wherever it shows. */}
+        <p className="df-sr-only" aria-live="polite" data-testid={`v2-pipeline-live-${list.id}`}>
+          {feedback && feedback.phase !== "failed" ? feedback.message : ""}
+        </p>
       </div>
     </section>
+  );
+}
+
+/**
+ * The slot beside a row (or under the list): the keys while its name has
+ * focus, then “Saving…”, a brief “Saved”, or why the save was refused.
+ */
+function PipelineStatus({
+  status,
+  hint = null,
+  hintId,
+}: {
+  status: PipelineFeedback | null;
+  hint?: string | null;
+  hintId?: string;
+}) {
+  if (status?.phase === "failed") {
+    return (
+      <p id={hintId} className="df-pipeline-status df-refusal" data-phase="failed" role="alert">
+        {status.message}
+      </p>
+    );
+  }
+  return (
+    <p id={hintId} className="df-pipeline-status" data-phase={status?.phase ?? (hint ? "hint" : "idle")}>
+      {status?.phase === "saved" ? <CheckIcon /> : null}
+      {status ? status.message : hint}
+    </p>
   );
 }
 

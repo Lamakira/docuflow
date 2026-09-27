@@ -27,6 +27,10 @@ import {
   removePipelineOption,
   renamePipelineOption,
   savePipelineList,
+  PIPELINE_RENAME_HINT,
+  PIPELINE_SAVED_MS,
+  feedbackFor,
+  pipelineFeedback,
   type PipelineListModel,
 } from "../../client/src/v2/pipelineLists";
 import { diffFieldOptions, builtInList, serializeFieldOption } from "@shared/pipelineLists";
@@ -425,6 +429,61 @@ describe("Pipeline & lists replaces the CRM field builder", () => {
     expect(rule(".df-pipeline-option")).toMatch(/gap:\s*var\(--df-space-3\)/);
     expect(rule(".df-pipeline-option")).toMatch(/padding:\s*var\(--df-space-2\) var\(--df-space-3\)/);
     expect(rule(".dark .df-pipeline-swatch")).toMatch(/var\(--df-swatch-line-dark\)/);
+  });
+});
+
+describe("Pipeline & lists says when a change saves", () => {
+  const card = pageSource.slice(pageSource.indexOf("function PipelineListCard("), pageSource.indexOf("/** The colours an option may wear"));
+
+  it("tells a focused name which keys rename and cancel, without moving the list", () => {
+    expect(PIPELINE_RENAME_HINT).toBe("Press Enter to rename · Esc to cancel");
+    expect(card).toContain("aria-describedby={hintId}");
+    expect(card).toContain("onFocus={() => setNaming(row.id)}");
+    expect(card).toContain("hint={naming === row.id ? PIPELINE_RENAME_HINT : null}");
+    // The slot has its own column on every row, so it appearing shifts nothing.
+    expect(rule(".df-pipeline-item")).toMatch(/grid-template-columns:\s*minmax\(0, 720px\) minmax\(0, 1fr\)/);
+    expect(rule(".df-pipeline-status")).toMatch(/color:\s*var\(--df-archive-slate\)/);
+  });
+
+  it("reports each save beside the row it changed, or under the list when the row is new or gone", () => {
+    expect(card).toContain("onEdit(renamePipelineOption(list, row.index, next), row.id)");
+    expect(card).toContain("onEdit(recolourPipelineOption(list, row.index, color), row.id)");
+    expect(card).toContain("onEdit(movePipelineOption(list, row.index, -1), row.id)");
+    expect(card).toContain("onEdit(removePipelineOption(list, row.index), null)");
+    expect(card).toContain("onEdit(addPipelineOption(list, draft), null)");
+
+    const saving = pipelineFeedback(3, "project-type", "retainer", { phase: "saving" });
+    expect(saving).toEqual({ id: 3, listId: "project-type", rowId: "retainer", phase: "saving", message: "Saving…" });
+    expect(pipelineFeedback(3, "project-type", "retainer", { phase: "saved" }).message).toBe("Saved");
+    expect(pipelineFeedback(4, "source", null, { phase: "failed", reason: "“Zoho” is already in this list." }).message).toBe(
+      "“Zoho” is already in this list.",
+    );
+    expect(feedbackFor(saving, "project-type", "retainer")).toBe(saving);
+    expect(feedbackFor(saving, "project-type", "monthly")).toBeNull();
+    expect(feedbackFor(saving, "project-type", null)).toBeNull();
+    expect(feedbackFor(saving, "source", "retainer")).toBeNull();
+  });
+
+  it("confirms a save briefly and politely, then fades unless motion is reduced", () => {
+    expect(PIPELINE_SAVED_MS).toBe(2000);
+    expect(card).toContain('aria-live="polite"');
+    expect(pageSource).toContain('{status?.phase === "saved" ? <CheckIcon /> : null}');
+    expect(pageSource).toMatch(/window\.setTimeout\(\s*\(\) => setPipelineStatus\(\(current\) => \(current\?\.id === shown \? null : current\)\),\s*PIPELINE_SAVED_MS,/);
+    expect(rule('.df-pipeline-status[data-phase="saved"]')).toMatch(/color:\s*var\(--df-positive-ink\)/);
+    expect(rule('.df-pipeline-status[data-phase="saved"]')).toMatch(/animation:\s*df-pipeline-saved/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.df-pipeline-status\[data-phase="saved"\] \{\s*animation: none;/);
+    for (const selector of [".df-pipeline-item", ".df-pipeline-status", '.df-pipeline-status[data-phase="saved"]']) {
+      expect(rule(selector)).not.toMatch(/#[0-9a-f]{3,6}\b/i);
+    }
+  });
+
+  it("shows a refused save beside its row and puts the saved name back", () => {
+    expect(pageSource).toContain('<p id={hintId} className="df-pipeline-status df-refusal" data-phase="failed" role="alert">');
+    expect(card).toContain('key={`${row.label}:${rowStatus?.phase === "failed" ? rowStatus.id : 0}`}');
+    expect(card).toContain("<PipelineStatus status={listStatus} />");
+    expect(card).not.toContain("{issue ?");
+    // A server refusal still reaches the page's refusal line too.
+    expect(pageSource).toMatch(/onError: \(error: Error, \{ feedback \}\) => \{\s*refuseWrite\(error\.message\);/);
   });
 });
 

@@ -292,6 +292,44 @@ export function removePipelineOption(list: PipelineListModel, index: number): Pi
   return { ok: true, options: stored(list.entries.filter((_, position) => position !== index)) };
 }
 
+/** Shown beside a name while it has focus: leaving the field saves too, but the keys say so. */
+export const PIPELINE_RENAME_HINT = "Press Enter to rename · Esc to cancel";
+
+/** How long “Saved” stays beside the row before it fades. */
+export const PIPELINE_SAVED_MS = 2000;
+
+/**
+ * What one save is doing, shown in the slot beside the row it changed
+ * (rename, recolour, move) or under the list when the row is gone or new
+ * (remove, add). `id` tells one save from the next.
+ */
+export type PipelineFeedback = {
+  id: number;
+  listId: PipelineListId;
+  rowId: string | null;
+  phase: "saving" | "saved" | "failed";
+  message: string;
+};
+
+export function pipelineFeedback(
+  id: number,
+  listId: PipelineListId,
+  rowId: string | null,
+  outcome: { phase: "saving" } | { phase: "saved" } | { phase: "failed"; reason: string },
+): PipelineFeedback {
+  const message = outcome.phase === "saving" ? "Saving…" : outcome.phase === "saved" ? "Saved" : outcome.reason;
+  return { id, listId, rowId, phase: outcome.phase, message };
+}
+
+/** The feedback a row's slot (or, with `rowId` null, the list's) shows, if any. */
+export function feedbackFor(
+  feedback: PipelineFeedback | null,
+  listId: PipelineListId,
+  rowId: string | null,
+): PipelineFeedback | null {
+  return feedback && feedback.listId === listId && feedback.rowId === rowId ? feedback : null;
+}
+
 export function adminModulesPath(): string {
   return "/api/admin/modules";
 }
