@@ -20,12 +20,14 @@ import { Panel, PanelHead, PanelBody, PanelRow } from '../components/Panel';
 import { Stage, StageHead } from '../components/Stage';
 import { useUi } from '../ui/UiContext';
 import { BellIcon, EyeIcon, GlobeIcon, PowerIcon, WindowIcon, WrenchIcon } from '../icons';
-import { idleBehaviourCopy, policyFreshnessCopy } from '../../../lib/trackingPolicy';
+import { idleBehaviourCopy, policySourceCopy, policySourceLabel } from '../../../lib/trackingPolicy';
 import type { DeviceTrackingPolicy } from '../../app/types';
 
 type SectionId = 'activity-bar' | 'tracking' | 'startup' | 'reminders' | 'timezone' | 'advanced';
 
 type OrgPolicy = DeviceTrackingPolicy;
+
+const POLICY_POLL_MS = 10_000;
 
 /* ── Row kinds ────────────────────────────────────────────────────────────── */
 
@@ -85,8 +87,15 @@ export function SettingsScreen() {
   const [openAtLogin, setOpenAtLogin] = useState(false);
   const [tz, setTz] = useState<'local' | 'utc'>('local');
 
+  // Re-read while open: the source flips when a heartbeat lands or fails.
   useEffect(() => {
-    void window.agentBridge.getOrgPolicy().then(setPolicy);
+    const load = () => void window.agentBridge.getOrgPolicy().then(setPolicy).catch(() => {});
+    load();
+    const id = window.setInterval(load, POLICY_POLL_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     void window.agentBridge.getLocalPrefs().then((p) => { setPrefs(p); setOpenAtLogin(p.openAtLogin); });
     void window.agentBridge.getDisplayTimezone().then(setTz);
   }, []);
@@ -105,7 +114,7 @@ export function SettingsScreen() {
 
   const SECTIONS: { id: SectionId; label: string; meta: string; Icon: typeof WindowIcon }[] = [
     { id: 'activity-bar', label: 'Activity Bar', meta: 'Floating widget & window', Icon: WindowIcon },
-    { id: 'tracking', label: 'Tracking', meta: 'Idle detection, captures', Icon: EyeIcon },
+    { id: 'tracking', label: 'Tracking', meta: `Tracking Policy · ${policySourceLabel(policy?.status)}`, Icon: EyeIcon },
     { id: 'startup', label: 'Startup', meta: 'Launch at login', Icon: PowerIcon },
     { id: 'reminders', label: 'Reminders', meta: 'Nudges when idle', Icon: BellIcon },
     { id: 'timezone', label: 'Time Zone', meta: zone, Icon: GlobeIcon },
@@ -198,6 +207,9 @@ export function SettingsScreen() {
               How time is recorded, when idle time is dropped, and how often screens are captured.
               These are set by your organisation and apply to every device on your account.
             </p>
+            <p className="v2-set__source" role="status">
+              Tracking Policy: {policySourceCopy(policy?.status)}
+            </p>
             <div className="v2-card v2-set__card">
               <Row
                 label="Capture screens automatically"
@@ -227,10 +239,7 @@ export function SettingsScreen() {
               </Row>
               <Row label="Per-app breakdown" hint="Attribute tracked time to the app in focus."><Soon /></Row>
             </div>
-            <p className="v2-set__foot">
-              {policy ? `${policyFreshnessCopy(policy.status)} ` : ''}
-              To change these, contact your administrator or open the web app.
-            </p>
+            <p className="v2-set__foot">To change these, contact your administrator or open the web app.</p>
           </>
         )}
 

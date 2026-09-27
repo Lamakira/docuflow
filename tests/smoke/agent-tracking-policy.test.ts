@@ -7,7 +7,9 @@ import {
   idleBehaviourCopy,
   isWithinActiveHours,
   normalizeTrackingPolicy,
-  policyFreshnessCopy,
+  policySourceCopy,
+  policySourceLabel,
+  trackingPolicyOrigin,
   startupTrackingPolicy,
   type TrackingPolicy,
 } from "../../desktop-agent/src/lib/trackingPolicy";
@@ -412,21 +414,56 @@ describe("the last policy on the Device (#293)", () => {
     expect(main.match(/clearSavedTrackingPolicy\(app\.getPath\("userData"\)\)/g)).toHaveLength(2);
   });
 
-  it("makes a failed refresh visible without nagging", () => {
+  it("names the Tracking Policy source and when it was received", () => {
     const now = new Date(2026, 8, 27, 12, 0);
-    const earlier = new Date(2026, 8, 27, 9, 30).toISOString();
-    expect(
-      policyFreshnessCopy(
-        { source: "saved", receivedAt: earlier, refreshFailedAt: now.toISOString(), refreshError: "offline" },
-        now,
-      ),
-    ).toMatch(/^Could not refresh from the server — using the policy received at /);
-    expect(
-      policyFreshnessCopy({ source: "default", receivedAt: null, refreshFailedAt: now.toISOString(), refreshError: "offline" }, now),
-    ).toBe("Could not reach the server yet — using the built-in defaults until it answers.");
-    expect(
-      policyFreshnessCopy({ source: "server", receivedAt: earlier, refreshFailedAt: null, refreshError: null }, now),
-    ).toMatch(/^Updated from the server at /);
+    const earlierAt = new Date(2026, 8, 27, 9, 30);
+    const earlier = earlierAt.toISOString();
+    const time = earlierAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const failed = { refreshFailedAt: now.toISOString(), refreshError: "offline" };
+    const ok = { refreshFailedAt: null, refreshError: null };
+
+    expect(policySourceCopy({ source: "server", receivedAt: earlier, ...ok }, now)).toBe(
+      `From your Workspace, received ${time}`,
+    );
+    // Started from the saved copy, before or after the server failed to answer.
+    expect(policySourceCopy({ source: "saved", receivedAt: earlier, ...ok }, now)).toBe(`Saved copy from ${time} (offline)`);
+    expect(policySourceCopy({ source: "saved", receivedAt: earlier, ...failed }, now)).toBe(`Saved copy from ${time} (offline)`);
+    // Received this session, then the server went away.
+    expect(policySourceCopy({ source: "server", receivedAt: earlier, ...failed }, now)).toBe(`Saved copy from ${time} (offline)`);
+    expect(policySourceCopy({ source: "default", receivedAt: null, ...failed }, now)).toBe(
+      "Built-in defaults — no policy received yet",
+    );
+    expect(policySourceCopy(null, now)).toBe("Built-in defaults — no policy received yet");
+
+    const yesterday = new Date(2026, 8, 26, 17, 5);
+    expect(policySourceCopy({ source: "saved", receivedAt: yesterday.toISOString(), ...ok }, now)).toBe(
+      `Saved copy from ${yesterday.toLocaleDateString([], { day: "numeric", month: "short" })}, ` +
+        `${yesterday.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (offline)`,
+    );
+
+    expect(trackingPolicyOrigin(undefined)).toBe("default");
+    expect(policySourceLabel({ source: "server", receivedAt: earlier, ...ok })).toBe("From your Workspace");
+    expect(policySourceLabel({ source: "saved", receivedAt: earlier, ...ok })).toBe("Saved copy (offline)");
+    expect(policySourceLabel(null)).toBe("Built-in defaults");
+  });
+
+  it("always shows the source in the v2 desktop Settings, kept current while open", () => {
+    const screen = read("renderer/app-v2/screens/SettingsScreen.tsx");
+    const tracking = screen.slice(screen.indexOf("section === 'tracking' &&"), screen.indexOf("section === 'startup' &&"));
+    // Unconditional: not gated on a loaded policy, a failed refresh or the footer.
+    expect(tracking).toMatch(/<p className="v2-set__source" role="status">\s*Tracking Policy: \{policySourceCopy\(policy\?\.status\)\}/);
+    expect(screen).toContain("policySourceLabel(policy?.status)");
+    expect(screen).toMatch(/setInterval\(load, POLICY_POLL_MS\)/);
+    expect(screen).toContain("clearInterval(id)");
+    expect(read("renderer/app/pages/SettingsPage.tsx")).toContain("policySourceCopy(policy.status)");
+    // The v2 bridge reads it over the same IPC channel the main process answers from its local state.
+    expect(read("renderer/preload.ts")).toContain('getOrgPolicy: () => ipcRenderer.invoke("settings:get-org-policy")');
+    expect(read("main/index.ts")).toMatch(
+      /ipcMain\.handle\("settings:get-org-policy", \(\) => \{\s*if \(!store\.isPaired\(\)\) return null;\s*return \{ \.\.\.trackingPolicy, status: trackingPolicyStatus \};/,
+    );
+  });
+
+  it("makes a failed refresh visible without nagging", () => {
 
     // One log line per failing streak; Settings carries it until a refresh succeeds.
     const main = read("main/index.ts");

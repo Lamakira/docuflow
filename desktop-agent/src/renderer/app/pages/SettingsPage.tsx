@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAgent } from '../stores/AgentContext';
-import { idleBehaviourCopy, policyFreshnessCopy } from '../../../lib/trackingPolicy';
+import { idleBehaviourCopy, policySourceCopy } from '../../../lib/trackingPolicy';
 import type { DeviceTrackingPolicy } from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ function PolicyBlock({ policy }: { policy: OrgPolicy | null }) {
         </div>
       )}
       {policy && (
-        <p className="sp-policy-block__note">{policyFreshnessCopy(policy.status)}</p>
+        <p className="sp-policy-block__note">Tracking Policy: {policySourceCopy(policy.status)}</p>
       )}
     </div>
   );

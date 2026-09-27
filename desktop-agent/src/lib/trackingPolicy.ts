@@ -148,17 +148,32 @@ export function idleBehaviourCopy(
     : `${after}, pauses the Timer without asking. Resume it when you are back.`;
 }
 
-/** Where the policy in force came from; says so plainly when the last refresh failed. */
-export function policyFreshnessCopy(status: TrackingPolicyStatus, now: Date = new Date()): string {
-  const when = status.receivedAt ? formatReceivedAt(new Date(status.receivedAt), now) : null;
-  if (status.refreshFailedAt) {
-    return status.source === "default"
-      ? "Could not reach the server yet — using the built-in defaults until it answers."
-      : `Could not refresh from the server — using the policy received ${when}.`;
-  }
-  if (status.source === "default") return "Waiting for the first sync with the server — using the built-in defaults.";
-  if (status.source === "saved") return `Using the policy received ${when} until the server answers.`;
-  return `Updated from the server ${when}.`;
+export type TrackingPolicyOrigin = "workspace" | "saved" | "default";
+
+/**
+ * Which Tracking Policy is in force, from the Member's point of view. A policy
+ * received this session whose later refresh failed is a saved copy too.
+ * `null` (nothing loaded yet) reads as the built-in defaults.
+ */
+export function trackingPolicyOrigin(status: TrackingPolicyStatus | null | undefined): TrackingPolicyOrigin {
+  if (!status?.receivedAt || status.source === "default") return "default";
+  if (status.source === "saved" || status.refreshFailedAt) return "saved";
+  return "workspace";
+}
+
+/** One quiet line naming the Tracking Policy source and when it was received. */
+export function policySourceCopy(status: TrackingPolicyStatus | null | undefined, now: Date = new Date()): string {
+  const origin = trackingPolicyOrigin(status);
+  if (origin === "default") return "Built-in defaults — no policy received yet";
+  const when = formatReceivedAt(new Date(status!.receivedAt!), now);
+  return origin === "saved" ? `Saved copy from ${when} (offline)` : `From your Workspace, received ${when}`;
+}
+
+/** The same source in two or three words, for a list caption. */
+export function policySourceLabel(status: TrackingPolicyStatus | null | undefined): string {
+  const origin = trackingPolicyOrigin(status);
+  if (origin === "default") return "Built-in defaults";
+  return origin === "saved" ? "Saved copy (offline)" : "From your Workspace";
 }
 
 function formatReceivedAt(at: Date, now: Date): string {
@@ -167,5 +182,5 @@ function formatReceivedAt(at: Date, now: Date): string {
     at.getFullYear() === now.getFullYear() &&
     at.getMonth() === now.getMonth() &&
     at.getDate() === now.getDate();
-  return sameDay ? `at ${time}` : `on ${at.toLocaleDateString()} at ${time}`;
+  return sameDay ? time : `${at.toLocaleDateString([], { day: "numeric", month: "short" })}, ${time}`;
 }
