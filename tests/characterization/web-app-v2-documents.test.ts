@@ -260,6 +260,8 @@ describe("the folder preview is a side panel of the register (#245, F2)", () => 
     const actions = rule(".df-folder-rename > .df-form-actions");
     expect(actions).toMatch(/justify-content:\s*space-between/);
     expect(actions).toMatch(/margin:\s*0/);
+    // The card-footer divider of .df-form-actions has no card edge to sit on here.
+    expect(actions).toMatch(/border-top:\s*0/);
     expect(rule(".df-folder-rename")).toMatch(/padding:\s*0/);
   });
 });
