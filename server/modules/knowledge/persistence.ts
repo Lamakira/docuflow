@@ -1,4 +1,5 @@
 import type { DocumentWriter } from "../writers";
+import type { ProjectDocumentationFile } from "../projects/persistence";
 import type {
   Document,
   InsertDocument,
@@ -54,6 +55,8 @@ export interface KnowledgePersistence {
 
   getFile(id: string): Promise<KnowledgeFile | undefined>;
   getFiles(folderId?: string): Promise<KnowledgeFile[]>;
+  /** Available Project Files (#278), newest first, for the given `projects` ids. */
+  getProjectFiles(projectIds: string[]): Promise<ProjectDocumentationFile[]>;
   createFile(
     file: InsertKnowledgeFile & { id?: string; scanStatus?: FileScanStatus; hold?: boolean }
   ): Promise<KnowledgeFile>;

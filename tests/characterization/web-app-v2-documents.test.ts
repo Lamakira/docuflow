@@ -227,24 +227,64 @@ describe("Workspace Documents register from live Workspace records (#174)", () =
 });
 
 
-describe("the folder preview does not run off the page (#245, F2)", () => {
-  /** The rule as it is written, without the comments the reader does not run. */
-  function rule(selector: string): string {
-    const match = css.match(new RegExp(`\\${selector}\\s*\\{([^}]*)\\}`));
-    return match ? match[1] : "";
-  }
+/** The rule as it is written, without the comments the reader does not run. */
+function rule(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
+  const match = css.match(new RegExp(`(?:^|[\\s}])${escaped}\\s*\\{([^}]*)\\}`));
+  return match ? match[1] : "";
+}
 
-  it("lets the row give way instead of clipping the aside", () => {
-    // The clipping was the row having no rule: a fixed 400px aside added on top
-    // of a register that refuses to go below 1060px overflows any viewport
-    // narrower than the sum. Wrapping is what gives.
-    expect(rule(".df-library")).toMatch(/flex-wrap:\s*wrap/);
+describe("the folder preview is a side panel of the register (#245, F2)", () => {
+  it("keeps the aside beside the register; the register gives way", () => {
+    // Wrapping dropped the aside below a register that would not go under
+    // 1060px, so on a laptop it sat bottom-left with its footer cut.
+    const library = rule(".df-library");
+    expect(library).toMatch(/flex-wrap:\s*nowrap/);
+    expect(library).not.toMatch(/flex-wrap:\s*wrap/);
+    expect(rule(".df-library-main")).toMatch(/min-width:\s*0/);
 
     const preview = rule(".df-folder-preview");
-    expect(preview).toMatch(/flex:\s*0\s+1\s+400px/);
-    expect(preview).toMatch(/max-width:\s*100%/);
+    expect(preview).toMatch(/flex:\s*0\s+0\s+380px/);
     expect(preview).toMatch(/min-width:\s*0/);
-    // The fixed width is what could not give way.
-    expect(preview).not.toMatch(/^\s*width:\s*400px/m);
+    expect(preview).toMatch(/max-width:\s*40%/);
+  });
+
+  it("stacks the preview header instead of squeezing it into columns", () => {
+    const heading = rule(".df-preview-heading");
+    expect(heading).toMatch(/flex-direction:\s*column/);
+    expect(heading).toMatch(/min-width:\s*0/);
+    expect(rule(".df-folder-preview > .df-panel-foot")).toMatch(/flex-wrap:\s*wrap/);
+  });
+
+  it("puts Delete folder and Rename at opposite ends of the rename form", () => {
+    const actions = rule(".df-folder-rename > .df-form-actions");
+    expect(actions).toMatch(/justify-content:\s*space-between/);
+    expect(actions).toMatch(/margin:\s*0/);
+    // The card-footer divider of .df-form-actions has no card edge to sit on here.
+    expect(actions).toMatch(/border-top:\s*0/);
+    expect(rule(".df-folder-rename")).toMatch(/padding:\s*0/);
+  });
+});
+
+describe("register rows line up with the head (#278 follow-up)", () => {
+  it("gives the head and every row the same content-independent tracks", () => {
+    const grid = rule(".df-library-head, .df-library-row");
+    expect(grid).toMatch(/grid-template-columns:\s*minmax\(0,\s*2\.1fr\)/);
+    expect(grid.match(/minmax\(0,/g)).toHaveLength(5);
+    expect(rule(".df-library-head")).toMatch(/padding:\s*var\(--df-space-3\)\s+var\(--df-space-4\)/);
+  });
+
+  it("indents only the name cell of a nested row", () => {
+    for (const depth of [1, 2, 3, 4]) {
+      expect(rule(`.df-library-row[data-depth="${depth}"] > :first-child`)).toMatch(/padding-left:/);
+      expect(rule(`.df-library-row[data-depth="${depth}"]`)).toBe("");
+    }
+    expect(rule('.df-library-row[data-child="true"]')).not.toMatch(/padding/);
+  });
+
+  it("marks the selected row without moving its columns", () => {
+    const selected = rule('.df-library-row[data-expanded="true"],\n.df-library-row[data-selected="true"]');
+    expect(selected).toMatch(/box-shadow:\s*inset\s+2px\s+0\s+0/);
+    expect(selected).not.toMatch(/border-left|padding/);
   });
 });

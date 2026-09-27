@@ -1,12 +1,12 @@
-import { companyDocuments } from "@shared/schema";
-import { isVisibleDocumentAccess } from "@shared/documentAccess";
-import { db } from "./db";
+import { isReadableDocument, isVisibleDocumentAccess } from "@shared/documentAccess";
 
 export type ChatCitation = {
   id: string;
   title: string;
   kind: "document" | "project-document";
   access?: string | null;
+  /** Stamped once the reader's Document Access was checked (#278). */
+  effectiveAccess?: string | null;
 };
 
 export { isVisibleDocumentAccess };
@@ -15,7 +15,7 @@ export function uniqueChatCitations(citations: ChatCitation[]): ChatCitation[] {
   const seen = new Set<string>();
   const out: ChatCitation[] = [];
   for (const citation of citations) {
-    if (!isVisibleDocumentAccess(citation.access)) continue;
+    if (!isReadableDocument(citation)) continue;
     const key = `${citation.kind}:${citation.id}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -24,18 +24,7 @@ export function uniqueChatCitations(citations: ChatCitation[]): ChatCitation[] {
   return out;
 }
 
-export async function workspaceDocumentAccessById(): Promise<Map<string, string>> {
-  const rows = await db
-    .select({ id: companyDocuments.id, access: companyDocuments.access })
-    .from(companyDocuments);
-  return new Map(rows.map((row) => [row.id, row.access]));
-}
-
-export function workspaceDocumentVisible(
-  documentId: string,
-  accessById: Map<string, string>,
-): boolean {
-  const access = accessById.get(documentId);
-  if (access === undefined) return false;
-  return isVisibleDocumentAccess(access);
+/** A Workspace Document the answer may draw on: one this reader can see. */
+export function workspaceDocumentVisible(documentId: string, visible: ReadonlyMap<string, string>): boolean {
+  return visible.has(documentId);
 }

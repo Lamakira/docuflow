@@ -5,7 +5,7 @@
  */
 
 import { PLATFORM_CONSOLE_LABEL } from "./platform";
-import { isVisibleDocumentAccess } from "@shared/documentAccess";
+import { isReadableDocument } from "@shared/documentAccess";
 import {
   DELIVERY_CATEGORIES,
   emailChannelEnabled,
@@ -28,6 +28,7 @@ export type SearchWorkspaceDocument = {
   id: string;
   name: string;
   access?: string | null;
+  effectiveAccess?: string | null;
   folderName?: string | null;
 };
 
@@ -101,7 +102,7 @@ export function composeSearch(input: {
   }
 
   for (const document of input.workspaceDocuments) {
-    if (!isVisibleDocument(document.access)) continue;
+    if (!isReadableDocument(document)) continue;
     rows.push({
       id: `document-${document.id}`,
       kind: "DOCUMENT",
@@ -112,10 +113,6 @@ export function composeSearch(input: {
   }
 
   return { rows, footer: searchFooter(input.accessFact) };
-}
-
-function isVisibleDocument(access: string | null | undefined): boolean {
-  return isVisibleDocumentAccess(access);
 }
 
 function searchFooter(fact: SearchAccessFact | undefined): string | null {
@@ -209,6 +206,7 @@ export type AskCitationInput = {
   title: string;
   kind: "document" | "project-document";
   access?: string | null;
+  effectiveAccess?: string | null;
 };
 
 export type AskMessageInput = {
@@ -268,7 +266,7 @@ function citeAskSources(citations: AskCitationInput[]): AskSource[] {
   const seen = new Set<string>();
   const sources: AskSource[] = [];
   for (const citation of citations) {
-    if (!isVisibleDocument(citation.access)) continue;
+    if (!isReadableDocument(citation)) continue;
     if (seen.has(citation.id)) continue;
     seen.add(citation.id);
     sources.push({

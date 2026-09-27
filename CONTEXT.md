@@ -194,9 +194,21 @@ _Avoid_: Company document, global document
 A Document attached to one project and visible exactly to members who can access that project.
 _Avoid_: Documentation project, workspace document
 
+**Project File**:
+A File attached to one project, listed with that project's Project Documents and visible exactly to members who can access that project.
+_Avoid_: Project attachment, note attachment
+
+**Folder**:
+A named container for Workspace Documents, Files, and other Folders. Its Document Access is inherited by everything filed inside it.
+_Avoid_: Directory, category
+
 **Document Access**:
-The visibility inherited by a Workspace Document from its folder: everyone in the workspace, selected workspace roles, or selected members. Browsing, search, and AI citations must enforce the same access.
-_Avoid_: Search visibility, AI-only access
+Who in the workspace can find and open a Workspace Document, File, or Folder, set to one Access Level. An item inherits its Folder's access by default and may be more restricted than its Folder, never more open. The member who added the item and Administrators may change it; a member without access never meets the item in the register, search, previews, direct links, the API, or AI answers and citations.
+_Avoid_: Search visibility, AI-only access, visibility, permission
+
+**Access Level**:
+One of three settings of Document Access. **Everyone**: every member of the workspace, or, inside a restricted Folder, the same as that Folder. **Restricted**: only the members named on the item, together with the member who added it and Administrators; inside a Restricted Folder only members who can see that Folder can be named. **Administrators only**: the Owner and Administrators, and the member who added it.
+_Avoid_: Private, public, hidden, shared
 
 **File Version**:
 One immutable uploaded revision of a File, stored as its own object and listed on the File with a current pointer. Replacing a File adds a version; it never overwrites an object.

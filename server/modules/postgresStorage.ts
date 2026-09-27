@@ -161,6 +161,7 @@ import type {
   CrmProjectListOptions,
   ProjectDocumentationListOptions,
   ProjectDocumentationPage,
+  ProjectDocumentationFile,
 } from "./projects/persistence";
 import type { CrmClientListOptions, CrmClientRegisterRow } from "./clients-sales/persistence";
 
@@ -1578,6 +1579,13 @@ export class DatabaseStorage implements IStorage {
       list.push(doc);
       docsByProject.set(doc.projectId, list);
     }
+    const projectFiles = ids.length ? await this.getProjectFiles(ids) : [];
+    const filesByProject = new Map<string, typeof projectFiles>();
+    for (const file of projectFiles) {
+      const list = filesByProject.get(file.projectId) ?? [];
+      list.push(file);
+      filesByProject.set(file.projectId, list);
+    }
 
     const choices = await db
       .select({ id: projects.id, name: projects.name, documentationEnabled: crmProjects.documentationEnabled })
@@ -1593,6 +1601,7 @@ export class DatabaseStorage implements IStorage {
         clientId: row.crm_projects.clientId,
         documentationEnabled: row.crm_projects.documentationEnabled === 1,
         documents: docsByProject.get(row.projects.id) ?? [],
+        files: filesByProject.get(row.projects.id) ?? [],
       })),
       total: Number(countResult?.count ?? 0),
       page,
@@ -1923,10 +1932,31 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           inWorkspace(files),
-          folderId ? eq(files.folderId, folderId) : isNull(files.folderId)
+          folderId ? eq(files.folderId, folderId) : isNull(files.folderId),
+          isNull(files.projectId)
         )
       )
       .orderBy(desc(files.createdAt));
+  }
+
+  async getProjectFiles(projectIds: string[]): Promise<ProjectDocumentationFile[]> {
+    if (projectIds.length === 0) return [];
+    const rows = await db
+      .select({
+        id: files.id,
+        name: files.name,
+        fileName: files.fileName,
+        mimeType: files.mimeType,
+        fileSize: files.fileSize,
+        projectId: files.projectId,
+        uploadedById: files.uploadedById,
+        createdAt: files.createdAt,
+        updatedAt: files.updatedAt,
+      })
+      .from(files)
+      .where(and(inArray(files.projectId, projectIds), eq(files.scanStatus, "available"), inWorkspace(files)))
+      .orderBy(desc(files.createdAt), asc(files.id));
+    return rows.map((row) => ({ ...row, projectId: row.projectId! }));
   }
 
   async createFile(

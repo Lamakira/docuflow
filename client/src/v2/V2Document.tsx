@@ -17,6 +17,7 @@ import {
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { V2FileViewer } from "./V2FileViewer";
+import { V2ManageAccessDialog } from "./V2ManageAccessDialog";
 import { projectVisibleTo } from "./projects";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,8 @@ function toWorkspaceRecord(document: CompanyDocumentWithUploader): DocumentEdito
     fileSize: document.fileSize,
     mimeType: document.mimeType,
     access: document.access,
+    effectiveAccess: document.effectiveAccess,
+    canManageAccess: document.canManageAccess,
   };
 }
 
@@ -84,6 +87,7 @@ export function V2DocumentPage() {
   const [readyId, setReadyId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<DocumentEditorSaveState>("idle");
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
+  const [managingAccess, setManagingAccess] = useState(false);
 
   const ownerName = useWorkspaceOwnerName();
   const { data, isLoading } = useQuery<LoadedDocument>({
@@ -318,6 +322,32 @@ export function V2DocumentPage() {
     [readOnly, workspaceName],
   );
 
+  const manageAccess =
+    source === "workspace" && data?.record?.canManageAccess ? (
+      <>
+        <Button
+          variant="outline"
+          type="button"
+          className="df-btn"
+          data-testid="v2-document-manage-access"
+          onClick={() => setManagingAccess(true)}
+        >
+          Manage access
+        </Button>
+        {managingAccess ? (
+          <V2ManageAccessDialog
+            kind="document"
+            id={documentId}
+            open
+            onOpenChange={setManagingAccess}
+            readOnlyRefusal={
+              readOnly ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }) : null
+            }
+          />
+        ) : null}
+      </>
+    ) : null;
+
   if (!documentId) {
     return <Redirect to={source === "project" ? "/project-documentation" : "/documents"} />;
   }
@@ -366,8 +396,10 @@ export function V2DocumentPage() {
           fileSize: record?.fileSize ?? null,
           mimeType: record?.mimeType ?? null,
           access: record?.access ?? null,
+          effectiveAccess: record?.effectiveAccess ?? null,
           backHref: editor.backHref,
         })}
+        actions={manageAccess}
       />
     );
   }
@@ -388,6 +420,7 @@ export function V2DocumentPage() {
             {writeRefusal}
           </p>
         ) : null}
+        {manageAccess}
       </header>
       <div className="df-editor">
         {readyId === documentId && content ? (

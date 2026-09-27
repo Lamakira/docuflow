@@ -68,12 +68,26 @@ export type ProjectDocumentationDocument = Pick<
   "id" | "title" | "projectId" | "parentId" | "position" | "createdById" | "createdAt" | "updatedAt"
 >;
 
+/** A Project File as the register lists it (#278): no bytes, no object key. */
+export type ProjectDocumentationFile = {
+  id: string;
+  name: string;
+  fileName: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
+  projectId: string;
+  uploadedById: string;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
 export type ProjectDocumentationEntry = {
   project: Project;
   crmProjectId: string;
   clientId: string | null;
   documentationEnabled: boolean;
   documents: ProjectDocumentationDocument[];
+  files: ProjectDocumentationFile[];
 };
 
 export type ProjectDocumentationPage = {

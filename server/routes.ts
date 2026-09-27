@@ -63,7 +63,17 @@ import {
   searchCompanyDocumentChunks,
   rebuildAllCompanyDocumentEmbeddings,
 } from "./embeddings";
-import { isVisibleDocumentAccess, uniqueChatCitations, workspaceDocumentAccessById, workspaceDocumentVisible, type ChatCitation } from "./askCitations";
+import { uniqueChatCitations, workspaceDocumentVisible, type ChatCitation } from "./askCitations";
+import {
+  accessViewer,
+  annotateDocument,
+  annotateFolder,
+  canSeeDocument,
+  canSeeFolder,
+  loadAccessGraph,
+  visibleWorkspaceDocuments,
+} from "./modules/knowledge/documentAccess";
+import { registerKnowledgeRoutes } from "./modules/knowledge/http";
 import {
   syncDocumentVideoTranscripts,
   getTranscriptStatus,
@@ -1152,10 +1162,15 @@ export async function registerRoutes(
       
       // Get company documents if mode includes company
       if (mode === "company" || mode === "both") {
-        const accessById = await workspaceDocumentAccessById();
+        // Document Access decides what the answer may read and cite (#278).
+        const viewer = await accessViewer(userId);
+        const accessGraph = await loadAccessGraph();
+        const visibleDocs = await visibleWorkspaceDocuments(viewer, accessGraph);
         const allCompanyDocs = await storage.getCompanyDocuments();
-        const companyDocs = allCompanyDocs.filter((doc) => isVisibleDocumentAccess(doc.access));
-        const folders = await storage.getCompanyDocumentFolders();
+        const companyDocs = allCompanyDocs.filter((doc) => visibleDocs.has(doc.id));
+        const folders = (await storage.getCompanyDocumentFolders()).filter((folder) =>
+          canSeeFolder(accessGraph, viewer, folder.id),
+        );
         const folderMap = new Map(folders.map(f => [f.id, f]));
         
         // Always build company docs overview when in company or both mode
@@ -1180,7 +1195,7 @@ export async function registerRoutes(
           try {
             const wanted = mode === "both" ? 8 : 12;
             const companySearchResults = (await searchCompanyDocumentChunks(message, wanted * 4))
-              .filter((result) => workspaceDocumentVisible(result.companyDocumentId, accessById))
+              .filter((result) => workspaceDocumentVisible(result.companyDocumentId, visibleDocs))
               .slice(0, wanted);
             
             if (companySearchResults.length > 0) {
@@ -1192,7 +1207,7 @@ export async function registerRoutes(
                   id: result.companyDocumentId,
                   title: result.title,
                   kind: "document",
-                  access: accessById.get(result.companyDocumentId) ?? "workspace",
+                  effectiveAccess: visibleDocs.get(result.companyDocumentId),
                 });
                 const key = `${result.folderName}/${result.title}`;
                 const existing = byCompanyDoc.get(key) || [];
@@ -1250,6 +1265,7 @@ export async function registerRoutes(
                   title: doc.name,
                   kind: "document",
                   access: doc.access,
+                  effectiveAccess: visibleDocs.get(doc.id),
                 });
               }
             }
@@ -2256,12 +2272,36 @@ Instructions:
   });
 
   // ==================== Company Document Folders ====================
-  
+  //
+  // Every read below answers only what the reader's Document Access lets them
+  // see (#278). A Folder or item they cannot see is answered exactly as one
+  // that does not exist, so its name and its existence stay out of reach.
+
+  /** The reader and the Workspace's access graph, loaded once for one request. */
+  async function documentAccessFor(req: any) {
+    const [viewer, graph] = await Promise.all([accessViewer(getUserId(req)!), loadAccessGraph()]);
+    return { viewer, graph };
+  }
+
+  /** A Workspace Document or File this reader may see, or undefined as if it were not there. */
+  async function visibleCompanyDocument(req: any, id: string) {
+    const document = await storage.getCompanyDocument(id);
+    if (!document) return undefined;
+    const { viewer, graph } = await documentAccessFor(req);
+    if (!canSeeDocument(graph, viewer, document)) return undefined;
+    return annotateDocument(graph, viewer, document);
+  }
+
   // List all folders
   app.get("/api/company-document-folders", isAuthenticated, async (req: any, res) => {
     try {
+      const { viewer, graph } = await documentAccessFor(req);
       const folders = await storage.getCompanyDocumentFolders();
-      res.json(folders);
+      res.json(
+        folders
+          .filter((folder) => canSeeFolder(graph, viewer, folder.id))
+          .map((folder) => annotateFolder(graph, viewer, folder)),
+      );
     } catch (error) {
       console.error("Error fetching company document folders:", error);
       res.status(500).json({ message: "Failed to fetch folders" });
@@ -2272,10 +2312,11 @@ Instructions:
   app.get("/api/company-document-folders/:id", isAuthenticated, async (req: any, res) => {
     try {
       const folder = await storage.getCompanyDocumentFolder(req.params.id);
-      if (!folder) {
+      const { viewer, graph } = await documentAccessFor(req);
+      if (!folder || !canSeeFolder(graph, viewer, folder.id)) {
         return res.status(404).json({ message: "Folder not found" });
       }
-      res.json(folder);
+      res.json(annotateFolder(graph, viewer, folder));
     } catch (error) {
       console.error("Error fetching folder:", error);
       res.status(500).json({ message: "Failed to fetch folder" });
@@ -2298,8 +2339,11 @@ Instructions:
       }
 
       const parentId = parsed.data.parentId ?? null;
-      if (parentId && !(await storage.getCompanyDocumentFolder(parentId))) {
-        return res.status(400).json({ message: "The parent Folder does not exist in this Workspace" });
+      if (parentId) {
+        const { viewer, graph } = await documentAccessFor(req);
+        if (!canSeeFolder(graph, viewer, parentId)) {
+          return res.status(400).json({ message: "The parent Folder does not exist in this Workspace" });
+        }
       }
       
       const folder = await storage.createCompanyDocumentFolder({
@@ -2327,6 +2371,11 @@ Instructions:
       const parsed = updateSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      }
+
+      const { viewer, graph } = await documentAccessFor(req);
+      if (!canSeeFolder(graph, viewer, req.params.id)) {
+        return res.status(404).json({ message: "Folder not found" });
       }
       
       const folder = await storage.updateCompanyDocumentFolder(req.params.id, parsed.data);
@@ -2370,8 +2419,16 @@ Instructions:
   app.get("/api/company-documents", isAuthenticated, async (req: any, res) => {
     try {
       const folderId = req.query.folderId as string | undefined;
+      const { viewer, graph } = await documentAccessFor(req);
+      if (folderId && !canSeeFolder(graph, viewer, folderId)) {
+        return res.json([]);
+      }
       const documents = await storage.getCompanyDocuments(folderId);
-      res.json(documents);
+      res.json(
+        documents
+          .filter((document) => canSeeDocument(graph, viewer, document))
+          .map((document) => annotateDocument(graph, viewer, document)),
+      );
     } catch (error) {
       console.error("Error fetching company documents:", error);
       res.status(500).json({ message: "Failed to fetch company documents" });
@@ -2385,8 +2442,15 @@ Instructions:
       if (!query || query.trim().length === 0) {
         return res.json({ documents: [], folders: [] });
       }
-      const documents = await storage.searchCompanyDocuments(query);
-      const folders = await storage.searchCompanyDocumentFolders(query);
+      // No count of what was left out: a count per query would let a Member
+      // probe for the names of items they cannot see.
+      const { viewer, graph } = await documentAccessFor(req);
+      const documents = (await storage.searchCompanyDocuments(query))
+        .filter((document) => canSeeDocument(graph, viewer, document))
+        .map((document) => annotateDocument(graph, viewer, document));
+      const folders = (await storage.searchCompanyDocumentFolders(query))
+        .filter((folder) => canSeeFolder(graph, viewer, folder.id))
+        .map((folder) => annotateFolder(graph, viewer, folder));
       res.json({ documents, folders });
     } catch (error) {
       console.error("Error searching company documents:", error);
@@ -2409,7 +2473,7 @@ Instructions:
   // Get single company document
   app.get("/api/company-documents/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const document = await storage.getCompanyDocument(req.params.id);
+      const document = await visibleCompanyDocument(req, req.params.id);
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
@@ -2439,6 +2503,13 @@ Instructions:
       const parsed = createSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      }
+
+      if (parsed.data.folderId) {
+        const { viewer, graph } = await documentAccessFor(req);
+        if (!canSeeFolder(graph, viewer, parsed.data.folderId)) {
+          return res.status(400).json({ message: "The Folder does not exist in this Workspace" });
+        }
       }
       
       // If it's an uploaded file, set ACL policy and land it through the
@@ -2531,6 +2602,10 @@ Instructions:
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
+
+      if (!(await visibleCompanyDocument(req, req.params.id))) {
+        return res.status(404).json({ message: "Document not found" });
+      }
       
       const document = await storage.updateCompanyDocument(req.params.id, parsed.data);
       if (!document) {
@@ -2574,7 +2649,7 @@ Instructions:
   // Stream company document (for inline viewing)
   app.get("/api/company-documents/:id/stream", isAuthenticated, async (req: any, res) => {
     try {
-      const document = await storage.getCompanyDocument(req.params.id);
+      const document = await visibleCompanyDocument(req, req.params.id);
       
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -2614,7 +2689,7 @@ Instructions:
   // Convert Word document to HTML for preview
   app.get("/api/company-documents/:id/word-html", isAuthenticated, async (req: any, res) => {
     try {
-      const document = await storage.getCompanyDocument(req.params.id);
+      const document = await visibleCompanyDocument(req, req.params.id);
       
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -2669,7 +2744,7 @@ Instructions:
   // Download company document
   app.get("/api/company-documents/:id/download", isAuthenticated, async (req: any, res) => {
     try {
-      const document = await storage.getCompanyDocument(req.params.id);
+      const document = await visibleCompanyDocument(req, req.params.id);
       
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -2719,7 +2794,7 @@ Instructions:
         return res.status(403).json({ message: "Only admins can delete company documents" });
       }
       
-      const document = await storage.getCompanyDocument(req.params.id);
+      const document = await visibleCompanyDocument(req, req.params.id);
       
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -2741,6 +2816,9 @@ Instructions:
       res.status(500).json({ message: "Failed to delete document" });
     }
   });
+
+  // Manage access on Workspace Documents and Folders, and Project Files (#278).
+  registerKnowledgeRoutes(app);
 
   // ==================== Admin Routes ====================
   // Administration is governed by the Workspace Role (#238). The routes below

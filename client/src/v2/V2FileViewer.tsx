@@ -31,7 +31,7 @@ import {
 // working exactly where a Workspace is most likely to be: behind a firewall.
 GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
-export function V2FileViewer({ viewer }: { viewer: FileViewerModel }) {
+export function V2FileViewer({ viewer, actions }: { viewer: FileViewerModel; actions?: ReactNode }) {
   return (
     <div className="df-editor-page df-file-viewer" data-testid="v2-file-viewer">
       <header className="df-editor-head df-file-head">
@@ -48,6 +48,7 @@ export function V2FileViewer({ viewer }: { viewer: FileViewerModel }) {
             </div>
           ) : null}
         </div>
+        {actions}
         {viewer.downloadHref ? (
           <DownloadControl href={viewer.downloadHref} fileName={viewer.fileName ?? viewer.title} />
         ) : null}

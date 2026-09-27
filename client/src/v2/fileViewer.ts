@@ -8,7 +8,7 @@
  * Novelty: none. Zoom is tens/day — a control, not an animation.
  */
 
-import { isVisibleDocumentAccess } from "@shared/documentAccess";
+import { isReadableDocument } from "@shared/documentAccess";
 
 export type FilePreviewKind = "image" | "pdf" | "word" | "text" | "none";
 
@@ -23,6 +23,7 @@ export type FileViewerInput = {
   mimeType?: string | null;
   fileSize?: number | null;
   access?: string | null;
+  effectiveAccess?: string | null;
   objectPath?: string | null;
   backHref?: string | null;
 };
@@ -107,7 +108,7 @@ export function composeFileViewer(input: FileViewerInput): FileViewerModel {
   const backHref = safeBackHref(input.backHref ?? "/documents");
   const backLabel = backLabelFor(backHref);
   const workspace = input.source === "workspace";
-  const readable = isVisibleDocumentAccess(input.access);
+  const readable = isReadableDocument(input);
   const objectPath = input.objectPath && isObjectPath(input.objectPath) ? input.objectPath : null;
   const origin = workspace
     ? input.documentId
@@ -141,7 +142,11 @@ export function composeFileViewer(input: FileViewerInput): FileViewerModel {
       : null;
   const preview: FilePreviewKind = kind === "word" && !wordHtmlHref ? "none" : kind;
   const downloadHref =
-    workspace && input.documentId ? companyDocumentDownloadHref(input.documentId) : origin;
+    workspace && input.documentId
+      ? companyDocumentDownloadHref(input.documentId)
+      : PROJECT_FILE_STREAM.test(origin)
+        ? origin.replace(/\/stream$/, "/download")
+        : origin;
 
   return {
     missing: false,
@@ -176,10 +181,25 @@ export function formatZoom(scale: number): string {
   return `${Math.round(scale * 100)}%`;
 }
 
-/** A File the backend serves as an object, not a route wouter can resolve. */
+const PROJECT_FILE_STREAM = /^\/api\/projects\/[^/?#]+\/files\/[^/?#]+\/stream$/;
+
+/**
+ * A File the backend serves as an object, not a route wouter can resolve. A
+ * Project File streams through its Project's route, which checks the reader's
+ * Project Assignment (#278).
+ */
 export function isObjectPath(href: string | null | undefined): boolean {
   if (!href) return false;
-  return href.startsWith("/objects/") || href.startsWith("/public-objects/");
+  return href.startsWith("/objects/") || href.startsWith("/public-objects/") || PROJECT_FILE_STREAM.test(href);
+}
+
+export function projectFileStreamHref(projectId: string, fileId: string): string {
+  return `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/stream`;
+}
+
+/** A Project File opens in the File viewer, and its back link returns to where it was listed. */
+export function projectFileHref(input: { projectId: string; id: string; name: string; back: string }): string {
+  return fileViewerHref({ src: projectFileStreamHref(input.projectId, input.id), name: input.name, back: input.back });
 }
 
 export function fileViewerHref(input: { src: string; name: string; back?: string | null }): string {

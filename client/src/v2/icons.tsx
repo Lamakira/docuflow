@@ -1,5 +1,7 @@
 import {
   Activity,
+  FilterX,
+  SearchX,
   ArrowLeftRight,
   Bell,
   Calendar,
@@ -119,7 +121,9 @@ export type EmptyStateIconId =
   | "notes"
   | "reminders"
   | "documents"
-  | "files";
+  | "files"
+  | "search"
+  | "filters";
 
 const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
   tasks: ListChecks,
@@ -130,6 +134,8 @@ const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
   reminders: Bell,
   documents: FileText,
   files: Paperclip,
+  search: SearchX,
+  filters: FilterX,
 };
 
 export function EmptyStateIcon({ id }: { id: EmptyStateIconId }) {
