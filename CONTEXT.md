@@ -86,6 +86,22 @@ _Avoid_: Lead project, CRM project
 A workspace-configurable step in an open sales pipeline. Won and Lost are fixed terminal outcomes rather than customizable open stages.
 _Avoid_: Project status, custom outcome
 
+**Opportunity Owner**:
+The one member accountable for winning an opportunity: who sold it. When the opportunity is won, the Owner is proposed as the Client Project's Project Manager; choosing someone else as Project Manager leaves the Owner unchanged.
+_Avoid_: Assignee, sales rep, Project Manager
+
+**Expected close**:
+The date an opportunity is expected to be won or lost.
+_Avoid_: Due date, deadline
+
+**Estimated value**:
+The amount of money an opportunity is expected to bring in, in one currency. It is never converted, never added across currencies, and never becomes a project's budget, which is time.
+_Avoid_: Budget, deal size, amount
+
+**Lost reason**:
+Why an opportunity was lost, chosen from the workspace's Lost reasons list with an optional detail. Marking an opportunity Lost requires one; opportunities lost before Lost reasons existed may have none.
+_Avoid_: Loss note, close reason
+
 **Project**:
 The operational hub connecting tasks, time, activity, updates, files, and project documentation. A project is either a Client Project or an Internal Project.
 _Avoid_: CRM project, documentation project

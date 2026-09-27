@@ -1,9 +1,10 @@
 /**
  * Pipeline & lists, the Administration tab that replaced the CRM field builder.
  *
- * Only three option lists in `crm_module_fields` ever reach a record: the
+ * Only four option lists in `crm_module_fields` ever reach a record: the
  * `projects` module's `status` (Opportunity Stages, and the combined status v1
- * Projects read), its `project_type`, and the `contacts` module's `source`.
+ * Projects read), its `project_type` and `lost_reason`, and the `contacts`
+ * module's `source`.
  * A Workspace that never saved one reads the defaults its consumers fall back
  * to; the first change asks the server to create the built-in lists, then
  * stores the edit.
@@ -65,14 +66,21 @@ export const PIPELINE_LISTS: PipelineListSpec[] = [
   {
     id: "source",
     title: "Source",
-    sub: "Where a Client came from, as offered on the Client record. Fiverr, Zoho and Direct show their own mark; any other source wears the colour picked here.",
+    sub: "Where a Client or an Opportunity came from, as offered on their records. Fiverr, Zoho and Direct show their own mark; any other source wears the colour picked here.",
     noun: "source",
     builtIn: builtIn("source"),
+  },
+  {
+    id: "lost-reasons",
+    title: "Lost reasons",
+    sub: "Why an Opportunity was lost. Marking an Opportunity Lost asks for one of these, with an optional detail.",
+    noun: "reason",
+    builtIn: builtIn("lost-reasons"),
   },
 ];
 
 export const PIPELINE_LISTS_INTRO =
-  "These lists feed the Opportunity stages and the Project type and Source dropdowns on Projects and Clients. A change applies to everyone in the Workspace.";
+  "These lists feed the Opportunity stages, the Project type and Source dropdowns on Projects, Clients and Opportunities, and the Lost reasons an Opportunity is closed with. A change applies to everyone in the Workspace.";
 
 const PICKER_ORDER: TailwindColourName[] = [
   "pink", "violet", "indigo", "blue", "sky", "cyan", "teal",
@@ -146,7 +154,10 @@ function renameNote(spec: PipelineListSpec): string {
   if (spec.id === "project-type") {
     return "Renaming a type updates every Project that already has it. Built-in types keep their names and cannot be removed.";
   }
-  return "Renaming a source updates every Client already recorded with it. Fiverr is built in: it keeps its name and cannot be removed.";
+  if (spec.id === "lost-reasons") {
+    return "Renaming a reason updates every Lost Opportunity already closed with it.";
+  }
+  return "Renaming a source updates every Client and Opportunity already recorded with it. Fiverr is built in: it keeps its name and cannot be removed.";
 }
 
 function removeConsequence(spec: PipelineListSpec, label: string): string {
@@ -157,7 +168,10 @@ function removeConsequence(spec: PipelineListSpec, label: string): string {
   if (spec.id === "project-type") {
     return `No Project is changed. Projects already typed “${label}” keep it, but it is no longer offered as a Project type. ${back}`;
   }
-  return `No Client is changed. Clients already recorded from “${label}” keep it, but it is no longer offered as a Source. ${back}`;
+  if (spec.id === "lost-reasons") {
+    return `No Opportunity is changed. Opportunities already lost for “${label}” keep it, but it is no longer offered as a Lost reason. ${back}`;
+  }
+  return `No Client or Opportunity is changed. Those already recorded from “${label}” keep it, but it is no longer offered as a Source. ${back}`;
 }
 
 function listRows(spec: PipelineListSpec, entries: StoredOption[]): PipelineOptionRow[] {

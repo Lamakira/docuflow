@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type FormEvent,
   type MouseEvent,
   type PointerEvent,
 } from "react";
@@ -14,30 +15,75 @@ import {
   type DraggableProvided,
   type DropResult,
 } from "@hello-pangea/dnd";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { CrmClient, CrmProjectWithDetails } from "@shared/schema";
+import type {
+  CrmClient,
+  CrmProjectNoteWithCreator,
+  CrmProjectStageHistoryWithUser,
+  CrmProjectWithDetails,
+  SafeUser,
+} from "@shared/schema";
 import { opportunityStageFromCombined } from "@shared/projectLifecycle";
+import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
 import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
+import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { V2EmptyState } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
-import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
+import { V2FilterSelect, V2_SELECT_NONE, type V2SelectOption } from "./V2Select";
 import {
+  CURRENCY_OPTIONS,
   canChangeOpportunityStage,
   combinedStatusForStage,
+  composeOpportunityForm,
+  composeOpportunityHistory,
+  composeOpportunityNotes,
   composeOpportunityPipeline,
   composeOpportunityRecord,
   composeOpportunityStages,
+  lostDraft,
+  lostReasonOptions,
+  newOpportunityDraft,
+  newOpportunityPayload,
+  opportunityDraft,
+  opportunityLostPath,
+  opportunityNotePath,
+  opportunityNotesPath,
+  opportunityStageHistoryPath,
+  opportunitySourceOptions,
   opportunityWriteRefusal,
+  readLostDraft,
+  readWinDraft,
   stageOptionsFromFieldOptions,
+  winDraft,
+  winProjectTypeOptions,
+  withSavedChoice,
+  type ListOption,
+  type LostDraft,
   type OpportunityCard,
+  type OpportunityDraft,
   type OpportunityPipelineRowInput,
+  type OpportunityStageOption,
+  type SavedOpportunity,
+  type WinDraft,
 } from "./opportunities";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { SkeletonBoard, SkeletonRecordHead, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type OpportunityRowsResponse = { data: CrmProjectWithDetails[]; total?: number };
@@ -75,7 +121,70 @@ function toPipelineRow(row: CrmProjectWithDetails): OpportunityPipelineRowInput 
     combinedStatus: row.status,
     projectType: row.projectType,
     isDocumentationOnly: row.isDocumentationOnly ?? 0,
+    estimatedValueMinor: row.estimatedValueMinor,
+    estimatedValueCurrency: row.estimatedValueCurrency,
   };
+}
+
+function toSavedOpportunity(row: CrmProjectWithDetails): SavedOpportunity {
+  return {
+    name: row.project?.name ?? "",
+    clientId: row.clientId,
+    opportunityOwnerId: row.opportunityOwnerId,
+    dueDate: row.dueDate,
+    source: row.source,
+    estimatedValueMinor: row.estimatedValueMinor,
+    estimatedValueCurrency: row.estimatedValueCurrency,
+  };
+}
+
+/** The Workspace's stages and the Pipeline & lists lists an Opportunity reads. */
+function useOpportunityLists() {
+  const { data: fields = [] } = useQuery<ModuleField[]>({
+    queryKey: ["/api/modules/projects/fields"],
+  });
+  const { data: contactFields = [] } = useQuery<ModuleField[]>({
+    queryKey: ["/api/modules/contacts/fields"],
+    retry: false,
+  });
+  const statusField = fields.find((field) => field.slug === "status");
+  const stages = useMemo(
+    () => composeOpportunityStages(stageOptionsFromFieldOptions(statusField?.options)),
+    [statusField],
+  );
+  return {
+    stages,
+    sources: opportunitySourceOptions(contactFields),
+    lostReasons: lostReasonOptions(fields),
+    projectTypes: winProjectTypeOptions(fields),
+  };
+}
+
+type OpportunityLists = ReturnType<typeof useOpportunityLists>;
+
+function useWorkspaceWrites() {
+  const { memberships } = useV2Chrome();
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
+  const workspaceName = current?.workspaceName ?? "this Workspace";
+  const readOnly = current?.condition === "Read-only";
+  const ownerName = useWorkspaceOwnerName();
+  return {
+    workspaceName,
+    readOnly,
+    refusal: (errorMessage?: string, capability?: string) =>
+      opportunityWriteRefusal({ readOnly, workspaceName, errorMessage, ownerName, capability }),
+  };
+}
+
+function peopleOptions(users: SafeUser[], none: string): V2SelectOption[] {
+  return [
+    { value: V2_SELECT_NONE, label: none },
+    ...users.map((user) => ({ value: user.id, label: memberName(user) })),
+  ];
+}
+
+function fromSelect(value: string): string {
+  return value === V2_SELECT_NONE ? "" : value;
 }
 
 function opportunityCloneRoot(): HTMLElement {
@@ -155,7 +264,699 @@ function OpportunityCardView({
     >
       <div className="df-row-title">{card.name}</div>
       {card.clientLabel ? <div className="df-opportunity-card-client">{card.clientLabel}</div> : null}
+      {card.valueLabel ? <div className="df-opportunity-card-value">{card.valueLabel}</div> : null}
     </article>
+  );
+}
+
+/** The fields New Opportunity asks for and the record edits (#276). */
+function OpportunityFieldInputs({
+  draft,
+  onChange,
+  clients,
+  users,
+  sources,
+  savedSource,
+  autoFocus,
+}: {
+  draft: OpportunityDraft;
+  onChange: (draft: OpportunityDraft) => void;
+  clients: CrmClient[];
+  users: SafeUser[];
+  sources: ListOption[];
+  savedSource?: string | null;
+  autoFocus?: boolean;
+}) {
+  const set = (patch: Partial<OpportunityDraft>) => onChange({ ...draft, ...patch });
+  return (
+    <>
+      <label className="df-daily-field" data-wide="true">
+        NAME
+        <input
+          type="text"
+          value={draft.name}
+          autoFocus={autoFocus}
+          onChange={(event) => set({ name: event.target.value })}
+          placeholder="Opportunity name"
+          aria-label="Opportunity name"
+        />
+      </label>
+      <label className="df-daily-field">
+        CLIENT
+        <V2FilterSelect
+          label=""
+          ariaLabel="Client"
+          value={draft.clientId || V2_SELECT_NONE}
+          options={[
+            { value: V2_SELECT_NONE, label: "No Client yet" },
+            ...clients.map((client) => ({ value: client.id, label: client.name })),
+          ]}
+          onChange={(value) => set({ clientId: fromSelect(value) })}
+        />
+      </label>
+      <label className="df-daily-field">
+        OWNER
+        <V2FilterSelect
+          label=""
+          ariaLabel="Owner"
+          value={draft.ownerId || V2_SELECT_NONE}
+          options={peopleOptions(users, "No Owner")}
+          onChange={(value) => set({ ownerId: fromSelect(value) })}
+        />
+      </label>
+      <label className="df-daily-field">
+        EXPECTED CLOSE
+        <input
+          type="date"
+          value={draft.closeDate}
+          onChange={(event) => set({ closeDate: event.target.value })}
+          aria-label="Expected close date"
+        />
+      </label>
+      <label className="df-daily-field">
+        SOURCE
+        <V2FilterSelect
+          label=""
+          ariaLabel="Source"
+          value={draft.source || V2_SELECT_NONE}
+          options={[{ value: V2_SELECT_NONE, label: "Not set" }, ...withSavedChoice(sources, savedSource)]}
+          onChange={(value) => set({ source: fromSelect(value) })}
+        />
+      </label>
+      <label className="df-daily-field">
+        ESTIMATED VALUE
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft.amount}
+          onChange={(event) => set({ amount: event.target.value })}
+          placeholder="Not set"
+          aria-label="Estimated value"
+        />
+      </label>
+      <label className="df-daily-field">
+        CURRENCY
+        <V2FilterSelect
+          label=""
+          ariaLabel="Currency"
+          value={draft.currency}
+          options={CURRENCY_OPTIONS}
+          onChange={(value) => set({ currency: value })}
+        />
+      </label>
+    </>
+  );
+}
+
+type Outcome = { kind: "won" | "lost"; row: CrmProjectWithDetails };
+
+/**
+ * Mark as won asks for the Client Project the win makes (ADR-0001): its
+ * Project type, its budget in hours, and its Project Manager, the Owner until
+ * changed. Mark as lost asks why. The Estimated value is never the budget.
+ */
+function OpportunityOutcomeDialog({
+  outcome,
+  onClose,
+  lists,
+  users,
+  clients,
+}: {
+  outcome: Outcome;
+  onClose: () => void;
+  lists: OpportunityLists;
+  users: SafeUser[];
+  clients: CrmClient[];
+}) {
+  const writes = useWorkspaceWrites();
+  const { row, kind } = outcome;
+  const [win, setWin] = useState<WinDraft>(() => winDraft(row, lists.projectTypes));
+  const [lost, setLost] = useState<LostDraft>(() => lostDraft(row));
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const alreadyLost = row.status === "lost";
+
+  const save = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      kind === "won"
+        ? apiRequest("PATCH", `/api/crm/projects/${row.id}`, payload)
+        : apiRequest("POST", opportunityLostPath(row.id), payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      onClose();
+    },
+    onError: (error: Error) => setRefusal(writes.refusal(error.message, "Change Opportunity Stage")),
+  });
+
+  const readWin = readWinDraft(win, { status: row.status, clientId: row.clientId });
+  const readLost = readLostDraft(lost);
+  const read = kind === "won" ? readWin : readLost;
+
+  function submit() {
+    if (writes.readOnly) {
+      setRefusal(writes.refusal());
+      return;
+    }
+    if (read.payload) save.mutate(read.payload);
+  }
+
+  const name = row.project?.name || "this Opportunity";
+  if (kind === "won") {
+    return (
+      <V2FormDialog
+        open
+        onOpenChange={(open) => !open && onClose()}
+        title="Mark as won"
+        description={`Winning ${name} makes it a Client Project. Its Estimated value stays on the Opportunity; the Project's budget is time.`}
+        submitLabel="Mark as won"
+        pending={save.isPending}
+        canSubmit={Boolean(readWin.payload)}
+        onSubmit={submit}
+        refusal={refusal ?? readWin.issue}
+        testId="v2-opportunity-win"
+      >
+        {!row.clientId ? (
+          <label className="df-daily-field">
+            CLIENT
+            <V2FilterSelect
+              label=""
+              ariaLabel="Client"
+              value={win.clientId || V2_SELECT_NONE}
+              options={[
+                { value: V2_SELECT_NONE, label: "Choose a Client" },
+                ...clients.map((client) => ({ value: client.id, label: client.name })),
+              ]}
+              onChange={(value) => setWin({ ...win, clientId: fromSelect(value) })}
+            />
+          </label>
+        ) : null}
+        <label className="df-daily-field">
+          PROJECT TYPE
+          <V2FilterSelect
+            label=""
+            ariaLabel="Project type"
+            value={win.projectType}
+            options={lists.projectTypes}
+            onChange={(value) => setWin({ ...win, projectType: value })}
+          />
+        </label>
+        <div className="df-field-pair">
+          <label className="df-daily-field">
+            BUDGET HOURS
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={win.hours}
+              autoFocus
+              onChange={(event) => setWin({ ...win, hours: event.target.value })}
+              placeholder="No budget"
+              aria-label="Budget hours"
+            />
+          </label>
+          <label className="df-daily-field">
+            MINUTES
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={59}
+              step={1}
+              value={win.minutes}
+              onChange={(event) => setWin({ ...win, minutes: event.target.value })}
+              placeholder="0"
+              aria-label="Budget minutes"
+            />
+          </label>
+        </div>
+        <label className="df-daily-field">
+          PROJECT MANAGER
+          <V2FilterSelect
+            label=""
+            ariaLabel="Project Manager"
+            value={win.managerId || V2_SELECT_NONE}
+            options={peopleOptions(users, "No Project Manager")}
+            onChange={(value) => setWin({ ...win, managerId: fromSelect(value) })}
+          />
+        </label>
+      </V2FormDialog>
+    );
+  }
+
+  return (
+    <V2FormDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={alreadyLost ? "Change Lost reason" : "Mark as lost"}
+      description={
+        alreadyLost
+          ? `Why ${name} was lost.`
+          : `Losing ${name} closes it. Say why, so the pipeline can learn from it.`
+      }
+      submitLabel={alreadyLost ? "Save reason" : "Mark as lost"}
+      pending={save.isPending}
+      canSubmit={Boolean(readLost.payload)}
+      onSubmit={submit}
+      refusal={refusal ?? (lost.reason ? readLost.issue : null)}
+      testId="v2-opportunity-lost"
+    >
+      <label className="df-daily-field">
+        LOST REASON
+        <V2FilterSelect
+          label=""
+          ariaLabel="Lost reason"
+          value={lost.reason || V2_SELECT_NONE}
+          options={[
+            { value: V2_SELECT_NONE, label: "Choose a reason", disabled: true },
+            ...withSavedChoice(lists.lostReasons, row.lostReason),
+          ]}
+          onChange={(value) => setLost({ ...lost, reason: fromSelect(value) })}
+        />
+      </label>
+      <label className="df-daily-field">
+        DETAIL
+        <textarea
+          value={lost.detail}
+          onChange={(event) => setLost({ ...lost, detail: event.target.value })}
+          placeholder="Optional"
+          aria-label="Lost reason detail"
+        />
+      </label>
+    </V2FormDialog>
+  );
+}
+
+function StageHistoryCard({ opportunityId, stages }: { opportunityId: string; stages: OpportunityStageOption[] }) {
+  const { data: changes = [] } = useQuery<CrmProjectStageHistoryWithUser[]>({
+    queryKey: ["/api/crm/projects", opportunityId, "stage-history"],
+    queryFn: () => apiRequest("GET", opportunityStageHistoryPath(opportunityId)),
+  });
+  const history = composeOpportunityHistory(changes, stages, new Date());
+  return (
+    <section className="df-card" data-testid="v2-opportunity-stage-history">
+      <div className="df-card-head">
+        <h2 className="df-card-title">Stage history</h2>
+      </div>
+      {history.empty ? (
+        <p className="df-empty">{history.emptyCopy}</p>
+      ) : (
+        history.rows.map((row) => (
+          <div key={row.id} className="df-history-row">
+            <div className="df-history-move">
+              {row.from && row.fromColor ? (
+                <>
+                  <span className="df-status" data-swatch="" style={swatchStyle(row.fromColor)}>{row.from}</span>
+                  <span className="df-mono df-meta">→</span>
+                </>
+              ) : null}
+              <span className="df-status" data-swatch="" style={swatchStyle(row.toColor)}>{row.to}</span>
+            </div>
+            <div className="df-mono df-meta">
+              {row.when} · {row.who.toUpperCase()} · HELD {row.held.toUpperCase()}
+            </div>
+          </div>
+        ))
+      )}
+    </section>
+  );
+}
+
+type NoteComposer = { mode: "new" } | { mode: "edit"; id: string };
+
+/** A thread of dated notes, written and edited in a dialog, as the Dossier's Notes tab. */
+function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
+  const writes = useWorkspaceWrites();
+  const [composer, setComposer] = useState<NoteComposer | null>(null);
+  const [content, setContent] = useState("");
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const notesKey = ["/api/crm/projects", opportunityId, "notes"];
+  const { data: notes = [] } = useQuery<CrmProjectNoteWithCreator[]>({
+    queryKey: notesKey,
+    queryFn: () => apiRequest("GET", opportunityNotesPath(opportunityId)),
+  });
+  const thread = composeOpportunityNotes(notes, new Date());
+
+  const onNoteError = (error: Error) => setRefusal(writes.refusal(error.message, "Manage Opportunity Notes"));
+  const saveNote = useMutation({
+    mutationFn: ({ target, text }: { target: NoteComposer; text: string }) =>
+      target.mode === "new"
+        ? apiRequest("POST", opportunityNotesPath(opportunityId), { content: text })
+        : apiRequest("PATCH", opportunityNotePath(opportunityId, target.id), { content: text }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: notesKey });
+      setComposer(null);
+      setContent("");
+      setRefusal(null);
+    },
+    onError: onNoteError,
+  });
+  const deleteNote = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", opportunityNotePath(opportunityId, id)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: notesKey }),
+    onError: onNoteError,
+  });
+
+  function open(target: NoteComposer, text: string) {
+    if (writes.readOnly) {
+      setRefusal(writes.refusal());
+      return;
+    }
+    setRefusal(null);
+    setContent(text);
+    setComposer(target);
+  }
+
+  const editing = composer?.mode === "edit";
+  return (
+    <section className="df-card" data-testid="v2-opportunity-notes">
+      <div className="df-card-head">
+        <h2 className="df-card-title">Notes</h2>
+        <span className="df-cluster">
+          <span className="df-count-chip">{thread.rows.length}</span>
+          {!thread.empty ? (
+            <Button variant="outline" type="button" onClick={() => open({ mode: "new" }, "")} className="df-btn">
+              New Note
+            </Button>
+          ) : null}
+        </span>
+      </div>
+      {refusal && !composer ? <p className="df-refusal">{refusal}</p> : null}
+      {thread.empty ? (
+        <V2EmptyState
+          icon="notes"
+          title={thread.emptyState.title}
+          copy={thread.emptyState.copy}
+          testId="v2-opportunity-notes-empty"
+          action={
+            <Button variant="default" type="button" className="df-btn" onClick={() => open({ mode: "new" }, "")}>
+              {thread.emptyState.action}
+            </Button>
+          }
+        />
+      ) : null}
+      {thread.rows.map((note) => (
+        <article key={note.id} className="df-update-body" data-testid={`v2-opportunity-note-${note.id}`}>
+          <div className="df-mono df-meta">{note.meta}</div>
+          <p className="df-prose">{note.content}</p>
+          <div className="df-cluster">
+            <Button
+              variant="outline"
+              type="button"
+              className="df-btn"
+              onClick={() => open({ mode: "edit", id: note.id }, note.content)}
+              data-testid={`v2-opportunity-edit-note-${note.id}`}
+            >
+              Edit
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="destructiveOutline"
+                  type="button"
+                  className="df-btn"
+                  data-testid={`v2-opportunity-delete-note-${note.id}`}
+                >
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="df-v2 df-alert">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete note</AlertDialogTitle>
+                  <AlertDialogDescription>{note.deleteConsequence}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="df-btn" autoFocus>
+                    Keep note
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => {
+                      if (writes.readOnly) setRefusal(writes.refusal());
+                      else deleteNote.mutate(note.id);
+                    }}
+                  >
+                    Delete note
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </article>
+      ))}
+      <V2FormDialog
+        open={composer !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setComposer(null);
+            setRefusal(null);
+          }
+        }}
+        title={editing ? "Edit note" : "New Note"}
+        description="A note keeps what was said or decided on this Opportunity. It is dated and signed with your name."
+        submitLabel={editing ? "Save note" : "Add note"}
+        pending={saveNote.isPending}
+        canSubmit={Boolean(content.trim())}
+        onSubmit={() => composer && saveNote.mutate({ target: composer, text: content.trim() })}
+        refusal={refusal}
+        testId="v2-opportunity-note-dialog"
+      >
+        <label className="df-daily-field">
+          NOTE
+          <textarea
+            value={content}
+            autoFocus
+            onChange={(event) => setContent(event.target.value)}
+            aria-label="Opportunity note"
+          />
+        </label>
+      </V2FormDialog>
+    </section>
+  );
+}
+
+function OpportunityDetailsCard({
+  row,
+  clients,
+  users,
+  sources,
+}: {
+  row: CrmProjectWithDetails;
+  clients: CrmClient[];
+  users: SafeUser[];
+  sources: ListOption[];
+}) {
+  const writes = useWorkspaceWrites();
+  const saved = toSavedOpportunity(row);
+  const [draft, setDraft] = useState<OpportunityDraft>(() => opportunityDraft(saved));
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const form = composeOpportunityForm(draft, saved);
+
+  const save = useMutation({
+    mutationFn: (patch: Record<string, unknown>) => apiRequest("PATCH", `/api/crm/projects/${row.id}`, patch),
+    onSuccess: () => {
+      setRefusal(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+    },
+    onError: (error: Error) => setRefusal(writes.refusal(error.message, "Edit Opportunities")),
+  });
+
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!form.canSave || !form.patch) return;
+    if (writes.readOnly) {
+      setRefusal(writes.refusal());
+      return;
+    }
+    save.mutate(form.patch);
+  }
+
+  const note = refusal ?? form.note;
+  return (
+    <section className="df-card" data-testid="v2-opportunity-details">
+      <div className="df-card-head">
+        <div className="df-card-head-text">
+          <h2 className="df-card-title">Opportunity record</h2>
+          <p className="df-card-sub">What this sale is, who owns it, and what it is expected to bring in.</p>
+        </div>
+      </div>
+      <form onSubmit={onSubmit}>
+        <div className="df-opportunity-fields">
+          <OpportunityFieldInputs
+            draft={draft}
+            onChange={setDraft}
+            clients={clients}
+            users={users}
+            sources={sources}
+            savedSource={row.source}
+          />
+        </div>
+        <div className="df-form-actions">
+          <p className={refusal || form.issue ? "df-form-note df-refusal-inline" : "df-form-note"} role="status">
+            {note}
+          </p>
+          <Button variant="default" type="submit" disabled={!form.canSave || save.isPending} className="df-btn">
+            {save.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
+  const lists = useOpportunityLists();
+  const writes = useWorkspaceWrites();
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
+  const { data: clients = [] } = useQuery<CrmClient[]>({ queryKey: ["/api/crm/clients"] });
+
+  const record = composeOpportunityRecord({
+    ...toPipelineRow(row),
+    stages: lists.stages,
+    clientId: row.clientId,
+    owner: users.find((member) => member.id === row.opportunityOwnerId) ?? null,
+    dueDate: row.dueDate,
+    source: row.source,
+    sourceOptions: lists.sources,
+    lostReason: row.lostReason,
+    lostReasonDetail: row.lostReasonDetail,
+    lostReasonOptions: lists.lostReasons,
+  });
+
+  const changeStage = useMutation({
+    mutationFn: (status: string) => apiRequest("PATCH", `/api/crm/projects/${row.id}`, { status }),
+    onSuccess: () => {
+      setRefusal(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+    },
+    onError: (error: Error) => setRefusal(writes.refusal(error.message, "Change Opportunity Stage")),
+  });
+
+  function onStage(next: string) {
+    if (!canChangeOpportunityStage(record.stageId, next)) return;
+    if (writes.readOnly) {
+      setRefusal(writes.refusal());
+      return;
+    }
+    if (next === "won" || next === "lost") {
+      setOutcome({ kind: next, row });
+      return;
+    }
+    changeStage.mutate(combinedStatusForStage(next, row.status));
+  }
+
+  return (
+    <div className="df-page" data-testid="v2-opportunity-record">
+      <header className="df-dossier-head">
+        <div className="df-dossier-identity">
+          <div className="df-dossier-copy">
+            <div className="df-dossier-meta">
+              <span className="df-status">OPPORTUNITY</span>
+              <span className="df-status" data-status={record.stage} data-swatch="" style={swatchStyle(record.stageColor)}>
+                {record.stage}
+              </span>
+            </div>
+            <h1 className="df-record-title">{record.title}</h1>
+            <div className="df-dossier-provenance">
+              {record.clientHref ? (
+                <Link href={record.clientHref} className="df-mono df-meta">{record.clientLabel}</Link>
+              ) : (
+                <span className="df-mono df-meta">{record.clientLabel}</span>
+              )}
+              <span className="df-mono df-meta">{record.terminal ? "TERMINAL" : "OPEN"}</span>
+            </div>
+          </div>
+        </div>
+      </header>
+      {refusal ? <p className="df-refusal">{refusal}</p> : null}
+
+      <section className="df-card" data-testid="v2-opportunity-stage">
+        <div className="df-card-head">
+          <div className="df-card-head-text">
+            <h2 className="df-card-title">Stage</h2>
+            <p className="df-card-sub">Won and Lost close the pipeline. Marking it won makes it a Client Project; marking it lost asks why.</p>
+          </div>
+        </div>
+        <div className="df-settings-grid">
+          <div className="df-settings-row">
+            <span className="df-settings-label">STAGE</span>
+            <span className="df-settings-value">
+              <V2FilterSelect
+                label=""
+                ariaLabel="Stage"
+                value={record.stageId}
+                options={lists.stages.map((stage) => ({ value: stage.id, label: stage.label }))}
+                onChange={onStage}
+                disabled={record.terminal || changeStage.isPending}
+              />
+            </span>
+          </div>
+          {record.lostReason ? (
+            <div className="df-settings-row" data-testid="v2-opportunity-lost-reason">
+              <span className="df-settings-label">LOST REASON</span>
+              <span className="df-settings-value df-settings-inline">
+                <span>
+                  {record.lostReason.label}
+                  {record.lostReason.detail ? <span className="df-settings-copy"> · {record.lostReason.detail}</span> : null}
+                </span>
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="df-btn"
+                  onClick={() => (writes.readOnly ? setRefusal(writes.refusal()) : setOutcome({ kind: "lost", row }))}
+                >
+                  Change reason
+                </Button>
+              </span>
+            </div>
+          ) : null}
+          {record.fields.map((field) => (
+            <div key={field.label} className="df-settings-row">
+              <span className="df-settings-label">{field.label}</span>
+              <span className="df-settings-value">{field.value}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <OpportunityDetailsCard
+        key={`${row.id}-${String(row.updatedAt)}`}
+        row={row}
+        clients={clients}
+        users={users}
+        sources={lists.sources}
+      />
+
+      <StageHistoryCard opportunityId={row.id} stages={lists.stages} />
+
+      <OpportunityNotesCard opportunityId={row.id} />
+
+      <section className="df-card" data-testid="v2-opportunity-client">
+        <div className="df-card-head">
+          <h2 className="df-card-title">Client</h2>
+          {record.clientHref ? (
+            <Button asChild variant="outline" className="df-btn">
+              <Link href={record.clientHref}>Open Client</Link>
+            </Button>
+          ) : null}
+        </div>
+        <p className={record.clientHref ? "df-update-body" : "df-empty"}>
+          {record.clientHref ? record.clientLabel : "No Client yet. Choose one in the Opportunity record."}
+        </p>
+      </section>
+
+      {outcome ? (
+        <OpportunityOutcomeDialog
+          key={`${outcome.kind}-${outcome.row.id}`}
+          outcome={outcome}
+          onClose={() => setOutcome(null)}
+          lists={lists}
+          users={users}
+          clients={clients}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -173,14 +974,6 @@ export function V2OpportunityRecordPage() {
       return response.json();
     },
   });
-  const { data: fields = [] } = useQuery<ModuleField[]>({
-    queryKey: ["/api/modules/projects/fields"],
-  });
-  const statusField = fields.find((field) => field.slug === "status");
-  const stages = useMemo(
-    () => composeOpportunityStages(stageOptionsFromFieldOptions(statusField?.options)),
-    [statusField],
-  );
 
   if (match.kind !== "opportunity-record") return null;
   if (isLoading) {
@@ -195,35 +988,7 @@ export function V2OpportunityRecordPage() {
     return <div className="df-page"><p className="df-empty">This Opportunity could not be loaded.</p></div>;
   }
 
-  const record = composeOpportunityRecord({ ...toPipelineRow(row), stages });
-  return (
-    <div className="df-page" data-testid="v2-opportunity-record">
-      <header className="df-dossier-head">
-        <div className="df-dossier-identity">
-          <div className="df-dossier-copy">
-            <div className="df-dossier-meta">
-              <span className="df-status">OPPORTUNITY</span>
-              <span className="df-status" data-status={record.stage} data-swatch="" style={swatchStyle(record.stageColor)}>
-                {record.stage}
-              </span>
-            </div>
-            <h1 className="df-record-title">{record.title}</h1>
-            <div className="df-dossier-provenance">
-              <span className="df-mono df-meta">{record.clientLabel}</span>
-              <span className="df-mono df-meta">{record.terminal ? "TERMINAL" : "OPEN"}</span>
-            </div>
-          </div>
-        </div>
-      </header>
-      <section className="df-card">
-        <div className="df-card-head"><h2 className="df-card-title">Opportunity record</h2></div>
-        <div className="df-card-body">
-          <div className="df-kv"><span>CLIENT</span><span>{record.clientLabel}</span></div>
-          <div className="df-kv"><span>STAGE</span><span>{record.stage}</span></div>
-        </div>
-      </section>
-    </div>
-  );
+  return <OpportunityRecord row={row} />;
 }
 
 function renderOpportunityClone(
@@ -237,38 +1002,29 @@ function renderOpportunityClone(
 }
 
 export function V2OpportunitiesPage() {
-  const { layout, memberships } = useV2Chrome();
+  const { layout } = useV2Chrome();
+  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [filterQuery, setFilterQuery] = useState("");
   const [changingId, setChangingId] = useState<string | null>(null);
   const pipelineRef = useRef<HTMLDivElement>(null);
   const [creating, setCreating] = useState(false);
-  const [name, setName] = useState("");
-  const [clientId, setClientId] = useState("");
+  const [draft, setDraft] = useState(() => newOpportunityDraft(""));
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
 
-  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
-  const workspaceName = current?.workspaceName ?? "this Workspace";
-  const readOnly = current?.condition === "Read-only";
+  const { workspaceName, readOnly, refusal } = useWorkspaceWrites();
+  const lists = useOpportunityLists();
+  const { stages } = lists;
 
-  const ownerName = useWorkspaceOwnerName();
-
-  const { data: fields = [] } = useQuery<ModuleField[]>({
-    queryKey: ["/api/modules/projects/fields"],
-  });
   const { data: clients = [] } = useQuery<CrmClient[]>({
     queryKey: ["/api/crm/clients"],
   });
+  const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
   const { data: projectsResponse, isLoading, isError } = useQuery<OpportunityRowsResponse>({
     queryKey: ["/api/crm/projects", "register"],
     queryFn: loadOpportunityRows,
   });
-
-  const statusField = fields.find((field) => field.slug === "status");
-  const stages = useMemo(
-    () => composeOpportunityStages(stageOptionsFromFieldOptions(statusField?.options)),
-    [statusField],
-  );
 
   const pipeline = composeOpportunityPipeline({
     workspaceName,
@@ -278,29 +1034,25 @@ export function V2OpportunitiesPage() {
     changingId,
   });
 
+  const created = newOpportunityPayload(draft);
+  const openStages = stages.filter((stage) => !stage.terminal);
+
   const createOpportunity = useMutation({
-    mutationFn: (input: { name: string; clientId: string | null }) =>
-      apiRequest("POST", "/api/crm/projects", {
-        name: input.name,
-        clientId: input.clientId,
-        status: "lead",
-      }),
+    mutationFn: async (input: { body: Record<string, unknown>; note: string | null }) => {
+      const result = await apiRequest("POST", "/api/crm/projects", input.body);
+      if (input.note) {
+        await apiRequest("POST", opportunityNotesPath(result.crmProject.id), { content: input.note });
+      }
+      return result;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
-      setName("");
-      setClientId("");
+      setDraft(newOpportunityDraft(user?.id ?? ""));
       setCreating(false);
       setWriteRefusal(null);
     },
     onError: (error: Error) => {
-      setWriteRefusal(
-        opportunityWriteRefusal({
-          readOnly,
-          workspaceName,
-          errorMessage: error.message,
-          ownerName,
-        }),
-      );
+      setWriteRefusal(refusal(error.message));
     },
   });
 
@@ -327,15 +1079,7 @@ export function V2OpportunitiesPage() {
         queryClient.setQueryData(["/api/crm/projects", "register"], context.previous);
       }
       setChangingId(null);
-      setWriteRefusal(
-        opportunityWriteRefusal({
-          readOnly,
-          workspaceName,
-          errorMessage: error.message,
-          ownerName,
-          capability: "Change Opportunity Stage",
-        }),
-      );
+      setWriteRefusal(refusal(error.message, "Change Opportunity Stage"));
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
@@ -344,19 +1088,22 @@ export function V2OpportunitiesPage() {
   });
 
   function onCreate() {
-    const opportunityName = name.trim();
-    if (!opportunityName) return;
+    if (!created.body) return;
     if (readOnly) {
-      setWriteRefusal(opportunityWriteRefusal({ readOnly: true, workspaceName }));
+      setWriteRefusal(refusal());
       return;
     }
-    createOpportunity.mutate({ name: opportunityName, clientId: clientId || null });
+    createOpportunity.mutate({ body: created.body, note: created.note });
   }
 
   function onStageChange(row: CrmProjectWithDetails, fromStage: string, nextStage: string) {
     if (!canChangeOpportunityStage(fromStage, nextStage)) return;
     if (readOnly) {
-      setWriteRefusal(opportunityWriteRefusal({ readOnly: true, workspaceName }));
+      setWriteRefusal(refusal());
+      return;
+    }
+    if (nextStage === "won" || nextStage === "lost") {
+      setOutcome({ kind: nextStage, row });
       return;
     }
     changeStage.mutate({
@@ -415,8 +1162,7 @@ export function V2OpportunitiesPage() {
             variant="default"
             type="button"
             onClick={() => {
-              setName("");
-              setClientId("");
+              setDraft(newOpportunityDraft(user?.id ?? ""));
               setWriteRefusal(null);
               setCreating(true);
             }}
@@ -431,38 +1177,43 @@ export function V2OpportunitiesPage() {
         open={creating}
         onOpenChange={setCreating}
         title="New Opportunity"
-        description="An Opportunity is a sale in the pipeline. It starts as a Lead and moves along the stages on the pipeline."
+        description="An Opportunity is a sale in the pipeline. It starts at the stage you choose and moves along the stages on the pipeline."
         submitLabel="Create Opportunity"
         pending={createOpportunity.isPending}
-        canSubmit={Boolean(name.trim())}
+        canSubmit={Boolean(created.body)}
         onSubmit={onCreate}
-        refusal={writeRefusal}
+        refusal={writeRefusal ?? (draft.name.trim() ? created.issue : null)}
         testId="v2-opportunities-new"
       >
-        <label className="df-daily-field">
-          NAME
-          <input
-            type="text"
-            value={name}
+        <div className="df-opportunity-fields">
+          <OpportunityFieldInputs
+            draft={draft}
+            onChange={(next) => setDraft({ ...draft, ...next })}
+            clients={clients}
+            users={users}
+            sources={lists.sources}
             autoFocus
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Opportunity name"
-            aria-label="Opportunity name"
           />
-        </label>
-        <label className="df-daily-field">
-          CLIENT
-          <V2FilterSelect
-            label=""
-            ariaLabel="Client"
-            value={clientId || V2_SELECT_NONE}
-            options={[
-              { value: V2_SELECT_NONE, label: "No Client yet" },
-              ...clients.map((client) => ({ value: client.id, label: client.name })),
-            ]}
-            onChange={(value) => setClientId(value === V2_SELECT_NONE ? "" : value)}
-          />
-        </label>
+          <label className="df-daily-field" data-wide="true">
+            STAGE
+            <V2FilterSelect
+              label=""
+              ariaLabel="Stage"
+              value={draft.stage}
+              options={openStages.map((stage) => ({ value: stage.id, label: stage.label }))}
+              onChange={(stage) => setDraft({ ...draft, stage })}
+            />
+          </label>
+          <label className="df-daily-field" data-wide="true">
+            FIRST NOTE
+            <textarea
+              value={draft.note}
+              onChange={(event) => setDraft({ ...draft, note: event.target.value })}
+              placeholder="Optional"
+              aria-label="First note"
+            />
+          </label>
+        </div>
       </V2FormDialog>
       {writeRefusal && !creating ? <p className="df-refusal">{writeRefusal}</p> : null}
 
@@ -507,7 +1258,14 @@ export function V2OpportunitiesPage() {
                     {column.label}
                   </span>
                 </h2>
-                <span className="df-count-chip">{column.cards.length}</span>
+                <span className="df-cluster">
+                  <span className="df-count-chip">{column.cards.length}</span>
+                  {column.totals.length ? (
+                    <span className="df-opportunity-totals" data-testid={`v2-opportunity-totals-${column.id}`}>
+                      {column.totals.join(" · ")}
+                    </span>
+                  ) : null}
+                </span>
               </div>
               <Droppable
                 droppableId={column.id}
@@ -553,6 +1311,17 @@ export function V2OpportunitiesPage() {
       <div className="df-library-foot">
         {pipeline.count} {pipeline.count === 1 ? "Opportunity" : "Opportunities"}
       </div>
+
+      {outcome ? (
+        <OpportunityOutcomeDialog
+          key={`${outcome.kind}-${outcome.row.id}`}
+          outcome={outcome}
+          onClose={() => setOutcome(null)}
+          lists={lists}
+          users={users}
+          clients={clients}
+        />
+      ) : null}
     </div>
   );
 }

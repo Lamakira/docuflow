@@ -2101,7 +2101,17 @@ button.df-activity-row {
 }
 
 .df-opportunity-column .df-card-head {
+  flex-wrap: wrap;
   padding: var(--df-space-4);
+}
+
+/* One total per currency; amounts in different currencies are never added. */
+.df-opportunity-totals,
+.df-opportunity-card-value {
+  font-family: var(--df-font-mono);
+  font-size: var(--df-text-1);
+  color: var(--df-archive-slate);
+  font-variant-numeric: tabular-nums;
 }
 
 .df-opportunity-column .df-card-title {
@@ -3051,6 +3061,49 @@ button.df-activity-row {
 
 /* A form field spans the dialog, so its chevron sits at the far end like an input's edge. */
 .df-form-dialog-body > .df-daily-field .df-select-trigger {
+  width: 100%;
+  height: var(--df-control-h);
+  justify-content: space-between;
+  letter-spacing: normal;
+}
+
+/* The Opportunity fields, two to a row, in New Opportunity and on the record. */
+.df-opportunity-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--df-space-4);
+  padding: var(--df-space-4);
+}
+
+.df-form-dialog-body > .df-opportunity-fields {
+  padding: 0;
+}
+
+.df-opportunity-fields > .df-daily-field {
+  min-width: 0;
+  font-family: var(--df-font-mono);
+  font-size: var(--df-text-1);
+  letter-spacing: 0.07em;
+  color: var(--df-archive-slate);
+}
+
+.df-opportunity-fields > .df-daily-field[data-wide="true"] {
+  grid-column: 1 / -1;
+}
+
+.df-opportunity-fields > .df-daily-field input,
+.df-opportunity-fields > .df-daily-field textarea {
+  font-family: var(--df-font-ui);
+  font-size: var(--df-text-3);
+  letter-spacing: normal;
+  color: var(--df-case-ink);
+}
+
+.df-opportunity-fields > .df-daily-field input {
+  height: var(--df-control-h);
+}
+
+.df-opportunity-fields > .df-daily-field .df-select-trigger {
   width: 100%;
   height: var(--df-control-h);
   justify-content: space-between;

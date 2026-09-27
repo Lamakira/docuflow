@@ -253,6 +253,13 @@
       "when": 1790531680710,
       "tag": "0035_perpetual_tattoo",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790544776267,
+      "tag": "0036_flashy_mattie_franklin",
+      "breakpoints": true
     }
   ]
 }

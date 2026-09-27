@@ -31,7 +31,21 @@ import {
 import { registerBillingRoutes } from "./modules/billing/http";
 import { CRM_PROJECT_SORTS } from "./modules/projects/persistence";
 import { CRM_CLIENT_SORTS, type OptionRenameColumn } from "./modules/clients-sales/persistence";
-import { builtInList, diffFieldOptions, type OptionRename } from "@shared/pipelineLists";
+import {
+  OPTION_VALUE_MAX,
+  builtInList,
+  diffFieldOptions,
+  workspaceListOptions,
+  type OptionRename,
+} from "@shared/pipelineLists";
+import {
+  ESTIMATED_VALUE_MINOR_MAX,
+  LOST_REASON_DETAIL_MAX,
+  OPPORTUNITY_CURRENCIES,
+  opportunityFieldsIssue,
+  type OpportunityFieldsState,
+} from "@shared/opportunityFields";
+import { projectHasOpportunity } from "@shared/projectLifecycle";
 import { SeatExhaustedError } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
 import mammoth from "mammoth";
@@ -1514,6 +1528,62 @@ Instructions:
     }
   });
 
+  // The Opportunity fields a create or an edit may send (#276).
+  const opportunityFieldsSchema = {
+    opportunityOwnerId: z.string().nullable().optional(),
+    source: z.string().max(OPTION_VALUE_MAX).nullable().optional(),
+    estimatedValueMinor: z.number().int().min(0).max(ESTIMATED_VALUE_MINOR_MAX).nullable().optional(),
+    estimatedValueCurrency: z.enum(OPPORTUNITY_CURRENCIES).nullable().optional(),
+    lostReason: z.string().max(OPTION_VALUE_MAX).nullable().optional(),
+    lostReasonDetail: z.string().max(LOST_REASON_DETAIL_MAX).nullable().optional(),
+  };
+
+  type OpportunityFieldsWrite = {
+    status?: string;
+    source?: string | null;
+    lostReason?: string | null;
+    lostReasonDetail?: string | null;
+  };
+
+  /**
+   * A Source or Lost reason is one the Workspace's list offers; a value already
+   * held may stay. Only v2's Mark as lost requires a Lost reason: v1 still moves
+   * a row to Lost without one.
+   */
+  async function opportunityWriteIssue(
+    previous: OpportunityFieldsState & { source: string | null } | null,
+    next: OpportunityFieldsState,
+    data: OpportunityFieldsWrite,
+    requireLostReason = false,
+  ): Promise<string | null> {
+    const issue = opportunityFieldsIssue(previous, next, {
+      status: data.status !== undefined && data.status !== previous?.status,
+      lostReason: data.lostReason !== undefined || data.lostReasonDetail !== undefined,
+      requireLostReason,
+    });
+    if (issue) return issue;
+    const source = data.source && data.source !== previous?.source ? data.source : null;
+    const lostReason = data.lostReason && data.lostReason !== previous?.lostReason ? data.lostReason : null;
+    if (!source && !lostReason) return null;
+    const modules = await storage.getCrmModules();
+    const offered = (moduleSlug: string, fieldSlug: string) => {
+      const list = builtInList(moduleSlug, fieldSlug);
+      const saved = modules.find((mod) => mod.slug === moduleSlug)?.fields?.find((field) => field.slug === fieldSlug)?.options;
+      return list ? workspaceListOptions(list, saved).map((option) => option.value) : [];
+    };
+    if (source && !offered("contacts", "source").includes(source)) {
+      return `“${source}” is not in this Workspace's Source list.`;
+    }
+    if (lostReason && !offered("projects", "lost_reason").includes(lostReason)) {
+      return `“${lostReason}” is not in this Workspace's Lost reasons.`;
+    }
+    return null;
+  }
+
+  function blankToNull(value: string | null | undefined): string | null | undefined {
+    return value === undefined ? undefined : value?.trim() || null;
+  }
+
   // Get all CRM projects for Kanban view (no pagination)
   app.get("/api/crm/projects/all", isAuthenticated, async (req: any, res) => {
     try {
@@ -1625,12 +1695,46 @@ Instructions:
         documentationEnabled: z.boolean().optional(),
         isDocumentationOnly: z.boolean().optional(),
         memberIds: z.array(z.string()).optional(),
+        ...opportunityFieldsSchema,
       });
       
       const parsed = createSchema.safeParse(req.body);
       
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      }
+
+      // v1 names only an assignee; while the row is an Opportunity, that is its Owner too.
+      const hasOpportunity = projectHasOpportunity({
+        isDocumentationOnly: parsed.data.isDocumentationOnly ? 1 : 0,
+        projectType: parsed.data.projectType || "one_time",
+        status: parsed.data.status || "lead",
+      });
+      const opportunityFields = {
+        opportunityOwnerId:
+          parsed.data.opportunityOwnerId !== undefined
+            ? parsed.data.opportunityOwnerId || null
+            : hasOpportunity
+              ? parsed.data.assigneeId || null
+              : null,
+        source: blankToNull(parsed.data.source) ?? null,
+        estimatedValueMinor: parsed.data.estimatedValueMinor ?? null,
+        estimatedValueCurrency: parsed.data.estimatedValueCurrency ?? null,
+        lostReason: blankToNull(parsed.data.lostReason) ?? null,
+        lostReasonDetail: blankToNull(parsed.data.lostReasonDetail) ?? null,
+      };
+      const opportunityIssue = await opportunityWriteIssue(
+        null,
+        {
+          ...opportunityFields,
+          status: parsed.data.status || "lead",
+          projectType: parsed.data.projectType || "one_time",
+          isDocumentationOnly: parsed.data.isDocumentationOnly ? 1 : 0,
+        },
+        { ...parsed.data, ...opportunityFields, status: parsed.data.status || "lead" },
+      );
+      if (opportunityIssue) {
+        return res.status(400).json({ message: opportunityIssue });
       }
       
       // Enforce unique project name per user
@@ -1663,6 +1767,7 @@ Instructions:
           actualHours: parsed.data.actualHours ?? null,
           documentationEnabled: parsed.data.documentationEnabled ? 1 : 0,
           isDocumentationOnly: parsed.data.isDocumentationOnly ? 1 : 0,
+          ...opportunityFields,
         }
       );
 
@@ -1778,8 +1883,56 @@ Instructions:
     }
   });
 
+  // Mark an Opportunity Lost from v2, or change the reason it was lost for.
+  // v2 must say why; v1's PATCH below still moves a row to Lost without one.
+  app.post("/api/crm/projects/:id/lost", isAuthenticated, async (req: any, res) => {
+    try {
+      const crmProject = await storage.getCrmProject(req.params.id);
+      if (!crmProject) {
+        return res.status(404).json({ message: "CRM Project not found" });
+      }
+      if (!projectHasOpportunity(crmProject)) {
+        return res.status(400).json({ message: "Only an Opportunity can be marked Lost." });
+      }
+      if (crmProject.status.startsWith("won")) {
+        return res.status(400).json({ message: "A won Opportunity cannot be marked Lost." });
+      }
+      const parsed = z
+        .object({
+          lostReason: z.string().max(OPTION_VALUE_MAX).nullable().optional(),
+          lostReasonDetail: z.string().max(LOST_REASON_DETAIL_MAX).nullable().optional(),
+        })
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      }
+      await updateCrmProjectFromRequest(
+        req,
+        res,
+        {
+          ...(crmProject.status === "lost" ? {} : { status: "lost" }),
+          lostReason: parsed.data.lostReason ?? null,
+          lostReasonDetail: parsed.data.lostReasonDetail ?? null,
+        },
+        { requireLostReason: true },
+      );
+    } catch (error) {
+      console.error("Error marking Opportunity Lost:", error);
+      res.status(500).json({ message: "Failed to update CRM project" });
+    }
+  });
+
   // Update CRM project
   app.patch("/api/crm/projects/:id", isAuthenticated, async (req: any, res) => {
+    await updateCrmProjectFromRequest(req, res, req.body, { requireLostReason: false });
+  });
+
+  async function updateCrmProjectFromRequest(
+    req: any,
+    res: any,
+    body: unknown,
+    options: { requireLostReason: boolean },
+  ) {
     try {
       const userId = getUserId(req)!;
       const crmProject = await storage.getCrmProject(req.params.id);
@@ -1803,12 +1956,45 @@ Instructions:
         budgetedMinutes: z.number().int().min(0).max(59).nullable().optional(),
         actualHours: z.number().nullable().optional(),
         projectDescription: z.string().nullable().optional(),
+        ...opportunityFieldsSchema,
       }).partial();
       
-      const parsed = updateSchema.safeParse(req.body);
+      const parsed = updateSchema.safeParse(body);
       
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      }
+
+      for (const key of ["source", "lostReason", "lostReasonDetail"] as const) {
+        if (parsed.data[key] !== undefined) parsed.data[key] = blankToNull(parsed.data[key]);
+      }
+      // A Lost reason belongs to a Lost Opportunity: leaving Lost clears it.
+      const leavingLost =
+        parsed.data.status !== undefined && parsed.data.status !== "lost" && crmProject.status === "lost";
+      if (leavingLost) {
+        parsed.data.lostReason ??= null;
+        parsed.data.lostReasonDetail ??= null;
+      }
+      const pick = <K extends keyof OpportunityFieldsState>(key: K) =>
+        (parsed.data[key as keyof typeof parsed.data] !== undefined
+          ? parsed.data[key as keyof typeof parsed.data]
+          : crmProject[key]) as OpportunityFieldsState[K];
+      const opportunityIssue = await opportunityWriteIssue(
+        crmProject,
+        {
+          status: pick("status"),
+          projectType: pick("projectType"),
+          isDocumentationOnly: crmProject.isDocumentationOnly,
+          estimatedValueMinor: pick("estimatedValueMinor"),
+          estimatedValueCurrency: pick("estimatedValueCurrency"),
+          lostReason: pick("lostReason"),
+          lostReasonDetail: pick("lostReasonDetail"),
+        },
+        leavingLost ? { ...parsed.data, lostReason: undefined, lostReasonDetail: undefined } : parsed.data,
+        options.requireLostReason,
+      );
+      if (opportunityIssue) {
+        return res.status(400).json({ message: opportunityIssue });
       }
       
       // Update base project name and/or description if provided
@@ -1943,7 +2129,7 @@ Instructions:
       console.error("Error updating CRM project:", error);
       res.status(500).json({ message: "Failed to update CRM project" });
     }
-  });
+  }
 
   // Get CRM project by documentation project ID
   // NOTE: This route MUST come before /api/crm/projects/:id to avoid matching "by-project" as :id
@@ -3383,7 +3569,8 @@ Instructions:
       const columns: OptionRenameColumn[] = [];
       if (list?.key === "opportunity-stages") columns.push("projects.status");
       if (list?.key === "project-type") columns.push("projects.projectType");
-      if (list?.key === "source") columns.push("clients.source");
+      if (list?.key === "source") columns.push("clients.source", "projects.source");
+      if (list?.key === "lost-reasons") columns.push("projects.lostReason");
       if (module?.slug === "contacts" && field.slug === "status") columns.push("clients.status");
 
       const updated = await storage.updateCrmModuleFieldOptions(req.params.id, data, renames, columns);

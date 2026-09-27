@@ -1,7 +1,7 @@
 /**
  * The option lists records read their values from: the `projects` module's
- * `status` (Opportunity Stages and the combined Project status) and
- * `project_type`, and the `contacts` module's `source`.
+ * `status` (Opportunity Stages and the combined Project status),
+ * `project_type` and `lost_reason`, and the `contacts` module's `source`.
  *
  * An option is stored in `crm_module_fields.options` as a JSON string
  * `{ id, label, color }`. Older entries are `{ label, color }` or a plain label;
@@ -12,7 +12,7 @@
 
 export type StoredOption = { id: string; label: string; value: string; color: string | null };
 
-export type BuiltInListKey = "opportunity-stages" | "project-type" | "source";
+export type BuiltInListKey = "opportunity-stages" | "project-type" | "source" | "lost-reasons";
 
 export type BuiltInModuleSpec = {
   name: string;
@@ -34,7 +34,7 @@ export type BuiltInList = {
   locked: readonly string[];
 };
 
-/** The longest value `crm_projects.status`, `project_type` and `crm_clients.source` hold. */
+/** The longest value `crm_projects.status`, `project_type`, `source`, `lost_reason` and `crm_clients.source` hold. */
 export const OPTION_VALUE_MAX = 50;
 
 const PROJECTS_MODULE: BuiltInModuleSpec = {
@@ -115,7 +115,25 @@ export const BUILT_IN_LISTS: readonly BuiltInList[] = [
     // A `fiverr` Client carries a Fiverr username.
     locked: ["fiverr"],
   },
+  {
+    key: "lost-reasons",
+    module: PROJECTS_MODULE,
+    field: { name: "Lost reason", slug: "lost_reason", displayOrder: 20, isRequired: 0 },
+    defaults: [
+      { label: "Price", color: "#f59e0b" },
+      { label: "Timing", color: "#06b6d4" },
+      { label: "Chose a competitor", color: "#8b5cf6" },
+      { label: "No response", color: "#64748b" },
+      { label: "Other", color: "#3b82f6" },
+    ],
+    locked: [],
+  },
 ];
+
+/** A built-in list's options as saved by the Workspace, or its defaults while none are. */
+export function workspaceListOptions(list: BuiltInList, saved: readonly string[] | null | undefined): StoredOption[] {
+  return parseFieldOptions(saved?.length ? saved : defaultFieldOptions(list));
+}
 
 export function builtInList(moduleSlug: string | null | undefined, fieldSlug: string | null | undefined): BuiltInList | null {
   return BUILT_IN_LISTS.find((list) => list.module.slug === moduleSlug && list.field.slug === fieldSlug) ?? null;

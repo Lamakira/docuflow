@@ -3,9 +3,21 @@ import {
   opportunityStageFromCombined,
   projectHasOpportunity,
 } from "@shared/projectLifecycle";
+import {
+  DEFAULT_OPPORTUNITY_CURRENCY,
+  ESTIMATED_VALUE_MINOR_MAX,
+  LOST_REASON_DETAIL_MAX,
+  OPPORTUNITY_CURRENCIES,
+  currencyExponent,
+  isOpportunityCurrency,
+} from "@shared/opportunityFields";
+import { builtInList, workspaceListOptions } from "@shared/pipelineLists";
 import { chromeRefusal } from "./chrome";
+import { clientHref } from "./clients";
+import { formatDayStamp, formatSpan, formatWhen, noteName, parseDate } from "./dossier";
+import { readProjectBudget } from "./projects";
 import { stageColor, stageInk } from "./stageColor";
-import { projectHref } from "./today";
+import { memberName, projectHref } from "./today";
 
 /**
  * Opportunities pipeline (#187).
@@ -29,6 +41,8 @@ export type OpportunityPipelineRowInput = {
   combinedStatus: string;
   projectType: string | null;
   isDocumentationOnly: number | null;
+  estimatedValueMinor?: number | null;
+  estimatedValueCurrency?: string | null;
 };
 
 export type OpportunityPipelineInput = {
@@ -50,20 +64,37 @@ export type OpportunityCard = {
   projectHref: string | null;
   recordHref: string;
   changing: boolean;
+  /** The Estimated value, formatted in its own currency. */
+  valueLabel: string | null;
 };
+
+/** One option of a Pipeline & lists list, as a select offers it. */
+export type ListOption = { value: string; label: string };
 
 export type OpportunityRecordInput = OpportunityPipelineRowInput & {
   /** The Workspace's stages, so the record wears the colour its column does. */
   stages?: OpportunityStageOption[];
+  clientId?: string | null;
+  owner?: { firstName?: string | null; lastName?: string | null; email?: string | null } | null;
+  dueDate?: Date | string | null;
+  source?: string | null;
+  sourceOptions?: ListOption[];
+  lostReason?: string | null;
+  lostReasonDetail?: string | null;
+  lostReasonOptions?: ListOption[];
 };
 
 export type OpportunityRecordModel = {
   id: string;
   title: string;
   clientLabel: string;
+  clientHref: string | null;
+  stageId: string;
   stage: string;
   stageColor: string;
   terminal: boolean;
+  fields: Array<{ label: string; value: string }>;
+  lostReason: { label: string; detail: string | null } | null;
 };
 
 export function opportunityHref(id: string): string {
@@ -79,14 +110,37 @@ export function opportunityHref(id: string): string {
  */
 export function composeOpportunityRecord(input: OpportunityRecordInput): OpportunityRecordModel {
   const stage = opportunityStageFromCombined(input.combinedStatus);
+  const value = estimatedValueLabel(input.estimatedValueMinor, input.estimatedValueCurrency);
+  const close = parseDate(input.dueDate ?? null);
+  const lost = stage === "lost" && input.lostReason;
   return {
     id: input.id,
     title: input.name || "Untitled Opportunity",
     clientLabel: input.clientName?.trim() || "—",
+    clientHref: input.clientId ? clientHref(input.clientId) : null,
+    stageId: stage,
     stage: stageLabel(stage).toUpperCase(),
     stageColor: stageColor(stage, input.stages?.find((option) => option.id === stage)?.color),
     terminal: isOpportunityTerminal(stage),
+    fields: [
+      { label: "OWNER", value: input.owner ? memberName(input.owner) : "No Owner" },
+      { label: "EXPECTED CLOSE", value: close ? formatCloseDate(close) : "Not set" },
+      { label: "SOURCE", value: input.source ? optionLabel(input.sourceOptions, input.source) : "Not set" },
+      { label: "ESTIMATED VALUE", value: value ?? "Not set" },
+    ],
+    lostReason: lost
+      ? { label: optionLabel(input.lostReasonOptions, input.lostReason!), detail: input.lostReasonDetail?.trim() || null }
+      : null,
   };
+}
+
+function optionLabel(options: ListOption[] | undefined, value: string): string {
+  return options?.find((option) => option.value === value)?.label ?? stageLabel(value);
+}
+
+/** A date-only field: stored at UTC midnight, read back on the same day everywhere. */
+function formatCloseDate(value: Date): string {
+  return value.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 export type OpportunityColumn = {
@@ -97,6 +151,8 @@ export type OpportunityColumn = {
   color: string;
   ink: "light" | "dark";
   cards: OpportunityCard[];
+  /** One total per currency, never summed across currencies. */
+  totals: string[];
 };
 
 export type OpportunityPipelineModel = {
@@ -204,7 +260,7 @@ export function combinedStatusForStage(stage: string, currentCombined?: string):
 
 function stageColumn(id: string, label: string, terminal: boolean, configured?: string): OpportunityColumn {
   const color = stageColor(id, configured);
-  return { id, label, terminal, color, ink: stageInk(color), cards: [] };
+  return { id, label, terminal, color, ink: stageInk(color), cards: [], totals: [] };
 }
 
 export function composeOpportunityPipeline(input: OpportunityPipelineInput): OpportunityPipelineModel {
@@ -215,6 +271,7 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
     stageColumn(stage.id, stage.label, stage.terminal || isOpportunityTerminal(stage.id), stage.color),
   );
   const columnById = new Map(columns.map((column) => [column.id, column]));
+  const sums = new Map<string, Map<string, number>>();
 
   for (const row of input.rows) {
     if (
@@ -257,7 +314,21 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
       projectHref: projectHref(row.id),
       recordHref: opportunityHref(row.id),
       changing: row.id === input.changingId,
+      valueLabel: estimatedValueLabel(row.estimatedValueMinor, row.estimatedValueCurrency),
     });
+    if (row.estimatedValueMinor != null && isOpportunityCurrency(row.estimatedValueCurrency)) {
+      const byCurrency = sums.get(column.id) ?? new Map<string, number>();
+      byCurrency.set(row.estimatedValueCurrency, (byCurrency.get(row.estimatedValueCurrency) ?? 0) + row.estimatedValueMinor);
+      sums.set(column.id, byCurrency);
+    }
+  }
+
+  for (const column of columns) {
+    const byCurrency = sums.get(column.id);
+    if (!byCurrency) continue;
+    column.totals = [...byCurrency.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([currency, minor]) => formatMoney(minor, currency));
   }
 
   const count = columns.reduce((sum, column) => sum + column.cards.length, 0);
@@ -298,4 +369,405 @@ export function opportunityWriteRefusal(input: {
     });
   }
   return chromeRefusal({ kind: "generic", message: message || "Failed to update Opportunity" });
+}
+
+/**
+ * The Estimated value in its own currency, e.g. "4 500 €" or "1 200,50 $":
+ * grouped, the symbol after, minor units only when there are some.
+ */
+export function formatMoney(minor: number, currency: string): string {
+  const exponent = currencyExponent(currency);
+  const unit = 10 ** exponent;
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency,
+    currencyDisplay: "narrowSymbol",
+    minimumFractionDigits: minor % unit === 0 ? 0 : exponent,
+    maximumFractionDigits: exponent,
+  }).format(minor / unit);
+}
+
+export function estimatedValueLabel(minor: number | null | undefined, currency: string | null | undefined): string | null {
+  if (minor == null || !currency) return null;
+  return formatMoney(minor, currency);
+}
+
+function currencySymbol(currency: string): string {
+  const parts = new Intl.NumberFormat("fr-FR", { style: "currency", currency, currencyDisplay: "narrowSymbol" }).formatToParts(0);
+  return parts.find((part) => part.type === "currency")?.value ?? currency;
+}
+
+export const CURRENCY_OPTIONS: ListOption[] = OPPORTUNITY_CURRENCIES.map((code) => {
+  const symbol = currencySymbol(code);
+  return { value: code, label: symbol === code ? code : `${code} ${symbol}` };
+});
+
+/** An amount as typed ("4500", "4 500", "4500,50"), in the currency's minor units; blank is no value. */
+export function readAmount(text: string, currency: string): { minor: number | null; issue: string | null } {
+  const compact = text.replace(/[\s\u00a0\u202f']/g, "");
+  if (!compact) return { minor: null, issue: null };
+  const exponent = currencyExponent(currency);
+  const match = compact.match(/^(\d+)(?:[.,](\d+))?$/);
+  if (!match || (match[2]?.length ?? 0) > exponent) {
+    return {
+      minor: null,
+      issue: exponent > 0 ? "Write the Estimated value as an amount, e.g. 4500 or 4500.50." : "Write the Estimated value as a whole amount.",
+    };
+  }
+  const minor = Number(match[1]) * 10 ** exponent + Number((match[2] ?? "").padEnd(exponent, "0") || 0);
+  if (!Number.isSafeInteger(minor) || minor > ESTIMATED_VALUE_MINOR_MAX) {
+    return { minor: null, issue: "That Estimated value is too large." };
+  }
+  return { minor, issue: null };
+}
+
+function amountText(minor: number | null | undefined, currency: string): string {
+  if (minor == null) return "";
+  const exponent = currencyExponent(currency);
+  const unit = 10 ** exponent;
+  return minor % unit === 0 ? String(minor / unit) : (minor / unit).toFixed(exponent);
+}
+
+type ModuleFieldsRead = ReadonlyArray<{ slug: string; options?: string[] | null }> | null | undefined;
+
+function listOptions(moduleSlug: string, fieldSlug: string, fields: ModuleFieldsRead): ListOption[] {
+  const list = builtInList(moduleSlug, fieldSlug);
+  if (!list) return [];
+  const saved = fields?.find((field) => field.slug === fieldSlug)?.options;
+  return workspaceListOptions(list, saved).map((option) => ({ value: option.value, label: option.label }));
+}
+
+/** The Pipeline & lists Source list, read from the `contacts` module's fields. */
+export function opportunitySourceOptions(contactFields: ModuleFieldsRead): ListOption[] {
+  return listOptions("contacts", "source", contactFields);
+}
+
+/** The Pipeline & lists Lost reasons, read from the `projects` module's fields. */
+export function lostReasonOptions(projectFields: ModuleFieldsRead): ListOption[] {
+  return listOptions("projects", "lost_reason", projectFields);
+}
+
+/** A win creates a Client Project, so Internal is never offered. */
+export function winProjectTypeOptions(projectFields: ModuleFieldsRead): ListOption[] {
+  return listOptions("projects", "project_type", projectFields).filter((option) => option.value !== "internal");
+}
+
+/** A value already saved stays a choice even after its option left the list. */
+export function withSavedChoice(options: ListOption[], saved: string | null | undefined): ListOption[] {
+  if (!saved || options.some((option) => option.value === saved)) return options;
+  return [...options, { value: saved, label: stageLabel(saved) }];
+}
+
+export type SavedOpportunity = {
+  name: string;
+  clientId: string | null;
+  opportunityOwnerId: string | null;
+  dueDate: Date | string | null;
+  source: string | null;
+  estimatedValueMinor: number | null;
+  estimatedValueCurrency: string | null;
+};
+
+export type OpportunityDraft = {
+  name: string;
+  clientId: string;
+  ownerId: string;
+  /** `YYYY-MM-DD`, as a date input holds it. */
+  closeDate: string;
+  source: string;
+  amount: string;
+  currency: string;
+};
+
+export type NewOpportunityDraft = OpportunityDraft & { stage: string; note: string };
+
+type OpportunityFields = {
+  name: string;
+  clientId: string | null;
+  opportunityOwnerId: string | null;
+  dueDate: string | null;
+  source: string | null;
+  estimatedValueMinor: number | null;
+  estimatedValueCurrency: string | null;
+};
+
+function closeDateOf(value: Date | string | null | undefined): string {
+  return parseDate(value ?? null)?.toISOString().slice(0, 10) ?? "";
+}
+
+export function newOpportunityDraft(ownerId: string): NewOpportunityDraft {
+  return {
+    name: "",
+    clientId: "",
+    ownerId,
+    closeDate: "",
+    source: "",
+    amount: "",
+    currency: DEFAULT_OPPORTUNITY_CURRENCY,
+    stage: "lead",
+    note: "",
+  };
+}
+
+export function opportunityDraft(saved: SavedOpportunity): OpportunityDraft {
+  const currency = isOpportunityCurrency(saved.estimatedValueCurrency) ? saved.estimatedValueCurrency : DEFAULT_OPPORTUNITY_CURRENCY;
+  return {
+    name: saved.name,
+    clientId: saved.clientId ?? "",
+    ownerId: saved.opportunityOwnerId ?? "",
+    closeDate: closeDateOf(saved.dueDate),
+    source: saved.source ?? "",
+    amount: amountText(saved.estimatedValueMinor, currency),
+    currency,
+  };
+}
+
+function readOpportunityDraft(draft: OpportunityDraft): { fields: OpportunityFields; issue: null } | { fields: null; issue: string } {
+  const name = draft.name.trim();
+  if (!name) return { fields: null, issue: "Name the Opportunity." };
+  if (draft.closeDate && !/^\d{4}-\d{2}-\d{2}$/.test(draft.closeDate)) {
+    return { fields: null, issue: "Pick the Expected close date from the calendar." };
+  }
+  if (!isOpportunityCurrency(draft.currency)) return { fields: null, issue: "Choose the currency of the Estimated value." };
+  const amount = readAmount(draft.amount, draft.currency);
+  if (amount.issue) return { fields: null, issue: amount.issue };
+  return {
+    fields: {
+      name,
+      clientId: draft.clientId || null,
+      opportunityOwnerId: draft.ownerId || null,
+      dueDate: draft.closeDate || null,
+      source: draft.source || null,
+      estimatedValueMinor: amount.minor,
+      estimatedValueCurrency: amount.minor == null ? null : draft.currency,
+    },
+    issue: null,
+  };
+}
+
+/** What New Opportunity posts, and the first note it adds once created. */
+export function newOpportunityPayload(
+  draft: NewOpportunityDraft,
+): { body: OpportunityFields & { status: string }; note: string | null; issue: null } | { body: null; note: null; issue: string } {
+  const read = readOpportunityDraft(draft);
+  if (!read.fields) return { body: null, note: null, issue: read.issue };
+  const stage = draft.stage && !isOpportunityTerminal(draft.stage) ? draft.stage : "lead";
+  return { body: { ...read.fields, status: stage }, note: draft.note.trim() || null, issue: null };
+}
+
+export type OpportunityForm = {
+  issue: string | null;
+  dirty: boolean;
+  canSave: boolean;
+  note: string;
+  /** Only the keys that change, as `PATCH /api/crm/projects/:id` names them. */
+  patch: Record<string, unknown> | null;
+};
+
+/** The Opportunity record's edit form: what would be written, and whether it changes anything. */
+export function composeOpportunityForm(draft: OpportunityDraft, saved: SavedOpportunity): OpportunityForm {
+  const read = readOpportunityDraft(draft);
+  if (!read.fields) return { issue: read.issue, dirty: true, canSave: false, note: read.issue, patch: null };
+  const next = read.fields;
+  const patch: Record<string, unknown> = {};
+  if (next.name !== saved.name) patch.projectName = next.name;
+  if (next.clientId !== (saved.clientId ?? null)) patch.clientId = next.clientId;
+  if (next.opportunityOwnerId !== (saved.opportunityOwnerId ?? null)) patch.opportunityOwnerId = next.opportunityOwnerId;
+  if ((next.dueDate ?? "") !== closeDateOf(saved.dueDate)) patch.dueDate = next.dueDate;
+  if (next.source !== (saved.source ?? null)) patch.source = next.source;
+  if (
+    next.estimatedValueMinor !== (saved.estimatedValueMinor ?? null) ||
+    next.estimatedValueCurrency !== (saved.estimatedValueCurrency ?? null)
+  ) {
+    patch.estimatedValueMinor = next.estimatedValueMinor;
+    patch.estimatedValueCurrency = next.estimatedValueCurrency;
+  }
+  const dirty = Object.keys(patch).length > 0;
+  return {
+    issue: null,
+    dirty,
+    canSave: dirty,
+    note: dirty ? "Unsaved changes." : "Every field is saved.",
+    patch: dirty ? patch : null,
+  };
+}
+
+export type WinDraft = { projectType: string; hours: string; minutes: string; managerId: string; clientId: string };
+
+/**
+ * Mark as won: the Client Project's Project type and hours budget, and its
+ * Project Manager, proposed as the Opportunity Owner. Choosing another Project
+ * Manager leaves the Owner as it is.
+ */
+export function winDraft(
+  row: {
+    projectType: string | null;
+    opportunityOwnerId: string | null;
+    assigneeId: string | null;
+    clientId: string | null;
+    budgetedHours: number | null;
+    budgetedMinutes?: number | null;
+  },
+  typeOptions: ListOption[],
+): WinDraft {
+  const projectType = typeOptions.some((option) => option.value === row.projectType)
+    ? (row.projectType as string)
+    : typeOptions[0]?.value ?? "one_time";
+  const hours = row.budgetedHours ?? 0;
+  const minutes = row.budgetedMinutes ?? 0;
+  return {
+    projectType,
+    hours: hours > 0 || minutes > 0 ? String(hours) : "",
+    minutes: minutes > 0 ? String(minutes) : "",
+    managerId: row.opportunityOwnerId ?? row.assigneeId ?? "",
+    clientId: row.clientId ?? "",
+  };
+}
+
+export function readWinDraft(
+  draft: WinDraft,
+  current: { status: string; clientId: string | null },
+): { payload: Record<string, unknown>; issue: null } | { payload: null; issue: string } {
+  if (!draft.projectType || draft.projectType === "internal") return { payload: null, issue: "Choose the Project type." };
+  if (!current.clientId && !draft.clientId) return { payload: null, issue: "Choose the Client this Client Project is for." };
+  const budget = readProjectBudget({ hours: draft.hours, minutes: draft.minutes });
+  if (!budget.budget) return { payload: null, issue: budget.issue };
+  return {
+    payload: {
+      status: combinedStatusForStage("won", current.status),
+      projectType: draft.projectType,
+      budgetedHours: budget.budget.budgetedHours,
+      budgetedMinutes: budget.budget.budgetedMinutes,
+      assigneeId: draft.managerId || null,
+      ...(current.clientId ? {} : { clientId: draft.clientId }),
+    },
+    issue: null,
+  };
+}
+
+export type LostDraft = { reason: string; detail: string };
+
+export function lostDraft(row: { lostReason?: string | null; lostReasonDetail?: string | null }): LostDraft {
+  return { reason: row.lostReason ?? "", detail: row.lostReasonDetail ?? "" };
+}
+
+/** What `POST /api/crm/projects/:id/lost` takes: marks Lost, or edits the reason once Lost. */
+export function readLostDraft(
+  draft: LostDraft,
+): { payload: Record<string, unknown>; issue: null } | { payload: null; issue: string } {
+  if (!draft.reason) return { payload: null, issue: "Choose a Lost reason." };
+  const detail = draft.detail.trim();
+  if (detail.length > LOST_REASON_DETAIL_MAX) {
+    return { payload: null, issue: `Keep the detail under ${LOST_REASON_DETAIL_MAX} characters.` };
+  }
+  return {
+    payload: {
+      lostReason: draft.reason,
+      lostReasonDetail: detail || null,
+    },
+    issue: null,
+  };
+}
+
+type Person = { firstName?: string | null; lastName?: string | null; email?: string | null };
+
+export type OpportunityStageChange = {
+  id: string;
+  fromStatus: string | null;
+  toStatus: string;
+  changedAt: Date | string | null;
+  changedBy?: Person | null;
+};
+
+export type OpportunityHistoryModel = {
+  rows: Array<{ id: string; from: string | null; fromColor: string | null; to: string; toColor: string; when: string; who: string; held: string }>;
+  empty: boolean;
+  emptyCopy: string;
+};
+
+/**
+ * Stage history, like the Dossier's Status history. A win's later delivery
+ * moves (Won → Won - In progress) are the Client Project's, not a Stage change.
+ */
+export function composeOpportunityHistory(
+  changes: OpportunityStageChange[],
+  stages: OpportunityStageOption[],
+  now: Date,
+): OpportunityHistoryModel {
+  const describe = (combined: string) => {
+    const stage = opportunityStageFromCombined(combined);
+    const spec = stages.find((option) => option.id === stage);
+    return { label: (spec?.label ?? stageLabel(stage)).toUpperCase(), color: stageColor(stage, spec?.color) };
+  };
+  const moves = changes
+    .filter((change) => !change.fromStatus || opportunityStageFromCombined(change.fromStatus) !== opportunityStageFromCombined(change.toStatus))
+    .map((change) => ({ change, at: parseDate(change.changedAt) }))
+    .sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
+  const rows = moves.map(({ change, at }, index) => {
+    const next = index > 0 ? moves[index - 1].at : null;
+    const held = at ? formatSpan((next ?? now).getTime() - at.getTime()) : "—";
+    const from = change.fromStatus ? describe(change.fromStatus) : null;
+    const to = describe(change.toStatus);
+    return {
+      id: change.id,
+      from: from?.label ?? null,
+      fromColor: from?.color ?? null,
+      to: to.label,
+      toColor: to.color,
+      when: at ? formatDayStamp(at) : "",
+      who: change.changedBy ? memberName(change.changedBy) : "—",
+      held: next || !at ? held : `${held} so far`,
+    };
+  });
+  return { rows, empty: rows.length === 0, emptyCopy: "No Stage changes recorded for this Opportunity yet." };
+}
+
+export type OpportunityNoteInput = {
+  id: string;
+  content: string;
+  createdAt: Date | string | null;
+  createdBy?: Person | null;
+};
+
+export type OpportunityNotesModel = {
+  rows: Array<{ id: string; content: string; meta: string; deleteConsequence: string }>;
+  empty: boolean;
+  emptyState: { title: string; copy: string; action: string };
+};
+
+/** The Opportunity's thread of dated notes, as the Dossier's Notes tab shows a Project's. */
+export function composeOpportunityNotes(notes: OpportunityNoteInput[], now: Date): OpportunityNotesModel {
+  const rows = notes.map((note) => ({
+    id: note.id,
+    content: note.content,
+    meta: [note.createdAt ? formatWhen(note.createdAt, now) : null, note.createdBy ? memberName(note.createdBy).toUpperCase() : null]
+      .filter(Boolean)
+      .join(" · "),
+    deleteConsequence: `${noteName(note.content)} will be deleted from this Opportunity. This cannot be undone.`,
+  }));
+  return {
+    rows,
+    empty: rows.length === 0,
+    emptyState: {
+      title: "No notes yet",
+      copy: "Notes keep what was said and decided on this Opportunity: a call, a meeting, what the Client asked for.",
+      action: "Write the first note",
+    },
+  };
+}
+
+export function opportunityNotesPath(id: string): string {
+  return `/api/crm/projects/${id}/notes`;
+}
+
+export function opportunityNotePath(id: string, noteId: string): string {
+  return `/api/crm/projects/${id}/notes/${noteId}`;
+}
+
+export function opportunityLostPath(id: string): string {
+  return `/api/crm/projects/${id}/lost`;
+}
+
+export function opportunityStageHistoryPath(id: string): string {
+  return `/api/crm/projects/${id}/stage-history`;
 }

@@ -460,7 +460,7 @@ export function documentsReorderPath(documentProjectId: string): string {
   return `/api/projects/${documentProjectId}/documents/reorder`;
 }
 
-function parseDate(value: Date | string | null | undefined): Date | null {
+export function parseDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
   const parsed = value instanceof Date ? value : new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
@@ -474,7 +474,7 @@ function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function formatWhen(updatedAt: Date | string | null | undefined, now: Date): string {
+export function formatWhen(updatedAt: Date | string | null | undefined, now: Date): string {
   const value = parseDate(updatedAt ?? null);
   if (!value) return "";
   if (sameDay(value, now)) return formatClock(value);
@@ -483,7 +483,7 @@ function formatWhen(updatedAt: Date | string | null | undefined, now: Date): str
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
 }
 
-function formatDayStamp(value: Date): string {
+export function formatDayStamp(value: Date): string {
   return `${value.getDate().toString().padStart(2, "0")} ${MONTHS[value.getMonth()]}`;
 }
 
@@ -769,7 +769,7 @@ function composeReminders(input: DossierInput): DossierModel["reminders"] {
 }
 
 /** A note has no title, so a confirmation names it by its opening words. */
-function noteName(content: string | null | undefined): string {
+export function noteName(content: string | null | undefined): string {
   const text = (content ?? "").trim().replace(/\s+/g, " ");
   if (!text) return "This note";
   return `“${text.length > 60 ? `${text.slice(0, 60).trimEnd()}…` : text}”`;
@@ -897,7 +897,7 @@ function lifecycleLabel(status: string): string {
   return status.replace(/_/g, " ").toUpperCase();
 }
 
-function formatSpan(ms: number): string {
+export function formatSpan(ms: number): string {
   const minutes = Math.max(0, Math.floor(ms / 60_000));
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor((minutes % 1440) / 60);
