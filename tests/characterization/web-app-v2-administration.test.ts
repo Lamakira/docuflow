@@ -1501,6 +1501,34 @@ describe("Administration controls (#212)", () => {
     expect(css).toContain('.df-v2 .df-checkbox[data-state="checked"]');
   });
 
+  it("draws a visible tick on every checked v2 checkbox, in light and dark", () => {
+    // `.df-v2 button:not(.df-btn) { color: inherit }` (0,2,1) outranks
+    // `.df-v2 .df-checkbox` (0,2,0), so a colour on the button itself loses and
+    // the tick took the ink of the checked fill. It must sit on the indicator span.
+    expect(rule(".df-v2 button:not(.df-btn),\n.df-v2 input")).toMatch(/color:\s*inherit/);
+    expect(rule(".df-v2 .df-checkbox > span")).toMatch(/color:\s*var\(--df-on-ink\)/);
+    expect(rule(".df-v2 .df-checkbox svg")).not.toMatch(/(^|[^-])color:/);
+
+    // On-ink contrasts with the Case Ink fill in both palettes.
+    const token = (block: string, name: string) =>
+      css.match(new RegExp(`${block.replace(/[.]/g, "\\.")}\\s*\\{[^}]*?--df-${name}:\\s*([^;]+);`))?.[1].trim();
+    for (const block of [".df-v2", ".dark .df-v2"]) {
+      const fill = token(block, "case-ink");
+      const tick = token(block, "on-ink");
+      expect(fill, `${block} --df-case-ink`).toBeTruthy();
+      expect(tick, `${block} --df-on-ink`).toBeTruthy();
+      expect(tick).not.toBe(fill);
+    }
+
+    // Every v2 shadcn Checkbox wears the class the rule targets.
+    for (const file of ["V2Administration.tsx", "V2Clients.tsx", "V2People.tsx"]) {
+      const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2", file), "utf8");
+      const boxes = source.match(/<Checkbox\b[\s\S]*?\/>/g) ?? [];
+      expect(boxes.length, file).toBeGreaterThan(0);
+      for (const box of boxes) expect(box, file).toContain('className="df-checkbox"');
+    }
+  });
+
   it("waits with the destination's real geometry, not an empty box", () => {
     // The skeleton pieces moved to V2Skeleton.tsx so every destination shares them.
     const skeletonSource = readFileSync(

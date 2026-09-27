@@ -1290,8 +1290,10 @@ button.df-activity-row {
 
 /* Checkbox — the shadcn/Radix control wearing v2 tokens. Distinct from
    `.df-check`, which is the Dossier's Task-completion control. */
-/* `.df-v2 button` sets `color: inherit`, so the tick needs the matching weight
-   or it inherits the ink and disappears on a checked box. */
+/* `.df-v2 button:not(.df-btn)` sets `color: inherit` and outranks
+   `.df-v2 .df-checkbox`, so the Radix button inherits the text ink — the same
+   colour as the checked fill. The tick's colour therefore lives on the
+   indicator span, which no button rule reaches. */
 .df-v2 .df-checkbox {
   display: inline-flex;
   align-items: center;
@@ -1327,6 +1329,7 @@ button.df-activity-row {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  color: var(--df-on-ink);
 }
 
 .df-v2 .df-checkbox svg {
