@@ -38,7 +38,9 @@ import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, V2_SELECT_NONE, type V2SelectOption } from "./V2Select";
 import {
   CURRENCY_OPTIONS,
+  NEW_CLIENT_CHOICE,
   canChangeOpportunityStage,
+  clientChoiceDraft,
   combinedStatusForStage,
   composeOpportunityForm,
   composeOpportunityHistory,
@@ -57,12 +59,14 @@ import {
   opportunityStageHistoryPath,
   opportunitySourceOptions,
   opportunityWriteRefusal,
+  readClientChoice,
   readLostDraft,
   readWinDraft,
   stageOptionsFromFieldOptions,
   winDraft,
   winProjectTypeOptions,
   withSavedChoice,
+  type ClientChoiceDraft,
   type ListOption,
   type LostDraft,
   type OpportunityCard,
@@ -507,7 +511,7 @@ function OpportunityOutcomeDialog({
     <V2FormDialog
       open
       onOpenChange={(open) => !open && onClose()}
-      title={alreadyLost ? "Change Lost reason" : "Mark as lost"}
+      title={alreadyLost ? (row.lostReason ? "Change Lost reason" : "Add Lost reason") : "Mark as lost"}
       description={
         alreadyLost
           ? `Why ${name} was lost.`
@@ -558,7 +562,12 @@ function StageHistoryCard({ opportunityId, stages }: { opportunityId: string; st
         <h2 className="df-card-title">Stage history</h2>
       </div>
       {history.empty ? (
-        <p className="df-empty">{history.emptyCopy}</p>
+        <V2EmptyState
+          icon="activity"
+          title={history.emptyState.title}
+          copy={history.emptyState.copy}
+          testId="v2-opportunity-stage-history-empty"
+        />
       ) : (
         history.rows.map((row) => (
           <div key={row.id} className="df-history-row">
@@ -803,10 +812,95 @@ function OpportunityDetailsCard({
   );
 }
 
+/** Links the Opportunity to a Client of the Workspace, or to a new Client named here. */
+function ChooseClientDialog({
+  opportunityId,
+  clients,
+  onClose,
+}: {
+  opportunityId: string;
+  clients: CrmClient[];
+  onClose: () => void;
+}) {
+  const writes = useWorkspaceWrites();
+  const [draft, setDraft] = useState<ClientChoiceDraft>(() => clientChoiceDraft(clients.length));
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const choice = readClientChoice(draft);
+
+  const save = useMutation({
+    mutationFn: async (picked: Exclude<ReturnType<typeof readClientChoice>, { kind: null }>) => {
+      const clientId =
+        picked.kind === "new"
+          ? ((await apiRequest("POST", "/api/crm/clients", { name: picked.name })) as { id: string }).id
+          : picked.clientId;
+      return apiRequest("PATCH", `/api/crm/projects/${opportunityId}`, { clientId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/clients"] });
+      onClose();
+    },
+    onError: (error: Error) => setRefusal(writes.refusal(error.message, "Edit Opportunities")),
+  });
+
+  function submit() {
+    if (writes.readOnly) {
+      setRefusal(writes.refusal());
+      return;
+    }
+    if (choice.kind) save.mutate(choice);
+  }
+
+  const creating = draft.choice === NEW_CLIENT_CHOICE;
+  return (
+    <V2FormDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title="Choose a Client"
+      description="The Client this sale is for. Winning the Opportunity makes a Client Project for them."
+      submitLabel={creating ? "Create and link Client" : "Link Client"}
+      pending={save.isPending}
+      canSubmit={Boolean(choice.kind)}
+      onSubmit={submit}
+      refusal={refusal}
+      testId="v2-opportunity-choose-client"
+    >
+      <label className="df-daily-field">
+        CLIENT
+        <V2FilterSelect
+          label=""
+          ariaLabel="Client"
+          value={draft.choice || V2_SELECT_NONE}
+          options={[
+            { value: V2_SELECT_NONE, label: "Choose a Client", disabled: true },
+            ...clients.map((client) => ({ value: client.id, label: client.name })),
+            { value: NEW_CLIENT_CHOICE, label: "New Client…" },
+          ]}
+          onChange={(value) => setDraft({ ...draft, choice: fromSelect(value) })}
+        />
+      </label>
+      {creating ? (
+        <label className="df-daily-field">
+          CLIENT NAME
+          <input
+            type="text"
+            value={draft.name}
+            autoFocus
+            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            placeholder="Client name"
+            aria-label="New Client name"
+          />
+        </label>
+      ) : null}
+    </V2FormDialog>
+  );
+}
+
 function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
   const lists = useOpportunityLists();
   const writes = useWorkspaceWrites();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [choosingClient, setChoosingClient] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
   const { data: clients = [] } = useQuery<CrmClient[]>({ queryKey: ["/api/crm/clients"] });
@@ -911,6 +1005,22 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
               </span>
             </div>
           ) : null}
+          {record.lostReasonMissing ? (
+            <div className="df-settings-row" data-testid="v2-opportunity-lost-reason">
+              <span className="df-settings-label">LOST REASON</span>
+              <span className="df-settings-value df-settings-inline">
+                <span className="df-settings-copy">Not recorded</span>
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="df-btn"
+                  onClick={() => (writes.readOnly ? setRefusal(writes.refusal()) : setOutcome({ kind: "lost", row }))}
+                >
+                  Add reason
+                </Button>
+              </span>
+            </div>
+          ) : null}
           {record.fields.map((field) => (
             <div key={field.label} className="df-settings-row">
               <span className="df-settings-label">{field.label}</span>
@@ -941,10 +1051,31 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
             </Button>
           ) : null}
         </div>
-        <p className={record.clientHref ? "df-update-body" : "df-empty"}>
-          {record.clientHref ? record.clientLabel : "No Client yet. Choose one in the Opportunity record."}
-        </p>
+        {record.clientEmptyState ? (
+          <V2EmptyState
+            icon="clients"
+            title={record.clientEmptyState.title}
+            copy={record.clientEmptyState.copy}
+            testId="v2-opportunity-client-empty"
+            action={
+              <Button
+                variant="default"
+                type="button"
+                className="df-btn"
+                onClick={() => (writes.readOnly ? setRefusal(writes.refusal()) : setChoosingClient(true))}
+              >
+                {record.clientEmptyState.action}
+              </Button>
+            }
+          />
+        ) : (
+          <p className="df-update-body">{record.clientLabel}</p>
+        )}
       </section>
+
+      {choosingClient ? (
+        <ChooseClientDialog opportunityId={row.id} clients={clients} onClose={() => setChoosingClient(false)} />
+      ) : null}
 
       {outcome ? (
         <OpportunityOutcomeDialog

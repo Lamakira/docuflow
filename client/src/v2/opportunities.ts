@@ -95,6 +95,18 @@ export type OpportunityRecordModel = {
   terminal: boolean;
   fields: Array<{ label: string; value: string }>;
   lostReason: { label: string; detail: string | null } | null;
+  /** Lost before a reason was asked for (v1 moves a row to Lost without one). */
+  lostReasonMissing: boolean;
+  /** The Client card's empty state, when no Client is chosen yet. */
+  clientEmptyState: EmptyStateCopy | null;
+};
+
+export type EmptyStateCopy = { title: string; copy: string; action?: string };
+
+const NO_CLIENT_STATE: EmptyStateCopy = {
+  title: "No Client yet",
+  copy: "Winning this Opportunity makes a Client Project for its Client. Choose who this sale is for, or create a new Client.",
+  action: "Choose a Client",
 };
 
 export function opportunityHref(id: string): string {
@@ -112,7 +124,8 @@ export function composeOpportunityRecord(input: OpportunityRecordInput): Opportu
   const stage = opportunityStageFromCombined(input.combinedStatus);
   const value = estimatedValueLabel(input.estimatedValueMinor, input.estimatedValueCurrency);
   const close = parseDate(input.dueDate ?? null);
-  const lost = stage === "lost" && input.lostReason;
+  const isLost = stage === "lost";
+  const lost = isLost && input.lostReason;
   return {
     id: input.id,
     title: input.name || "Untitled Opportunity",
@@ -131,6 +144,8 @@ export function composeOpportunityRecord(input: OpportunityRecordInput): Opportu
     lostReason: lost
       ? { label: optionLabel(input.lostReasonOptions, input.lostReason!), detail: input.lostReasonDetail?.trim() || null }
       : null,
+    lostReasonMissing: isLost && !input.lostReason,
+    clientEmptyState: input.clientId ? null : NO_CLIENT_STATE,
   };
 }
 
@@ -682,7 +697,7 @@ export type OpportunityStageChange = {
 export type OpportunityHistoryModel = {
   rows: Array<{ id: string; from: string | null; fromColor: string | null; to: string; toColor: string; when: string; who: string; held: string }>;
   empty: boolean;
-  emptyCopy: string;
+  emptyState: EmptyStateCopy;
 };
 
 /**
@@ -719,7 +734,14 @@ export function composeOpportunityHistory(
       held: next || !at ? held : `${held} so far`,
     };
   });
-  return { rows, empty: rows.length === 0, emptyCopy: "No Stage changes recorded for this Opportunity yet." };
+  return {
+    rows,
+    empty: rows.length === 0,
+    emptyState: {
+      title: "No Stage changes yet",
+      copy: "Each move along the pipeline is recorded here: the Stage it left, the one it reached, who moved it, and how long it held.",
+    },
+  };
 }
 
 export type OpportunityNoteInput = {
@@ -754,6 +776,26 @@ export function composeOpportunityNotes(notes: OpportunityNoteInput[], now: Date
       action: "Write the first note",
     },
   };
+}
+
+/** The Client dialog's choice: a Client of the Workspace, or a new one named here. */
+export const NEW_CLIENT_CHOICE = "__new_client__";
+
+export type ClientChoiceDraft = { choice: string; name: string };
+
+export function clientChoiceDraft(clientCount: number): ClientChoiceDraft {
+  return { choice: clientCount > 0 ? "" : NEW_CLIENT_CHOICE, name: "" };
+}
+
+export function readClientChoice(
+  draft: ClientChoiceDraft,
+): { kind: "existing"; clientId: string; issue: null } | { kind: "new"; name: string; issue: null } | { kind: null; issue: string } {
+  if (draft.choice === NEW_CLIENT_CHOICE) {
+    const name = draft.name.trim();
+    return name ? { kind: "new", name, issue: null } : { kind: null, issue: "Name the new Client." };
+  }
+  if (!draft.choice) return { kind: null, issue: "Choose a Client, or create a new one." };
+  return { kind: "existing", clientId: draft.choice, issue: null };
 }
 
 export function opportunityNotesPath(id: string): string {
