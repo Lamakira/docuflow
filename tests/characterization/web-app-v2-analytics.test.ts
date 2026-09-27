@@ -232,7 +232,7 @@ describe("Administration shows one configuration section at a time (#281)", () =
       "billing",
       "members",
       "tracking-policy",
-      "crm-fields",
+      "pipeline-lists",
       "integrations",
     ]);
     expect(administrationTabHref("workspace")).toBe("/administration");
@@ -266,6 +266,18 @@ describe("Administration shows one configuration section at a time (#281)", () =
     expect(appSource.indexOf('path="/administration/danger-zone"')).toBeLessThan(
       appSource.indexOf('path="/administration/:tab?"'),
     );
+    // CRM fields became Pipeline & lists; its old address opens the new tab.
+    expect(matchV2Route("/administration/crm-fields")).toMatchObject({
+      kind: "administration",
+      tab: "pipeline-lists",
+      href: "/administration/pipeline-lists",
+    });
+    expect(appSource).toMatch(
+      /<Route path="\/administration\/crm-fields">\s*<Redirect to="\/administration\/pipeline-lists" \/>/,
+    );
+    expect(appSource.indexOf('path="/administration/crm-fields"')).toBeLessThan(
+      appSource.indexOf('path="/administration/:tab?"'),
+    );
     // A tab that does not exist lands on Workspace rather than an empty page.
     expect(adminSource).toContain('navigate(administrationTabHref("workspace"), { replace: true })');
   });
@@ -277,7 +289,7 @@ describe("Administration shows one configuration section at a time (#281)", () =
       "Billing",
       "Members & Roles",
       "Tracking Policy",
-      "CRM fields",
+      "Pipeline & lists",
       "Integrations",
     ]);
     expect(owner.filter((tab) => tab.active).map((tab) => tab.id)).toEqual(["billing"]);
@@ -300,7 +312,8 @@ describe("Administration shows one configuration section at a time (#281)", () =
       return adminSource.slice(start, adminSource.indexOf("</TabsContent>", start));
     };
     expect(panel("billing")).toContain('data-testid="v2-administration-billing"');
-    expect(panel("crm-fields")).toContain('data-testid="v2-administration-crm-modules"');
+    expect(panel("pipeline-lists")).toContain('data-testid="v2-administration-pipeline-lists"');
+    expect(panel("pipeline-lists")).toContain("<PipelineListCard");
     expect(panel("integrations")).toContain('data-testid="v2-administration-service-accounts"');
     expect(panel("integrations")).toContain('data-testid="v2-administration-webhooks"');
     expect(panel("integrations")).toContain('data-testid="v2-administration-secret"');
@@ -421,13 +434,12 @@ describe("The Workspace, Members & Roles and Billing tabs (#281)", () => {
 });
 
 describe("A destructive row action asks before it runs (#281)", () => {
-  it("confirms deleting a CRM module or field and revoking a Service Account in an AlertDialog", () => {
+  it("confirms removing a list option and revoking a Service Account in an AlertDialog", () => {
     expect(adminSource).toContain("function DestructiveConfirm(");
-    expect(adminSource).toMatch(/<DestructiveConfirm label="Delete" title=\{`Delete \$\{module\.name\}`\}/);
-    expect(adminSource).toMatch(/<DestructiveConfirm label="Delete" title=\{`Delete \$\{field\.name\}`\}/);
+    expect(adminSource).toMatch(/<DestructiveConfirm\s+label="Remove"\s+title=\{`Remove \$\{row\.label\}`\}\s+consequence=\{row\.removeConsequence\}/);
     expect(adminSource).toMatch(/<DestructiveConfirm\s+label="Revoke"/);
     // No press mutates on its own.
-    expect(adminSource).not.toMatch(/onClick=\{\(\) => \{ if \(!guardWrite\(\)\) return; delete(CrmModule|CrmField)\.mutate/);
+    expect(adminSource).not.toMatch(/onClick=\{\(\) => onEdit\(removePipelineOption/);
     expect(adminSource).not.toMatch(/onClick=\{\(\) => onRevoke\(/);
     const confirm = adminSource.slice(adminSource.indexOf("function DestructiveConfirm("));
     expect(confirm).toContain("<AlertDialogCancel className=\"df-btn\" autoFocus>");

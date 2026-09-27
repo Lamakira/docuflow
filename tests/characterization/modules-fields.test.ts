@@ -10,12 +10,13 @@ import { registerAdmin, registerUser } from "../helpers/auth";
  * Quirks frozen here:
  *  - `POST /api/admin/modules/:moduleId/fields` never checks the module exists;
  *    the foreign key does, and reports 500.
- *  - `PATCH /api/admin/modules/:id` and `/api/admin/fields/:id` pass `req.body`
- *    straight through with no schema, so unknown keys reach the update.
- *  - Renaming a select option rewrites the stored values that referenced it,
- *    matching old to new by position in the options array.
- *  - System modules and fields cannot be deleted (403), but can still be
- *    edited.
+ *  - `PATCH /api/admin/modules/:id` and `/api/admin/fields/:id` take only the
+ *    editable keys; `isSystem` is the server's alone.
+ *  - An option list is stored with a stable id per option. Only an option that
+ *    keeps its id and changes its value is a rename, and the records holding
+ *    the old value are rewritten in the same transaction.
+ *  - System modules and fields cannot be deleted (403) or have their slug
+ *    changed, but can still be edited.
  *  - Delete answers 200 `{ success: true }`, not 204.
  */
 describe("CRM modules and fields (characterization)", () => {
@@ -168,7 +169,7 @@ describe("CRM modules and fields (characterization)", () => {
     expect(missingField.body).toEqual({ message: "Field not found" });
   });
 
-  it("rewrites stored values when a select option is renamed in place", async () => {
+  it("stores options with ids and reads a rename only from a kept id", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const module = await admin.agent
@@ -181,49 +182,83 @@ describe("CRM modules and fields (characterization)", () => {
       options: ["High touch", "Low touch"],
     });
 
+    // Legacy plain labels read back with their value as id.
     const renamed = await admin.agent
       .patch(`/api/admin/fields/${field.body.id}`)
-      .send({ options: ["Hands on", "Low touch"] });
+      .send({ options: ['{"id":"high_touch","label":"Hands on"}', "Low touch"] });
     expect(renamed.status).toBe(200);
-    expect(renamed.body.options).toEqual(["Hands on", "Low touch"]);
-    // The rename is matched by position: "high_touch" → "hands_on" is applied to
-    // any stored custom-field value that used the old slug.
+    expect(renamed.body.options).toEqual([
+      '{"id":"high_touch","label":"Hands on"}',
+      '{"id":"low_touch","label":"Low touch"}',
+    ]);
+
+    const refused = await admin.agent
+      .patch(`/api/admin/fields/${field.body.id}`)
+      .send({ options: ["Low touch", "low-touch"] });
+    expect(refused.status).toBe(400);
+    expect(refused.body).toEqual({ message: "“low-touch” is in the list twice." });
+
+    const malformed = await admin.agent.patch(`/api/admin/fields/${field.body.id}`).send({ options: "High" });
+    expect(malformed.status).toBe(400);
+    expect(malformed.body).toEqual({ message: "Options must be a list of strings." });
   });
 
-  it("protects system modules and fields from deletion only", async () => {
+  it("protects system modules and fields from deletion and slug changes only", async () => {
+    const app = await makeApp();
+    const admin = await registerAdmin(app);
+    const ensured = await admin.agent.post("/api/admin/system-lists/ensure");
+    const projects = ensured.body.find((m: { slug: string }) => m.slug === "projects");
+    const status = projects.fields.find((f: { slug: string }) => f.slug === "status");
+
+    const refusedField = await admin.agent.delete(`/api/admin/fields/${status.id}`);
+    expect(refusedField.status).toBe(403);
+    expect(refusedField.body).toEqual({ message: "Cannot delete system field" });
+
+    const refusedModule = await admin.agent.delete(`/api/admin/modules/${projects.id}`);
+    expect(refusedModule.status).toBe(403);
+    expect(refusedModule.body).toEqual({ message: "Cannot delete system module" });
+
+    const reslugged = await admin.agent.patch(`/api/admin/fields/${status.id}`).send({ slug: "stage" });
+    expect(reslugged.status).toBe(403);
+    const retyped = await admin.agent.patch(`/api/admin/fields/${status.id}`).send({ fieldType: "text" });
+    expect(retyped.status).toBe(403);
+    const movedModule = await admin.agent.patch(`/api/admin/modules/${projects.id}`).send({ slug: "deals" });
+    expect(movedModule.status).toBe(403);
+
+    // Editing a system field is still allowed, and resending its own slug is no change.
+    const edited = await admin.agent
+      .patch(`/api/admin/fields/${status.id}`)
+      .send({ name: "Renamed system field", slug: "status", fieldType: "select" });
+    expect(edited.status).toBe(200);
+    expect(edited.body).toMatchObject({ name: "Renamed system field", isSystem: 1 });
+  });
+
+  it("never lets a client set isSystem", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const module = await admin.agent
       .post("/api/admin/modules")
-      .send({ name: "System-ish", slug: "system_ish" });
+      .send({ name: "System-ish", slug: "system_ish", isSystem: 1 });
+    expect(module.body.isSystem).toBe(0);
     const field = await admin.agent
       .post(`/api/admin/modules/${module.body.id}/fields`)
-      .send({ name: "Status", slug: "status", fieldType: "select" });
+      .send({ name: "Status", slug: "status", fieldType: "select", isSystem: 1 });
+    expect(field.body.isSystem).toBe(0);
 
-    // Flag both as system through the unvalidated update path.
-    await admin.agent.patch(`/api/admin/modules/${module.body.id}`).send({ isSystem: 1 });
-    await admin.agent.patch(`/api/admin/fields/${field.body.id}`).send({ isSystem: 1 });
-
-    const refusedField = await admin.agent.delete(`/api/admin/fields/${field.body.id}`);
-    expect(refusedField.status).toBe(403);
-    expect(refusedField.body).toEqual({ message: "Cannot delete system field" });
-
-    const refusedModule = await admin.agent.delete(`/api/admin/modules/${module.body.id}`);
-    expect(refusedModule.status).toBe(403);
-    expect(refusedModule.body).toEqual({ message: "Cannot delete system module" });
-
-    // Editing a system field is still allowed.
-    const edited = await admin.agent
+    const markedModule = await admin.agent
+      .patch(`/api/admin/modules/${module.body.id}`)
+      .send({ isSystem: 1, workspaceId: "parallel", name: "Still editable" });
+    expect(markedModule.status).toBe(200);
+    expect(markedModule.body).toMatchObject({ isSystem: 0, name: "Still editable" });
+    const markedField = await admin.agent
       .patch(`/api/admin/fields/${field.body.id}`)
-      .send({ name: "Renamed system field" });
-    expect(edited.status).toBe(200);
+      .send({ isSystem: 1, moduleId: "elsewhere" });
+    expect(markedField.status).toBe(200);
+    expect(markedField.body).toMatchObject({ isSystem: 0, moduleId: module.body.id });
 
-    await admin.agent.patch(`/api/admin/fields/${field.body.id}`).send({ isSystem: 0 });
     const deletedField = await admin.agent.delete(`/api/admin/fields/${field.body.id}`);
     expect(deletedField.status).toBe(200);
     expect(deletedField.body).toEqual({ success: true });
-
-    await admin.agent.patch(`/api/admin/modules/${module.body.id}`).send({ isSystem: 0 });
     const deletedModule = await admin.agent.delete(`/api/admin/modules/${module.body.id}`);
     expect(deletedModule.status).toBe(200);
     expect(deletedModule.body).toEqual({ success: true });

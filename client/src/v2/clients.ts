@@ -1,3 +1,4 @@
+import { builtInList, defaultFieldOptions, parseFieldOptions } from "@shared/pipelineLists";
 import { chromeRefusal } from "./chrome";
 import { clientStatusColor, projectStatusColor } from "./palette";
 import { readPage, readPageSize, writePaging } from "./paging";
@@ -38,6 +39,8 @@ export type ClientRegisterRow = {
   /** The status's board colour; `swatchStyle` turns it into the badge. */
   statusColor: string;
   source: string;
+  /** The stored value, for `SourceMark`. */
+  sourceValue: string | null;
   projectCount: number;
   href: string;
   selected: boolean;
@@ -95,6 +98,7 @@ export function composeClientRegister(input: ClientRegisterInput): ClientRegiste
       status: statusLabel(client.status),
       statusColor: clientStatusColor(client.status),
       source: sourceLabel(client.source),
+      sourceValue: client.source || null,
       projectCount: client.projectCount,
       href: clientHref(client.id),
       selected: client.id === input.selectedId,
@@ -124,22 +128,33 @@ export const CLIENT_STATUS_OPTIONS = [
   { value: "client_recurrent", label: "CLIENT RECURRENT" },
 ];
 
-export const CLIENT_SOURCE_OPTIONS = [
-  { value: "direct", label: "DIRECT" },
-  { value: "fiverr", label: "FIVERR" },
-  { value: "zoho", label: "ZOHO" },
-  { value: "none", label: "NONE" },
-];
+export type ClientSourceOption = { value: string; label: string };
+
+/**
+ * The Source choices: the Workspace's saved `contacts.source` list in its
+ * order, or the built-in defaults when none is saved, then NONE.
+ */
+export function clientSourceOptions(fields: ReadonlyArray<{ slug: string; options?: string[] | null }> | null | undefined): ClientSourceOption[] {
+  const saved = fields?.find((field) => field.slug === "source")?.options;
+  const list = builtInList("contacts", "source");
+  const entries = parseFieldOptions(saved?.length ? saved : list ? defaultFieldOptions(list) : []);
+  return [...entries.map((entry) => ({ value: entry.value, label: entry.label.toUpperCase() })), { value: "none", label: "NONE" }];
+}
+
+export const CLIENT_SOURCE_OPTIONS = clientSourceOptions(null);
 
 /**
  * The source choices on Edit Client. A stored source outside the set (seed or
  * imported data) stays a choice, so the field reads what is saved and a save
  * does not rewrite it unasked.
  */
-export function clientSourceChoices(current: string | null | undefined): Array<{ value: string; label: string }> {
+export function clientSourceChoices(
+  current: string | null | undefined,
+  options: ClientSourceOption[] = CLIENT_SOURCE_OPTIONS,
+): ClientSourceOption[] {
   const source = current?.trim();
-  if (!source || CLIENT_SOURCE_OPTIONS.some((option) => option.value === source)) return CLIENT_SOURCE_OPTIONS;
-  return [...CLIENT_SOURCE_OPTIONS, { value: source, label: sourceLabel(source) }];
+  if (!source || options.some((option) => option.value === source)) return options;
+  return [...options, { value: source, label: sourceLabel(source) }];
 }
 
 export const CLIENT_OPEN_OPTIONS = [
@@ -284,6 +299,8 @@ export type ClientRecordIdentity = {
   company: string;
   email: string | null;
   source: string;
+  /** The stored value, for `SourceMark`. */
+  sourceValue: string | null;
   phone: string | null;
   phoneFormat: string | null;
   fiverrUsername: string | null;
@@ -336,6 +353,7 @@ function identityFrom(client: ClientIdentitySeed): ClientRecordIdentity {
     company: client.company || "—",
     email: client.email ?? null,
     source: sourceLabel(client.source),
+    sourceValue: client.source || null,
     phone: client.phone ?? null,
     phoneFormat: client.phoneFormat ?? null,
     fiverrUsername: client.fiverrUsername ?? null,

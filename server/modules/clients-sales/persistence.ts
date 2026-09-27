@@ -25,6 +25,7 @@ import type {
   CrmModuleWithFields,
   CrmCustomFieldValue,
 } from "@shared/schema";
+import type { OptionRename } from "@shared/pipelineLists";
 
 /** Every filter narrows the set before it is paged, so `total` counts what the filters kept (#275). */
 export type CrmClientListOptions = {
@@ -118,19 +119,19 @@ export interface ClientsSalesPersistence {
     fieldId: string,
     value: string | null
   ): Promise<CrmCustomFieldValue>;
-  updateCrmFieldValuesOnOptionRename(
-    fieldId: string,
-    oldLabel: string,
-    newLabel: string
-  ): Promise<void>;
-  updateCrmProjectsColumnOnOptionRename(
-    column: "status" | "projectType",
-    oldLabel: string,
-    newLabel: string
-  ): Promise<void>;
-  updateCrmClientsColumnOnOptionRename(
-    column: "status",
-    oldLabel: string,
-    newLabel: string
-  ): Promise<void>;
+  /**
+   * Stores a field and, in the same transaction, rewrites the records holding
+   * a renamed value: the field's custom values and each listed column.
+   */
+  updateCrmModuleFieldOptions(
+    id: string,
+    data: Partial<InsertCrmModuleField>,
+    renames: OptionRename[],
+    columns: OptionRenameColumn[]
+  ): Promise<CrmModuleField | undefined>;
+  /** Creates or marks as system the built-in modules and lists; safe to repeat. */
+  ensureCrmSystemLists(): Promise<CrmModuleWithFields[]>;
 }
+
+/** A record column that stores an option value directly. */
+export type OptionRenameColumn = "projects.status" | "projects.projectType" | "clients.status" | "clients.source";

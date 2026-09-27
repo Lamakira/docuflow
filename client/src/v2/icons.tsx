@@ -29,6 +29,8 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { swatchStyle } from "./palette";
+import { sourceIcon } from "./sourceIcons";
 import type { V2NavId } from "./presentation";
 
 const stroke = { width: 15, height: 15, strokeWidth: 1.4 };
@@ -141,4 +143,38 @@ export function StopIcon() {
 
 export function SendIcon() {
   return <Send width={14} height={14} strokeWidth={1.6} {...tone("--df-card-white")} />;
+}
+
+/**
+ * A Client Source as one mark wherever it shows. A brand wears its hue through
+ * the swatch ink palette.ts contrast-checks for each ground; a Source without
+ * a mark falls back to its colour dot when it has one. `inline` sits in a line
+ * of text or a select; `box` fills the mark box on Pipeline & lists.
+ */
+export function SourceMark({
+  value,
+  color,
+  size = "inline",
+}: {
+  value: string | null | undefined;
+  color?: string;
+  size?: "inline" | "box";
+}) {
+  const spec = sourceIcon(value);
+  if (spec) {
+    const { Icon, hue, shape, viewBox } = spec;
+    return (
+      <Icon
+        className="df-source-icon"
+        data-size={size}
+        data-shape={shape}
+        viewBox={viewBox}
+        data-brand={hue ? "" : undefined}
+        style={hue ? swatchStyle(hue) : undefined}
+        aria-hidden="true"
+      />
+    );
+  }
+  if (!color) return null;
+  return <span className="df-pipeline-swatch" style={swatchStyle(color)} aria-hidden="true" />;
 }

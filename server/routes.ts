@@ -30,7 +30,8 @@ import {
 } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
 import { CRM_PROJECT_SORTS } from "./modules/projects/persistence";
-import { CRM_CLIENT_SORTS } from "./modules/clients-sales/persistence";
+import { CRM_CLIENT_SORTS, type OptionRenameColumn } from "./modules/clients-sales/persistence";
+import { builtInList, diffFieldOptions, type OptionRename } from "@shared/pipelineLists";
 import { SeatExhaustedError } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
 import mammoth from "mammoth";
@@ -44,7 +45,9 @@ import {
   createProjectDailyUpdateApiSchema,
   crmProjectStatusValues,
   crmProjectTypeValues,
-  toSafeUser
+  toSafeUser,
+  type InsertCrmModule,
+  type InsertCrmModuleField,
 } from "@shared/schema";
 import OpenAI from "openai";
 import {
@@ -3172,6 +3175,19 @@ Instructions:
     }
   });
 
+  // Only these reach an update; `isSystem` is set by the server alone.
+  const EDITABLE_MODULE_KEYS = ["name", "slug", "description", "icon", "isEnabled", "displayOrder"] as const;
+  const EDITABLE_FIELD_KEYS = [
+    "name", "slug", "fieldType", "description", "placeholder", "defaultValue",
+    "options", "isRequired", "isEnabled", "displayOrder",
+  ] as const;
+  const pickEditable = (body: unknown, keys: readonly string[]): Record<string, unknown> => {
+    const source = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    return Object.fromEntries(keys.filter((key) => key in source).map((key) => [key, source[key]]));
+  };
+  const changes = (current: Record<string, unknown>, data: Record<string, unknown>, keys: string[]) =>
+    keys.some((key) => key in data && data[key] !== current[key]);
+
   // Update a module
   app.patch("/api/admin/modules/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
@@ -3180,7 +3196,11 @@ Instructions:
         return res.status(404).json({ message: "Module not found" });
       }
       
-      const updated = await storage.updateCrmModule(req.params.id, req.body);
+      const data = pickEditable(req.body, EDITABLE_MODULE_KEYS) as Partial<InsertCrmModule>;
+      if (mod.isSystem === 1 && changes(mod, data, ["slug"])) {
+        return res.status(403).json({ message: "Cannot change the slug of a system module" });
+      }
+      const updated = await storage.updateCrmModule(req.params.id, data);
       res.json(updated);
     } catch (error) {
       console.error("Error updating module:", error);
@@ -3259,91 +3279,44 @@ Instructions:
       if (!field) {
         return res.status(404).json({ message: "Field not found" });
       }
-      
-      // Get the module to check if it's projects or contacts
-      const module = await storage.getCrmModule(field.moduleId);
-      
-      // Helper to extract label from option (handles both JSON format and plain strings)
-      const getOptionLabel = (opt: string): string => {
-        try {
-          const parsed = JSON.parse(opt);
-          return parsed.label || opt;
-        } catch {
-          return opt;
-        }
-      };
-      
-      // Helper to convert label to slug (same logic as frontend)
-      const labelToSlug = (label: string): string => {
-        return label.toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '');
-      };
-      
-      // Check if options are being updated for select/multiselect fields
-      const oldOptions = field.options || [];
-      const newOptions = req.body.options || [];
-      
-      console.log("[Field Update] Field slug:", field.slug, "isSystem:", field.isSystem, "module:", module?.slug);
-      console.log("[Field Update] Old options count:", oldOptions.length, "New options count:", newOptions.length);
-      
-      if (newOptions.length > 0 && oldOptions.length > 0 && 
-          (field.fieldType === "select" || field.fieldType === "multiselect")) {
-        // Create a mapping of old slugs to new slugs by position
-        // This handles the case where a user renames an option in place
-        const optionRenames: { oldSlug: string; newSlug: string }[] = [];
-        
-        for (let i = 0; i < Math.min(oldOptions.length, newOptions.length); i++) {
-          const oldLabel = getOptionLabel(oldOptions[i]);
-          const newLabel = getOptionLabel(newOptions[i]);
-          const oldSlug = labelToSlug(oldLabel);
-          const newSlug = labelToSlug(newLabel);
-          
-          console.log(`[Field Update] Position ${i}: oldLabel="${oldLabel}" -> newLabel="${newLabel}", oldSlug="${oldSlug}" -> newSlug="${newSlug}"`);
-          
-          if (oldSlug !== newSlug) {
-            optionRenames.push({ oldSlug, newSlug });
-            console.log(`[Field Update] Detected rename: "${oldSlug}" -> "${newSlug}"`);
-          }
-        }
-        
-        console.log("[Field Update] Total renames to process:", optionRenames.length);
-        
-        // Update field values based on where they're stored
-        for (const rename of optionRenames) {
-          console.log(`[Field Update] Processing rename: "${rename.oldSlug}" -> "${rename.newSlug}"`);
-          
-          // For system fields in the projects module, update the crmProjects table directly
-          if (module?.slug === "projects" && field.isSystem === 1) {
-            if (field.slug === "status") {
-              console.log(`[Field Update] Updating crmProjects.status: "${rename.oldSlug}" -> "${rename.newSlug}"`);
-              await storage.updateCrmProjectsColumnOnOptionRename("status", rename.oldSlug, rename.newSlug);
-            } else if (field.slug === "project_type") {
-              console.log(`[Field Update] Updating crmProjects.projectType: "${rename.oldSlug}" -> "${rename.newSlug}"`);
-              await storage.updateCrmProjectsColumnOnOptionRename("projectType", rename.oldSlug, rename.newSlug);
-            }
-          }
-          
-          // For system fields in the contacts module, update the crmClients table directly
-          if (module?.slug === "contacts" && field.isSystem === 1) {
-            if (field.slug === "status") {
-              console.log(`[Field Update] Updating crmClients.status: "${rename.oldSlug}" -> "${rename.newSlug}"`);
-              await storage.updateCrmClientsColumnOnOptionRename("status", rename.oldSlug, rename.newSlug);
-            }
-          }
-          
-          // Also update crmCustomFieldValues for custom fields
-          await storage.updateCrmFieldValuesOnOptionRename(
-            req.params.id,
-            rename.oldSlug,
-            rename.newSlug
-          );
-        }
+      const data = pickEditable(req.body, EDITABLE_FIELD_KEYS) as Partial<InsertCrmModuleField>;
+      if (field.isSystem === 1 && changes(field, data, ["slug", "fieldType"])) {
+        return res.status(403).json({ message: "Cannot change the slug or type of a system field" });
       }
-      
-      const updated = await storage.updateCrmModuleField(req.params.id, req.body);
+
+      const module = await storage.getCrmModule(field.moduleId);
+      const list = builtInList(module?.slug, field.slug);
+      let renames: OptionRename[] = [];
+      if ("options" in data) {
+        const change = diffFieldOptions(field.options, data.options, list);
+        if (!change.ok) {
+          return res.status(400).json({ message: change.message });
+        }
+        data.options = change.options;
+        renames = change.renames;
+      }
+
+      const columns: OptionRenameColumn[] = [];
+      if (list?.key === "opportunity-stages") columns.push("projects.status");
+      if (list?.key === "project-type") columns.push("projects.projectType");
+      if (list?.key === "source") columns.push("clients.source");
+      if (module?.slug === "contacts" && field.slug === "status") columns.push("clients.status");
+
+      const updated = await storage.updateCrmModuleFieldOptions(req.params.id, data, renames, columns);
       res.json(updated);
     } catch (error) {
       console.error("Error updating field:", error);
       res.status(500).json({ message: "Failed to update field" });
+    }
+  });
+
+  // Create the built-in modules and lists a Workspace has not saved yet
+  app.post("/api/admin/system-lists/ensure", isAuthenticated, requireAdministration, async (_req: any, res) => {
+    try {
+      res.json(await storage.ensureCrmSystemLists());
+    } catch (error) {
+      console.error("Error ensuring system lists:", error);
+      res.status(500).json({ message: "Failed to prepare the built-in lists" });
     }
   });
 
