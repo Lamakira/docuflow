@@ -1495,6 +1495,18 @@ button:disabled { cursor: default; }
   line-height: 1.5;
   color: var(--text-body);
 }
+.v2-idle__countdown {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--text-body);
+}
+.v2-idle__countdown-value {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--status-hold-text);
+}
 .v2-idle__actions { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
 
 /* ── Login ────────────────────────────────────────────────────────────── */

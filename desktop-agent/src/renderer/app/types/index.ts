@@ -1,4 +1,9 @@
 import type { ChromeMode } from '../../../lib/windowChrome';
+import type { IdlePromptPayload } from '../../../lib/idleFlow';
+import type { TrackingPolicy, TrackingPolicyStatus } from '../../../lib/trackingPolicy';
+
+export type { IdlePromptPayload };
+export type DeviceTrackingPolicy = TrackingPolicy & { status: TrackingPolicyStatus };
 
 export interface Project {
   id: string;
@@ -90,7 +95,7 @@ export interface AgentBridge {
   getWorkedToday: () => Promise<{ ok: boolean; total: number }>;
   idleBreak: () => Promise<{ ok: boolean }>;
   idleResume: () => Promise<{ ok: boolean; error?: string }>;
-  onIdlePrompt: (cb: (data: { idleSeconds: number }) => void) => () => void;
+  onIdlePrompt: (cb: (data: IdlePromptPayload) => void) => () => void;
   onIdleDismiss: (cb: () => void) => () => void;
   getTodayBreakdown: () => Promise<{ ok: boolean; rows: BreakdownRow[]; error?: string }>;
   onLoginProgress: (cb: (data: { message: string }) => void) => () => void;
@@ -130,12 +135,8 @@ export interface AgentBridge {
   getDisplayTimezone: () => Promise<'local' | 'utc'>;
   setDisplayTimezone: (tz: 'local' | 'utc') => Promise<{ ok: boolean }>;
   getWorkedPeriod: (startIso: string, endIso: string) => Promise<{ ok: boolean; total: number }>;
-  getOrgPolicy: () => Promise<{
-    screenshotsEnabled: boolean;
-    idlePromptEnabled: boolean;
-    idleTimeoutMinutes: number;
-    idleCountdownSeconds: number;
-  } | null>;
+  /** Tracking Policy in force on this Device and where it came from; null when not paired. */
+  getOrgPolicy: () => Promise<DeviceTrackingPolicy | null>;
   listScreenshots: () => Promise<{
     ok: boolean;
     data: Array<{ filename: string; timestampMs: number; sizeKb: number; projectName: string | null; taskName: string | null }>;

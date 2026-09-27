@@ -149,6 +149,37 @@ describe("desktop agent ingestion (characterization)", () => {
     });
   });
 
+  it("hands the Device an overnight window and the idle prompt settings as saved (#293)", async () => {
+    const app = await makeApp();
+    const admin = await registerAdmin(app);
+    const { device } = await trackingUser(app);
+
+    const updated = await admin.agent.patch("/api/admin/org-settings").send({
+      screenshotPolicy: {
+        activeHoursEnabled: true,
+        activeHoursStart: "22:00",
+        activeHoursEnd: "06:00",
+        idlePromptEnabled: false,
+        idleTimeoutMinutes: 5,
+        idleCountdownSeconds: 30,
+      },
+    });
+    expect(updated.status).toBe(200);
+
+    const res = await heartbeat(device);
+    expect(res.body.screenshotPolicy).toEqual({
+      screenshotsEnabled: true,
+      captureIntervalMinMin: 3,
+      captureIntervalMaxMin: 5,
+      activeHoursEnabled: true,
+      activeHoursStart: "22:00",
+      activeHoursEnd: "06:00",
+      idlePromptEnabled: false,
+      idleTimeoutMinutes: 5,
+      idleCountdownSeconds: 30,
+    });
+  });
+
   it("credits the gap between heartbeats to the running entry, on the client's clock", async () => {
     const app = await makeApp();
     const { user, device, crmProjectId, taskId } = await trackingUser(app);

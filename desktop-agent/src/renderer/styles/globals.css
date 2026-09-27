@@ -974,6 +974,7 @@ a:hover { text-decoration: underline; }
   line-height: 1.5;
 }
 .idle-card__body strong { color: var(--text); }
+.idle-card__countdown { font-variant-numeric: tabular-nums; }
 
 .idle-card__instruction {
   font-size: 0.72rem;

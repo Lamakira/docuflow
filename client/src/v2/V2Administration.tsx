@@ -1085,6 +1085,7 @@ export function V2AdministrationPage() {
                   />
                   {policyDraft.activeHoursEnabled ? (
                     <div className="df-policy-group">
+                      <p className="df-policy-hint">{trackingPolicy.hints.activeHours}</p>
                       <div className="df-policy-grid">
                       <label className="df-daily-field">
                         Start
@@ -1109,16 +1110,9 @@ export function V2AdministrationPage() {
                       </div>
                     </div>
                   ) : null}
-                  <CheckRow
-                    id="df-policy-idle"
-                    label="Prompt on idle"
-                    checked={policyDraft.idlePromptEnabled}
-                    disabled={!trackingPolicy.editable}
-                    onChange={(next) => editPolicy({ idlePromptEnabled: next })}
-                  />
-                  {policyDraft.idlePromptEnabled ? (
-                    <div className="df-policy-group">
-                      <div className="df-policy-grid">
+                  <div className="df-policy-group">
+                    <p className="df-policy-hint">{trackingPolicy.hints.idleTimeout}</p>
+                    <div className="df-policy-grid">
                       <label className="df-daily-field">
                         Idle timeout (minutes)
                         <input
@@ -1138,8 +1132,22 @@ export function V2AdministrationPage() {
                           }
                         />
                       </label>
+                    </div>
+                  </div>
+                  <CheckRow
+                    id="df-policy-idle"
+                    label="Prompt on idle"
+                    checked={policyDraft.idlePromptEnabled}
+                    disabled={!trackingPolicy.editable}
+                    onChange={(next) => editPolicy({ idlePromptEnabled: next })}
+                  />
+                  <p className="df-policy-hint">{trackingPolicy.hints.prompt}</p>
+                  {policyDraft.idlePromptEnabled ? (
+                    <div className="df-policy-group">
+                      <p className="df-policy-hint">{trackingPolicy.hints.countdown}</p>
+                      <div className="df-policy-grid">
                       <label className="df-daily-field">
-                        Auto-stop countdown (seconds)
+                        Prompt countdown (seconds)
                         <input
                           type="number"
                           min={15}

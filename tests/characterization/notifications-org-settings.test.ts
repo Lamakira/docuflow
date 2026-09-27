@@ -154,6 +154,36 @@ describe("notifications and org settings (characterization)", () => {
     expect(nothing.body).toEqual({ message: "Nothing to update" });
   });
 
+  it("accepts an overnight active-hours window and refuses anything that is not HH:mm (#293)", async () => {
+    const app = await makeApp();
+    const admin = await registerAdmin(app);
+
+    const overnight = await admin.agent.patch("/api/admin/org-settings").send({
+      screenshotPolicy: { activeHoursEnabled: true, activeHoursStart: "22:00", activeHoursEnd: "06:00" },
+    });
+    expect(overnight.status).toBe(200);
+
+    for (const bad of ["8:00", "24:00", "07:60", "0800", "", "noon", 800, null]) {
+      const res = await admin.agent
+        .patch("/api/admin/org-settings")
+        .send({ screenshotPolicy: { activeHoursEnd: bad } });
+      expect(res.status, `activeHoursEnd=${JSON.stringify(bad)}`).toBe(400);
+      expect(res.body).toEqual({ message: "Active hours must be 24-hour HH:mm times, for example 08:00" });
+    }
+    const badStart = await admin.agent
+      .patch("/api/admin/org-settings")
+      .send({ screenshotPolicy: { activeHoursStart: "25:30" } });
+    expect(badStart.status).toBe(400);
+
+    // A refused patch writes nothing, so the saved window is the overnight one.
+    const after = await admin.agent.get("/api/admin/org-settings");
+    expect(after.body.screenshotPolicy).toMatchObject({
+      activeHoursEnabled: true,
+      activeHoursStart: "22:00",
+      activeHoursEnd: "06:00",
+    });
+  });
+
   it("stores the allowed timezone list and exposes it to every user", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);

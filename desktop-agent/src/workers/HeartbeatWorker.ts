@@ -10,8 +10,6 @@
 import { app } from "electron";
 import { ApiClient } from "../lib/ApiClient";
 import { AgentStore } from "../lib/AgentStore";
-import type { ScreenshotPolicyPayload } from "./ScreenCaptureWorker";
-
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
 type TimerSyncCallback = (
@@ -27,7 +25,10 @@ type TimerSyncCallback = (
   } | null
 ) => void;
 
-type PolicySyncCallback = (policy: ScreenshotPolicyPayload) => void;
+/** The raw Tracking Policy from the heartbeat answer; main validates it. */
+type PolicySyncCallback = (policy: unknown) => void;
+/** The heartbeat failed, or answered without a Tracking Policy. */
+type PolicyRefreshFailedCallback = (message: string) => void;
 
 export class HeartbeatWorker {
   private apiClient: ApiClient;
@@ -35,17 +36,20 @@ export class HeartbeatWorker {
   private interval: ReturnType<typeof setInterval> | null = null;
   private onTimerSync: TimerSyncCallback | null;
   private onPolicySync: PolicySyncCallback | null;
+  private onPolicyRefreshFailed: PolicyRefreshFailedCallback | null;
 
   constructor(
     apiClient: ApiClient,
     store: AgentStore,
     onTimerSync?: TimerSyncCallback,
-    onPolicySync?: PolicySyncCallback
+    onPolicySync?: PolicySyncCallback,
+    onPolicyRefreshFailed?: PolicyRefreshFailedCallback
   ) {
     this.apiClient = apiClient;
     this.store = store;
     this.onTimerSync = onTimerSync ?? null;
     this.onPolicySync = onPolicySync ?? null;
+    this.onPolicyRefreshFailed = onPolicyRefreshFailed ?? null;
   }
 
   start(): void {
@@ -89,11 +93,15 @@ export class HeartbeatWorker {
       }
 
       // Propagate full policy (screenshot + idle) so workers update without restart
-      if (this.onPolicySync && (result as any).screenshotPolicy) {
-        this.onPolicySync((result as any).screenshotPolicy as ScreenshotPolicyPayload);
+      const policy = (result as any).screenshotPolicy;
+      if (policy) {
+        this.onPolicySync?.(policy);
+      } else {
+        this.onPolicyRefreshFailed?.("The heartbeat answer carried no Tracking Policy");
       }
     } catch (error: any) {
       console.error("[HeartbeatWorker] Failed:", error.message);
+      this.onPolicyRefreshFailed?.(error.message ?? "Heartbeat failed");
     }
   }
 }

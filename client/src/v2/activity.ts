@@ -156,11 +156,11 @@ export function composeTrackingPolicy(policy: ScreenshotPolicy | null): Activity
     ? `Every ${policy.captureIntervalMinMin}–${policy.captureIntervalMaxMin} min`
     : "Off";
   const hours = policy.activeHoursEnabled
-    ? `${policy.activeHoursStart}–${policy.activeHoursEnd}`
+    ? `${policy.activeHoursStart}–${policy.activeHoursEnd}, computer clock`
     : "Any hours";
   const idle = policy.idlePromptEnabled
-    ? `Prompt after ${policy.idleTimeoutMinutes} min`
-    : "No idle prompt";
+    ? `Pause after ${policy.idleTimeoutMinutes} min, asked first`
+    : `Pause after ${policy.idleTimeoutMinutes} min, without asking`;
   return [
     { label: "CAPTURE", value: capture },
     { label: "HOURS", value: hours },

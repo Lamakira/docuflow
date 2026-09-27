@@ -151,10 +151,29 @@ describe("Activity from Activity Evidence (#191)", () => {
     expect(page.policyLines).toEqual([
       { label: "CAPTURE", value: "Every 3–5 min" },
       { label: "HOURS", value: "Any hours" },
-      { label: "IDLE", value: "Prompt after 10 min" },
+      { label: "IDLE", value: "Pause after 10 min, asked first" },
     ]);
     expect(page.policyFootnote.toLowerCase()).toContain("tracking policy");
     expect(JSON.stringify(page.policyLines).toLowerCase()).not.toContain("productivity");
+  });
+
+  it("says the Timer still pauses on idle when the prompt is off, and whose clock active hours use (#293)", () => {
+    const page = composeActivity(
+      emptyActivity({
+        policy: {
+          ...DEFAULT_SCREENSHOT_POLICY,
+          idlePromptEnabled: false,
+          activeHoursEnabled: true,
+          activeHoursStart: "22:00",
+          activeHoursEnd: "06:00",
+        },
+      }),
+    );
+    expect(page.policyLines).toEqual([
+      { label: "CAPTURE", value: "Every 3–5 min" },
+      { label: "HOURS", value: "22:00–06:00, computer clock" },
+      { label: "IDLE", value: "Pause after 10 min, without asking" },
+    ]);
   });
 
   it("an Owner reviewing the Workspace sees every Member's evidence", () => {

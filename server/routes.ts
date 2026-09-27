@@ -45,6 +45,7 @@ import {
   createProjectDailyUpdateApiSchema,
   crmProjectStatusValues,
   crmProjectTypeValues,
+  isTrackingPolicyClockTime,
   toSafeUser,
   type InsertCrmModule,
   type InsertCrmModuleField,
@@ -2816,6 +2817,11 @@ Instructions:
         if (typeof p.idleCountdownSeconds === "number") {
           if (p.idleCountdownSeconds < 15 || p.idleCountdownSeconds > 120)
             return res.status(400).json({ message: "Idle countdown must be between 15 and 120 seconds" });
+        }
+        // ── Active hours validation ──────────────────────────────────────────
+        for (const key of ["activeHoursStart", "activeHoursEnd"] as const) {
+          if (p[key] !== undefined && !isTrackingPolicyClockTime(p[key]))
+            return res.status(400).json({ message: "Active hours must be 24-hour HH:mm times, for example 08:00" });
         }
         ops.push(storage.upsertScreenshotPolicy(screenshotPolicy));
       }

@@ -20,15 +20,12 @@ import { Panel, PanelHead, PanelBody, PanelRow } from '../components/Panel';
 import { Stage, StageHead } from '../components/Stage';
 import { useUi } from '../ui/UiContext';
 import { BellIcon, EyeIcon, GlobeIcon, PowerIcon, WindowIcon, WrenchIcon } from '../icons';
+import { idleBehaviourCopy, policyFreshnessCopy } from '../../../lib/trackingPolicy';
+import type { DeviceTrackingPolicy } from '../../app/types';
 
 type SectionId = 'activity-bar' | 'tracking' | 'startup' | 'reminders' | 'timezone' | 'advanced';
 
-interface OrgPolicy {
-  screenshotsEnabled: boolean;
-  idlePromptEnabled: boolean;
-  idleTimeoutMinutes: number;
-  idleCountdownSeconds: number;
-}
+type OrgPolicy = DeviceTrackingPolicy;
 
 /* ── Row kinds ────────────────────────────────────────────────────────────── */
 
@@ -214,17 +211,26 @@ export function SettingsScreen() {
               </Row>
               <Row
                 label="Drop idle time"
+                hint={policy ? idleBehaviourCopy(policy) : 'Loads after the first sync with the server.'}
+              >
+                <LockedToggle on={!!policy} label="Drop idle time" />
+              </Row>
+              <Row
+                label="Active hours"
                 hint={policy
-                  ? policy.idlePromptEnabled
-                    ? `Asks what to do when the machine is idle over ${policy.idleTimeoutMinutes} minutes.`
-                    : 'Idle detection is switched off for your organisation.'
+                  ? policy.activeHoursEnabled
+                    ? `Captures only between ${policy.activeHoursStart} and ${policy.activeHoursEnd} on this computer's clock.`
+                    : 'Captures at any time while a timer runs.'
                   : 'Loads after the first sync with the server.'}
               >
-                <LockedToggle on={!!policy?.idlePromptEnabled} label="Drop idle time" />
+                <LockedToggle on={!!policy?.activeHoursEnabled} label="Active hours" />
               </Row>
               <Row label="Per-app breakdown" hint="Attribute tracked time to the app in focus."><Soon /></Row>
             </div>
-            <p className="v2-set__foot">To change these, contact your administrator or open the web app.</p>
+            <p className="v2-set__foot">
+              {policy ? `${policyFreshnessCopy(policy.status)} ` : ''}
+              To change these, contact your administrator or open the web app.
+            </p>
           </>
         )}
 

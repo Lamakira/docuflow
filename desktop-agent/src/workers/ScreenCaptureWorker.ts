@@ -1,9 +1,9 @@
 /**
  * Screenshot capture worker.
  *
- * Captures a full-screen PNG at a random interval between 3 and 5 minutes
- * when the timer is running. Saves to a temp directory and enqueues in
- * SqliteQueue for async upload by SyncWorker.
+ * Captures a full-screen PNG at a random moment between the Tracking Policy's
+ * min and max interval when the timer is running. Saves to a temp directory
+ * and enqueues in SqliteQueue for async upload by SyncWorker.
  *
  * Platform: Windows primary (Phase 4.3 MVP).
  *           macOS/Linux: same code path — desktopCapturer is cross-platform.
@@ -22,26 +22,20 @@ import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
 import type { ActivityWorker, ActivityMetrics } from "./ActivityWorker";
 import { isWaylandSession, shouldSkipWaylandCaptures, getTestCaptureIntervalSeconds } from "../lib/platform";
-
-const CAPTURE_MIN_MS = 3 * 60 * 1000; // 3 minutes
-const CAPTURE_MAX_MS = 5 * 60 * 1000; // 5 minutes
+import { CaptureScheduler, captureIntervalFromPolicy } from "../lib/captureSchedule";
+import {
+  DEFAULT_TRACKING_POLICY,
+  clockMinutes,
+  isWithinActiveHours,
+  type TrackingPolicy,
+} from "../lib/trackingPolicy";
 
 const MAX_PNG_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB hard limit
 
-export interface ScreenshotPolicyPayload {
-  screenshotsEnabled: boolean;
-  captureIntervalMinMin: number;
-  captureIntervalMaxMin: number;
-  activeHoursEnabled: boolean;
-  activeHoursStart: string; // "HH:mm"
-  activeHoursEnd: string;   // "HH:mm"
-  /** Whether the idle-prompt overlay is enabled. */
-  idlePromptEnabled: boolean;
-  /** Minutes of inactivity before the idle prompt fires (3–60). */
-  idleTimeoutMinutes: number;
-  /** Seconds of countdown before the timer is auto-stopped (15–120). */
-  idleCountdownSeconds: number;
-}
+/** The Tracking Policy a heartbeat carries. */
+export type ScreenshotPolicyPayload = TrackingPolicy;
+
+type ActiveHours = Pick<TrackingPolicy, "activeHoursEnabled" | "activeHoursStart" | "activeHoursEnd">;
 
 /** Optional hooks for Wayland portal capture — pause timer during consent dialog. */
 export interface CaptureLifecycleHooks {
@@ -54,15 +48,15 @@ export interface CaptureLifecycleHooks {
 export class ScreenCaptureWorker {
   private queue: SqliteQueue;
   private store: AgentStore;
-  private timeout: ReturnType<typeof setTimeout> | null = null;
+  private scheduler: CaptureScheduler;
   private enabled: boolean;
   private totalCaptured = 0;
   private screenshotDir: string;
-  private captureMinMs = CAPTURE_MIN_MS;
-  private captureMaxMs = CAPTURE_MAX_MS;
-  private activeHoursEnabled = false;
-  private activeHoursStart = "08:00";
-  private activeHoursEnd = "18:00";
+  private activeHours: ActiveHours = {
+    activeHoursEnabled: DEFAULT_TRACKING_POLICY.activeHoursEnabled,
+    activeHoursStart: DEFAULT_TRACKING_POLICY.activeHoursStart,
+    activeHoursEnd: DEFAULT_TRACKING_POLICY.activeHoursEnd,
+  };
   private activityWorker: ActivityWorker | null = null;
   private captureHooks: CaptureLifecycleHooks = {};
 
@@ -72,6 +66,13 @@ export class ScreenCaptureWorker {
     this.enabled = enabled;
     // Use app userData dir (not os.tmpdir) — survives reboots, app-private, not world-readable
     this.screenshotDir = path.join(app.getPath("userData"), "screenshots");
+    const testIntervalSec = getTestCaptureIntervalSeconds();
+    this.scheduler = new CaptureScheduler(
+      () => void this.captureAndEnqueue(),
+      testIntervalSec
+        ? { minMs: testIntervalSec * 1000, maxMs: testIntervalSec * 1000 }
+        : captureIntervalFromPolicy(DEFAULT_TRACKING_POLICY),
+    );
   }
 
   /** Wire the ActivityWorker so captures include real activity metrics. */
@@ -89,11 +90,10 @@ export class ScreenCaptureWorker {
       console.log("[ScreenCaptureWorker] Disabled (screenshotsEnabled=false)");
       return;
     }
+    if (this.scheduler.pending) return;
 
     const testIntervalSec = getTestCaptureIntervalSeconds();
     if (testIntervalSec) {
-      this.captureMinMs = testIntervalSec * 1000;
-      this.captureMaxMs = testIntervalSec * 1000;
       console.log(`[ScreenCaptureWorker] TEST capture interval: ${testIntervalSec}s`);
     }
 
@@ -109,34 +109,45 @@ export class ScreenCaptureWorker {
     }
     fs.mkdirSync(this.screenshotDir, { recursive: true });
     this.scheduleNext();
-    console.log(`[ScreenCaptureWorker] Started (interval 3–5 min random, dir: ${this.screenshotDir})`);
+    const { minMs, maxMs } = this.scheduler.current;
+    console.log(
+      `[ScreenCaptureWorker] Started (interval ${minMs / 60_000}–${maxMs / 60_000} min random, dir: ${this.screenshotDir})`
+    );
   }
 
   stop(): void {
-    if (this.timeout) {
-      clearTimeout(this.timeout);
-      this.timeout = null;
-    }
+    this.scheduler.cancel();
     console.log(`[ScreenCaptureWorker] Stopped (captured: ${this.totalCaptured})`);
   }
 
   /**
-   * Apply a screenshot policy received from the server via heartbeat.
-   * Takes effect immediately — no restart required.
+   * Apply a Tracking Policy (saved at startup, then from every heartbeat).
+   * Takes effect immediately: a changed interval re-draws the waiting capture,
+   * and turning capture off or on stops or starts it.
    */
   applyPolicy(policy: ScreenshotPolicyPayload): void {
     const wasEnabled = this.enabled;
     this.enabled = policy.screenshotsEnabled;
-    this.captureMinMs = Math.max(3, policy.captureIntervalMinMin) * 60 * 1000;
-    this.captureMaxMs = Math.max(this.captureMinMs, policy.captureIntervalMaxMin * 60 * 1000);
-    this.activeHoursEnabled = policy.activeHoursEnabled;
-    this.activeHoursStart = policy.activeHoursStart;
-    this.activeHoursEnd = policy.activeHoursEnd;
+    this.activeHours = {
+      activeHoursEnabled: policy.activeHoursEnabled,
+      activeHoursStart: policy.activeHoursStart,
+      activeHoursEnd: policy.activeHoursEnd,
+    };
+    const rescheduled = getTestCaptureIntervalSeconds()
+      ? false
+      : this.scheduler.setInterval(captureIntervalFromPolicy(policy));
+    const hours = policy.activeHoursEnabled ? `${policy.activeHoursStart}–${policy.activeHoursEnd}` : "off";
     console.log(
       `[ScreenCaptureWorker] Policy applied: enabled=${this.enabled}, ` +
-      `interval=${policy.captureIntervalMinMin}–${policy.captureIntervalMaxMin}min, ` +
-      `activeHours=${this.activeHoursEnabled ? `${this.activeHoursStart}–${this.activeHoursEnd}` : "off"}`
+      `interval=${policy.captureIntervalMinMin}–${policy.captureIntervalMaxMin}min` +
+      `${rescheduled ? " (pending capture rescheduled)" : ""}, activeHours=${hours}`
     );
+    if (
+      policy.activeHoursEnabled &&
+      (clockMinutes(policy.activeHoursStart) === null || clockMinutes(policy.activeHoursEnd) === null)
+    ) {
+      console.warn(`[ScreenCaptureWorker] Active hours ${hours} are not HH:mm — not restricting captures`);
+    }
     // Start if newly enabled; stop if newly disabled.
     // On Wayland, start() is a no-op (logs warning, returns early) so
     // the policy enable flag is preserved but no timer is scheduled.
@@ -147,19 +158,9 @@ export class ScreenCaptureWorker {
     }
   }
 
-  /** Returns true if the current local time is within the configured active-hours window. */
-  private isWithinActiveHours(): boolean {
-    if (!this.activeHoursEnabled) return true;
-    const now = new Date();
-    const current = now.getHours() * 60 + now.getMinutes();
-    const [sh, sm] = this.activeHoursStart.split(":").map(Number);
-    const [eh, em] = this.activeHoursEnd.split(":").map(Number);
-    return current >= sh * 60 + sm && current < eh * 60 + em;
-  }
-
   private scheduleNext(): void {
-    const delay = this.captureMinMs + Math.random() * (this.captureMaxMs - this.captureMinMs);
-    this.timeout = setTimeout(() => this.captureAndEnqueue(), delay);
+    if (!this.enabled) return;
+    this.scheduler.scheduleNext();
   }
 
   private async captureAndEnqueue(): Promise<void> {
@@ -172,9 +173,9 @@ export class ScreenCaptureWorker {
       }
 
       // Respect active-hours window
-      if (!this.isWithinActiveHours()) {
+      if (!isWithinActiveHours(this.activeHours, new Date())) {
         console.log(
-          `[ScreenCaptureWorker] Skipping — outside active hours (${this.activeHoursStart}–${this.activeHoursEnd})`
+          `[ScreenCaptureWorker] Skipping — outside active hours (${this.activeHours.activeHoursStart}–${this.activeHours.activeHoursEnd})`
         );
         this.scheduleNext();
         return;
