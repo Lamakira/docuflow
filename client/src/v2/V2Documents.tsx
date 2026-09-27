@@ -528,9 +528,22 @@ export function V2DocumentsPage() {
                   setFilters(clearLibraryFilters());
                 }}
               >
-                Clear filters
+                {library.emptyState?.kind === "search" ? "Clear search" : "Clear filters"}
               </Button>
             ) : null
+          }
+          createActions={
+            <>
+              <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
+                New Document
+              </Button>
+              <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+                Upload File
+              </Button>
+              <Button variant="outline" type="button" onClick={() => openCreate("folder")} className="df-btn">
+                New folder
+              </Button>
+            </>
           }
         />
       </div>

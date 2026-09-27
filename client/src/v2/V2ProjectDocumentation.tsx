@@ -9,6 +9,7 @@ import {
   clearDocumentationFilters,
   composeProjectDocumentation,
   documentationFilterLabels,
+  documentationFilterWords,
   documentationRegisterPath,
   projectFilesPath,
   readDocumentationFilters,
@@ -123,10 +124,12 @@ export function V2ProjectDocumentationPage() {
   const clientOptions = [...clients]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((client) => ({ value: client.id, label: client.name }));
-  const activeFilters = documentationFilterLabels(filters, {
+  const filterNames = {
     projects: new Map(choices.map((project) => [project.id, project.name])),
     clients: new Map(clientOptions.map((option) => [option.value, option.label])),
-  });
+  };
+  const activeFilters = documentationFilterLabels(filters, filterNames);
+  const filterWords = documentationFilterWords(filters, filterNames);
 
   // The server already scoped the page to what the reader may see.
   const projectInputs = (page?.data ?? []).map((entry) => ({
@@ -142,6 +145,7 @@ export function V2ProjectDocumentationPage() {
     workspaceName,
     projects: projectInputs,
     activeFilters,
+    filterWords,
     documents: (page?.data ?? []).flatMap((entry) => entry.documents).map((document) => ({
       id: document.id,
       title: document.title,
@@ -451,9 +455,22 @@ export function V2ProjectDocumentationPage() {
                   setFilters(clearDocumentationFilters(filters));
                 }}
               >
-                Clear filters
+                {library.emptyState?.kind === "search" ? "Clear search" : "Clear filters"}
               </Button>
             ) : null
+          }
+          createActions={
+            <>
+              <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
+                New Document
+              </Button>
+              <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+                Upload File
+              </Button>
+              <Button variant="outline" type="button" onClick={() => openCreate("project")} className="df-btn">
+                New project
+              </Button>
+            </>
           }
           footer={
             library.refusal ? undefined : (

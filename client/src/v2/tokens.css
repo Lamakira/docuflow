@@ -4342,6 +4342,10 @@ button.df-activity-row {
 
 .df-empty-panel-action {
   margin-top: var(--df-space-3);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--df-space-2);
 }
 
 /* A side panel of the register: a fixed column beside it that never grows past

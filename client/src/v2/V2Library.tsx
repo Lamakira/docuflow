@@ -1,7 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { FileText, Folder } from "lucide-react";
-import { groupLibraryRows, type LibraryGroup, type LibraryModel, type LibraryRow } from "./library";
+import {
+  groupLibraryRows,
+  unfilteredFootLabel,
+  type LibraryEmptyState,
+  type LibraryGroup,
+  type LibraryModel,
+  type LibraryRow,
+} from "./library";
+import { V2EmptyState } from "./V2EmptyState";
+import type { EmptyStateIconId } from "./icons";
+
+const EMPTY_ICON: Record<LibraryEmptyState["kind"], EmptyStateIconId> = {
+  search: "search",
+  filters: "filters",
+  none: "documents",
+};
 
 /** The indent stops at four Folders deep; the path still names every one. */
 const MAX_INDENT = 4;
@@ -122,6 +137,7 @@ export function V2LibraryRegister({
   instantExpand,
   onFolderClick,
   emptyAction,
+  createActions,
   footer,
 }: {
   library: LibraryModel;
@@ -130,6 +146,8 @@ export function V2LibraryRegister({
   onFolderClick: (folderId: string) => void;
   /** Offered under the empty copy, such as clearing the filters that emptied it. */
   emptyAction?: ReactNode;
+  /** Offered when the register has nothing in it yet: the actions that add the first item. */
+  createActions?: ReactNode;
   /** Replaces the item count, such as a pager. */
   footer?: ReactNode;
 }) {
@@ -137,15 +155,25 @@ export function V2LibraryRegister({
 
   return (
     <section className="df-card" data-testid={testId}>
-      <div className="df-library-head">
-        <span>NAME / PATH</span>
-        <span>TYPE</span>
-        <span>ACCESS</span>
-        <span>LAST EDITOR</span>
-        <span style={{ textAlign: "right" }}>UPDATED</span>
-      </div>
+      {library.empty && !library.refusal && library.emptyState ? null : (
+        <div className="df-library-head">
+          <span>NAME / PATH</span>
+          <span>TYPE</span>
+          <span>ACCESS</span>
+          <span>LAST EDITOR</span>
+          <span style={{ textAlign: "right" }}>UPDATED</span>
+        </div>
+      )}
       {library.refusal ? (
         <p className="df-refusal">{library.refusal}</p>
+      ) : library.empty && library.emptyState ? (
+        <V2EmptyState
+          icon={EMPTY_ICON[library.emptyState.kind]}
+          title={library.emptyState.title}
+          copy={library.emptyState.copy}
+          action={library.emptyState.kind === "none" ? createActions : emptyAction}
+          testId={`${testId}-empty`}
+        />
       ) : library.empty ? (
         emptyAction ? (
           <div className="df-empty-state">
@@ -167,10 +195,7 @@ export function V2LibraryRegister({
       )}
       {footer ?? (
         <div className="df-library-foot">
-          <span>
-            {library.itemCount} {library.itemCount === 1 ? "ITEM" : "ITEMS"} · {library.folderCount}{" "}
-            {library.folderCount === 1 ? library.parentNoun.singular : library.parentNoun.plural}
-          </span>
+          <span>{library.footLabel ?? unfilteredFootLabel(library.itemCount, library.folderCount, library.parentNoun)}</span>
         </div>
       )}
     </section>

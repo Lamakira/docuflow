@@ -154,6 +154,20 @@ export type LibraryModel = {
   preview: LibraryPreview | null;
   /** Empty because of a filter, so the register offers to clear it (#275). */
   filtered?: boolean;
+  /** The designed empty state (#277) when there are no rows. */
+  emptyState?: LibraryEmptyState | null;
+  /** The foot line; while filtered it says how many rows are shown of the whole. */
+  footLabel?: string;
+};
+
+/**
+ * Why a register is empty: nothing matches the name search, nothing matches
+ * the filters, or there is nothing in it yet.
+ */
+export type LibraryEmptyState = {
+  kind: "search" | "filters" | "none";
+  title: string;
+  copy: string;
 };
 
 export type LibraryGroup =
@@ -279,8 +293,22 @@ export function composeLibrary(input: LibraryInput): LibraryModel {
   const preview = selected
     ? folderPreview(selected, childrenByFolder.get(selected.id) ?? [], tree.children.get(selected.id)?.length ?? 0)
     : null;
+  const itemCount = visible.length + input.folders.length;
+  const search = input.filterQuery.trim();
+  const facetLabels = libraryFilterLabels(facets, libraryOwnerOptions(input.documents));
 
   return {
+    emptyState: empty
+      ? libraryEmptyState({
+          noun: "Workspace Documents",
+          search,
+          filterLabels: facetLabels,
+          noneCopy: `Workspace Documents are the policies, profiles, benefits, and templates that belong to ${input.workspaceName}. Add the first one, or a Folder to file them in.`,
+        })
+      : null,
+    footLabel: narrowing
+      ? filteredFootLabel(rows, itemCount, FOLDER_PARENTS)
+      : unfilteredFootLabel(itemCount, input.folders.length, FOLDER_PARENTS),
     subhead,
     empty,
     emptyCopy: empty
@@ -293,9 +321,75 @@ export function composeLibrary(input: LibraryInput): LibraryModel {
     rows,
     folderCount: input.folders.length,
     parentNoun: FOLDER_PARENTS,
-    itemCount: visible.length + input.folders.length,
+    itemCount,
     preview,
   };
+}
+
+/** The TYPE, OWNER, ACCESS, and UPDATED filters in plain words, as the empty state names them. */
+export function libraryFilterLabels(
+  facets: Omit<LibraryFilters, "q">,
+  owners: Array<{ value: string; label: string }>,
+): string[] {
+  const labels: string[] = [];
+  if (facets.type !== "all") labels.push(`Type: ${facets.type === "file" ? "File" : "Document"}`);
+  if (facets.owner !== "all") {
+    labels.push(`Owner: ${owners.find((owner) => owner.value === facets.owner)?.label ?? "a Member"}`);
+  }
+  if (facets.access !== "all") {
+    const level =
+      facets.access === ACCESS_EVERYONE ? "Everyone" : facets.access === ACCESS_RESTRICTED ? "Restricted" : "Administrators only";
+    labels.push(`Access: ${level}`);
+  }
+  if (facets.updated !== "all") labels.push(`Updated: in the last ${facets.updated} days`);
+  return labels;
+}
+
+/**
+ * The search on its own names the text; any other filter names every filter,
+ * the search among them.
+ */
+export function libraryEmptyState(input: {
+  noun: string;
+  search: string;
+  filterLabels: string[];
+  noneCopy: string;
+}): LibraryEmptyState {
+  const quoted = `“${input.search}”`;
+  if (input.filterLabels.length > 0) {
+    const labels = input.search ? [`Name: ${quoted}`, ...input.filterLabels] : input.filterLabels;
+    return {
+      kind: "filters",
+      title: `No ${input.noun} match these filters`,
+      copy: `Nothing here matches ${labels.join(" · ")}. Clear the filters to see everything you can open.`,
+    };
+  }
+  if (input.search) {
+    return {
+      kind: "search",
+      title: `No ${input.noun} match ${quoted}`,
+      copy: `Nothing here has ${quoted} in its name. Try another word, or clear the search.`,
+    };
+  }
+  return { kind: "none", title: `No ${input.noun} yet`, copy: input.noneCopy };
+}
+
+function parentLabel(count: number, noun: { singular: string; plural: string }): string {
+  return `${count} ${count === 1 ? noun.singular : noun.plural}`;
+}
+
+export function unfilteredFootLabel(itemCount: number, parentCount: number, noun: { singular: string; plural: string }): string {
+  return `${itemCount} ${itemCount === 1 ? "ITEM" : "ITEMS"} · ${parentLabel(parentCount, noun)}`;
+}
+
+/** “0 OF 4 ITEMS · 0 FOLDERS SHOWN”: the rows a filter left, out of everything. */
+export function filteredFootLabel(
+  rows: LibraryRow[],
+  itemCount: number,
+  noun: { singular: string; plural: string },
+): string {
+  const parents = rows.filter((row) => row.kind === "folder").length;
+  return `${rows.length} OF ${itemCount} ${itemCount === 1 ? "ITEM" : "ITEMS"} · ${parentLabel(parents, noun)} SHOWN`;
 }
 
 function facetsActive(facets: Omit<LibraryFilters, "q">): boolean {

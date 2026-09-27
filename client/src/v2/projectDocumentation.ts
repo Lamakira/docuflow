@@ -2,7 +2,15 @@ import { chromeRefusal } from "./chrome";
 import { projectFileHref } from "./fileViewer";
 import { readPage, readPageSize, writePaging } from "./paging";
 import { memberName } from "./today";
-import { projectDocumentHref, type LibraryModel, type LibraryPerson, type LibraryRow } from "./library";
+import {
+  filteredFootLabel,
+  libraryEmptyState,
+  projectDocumentHref,
+  unfilteredFootLabel,
+  type LibraryModel,
+  type LibraryPerson,
+  type LibraryRow,
+} from "./library";
 
 export type ProjectDocumentationProject = {
   id: string;
@@ -51,7 +59,11 @@ export type ProjectDocumentationInput = {
   ownerName?: string | null;
   /** Filters the server already applied, named for the empty state (#275). */
   activeFilters?: string[];
+  /** The same filters in plain words, the search left out, for the designed empty state. */
+  filterWords?: string[];
 };
+
+const PROJECT_PARENTS = { singular: "PROJECT", plural: "PROJECTS" } as const;
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
@@ -119,7 +131,22 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
 
   const empty = rows.length === 0;
   const activeFilters = input.activeFilters ?? [];
+  const filterWords = input.filterWords ?? [];
+  const itemCount = visibleDocs.length + visibleFiles.length + visibleProjects.length;
+  const narrowing = Boolean(needle) || filterWords.length > 0;
   return {
+    emptyState: empty
+      ? libraryEmptyState({
+          noun: "Project Documents",
+          search: input.filterQuery.trim(),
+          filterLabels: filterWords,
+          noneCopy:
+            "Project Documents belong to one Project and are visible to Members assigned to it. Add the first one, or a documentation-only Project to hold them.",
+        })
+      : null,
+    footLabel: narrowing
+      ? filteredFootLabel(rows, itemCount, PROJECT_PARENTS)
+      : unfilteredFootLabel(itemCount, visibleProjects.length, PROJECT_PARENTS),
     subhead,
     empty,
     emptyCopy: empty
@@ -134,7 +161,7 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
     rows,
     folderCount: visibleProjects.length,
     parentNoun: { singular: "PROJECT", plural: "PROJECTS" },
-    itemCount: visibleDocs.length + visibleFiles.length + visibleProjects.length,
+    itemCount,
     preview: null,
   };
 }
@@ -318,6 +345,20 @@ export function documentationRegisterPath(filters: ProjectDocumentationFilters):
 }
 
 /** Names each filter in force, for the empty state. The default DOCUMENTATION ENABLED is not a filter. */
+/** The PROJECT, CLIENT, and DOCUMENTATION filters in plain words. */
+export function documentationFilterWords(
+  filters: ProjectDocumentationFilters,
+  names: { projects: Map<string, string>; clients: Map<string, string> },
+): string[] {
+  const words: string[] = [];
+  if (filters.project !== "all") words.push(`Project: ${names.projects.get(filters.project) ?? "another Project"}`);
+  if (filters.client !== "all") words.push(`Client: ${names.clients.get(filters.client) ?? "another Client"}`);
+  if (filters.documentation !== "enabled") {
+    words.push(`Documentation: ${filters.documentation === "disabled" ? "Disabled" : "Enabled or disabled"}`);
+  }
+  return words;
+}
+
 export function documentationFilterLabels(
   filters: ProjectDocumentationFilters,
   names: { projects: Map<string, string>; clients: Map<string, string> },
