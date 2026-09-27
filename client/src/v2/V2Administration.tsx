@@ -1557,7 +1557,7 @@ function PipelineListCard({
       </div>
       <div className="df-daily-form">
         {list.unsavedNote ? <p className="df-policy-hint">{list.unsavedNote}</p> : null}
-        <ol className="df-pipeline-options" aria-label={list.title}>
+        <ol className="df-pipeline-options" data-list={list.id} aria-label={list.title}>
           {list.rows.map((row) => {
             const rowStatus = feedbackFor(feedback, list.id, row.id);
             const hintId = `v2-pipeline-hint-${list.id}-${row.id}`;
@@ -1568,7 +1568,7 @@ function PipelineListCard({
                       with its own mark has no picker. */}
                   {list.id === "source" && sourceIcon(row.value) ? (
                     <span className="df-pipeline-mark" data-testid={`v2-pipeline-mark-${row.value}`}>
-                      <SourceMark value={row.value} />
+                      <SourceMark value={row.value} size="box" />
                     </span>
                   ) : (
                     <ColourPicker

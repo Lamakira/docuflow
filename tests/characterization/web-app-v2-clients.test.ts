@@ -14,7 +14,8 @@ import {
   type ClientRegisterInput,
 } from "../../client/src/v2/clients";
 import { Handshake } from "lucide-react";
-import { SiFiverr, SiZoho } from "react-icons/si";
+import { SiZoho } from "react-icons/si";
+import { TbBrandFiverr } from "react-icons/tb";
 import { sourceIcon } from "../../client/src/v2/sourceIcons";
 
 /**
@@ -99,9 +100,10 @@ describe("a Client Source wears one mark everywhere v2 shows it", () => {
   );
 
   it("draws Fiverr and Zoho with their brand marks and Direct with a neutral lucide one", () => {
-    expect(sourceIcon("fiverr")).toEqual({ Icon: SiFiverr, hue: "#1dbf73" });
-    expect(sourceIcon("zoho")).toEqual({ Icon: SiZoho, hue: "#e42527" });
-    expect(sourceIcon(" Direct ")).toEqual({ Icon: Handshake, hue: null });
+    expect(sourceIcon("fiverr")).toEqual({ Icon: TbBrandFiverr, hue: "#1dbf73", shape: "square" });
+    // Zoho has only a wordmark: it is cropped to its glyph and drawn wide.
+    expect(sourceIcon("zoho")).toEqual({ Icon: SiZoho, hue: "#e42527", shape: "wide", viewBox: "0 6.9 24 10.2" });
+    expect(sourceIcon(" Direct ")).toEqual({ Icon: Handshake, hue: null, shape: "square" });
     // A Source an Administrator added keeps its colour dot.
     expect(sourceIcon("referral")).toBeNull();
     expect(sourceIcon("none")).toBeNull();
@@ -133,7 +135,7 @@ describe("a Client Source wears one mark everywhere v2 shows it", () => {
     expect(selectSource).toContain("<OptionText option={option} />");
     // Pipeline & lists: a marked Source has no colour picker; any other keeps one.
     expect(adminSource).toMatch(/list\.id === "source" && sourceIcon\(row\.value\) \?\s*\(\s*<span className="df-pipeline-mark"/);
-    expect(adminSource).toContain("<SourceMark value={row.value} />");
+    expect(adminSource).toContain('<SourceMark value={row.value} size="box" />');
   });
 
   it("colours a brand mark with the contrast-checked swatch ink on either ground", () => {
@@ -143,7 +145,19 @@ describe("a Client Source wears one mark everywhere v2 shows it", () => {
     for (const selector of [".df-source-icon", ".df-source-icon[data-brand]", ".dark .df-source-icon[data-brand]", ".df-pipeline-mark"]) {
       expect(rule(selector)).not.toMatch(/#[0-9a-f]{3,6}\b/i);
     }
-    expect(rule(".df-pipeline-mark")).toMatch(/width:\s*var\(--df-control-h\)/);
+  });
+
+  it("sizes a Source mark to read: 16px inline, 24px in the Pipeline & lists box, wordmarks by width", () => {
+    expect(clientsSource).not.toMatch(/<SourceMark[^>]*size="box"/);
+    expect(rule(".df-source-icon")).toMatch(/width:\s*var\(--df-space-4\);\s*height:\s*var\(--df-space-4\)/);
+    expect(rule('.df-source-icon[data-shape="wide"]')).toMatch(/width:\s*calc\(var\(--df-space-4\) \* var\(--df-source-wide\)\)/);
+    expect(rule('.df-source-icon[data-size="box"]')).toMatch(/width:\s*var\(--df-space-6\);\s*height:\s*var\(--df-space-6\)/);
+    expect(rule('.df-source-icon[data-size="box"][data-shape="wide"]')).toMatch(/height:\s*var\(--df-space-5\)/);
+    // The Source list's mark box and its pickers share one width, wide enough for Zoho.
+    const box = /width:\s*calc\(var\(--df-control-h\) \+ var\(--df-space-5\)\)/;
+    expect(rule(".df-pipeline-mark")).toMatch(box);
+    expect(rule('.df-v2 .df-pipeline-options[data-list="source"] .df-pipeline-colour')).toMatch(box);
+    expect(adminSource).toContain('<ol className="df-pipeline-options" data-list={list.id}');
   });
 });
 

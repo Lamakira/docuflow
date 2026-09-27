@@ -1742,25 +1742,47 @@ button.df-activity-row {
   background: var(--df-swatch-line-dark);
 }
 
-/* A Source's mark sits where the colour picker would, in the same square. */
+/* A Source's mark sits where the colour picker would. The Source list's box is
+   wider than a picker's square so Zoho's wordmark reads; its pickers match, so
+   every name starts at the same place. */
 .df-pipeline-mark {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--df-control-h);
+  width: calc(var(--df-control-h) + var(--df-space-5));
   height: var(--df-control-h);
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-2);
 }
 
+.df-v2 .df-pipeline-options[data-list="source"] .df-pipeline-colour {
+  width: calc(var(--df-control-h) + var(--df-space-5));
+}
+
 /* A Client Source mark. A brand takes its hue as the contrast-checked swatch
-   ink for the ground; Direct takes the neutral ink. */
+   ink for the ground; Direct takes the neutral ink. A wide mark (Zoho's
+   wordmark, cropped to its glyph) keeps its 24 : 10.2 proportion. */
 .df-source-icon {
+  --df-source-wide: 2.35;
   flex: none;
   width: var(--df-space-4);
   height: var(--df-space-4);
   color: var(--df-archive-slate);
+}
+
+.df-source-icon[data-shape="wide"] {
+  width: calc(var(--df-space-4) * var(--df-source-wide));
+}
+
+.df-source-icon[data-size="box"] {
+  width: var(--df-space-6);
+  height: var(--df-space-6);
+}
+
+.df-source-icon[data-size="box"][data-shape="wide"] {
+  width: calc(var(--df-space-5) * var(--df-source-wide));
+  height: var(--df-space-5);
 }
 
 .df-source-icon[data-brand] {

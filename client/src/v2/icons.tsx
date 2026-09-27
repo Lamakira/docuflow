@@ -148,15 +148,27 @@ export function SendIcon() {
 /**
  * A Client Source as one mark wherever it shows. A brand wears its hue through
  * the swatch ink palette.ts contrast-checks for each ground; a Source without
- * a mark falls back to its colour dot when it has one.
+ * a mark falls back to its colour dot when it has one. `inline` sits in a line
+ * of text or a select; `box` fills the mark box on Pipeline & lists.
  */
-export function SourceMark({ value, color }: { value: string | null | undefined; color?: string }) {
+export function SourceMark({
+  value,
+  color,
+  size = "inline",
+}: {
+  value: string | null | undefined;
+  color?: string;
+  size?: "inline" | "box";
+}) {
   const spec = sourceIcon(value);
   if (spec) {
-    const { Icon, hue } = spec;
+    const { Icon, hue, shape, viewBox } = spec;
     return (
       <Icon
         className="df-source-icon"
+        data-size={size}
+        data-shape={shape}
+        viewBox={viewBox}
         data-brand={hue ? "" : undefined}
         style={hue ? swatchStyle(hue) : undefined}
         aria-hidden="true"
