@@ -250,8 +250,9 @@ describe("the folder preview is a side panel of the register (#245, F2)", () => 
   });
 
   it("stacks the preview header instead of squeezing it into columns", () => {
-    const head = rule(".df-folder-preview > .df-panel-head");
-    expect(head).toMatch(/flex-direction:\s*column/);
+    const heading = rule(".df-preview-heading");
+    expect(heading).toMatch(/flex-direction:\s*column/);
+    expect(heading).toMatch(/min-width:\s*0/);
     expect(rule(".df-folder-preview > .df-panel-foot")).toMatch(/flex-wrap:\s*wrap/);
   });
 

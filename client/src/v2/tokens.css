@@ -4353,10 +4353,31 @@ button.df-activity-row {
   max-width: 40%;
 }
 
-.df-folder-preview > .df-panel-head {
+/* The heading stacks; the close button holds the top-right corner. */
+.df-preview-heading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
-  align-items: stretch;
   gap: var(--df-space-1);
+}
+
+.df-preview-title {
+  font-family: var(--df-font-display);
+  font-weight: 700;
+  font-size: var(--df-text-5);
+  overflow-wrap: anywhere;
+}
+
+.df-preview-close {
+  flex: none;
+  align-self: flex-start;
+  color: var(--df-archive-slate);
+}
+
+.df-preview-close:hover {
+  color: var(--df-case-ink);
+  background: var(--df-cold-stock);
 }
 
 .df-folder-preview > .df-panel-foot {

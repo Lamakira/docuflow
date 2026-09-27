@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
@@ -31,6 +31,8 @@ import { V2FormDialog } from "./V2FormDialog";
 import { V2ManageAccessDialog } from "./V2ManageAccessDialog";
 import { V2UploadDialog, fileTitle, storeUpload } from "./V2UploadDialog";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
+import { V2PreviewHead } from "./V2PreviewHead";
+import { focusPreviewOpener, previewClosesOnKey, togglePreviewSelection } from "./previewPanel";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -158,6 +160,7 @@ export function V2DocumentsPage() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<CreateMode>(() => actionFromSearch());
   const [managingFolderId, setManagingFolderId] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [name, setName] = useState("");
   const [targetFolderId, setTargetFolderId] = useState<string>(V2_SELECT_NONE);
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
@@ -326,10 +329,29 @@ export function V2DocumentsPage() {
 
   function onFolderClick(folderId: string) {
     folderMotion.onUserExpand();
-    setSelectedFolderId(folderId);
+    setSelectedFolderId((current) => togglePreviewSelection(current, folderId));
     setExpandedFolderIds((current) =>
       current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId],
     );
+  }
+
+  function closePreview() {
+    const opener = selectedFolderId;
+    setSelectedFolderId(null);
+    if (opener) focusPreviewOpener(`[data-testid="v2-folder-row-${opener}"]`);
+  }
+
+  function onLibraryKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const closes = previewClosesOnKey({
+      key: event.key,
+      defaultPrevented: event.defaultPrevented,
+      previewOpen: Boolean(library.preview),
+      focusInPage: event.currentTarget.contains(event.target as Node),
+      dialogOpen: Boolean(managingFolderId) || confirmingDelete || createMode !== null,
+    });
+    if (!closes) return;
+    event.preventDefault();
+    closePreview();
   }
 
   function openCreate(mode: Exclude<CreateMode, null>) {
@@ -375,7 +397,7 @@ export function V2DocumentsPage() {
   }
 
   return (
-    <div className="df-library" data-testid="v2-documents">
+    <div className="df-library" data-testid="v2-documents" onKeyDown={onLibraryKeyDown}>
       <div className="df-library-main">
         <header className="df-today-head">
           <div style={{ minWidth: 0 }}>
@@ -515,17 +537,12 @@ export function V2DocumentsPage() {
 
       {library.preview ? (
         <aside className="df-panel df-folder-preview" data-testid="v2-folder-preview">
-          <header className="df-panel-head">
-            <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.08em" }}>
-              FOLDER PREVIEW
-            </div>
-            <div style={{ fontFamily: "var(--df-font-display)", fontWeight: 700, fontSize: 18 }}>
-              {library.preview.title}
-            </div>
-            <div className="df-mono df-meta df-meta-follow">
-              {library.preview.meta}
-            </div>
-          </header>
+          <V2PreviewHead
+            kicker="FOLDER PREVIEW"
+            title={library.preview.title}
+            meta={library.preview.meta}
+            onClose={closePreview}
+          />
           <div className="df-panel-scroll">
             <div className="df-mono df-meta">ACCESS</div>
             <p className="df-prose df-prose-follow" style={{ color: "var(--df-archive-slate)" }}>
@@ -542,7 +559,7 @@ export function V2DocumentsPage() {
                 />
               </label>
               <div className="df-form-actions">
-                <AlertDialog>
+                <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
                   <AlertDialogTrigger asChild>
                     <Button
                       type="button"

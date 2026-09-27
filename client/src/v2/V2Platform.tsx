@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import { Redirect } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
@@ -19,6 +19,8 @@ import {
   type PlatformAction,
 } from "./platform";
 import { Button } from "@/components/ui/button";
+import { V2PreviewHead } from "./V2PreviewHead";
+import { focusPreviewOpener, previewClosesOnKey, togglePreviewSelection } from "./previewPanel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -117,8 +119,28 @@ export function V2PlatformPage() {
 
   const detail = directory.detail;
 
+  function closeDetail() {
+    const opener = selectedId;
+    setSelectedId(null);
+    if (opener) focusPreviewOpener(`[data-testid="v2-platform-row-${opener}"]`);
+  }
+
+  // Action confirmations are portalled, so their Escape never reaches here.
+  function onDirectoryKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const closes = previewClosesOnKey({
+      key: event.key,
+      defaultPrevented: event.defaultPrevented,
+      previewOpen: Boolean(detail),
+      focusInPage: event.currentTarget.contains(event.target as Node),
+      dialogOpen: false,
+    });
+    if (!closes) return;
+    event.preventDefault();
+    closeDetail();
+  }
+
   return (
-    <div className="df-library" data-testid="v2-platform">
+    <div className="df-library" data-testid="v2-platform" onKeyDown={onDirectoryKeyDown}>
       <div className="df-library-main">
         <header className="df-today-head">
           <div style={{ minWidth: 0 }}>
@@ -161,7 +183,7 @@ export function V2PlatformPage() {
                 data-archived={row.archived ? "true" : "false"}
                 data-testid={`v2-platform-row-${row.id}`}
                 onClick={() => {
-                  setSelectedId(row.id);
+                  setSelectedId((current) => togglePreviewSelection(current, row.id));
                   setRefusal(null);
                   setNotice(null);
                 }}
@@ -188,11 +210,7 @@ export function V2PlatformPage() {
 
       {detail ? (
         <aside className="df-panel df-folder-preview" data-testid="v2-platform-detail">
-          <header className="df-panel-head">
-            <div className="df-mono df-meta">USER</div>
-            <div style={{ fontFamily: "var(--df-font-display)", fontWeight: 700, fontSize: 18 }}>{detail.name}</div>
-            <div className="df-mono df-meta df-meta-follow">{detail.email}</div>
-          </header>
+          <V2PreviewHead kicker="USER" title={detail.name} meta={detail.email} onClose={closeDetail} />
           <div className="df-panel-scroll">
             <div className="df-kv">
               <span>ROLE</span>
