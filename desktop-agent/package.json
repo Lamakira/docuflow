@@ -9,6 +9,7 @@
     "predev": "node scripts/kill-port.js 9000",
     "dev": "DOCUFLOW_DEBUG_IDLE=true node scripts/start-dev.js",
     "dev:v2": "DOCUFLOW_UI=v2 DOCUFLOW_DEBUG_IDLE=true node scripts/start-dev.js",
+    "dev:v2:test-idle": "DOCUFLOW_UI=v2 DOCUFLOW_DEBUG_IDLE=true DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES=1 node scripts/start-dev.js",
     "dev:test": "DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES=1 DOCUFLOW_TEST_CAPTURE_INTERVAL_SECONDS=45 DOCUFLOW_TEST_DAY_ROLLOVER_SECONDS=120 node scripts/start-dev.js",
     "dev:test-idle": "DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES=1 node scripts/start-dev.js",
     "dev:test-capture": "DOCUFLOW_TEST_CAPTURE_INTERVAL_SECONDS=30 node scripts/start-dev.js",
