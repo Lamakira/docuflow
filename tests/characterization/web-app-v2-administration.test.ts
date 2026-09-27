@@ -66,6 +66,7 @@ import {
   webhookEndpointsPath,
   administrationWriteRefusal,
   trackingPolicyIssue,
+  trackingPolicyHints,
   type AdministrationInput,
   type AnalyticsInput,
   type BillingInput,
@@ -1326,6 +1327,61 @@ describe("Tracking Policy editing (#212)", () => {
     );
   });
 
+  it("refuses active hours that are not HH:mm and accepts an overnight window (#293)", () => {
+    expect(
+      trackingPolicyIssue(policyDraft({ activeHoursStart: "22:00", activeHoursEnd: "06:00" })),
+    ).toBeNull();
+    for (const bad of ["", "8:00", "24:00", "07:60"]) {
+      expect(trackingPolicyIssue(policyDraft({ activeHoursEnd: bad }))).toBe(
+        "Active hours must be 24-hour times such as 08:00.",
+      );
+    }
+    // The form refuses before the PATCH, so a cleared time input never reaches the server.
+    const cleared = composeTrackingPolicyEditor(
+      editorInput({ draft: policyDraft({ activeHoursEnabled: true, activeHoursStart: "" }) }),
+    );
+    expect(cleared.kind).toBe("ready");
+    if (cleared.kind !== "ready") return;
+    expect(cleared.canSave).toBe(false);
+  });
+
+  it("names the Device clock for active hours and keeps idle pause apart from the prompt (#293)", () => {
+    const day = trackingPolicyHints(policyDraft());
+    expect(day.activeHours).toBe("Uses each Member's computer clock, not a Workspace time zone.");
+    expect(day.idleTimeout).toBe(
+      "After 10 min without keyboard or mouse input, the Timer pauses and the idle time is not counted.",
+    );
+    expect(day.prompt).toBe(
+      "The Member is asked first and has 60 s to answer before the Timer pauses.",
+    );
+    expect(day.countdown).toBe(
+      "Shown on the idle prompt. When it reaches zero with no answer, the Timer pauses.",
+    );
+
+    const night = trackingPolicyHints(
+      policyDraft({ activeHoursStart: "22:00", activeHoursEnd: "06:00", idlePromptEnabled: false }),
+    );
+    expect(night.activeHours).toBe(
+      "Uses each Member's computer clock, not a Workspace time zone. 22:00–06:00 runs overnight, into the next morning.",
+    );
+    expect(night.prompt).toBe("The Timer pauses at the timeout without asking. The Member resumes it.");
+
+    const page = composeTrackingPolicyEditor(editorInput());
+    expect(page.kind).toBe("ready");
+    if (page.kind !== "ready") return;
+    expect(page.hints).toEqual(day);
+
+    // The idle timeout stays editable with the prompt off; only the countdown hides.
+    const promptBlock = pageSource.slice(
+      pageSource.indexOf('id="df-policy-idle"'),
+      pageSource.indexOf("Save Tracking Policy"),
+    );
+    expect(promptBlock).toContain("Prompt countdown (seconds)");
+    expect(promptBlock).not.toContain('aria-label="Idle timeout"');
+    expect(pageSource).not.toContain("Auto-stop countdown");
+    expect(pageSource).toContain("trackingPolicy.hints.activeHours");
+  });
+
   it("refuses a Member and names the Workspace condition for a read-only Workspace", () => {
     const member = composeTrackingPolicyEditor(editorInput({ workspaceRole: "MEMBER" }));
     expect(member.kind).toBe("refusal");
@@ -1443,6 +1499,34 @@ describe("Administration controls (#212)", () => {
     // shadcn ships Tailwind state classes at equal weight; ours must outrank
     // them so the control never depends on stylesheet order.
     expect(css).toContain('.df-v2 .df-checkbox[data-state="checked"]');
+  });
+
+  it("draws a visible tick on every checked v2 checkbox, in light and dark", () => {
+    // `.df-v2 button:not(.df-btn) { color: inherit }` (0,2,1) outranks
+    // `.df-v2 .df-checkbox` (0,2,0), so a colour on the button itself loses and
+    // the tick took the ink of the checked fill. It must sit on the indicator span.
+    expect(rule(".df-v2 button:not(.df-btn),\n.df-v2 input")).toMatch(/color:\s*inherit/);
+    expect(rule(".df-v2 .df-checkbox > span")).toMatch(/color:\s*var\(--df-on-ink\)/);
+    expect(rule(".df-v2 .df-checkbox svg")).not.toMatch(/(^|[^-])color:/);
+
+    // On-ink contrasts with the Case Ink fill in both palettes.
+    const token = (block: string, name: string) =>
+      css.match(new RegExp(`${block.replace(/[.]/g, "\\.")}\\s*\\{[^}]*?--df-${name}:\\s*([^;]+);`))?.[1].trim();
+    for (const block of [".df-v2", ".dark .df-v2"]) {
+      const fill = token(block, "case-ink");
+      const tick = token(block, "on-ink");
+      expect(fill, `${block} --df-case-ink`).toBeTruthy();
+      expect(tick, `${block} --df-on-ink`).toBeTruthy();
+      expect(tick).not.toBe(fill);
+    }
+
+    // Every v2 shadcn Checkbox wears the class the rule targets.
+    for (const file of ["V2Administration.tsx", "V2Clients.tsx", "V2People.tsx"]) {
+      const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2", file), "utf8");
+      const boxes = source.match(/<Checkbox\b[\s\S]*?\/>/g) ?? [];
+      expect(boxes.length, file).toBeGreaterThan(0);
+      for (const box of boxes) expect(box, file).toContain('className="df-checkbox"');
+    }
   });
 
   it("waits with the destination's real geometry, not an empty box", () => {

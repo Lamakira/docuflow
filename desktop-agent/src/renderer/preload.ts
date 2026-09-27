@@ -4,6 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from "electron";
+import type { IdlePromptPayload } from "../lib/idleFlow";
 
 contextBridge.exposeInMainWorld("agentBridge", {
   // Auth
@@ -46,8 +47,8 @@ contextBridge.exposeInMainWorld("agentBridge", {
   // Idle / break
   idleBreak: () => ipcRenderer.invoke("agent:idle-break"),
   idleResume: () => ipcRenderer.invoke("agent:idle-resume"),
-  onIdlePrompt: (callback: (data: { idleSeconds: number }) => void) => {
-    const handler = (_event: any, data: { idleSeconds: number }) => callback(data);
+  onIdlePrompt: (callback: (data: IdlePromptPayload) => void) => {
+    const handler = (_event: any, data: IdlePromptPayload) => callback(data);
     ipcRenderer.on("agent:idle-prompt", handler);
     return () => ipcRenderer.off("agent:idle-prompt", handler);
   },

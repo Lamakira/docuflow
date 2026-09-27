@@ -1591,18 +1591,29 @@ export interface ScreenshotPolicy {
   captureIntervalMinMin: number;
   /** Maximum capture interval in minutes. Must be <= 15. */
   captureIntervalMaxMin: number;
-  /** Whether to restrict captures to a time window */
+  /**
+   * Whether to restrict captures to a time window. The window is read on each
+   * Device's local clock; a start later than the end spans midnight.
+   */
   activeHoursEnabled: boolean;
   /** Start of capture window, "HH:mm" 24 h (default "08:00") */
   activeHoursStart: string;
   /** End of capture window, "HH:mm" 24 h (default "18:00") */
   activeHoursEnd: string;
-  /** Whether the idle-prompt overlay is shown after inactivity */
+  /**
+   * Whether the Member is asked before the idle pause. The Timer pauses after
+   * `idleTimeoutMinutes` either way; off means it pauses without asking.
+   */
   idlePromptEnabled: boolean;
-  /** Minutes of inactivity before the idle prompt fires. Range: 1–60. */
+  /** Minutes of inactivity before the Timer pauses. Range: 1–60. */
   idleTimeoutMinutes: number;
-  /** Seconds of countdown before the timer is auto-stopped. Range: 15–120. */
+  /** Seconds the idle prompt counts down before the Timer pauses. Range: 15–120. */
   idleCountdownSeconds: number;
+}
+
+/** A Tracking Policy clock time: 24-hour "HH:mm". */
+export function isTrackingPolicyClockTime(value: unknown): value is string {
+  return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
@@ -1692,6 +1703,11 @@ export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 export const workspaces = pgTable("workspaces", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 255 }).notNull(),
+  /**
+   * Seed-time copy of `org_settings.screenshot_policy` (migration 0007). Nothing
+   * reads or writes it since; Tracking Policy lives in `org_settings`. Kept so
+   * no data is dropped.
+   */
   screenshotPolicy: jsonb("screenshot_policy").$type<ScreenshotPolicy>(),
   allowedTimezones: jsonb("allowed_timezones").$type<string[]>(),
   createdAt: timestamp("created_at").defaultNow(),

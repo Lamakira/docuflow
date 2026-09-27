@@ -84,15 +84,16 @@ export function AdministrationDoc() {
         </DocP>
         <DocList>
           <DocLi>
-            <DocStrong>idlePromptEnabled</DocStrong> — whether the idle overlay can appear.
+            <DocStrong>idlePromptEnabled</DocStrong> — whether the Member is asked before the idle
+            pause. When off, the Timer still pauses at the timeout, without asking.
           </DocLi>
           <DocLi>
-            <DocStrong>idleTimeoutMinutes</DocStrong> — minutes without qualifying activity before a
-            prompt (allowed range in the admin form: 1–60).
+            <DocStrong>idleTimeoutMinutes</DocStrong> — minutes without qualifying activity before the
+            Timer pauses (allowed range in the admin form: 1–60).
           </DocLi>
           <DocLi>
-            <DocStrong>idleCountdownSeconds</DocStrong> — countdown length before automatic stop when
-            the flow uses it (allowed range in the admin form: 15–120 seconds).
+            <DocStrong>idleCountdownSeconds</DocStrong> — how long the idle prompt counts down before
+            the Timer pauses with no answer (allowed range in the admin form: 15–120 seconds).
           </DocLi>
         </DocList>
         <HelpScreenshot

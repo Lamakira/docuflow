@@ -23,7 +23,8 @@
  *   mouseCount              = total pointer events in the window
  *
  * Idle detection drives the 3-min idle_start/idle_end analytics events and the
- * 10-min auto-pause UX flow. On Linux/Wayland, powerMonitor returns 0 — we use
+ * Idle timeout (default 10 min) that pauses the Timer, with or without the idle
+ * prompt — main decides which (lib/idleFlow.ts). On Linux/Wayland, powerMonitor returns 0 — we use
  * GNOME Mutter IdleMonitor D-Bus (or uiohook last-input time as fallback).
  *
  * Phase 4.4
@@ -34,12 +35,13 @@ import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
 import { getLinuxIdleSeconds } from "../lib/LinuxIdleTime";
 import { isWaylandSession } from "../lib/platform";
+import { idleTimeoutReached } from "../lib/idleFlow";
 
 // ─── Timing constants ───
 const IDLE_CHECK_INTERVAL_MS = 5_000;
 const ACTIVE_WINDOW_INTERVAL_MS = 10_000;
 const IDLE_THRESHOLD_SECONDS = 180;    // analytics: idle_start / idle_end events
-const IDLE_UX_THRESHOLD_SECONDS = 600; // 10 min → auto-pause + user prompt
+const IDLE_UX_THRESHOLD_SECONDS = 600; // 10 min → Idle timeout (Timer pauses, prompt optional)
 
 const ACTIVITY_WINDOW_SECONDS = 60;   // sliding window for per-screenshot metrics
 const ACTIVITY_SAMPLE_MS = 1_000;     // fallback poll interval
@@ -117,8 +119,7 @@ export class ActivityWorker {
   /** One-shot: next global keydown/mousedown (mousemove excluded) unless handler returns false to retry. */
   private idleInputCb: IdleGlobalInputHandler | null = null;
 
-  // ─── Idle UX policy (admin-configurable, updated via applyIdlePolicy()) ───
-  private idleUxEnabled = true;
+  // ─── Idle timeout (admin-configurable, updated via applyIdleTimeout()) ───
   private idleUxThresholdSeconds = IDLE_UX_THRESHOLD_SECONDS;
   private lastIdleProgressLogMs = 0;
 
@@ -155,7 +156,7 @@ export class ActivityWorker {
     this.store = store;
   }
 
-  /** Register callback fired when idle crosses the UX threshold. */
+  /** Register callback fired when idle crosses the Idle timeout, whether or not the prompt is on. */
   setIdleUxCallback(cb: (idleSeconds: number) => void): void {
     this.onIdleUxCb = cb;
   }
@@ -169,27 +170,24 @@ export class ActivityWorker {
   }
 
   /**
-   * Apply admin-managed idle prompt policy.
-   * Called by HeartbeatWorker on every heartbeat response.
+   * Apply the Tracking Policy's Idle timeout (saved at startup, then every heartbeat).
    * Takes effect on the next idle-check cycle (≤ 5 s).
    * Accepted range: 1–60 minutes (mirrors server and admin UI validation).
+   * Whether the Member is prompted is main's call, not this worker's.
    */
-  applyIdlePolicy(enabled: boolean, timeoutMinutes: number): void {
-    this.idleUxEnabled = enabled;
+  applyIdleTimeout(timeoutMinutes: number): void {
     const testOverride = process.env.DOCUFLOW_TEST_IDLE_TIMEOUT_MINUTES;
     if (testOverride) {
       const mins = Math.max(1, parseInt(testOverride, 10) || 1);
       this.idleUxThresholdSeconds = mins * 60;
-      console.log(
-        `[ActivityWorker] Idle policy (test override kept): enabled=${enabled} timeout=${mins}min`
-      );
+      console.log(`[ActivityWorker] Idle timeout (test override kept): ${mins}min`);
       return;
     }
     const effectiveMinutes = Math.max(1, Math.min(60, timeoutMinutes));
-    this.idleUxThresholdSeconds = effectiveMinutes * 60;
-    console.log(
-      `[ActivityWorker] Idle policy updated: enabled=${enabled} timeout=${effectiveMinutes}min (${this.idleUxThresholdSeconds}s)`
-    );
+    const next = effectiveMinutes * 60;
+    if (next === this.idleUxThresholdSeconds) return;
+    this.idleUxThresholdSeconds = next;
+    console.log(`[ActivityWorker] Idle timeout updated: ${effectiveMinutes}min (${next}s)`);
   }
 
   start(): void {
@@ -454,13 +452,12 @@ export class ActivityWorker {
           : "powerMonitor";
       console.log(
         `[ActivityWorker][TEST] idle=${idleSeconds}s threshold=${this.idleUxThresholdSeconds}s` +
-        ` enabled=${this.idleUxEnabled} triggered=${this.idleUxTriggered} timer=${timerStatus}` +
+        ` triggered=${this.idleUxTriggered} timer=${timerStatus}` +
         ` source=${source}`
       );
     } else if (
       process.env.DOCUFLOW_DEBUG_IDLE === "true" &&
-      timerStatus === "running" &&
-      this.idleUxEnabled
+      timerStatus === "running"
     ) {
       const now = Date.now();
       if (now - this.lastIdleProgressLogMs >= 60_000) {
@@ -494,16 +491,17 @@ export class ActivityWorker {
     }
 
     if (
-      this.idleUxEnabled &&
-      idleSeconds >= this.idleUxThresholdSeconds &&
-      !this.idleUxTriggered &&
-      timerStatus === "running"
+      idleTimeoutReached({
+        idleSeconds,
+        thresholdSeconds: this.idleUxThresholdSeconds,
+        alreadyTriggered: this.idleUxTriggered,
+        timerStatus,
+      })
     ) {
       this.idleUxTriggered = true;
-      console.log(`[ActivityWorker] Idle UX threshold reached (${idleSeconds}s ≥ ${this.idleUxThresholdSeconds}s) — firing callback`);
+      console.log(`[ActivityWorker] Idle timeout reached (${idleSeconds}s ≥ ${this.idleUxThresholdSeconds}s) — firing callback`);
       this.onIdleUxCb?.(idleSeconds);
     } else if (
-      this.idleUxEnabled &&
       idleSeconds >= this.idleUxThresholdSeconds &&
       !this.idleUxTriggered &&
       timerStatus !== "running" &&

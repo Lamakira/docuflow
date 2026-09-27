@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAgent } from '../stores/AgentContext';
+import { idleBehaviourCopy, policySourceCopy } from '../../../lib/trackingPolicy';
+import type { DeviceTrackingPolicy } from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,12 +13,7 @@ interface LocalPrefs {
   appVersion: string;
 }
 
-interface OrgPolicy {
-  screenshotsEnabled: boolean;
-  idlePromptEnabled: boolean;
-  idleTimeoutMinutes: number;
-  idleCountdownSeconds: number;
-}
+type OrgPolicy = DeviceTrackingPolicy;
 
 // ─── Atoms ────────────────────────────────────────────────────────────────────
 
@@ -145,26 +142,37 @@ function PolicyBlock({ policy }: { policy: OrgPolicy | null }) {
       {policy ? (
         <div className="sp-policy-block__rows">
           <InfoRow
-            label="Idle detection"
-            value={
-              policy.idlePromptEnabled
-                ? `Enabled — ${policy.idleTimeoutMinutes} min timeout`
-                : 'Disabled'
-            }
+            label="Idle timeout"
+            value={`${policy.idleTimeoutMinutes} min`}
           />
           <InfoRow
             label="Idle behaviour"
-            value="Pause immediately — no countdown"
+            value={
+              policy.idlePromptEnabled
+                ? `Ask, then pause after ${policy.idleCountdownSeconds} s`
+                : 'Pause without asking'
+            }
           />
           <InfoRow
             label="Screenshots"
             value={policy.screenshotsEnabled ? 'Enabled' : 'Disabled'}
+          />
+          <InfoRow
+            label="Active hours"
+            value={
+              policy.activeHoursEnabled
+                ? `${policy.activeHoursStart}–${policy.activeHoursEnd} (this computer's clock)`
+                : 'Any time'
+            }
           />
         </div>
       ) : (
         <div className="sp-policy-block__loading">
           Policy loads after the first heartbeat sync with the server.
         </div>
+      )}
+      {policy && (
+        <p className="sp-policy-block__note">Tracking Policy: {policySourceCopy(policy.status)}</p>
       )}
     </div>
   );
@@ -310,15 +318,16 @@ function TrackingSection({ policy }: { policy: OrgPolicy | null }) {
     <>
       <SectionHead
         title="Tracking"
-        desc="Idle detection, auto-stop, and screenshot capture are configured by your organisation and applied to all devices on your account. They cannot be changed on this device."
+        desc="Idle detection, idle pause, and screenshot capture are configured by your organisation and applied to all devices on your account. They cannot be changed on this device."
       />
 
       <PolicyBlock policy={policy} />
 
       <InfoNote>
-        When you are idle for the configured period, DocuFlow shows an "Are you still working?" prompt.
-        If you do not respond before the countdown ends, the timer stops automatically and idle time is excluded from your totals.
-        To change these thresholds, contact your administrator or visit the DocuFlow web app.
+        {policy
+          ? `${idleBehaviourCopy(policy)} Idle time is excluded from your totals.`
+          : 'When you are idle for the configured period, the timer pauses and idle time is excluded from your totals.'}
+        {' '}To change these thresholds, contact your administrator or visit the DocuFlow web app.
       </InfoNote>
     </>
   );

@@ -9,6 +9,7 @@
 
 import {
   DEFAULT_SCREENSHOT_POLICY,
+  isTrackingPolicyClockTime,
   PUBLIC_API_CAPABILITIES,
   VIEW_DAILY_UPDATES_CAPABILITY_ID,
   type ScreenshotPolicy,
@@ -1252,6 +1253,7 @@ export type TrackingPolicyModel =
       writeRefusal: string | null;
       savedNote: string | null;
       footnote: string;
+      hints: TrackingPolicyHints;
       timezones: {
         rows: string[];
         empty: boolean;
@@ -1262,6 +1264,35 @@ export type TrackingPolicyModel =
     };
 
 export type TimezoneEdit = { ok: true; timezones: string[] } | { ok: false; reason: string };
+
+export type TrackingPolicyHints = {
+  activeHours: string;
+  idleTimeout: string;
+  prompt: string;
+  countdown: string;
+};
+
+/** What each idle and active-hours field does on the Device, for the draft as it stands. */
+export function trackingPolicyHints(draft: ScreenshotPolicy): TrackingPolicyHints {
+  const clock = "Uses each Member's computer clock, not a Workspace time zone.";
+  const span =
+    isTrackingPolicyClockTime(draft.activeHoursStart) &&
+    isTrackingPolicyClockTime(draft.activeHoursEnd)
+      ? draft.activeHoursStart === draft.activeHoursEnd
+        ? " The same start and end restricts nothing."
+        : draft.activeHoursStart > draft.activeHoursEnd
+          ? ` ${draft.activeHoursStart}–${draft.activeHoursEnd} runs overnight, into the next morning.`
+          : ""
+      : "";
+  return {
+    activeHours: `${clock}${span}`,
+    idleTimeout: `After ${draft.idleTimeoutMinutes} min without keyboard or mouse input, the Timer pauses and the idle time is not counted.`,
+    prompt: draft.idlePromptEnabled
+      ? `The Member is asked first and has ${draft.idleCountdownSeconds} s to answer before the Timer pauses.`
+      : "The Timer pauses at the timeout without asking. The Member resumes it.",
+    countdown: "Shown on the idle prompt. When it reaches zero with no answer, the Timer pauses.",
+  };
+}
 
 /** Mirrors the `/api/admin/org-settings` bounds so a refusal is named before the PATCH. */
 export function trackingPolicyIssue(draft: ScreenshotPolicy): string | null {
@@ -1279,6 +1310,12 @@ export function trackingPolicyIssue(draft: ScreenshotPolicy): string | null {
   }
   if (draft.idleCountdownSeconds < 15 || draft.idleCountdownSeconds > 120) {
     return "Idle countdown must be between 15 and 120 seconds.";
+  }
+  if (
+    !isTrackingPolicyClockTime(draft.activeHoursStart) ||
+    !isTrackingPolicyClockTime(draft.activeHoursEnd)
+  ) {
+    return "Active hours must be 24-hour times such as 08:00.";
   }
   return null;
 }
@@ -1372,6 +1409,7 @@ export function composeTrackingPolicyEditor(input: TrackingPolicyInput): Trackin
       : null,
     savedNote: input.justSaved ? "Policy saved. Devices apply it on their next heartbeat." : null,
     footnote: "Activity shows this policy to every Member; Devices apply it on their next heartbeat.",
+    hints: trackingPolicyHints(input.draft),
     timezones: {
       rows: input.draftTimezones,
       empty: input.draftTimezones.length === 0,

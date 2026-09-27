@@ -12,7 +12,8 @@
  * tasks, same totals — so a rendered screen can be compared to its PNG.
  */
 
-import type { AgentBridge, AgentState, Project, Task, TimerState, BreakdownRow } from '../app/types';
+import type { AgentBridge, AgentState, Project, Task, TimerState, BreakdownRow, IdlePromptPayload } from '../app/types';
+import { DEFAULT_TRACKING_POLICY } from '../../lib/trackingPolicy';
 
 export type Scenario =
   | 'running'      // timer on Northwind / Ledger rebuild, 1:36:12
@@ -186,7 +187,7 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
 
   let timer = seedTimer(scenario);
   const listeners: Array<(s: any) => void> = [];
-  const idlePromptCbs: Array<(d: { idleSeconds: number }) => void> = [];
+  const idlePromptCbs: Array<(d: IdlePromptPayload) => void> = [];
   const idleDismissCbs: Array<() => void> = [];
 
   // `revoked` starts paired and drops after a beat: the reducer only sets
@@ -221,10 +222,24 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
     });
   }, SECOND);
 
-  /** Fire the idle prompt from the console: `__mockIdle(720)` */
-  (window as any).__mockIdle = (idleSeconds = 720) => {
-    patch({ status: 'paused' });
-    idlePromptCbs.forEach((cb) => cb({ idleSeconds }));
+  /**
+   * Fire the idle prompt from the console: `__mockIdle(720)` shows the countdown
+   * (`__mockIdle(720, 60)`), and `__mockIdle(720, 0)` the paused card.
+   */
+  (window as any).__mockIdle = (idleSeconds = 720, countdownSeconds = 60) => {
+    if (countdownSeconds <= 0) {
+      patch({ status: 'paused' });
+      idlePromptCbs.forEach((cb) => cb({ idleSeconds, pausesAt: null, countdownSeconds: null }));
+      return;
+    }
+    const pausesAt = Date.now() + countdownSeconds * SECOND;
+    idlePromptCbs.forEach((cb) => cb({ idleSeconds, pausesAt, countdownSeconds }));
+    setTimeout(() => {
+      if (timer.status !== 'running') return;
+      patch({ status: 'paused' });
+      idlePromptCbs.forEach((cb) =>
+        cb({ idleSeconds: idleSeconds + countdownSeconds, pausesAt: null, countdownSeconds: null }));
+    }, countdownSeconds * SECOND);
   };
 
   return {
@@ -356,13 +371,12 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
     readScreenshot: async (filename) =>
       filename === 'shot-1752.jpg' ? { ok: false } : { ok: true, dataUrl: STRIPE_TILE },
 
-    getOrgPolicy: async () =>
-      failing ? null : {
-        screenshotsEnabled: true,
-        idlePromptEnabled: true,
-        idleTimeoutMinutes: 10,
-        idleCountdownSeconds: 0,
-      },
+    getOrgPolicy: async () => ({
+      ...DEFAULT_TRACKING_POLICY,
+      status: failing
+        ? { source: 'saved', receivedAt: new Date(Date.now() - 3 * 3600_000).toISOString(), refreshFailedAt: new Date().toISOString(), refreshError: 'Network error' }
+        : { source: 'server', receivedAt: new Date().toISOString(), refreshFailedAt: null, refreshError: null },
+    }),
 
     getLocalPrefs: async () => ({ openAtLogin: true, isPackaged: false, appVersion: '2.4.1' }),
     setOpenAtLogin: async () => ({ ok: true }),

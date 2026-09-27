@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useAgent } from '../../stores/AgentContext';
-
-type IdlePhase = { kind: 'warning'; idleSeconds: number } | null;
+import { formatCountdown } from '../../../../lib/idleFlow';
+import type { IdlePromptPayload } from '../../types';
+import { useIdleCountdown } from './useIdleCountdown';
 
 function fmtDuration(seconds: number): string {
   const m = Math.round(seconds / 60);
@@ -9,12 +9,16 @@ function fmtDuration(seconds: number): string {
   return m === 1 ? '1 minute' : `${m} minutes`;
 }
 
+/**
+ * While the Tracking Policy's countdown runs the Timer is still going and the
+ * card says when it pauses; at zero it pauses and the card says so (#293).
+ */
 export function IdlePrompt() {
-  const { state, startTimer } = useAgent();
-  const [phase, setPhase] = useState<IdlePhase>(null);
+  const [prompt, setPrompt] = useState<IdlePromptPayload | null>(null);
   const [loading, setLoading] = useState<'break' | 'resume' | null>(null);
   const loadingRef = useRef<'break' | 'resume' | null>(null);
   loadingRef.current = loading;
+  const remaining = useIdleCountdown(prompt?.pausesAt ?? null);
 
   async function doResume() {
     if (loadingRef.current !== null) return;
@@ -38,13 +42,13 @@ export function IdlePrompt() {
 
   // IPC events from main process
   useEffect(() => {
-    const offPrompt = window.agentBridge.onIdlePrompt(({ idleSeconds }) => {
-      console.log(`[IdlePrompt] prompt — idleSeconds=${idleSeconds}`);
-      setPhase({ kind: 'warning', idleSeconds });
+    const offPrompt = window.agentBridge.onIdlePrompt((payload) => {
+      console.log(`[IdlePrompt] prompt — idleSeconds=${payload.idleSeconds} pausesAt=${payload.pausesAt ?? 'paused'}`);
+      setPrompt(payload);
       setLoading(null);
     });
     const offDismiss = window.agentBridge.onIdleDismiss(() => {
-      setPhase(null);
+      setPrompt(null);
       setLoading(null);
     });
     return () => { offPrompt(); offDismiss(); };
@@ -52,8 +56,9 @@ export function IdlePrompt() {
 
   // Any keyboard input or mouse click outside the modal card = "I'm still working"
   // (mirrors the global-input callback in main, redundant but gives instant feedback)
+  const open = prompt !== null;
   useEffect(() => {
-    if (phase?.kind !== 'warning') return;
+    if (!open) return;
 
     function onUserActivity(e: Event) {
       const target = e.target as Element | null;
@@ -67,23 +72,37 @@ export function IdlePrompt() {
       window.removeEventListener('keydown', onUserActivity, { capture: true });
       window.removeEventListener('mousedown', onUserActivity, { capture: true });
     };
-  }, [phase?.kind]);
+  }, [open]);
 
-  if (phase === null) return null;
+  if (prompt === null) return null;
+  const counting = prompt.pausesAt != null;
 
   return (
     <div className="idle-overlay">
       <div className="idle-card idle-card--warning">
-        <div className="idle-card__pause-icon" aria-hidden="true">⏸</div>
-        <div className="idle-card__title">Tracking paused</div>
+        <div className="idle-card__pause-icon" aria-hidden="true">{counting ? '⏱' : '⏸'}</div>
+        <div className="idle-card__title">{counting ? 'Are you still working?' : 'Tracking paused'}</div>
 
-        <div className="idle-card__body">
-          No activity for <strong>{fmtDuration(phase.idleSeconds)}</strong> — timer paused automatically.
-        </div>
-
-        <div className="idle-card__instruction">
-          Press any key or click to resume.
-        </div>
+        {counting ? (
+          <>
+            <div className="idle-card__body">
+              No activity for <strong>{fmtDuration(prompt.idleSeconds)}</strong> — the timer pauses in{' '}
+              <strong className="idle-card__countdown" role="timer">{formatCountdown(remaining ?? 0)}</strong>.
+            </div>
+            <div className="idle-card__instruction">
+              Press any key or click to carry on. Idle time is not counted.
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="idle-card__body">
+              No activity for <strong>{fmtDuration(prompt.idleSeconds)}</strong> — timer paused automatically.
+            </div>
+            <div className="idle-card__instruction">
+              Press any key or click to resume.
+            </div>
+          </>
+        )}
 
         <div className="idle-card__actions">
           <button

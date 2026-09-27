@@ -102,7 +102,8 @@ export function FaqTroubleshootingDoc() {
         <DocH3>Active hours window</DocH3>
         <DocP>
           When <DocStrong>activeHoursEnabled</DocStrong> is on, captures only occur inside the
-          configured daily window — outside that window, gaps are expected.
+          configured daily window — outside that window, gaps are expected. The window is read on
+          each Member&apos;s computer clock, and a start later than the end (22:00–06:00) runs overnight.
         </DocP>
         <DocH3>OS permissions</DocH3>
         <DocP>

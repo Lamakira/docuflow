@@ -67,6 +67,19 @@ import { ScreenCaptureWorker } from "../workers/ScreenCaptureWorker";
 import { LinuxScreenLockWatcher } from "../lib/LinuxScreenLockWatcher";
 import { getLocalDayKey, getTestDayRolloverSeconds } from "../lib/dayBoundary";
 import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
+import { IdleFlow } from "../lib/idleFlow";
+import {
+  DEFAULT_TRACKING_POLICY,
+  normalizeTrackingPolicy,
+  startupTrackingPolicy,
+  type TrackingPolicy,
+  type TrackingPolicyStatus,
+} from "../lib/trackingPolicy";
+import {
+  clearSavedTrackingPolicy,
+  loadSavedTrackingPolicy,
+  saveTrackingPolicy,
+} from "../lib/trackingPolicyFile";
 import {
   type ChromeMode,
   TRAFFIC_LIGHT_POSITION,
@@ -79,8 +92,17 @@ let widgetWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 /** Set by the user clicking ×. Cleared when the timer stops so the next session shows the widget again. */
 let widgetDismissed = false;
-/** Last org policy received from heartbeat — exposed to renderer via settings:get-org-policy. */
-let lastKnownPolicy: import("../workers/ScreenCaptureWorker").ScreenshotPolicyPayload | null = null;
+/**
+ * Tracking Policy in force: the saved copy (or defaults) at startup, then each
+ * heartbeat's. Exposed to the renderer via settings:get-org-policy.
+ */
+let trackingPolicy: TrackingPolicy = DEFAULT_TRACKING_POLICY;
+let trackingPolicyStatus: TrackingPolicyStatus = {
+  source: "default",
+  receivedAt: null,
+  refreshFailedAt: null,
+  refreshError: null,
+};
 
 const WIDGET_WIDTH = 380;
 const WIDGET_HEIGHT = 44;
@@ -162,6 +184,7 @@ function handleDeviceRevoked(): void {
   console.log("[Main] device.revoked — stopping workers and clearing session");
   stopWorkers();
   store.clearSession();
+  clearSavedTrackingPolicy(app.getPath("userData"));
   agentTimerRequiresTask = false;
   pushStateToRenderer();
 }
@@ -544,32 +567,84 @@ function createTray(): void {
 
 // ─── Workers ───
 
+/** Apply the Tracking Policy in force to the workers already running. */
+function applyTrackingPolicy(policy: TrackingPolicy): void {
+  trackingPolicy = policy;
+  screenshotWorker?.applyPolicy(policy);
+  activityWorker?.applyIdleTimeout(policy.idleTimeoutMinutes);
+}
+
+/** A heartbeat answered with a policy: keep it on disk, then apply it. */
+function receiveTrackingPolicy(raw: unknown): void {
+  const policy = normalizeTrackingPolicy(raw, trackingPolicy);
+  if (!policy) {
+    trackingPolicyRefreshFailed("The heartbeat answer carried an unreadable Tracking Policy");
+    return;
+  }
+  const receivedAt = new Date();
+  if (trackingPolicyStatus.refreshFailedAt) {
+    console.log("[Main] tracking-policy.refresh recovered");
+  }
+  saveTrackingPolicy(app.getPath("userData"), policy, receivedAt);
+  trackingPolicyStatus = {
+    source: "server",
+    receivedAt: receivedAt.toISOString(),
+    refreshFailedAt: null,
+    refreshError: null,
+  };
+  applyTrackingPolicy(policy);
+}
+
+/** Logged once per failing streak; Settings shows it until a refresh succeeds. */
+function trackingPolicyRefreshFailed(message: string): void {
+  if (!trackingPolicyStatus.refreshFailedAt) {
+    console.warn(
+      `[Main] tracking-policy.refresh failed — keeping the ${trackingPolicyStatus.source} policy: ${message}`
+    );
+    trackingPolicyStatus = { ...trackingPolicyStatus, refreshFailedAt: new Date().toISOString() };
+  }
+  trackingPolicyStatus = { ...trackingPolicyStatus, refreshError: message };
+}
+
 function startWorkers(): void {
   if (!store.isPaired()) return;
 
-  heartbeatWorker = new HeartbeatWorker(apiClient, store, applyServerTimerSync, (policy) => {
-    lastKnownPolicy = policy;
-    screenshotWorker?.applyPolicy(policy);
-
-    activityWorker?.applyIdlePolicy(
-      policy.idlePromptEnabled ?? true,
-      policy.idleTimeoutMinutes ?? 10
-    );
+  // Apply the last policy this Device received before the first heartbeat, so
+  // a start without the server does not fall back to hard-coded defaults.
+  const startup = startupTrackingPolicy(loadSavedTrackingPolicy(app.getPath("userData")), {
+    ...DEFAULT_TRACKING_POLICY,
+    screenshotsEnabled: SCREENSHOTS_ENABLED,
   });
+  trackingPolicy = startup.policy;
+  trackingPolicyStatus = startup.status;
+  console.log(
+    `[Main] tracking-policy.startup — ${startup.status.source}` +
+    (startup.status.receivedAt ? ` (received ${startup.status.receivedAt})` : "")
+  );
+
+  heartbeatWorker = new HeartbeatWorker(
+    apiClient,
+    store,
+    applyServerTimerSync,
+    receiveTrackingPolicy,
+    trackingPolicyRefreshFailed,
+  );
   heartbeatWorker.start();
 
   activityWorker = new ActivityWorker(queue, store);
+  activityWorker.applyIdleTimeout(trackingPolicy.idleTimeoutMinutes);
   activityWorker.setIdleUxCallback((idleSeconds) => handleIdleUx(idleSeconds));
   activityWorker.start();
 
   syncWorker = new SyncWorker(apiClient, queue, store);
   syncWorker.start();
 
-  screenshotWorker = new ScreenCaptureWorker(queue, store, SCREENSHOTS_ENABLED);
+  screenshotWorker = new ScreenCaptureWorker(queue, store, trackingPolicy.screenshotsEnabled);
+  screenshotWorker.applyPolicy(trackingPolicy);
   if (activityWorker) screenshotWorker.setActivityWorker(activityWorker);
   screenshotWorker.setCaptureLifecycleHooks({
     onBeforePortalDialog: () => {
-      if (store.getTimerStatus() !== "running" || idleStartedAt !== null) return;
+      if (store.getTimerStatus() !== "running" || idleFlow.active) return;
       const entryId = store.getActiveEntryId();
       if (!entryId) return;
 
@@ -591,7 +666,7 @@ function startWorkers(): void {
       }
 
       const entryId = store.getActiveEntryId();
-      if (entryId && store.getTimerStatus() === "paused" && idleStartedAt === null) {
+      if (entryId && store.getTimerStatus() === "paused" && !idleFlow.active) {
         store.setTimerRunning(
           entryId,
           store.getActiveProjectName(),
@@ -675,7 +750,7 @@ function startWorkers(): void {
     console.log(`[Main] Wayland session — ${captureNote}`);
   }
 
-  console.log(`[Main] Workers started (screenshots: ${SCREENSHOTS_ENABLED})`);
+  console.log(`[Main] Workers started (screenshots: ${trackingPolicy.screenshotsEnabled})`);
 }
 
 function stopWorkers(): void {
@@ -686,6 +761,12 @@ function stopWorkers(): void {
   linuxScreenLockWatcher?.stop();
   linuxScreenLockWatcher = null;
 
+  if (idleFlow.active) {
+    idleFlow.cancel();
+    clearIdleActivityCheck();
+    releaseIdleOnTop();
+    mainWindow?.webContents.send("agent:idle-dismiss");
+  }
   heartbeatWorker?.stop();
   activityWorker?.stop();
   syncWorker?.stop();
@@ -918,6 +999,7 @@ ipcMain.handle("agent:login", async (event, { pairingCode }) => {
 ipcMain.handle("agent:unpair", () => {
   stopWorkers();
   store.clearSession();
+  clearSavedTrackingPolicy(app.getPath("userData"));
   agentTimerRequiresTask = false;
   pushStateToRenderer();
   return { ok: true };
@@ -1317,13 +1399,8 @@ ipcMain.handle("agent:worked-period", async (_event, startIso: string, endIso: s
 });
 
 ipcMain.handle("settings:get-org-policy", () => {
-  if (!lastKnownPolicy) return null;
-  return {
-    screenshotsEnabled: lastKnownPolicy.screenshotsEnabled,
-    idlePromptEnabled: lastKnownPolicy.idlePromptEnabled,
-    idleTimeoutMinutes: lastKnownPolicy.idleTimeoutMinutes,
-    idleCountdownSeconds: lastKnownPolicy.idleCountdownSeconds,
-  };
+  if (!store.isPaired()) return null;
+  return { ...trackingPolicy, status: trackingPolicyStatus };
 });
 
 ipcMain.handle("agent:get-worked-today", () => {
@@ -1369,8 +1446,6 @@ ipcMain.handle("agent:today-breakdown", async () => {
 
 /** Tracks whether a global-input callback is registered on activityWorker (for cleanup). */
 let idleActivityCheckActive = false;
-/** Wall-clock time when the user went idle — set by handleIdleUx, cleared on any resolution. */
-let idleStartedAt: Date | null = null;
 
 function clearIdleActivityCheck(): void {
   if (idleActivityCheckActive) {
@@ -1379,25 +1454,90 @@ function clearIdleActivityCheck(): void {
   }
 }
 
-/** Clear the global-input listener only (no countdown to clear in the new flow). */
-function clearIdleTimeout(): void {
+function resumeTimerLocally(entryId: string): void {
+  store.setTimerRunning(
+    entryId,
+    store.getActiveProjectName(),
+    store.getActiveTaskId(),
+    store.getActiveTaskName(),
+    store.getActiveDescription(),
+  );
+}
+
+/** Idle pause and prompt (lib/idleFlow.ts); these ports are its only reach into the app. */
+const idleFlow = new IdleFlow({
+  now: () => Date.now(),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+  timerStatus: () => (store.getActiveEntryId() ? store.getTimerStatus() : "stopped"),
+  pauseAt: (at) => {
+    const entryId = store.getActiveEntryId();
+    if (!entryId) return;
+    // Closing the session at `at` keeps the idle time out of Worked Today.
+    store.setTimerPaused(at);
+    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+    syncWorker?.triggerSync();
+    pushStateToRenderer();
+  },
+  dropIdleSince: (at) => {
+    const entryId = store.getActiveEntryId();
+    if (!entryId) return;
+    // Local only: the server Timer never stopped running.
+    store.setTimerPaused(at);
+    resumeTimerLocally(entryId);
+    pushStateToRenderer();
+  },
+  resume: () => resumeTimerAfterIdle(),
+  stopAt: (at) => stopTimerAfterIdle(at),
+  showPrompt: (payload) => {
+    raiseForIdlePrompt();
+    mainWindow?.webContents.send("agent:idle-prompt", payload);
+    watchForReturnFromIdle();
+  },
+  dismissPrompt: () => dismissIdlePrompt(),
+  log: (message) => console.log(`[Main] ${message}`),
+});
+
+function resumeTimerAfterIdle(): void {
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return;
+  resumeTimerLocally(entryId);
+  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+}
+
+function stopTimerAfterIdle(at: Date): void {
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return;
+  if (store.getTimerStatus() === "running") store.setTimerPaused(at);
+  store.clearTimer();
+  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+}
+
+function dismissIdlePrompt(): void {
   clearIdleActivityCheck();
+  releaseIdleOnTop();
+  mainWindow?.webContents.send("agent:idle-dismiss");
 }
 
 /**
  * Pause the timer when the system sleeps or the screen is locked.
  * Local pause only — no server command (matches TD2 / plan P2).
+ * A countdown already running pauses where the idle time began.
  */
 function pauseTimerForSystemAway(reason: string): void {
   if (store.getTimerStatus() !== "running") return;
   const entryId = store.getActiveEntryId();
   if (!entryId) return;
 
-  store.setTimerPaused(new Date());
-  clearIdleTimeout();
+  const idleSince = idleFlow.cancel();
+  clearIdleActivityCheck();
   releaseIdleOnTop();
-  idleStartedAt = null;
   mainWindow?.webContents.send("agent:idle-dismiss");
+  store.setTimerPaused(idleSince ?? new Date());
   pushStateToRenderer();
   console.log(`[Main] ${reason} — timer paused locally (entry=${entryId})`);
 }
@@ -1419,154 +1559,64 @@ function releaseIdleOnTop(): void {
 }
 
 /**
- * Resume the timer after an idle prompt — used by both the IPC handler and the
- * global-input (uiohook) callback so the logic is in one place.
+ * While the idle prompt is up, a keydown/mousedown outside the agent window
+ * counts as "I'm back", matching Time Doctor behaviour. Input inside the window
+ * is left to the prompt's own buttons.
  */
-function resumeFromIdlePrompt(entryId: string): void {
+function watchForReturnFromIdle(): void {
   clearIdleActivityCheck();
-  releaseIdleOnTop();
-  idleStartedAt = null;
-
-  store.setTimerRunning(
-    entryId,
-    store.getActiveProjectName(),
-    store.getActiveTaskId(),
-    store.getActiveTaskName(),
-    store.getActiveDescription(),
-  );
-  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
-  pushStateToRenderer();
-  syncWorker?.triggerSync();
-  mainWindow?.webContents.send("agent:idle-dismiss");
-  console.log(`[Main] idle.resume — timer resumed (entry=${entryId})`);
+  if (!activityWorker) return;
+  idleActivityCheckActive = true;
+  activityWorker.setIdleInputCallback((payload: IdleGlobalInputPayload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (payload.kind === "mousedown") {
+        const b = mainWindow.getBounds();
+        const { x, y } = payload;
+        if (x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height) {
+          return false; // click inside agent window — handled by modal buttons
+        }
+      }
+      if (payload.kind === "keydown" && mainWindow.isFocused()) {
+        return false; // key while window is focused — handled by modal
+      }
+    }
+    idleActivityCheckActive = false;
+    console.log("[Main] idle.globalActivity — Member is back (outside agent window / key while unfocused)");
+    if (!idleFlow.memberBack()) dismissIdlePrompt();
+    return true;
+  });
 }
 
 /**
- * Called by ActivityWorker when idle crosses the configured threshold while timer is running.
- *
- * Time-Doctor style flow:
- *   1. Pause the timer immediately (at idleStartedAt — retroactive).
- *   2. Enqueue a pause command to the server.
- *   3. Show the idle prompt (no countdown — session is already safe).
- *   4. Global input outside the window → auto-resume.
- *   5. "I'm back" button → resume.
- *   6. "I'm not working" button → stop (session was already paused at idleStartedAt).
+ * Called by ActivityWorker when input has stopped for the Idle timeout while
+ * the Timer runs. The Timer pauses either way; the Tracking Policy decides
+ * whether the Member is asked first (lib/idleFlow.ts).
  */
 function handleIdleUx(idleSeconds: number): void {
-  const timerStatus = store.getTimerStatus();
-  const entryId = store.getActiveEntryId();
-  console.log(`[Main] handleIdleUx — idleSeconds=${idleSeconds} timerStatus=${timerStatus} entryId=${entryId ?? "none"} mainWindow=${!!mainWindow}`);
-
-  if (timerStatus !== "running") {
-    console.log(`[Main] handleIdleUx — skipped: timer is "${timerStatus}" (must be "running")`);
-    return;
-  }
-  if (!entryId) {
-    console.log("[Main] handleIdleUx — skipped: no active entry");
-    return;
-  }
-  // Guard: prompt already active (e.g. ActivityWorker fired again before user responded).
-  if (idleStartedAt !== null) {
-    console.log(`[Main] handleIdleUx — skipped: prompt already active (idleStartedAt=${idleStartedAt.toISOString()})`);
-    return;
-  }
-
-  // Backdate the pause to when the user actually went idle.
-  idleStartedAt = new Date(Date.now() - idleSeconds * 1000);
-  console.log(`[Main] idle.pause — pausing timer immediately at idleStartedAt=${idleStartedAt.toISOString()} (idleSeconds=${idleSeconds})`);
-
-  // Pause the timer locally at idleStartedAt so idle time is excluded from Worked Today.
-  store.setTimerPaused(idleStartedAt);
-  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
-  syncWorker?.triggerSync();
-  pushStateToRenderer();
-
-  // Raise window so the prompt is visible regardless of focus.
-  raiseForIdlePrompt();
-
-  mainWindow?.webContents.send("agent:idle-prompt", { idleSeconds });
-
-  // Register a one-shot global-input callback: any keydown/mousedown outside the agent window
-  // counts as "I'm back" and auto-resumes, matching Time Doctor behaviour.
-  clearIdleActivityCheck();
-  if (activityWorker) {
-    idleActivityCheckActive = true;
-    activityWorker.setIdleInputCallback((payload: IdleGlobalInputPayload) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        if (payload.kind === "mousedown") {
-          const b = mainWindow.getBounds();
-          const { x, y } = payload;
-          if (x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height) {
-            return false; // click inside agent window — handled by modal buttons
-          }
-        }
-        if (payload.kind === "keydown" && mainWindow.isFocused()) {
-          return false; // key while window is focused — handled by modal
-        }
-      }
-      // Activity detected outside the agent window → auto-resume
-      const currentEntryId = store.getActiveEntryId();
-      if (currentEntryId && store.getTimerStatus() === "paused") {
-        console.log("[Main] idle.globalActivity — auto-resume (outside agent window / key while unfocused)");
-        resumeFromIdlePrompt(currentEntryId);
-      } else {
-        idleActivityCheckActive = false;
-        clearIdleActivityCheck();
-        releaseIdleOnTop();
-        idleStartedAt = null;
-        mainWindow?.webContents.send("agent:idle-dismiss");
-      }
-    });
-  }
+  const outcome = idleFlow.onIdleTimeout(idleSeconds, trackingPolicy);
+  console.log(
+    `[Main] handleIdleUx — idleSeconds=${idleSeconds} timerStatus=${store.getTimerStatus()} ` +
+    `prompt=${trackingPolicy.idlePromptEnabled} outcome=${outcome}`
+  );
 }
 
-/** Renderer: user clicked "I'm back" — resume the paused timer. */
+/** Renderer: "I'm back", or input outside the prompt card. */
 ipcMain.handle("agent:idle-resume", () => {
-  clearIdleActivityCheck();
-  releaseIdleOnTop();
-  const entryId = store.getActiveEntryId();
-  const capturedIdleStartedAt = idleStartedAt;
-  idleStartedAt = null;
-
-  if (entryId && (store.getTimerStatus() === "paused" || store.getTimerStatus() === "running")) {
-    store.setTimerRunning(
-      entryId,
-      store.getActiveProjectName(),
-      store.getActiveTaskId(),
-      store.getActiveTaskName(),
-      store.getActiveDescription(),
-    );
-    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "resume", entryId });
-    pushStateToRenderer();
-    syncWorker?.triggerSync();
-    const idleDuration = capturedIdleStartedAt
-      ? Math.round((Date.now() - capturedIdleStartedAt.getTime()) / 1000)
-      : 0;
-    console.log(`[Main] idle.resume confirmed — timer resumed (entry=${entryId} idleDuration=${idleDuration}s)`);
+  if (!idleFlow.memberBack()) {
+    // No prompt in flight (a stale overlay): resume a paused Timer as before.
+    if (store.getTimerStatus() === "paused") resumeTimerAfterIdle();
+    dismissIdlePrompt();
   }
-  mainWindow?.webContents.send("agent:idle-dismiss");
   return { ok: true };
 });
 
-/** Renderer: user chose "I'm not working" — timer is already paused at idleStartedAt; just stop it. */
+/** Renderer: "I'm not working" — stop the Timer where the idle time began. */
 ipcMain.handle("agent:idle-break", () => {
-  clearIdleActivityCheck();
-  releaseIdleOnTop();
-  const entryId = store.getActiveEntryId();
-  const capturedIdleStartedAt = idleStartedAt;
-  idleStartedAt = null;
-
-  if (entryId && (store.getTimerStatus() === "paused" || store.getTimerStatus() === "running")) {
-    // Timer was already paused at idleStartedAt — just convert the pause to a full stop.
-    store.clearTimer();
-    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
-    pushStateToRenderer();
-    syncWorker?.triggerSync();
-    const ts = capturedIdleStartedAt ?? new Date();
-    const actualIdleSeconds = Math.round((Date.now() - ts.getTime()) / 1000);
-    console.log(`[Main] idle.break confirmed — timer stopped (entry=${entryId} idleSince=${ts.toISOString()} idleDuration=${actualIdleSeconds}s)`);
+  if (!idleFlow.memberNotWorking()) {
+    const status = store.getTimerStatus();
+    if (status === "paused" || status === "running") stopTimerAfterIdle(new Date());
+    dismissIdlePrompt();
   }
-  mainWindow?.webContents.send("agent:idle-dismiss");
   return { ok: true };
 });
 
