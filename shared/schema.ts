@@ -536,6 +536,15 @@ export const crmProjects = pgTable("crm_projects", {
   budgetedMinutes: integer("budgeted_minutes").default(0),
   actualHours: integer("actual_hours"),
   actualMinutes: integer("actual_minutes").default(0),
+  // Opportunity fields (#276). The Opportunity Owner sold it; the Project
+  // Manager is `assigneeId`. The Estimated value is money in the currency's
+  // minor units, never the hours budget above.
+  opportunityOwnerId: varchar("opportunity_owner_id").references(() => users.id, { onDelete: "set null" }),
+  source: varchar("source", { length: 50 }),
+  estimatedValueMinor: bigint("estimated_value_minor", { mode: "number" }),
+  estimatedValueCurrency: varchar("estimated_value_currency", { length: 3 }),
+  lostReason: varchar("lost_reason", { length: 50 }),
+  lostReasonDetail: text("lost_reason_detail"),
   documentationEnabled: integer("documentation_enabled").default(0),
   isDocumentationOnly: integer("is_documentation_only").default(0),
   // Combined HTTP lifecycle (lead/won_in_progress/…). Project Status is projectStatus.

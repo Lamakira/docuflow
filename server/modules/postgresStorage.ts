@@ -1299,6 +1299,12 @@ export class DatabaseStorage implements IStorage {
       budgetedHours: crmData?.budgetedHours ?? null,
       budgetedMinutes: crmData?.budgetedMinutes ?? 0,
       actualHours: crmData?.actualHours ?? null,
+      opportunityOwnerId: crmData?.opportunityOwnerId ?? null,
+      source: crmData?.source ?? null,
+      estimatedValueMinor: crmData?.estimatedValueMinor ?? null,
+      estimatedValueCurrency: crmData?.estimatedValueCurrency ?? null,
+      lostReason: crmData?.lostReason ?? null,
+      lostReasonDetail: crmData?.lostReasonDetail ?? null,
     });
 
     // Auto-add the creator as a project member
@@ -2435,6 +2441,16 @@ export class DatabaseStorage implements IStorage {
             .update(crmProjects)
             .set({ projectType: renamed(crmProjects.projectType, renames), updatedAt: now })
             .where(and(inWorkspace(crmProjects), inArray(crmProjects.projectType, froms(renames))));
+        } else if (column === "projects.source") {
+          await tx
+            .update(crmProjects)
+            .set({ source: renamed(crmProjects.source, renames), updatedAt: now })
+            .where(and(inWorkspace(crmProjects), inArray(crmProjects.source, froms(renames))));
+        } else if (column === "projects.lostReason") {
+          await tx
+            .update(crmProjects)
+            .set({ lostReason: renamed(crmProjects.lostReason, renames), updatedAt: now })
+            .where(and(inWorkspace(crmProjects), inArray(crmProjects.lostReason, froms(renames))));
         } else if (column === "clients.status") {
           await tx
             .update(crmClients)

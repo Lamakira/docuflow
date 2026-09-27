@@ -192,22 +192,24 @@ function values(options: string[]): string[] {
 }
 
 describe("Pipeline & lists replaces the CRM field builder", () => {
-  it("shows exactly the three lists records read, on the real module and field slugs", () => {
+  it("shows exactly the four lists records read, on the real module and field slugs", () => {
     expect(PIPELINE_LISTS.map((list) => [list.id, list.title, list.builtIn.module.slug, list.builtIn.field.slug])).toEqual([
       ["opportunity-stages", "Opportunity stages", "projects", "status"],
       ["project-type", "Project type", "projects", "project_type"],
       ["source", "Source", "contacts", "source"],
+      ["lost-reasons", "Lost reasons", "projects", "lost_reason"],
     ]);
     expect(composePipelineLists(seededModules()).map((list) => list.id)).toEqual([
       "opportunity-stages",
       "project-type",
       "source",
+      "lost-reasons",
     ]);
   });
 
   it("offers a Workspace with no modules the values each consumer falls back to", () => {
-    const [stages, types, sources] = composePipelineLists([]);
-    for (const list of [stages, types, sources]) {
+    const [stages, types, sources, lostReasons] = composePipelineLists([]);
+    for (const list of [stages, types, sources, lostReasons]) {
       expect(list.saved).toBe(false);
       expect(list.unsavedNote).toContain("The first change saves the list.");
       expect(list.fieldId).toBeNull();
@@ -218,6 +220,14 @@ describe("Pipeline & lists replaces the CRM field builder", () => {
     expect(stages.entries.map((entry) => entry.value)).toEqual([...crmProjectStatusValues]);
     expect(types.entries.map((entry) => entry.value)).toEqual([...crmProjectTypeValues]);
     expect(sources.entries.map((entry) => entry.value)).toEqual(["fiverr", "zoho", "direct"]);
+    expect(lostReasons.entries.map((entry) => entry.value)).toEqual([
+      "price",
+      "timing",
+      "chose_a_competitor",
+      "no_response",
+      "other",
+    ]);
+    expect(lostReasons.rows.every((row) => !row.builtIn)).toBe(true);
     // Saved, the defaults draw the board Opportunities already falls back to.
     const board = composeOpportunityStages(stageOptionsFromFieldOptions(stages.entries.map(serializeFieldOption)));
     expect(board.filter((stage) => !stage.terminal).map((stage) => stage.id)).toEqual(
@@ -365,7 +375,7 @@ describe("Pipeline & lists replaces the CRM field builder", () => {
   });
 
   it("says honestly what a rename and a removal do to records", () => {
-    const [stages, types, sources] = composePipelineLists(seededModules());
+    const [stages, types, sources, lostReasons] = composePipelineLists(seededModules());
     expect(stages.renameNote).toBe(
       "Renaming a stage moves every Opportunity already at it. Built-in stages keep their names and cannot be removed.",
     );
@@ -373,15 +383,17 @@ describe("Pipeline & lists replaces the CRM field builder", () => {
       "Renaming a type updates every Project that already has it. Built-in types keep their names and cannot be removed.",
     );
     expect(sources.renameNote).toBe(
-      "Renaming a source updates every Client already recorded with it. Fiverr is built in: it keeps its name and cannot be removed.",
+      "Renaming a source updates every Client and Opportunity already recorded with it. Fiverr is built in: it keeps its name and cannot be removed.",
     );
+    expect(lostReasons.renameNote).toBe("Renaming a reason updates every Lost Opportunity already closed with it.");
 
     expect(stages.rows[2].removeConsequence).toBe(
       "No Opportunity is changed. Opportunities already at “proposal_sent” stay there and still show on the board, but no Opportunity can be moved to it. Adding “proposal_sent” back restores it.",
     );
     expect(types.rows[0].removeConsequence).toContain("No Project is changed.");
-    expect(sources.rows[0].removeConsequence).toContain("No Client is changed.");
-    for (const list of [stages, types, sources]) {
+    expect(sources.rows[0].removeConsequence).toContain("No Client or Opportunity is changed.");
+    expect(lostReasons.rows[0].removeConsequence).toContain("No Opportunity is changed.");
+    for (const list of [stages, types, sources, lostReasons]) {
       for (const row of list.rows) expect(row.removeConsequence).not.toMatch(/removed from|cannot be undone/i);
     }
   });

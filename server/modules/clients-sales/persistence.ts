@@ -134,4 +134,10 @@ export interface ClientsSalesPersistence {
 }
 
 /** A record column that stores an option value directly. */
-export type OptionRenameColumn = "projects.status" | "projects.projectType" | "clients.status" | "clients.source";
+export type OptionRenameColumn =
+  | "projects.status"
+  | "projects.projectType"
+  | "projects.source"
+  | "projects.lostReason"
+  | "clients.status"
+  | "clients.source";
