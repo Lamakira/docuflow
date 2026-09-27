@@ -1236,7 +1236,6 @@ export type TrackingPolicyInput = {
   draft: ScreenshotPolicy;
   savedTimezones: string[];
   draftTimezones: string[];
-  justSaved: boolean;
   /** The BFF refused the read behind the same Administration gate — name it, do not edit defaults. */
   refused?: boolean;
 };
@@ -1251,7 +1250,6 @@ export type TrackingPolicyModel =
       issue: string | null;
       canSave: boolean;
       writeRefusal: string | null;
-      savedNote: string | null;
       footnote: string;
       hints: TrackingPolicyHints;
       timezones: {
@@ -1369,6 +1367,9 @@ function samePolicy(a: ScreenshotPolicy, b: ScreenshotPolicy): boolean {
   );
 }
 
+/** The sign-off a saved policy gets: what happens next, not a celebration. */
+export const TRACKING_POLICY_SAVED = "Policy saved. Devices apply it on their next heartbeat.";
+
 export function composeTrackingPolicyEditor(input: TrackingPolicyInput): TrackingPolicyModel {
   if (input.refused || !canManageAdministration(input.workspaceRole)) {
     return {
@@ -1407,7 +1408,6 @@ export function composeTrackingPolicyEditor(input: TrackingPolicyInput): Trackin
           condition: "Read-only",
         })
       : null,
-    savedNote: input.justSaved ? "Policy saved. Devices apply it on their next heartbeat." : null,
     footnote: "Activity shows this policy to every Member; Devices apply it on their next heartbeat.",
     hints: trackingPolicyHints(input.draft),
     timezones: {

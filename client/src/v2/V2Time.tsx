@@ -7,6 +7,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { CrmProjectWithDetails, SafeUser, TimeEntryWithDetails } from "@shared/schema";
 import { canManageAdministration } from "./administration";
 import { chromeRefusal } from "./chrome";
+import { isStandingRefusal, notify } from "./notify";
 import { motionForSurface } from "./motion";
 import { memberName } from "./today";
 import { TIME_TAB_IDS, type TimeTabId } from "./presentation";
@@ -212,8 +213,10 @@ function TimeEntriesPane() {
       queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/stats"] });
       setWriteRefusal(null);
+      notify.success("Time Entry deleted");
     },
     onError: (error: Error) => {
+      if (!readOnly && !isStandingRefusal(error)) return notify.error(error);
       setWriteRefusal(
         readOnly
           ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" })
@@ -666,6 +669,7 @@ function ProjectTasksPane() {
   }
 
   function onWriteError(error: Error) {
+    if (!readOnly && !isStandingRefusal(error)) return notify.error(error);
     setWriteRefusal(
       readOnly
         ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" })
@@ -680,6 +684,7 @@ function ProjectTasksPane() {
       invalidate();
       setTaskName("");
       setWriteRefusal(null);
+      notify.success("Task created");
     },
     onError: onWriteError,
   });
@@ -687,10 +692,11 @@ function ProjectTasksPane() {
   const updateTask = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<ProjectTask> }) =>
       apiRequest("PATCH", taskPath(id), data),
-    onSuccess: () => {
+    onSuccess: (_result, { data }) => {
       invalidate();
       setEditingId(null);
       setWriteRefusal(null);
+      if (data.name) notify.success("Task renamed");
     },
     onError: onWriteError,
   });
@@ -701,6 +707,7 @@ function ProjectTasksPane() {
       invalidate();
       setConfirmDeleteId(null);
       setWriteRefusal(null);
+      notify.success("Task deleted");
     },
     onError: onWriteError,
   });

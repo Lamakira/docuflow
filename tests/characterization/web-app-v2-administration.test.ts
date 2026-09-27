@@ -54,6 +54,7 @@ import {
   composeAdministration,
   composeAnalytics,
   composeTrackingPolicyEditor,
+  TRACKING_POLICY_SAVED,
   hostedBillingSession,
   workspaceSettingsPath,
   removeAllowedTimezone,
@@ -901,7 +902,6 @@ function editorInput(overrides: Partial<TrackingPolicyInput> = {}): TrackingPoli
     draft: policyDraft(),
     savedTimezones: [],
     draftTimezones: [],
-    justSaved: false,
     ...overrides,
   };
 }
@@ -1417,7 +1417,6 @@ describe("Tracking Policy editing (#212)", () => {
     expect(clean.dirty).toBe(false);
     expect(clean.canSave).toBe(false);
     expect(clean.issue).toBeNull();
-    expect(clean.savedNote).toBeNull();
 
     const dirty = composeTrackingPolicyEditor(
       editorInput({ draft: policyDraft({ captureIntervalMaxMin: 9 }) }),
@@ -1437,12 +1436,11 @@ describe("Tracking Policy editing (#212)", () => {
     expect(invalid.issue).toBe("Idle timeout must be between 1 and 60 minutes.");
   });
 
-  it("signs off a saved policy without celebrating it", () => {
-    const page = composeTrackingPolicyEditor(editorInput({ justSaved: true }));
-    expect(page.kind).toBe("ready");
-    if (page.kind !== "ready") return;
-    expect(page.savedNote).toBe("Policy saved. Devices apply it on their next heartbeat.");
-    expect(page.savedNote?.toLowerCase()).not.toMatch(/congratulations|nice work|🎉/);
+  it("signs off a saved policy in a toast without celebrating it", () => {
+    expect(TRACKING_POLICY_SAVED).toBe("Policy saved. Devices apply it on their next heartbeat.");
+    expect(TRACKING_POLICY_SAVED.toLowerCase()).not.toMatch(/congratulations|nice work|🎉/);
+    expect(pageSource).toContain("notify.success(TRACKING_POLICY_SAVED)");
+    expect(pageSource).not.toContain("df-policy-saved");
   });
 
   it("owns the Screencasts timezone list and validates every entry", () => {
@@ -1627,12 +1625,7 @@ describe("Tracking Policy save motion (#212)", () => {
     expect(reduced.movement).toBe("none");
     expect(reduced.keepOpacity).toBe(true);
 
-    expect(rule('.df-policy-saved[data-motion="standard"]')).toMatch(/var\(--ease-out\)/);
-    expect(rule('.df-policy-saved[data-motion="standard"]')).not.toMatch(/transition\s*:\s*all\b/);
     expect(rule(".df-policy-form input")).toMatch(/animation:\s*none/);
-    expect(reducedMotionCss()).toMatch(
-      /\.df-policy-saved\[data-motion="standard"\][^{]*\{[^}]*transform:\s*none/,
-    );
   });
 });
 

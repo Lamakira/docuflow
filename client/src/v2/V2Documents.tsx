@@ -8,6 +8,7 @@ import type {
 } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
+import { isStandingRefusal, notify } from "./notify";
 import {
   clearLibraryFilters,
   composeLibrary,
@@ -222,6 +223,10 @@ export function V2DocumentsPage() {
       setWriteRefusal(readOnlyRefusal);
       return true;
     }
+    if (errorMessage && !isStandingRefusal(errorMessage)) {
+      notify.error(errorMessage);
+      return false;
+    }
     if (errorMessage) {
       setWriteRefusal(chromeRefusal({ kind: "generic", message: errorMessage }));
     }
@@ -241,6 +246,7 @@ export function V2DocumentsPage() {
       setCreateMode(null);
       setName("");
       setWriteRefusal(null);
+      notify.success("Document created");
       if (created?.id) navigate(`/documents/${created.id}`);
     },
     onError: (error: Error) => {
@@ -258,6 +264,7 @@ export function V2DocumentsPage() {
       setCreateMode(null);
       setName("");
       setWriteRefusal(null);
+      notify.success("Folder created");
     },
     onError: (error: Error) => {
       refuseWrite(error.message);
@@ -293,6 +300,7 @@ export function V2DocumentsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
       setWriteRefusal(null);
+      notify.success("Folder renamed");
     },
     onError: (error: Error) => {
       refuseWrite(error.message);
@@ -307,6 +315,7 @@ export function V2DocumentsPage() {
       setSelectedFolderId(null);
       setExpandedFolderIds((current) => current.filter((folderId) => folderId !== id));
       setWriteRefusal(null);
+      notify.success("Folder deleted");
     },
     onError: (error: Error) => {
       refuseWrite(error.message);

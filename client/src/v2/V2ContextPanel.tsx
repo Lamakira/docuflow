@@ -16,6 +16,7 @@ import {
 } from "./chrome";
 import { CloseIcon, SendIcon } from "./icons";
 import { motionForSurface } from "./motion";
+import { notify } from "./notify";
 import type { V2ChromeLayout, V2CommandPanel } from "./presentation";
 import { EMPTY_TIMESHEET_APPROVALS } from "./today";
 import { useV2Chrome } from "./V2Shell";
@@ -237,6 +238,7 @@ function NotificationsBody({ onClose }: { onClose: () => void }) {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
     },
+    onError: (error: Error) => notify.error(error, { fallback: "Notifications could not be marked read." }),
   });
 
   const saveDelivery = useMutation({
@@ -246,6 +248,7 @@ function NotificationsBody({ onClose }: { onClose: () => void }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/delivery-preferences"] });
     },
+    onError: (error: Error) => notify.error(error, { fallback: "Delivery Preference could not be saved." }),
   });
 
   return (

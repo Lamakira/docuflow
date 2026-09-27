@@ -1841,21 +1841,6 @@ button.df-activity-row {
   background: var(--df-swatch-base);
 }
 
-.df-policy-saved[data-motion="standard"] {
-  opacity: 1;
-  transform: none;
-  transition:
-    opacity var(--duration-ui) var(--ease-out),
-    transform var(--duration-ui) var(--ease-out);
-}
-
-@starting-style {
-  .df-policy-saved[data-motion="standard"] {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-
 .df-devices-register .df-register-head,
 .df-devices-register .df-register-row {
   grid-template-columns: 1.4fr 0.7fr 0.8fr 0.9fr 0.8fr;
@@ -2486,52 +2471,17 @@ button.df-activity-row {
   color: var(--df-archive-slate);
 }
 
-.df-toast {
-  position: fixed;
-  left: 50%;
-  bottom: 26px;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: var(--df-space-3);
-  background: var(--df-case-ink);
-  border-radius: var(--df-radius-2);
+/* The one v2 Toaster (Sonner). Its scope wrapper only carries the palette, so
+   it draws no box of its own; Sonner positions the list at the top center. */
+.df-toaster {
+  display: contents;
+}
+
+.df-toaster [data-sonner-toast][data-styled="true"].df-toast {
+  gap: var(--df-space-2);
   padding: var(--df-space-3) var(--df-space-4);
-  box-shadow: 0 12px 30px rgba(15, 21, 36, 0.28);
-  color: var(--df-on-ink);
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-  transition:
-    opacity var(--duration-ui) var(--ease-out),
-    transform var(--duration-ui) var(--ease-out);
-}
-
-@starting-style {
-  .df-toast {
-    opacity: 0;
-    transform: translateX(-50%) translateY(100%);
-  }
-}
-
-.df-toast[data-state="leaving"] {
-  opacity: 0;
-  transform: translateX(-50%) translateY(100%);
-}
-
-.df-toast-message {
-  font-weight: 500;
-  font-size: var(--df-text-2);
-}
-
-.df-toast-undo {
-  font-family: var(--df-font-mono);
-  font-weight: 500;
-  font-size: var(--df-text-2);
-  color: var(--df-amber);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  padding: 0;
+  font-size: var(--df-text-3);
+  box-shadow: 0 12px 30px rgba(15, 21, 36, 0.18);
 }
 
 .df-user-card {
@@ -4899,11 +4849,6 @@ button.df-activity-row {
     animation: none;
   }
 
-  .df-policy-saved[data-motion="standard"] {
-    transform: none;
-    transition: opacity var(--duration-ui) var(--ease-out);
-  }
-
   .df-pairing-code[data-motion="standard"] {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
@@ -4935,10 +4880,6 @@ button.df-activity-row {
       transform: none;
     }
 
-    .df-policy-saved[data-motion="standard"] {
-      transform: none;
-    }
-
     .df-pairing-code[data-motion="standard"] {
       transform: none;
     }
@@ -4948,25 +4889,12 @@ button.df-activity-row {
     transition: none;
   }
 
-  .df-toast {
-    transform: translateX(-50%);
-    transition: opacity var(--duration-ui) var(--ease-out);
-  }
-
-  .df-toast[data-state="leaving"] {
-    transform: translateX(-50%);
-  }
-
   .df-notice-row[data-enter="true"] {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
   }
 
   @starting-style {
-    .df-toast {
-      transform: translateX(-50%);
-    }
-
     .df-notice-row[data-enter="true"] {
       transform: none;
     }

@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import type { CrmClient, Document, Project, SafeUser } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
+import { isStandingRefusal, notify } from "./notify";
 import {
   clearDocumentationFilters,
   composeProjectDocumentation,
@@ -188,6 +189,10 @@ export function V2ProjectDocumentationPage() {
       );
       return true;
     }
+    if (errorMessage && !isStandingRefusal(errorMessage) && !/select a project/i.test(errorMessage)) {
+      notify.error(errorMessage);
+      return false;
+    }
     if (errorMessage) {
       setWriteRefusal(chromeRefusal({ kind: "generic", message: errorMessage }));
     }
@@ -207,6 +212,7 @@ export function V2ProjectDocumentationPage() {
       setCreateMode(null);
       setName("");
       setWriteRefusal(null);
+      notify.success("Document created");
       if (created?.id) navigate(`/document/${created.id}`);
     },
     onError: (error: Error) => {
@@ -256,6 +262,7 @@ export function V2ProjectDocumentationPage() {
       setCreateMode(null);
       setName("");
       setWriteRefusal(null);
+      notify.success("Project created");
     },
     onError: (error: Error) => {
       refuseWrite(error.message);

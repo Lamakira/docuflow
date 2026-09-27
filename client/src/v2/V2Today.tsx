@@ -20,6 +20,7 @@ import {
   remindDailyUpdatesPath,
 } from "./dailyUpdate";
 import { motionForSurface } from "./motion";
+import { isStandingRefusal, notify } from "./notify";
 import { meterTone, swatchStyle } from "./palette";
 import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
 import { V2RefusalPopover } from "./V2RefusalPopover";
@@ -171,8 +172,10 @@ export function V2TodayPage() {
       setRemindRefusal(null);
       queryClient.invalidateQueries({ queryKey: [adminDailyUpdateTodayStatusPath()] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      notify.success("Daily Update reminders sent");
     },
     onError: (error: Error) => {
+      if (error.message && !isStandingRefusal(error)) return notify.error(error);
       setRemindRefusal(
         dailyUpdateRemindRefusal({
           workspaceName,

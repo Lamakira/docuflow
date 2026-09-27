@@ -10,7 +10,6 @@ import { V2CommandBar } from "./V2CommandBar";
 import { V2ContextPanel } from "./V2ContextPanel";
 import { V2Rail } from "./V2Rail";
 import { V2TimerChip } from "./V2TimerChip";
-import { V2ToastHost, type V2Toast } from "./V2Toast";
 import { V2FirstWorkspace } from "./V2FirstWorkspace";
 import { V2WorkspaceChooser } from "./V2WorkspaceChooser";
 import { selectCommandPanel } from "./chrome";
@@ -23,6 +22,7 @@ import {
   type V2CommandPanel,
 } from "./presentation";
 import { motionForSurface } from "./motion";
+import { notify } from "./notify";
 import { invitationAcceptPath, myInvitationsPath } from "./people";
 import { chooserInvitationRows, workspaceEntry, type MembershipsResponse, type PendingInvitationOption } from "./workspace";
 import "./tokens.css";
@@ -40,14 +40,11 @@ const V2ChromeContext = createContext<{
   layout: V2ChromeLayout;
   memberships: MembershipsResponse | undefined;
   switchWorkspace: (workspaceId: string) => Promise<void>;
-  /** A write that leaves no visible trace needs a sign-off (#213). */
-  showToast: (message: string, undo?: () => void) => void;
 }>({
   openPanel: () => {},
   layout: DESKTOP_LAYOUT,
   memberships: undefined,
   switchWorkspace: async () => {},
-  showToast: () => {},
 });
 
 export function useV2Chrome() {
@@ -75,13 +72,22 @@ async function acceptPendingInvitation(token: string): Promise<void> {
   await queryClient.invalidateQueries();
 }
 
+function openWorkspace(workspaceId: string) {
+  switchWorkspace(workspaceId).catch((error) => notify.error(error, { fallback: "Workspace could not be opened." }));
+}
+
+function acceptInvitation(token: string) {
+  acceptPendingInvitation(token)
+    .then(() => notify.success("Invitation accepted"))
+    .catch((error) => notify.error(error, { fallback: "Invitation could not be accepted." }));
+}
+
 export function V2Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [collapsed, setCollapsed] = useState(() =>
     typeof window === "undefined" ? false : readRailCollapsed(window.localStorage),
   );
   const [panel, setPanel] = useState<V2CommandPanel | null>(null);
-  const [toast, setToast] = useState<V2Toast | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const width = useViewportWidth();
   const layout = chromeLayoutForViewport(width);
@@ -146,7 +152,6 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
       layout,
       memberships,
       switchWorkspace,
-      showToast,
     }),
     [layout, memberships],
   );
@@ -168,14 +173,6 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
   // Flow 4's secondary action stands ahead of the chooser: a User with
   // Memberships reaches Workspace creation without being sent into one first.
   const onNewWorkspace = location === "/workspaces/new";
-
-  function showToast(message: string, undo?: () => void) {
-    setToast({ id: Date.now(), message, undo, state: "in" });
-  }
-
-  function dismissToast() {
-    setToast((current) => (current ? { ...current, state: "leaving" } : null));
-  }
 
   function selectPanel(next: V2CommandPanel | null) {
     setNavOpen(false);
@@ -218,8 +215,8 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
           rows={entry.rows}
           newWorkspaceHref="/workspaces/new"
           invitations={chooserInvitationRows(invitations)}
-          onChoose={(id) => void switchWorkspace(id)}
-          onAccept={(token) => void acceptPendingInvitation(token)}
+          onChoose={openWorkspace}
+          onAccept={acceptInvitation}
         />
       </V2ChromeContext.Provider>
     );
@@ -254,7 +251,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
             drawer={layout.rail === "drawer"}
             memberships={memberships}
             timerWorkspaceId={activeEntry?.workspaceId ?? null}
-            onSwitchWorkspace={(id) => void switchWorkspace(id)}
+            onSwitchWorkspace={openWorkspace}
           />
         ) : null}
         <div
@@ -288,13 +285,12 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
                 panel={panel}
                 onPanel={selectPanel}
                 timerWorkspaceLabel={timerWorkspaceLabel}
-                onToast={showToast}
               />
             )}
             <div className="df-chrome-body">
               <div className="df-stage">
                 {layout.timer === "strip" ? (
-                  <V2TimerChip variant="strip" workspaceLabel={timerWorkspaceLabel} onToast={showToast} />
+                  <V2TimerChip variant="strip" workspaceLabel={timerWorkspaceLabel} />
                 ) : null}
                 <main className="df-main" data-motion={RAIL_DESTINATION_MOTION}>
                   <div
@@ -329,7 +325,6 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
             ) : null}
           </SheetContent>
         </Sheet>
-        <V2ToastHost toast={toast} onDismiss={dismissToast} onGone={() => setToast(null)} />
       </div>
     </V2ChromeContext.Provider>
   );

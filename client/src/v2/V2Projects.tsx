@@ -8,6 +8,7 @@ import type { CrmClient, CrmProjectWithDetails, CrmTag } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
+import { isStandingRefusal, notify } from "./notify";
 import { tagsPath } from "./dossier";
 import { meterTone, swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
@@ -557,7 +558,8 @@ export function V2ProjectsPage() {
         queryClient.setQueryData([projectsKanbanPath()], context.previous);
       }
       setChangingId(null);
-      setWriteRefusal(error.message || "Failed to move Project");
+      if (!isStandingRefusal(error)) return notify.error(error, { fallback: "Project could not be moved." });
+      setWriteRefusal(chromeRefusal({ kind: "generic", message: error.message }));
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: [projectsKanbanPath()] });
@@ -603,9 +605,11 @@ export function V2ProjectsPage() {
       setBudgetDraft(EMPTY_PROJECT_BUDGET_DRAFT);
       setCreating(false);
       setWriteRefusal(null);
+      notify.success("Project created");
     },
     onError: (error: Error) => {
-      setWriteRefusal(error.message || "Failed to create Project");
+      if (!isStandingRefusal(error)) return notify.error(error, { fallback: "Project could not be created." });
+      setWriteRefusal(chromeRefusal({ kind: "generic", message: error.message }));
     },
   });
 

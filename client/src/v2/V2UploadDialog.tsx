@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { V2FormDialog } from "./V2FormDialog";
+import { notify } from "./notify";
 
 /** The object path a stored upload answers with, before any row points at it. */
 export async function storeUpload(file: File): Promise<string> {
@@ -87,6 +88,7 @@ export function V2UploadDialog({
   async function onSubmit() {
     if (files.length === 0) return;
     if (beforeUpload?.()) return;
+    const count = files.length;
     for (const file of files) {
       try {
         await upload(file);
@@ -96,6 +98,7 @@ export function V2UploadDialog({
       }
     }
     onOpenChange(false);
+    notify.success(count > 1 ? `${count} Files uploaded` : "File uploaded");
   }
 
   return (

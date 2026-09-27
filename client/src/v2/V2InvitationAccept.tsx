@@ -9,6 +9,7 @@ import {
   invitationPagePath,
   type InvitationAcceptStatus,
 } from "./people";
+import { notify } from "./notify";
 import "./tokens.css";
 import { Button } from "@/components/ui/button";
 
@@ -41,6 +42,7 @@ export function V2InvitationAcceptPage() {
       setStatus("accepted");
       await queryClient.invalidateQueries();
       await queryClient.refetchQueries({ queryKey: ["/api/auth/user"] });
+      notify.success("Invitation accepted");
       setLocation("/");
     },
     onError: (error: Error) => {

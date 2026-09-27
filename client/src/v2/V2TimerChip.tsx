@@ -2,15 +2,14 @@ import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { PlayIcon, PauseIcon, StopIcon } from "./icons";
 import { timerChipCommands } from "./chrome";
 import { timerChipModel } from "./presentation";
+import { notify } from "./notify";
 
 export function V2TimerChip({
   variant = "chip",
   workspaceLabel = null,
-  onToast,
 }: {
   variant?: "chip" | "strip";
   workspaceLabel?: string | null;
-  onToast?: (message: string) => void;
 }) {
   const {
     activeEntry,
@@ -48,33 +47,33 @@ export function V2TimerChip({
   function onPrimary() {
     if (commands.primary === "pause") {
       handlePause();
-      onToast?.("Timer paused");
+      notify.success("Timer paused");
       return;
     }
     if (commands.primary === "resume") {
       handleResume();
-      onToast?.("Timer resumed");
+      notify.success("Timer resumed");
       return;
     }
     if (taskStartBlockedReason === "no_project" || !selectedProjectId) {
-      onToast?.("Choose a Project before starting the Timer.");
+      notify.info("Choose a Project before starting the Timer.");
       return;
     }
     if (taskStartBlockedReason === "no_tasks") {
-      onToast?.("Create a Task before starting the Timer.");
+      notify.info("Create a Task before starting the Timer.");
       return;
     }
     if (taskStartBlockedReason === "no_task_selected" || taskStartBlockedReason === "loading") {
-      onToast?.("Choose a Task before starting the Timer.");
+      notify.info("Choose a Task before starting the Timer.");
       return;
     }
     handleStart();
-    onToast?.("Timer started");
+    notify.success("Timer started");
   }
 
   function onStop() {
     handleStop();
-    onToast?.("Timer stopped");
+    notify.success("Timer stopped");
   }
 
   const strip = variant === "strip";

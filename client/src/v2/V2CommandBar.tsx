@@ -28,7 +28,6 @@ type V2CommandBarProps = {
   panel: Panel;
   onPanel: (panel: Panel) => void;
   timerWorkspaceLabel?: string | null;
-  onToast?: (message: string) => void;
 };
 
 export function V2CommandBar({
@@ -36,7 +35,6 @@ export function V2CommandBar({
   panel,
   onPanel,
   timerWorkspaceLabel = null,
-  onToast,
 }: V2CommandBarProps) {
   const [location] = useLocation();
   const crumbs = breadcrumbFor(location, workspaceName);
@@ -90,7 +88,7 @@ export function V2CommandBar({
 
         <div style={{ flex: 1 }} />
 
-        <V2TimerChip workspaceLabel={timerWorkspaceLabel} onToast={onToast} />
+        <V2TimerChip workspaceLabel={timerWorkspaceLabel} />
 
         <Button variant="outline" type="button" data-testid="v2-ask" onClick={() => onPanel(selectCommandPanel(panel, "ask"))} className="df-btn">
           <SparkleIcon />

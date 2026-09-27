@@ -28,6 +28,7 @@ import { opportunityStageFromCombined } from "@shared/projectLifecycle";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
+import { isStandingRefusal, notify } from "./notify";
 import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { memberName } from "./today";
@@ -173,6 +174,14 @@ function useWorkspaceWrites() {
     readOnly,
     refusal: (errorMessage?: string, capability?: string) =>
       opportunityWriteRefusal({ readOnly, workspaceName, errorMessage, ownerName, capability }),
+    /** The inline refusal a failed write leaves, or null once any other failure is a toast. */
+    failed: (error: Error, capability?: string): string | null => {
+      if (!readOnly && !isStandingRefusal(error)) {
+        notify.error(error);
+        return null;
+      }
+      return opportunityWriteRefusal({ readOnly, workspaceName, errorMessage: error.message, ownerName, capability });
+    },
   };
 }
 
@@ -403,8 +412,9 @@ function OpportunityOutcomeDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
       onClose();
+      notify.success(kind === "won" ? "Opportunity marked won" : "Opportunity marked lost");
     },
-    onError: (error: Error) => setRefusal(writes.refusal(error.message, "Change Opportunity Stage")),
+    onError: (error: Error) => setRefusal(writes.failed(error, "Change Opportunity Stage")),
   });
 
   const readWin = readWinDraft(win, { status: row.status, clientId: row.clientId });
@@ -601,23 +611,27 @@ function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
   });
   const thread = composeOpportunityNotes(notes, new Date());
 
-  const onNoteError = (error: Error) => setRefusal(writes.refusal(error.message, "Manage Opportunity Notes"));
+  const onNoteError = (error: Error) => setRefusal(writes.failed(error, "Manage Opportunity Notes"));
   const saveNote = useMutation({
     mutationFn: ({ target, text }: { target: NoteComposer; text: string }) =>
       target.mode === "new"
         ? apiRequest("POST", opportunityNotesPath(opportunityId), { content: text })
         : apiRequest("PATCH", opportunityNotePath(opportunityId, target.id), { content: text }),
-    onSuccess: () => {
+    onSuccess: (_result, { target }) => {
       queryClient.invalidateQueries({ queryKey: notesKey });
       setComposer(null);
       setContent("");
       setRefusal(null);
+      notify.success(target.mode === "new" ? "Note added" : "Note saved");
     },
     onError: onNoteError,
   });
   const deleteNote = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", opportunityNotePath(opportunityId, id)),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: notesKey }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: notesKey });
+      notify.success("Note deleted");
+    },
     onError: onNoteError,
   });
 
@@ -761,8 +775,9 @@ function OpportunityDetailsCard({
     onSuccess: () => {
       setRefusal(null);
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      notify.success("Opportunity saved");
     },
-    onError: (error: Error) => setRefusal(writes.refusal(error.message, "Edit Opportunities")),
+    onError: (error: Error) => setRefusal(writes.failed(error, "Edit Opportunities")),
   });
 
   function onSubmit(event: FormEvent) {
@@ -835,7 +850,7 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
       setRefusal(null);
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
     },
-    onError: (error: Error) => setRefusal(writes.refusal(error.message, "Change Opportunity Stage")),
+    onError: (error: Error) => setRefusal(writes.failed(error, "Change Opportunity Stage")),
   });
 
   function onStage(next: string) {
@@ -1033,7 +1048,7 @@ export function V2OpportunitiesPage() {
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
-  const { workspaceName, readOnly, refusal } = useWorkspaceWrites();
+  const { workspaceName, readOnly, refusal, failed } = useWorkspaceWrites();
   const lists = useOpportunityLists();
   const { stages } = lists;
 
@@ -1070,9 +1085,10 @@ export function V2OpportunitiesPage() {
       setDraft(newOpportunityDraft(user?.id ?? ""));
       setCreating(false);
       setWriteRefusal(null);
+      notify.success("Opportunity created");
     },
     onError: (error: Error) => {
-      setWriteRefusal(refusal(error.message));
+      setWriteRefusal(failed(error));
     },
   });
 
@@ -1099,7 +1115,7 @@ export function V2OpportunitiesPage() {
         queryClient.setQueryData(["/api/crm/projects", "register"], context.previous);
       }
       setChangingId(null);
-      setWriteRefusal(refusal(error.message, "Change Opportunity Stage"));
+      setWriteRefusal(failed(error, "Change Opportunity Stage"));
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });

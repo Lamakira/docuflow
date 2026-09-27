@@ -410,20 +410,6 @@ export function chromeRefusal(input: ChromeRefusal): string {
   return input.message;
 }
 
-export type ToastModel = {
-  message: string;
-  edge: "bottom";
-  undoLabel: "UNDO" | null;
-};
-
-export function toastModel(input: { message: string; undo?: boolean }): ToastModel {
-  return {
-    message: input.message,
-    edge: "bottom",
-    undoLabel: input.undo ? "UNDO" : null,
-  };
-}
-
 export type RefusalPlacement = {
   open: boolean;
   align: "end";
