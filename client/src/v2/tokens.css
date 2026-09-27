@@ -1734,6 +1734,21 @@ button.df-activity-row {
   padding: var(--df-space-1);
 }
 
+.df-colour-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--df-space-2);
+}
+
+/* The named colour at full strength, so Red and Rose part before their tints do. */
+.df-colour-chip {
+  flex: none;
+  width: var(--df-space-4);
+  height: var(--df-space-4);
+  border-radius: 999px;
+  background: var(--df-swatch-base);
+}
+
 .df-policy-saved[data-motion="standard"] {
   opacity: 1;
   transform: none;

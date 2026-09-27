@@ -1652,7 +1652,10 @@ function ColourPicker({
                   if (colour.hex !== color) onChoose(colour.hex);
                 }}
               >
-                <span className="df-status" data-swatch="" style={swatchStyle(colour.hex)}>{colour.name}</span>
+                <span className="df-colour-option" style={swatchStyle(colour.hex)}>
+                  <span className="df-colour-chip" aria-hidden="true" />
+                  <span className="df-status" data-swatch="">{colour.name}</span>
+                </span>
               </CommandItem>
             ))}
           </CommandList>

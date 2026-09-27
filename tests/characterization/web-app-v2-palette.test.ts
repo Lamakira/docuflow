@@ -9,12 +9,17 @@ import {
   lifecycleColor,
   meterTone,
   projectStatusColor,
+  SCALE_STOPS,
   statusSwatch,
   statusTone,
   swatchStyle,
   taskStatusColor,
+  TAILWIND_SCALES,
+  type TailwindColourName,
 } from "../../client/src/v2/palette";
+import { PIPELINE_COLOURS } from "../../client/src/v2/pipelineLists";
 import { stageColor } from "../../client/src/v2/stageColor";
+import tailwindColors from "tailwindcss/colors";
 
 /**
  * The v2 palette, built on the brand amber. Amber marks the primary action;
@@ -356,6 +361,7 @@ describe("one colour per status (#274)", () => {
   it("hands the swatch to CSS as custom properties the badge rule reads", () => {
     const style = swatchStyle("#14b8a6") as Record<string, string>;
     expect(Object.keys(style).sort()).toEqual([
+      "--df-swatch-base",
       "--df-swatch-ink",
       "--df-swatch-ink-dark",
       "--df-swatch-line",
@@ -482,5 +488,58 @@ describe("v2 screens read colour from tokens", () => {
       });
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("the named option colours are Tailwind's own (Pipeline & lists)", () => {
+  const names = Object.keys(TAILWIND_SCALES) as TailwindColourName[];
+
+  it("takes every scale, stop for stop, from the installed Tailwind", () => {
+    for (const name of names) {
+      expect(TAILWIND_SCALES[name], name).toEqual(tailwindColors[name]);
+    }
+  });
+
+  it("offers each name at its Tailwind 500, which is what an option stores", () => {
+    expect(PIPELINE_COLOURS.map((colour) => colour.name)).toEqual([
+      "Pink", "Violet", "Indigo", "Blue", "Sky", "Cyan", "Teal", "Green", "Lime", "Amber", "Orange", "Red", "Rose", "Slate",
+    ]);
+    for (const colour of PIPELINE_COLOURS) {
+      const name = colour.name.toLowerCase() as TailwindColourName;
+      expect(colour.hex, colour.name).toBe(tailwindColors[name][500]);
+    }
+  });
+
+  it("draws a named colour's badge from its own scale, legible on either ground", () => {
+    const card = darkHexOf("--df-card-white");
+    for (const name of names) {
+      const scale = TAILWIND_SCALES[name];
+      const light = statusSwatch(scale[500]);
+      expect(light.tint, name).toBe(scale[SCALE_STOPS.light.tint]);
+      expect(light.line, name).toBe(scale[SCALE_STOPS.light.line]);
+      expect(SCALE_STOPS.light.ink.map((stop) => scale[stop]), name).toContain(light.ink);
+      expect(contrastRatio(light.ink, light.tint), name).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(light.ink, "#ffffff"), name).toBeGreaterThanOrEqual(4.5);
+
+      const dark = statusSwatch(scale[500], "dark");
+      expect(dark.tint, name).toBe(scale[SCALE_STOPS.dark.tint]);
+      expect(dark.line, name).toBe(scale[SCALE_STOPS.dark.line]);
+      expect(SCALE_STOPS.dark.ink.map((stop) => scale[stop]), name).toContain(dark.ink);
+      expect(contrastRatio(dark.ink, dark.tint), name).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(dark.ink, card), name).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("still draws a stored colour outside the names", () => {
+    const swatch = statusSwatch("#a8a29e");
+    expect(contrastRatio(swatch.ink, swatch.tint)).toBeGreaterThanOrEqual(4.5);
+    expect(swatch.tint).not.toBe("#a8a29e");
+  });
+
+  it("shows each picker option as a solid chip of its colour beside the badge", () => {
+    const admin = read("client/src/v2/V2Administration.tsx");
+    expect(admin).toMatch(/<span className="df-colour-option" style=\{swatchStyle\(colour\.hex\)\}>\s*<span className="df-colour-chip" aria-hidden="true" \/>\s*<span className="df-status" data-swatch="">\{colour\.name\}<\/span>/);
+    expect(rule(".df-colour-chip")).toMatch(/background:\s*var\(--df-swatch-base\)/);
+    expect(rule(".df-colour-chip")).not.toMatch(/#[0-9a-f]{3,6}\b/i);
   });
 });

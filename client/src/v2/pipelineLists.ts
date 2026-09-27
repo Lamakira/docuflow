@@ -25,6 +25,7 @@ import {
   type StoredOption,
 } from "@shared/pipelineLists";
 import type { CrmModuleWithFields } from "@shared/schema";
+import { TAILWIND_SCALES, type TailwindColourName } from "./palette";
 import { STAGE_FALLBACK_COLOR, stageColor } from "./stageColor";
 
 export { optionValue };
@@ -73,23 +74,19 @@ export const PIPELINE_LISTS: PipelineListSpec[] = [
 export const PIPELINE_LISTS_INTRO =
   "These lists feed the Opportunity stages and the Project type and Source dropdowns on Projects and Clients. A change applies to everyone in the Workspace.";
 
-/** The colours an option can wear; the seeded defaults all come from here. */
-export const PIPELINE_COLOURS: Array<{ name: string; hex: string }> = [
-  { name: "Pink", hex: "#ec4899" },
-  { name: "Violet", hex: "#8b5cf6" },
-  { name: "Indigo", hex: "#6366f1" },
-  { name: "Blue", hex: "#3b82f6" },
-  { name: "Sky", hex: "#0ea5e9" },
-  { name: "Cyan", hex: "#06b6d4" },
-  { name: "Teal", hex: "#14b8a6" },
-  { name: "Green", hex: "#22c55e" },
-  { name: "Lime", hex: "#84cc16" },
-  { name: "Amber", hex: "#f59e0b" },
-  { name: "Orange", hex: "#f97316" },
-  { name: "Red", hex: "#ef4444" },
-  { name: "Rose", hex: "#f43f5e" },
-  { name: "Slate", hex: STAGE_FALLBACK_COLOR },
+const PICKER_ORDER: TailwindColourName[] = [
+  "pink", "violet", "indigo", "blue", "sky", "cyan", "teal",
+  "green", "lime", "amber", "orange", "red", "rose", "slate",
 ];
+
+/**
+ * The colours an option can wear: Tailwind's named colours at 500, which is
+ * what an option stores. The seeded defaults all come from here.
+ */
+export const PIPELINE_COLOURS: Array<{ name: string; hex: string }> = PICKER_ORDER.map((name) => ({
+  name: name[0].toUpperCase() + name.slice(1),
+  hex: TAILWIND_SCALES[name][500],
+}));
 
 type StageRole = "open" | "outcome" | "follow-on";
 
