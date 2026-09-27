@@ -123,8 +123,7 @@ export type EmptyStateIconId =
   | "documents"
   | "files"
   | "search"
-  | "filters"
-  | "clients";
+  | "filters";
 
 const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
   tasks: ListChecks,
@@ -137,7 +136,6 @@ const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
   files: Paperclip,
   search: SearchX,
   filters: FilterX,
-  clients: Users,
 };
 
 export function EmptyStateIcon({ id }: { id: EmptyStateIconId }) {

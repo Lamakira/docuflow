@@ -3,9 +3,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-  clientChoiceDraft,
-  NEW_CLIENT_CHOICE,
-  readClientChoice,
   composeOpportunityForm,
   composeOpportunityHistory,
   composeOpportunityNotes,
@@ -277,34 +274,16 @@ describe("Mark as won and Mark as lost", () => {
 });
 
 describe("The record's empty states", () => {
-  it("offers to choose a Client right on the record, never pointing back at it", () => {
-    const record = composeOpportunityRecord({ ...row(), clientName: null });
-    expect(record.clientEmptyState).toEqual({
-      title: "No Client yet",
-      copy: expect.stringContaining("Choose who this sale is for, or create a new Client."),
-      action: "Choose a Client",
-    });
-    expect(JSON.stringify(record.clientEmptyState)).not.toMatch(/Opportunity record/);
-    expect(composeOpportunityRecord({ ...row(), clientId: "client-1" }).clientEmptyState).toBeNull();
+  it("chooses the Client in the record's form, and shows the Client card only once one is set", () => {
+    expect(composeOpportunityRecord({ ...row(), clientName: null }).clientHref).toBeNull();
+    expect(composeOpportunityRecord({ ...row(), clientId: "client-1" }).clientHref).toBe("/clients/client-1");
 
-    expect(pageSource).toContain('icon="clients"');
-    expect(pageSource).toContain('testId="v2-opportunity-client-empty"');
-    expect(pageSource).toContain("<ChooseClientDialog");
-    expect(pageSource).not.toContain("Choose one in the Opportunity record");
-  });
-
-  it("links an existing Client or names a new one in the Client dialog", () => {
-    expect(clientChoiceDraft(3)).toEqual({ choice: "", name: "" });
-    expect(clientChoiceDraft(0)).toEqual({ choice: NEW_CLIENT_CHOICE, name: "" });
-    expect(readClientChoice({ choice: "", name: "" }).issue).toBe("Choose a Client, or create a new one.");
-    expect(readClientChoice({ choice: "client-1", name: "ignored" })).toEqual({ kind: "existing", clientId: "client-1", issue: null });
-    expect(readClientChoice({ choice: NEW_CLIENT_CHOICE, name: "  " }).issue).toBe("Name the new Client.");
-    expect(readClientChoice({ choice: NEW_CLIENT_CHOICE, name: " Harbour Shipping " })).toEqual({
-      kind: "new",
-      name: "Harbour Shipping",
-      issue: null,
-    });
-    expect(pageSource).toContain('apiRequest("POST", "/api/crm/clients", { name: picked.name })');
+    expect(pageSource).toMatch(/\{record\.clientHref \? \(\s*<section className="df-card" data-testid="v2-opportunity-client">/);
+    expect(pageSource).toContain('<Link href={record.clientHref}>Open Client</Link>');
+    expect(pageSource).toContain('ariaLabel="Client"');
+    expect(pageSource).not.toContain("No Client yet. Choose");
+    expect(pageSource).not.toContain("v2-opportunity-client-empty");
+    expect(pageSource).not.toContain("ChooseClientDialog");
   });
 
   it("asks for the Lost reason v1 never recorded", () => {

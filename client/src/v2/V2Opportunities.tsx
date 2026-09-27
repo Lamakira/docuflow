@@ -38,9 +38,7 @@ import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, V2_SELECT_NONE, type V2SelectOption } from "./V2Select";
 import {
   CURRENCY_OPTIONS,
-  NEW_CLIENT_CHOICE,
   canChangeOpportunityStage,
-  clientChoiceDraft,
   combinedStatusForStage,
   composeOpportunityForm,
   composeOpportunityHistory,
@@ -59,14 +57,12 @@ import {
   opportunityStageHistoryPath,
   opportunitySourceOptions,
   opportunityWriteRefusal,
-  readClientChoice,
   readLostDraft,
   readWinDraft,
   stageOptionsFromFieldOptions,
   winDraft,
   winProjectTypeOptions,
   withSavedChoice,
-  type ClientChoiceDraft,
   type ListOption,
   type LostDraft,
   type OpportunityCard,
@@ -812,95 +808,10 @@ function OpportunityDetailsCard({
   );
 }
 
-/** Links the Opportunity to a Client of the Workspace, or to a new Client named here. */
-function ChooseClientDialog({
-  opportunityId,
-  clients,
-  onClose,
-}: {
-  opportunityId: string;
-  clients: CrmClient[];
-  onClose: () => void;
-}) {
-  const writes = useWorkspaceWrites();
-  const [draft, setDraft] = useState<ClientChoiceDraft>(() => clientChoiceDraft(clients.length));
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const choice = readClientChoice(draft);
-
-  const save = useMutation({
-    mutationFn: async (picked: Exclude<ReturnType<typeof readClientChoice>, { kind: null }>) => {
-      const clientId =
-        picked.kind === "new"
-          ? ((await apiRequest("POST", "/api/crm/clients", { name: picked.name })) as { id: string }).id
-          : picked.clientId;
-      return apiRequest("PATCH", `/api/crm/projects/${opportunityId}`, { clientId });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/clients"] });
-      onClose();
-    },
-    onError: (error: Error) => setRefusal(writes.refusal(error.message, "Edit Opportunities")),
-  });
-
-  function submit() {
-    if (writes.readOnly) {
-      setRefusal(writes.refusal());
-      return;
-    }
-    if (choice.kind) save.mutate(choice);
-  }
-
-  const creating = draft.choice === NEW_CLIENT_CHOICE;
-  return (
-    <V2FormDialog
-      open
-      onOpenChange={(open) => !open && onClose()}
-      title="Choose a Client"
-      description="The Client this sale is for. Winning the Opportunity makes a Client Project for them."
-      submitLabel={creating ? "Create and link Client" : "Link Client"}
-      pending={save.isPending}
-      canSubmit={Boolean(choice.kind)}
-      onSubmit={submit}
-      refusal={refusal}
-      testId="v2-opportunity-choose-client"
-    >
-      <label className="df-daily-field">
-        CLIENT
-        <V2FilterSelect
-          label=""
-          ariaLabel="Client"
-          value={draft.choice || V2_SELECT_NONE}
-          options={[
-            { value: V2_SELECT_NONE, label: "Choose a Client", disabled: true },
-            ...clients.map((client) => ({ value: client.id, label: client.name })),
-            { value: NEW_CLIENT_CHOICE, label: "New Client…" },
-          ]}
-          onChange={(value) => setDraft({ ...draft, choice: fromSelect(value) })}
-        />
-      </label>
-      {creating ? (
-        <label className="df-daily-field">
-          CLIENT NAME
-          <input
-            type="text"
-            value={draft.name}
-            autoFocus
-            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-            placeholder="Client name"
-            aria-label="New Client name"
-          />
-        </label>
-      ) : null}
-    </V2FormDialog>
-  );
-}
-
 function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
   const lists = useOpportunityLists();
   const writes = useWorkspaceWrites();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [choosingClient, setChoosingClient] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
   const { data: clients = [] } = useQuery<CrmClient[]>({ queryKey: ["/api/crm/clients"] });
@@ -1042,40 +953,18 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
 
       <OpportunityNotesCard opportunityId={row.id} />
 
-      <section className="df-card" data-testid="v2-opportunity-client">
-        <div className="df-card-head">
-          <h2 className="df-card-title">Client</h2>
-          {record.clientHref ? (
+      {record.clientHref ? (
+        <section className="df-card" data-testid="v2-opportunity-client">
+          <div className="df-card-head">
+            <h2 className="df-card-title">Client</h2>
             <Button asChild variant="outline" className="df-btn">
               <Link href={record.clientHref}>Open Client</Link>
             </Button>
-          ) : null}
-        </div>
-        {record.clientEmptyState ? (
-          <V2EmptyState
-            icon="clients"
-            title={record.clientEmptyState.title}
-            copy={record.clientEmptyState.copy}
-            testId="v2-opportunity-client-empty"
-            action={
-              <Button
-                variant="default"
-                type="button"
-                className="df-btn"
-                onClick={() => (writes.readOnly ? setRefusal(writes.refusal()) : setChoosingClient(true))}
-              >
-                {record.clientEmptyState.action}
-              </Button>
-            }
-          />
-        ) : (
+          </div>
           <p className="df-update-body">{record.clientLabel}</p>
-        )}
-      </section>
-
-      {choosingClient ? (
-        <ChooseClientDialog opportunityId={row.id} clients={clients} onClose={() => setChoosingClient(false)} />
+        </section>
       ) : null}
+
 
       {outcome ? (
         <OpportunityOutcomeDialog

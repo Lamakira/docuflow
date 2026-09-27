@@ -97,17 +97,10 @@ export type OpportunityRecordModel = {
   lostReason: { label: string; detail: string | null } | null;
   /** Lost before a reason was asked for (v1 moves a row to Lost without one). */
   lostReasonMissing: boolean;
-  /** The Client card's empty state, when no Client is chosen yet. */
-  clientEmptyState: EmptyStateCopy | null;
 };
 
 export type EmptyStateCopy = { title: string; copy: string; action?: string };
 
-const NO_CLIENT_STATE: EmptyStateCopy = {
-  title: "No Client yet",
-  copy: "Winning this Opportunity makes a Client Project for its Client. Choose who this sale is for, or create a new Client.",
-  action: "Choose a Client",
-};
 
 export function opportunityHref(id: string): string {
   return `/opportunities/${id}`;
@@ -145,7 +138,6 @@ export function composeOpportunityRecord(input: OpportunityRecordInput): Opportu
       ? { label: optionLabel(input.lostReasonOptions, input.lostReason!), detail: input.lostReasonDetail?.trim() || null }
       : null,
     lostReasonMissing: isLost && !input.lostReason,
-    clientEmptyState: input.clientId ? null : NO_CLIENT_STATE,
   };
 }
 
@@ -776,26 +768,6 @@ export function composeOpportunityNotes(notes: OpportunityNoteInput[], now: Date
       action: "Write the first note",
     },
   };
-}
-
-/** The Client dialog's choice: a Client of the Workspace, or a new one named here. */
-export const NEW_CLIENT_CHOICE = "__new_client__";
-
-export type ClientChoiceDraft = { choice: string; name: string };
-
-export function clientChoiceDraft(clientCount: number): ClientChoiceDraft {
-  return { choice: clientCount > 0 ? "" : NEW_CLIENT_CHOICE, name: "" };
-}
-
-export function readClientChoice(
-  draft: ClientChoiceDraft,
-): { kind: "existing"; clientId: string; issue: null } | { kind: "new"; name: string; issue: null } | { kind: null; issue: string } {
-  if (draft.choice === NEW_CLIENT_CHOICE) {
-    const name = draft.name.trim();
-    return name ? { kind: "new", name, issue: null } : { kind: null, issue: "Name the new Client." };
-  }
-  if (!draft.choice) return { kind: null, issue: "Choose a Client, or create a new one." };
-  return { kind: "existing", clientId: draft.choice, issue: null };
 }
 
 export function opportunityNotesPath(id: string): string {
