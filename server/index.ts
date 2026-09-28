@@ -4,6 +4,8 @@
 import "./telemetry";
 import { createApp, log } from "./app";
 import { config, logConfigSummary } from "./config";
+import { assertRuntimeRoleEnforcesRls } from "./databaseRole";
+import { pool } from "./db";
 import { serveStatic } from "./static";
 
 /**
@@ -20,6 +22,8 @@ import { serveStatic } from "./static";
 (async () => {
   // First line of the boot log: what this process resolved its environment to.
   logConfigSummary();
+
+  await assertRuntimeRoleEnforcesRls({ pool, production: config.isProduction });
 
   if (config.role === "worker") {
     const { startWorkerLoop } = await import("./worker");

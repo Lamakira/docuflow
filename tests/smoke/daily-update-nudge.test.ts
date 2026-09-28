@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
-import { inSeededWorkspace } from "../helpers/workspace";
+import { createSeededMember, inSeededWorkspace } from "../helpers/workspace";
 import { sentEmails } from "../fakes/resend";
 
 /**
@@ -20,7 +20,7 @@ const WORKDAY = "2026-08-18";
 
 async function seedMember(email = "ada@test.invalid") {
   const { storage } = await import("../../server/storage");
-  const user = await storage.createUser({
+  const user = await createSeededMember({
     email,
     firstName: "Ada",
   });

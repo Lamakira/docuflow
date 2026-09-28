@@ -26,7 +26,7 @@ import { config } from "./config";
 import { agentProtocolHandshake, allowAgentProtocol } from "./agentProtocol";
 import { issueAccessToken, verifyAccessToken } from "./desktopTokens";
 import { logInfo, logError, logTimeEvent } from "./logger";
-import { parseObjectPath, storagePort } from "./objectStorage";
+import { parseObjectPath, storagePort, workspaceScreenshotKey } from "./objectStorage";
 import {
   commitActivityScreenshot,
   createActivityJobsPort,
@@ -724,7 +724,7 @@ export function registerAgentRoutes(app: Express): void {
         // for an object already in memory, and which no provider without signing
         // can do at all.
         const privateDir = config.objectStorage.privateDir;
-        const objectSubPath = `agent-screenshots/${id}.${imageExt}`;
+        const objectSubPath = workspaceScreenshotKey(screenshot.workspaceId, id, imageExt);
         const ref = parseObjectPath(`${privateDir}/${objectSubPath}`);
 
         await storagePort.writeBytes(ref, imageBuffer, { contentType: imageMime });

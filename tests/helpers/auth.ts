@@ -57,7 +57,8 @@ export async function registerUser(
 
 /**
  * A User row with no IdentityProvider link — the state every User was in before
- * the #108 import ran, and the one the import suites are about.
+ * the #108 import ran, and the one the import suites are about. The User is a
+ * Member of the seeded Workspace.
  *
  * No agent comes back, because linking is what makes signing in possible. A
  * suite that wants one anyway passes the id to `signIn`, which links first.
@@ -66,9 +67,9 @@ export async function createUnlinkedUser(
   overrides: { email?: string; firstName?: string; lastName?: string } = {}
 ): Promise<Omit<TestUser, "agent">> {
   const email = overrides.email ?? uniqueEmail();
-  const { storage } = await import("../../server/storage");
+  const { createSeededMember } = await import("./workspace");
 
-  const user = await storage.createUser({
+  const user = await createSeededMember({
     email,
     firstName: overrides.firstName ?? null,
     lastName: overrides.lastName ?? null,

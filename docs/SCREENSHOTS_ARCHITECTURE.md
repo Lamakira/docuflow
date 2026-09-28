@@ -20,7 +20,7 @@ Desktop Agent
                   ├─ PUT  /api/agent/screenshots/upload/:id
                   │     → sharp: resize 1920px + WebP 75%
                   │     → upload to GCS via signed PUT URL
-                  │     → update DB record (storageKey = "/objects/agent-screenshots/{id}.webp")
+                  │     → update DB record (storageKey = "/objects/ws/{workspaceId}/agent-screenshots/{id}.webp")
                   └─ POST /api/agent/screenshots/confirm
                         → validates storageKey not "pending-*"
 ```
@@ -40,7 +40,7 @@ id            uuid PRIMARY KEY
 timeEntryId   varchar  REFERENCES time_entries(id) ON DELETE CASCADE
 userId        varchar  REFERENCES users(id) ON DELETE CASCADE
 crmProjectId  varchar  REFERENCES crm_projects(id) ON DELETE CASCADE
-storageKey    varchar(500)   -- "/objects/agent-screenshots/{id}.webp"
+storageKey    varchar(500)   -- "/objects/ws/{workspaceId}/agent-screenshots/{id}.webp" (legacy rows: "/objects/agent-screenshots/{id}.webp")
 capturedAt    timestamp
 createdAt     timestamp
 

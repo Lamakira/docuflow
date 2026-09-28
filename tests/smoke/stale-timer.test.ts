@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
-import { inSeededWorkspace } from "../helpers/workspace";
+import { createSeededMember, inSeededWorkspace } from "../helpers/workspace";
 
 /**
  * Stale-timer detection as a Job (#84, spec #81).
@@ -18,7 +18,7 @@ const NOW = new Date("2026-08-18T16:00:00.000Z");
 async function seedRunningEntry(lastActivityAt: Date) {
   const { storage } = await import("../../server/storage");
   const { inSeededWorkspace } = await import("../helpers/workspace");
-  const user = await storage.createUser({
+  const user = await createSeededMember({
     email: "timer@test.invalid",
     firstName: "Tim",
   });

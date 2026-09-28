@@ -106,8 +106,6 @@ import {
   type InsertProjectDailyUpdate,
   type ProjectDailyUpdateWithDetails,
   DOCUMENT_ACCESS_WORKSPACE,
-  SEEDED_WORKSPACE_ID,
-  SEEDED_MEMBER_ROLE_ID,
   PARALLEL_WORKSPACE_ID,
   PARALLEL_MEMBER_ROLE_ID,
   memberships,
@@ -156,7 +154,7 @@ import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import { assertSeatAvailable } from "./billing/seats";
 import type { ImportableUser } from "./identity/userImport";
-import { eq, ne, and, desc, like, or, isNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike, type AnyColumn } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike, type AnyColumn } from "drizzle-orm";
 import type {
   CrmProjectListOptions,
   ProjectDocumentationListOptions,
@@ -191,7 +189,6 @@ export class DatabaseStorage implements IStorage {
   async createUser(userData: InsertUser): Promise<User> {
     return db.transaction(async (tx) => {
       const [user] = await tx.insert(users).values(userData).returning();
-      await this.ensureSeededMembership(user, tx);
       await this.ensureParallelMembership(user, tx);
       return user;
     });
@@ -218,7 +215,6 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(users.email, userData.email))
           .returning();
-        await this.ensureSeededMembership(updated);
         await this.ensureParallelMembership(updated);
         return updated;
       }
@@ -245,7 +241,6 @@ export class DatabaseStorage implements IStorage {
         },
       })
       .returning();
-    await this.ensureSeededMembership(user);
     await this.ensureParallelMembership(user);
     return user;
   }
@@ -296,37 +291,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   /**
-   * New Users join the seeded Workspace. Identity is global; the Membership is
-   * the Active Workspace for this phase. Not taken from request input.
-   * Adding a Membership fails closed when Billable Seat capacity is exhausted.
-   */
-  private async ensureSeededMembership(
-    user: User,
-    writer: Pick<typeof db, "insert" | "select"> = db
-  ): Promise<void> {
-    await runWithWorkspaceContext({ workspaceId: SEEDED_WORKSPACE_ID }, async () => {
-      const [existing] = await writer
-        .select({ id: memberships.id })
-        .from(memberships)
-        .where(and(eq(memberships.workspaceId, SEEDED_WORKSPACE_ID), eq(memberships.userId, user.id)))
-        .limit(1);
-      if (existing) return;
-      if (!user.isArchived) await assertSeatAvailable(writer);
-      await writer
-        .insert(memberships)
-        .values({
-          workspaceId: SEEDED_WORKSPACE_ID,
-          userId: user.id,
-          workspaceRoleId: SEEDED_MEMBER_ROLE_ID,
-          archivedAt: user.isArchived ? new Date() : null,
-        })
-        .onConflictDoNothing();
-    });
-  }
-
-  /**
-   * In the parallel v2 environment, also join Harbour View so the switcher
-   * can be demonstrated (#183). Production stays one Membership.
+   * A new User joins no Workspace (#297): Workspaces add people through
+   * Invitations. In the parallel v2 environment only, join Harbour View so the
+   * switcher can be demonstrated (#183).
    */
   private async ensureParallelMembership(
     user: User,
@@ -735,7 +702,7 @@ export class DatabaseStorage implements IStorage {
     const allDocs = await db
       .select()
       .from(documents)
-      .where(or(...projectIds.map((pid) => eq(documents.projectId, pid))))
+      .where(and(inArray(documents.projectId, projectIds), inWorkspace(documents)))
       .orderBy(documents.projectId, documents.position);
 
     return allDocs.map(doc => ({
@@ -1645,35 +1612,32 @@ export class DatabaseStorage implements IStorage {
     return await db.select(safeColumns).from(users).orderBy(asc(users.firstName), asc(users.lastName)) as SafeUser[];
   }
 
+  /**
+   * The platform directory (ADR-0025) archives the account, so every Membership
+   * follows it. Restoring takes a Billable Seat in each Workspace it returns to.
+   */
   async archiveUser(userId: string, isArchived: boolean): Promise<SafeUser | undefined> {
     if (!isArchived) {
       return db.transaction(async (tx) => {
-        const restored = await runWithWorkspaceContext(
-          { workspaceId: SEEDED_WORKSPACE_ID },
-          async () => {
-            const [membership] = await tx
-              .select({ archivedAt: memberships.archivedAt })
-              .from(memberships)
-              .where(
-                and(eq(memberships.workspaceId, SEEDED_WORKSPACE_ID), eq(memberships.userId, userId))
-              )
-              .limit(1);
-            if (membership?.archivedAt) await assertSeatAvailable(tx);
-            const [updated] = await tx
-              .update(users)
-              .set({ isArchived: false, updatedAt: new Date() })
-              .where(eq(users.id, userId))
-              .returning();
-            if (updated) {
-              await tx
-                .update(memberships)
-                .set({ archivedAt: null, updatedAt: new Date() })
-                .where(eq(memberships.userId, userId));
-            }
-            return updated && toSafeUser(updated);
-          }
-        );
-        return restored;
+        const archived = await tx
+          .select({ workspaceId: memberships.workspaceId })
+          .from(memberships)
+          .where(and(eq(memberships.userId, userId), isNotNull(memberships.archivedAt)));
+        for (const { workspaceId } of archived) {
+          await runWithWorkspaceContext({ workspaceId }, () => assertSeatAvailable(tx));
+        }
+        const [updated] = await tx
+          .update(users)
+          .set({ isArchived: false, updatedAt: new Date() })
+          .where(eq(users.id, userId))
+          .returning();
+        if (updated) {
+          await tx
+            .update(memberships)
+            .set({ archivedAt: null, updatedAt: new Date() })
+            .where(eq(memberships.userId, userId));
+        }
+        return updated && toSafeUser(updated);
       });
     }
     const [updated] = await db
@@ -1685,7 +1649,7 @@ export class DatabaseStorage implements IStorage {
       await db
         .update(memberships)
         .set({ archivedAt: new Date(), updatedAt: new Date() })
-        .where(eq(memberships.userId, userId));
+        .where(and(eq(memberships.userId, userId), isNull(memberships.archivedAt)));
     }
     return updated && toSafeUser(updated);
   }

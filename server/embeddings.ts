@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { config } from "./config";
 import { db } from "./db";
 import { documentEmbeddings, documents, projects, companyDocumentEmbeddings, companyDocuments, companyDocumentFolders } from "@shared/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
 import { inWorkspace, requireWorkspaceContext } from "./workspaceContext";
@@ -219,11 +219,16 @@ export interface SearchResult {
   similarity: number;
 }
 
+/**
+ * Project Document chunks in the Active Workspace, limited to the Projects the
+ * caller may open. An empty list matches nothing.
+ */
 export async function searchSimilarChunks(
-  userId: string,
+  projectIds: string[],
   query: string,
   limit: number = 15
 ): Promise<SearchResult[]> {
+  if (projectIds.length === 0) return [];
   const queryEmbedding = await generateEmbedding(query);
   const embeddingString = `[${queryEmbedding.join(",")}]`;
   
@@ -235,7 +240,8 @@ export async function searchSimilarChunks(
       metadata,
       1 - (embedding <=> ${embeddingString}::vector) as similarity
     FROM document_embeddings
-    WHERE owner_id = ${userId}
+    WHERE workspace_id = ${requireWorkspaceContext().workspaceId}
+      AND project_id IN (${sql.join(projectIds.map((id) => sql`${id}`), sql`, `)})
     ORDER BY embedding <=> ${embeddingString}::vector
     LIMIT ${limit}
   `);
@@ -251,11 +257,12 @@ export async function searchSimilarChunks(
   }));
 }
 
-export async function hasEmbeddings(userId: string): Promise<boolean> {
+export async function hasEmbeddings(projectIds: string[]): Promise<boolean> {
+  if (projectIds.length === 0) return false;
   const result = await db
     .select({ count: sql<number>`count(*)` })
     .from(documentEmbeddings)
-    .where(eq(documentEmbeddings.ownerId, userId));
+    .where(and(inWorkspace(documentEmbeddings), inArray(documentEmbeddings.projectId, projectIds)));
   
   return (result[0]?.count || 0) > 0;
 }
@@ -264,7 +271,7 @@ export async function rebuildAllEmbeddings(userId: string): Promise<{ processed:
   const userProjects = await db
     .select()
     .from(projects)
-    .where(eq(projects.ownerId, userId));
+    .where(and(eq(projects.ownerId, userId), inWorkspace(projects)));
   
   let processed = 0;
   const errors: string[] = [];
@@ -273,7 +280,7 @@ export async function rebuildAllEmbeddings(userId: string): Promise<{ processed:
     const projectDocs = await db
       .select()
       .from(documents)
-      .where(eq(documents.projectId, project.id));
+      .where(and(eq(documents.projectId, project.id), inWorkspace(documents)));
     
     for (const doc of projectDocs) {
       try {

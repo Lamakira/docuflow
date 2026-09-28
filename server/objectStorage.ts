@@ -9,6 +9,10 @@ import {
 import type { StoragePort, StoredObjectRef } from "./storagePort";
 import { GcsStoragePort } from "./gcsStorage";
 import { ReplitStoragePort } from "./replitStorage";
+import { and, eq } from "drizzle-orm";
+import { companyDocuments, files, objectUploadSlots, timeEntryScreenshots } from "@shared/schema";
+import { db } from "./db";
+import { currentWorkspaceContext, inWorkspace, requireWorkspaceContext } from "./workspaceContext";
 
 /**
  * The storage this deployment talks to, chosen once by what the environment
@@ -108,10 +112,10 @@ export class ObjectStorageService {
    */
   async getObjectEntityUpload(): Promise<{ uploadURL: string; objectPath: string }> {
     const privateObjectDir = this.getPrivateObjectDir();
-    const objectId = randomUUID();
+    const key = newWorkspaceFileKey();
     return {
-      uploadURL: await uploadUrlFor(`${privateObjectDir}/uploads/${objectId}`),
-      objectPath: `/objects/uploads/${objectId}`,
+      uploadURL: await uploadUrlFor(`${privateObjectDir}/${key}`),
+      objectPath: `/objects/${key}`,
     };
   }
 
@@ -123,10 +127,10 @@ export class ObjectStorageService {
    */
   async getPublicUpload(): Promise<{ uploadURL: string; publicPath: string }> {
     const publicDir = this.getPublicObjectSearchPaths()[0];
-    const objectId = randomUUID();
+    const key = newWorkspaceFileKey();
     return {
-      uploadURL: await uploadUrlFor(`${publicDir}/uploads/${objectId}`),
-      publicPath: `/public-objects/uploads/${objectId}`,
+      uploadURL: await uploadUrlFor(`${publicDir}/${key}`),
+      publicPath: `/public-objects/${key}`,
     };
   }
 
@@ -168,6 +172,7 @@ export class ObjectStorageService {
       return normalizedPath;
     }
 
+    assertObjectInActiveWorkspace(normalizedPath);
     const ref = await this.getObjectEntityFile(normalizedPath);
     await storagePort.setAclPolicy(ref, aclPolicy);
     return normalizedPath;
@@ -276,6 +281,60 @@ export function parseObjectPath(path: string): StoredObjectRef {
     bucketName: pathParts[1],
     objectName: pathParts.slice(2).join("/"),
   };
+}
+
+/**
+ * A new File object's key (ADR-0012): immutable, ID-only, and prefixed by the
+ * Active Workspace. The database row stays the key authority, so legacy
+ * `uploads/<uuid>` keys keep resolving until the R2 move copies them (#59).
+ */
+function newWorkspaceFileKey(): string {
+  const { workspaceId } = requireWorkspaceContext();
+  return `ws/${workspaceId}/files/${randomUUID()}/${randomUUID()}`;
+}
+
+/** The Workspace an ADR-0012 key belongs to, or null for a legacy key. */
+export function objectPathWorkspaceId(objectPath: string): string | null {
+  const match = /^\/(?:objects|public-objects)\/ws\/([^/]+)\//.exec(objectPath);
+  return match ? match[1] : null;
+}
+
+/**
+ * Knowing another Workspace's key is not authority to attach its object here.
+ * Legacy keys carry no Workspace and pass; their rows remain the only guard.
+ */
+export function assertObjectInActiveWorkspace(objectPath: string): void {
+  const owner = objectPathWorkspaceId(objectPath);
+  if (owner !== null && owner !== currentWorkspaceContext()?.workspaceId) {
+    throw new ObjectNotFoundError();
+  }
+}
+
+/** An agent screenshot's key (ADR-0012), under the Workspace that owns its row. */
+export function workspaceScreenshotKey(workspaceId: string, screenshotId: string, ext: string): string {
+  return `ws/${workspaceId}/agent-screenshots/${screenshotId}.${ext}`;
+}
+
+/**
+ * Whether the Active Workspace owns a private object. A prefixed key says so
+ * itself; a legacy key belongs where a row in this Workspace references it.
+ */
+export async function isObjectInActiveWorkspace(objectPath: string): Promise<boolean> {
+  const ctx = currentWorkspaceContext();
+  if (!ctx) return false;
+  const owner = objectPathWorkspaceId(objectPath);
+  if (owner !== null) return owner === ctx.workspaceId;
+  const referenced = await Promise.all([
+    db.select({ id: files.id }).from(files)
+      .where(and(inWorkspace(files), eq(files.storagePath, objectPath))).limit(1),
+    db.select({ id: companyDocuments.id }).from(companyDocuments)
+      .where(and(inWorkspace(companyDocuments), eq(companyDocuments.storagePath, objectPath))).limit(1),
+    db.select({ id: objectUploadSlots.id }).from(objectUploadSlots)
+      .where(and(inWorkspace(objectUploadSlots), eq(objectUploadSlots.objectPath, objectPath))).limit(1),
+    db.select({ id: timeEntryScreenshots.id }).from(timeEntryScreenshots)
+      .where(and(inWorkspace(timeEntryScreenshots), eq(timeEntryScreenshots.storageKey, objectPath))).limit(1),
+  ]);
+  return referenced.some((rows) => rows.length > 0);
 }
 
 /**

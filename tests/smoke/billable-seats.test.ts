@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetDb } from "../helpers/db";
-import { inSeededWorkspace } from "../helpers/workspace";
+import { createSeededMember, inSeededWorkspace } from "../helpers/workspace";
 
 /**
  * Phase 8 ticket #141: Billable Seats from active Memberships.
@@ -15,16 +15,15 @@ describe("Billable Seat count", () => {
   });
 
   it("equals non-archived Memberships in the Workspace", async () => {
-    const { storage } = await import("../../server/storage");
     const { countConsumedSeats } = await import("../../server/modules/billing");
 
     await expect(inSeededWorkspace(() => countConsumedSeats())).resolves.toBe(0);
 
-    await storage.createUser({
+    await createSeededMember({
       email: "ada@test.invalid",
       firstName: "Ada",
     });
-    await storage.createUser({
+    await createSeededMember({
       email: "bob@test.invalid",
       firstName: "Bob",
     });
@@ -32,15 +31,24 @@ describe("Billable Seat count", () => {
     await expect(inSeededWorkspace(() => countConsumedSeats())).resolves.toBe(2);
   });
 
+  it("takes no seat for a User who has no Membership", async () => {
+    const { storage } = await import("../../server/storage");
+    const { countConsumedSeats } = await import("../../server/modules/billing");
+
+    await storage.createUser({ email: "ada@test.invalid", firstName: "Ada" });
+
+    await expect(inSeededWorkspace(() => countConsumedSeats())).resolves.toBe(0);
+  });
+
   it("does not count Archived Memberships", async () => {
     const { storage } = await import("../../server/storage");
     const { countConsumedSeats } = await import("../../server/modules/billing");
 
-    const ada = await storage.createUser({
+    const ada = await createSeededMember({
       email: "ada@test.invalid",
       firstName: "Ada",
     });
-    await storage.createUser({
+    await createSeededMember({
       email: "bob@test.invalid",
       firstName: "Bob",
     });
@@ -71,7 +79,7 @@ describe("fail-closed Membership add", () => {
     await resetDb();
   });
 
-  it("rejects adding a Membership that would exceed purchased capacity", async () => {
+  it("rejects restoring a Membership that would exceed purchased capacity", async () => {
     const { storage } = await import("../../server/storage");
     const {
       SeatExhaustedError,
@@ -80,31 +88,30 @@ describe("fail-closed Membership add", () => {
       setEntitlementOverride,
     } = await import("../../server/modules/billing");
 
-    await inSeededWorkspace(() =>
-      setEntitlementOverride({ seatCapacity: 1 }, { kind: "system" })
-    );
-
-    await storage.createUser({
+    await createSeededMember({
       email: "ada@test.invalid",
       firstName: "Ada",
     });
+    const bob = await createSeededMember({
+      email: "bob@test.invalid",
+      firstName: "Bob",
+    });
+    await storage.archiveUser(bob.id, true);
+
+    await inSeededWorkspace(() =>
+      setEntitlementOverride({ seatCapacity: 1 }, { kind: "system" })
+    );
     await expect(inSeededWorkspace(() => countConsumedSeats())).resolves.toBe(1);
     await expect(inSeededWorkspace(() => assertSeatAvailable())).rejects.toBeInstanceOf(
       SeatExhaustedError
     );
 
-    await expect(
-      storage.createUser({
-        email: "bob@test.invalid",
-        firstName: "Bob",
-      })
-    ).rejects.toBeInstanceOf(SeatExhaustedError);
+    await expect(storage.archiveUser(bob.id, false)).rejects.toBeInstanceOf(SeatExhaustedError);
 
     await expect(inSeededWorkspace(() => countConsumedSeats())).resolves.toBe(1);
   });
 
   it("does not block Memberships on the seeded legacy Plan", async () => {
-    const { storage } = await import("../../server/storage");
     const { assertSeatAvailable, countConsumedSeats, effectiveEntitlements } = await import(
       "../../server/modules/billing"
     );
@@ -114,7 +121,7 @@ describe("fail-closed Membership add", () => {
     });
 
     for (let i = 0; i < 3; i += 1) {
-      await storage.createUser({
+      await createSeededMember({
         email: `member-${i}@test.invalid`,
         firstName: `M${i}`,
       });
@@ -131,7 +138,6 @@ describe("purchased seat capacity floor", () => {
   });
 
   it("rejects decreasing purchased capacity below current consumption", async () => {
-    const { storage } = await import("../../server/storage");
     const {
       SeatCapacityFloorError,
       countConsumedSeats,
@@ -139,11 +145,11 @@ describe("purchased seat capacity floor", () => {
       setPurchasedSeatCapacity,
     } = await import("../../server/modules/billing");
 
-    await storage.createUser({
+    await createSeededMember({
       email: "ada@test.invalid",
       firstName: "Ada",
     });
-    await storage.createUser({
+    await createSeededMember({
       email: "bob@test.invalid",
       firstName: "Bob",
     });
@@ -187,7 +193,7 @@ describe("distinct seat exhaustion error", () => {
 
   it("is distinct from capability denial and from Read-only Workspace", async () => {
     const { makeApp } = await import("../helpers/app");
-    const { newAgent, promoteToAdmin, registerUser, setWorkspaceRole, uniqueEmail } = await import(
+    const { newAgent, registerUser, setWorkspaceRole, uniqueEmail } = await import(
       "../helpers/auth"
     );
     const {
@@ -215,13 +221,11 @@ describe("distinct seat exhaustion error", () => {
       setEntitlementOverride({ seatCapacity: 1 }, { kind: "system" })
     );
 
-    // Through the admin route, which is where a User is created now that #110
-    // retired self-service registration. Same gate, same `SeatExhaustedError`.
-    await promoteToAdmin(owner.id);
-    const exhausted = await owner.agent.post("/api/admin/users").send({
+    // Through an Invitation, which is how a Workspace adds people now that a
+    // User from the platform directory joins no Workspace (#297).
+    const exhausted = await owner.agent.post("/api/workspace/invitations").send({
       email: uniqueEmail("blocked"),
-      firstName: "Blocked",
-      lastName: "Member",
+      workspaceRole: "MEMBER",
     });
     expect(exhausted.status).toBe(409);
     expect(exhausted.body).toEqual({ message: "Billable Seat capacity is exhausted" });

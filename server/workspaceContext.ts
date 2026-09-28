@@ -8,7 +8,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { and, eq, isNull, type AnyColumn } from "drizzle-orm";
-import { deviceEnrollments, memberships, users, workspaces, SEEDED_WORKSPACE_ID } from "@shared/schema";
+import { deviceEnrollments, memberships, users, workspaces } from "@shared/schema";
 import { db } from "./db";
 import { setWorkspaceContextReader } from "./workspaceScope";
 
@@ -95,7 +95,8 @@ export async function contextFromUser(userId: string): Promise<WorkspaceContext>
   throw new NoActiveMembershipError();
 }
 
-function pickActiveMembership<T extends { workspaceId: string }>(
+/** The preferred Workspace when it is still active, otherwise the oldest active Membership. */
+export function pickActiveMembership<T extends { workspaceId: string; createdAt: Date | null }>(
   active: T[],
   preferredWorkspaceId: string | null,
 ): T | undefined {
@@ -104,10 +105,11 @@ function pickActiveMembership<T extends { workspaceId: string }>(
     const preferred = active.find((row) => row.workspaceId === preferredWorkspaceId);
     if (preferred) return preferred;
   }
-  return (
-    active.find((row) => row.workspaceId === SEEDED_WORKSPACE_ID) ??
-    [...active].sort((a, b) => a.workspaceId.localeCompare(b.workspaceId))[0]
-  );
+  return [...active].sort(
+    (a, b) =>
+      (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0) ||
+      a.workspaceId.localeCompare(b.workspaceId),
+  )[0];
 }
 
 export async function contextFromDevice(

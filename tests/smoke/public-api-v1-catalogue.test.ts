@@ -10,6 +10,7 @@ import {
   workspaceRoles,
 } from "../../shared/schema";
 import { makeApp } from "../helpers/app";
+import { createSeededMember } from "../helpers/workspace";
 import { newAgent, registerUser, setWorkspaceRole } from "../helpers/auth";
 import { resetDb } from "../helpers/db";
 import { createClient, createCrmProject, createTask, startTimer } from "../helpers/fixtures";
@@ -130,7 +131,7 @@ describe("public /api/v1 catalogue — Clients", () => {
     const { db } = await import("../../server/db");
 
     await plantOtherWorkspace();
-    const other = await storage.createUser({
+    const other = await createSeededMember({
       email: "other@test.invalid",
       firstName: "Other",
     });
@@ -261,7 +262,7 @@ describe("public /api/v1 catalogue — Projects", () => {
     const { db } = await import("../../server/db");
 
     await plantOtherWorkspace();
-    const other = await storage.createUser({
+    const other = await createSeededMember({
       email: "other-proj@test.invalid",
       firstName: "Other",
     });
@@ -339,7 +340,7 @@ describe("public /api/v1 catalogue — Time Entries", () => {
     const { db } = await import("../../server/db");
 
     await plantOtherWorkspace();
-    const other = await storage.createUser({
+    const other = await createSeededMember({
       email: "other-time@test.invalid",
       firstName: "Other",
     });

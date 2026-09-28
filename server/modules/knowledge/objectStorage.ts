@@ -17,6 +17,7 @@ import { db } from "../../db";
 import {
   ObjectNotFoundError,
   ObjectStorageService,
+  assertObjectInActiveWorkspace,
   objectRefFromEntityPath,
   storagePort,
 } from "../../objectStorage";
@@ -92,6 +93,11 @@ class KnowledgeObjectStorage implements KnowledgeObjectStoragePort {
   async finalizeUpload(input: FinalizeUploadInput): Promise<KnowledgeFile> {
     const objects = new ObjectStorageService();
     const objectPath = objects.normalizeObjectEntityPath(input.objectPath);
+    try {
+      assertObjectInActiveWorkspace(objectPath);
+    } catch {
+      throw new ObjectNotUploadedError();
+    }
     await this.assertSlotAllowsFinalize(objectPath);
     try {
       await objects.getObjectEntityFile(objectPath);

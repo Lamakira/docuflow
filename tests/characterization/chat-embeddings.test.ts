@@ -42,13 +42,12 @@ describe("chat and embeddings (characterization)", () => {
     expect(badMode.status).toBe(400);
   });
 
-  it("falls back to pasting whole pages when the caller owns no embeddings", async () => {
+  it("falls back to pasting whole pages when nothing is embedded yet", async () => {
     const app = await makeApp();
     const author = await registerUser(app);
-    // Every embedding row is written with `owner_id` = the user whose request
-    // generated it, and vector search filters on `owner_id` = the caller
-    // (`server/embeddings.ts`). A second user's search therefore always comes
-    // back empty — which is what puts chat on the fallback path deterministically.
+    // Saving a page writes no embedding (`POST /api/embeddings/rebuild` is the
+    // synchronous path), so vector search comes back empty — which is what puts
+    // chat on the fallback path deterministically.
     const user = await registerUser(app);
     const { project } = await createCrmProject(author.agent, { name: "Atlas" });
     await createDocument(author.agent, project.id, {

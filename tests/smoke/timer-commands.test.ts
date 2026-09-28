@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetDb } from "../helpers/db";
-import { inSeededWorkspace } from "../helpers/workspace";
+import { createSeededMember, inSeededWorkspace } from "../helpers/workspace";
 
 /**
  * Phase 6 ticket #117: Timer Commands ingest new timer work (ADR-0009, Spec #112).
@@ -10,7 +10,7 @@ import { inSeededWorkspace } from "../helpers/workspace";
 
 async function seedTrackableWork() {
   const { storage } = await import("../../server/storage");
-  const user = await storage.createUser({
+  const user = await createSeededMember({
     email: "timer@test.invalid",
     firstName: "Timer",
   });
