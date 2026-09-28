@@ -12,6 +12,9 @@
 import { AgentStore } from "./AgentStore";
 import { API_BASE } from "./config";
 
+/** The server's refusal code for an area the Workspace's Plan leaves out. */
+export const PLAN_UPGRADE_REQUIRED = "plan_upgrade_required";
+
 interface LoginResult {
   deviceId: string;
   deviceToken: string;
@@ -459,6 +462,10 @@ export class ApiClient {
         // The path is the whole diagnosis: a refusal message alone says only
         // that one happened somewhere. Query included — it names the project.
         console.log(`[ApiClient] Forbidden (403, not a revocation): ${init.method ?? 'GET'} ${path} — ${msg}`);
+      }
+      // The Workspace's Plan leaves this area out; retrying cannot succeed (#299).
+      if (data.code === PLAN_UPGRADE_REQUIRED) {
+        throw Object.assign(new Error(msg), { code: PLAN_UPGRADE_REQUIRED });
       }
       throw new Error(msg);
     }

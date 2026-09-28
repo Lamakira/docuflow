@@ -1,15 +1,13 @@
 /**
- * BillingProvider port (#142, ADR-0010). Application code that talks to Stripe
- * talks only to this surface. Price ids stay inside the adapter.
+ * BillingProvider port (#142, ADR-0010, ADR-0027). Application code that talks
+ * to Stripe talks only to this surface. Price ids stay inside the adapter.
  */
 
-import type { PlanKey } from "./planRegistry";
+import type { BillingInterval, PlanKey } from "./planRegistry";
 
 export type BillingProviderConfig = {
   secretKey?: string;
   webhookSecret?: string;
-  /** Stripe Price ids keyed by Plan. Plans with no mapping have no Stripe objects. */
-  priceIds: Partial<Record<PlanKey, string>>;
 };
 
 export class BillingProviderError extends Error {
@@ -29,6 +27,7 @@ export class BillingProviderClosedError extends BillingProviderError {
 export type CheckoutRequest = {
   workspaceId: string;
   planKey: PlanKey;
+  interval: BillingInterval;
   seatQuantity: number;
   successUrl: string;
   cancelUrl: string;
@@ -54,6 +53,7 @@ export type ProviderSubscription = {
   providerCustomerId: string;
   providerSubscriptionId: string;
   planKey: PlanKey;
+  interval: BillingInterval;
   seatQuantity: number;
   currentPeriodEnd: Date;
   cancelAtPeriodEnd: boolean;
@@ -74,6 +74,12 @@ export type SeatQuantityUpdate = {
   proration: SeatProration;
 };
 
+export type SubscriptionPlanChange = {
+  providerSubscriptionId: string;
+  planKey: PlanKey;
+  interval: BillingInterval;
+};
+
 export type PaymentMethodUpdateRequest = {
   providerCustomerId: string;
   returnUrl: string;
@@ -91,6 +97,8 @@ export interface BillingProvider {
   fetchCheckoutSession(providerSessionId: string): Promise<ProviderCheckoutSession>;
   fetchSubscription(providerSubscriptionId: string): Promise<ProviderSubscription>;
   updateSeatQuantity(update: SeatQuantityUpdate): Promise<void>;
+  /** Moves the Subscription to the Plan's current Price for the interval, prorated. */
+  changeSubscriptionPlan(change: SubscriptionPlanChange): Promise<void>;
   createPaymentMethodUpdate(request: PaymentMethodUpdateRequest): Promise<HostedBillingSession>;
   verifyWebhook(payload: string, signature: string): Promise<WebhookEvent>;
 }
@@ -109,6 +117,10 @@ export class UnconfiguredBillingProvider implements BillingProvider {
   }
 
   async updateSeatQuantity(): Promise<void> {
+    this.closed();
+  }
+
+  async changeSubscriptionPlan(): Promise<void> {
     this.closed();
   }
 

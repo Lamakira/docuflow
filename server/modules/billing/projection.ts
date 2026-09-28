@@ -15,13 +15,22 @@ import {
   type AuditActor,
   type BillingProjection,
 } from "./entitlements";
-import type { BillingState, PlanKey } from "./planRegistry";
+import {
+  isPlanKey,
+  placePlan,
+  PLAN_REGISTRY,
+  type BillingInterval,
+  type BillingState,
+  type PlanKey,
+} from "./planRegistry";
 import { countConsumedSeats, resolveProjectedSeatCapacity } from "./seats";
 
 export const BILLING_ENTITLEMENTS_CHANGED = "billing.entitlements_changed";
 
 type ProjectedPin = {
   planKey: PlanKey;
+  registryVersion: number;
+  billingInterval: BillingInterval;
   billingState: BillingState;
   purchasedSeatCapacity: number;
   stripeCustomerId: string;
@@ -43,13 +52,34 @@ function sameInstant(left: Date | null, right: Date | null): boolean {
   return left.getTime() === right.getTime();
 }
 
+type CurrentPlan = { planKey: string; registryVersion: number; trialEndsAt: Date | null };
+
+/**
+ * The Plan a Subscription puts the Workspace on (ADR-0027). A sales-led Plan
+ * (Enterprise) is assigned in DocuFlow and survives whatever Price Stripe bills.
+ */
+function projectedPlan(
+  subscription: ProviderSubscription,
+  current: CurrentPlan
+): { planKey: PlanKey; registryVersion: number } {
+  if (
+    isPlanKey(current.planKey) &&
+    PLAN_REGISTRY[current.registryVersion]?.[current.planKey]?.salesLed
+  ) {
+    return { planKey: current.planKey, registryVersion: current.registryVersion };
+  }
+  return placePlan(subscription.planKey, current.registryVersion);
+}
+
 export function projectedPinFromSubscription(
   subscription: ProviderSubscription,
-  trialEndsAt: Date | null
+  current: CurrentPlan
 ): ProjectedPin {
   const billingState = billingStateFromCollection(subscription.collectionState);
+  const trialEndsAt = current.trialEndsAt;
   return {
-    planKey: subscription.planKey,
+    ...projectedPlan(subscription, current),
+    billingInterval: subscription.interval,
     billingState,
     purchasedSeatCapacity: subscription.seatQuantity,
     stripeCustomerId: subscription.providerCustomerId,
@@ -63,6 +93,8 @@ export function projectedPinFromSubscription(
 export function pinAgreesWithSubscription(
   pin: {
     planKey: string;
+    registryVersion: number;
+    billingInterval: string | null;
     billingState: string;
     purchasedSeatCapacity: number;
     stripeCustomerId: string | null;
@@ -73,9 +105,11 @@ export function pinAgreesWithSubscription(
   },
   subscription: ProviderSubscription
 ): boolean {
-  const next = projectedPinFromSubscription(subscription, pin.trialEndsAt);
+  const next = projectedPinFromSubscription(subscription, pin);
   return (
     pin.planKey === next.planKey &&
+    pin.registryVersion === next.registryVersion &&
+    (pin.billingInterval ?? null) === next.billingInterval &&
     pin.billingState === next.billingState &&
     pin.purchasedSeatCapacity === next.purchasedSeatCapacity &&
     (pin.stripeCustomerId ?? null) === next.stripeCustomerId &&
@@ -101,12 +135,14 @@ export async function applyProviderSubscription(
       .limit(1);
     if (!pin) throw new BillingPinMissingError();
 
-    const next = projectedPinFromSubscription(subscription, pin.trialEndsAt);
+    const next = projectedPinFromSubscription(subscription, pin);
     const seats = resolveProjectedSeatCapacity(pin, subscription, await countConsumedSeats(tx));
     next.purchasedSeatCapacity = seats.purchasedSeatCapacity;
 
+    const planChanged = pin.planKey !== next.planKey || pin.registryVersion !== next.registryVersion;
     const pinUnchanged =
-      pin.planKey === next.planKey &&
+      !planChanged &&
+      (pin.billingInterval ?? null) === next.billingInterval &&
       pin.billingState === next.billingState &&
       pin.purchasedSeatCapacity === next.purchasedSeatCapacity &&
       (pin.stripeCustomerId ?? null) === next.stripeCustomerId &&
@@ -131,7 +167,7 @@ export async function applyProviderSubscription(
     }
 
     const entitlementsChanged =
-      pin.planKey !== next.planKey ||
+      planChanged ||
       pin.billingState !== next.billingState ||
       pin.purchasedSeatCapacity !== next.purchasedSeatCapacity;
     const authorizationVersion = entitlementsChanged
@@ -162,7 +198,7 @@ export async function applyProviderSubscription(
         })
       );
     }
-    if (pin.planKey !== next.planKey) {
+    if (planChanged) {
       await tx.insert(auditEvents).values(
         stampWorkspace({
           actorKind: actor.kind,
@@ -170,7 +206,12 @@ export async function applyProviderSubscription(
           action: "billing.plan_change",
           resourceType: "workspace_billing",
           resourceId: workspaceId,
-          payload: { from: pin.planKey, to: next.planKey },
+          payload: {
+            from: pin.planKey,
+            to: next.planKey,
+            fromRegistryVersion: pin.registryVersion,
+            toRegistryVersion: next.registryVersion,
+          },
         })
       );
     }

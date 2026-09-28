@@ -31,9 +31,11 @@ function addUtcDays(from: Date, days: number): Date {
 }
 
 function trialDurationDays(): number {
-  const days = PLAN_REGISTRY[PLAN_REGISTRY_VERSION]?.trial.trialDurationDays;
+  const days = PLAN_REGISTRY[PLAN_REGISTRY_VERSION]?.trial?.trialDurationDays;
   if (days == null) {
-    throw new InvalidBillingPinError("Trial duration missing from registry version 1");
+    throw new InvalidBillingPinError(
+      `Trial duration missing from registry version ${PLAN_REGISTRY_VERSION}`
+    );
   }
   return days;
 }
@@ -84,7 +86,7 @@ async function applyState(
 
 /**
  * Pin an unpinned Workspace to Plan `trial` / Trialing. No Stripe objects.
- * Duration is the 14-day DocuFlow value from registry version 1.
+ * Duration and seats come from the current registry version.
  */
 export async function startTrial(
   actor: AuditActor,
@@ -93,7 +95,7 @@ export async function startTrial(
   const { workspaceId } = requireWorkspaceContext();
   const now = options.now ?? new Date();
   const trialEndsAt = addUtcDays(now, trialDurationDays());
-  const seatCapacity = PLAN_REGISTRY[PLAN_REGISTRY_VERSION].trial.seatCapacity;
+  const seatCapacity = PLAN_REGISTRY[PLAN_REGISTRY_VERSION]?.trial?.seatCapacity;
   if (typeof seatCapacity !== "number") {
     throw new InvalidBillingPinError("Trial seat capacity must be a number");
   }

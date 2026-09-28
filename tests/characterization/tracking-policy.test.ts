@@ -24,7 +24,13 @@ describe("Tracking Policy HTTP (#191)", () => {
 
     const before = await member.agent.get("/api/time-tracking/tracking-policy");
     expect(before.status).toBe(200);
-    expect(before.body).toEqual({ screenshotPolicy: DEFAULT_SCREENSHOT_POLICY });
+    expect(before.body).toEqual({
+      screenshotPolicy: {
+        ...DEFAULT_SCREENSHOT_POLICY,
+        screenshotProjectCapacity: null,
+        activityCaptureEnabled: true,
+      },
+    });
 
     const patched = await admin.agent.patch("/api/admin/org-settings").send({
       screenshotPolicy: { screenshotsEnabled: false, idleTimeoutMinutes: 15 },

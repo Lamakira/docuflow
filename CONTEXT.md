@@ -267,11 +267,11 @@ The commercial agreement owned and billed independently by one workspace.
 _Avoid_: User subscription, global subscription
 
 **Plan**:
-A subscription level that changes capacity and operational depth while retaining Time, Activity, Work & clients, and Knowledge as one complete product.
-_Avoid_: Module bundle, single-feature tier
+A per-seat subscription level (Starter, Growth, Business, Enterprise) that sets which areas of the product a Workspace uses and how much capacity it has. A Plan may leave areas out: Starter, the entry tier, is time tracking with screenshots on one Project; Growth adds activity and idle detection, payroll-ready exports, Clients and Opportunities, Project management and Knowledge; Business adds advanced analytics and profitability dashboards; Enterprise adds SSO, SCIM and data residency and is agreed with sales. Data kept from a higher Plan stays visible but read-only.
+_Avoid_: Module bundle, feature flag
 
 **Trial**:
-A time-limited period with access to the complete product. When it expires without a paid subscription, the workspace becomes read-only while retaining access to its data, exports, and billing controls.
+A 14-day, 3-seat, no-card period on Business, so the Workspace sees the complete product. When it expires without a paid subscription, the workspace becomes read-only while retaining access to its data, exports, and billing controls.
 _Avoid_: Free plan, limited-feature trial
 
 **Read-only Workspace**:
@@ -283,7 +283,7 @@ An accepted, active membership that consumes subscription capacity. Pending invi
 _Avoid_: User license, invited seat
 
 **Entitlement**:
-A workspace-level answer to whether the subscription grants a capability or capacity limit, derived deterministically from billing state and the versioned plan registry rather than read from the billing provider.
+A workspace-level answer to whether the subscription grants a capability or capacity limit, derived deterministically from billing state and the versioned plan registry rather than read from the billing provider. An area the Plan leaves out is refused on the server with the Plan that includes it.
 _Avoid_: Feature flag, plan permission
 
 **Plan Registry**:

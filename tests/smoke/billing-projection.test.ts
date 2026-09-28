@@ -22,6 +22,7 @@ const PROVIDER_SUB = {
   providerCustomerId: "cus_fake_1",
   providerSubscriptionId: SUBSCRIPTION_ID,
   planKey: "pro" as const,
+  interval: "monthly" as const,
   seatQuantity: 3,
   currentPeriodEnd: PERIOD_END,
   cancelAtPeriodEnd: false,
@@ -212,11 +213,12 @@ describe("projection Job", () => {
 
     await expect(
       runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () => effectiveEntitlements())
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       seatCapacity: 3,
       serviceAccountRequestsPerMinute: 60,
       workspaceRequestsPerMinute: 120,
       writesAllowed: true,
+      screenshotProjectCapacity: null,
     });
 
     const events = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>

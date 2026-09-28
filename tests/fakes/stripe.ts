@@ -4,6 +4,10 @@
  * `vitest.config.ts` aliases `stripe` here, so the BillingProvider adapter
  * never reaches api.stripe.com. Tests of the port use `tests/fakes/billingProvider.ts`;
  * this module exists so loading the adapter under test still cannot call Stripe.
+ *
+ * Prices and Products mirror the Stripe setup ADR-0027 asks for: one Product
+ * per priced Plan carrying `docuflow_plan` metadata, and a monthly and an
+ * annual Price per Product, found by lookup key.
  */
 
 export type CheckoutCreateParams = {
@@ -15,6 +19,16 @@ export type CheckoutCreateParams = {
   automatic_tax?: { enabled?: boolean };
   billing_address_collection?: string;
   customer?: string;
+};
+
+export type FakeProduct = { id: string; metadata: Record<string, string>; deleted?: boolean };
+
+export type FakePrice = {
+  id: string;
+  lookup_key: string | null;
+  active: boolean;
+  product: string | FakeProduct;
+  recurring: { interval: string } | null;
 };
 
 /**
@@ -34,13 +48,13 @@ export type FakeSubscription = {
       id?: string;
       quantity: number;
       current_period_end?: number;
-      price: { id: string };
+      price: { id: string; product?: string | FakeProduct; recurring?: { interval: string } | null };
     }>;
   };
 };
 
 export type SubscriptionUpdateParams = {
-  items?: Array<{ id?: string; quantity?: number }>;
+  items?: Array<{ id?: string; quantity?: number; price?: string }>;
   proration_behavior?: string;
 };
 
@@ -50,10 +64,33 @@ export type BillingPortalCreateParams = {
   flow_data?: { type?: string };
 };
 
+export type PriceListParams = { lookup_keys?: string[]; active?: boolean; expand?: string[] };
+
+const PLAN_PRODUCTS: FakeProduct[] = ["pro", "starter", "growth", "business"].map((plan) => ({
+  id: `prod_${plan}`,
+  metadata: { docuflow_plan: plan },
+}));
+
+function defaultPrices(): FakePrice[] {
+  return ["starter", "growth", "business"].flatMap((plan) =>
+    (["monthly", "annual"] as const).map((interval) => ({
+      id: `price_${plan}_${interval}`,
+      lookup_key: `${plan}_${interval}`,
+      active: true,
+      product: `prod_${plan}`,
+      recurring: { interval: interval === "monthly" ? "month" : "year" },
+    }))
+  );
+}
+
 const checkoutSessionCreates: CheckoutCreateParams[] = [];
 const billingPortalCreates: BillingPortalCreateParams[] = [];
 const subscriptionUpdates: Array<{ id: string } & SubscriptionUpdateParams> = [];
+const priceLists: PriceListParams[] = [];
+const productRetrieves: string[] = [];
 let retrievedSubscription: FakeSubscription | null = null;
+let prices: FakePrice[] = defaultPrices();
+let products: FakeProduct[] = [...PLAN_PRODUCTS];
 
 export default class Stripe {
   constructor(_apiKey?: string, _opts?: unknown) {}
@@ -80,7 +117,7 @@ export default class Stripe {
   };
 
   subscriptions = {
-    retrieve: async (id: string): Promise<FakeSubscription> => {
+    retrieve: async (id: string, _params?: { expand?: string[] }): Promise<FakeSubscription> => {
       if (retrievedSubscription) return retrievedSubscription;
       return {
         id,
@@ -93,7 +130,11 @@ export default class Stripe {
               id: "si_test_fake",
               quantity: 1,
               current_period_end: 0,
-              price: { id: "price_pro_test" },
+              price: {
+                id: "price_pro_test",
+                product: PLAN_PRODUCTS[0],
+                recurring: { interval: "month" },
+              },
             },
           ],
         },
@@ -102,6 +143,27 @@ export default class Stripe {
     update: async (id: string, params: SubscriptionUpdateParams) => {
       subscriptionUpdates.push({ id, ...params });
       return { id };
+    },
+  };
+
+  prices = {
+    list: async (params: PriceListParams) => {
+      priceLists.push(params);
+      const data = prices.filter(
+        (price) =>
+          (!params.lookup_keys || (price.lookup_key && params.lookup_keys.includes(price.lookup_key))) &&
+          (params.active === undefined || price.active === params.active)
+      );
+      return { object: "list", data, has_more: false };
+    },
+  };
+
+  products = {
+    retrieve: async (id: string): Promise<FakeProduct> => {
+      productRetrieves.push(id);
+      const product = products.find((candidate) => candidate.id === id);
+      if (!product) throw new Error(`No such product: '${id}'`);
+      return product;
     },
   };
 
@@ -143,13 +205,33 @@ export function billingPortalCreatesLog(): BillingPortalCreateParams[] {
   return billingPortalCreates;
 }
 
+export function priceListCalls(): PriceListParams[] {
+  return priceLists;
+}
+
+export function productRetrieveCalls(): string[] {
+  return productRetrieves;
+}
+
 export function setRetrievedSubscription(subscription: FakeSubscription | null): void {
   retrievedSubscription = subscription;
+}
+
+export function setStripePrices(next: FakePrice[]): void {
+  prices = next;
+}
+
+export function setStripeProducts(next: FakeProduct[]): void {
+  products = next;
 }
 
 export function resetStripe(): void {
   checkoutSessionCreates.length = 0;
   subscriptionUpdates.length = 0;
   billingPortalCreates.length = 0;
+  priceLists.length = 0;
+  productRetrieves.length = 0;
   retrievedSubscription = null;
+  prices = defaultPrices();
+  products = [...PLAN_PRODUCTS];
 }

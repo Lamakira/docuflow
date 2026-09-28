@@ -4,9 +4,13 @@ export type { ActivityPersistence };
 export { activityPersistence };
 export {
   TRACKING_POLICY_VERSION,
+  assertScreenshotProject,
+  assertScreenshotProjectCapacity,
+  deliveredTrackingPolicy,
   getScreenshotPolicy,
   upsertScreenshotPolicy,
 } from "./policy";
+export type { DeliveredTrackingPolicy } from "./policy";
 export {
   createAgentActivityEvents,
   createTimeEntryScreenshot,

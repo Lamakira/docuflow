@@ -203,6 +203,7 @@ async function refreshAgentTimerPolicy(): Promise<void> {
     const cap = await apiClient.getAgentCapabilities();
     agentTimerRequiresTask = !!cap.requiresTask;
     console.log(`[Main] timer.policy — requiresTask=${agentTimerRequiresTask}`);
+    pushStateToRenderer();
   } catch (err: any) {
     console.warn(`[Main] timer.policy refresh failed: ${err.message}`);
   }
@@ -572,6 +573,7 @@ function applyTrackingPolicy(policy: TrackingPolicy): void {
   trackingPolicy = policy;
   screenshotWorker?.applyPolicy(policy);
   activityWorker?.applyIdleTimeout(policy.idleTimeoutMinutes);
+  activityWorker?.applyActivityCapture(policy.activityCaptureEnabled);
 }
 
 /** A heartbeat answered with a policy: keep it on disk, then apply it. */
@@ -633,6 +635,7 @@ function startWorkers(): void {
 
   activityWorker = new ActivityWorker(queue, store);
   activityWorker.applyIdleTimeout(trackingPolicy.idleTimeoutMinutes);
+  activityWorker.applyActivityCapture(trackingPolicy.activityCaptureEnabled);
   activityWorker.setIdleUxCallback((idleSeconds) => handleIdleUx(idleSeconds));
   activityWorker.start();
 
@@ -930,6 +933,7 @@ function pushStateToRenderer(): void {
     apiBase: API_BASE,
     apiBaseSource: API_BASE_SOURCE,
     timer: timerState,
+    timerRequiresTask: agentTimerRequiresTask,
   });
 
   // Push timer state to widget + sync visibility
@@ -950,6 +954,7 @@ ipcMain.handle("agent:get-state", () => {
     apiBase: API_BASE,
     apiBaseSource: API_BASE_SOURCE,
     timer: store.getTimerState(),
+    timerRequiresTask: agentTimerRequiresTask,
   };
 });
 

@@ -740,7 +740,9 @@ describe("Administration from operator routes (#193)", () => {
     expect(active.billing.plan).toBe("Pro");
     expect(active.billing.condition).toBe("Active");
     expect(active.billing.seats).toBe("3 of 8 Billable Seats consumed.");
+    // #299: a live Subscription moves between Plans from the card.
     expect(active.billing.actions.map((action) => action.id)).toEqual([
+      "plan",
       "seats",
       "payment-method",
       "cancel",
@@ -773,7 +775,8 @@ describe("Administration from operator routes (#193)", () => {
     expect(page.billing.condition).toBe("Read-only");
     expect(page.billing.figures).toContainEqual({ label: "WRITES", value: "Blocked" });
     expect(page.billing.entitlementNote).toContain("Writes blocked");
-    expect(page.billing.actions.map((action) => action.id)).toEqual(["payment-method"]);
+    // #299: a lapsed Subscription comes back through Checkout.
+    expect(page.billing.actions.map((action) => action.id)).toEqual(["checkout", "payment-method"]);
     expect(page.serviceAccounts.createAllowed).toBe(false);
     expect(page.webhookEndpoints.createAllowed).toBe(false);
     expect(page.writeRefusal).toBe(

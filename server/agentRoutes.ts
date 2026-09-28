@@ -35,6 +35,8 @@ import {
 } from "./modules/activity/evidenceJobs";
 import { applyTimerCommand, nextTimerSequence } from "./modules/time/commands";
 import { gateSessionWrite } from "./modules/billing/sessionWriteGate";
+import { PlanFeatureNotIncludedError, featureIncluded } from "./modules/billing";
+import { assertScreenshotProject, deliveredTrackingPolicy } from "./modules/activity/policy";
 import {
   ArchivedMembershipError,
   NoActiveMembershipError,
@@ -500,8 +502,8 @@ export function registerAgentRoutes(app: Express): void {
         };
       }
 
-      // Fetch org screenshot policy to push to desktop agent
-      const screenshotPolicy = await storage.getScreenshotPolicy();
+      // The Tracking Policy for the running Project, narrowed by the Plan
+      const screenshotPolicy = await deliveredTrackingPolicy(timerSync ? serverActive!.crmProjectId : null);
 
       logInfo("agent.heartbeat", {
         deviceId: body.deviceId,
@@ -610,6 +612,14 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(403).json({ code: "device_revoked", message: "Device has been revoked" });
       }
 
+      try {
+        await assertScreenshotProject(timeEntry.crmProjectId);
+      } catch (error) {
+        if (error instanceof PlanFeatureNotIncludedError) return res.status(403).json(error.body());
+        throw error;
+      }
+      const activity = await featureIncluded("activityCapture");
+
       // Create a screenshot record with pending status
       const screenshot = await ingestActivityScreenshot({
         jobs: createActivityJobsPort(),
@@ -619,10 +629,10 @@ export function registerAgentRoutes(app: Express): void {
           crmProjectId: timeEntry.crmProjectId,
           storageKey: `pending-${Date.now()}`, // Replaced on upload
           capturedAt: new Date(body.capturedAt),
-          keyboardActivityPercent: body.keyboardActivityPercent ?? null,
-          mouseActivityPercent: body.mouseActivityPercent ?? null,
-          keyboardCount: body.keyboardCount ?? null,
-          mouseCount: body.mouseCount ?? null,
+          keyboardActivityPercent: activity ? body.keyboardActivityPercent ?? null : null,
+          mouseActivityPercent: activity ? body.mouseActivityPercent ?? null : null,
+          keyboardCount: activity ? body.keyboardCount ?? null : null,
+          mouseCount: activity ? body.mouseCount ?? null : null,
         },
       });
 
@@ -977,7 +987,7 @@ export function registerAgentRoutes(app: Express): void {
 
   /** Agent: timer / task policy flags. */
   app.get("/api/agent/capabilities", isAgentAuthenticated as any, async (_req: AgentAuthRequest, res) => {
-    res.json({ requiresTask: true });
+    res.json({ requiresTask: await featureIncluded("projectManagement") });
   });
 
   /** Agent: list CRM projects (for timer start dropdown) */
@@ -1006,9 +1016,14 @@ export function registerAgentRoutes(app: Express): void {
       if (!name || typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ message: "Project name is required" });
       }
-      const { crmProject } = await storage.createCrmProjectWithBase(
+      const light = !(await featureIncluded("crm"));
+      const { crmProject: created } = await storage.createCrmProjectWithBase(
         { name: name.trim(), description: null, icon: null, ownerId: userId },
+        light ? { status: "won_in_progress" } : undefined,
       );
+      const crmProject = light
+        ? ((await storage.updateCrmProject(created.id, { projectType: "internal" })) ?? created)
+        : created;
       res.status(201).json({
         id: crmProject.id,
         name: name.trim(),
@@ -1040,16 +1055,17 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      if (!taskId) {
-        return res.status(400).json({ message: "taskId is required" });
-      }
-
-      const task = await storage.getTask(taskId);
-      if (!task || task.crmProjectId !== crmProjectId) {
-        return res.status(400).json({ message: "Invalid task for this project" });
-      }
-      if (task.status === "archived") {
-        return res.status(400).json({ message: "Cannot start timer on an archived task" });
+      if (taskId || (await featureIncluded("projectManagement"))) {
+        if (!taskId) {
+          return res.status(400).json({ message: "taskId is required" });
+        }
+        const task = await storage.getTask(taskId);
+        if (!task || task.crmProjectId !== crmProjectId) {
+          return res.status(400).json({ message: "Invalid task for this project" });
+        }
+        if (task.status === "archived") {
+          return res.status(400).json({ message: "Cannot start timer on an archived task" });
+        }
       }
 
       // Idempotency: if we've already processed this command, return the existing entry

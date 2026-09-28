@@ -49,7 +49,6 @@ delete process.env.MCP_API_KEY;
 // credentials are the default: Entitlement reads still succeed, Checkout fails closed.
 delete process.env.STRIPE_SECRET_KEY;
 delete process.env.STRIPE_WEBHOOK_SECRET;
-delete process.env.STRIPE_PRICE_PRO;
 // Test-mode Clerk credentials, consumed by the aliased fake and never sent
 // anywhere (ADR-0018) — assigned rather than deleted since #110, because web
 // sign-in is now the IdentityProvider and `tests/helpers/auth.ts` signs every

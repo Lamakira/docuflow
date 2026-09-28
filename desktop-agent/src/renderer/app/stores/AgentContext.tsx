@@ -81,6 +81,7 @@ function reducer(state: State, action: Action): State {
         apiBase: action.payload.apiBase ?? null,
         apiBaseSource: action.payload.apiBaseSource ?? null,
         timer: action.payload.timer ?? defaultTimerState,
+        timerRequiresTask: action.payload.timerRequiresTask ?? prev?.timerRequiresTask,
       };
 
       return {

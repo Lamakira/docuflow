@@ -1,7 +1,12 @@
 /**
- * Stripe BillingProvider adapter (#142, ADR-0010). The only server module that
- * imports `stripe`. Plan keys map to Price ids here; DocuFlow never stores those
- * ids as customer-facing prices.
+ * Stripe BillingProvider adapter (#142, ADR-0010, ADR-0027). The only server
+ * module that imports `stripe`.
+ *
+ * Checkout finds a Plan's Price by the lookup key the Plan Registry names, so
+ * moving a lookup key to a new Price changes what new customers pay without a
+ * deploy. A Subscription's Plan is read from its Price's Product metadata
+ * (`docuflow_plan`), never from the Price id, so a customer on an older Price
+ * keeps being recognised. Entitlements never come from Stripe.
  */
 
 import Stripe from "stripe";
@@ -18,9 +23,21 @@ import {
   type ProviderCheckoutSession,
   type ProviderSubscription,
   type SeatQuantityUpdate,
+  type SubscriptionPlanChange,
   type WebhookEvent,
 } from "./billingProvider";
-import type { PlanKey } from "./planRegistry";
+import {
+  PLAN_REGISTRY_VERSION,
+  isPlanKey,
+  planDefinition,
+  type BillingInterval,
+  type PlanKey,
+} from "./planRegistry";
+
+/** Product metadata key naming the DocuFlow Plan a Stripe Product sells. */
+export const PLAN_METADATA_KEY = "docuflow_plan";
+
+const PRICE_CACHE_MS = 5 * 60_000;
 
 function idOf(value: string | { id: string } | null | undefined): string | undefined {
   if (!value) return undefined;
@@ -35,10 +52,22 @@ const COLLECTION_STATE: Record<string, CollectionState> = {
   incomplete_expired: "Canceled",
 };
 
+const INTERVAL: Record<string, BillingInterval> = { month: "monthly", year: "annual" };
+
+type PriceLike = {
+  id: string;
+  product?: string | { id: string; metadata?: Record<string, string> | null; deleted?: boolean } | null;
+  recurring?: { interval?: string } | null;
+};
+
 export class StripeBillingProvider implements BillingProvider {
   private readonly stripe: Stripe;
+  private readonly prices = new Map<string, { priceId: string; expiresAt: number }>();
 
-  constructor(private readonly billing: BillingProviderConfig) {
+  constructor(
+    private readonly billing: BillingProviderConfig,
+    private readonly now: () => number = Date.now
+  ) {
     if (!billing.secretKey) {
       throw new BillingProviderClosedError();
     }
@@ -46,7 +75,7 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async createCheckout(request: CheckoutRequest): Promise<HostedBillingSession> {
-    const price = this.priceIdFor(request.planKey);
+    const price = await this.priceIdFor(request.planKey, request.interval);
     const session = await this.stripe.checkout.sessions.create({
       mode: "subscription",
       line_items: [{ price, quantity: request.seatQuantity }],
@@ -86,13 +115,15 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async fetchSubscription(providerSubscriptionId: string): Promise<ProviderSubscription> {
-    const subscription = await this.stripe.subscriptions.retrieve(providerSubscriptionId);
+    const subscription = await this.stripe.subscriptions.retrieve(providerSubscriptionId, {
+      expand: ["items.data.price.product"],
+    });
     const item = subscription.items.data[0];
     if (!item) {
       throw new BillingProviderError(`Subscription ${providerSubscriptionId} has no items`);
     }
-    const priceId = idOf(item.price);
-    if (!priceId) {
+    const price = item.price as unknown as PriceLike | undefined;
+    if (!price?.id) {
       throw new BillingProviderError(`Subscription ${providerSubscriptionId} has no Price`);
     }
     const periodEnd =
@@ -117,7 +148,8 @@ export class StripeBillingProvider implements BillingProvider {
     return {
       providerCustomerId,
       providerSubscriptionId: subscription.id,
-      planKey: this.planKeyFor(priceId),
+      planKey: await this.planKeyFor(price),
+      interval: intervalOf(price),
       seatQuantity: item.quantity ?? 1,
       currentPeriodEnd: new Date(periodEnd * 1000),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
@@ -126,17 +158,19 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async updateSeatQuantity(update: SeatQuantityUpdate): Promise<void> {
-    const subscription = await this.stripe.subscriptions.retrieve(update.providerSubscriptionId);
-    const item = subscription.items.data[0];
-    const itemId = item && "id" in item && typeof item.id === "string" ? item.id : undefined;
-    if (!itemId) {
-      throw new BillingProviderError(
-        `Subscription ${update.providerSubscriptionId} has no items`
-      );
-    }
+    const itemId = await this.subscriptionItemId(update.providerSubscriptionId);
     await this.stripe.subscriptions.update(update.providerSubscriptionId, {
       items: [{ id: itemId, quantity: update.seatQuantity }],
       proration_behavior: update.proration,
+    });
+  }
+
+  async changeSubscriptionPlan(change: SubscriptionPlanChange): Promise<void> {
+    const price = await this.priceIdFor(change.planKey, change.interval);
+    const itemId = await this.subscriptionItemId(change.providerSubscriptionId);
+    await this.stripe.subscriptions.update(change.providerSubscriptionId, {
+      items: [{ id: itemId, price }],
+      proration_behavior: "create_prorations",
     });
   }
 
@@ -176,20 +210,57 @@ export class StripeBillingProvider implements BillingProvider {
     }
   }
 
-  private priceIdFor(planKey: PlanKey): string {
-    const priceId = this.billing.priceIds[planKey];
-    if (!priceId) {
-      throw new BillingProviderError(`Plan ${planKey} has no Stripe Price`);
+  private async subscriptionItemId(providerSubscriptionId: string): Promise<string> {
+    const subscription = await this.stripe.subscriptions.retrieve(providerSubscriptionId);
+    const item = subscription.items.data[0];
+    const itemId = item && "id" in item && typeof item.id === "string" ? item.id : undefined;
+    if (!itemId) {
+      throw new BillingProviderError(`Subscription ${providerSubscriptionId} has no items`);
     }
-    return priceId;
+    return itemId;
   }
 
-  private planKeyFor(priceId: string): PlanKey {
-    for (const [planKey, mapped] of Object.entries(this.billing.priceIds)) {
-      if (mapped === priceId) return planKey as PlanKey;
+  /** The active Price behind the Plan's lookup key, cached briefly. */
+  private async priceIdFor(planKey: PlanKey, interval: BillingInterval): Promise<string> {
+    const lookupKey = planDefinition(planKey, PLAN_REGISTRY_VERSION).lookupKeys?.[interval];
+    if (!lookupKey) {
+      throw new BillingProviderError(`Plan ${planKey} is not sold through Checkout`);
     }
-    throw new BillingProviderError(`No Plan maps to Stripe Price ${priceId}`);
+    const cached = this.prices.get(lookupKey);
+    if (cached && cached.expiresAt > this.now()) return cached.priceId;
+
+    const { data } = await this.stripe.prices.list({ lookup_keys: [lookupKey], active: true });
+    const price = data.find((candidate) => candidate.lookup_key === lookupKey);
+    if (!price) {
+      throw new BillingProviderError(
+        `No active Stripe Price has lookup key "${lookupKey}" (Plan ${planKey}, ${interval})`
+      );
+    }
+    this.prices.set(lookupKey, { priceId: price.id, expiresAt: this.now() + PRICE_CACHE_MS });
+    return price.id;
   }
+
+  private async planKeyFor(price: PriceLike): Promise<PlanKey> {
+    const product =
+      typeof price.product === "string"
+        ? await this.stripe.products.retrieve(price.product)
+        : price.product;
+    const planKey = product && !product.deleted ? product.metadata?.[PLAN_METADATA_KEY] : undefined;
+    if (!planKey || !isPlanKey(planKey)) {
+      throw new BillingProviderError(
+        `Stripe Price ${price.id} belongs to no Product with ${PLAN_METADATA_KEY} metadata`
+      );
+    }
+    return planKey;
+  }
+}
+
+function intervalOf(price: PriceLike): BillingInterval {
+  const interval = INTERVAL[price.recurring?.interval ?? ""];
+  if (!interval) {
+    throw new BillingProviderError(`Stripe Price ${price.id} is not billed monthly or yearly`);
+  }
+  return interval;
 }
 
 function unixPeriodEnd(value: unknown): number | undefined {

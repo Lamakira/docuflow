@@ -68,8 +68,6 @@ export interface BillingConfig {
   /** Absent means Checkout and other money movement fail closed. */
   secretKey?: string;
   webhookSecret?: string;
-  /** Stripe Price id for Plan `pro`. Other Plans have no Stripe objects. */
-  pricePro?: string;
 }
 
 export interface IdentityConfig {
@@ -558,7 +556,6 @@ function resolveBilling(missing: string[]): BillingConfig {
   return {
     secretKey,
     webhookSecret: read("STRIPE_WEBHOOK_SECRET"),
-    pricePro: read("STRIPE_PRICE_PRO"),
   };
 }
 

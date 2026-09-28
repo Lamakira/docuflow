@@ -260,6 +260,13 @@
       "when": 1790544776267,
       "tag": "0036_flashy_mattie_franklin",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790593822161,
+      "tag": "0037_flowery_spirit",
+      "breakpoints": true
     }
   ]
 }

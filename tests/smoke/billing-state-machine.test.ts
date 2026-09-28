@@ -29,13 +29,14 @@ describe("Trialing Workspace", () => {
     await resetDb();
   });
 
-  it("pins Trialing with no Stripe ids and a 14-day duration from registry version 1", async () => {
+  it("pins Trialing with no Stripe ids, 3 seats and a 14-day duration from the current registry version", async () => {
     const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
     const { startTrial, getBillingProjection, effectiveEntitlements, PLAN_REGISTRY } = await import(
       "../../server/modules/billing"
     );
 
-    expect(PLAN_REGISTRY[1].trial.trialDurationDays).toBe(14);
+    expect(PLAN_REGISTRY[2].trial?.trialDurationDays).toBe(14);
+    expect(PLAN_REGISTRY[2].trial?.seatCapacity).toBe(3);
     await plantUnpinnedWorkspace();
 
     const pin = await runWithWorkspaceContext({ workspaceId: TRIAL_WORKSPACE_ID }, () =>
@@ -45,9 +46,9 @@ describe("Trialing Workspace", () => {
     expect(pin).toMatchObject({
       workspaceId: TRIAL_WORKSPACE_ID,
       planKey: "trial",
-      registryVersion: 1,
+      registryVersion: 2,
       billingState: "Trialing",
-      purchasedSeatCapacity: 1,
+      purchasedSeatCapacity: 3,
       stripeCustomerId: null,
       stripeSubscriptionId: null,
       cancelAtPeriodEnd: false,
@@ -57,7 +58,20 @@ describe("Trialing Workspace", () => {
 
     await expect(
       runWithWorkspaceContext({ workspaceId: TRIAL_WORKSPACE_ID }, () => effectiveEntitlements())
-    ).resolves.toMatchObject({ writesAllowed: true, seatCapacity: 1 });
+    ).resolves.toMatchObject({
+      writesAllowed: true,
+      seatCapacity: 3,
+      screenshotProjectCapacity: null,
+      features: {
+        activityCapture: true,
+        payrollExports: true,
+        crm: true,
+        projectManagement: true,
+        knowledge: true,
+        advancedAnalytics: true,
+        sso: false,
+      },
+    });
 
     await expect(
       runWithWorkspaceContext({ workspaceId: TRIAL_WORKSPACE_ID }, () => getBillingProjection())

@@ -12,8 +12,12 @@ import { db } from "../../db";
 import { inWorkspace, requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 import {
   deriveEntitlements,
+  isFeatureKey,
+  isPlanKey,
+  type BillingInterval,
   type EntitlementOverrideValues,
   type Entitlements,
+  type PlanFeatures,
   type PlanKey,
   type BillingState,
 } from "./planRegistry";
@@ -44,6 +48,7 @@ export type BillingProjection = {
   trialEndsAt: Date | null;
   periodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
+  billingInterval: BillingInterval | null;
 };
 
 export type AuditActor = {
@@ -52,8 +57,27 @@ export type AuditActor = {
 };
 
 function asPlanKey(value: string): PlanKey {
-  if (value === "legacy" || value === "trial" || value === "pro") return value;
+  if (isPlanKey(value)) return value;
   throw new InvalidBillingPinError(`Unknown Plan ${value}`);
+}
+
+function asBillingInterval(value: string | null | undefined): BillingInterval | null {
+  return value === "monthly" || value === "annual" ? value : null;
+}
+
+type OverrideRow = {
+  seatCapacity: number | null;
+  serviceAccountRequestsPerMinute: number | null;
+  workspaceRequestsPerMinute: number | null;
+  features?: Record<string, boolean> | null;
+};
+
+function featureOverrides(value: Record<string, boolean> | null | undefined): Partial<PlanFeatures> | undefined {
+  if (!value) return undefined;
+  const known = Object.entries(value).filter(
+    ([key, included]) => isFeatureKey(key) && typeof included === "boolean"
+  );
+  return known.length > 0 ? (Object.fromEntries(known) as Partial<PlanFeatures>) : undefined;
 }
 
 function asBillingState(value: string): BillingState {
@@ -68,15 +92,7 @@ function asBillingState(value: string): BillingState {
   throw new InvalidBillingPinError(`Unknown billing state ${value}`);
 }
 
-function overrideValues(
-  row:
-    | {
-        seatCapacity: number | null;
-        serviceAccountRequestsPerMinute: number | null;
-        workspaceRequestsPerMinute: number | null;
-      }
-    | undefined
-): EntitlementOverrideValues | undefined {
+function overrideValues(row: OverrideRow | undefined): EntitlementOverrideValues | undefined {
   if (!row) return undefined;
   const overrides: EntitlementOverrideValues = {};
   if (row.seatCapacity != null) overrides.seatCapacity = row.seatCapacity;
@@ -86,6 +102,8 @@ function overrideValues(
   if (row.workspaceRequestsPerMinute != null) {
     overrides.workspaceRequestsPerMinute = row.workspaceRequestsPerMinute;
   }
+  const features = featureOverrides(row.features);
+  if (features) overrides.features = features;
   return Object.keys(overrides).length > 0 ? overrides : undefined;
 }
 
@@ -96,11 +114,7 @@ function entitlementsFor(
     billingState: string;
     purchasedSeatCapacity: number;
   },
-  override?: {
-    seatCapacity: number | null;
-    serviceAccountRequestsPerMinute: number | null;
-    workspaceRequestsPerMinute: number | null;
-  }
+  override?: OverrideRow
 ): Entitlements {
   return deriveEntitlements({
     planKey: asPlanKey(pin.planKey),
@@ -133,6 +147,7 @@ export function billingProjectionOf(row: {
   trialEndsAt: Date | null;
   periodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
+  billingInterval?: string | null;
 }): BillingProjection {
   return {
     workspaceId: row.workspaceId,
@@ -146,6 +161,7 @@ export function billingProjectionOf(row: {
     trialEndsAt: row.trialEndsAt ?? null,
     periodEndsAt: row.periodEndsAt ?? null,
     cancelAtPeriodEnd: row.cancelAtPeriodEnd,
+    billingInterval: asBillingInterval(row.billingInterval),
   };
 }
 
@@ -153,14 +169,21 @@ export async function getBillingProjection(): Promise<BillingProjection> {
   return billingProjectionOf(await loadPin());
 }
 
-export async function effectiveEntitlements(): Promise<Entitlements> {
+export type PlanStanding = { projection: BillingProjection; entitlements: Entitlements };
+
+/** The pin and what it entitles, read together so the two cannot disagree. */
+export async function planStanding(): Promise<PlanStanding> {
   const pin = await loadPin();
   const [override] = await db
     .select()
     .from(workspaceEntitlementOverrides)
     .where(inWorkspace(workspaceEntitlementOverrides))
     .limit(1);
-  return entitlementsFor(pin, override);
+  return { projection: billingProjectionOf(pin), entitlements: entitlementsFor(pin, override) };
+}
+
+export async function effectiveEntitlements(): Promise<Entitlements> {
+  return (await planStanding()).entitlements;
 }
 
 export async function setEntitlementOverride(
@@ -190,6 +213,9 @@ export async function setEntitlementOverride(
         null,
       workspaceRequestsPerMinute:
         values.workspaceRequestsPerMinute ?? existing?.workspaceRequestsPerMinute ?? null,
+      features: values.features
+        ? { ...(existing?.features ?? {}), ...values.features }
+        : (existing?.features ?? null),
       updatedAt: new Date(),
     };
 

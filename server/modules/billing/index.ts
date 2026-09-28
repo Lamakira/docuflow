@@ -40,30 +40,55 @@ import {
 
 export type { BillingPersistence };
 export type {
+  BillingInterval,
   BillingPinInput,
   EntitlementOverrideValues,
   Entitlements,
+  FeatureKey,
   PlanDefinition,
+  PlanFeatures,
   PlanKey,
   PlanRegistry,
   BillingState,
 } from "./planRegistry";
 export {
+  BILLING_INTERVALS,
   deriveEntitlements,
+  FEATURE_KEYS,
+  FEATURE_LABEL,
+  isPlanKey,
+  minimumPlanFor,
+  placePlan,
+  planDefinition,
+  PLAN_LABEL,
+  PLAN_LADDER,
+  PLAN_MIGRATIONS,
   PLAN_REGISTRY,
   PLAN_REGISTRY_VERSION,
+  PRICED_PLAN_KEYS,
   PUBLIC_API_RATE_LIMITS,
   UnknownPlanError,
   UnknownRegistryVersionError,
 } from "./planRegistry";
-export type { AuditActor, BillingProjection } from "./entitlements";
+export type { AuditActor, BillingProjection, PlanStanding } from "./entitlements";
 export {
   BillingPinMissingError,
   InvalidBillingPinError,
   effectiveEntitlements,
   getBillingProjection,
+  planStanding,
   setEntitlementOverride,
 } from "./entitlements";
+export type { FeatureMode } from "./featureGate";
+export {
+  PLAN_UPGRADE_REQUIRED,
+  PlanFeatureNotIncludedError,
+  assertFeature,
+  assertRequestEntitled,
+  featureForRequest,
+  featureIncluded,
+  projectWriteFeature,
+} from "./featureGate";
 export {
   InvalidBillingTransitionError,
   applyPeriodEnd,
@@ -99,6 +124,7 @@ export type {
   ProviderSubscription,
   SeatQuantityUpdate,
   SeatProration,
+  SubscriptionPlanChange,
   PaymentMethodUpdateRequest,
   WebhookEvent,
 } from "./billingProvider";
@@ -128,11 +154,17 @@ export {
   SeededWorkspaceCheckoutError,
   InvalidCheckoutError,
   PaymentMethodUpdateUnavailableError,
+  changePlan,
   getSubscriptionStatus,
   startCheckout,
   startPaymentMethodUpdate,
 } from "./checkout";
-export type { StartCheckoutInput, StartPaymentMethodUpdateInput, SubscriptionStatus } from "./checkout";
+export type {
+  ChangePlanInput,
+  StartCheckoutInput,
+  StartPaymentMethodUpdateInput,
+  SubscriptionStatus,
+} from "./checkout";
 
 /** Process-wide BillingProvider. Missing Stripe credentials fail closed on money movement. */
 export const billingProvider = billingProviderFromAppConfig(config.billing);

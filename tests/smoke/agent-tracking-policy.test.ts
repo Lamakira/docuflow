@@ -52,7 +52,18 @@ function at(hhmm: string): Date {
 
 describe("Tracking Policy defaults (#293)", () => {
   it("mirrors the server's defaults so an unreached server changes nothing", () => {
-    expect(DEFAULT_TRACKING_POLICY).toEqual(DEFAULT_SCREENSHOT_POLICY);
+    expect(DEFAULT_TRACKING_POLICY).toEqual({ ...DEFAULT_SCREENSHOT_POLICY, activityCaptureEnabled: true });
+  });
+
+  it("keeps the Plan's screenshot Projects and activity capture from the delivered policy (#299)", () => {
+    const delivered = normalizeTrackingPolicy({
+      ...DEFAULT_TRACKING_POLICY,
+      screenshotProjectIds: ["p1"],
+      activityCaptureEnabled: false,
+    })!;
+    expect(delivered.screenshotProjectIds).toEqual(["p1"]);
+    expect(delivered.activityCaptureEnabled).toBe(false);
+    expect(normalizeTrackingPolicy({ screenshotProjectIds: "p1" })!.screenshotProjectIds).toBeNull();
   });
 });
 

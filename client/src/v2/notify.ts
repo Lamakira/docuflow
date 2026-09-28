@@ -19,14 +19,22 @@ export function errorMessage(error: unknown, fallback: string = GENERIC_FAILURE)
 }
 
 const STANDING_REFUSAL = /read-only|permission denied|not authorized|access denied|forbidden|capability/i;
+const PLAN_REFUSAL = /\bUpgrade to [A-Z]\w* to\b/;
+
+/** The server's refusal for an area the Workspace's Plan leaves out; it names the Plan to move to. */
+export function isPlanRefusal(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return PLAN_REFUSAL.test(message);
+}
 
 /**
  * A refusal that explains the reader's standing — a Capability, the Workspace
- * Role, a Read-only Workspace — stays beside the control that raised it.
+ * Role, a Read-only Workspace — stays beside the control that raised it. A
+ * Plan refusal is a toast: its own words are the whole explanation.
  */
 export function isStandingRefusal(error: unknown): boolean {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return STANDING_REFUSAL.test(message);
+  return STANDING_REFUSAL.test(message) && !isPlanRefusal(message);
 }
 
 type NotifyOptions = {

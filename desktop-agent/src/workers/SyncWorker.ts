@@ -11,7 +11,7 @@
  * Phase 4.2
  */
 
-import { ApiClient } from "../lib/ApiClient";
+import { ApiClient, PLAN_UPGRADE_REQUIRED } from "../lib/ApiClient";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
 import fs from "fs";
@@ -188,6 +188,12 @@ export class SyncWorker {
         this.queue.releaseBatch(batchId);
       }
     } catch (error: any) {
+      if (error?.code === PLAN_UPGRADE_REQUIRED) {
+        // The Plan leaves activity capture out: the batch can never be accepted.
+        this.queue.markBatchSynced(batchId);
+        console.warn(`[SyncWorker] Events: ${events.length} dropped — ${error.message}`);
+        return;
+      }
       this.queue.releaseBatch(batchId);
       this.eventFailures++;
       console.error(`[SyncWorker] Event sync failed: ${error.message}`);
@@ -265,6 +271,11 @@ export class SyncWorker {
         `[SyncWorker] Screenshot ${pending.id.slice(0, 8)} uploaded (total: ${this.totalScreenshotsSynced})`
       );
     } catch (error: any) {
+      if (error?.code === PLAN_UPGRADE_REQUIRED) {
+        console.warn(`[SyncWorker] Screenshot ${pending.id.slice(0, 8)} dropped — ${error.message}`);
+        this.queue.markScreenshotSent(pending.id);
+        return;
+      }
       const backoff = Math.min(
         BASE_BACKOFF_MS * Math.pow(2, pending.attemptCount),
         MAX_BACKOFF_MS

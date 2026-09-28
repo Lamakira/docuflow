@@ -3,7 +3,17 @@ import { z } from "zod";
 import { isAuthenticated, getUserId } from "../../auth";
 import {
   BillingProviderClosedError,
+  BillingProviderError,
   BillingWebhookSignatureError,
+  FEATURE_KEYS,
+  PLAN_LABEL,
+  PLAN_LADDER,
+  PLAN_REGISTRY,
+  PLAN_REGISTRY_VERSION,
+  PRICED_PLAN_KEYS,
+  changePlan,
+  minimumPlanFor,
+  planStanding,
   InvalidBillingTransitionError,
   InvalidCheckoutError,
   PaymentMethodUpdateUnavailableError,
@@ -34,11 +44,24 @@ function webhookPayload(req: { rawBody?: unknown; body?: unknown }): string {
   return typeof req.body === "string" ? req.body : JSON.stringify(req.body ?? {});
 }
 
+const pricedPlan = z.enum(PRICED_PLAN_KEYS, {
+  errorMap: () => ({ message: "Choose Starter, Growth or Business." }),
+});
+const billingInterval = z.enum(["monthly", "annual"], {
+  errorMap: () => ({ message: "Choose monthly or annual billing." }),
+});
+
 const checkoutBody = z.object({
-  planKey: z.enum(["pro"]),
+  planKey: pricedPlan,
+  interval: billingInterval,
   seatQuantity: z.number().int().min(1),
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
+});
+
+const planBody = z.object({
+  planKey: pricedPlan,
+  interval: billingInterval,
 });
 
 const seatsBody = z.object({
@@ -73,7 +96,35 @@ function sendBillingError(
     res.status(400).json({ message: error.message });
     return true;
   }
+  if (error instanceof BillingProviderError) {
+    res.status(502).json({ message: error.message });
+    return true;
+  }
   return false;
+}
+
+/** What the Workspace's Plan includes, for navigation and upgrade prompts. Any member may read it. */
+async function entitlementSummary() {
+  const { projection, entitlements } = await planStanding();
+  const plans = PLAN_REGISTRY[PLAN_REGISTRY_VERSION] ?? {};
+  return {
+    planKey: projection.planKey,
+    planLabel: PLAN_LABEL[projection.planKey],
+    registryVersion: projection.registryVersion,
+    billingState: projection.billingState,
+    billingInterval: projection.billingInterval,
+    trialEndsAt: projection.trialEndsAt,
+    features: entitlements.features,
+    screenshotProjectCapacity: entitlements.screenshotProjectCapacity,
+    requiredPlan: Object.fromEntries(FEATURE_KEYS.map((feature) => [feature, minimumPlanFor(feature)])),
+    plans: PLAN_LADDER.filter((planKey) => plans[planKey]).map((planKey) => ({
+      planKey,
+      label: PLAN_LABEL[planKey],
+      features: plans[planKey]!.features,
+      screenshotProjectCapacity: plans[planKey]!.screenshotProjectCapacity,
+      priced: (PRICED_PLAN_KEYS as readonly string[]).includes(planKey),
+    })),
+  };
 }
 
 /**
@@ -112,6 +163,19 @@ export function registerBillingRoutes(app: Express): void {
     try {
       const body = checkoutBody.parse(req.body);
       res.json(await startCheckout(body, actorOf(req), billingProvider));
+    } catch (error) {
+      if (!sendBillingError(res, error)) throw error;
+    }
+  });
+
+  app.get("/api/billing/entitlements", isAuthenticated, async (_req, res) => {
+    res.json(await entitlementSummary());
+  });
+
+  app.post("/api/billing/plan", isAuthenticated, requireAdministration, async (req, res) => {
+    try {
+      const body = planBody.parse(req.body);
+      res.json(await changePlan(body, actorOf(req), billingProvider));
     } catch (error) {
       if (!sendBillingError(res, error)) throw error;
     }

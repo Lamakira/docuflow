@@ -99,6 +99,10 @@ describe("desktop agent ingestion (characterization)", () => {
       idlePromptEnabled: true,
       idleTimeoutMinutes: 10,
       idleCountdownSeconds: 60,
+      // Narrowed by the Plan (#299): the seeded legacy Plan captures on every Project.
+      screenshotProjectIds: null,
+      screenshotProjectCapacity: null,
+      activityCaptureEnabled: true,
     });
 
     const entry = await startTimer(user.agent, crmProjectId, taskId);
@@ -177,6 +181,9 @@ describe("desktop agent ingestion (characterization)", () => {
       idlePromptEnabled: false,
       idleTimeoutMinutes: 5,
       idleCountdownSeconds: 30,
+      screenshotProjectIds: null,
+      screenshotProjectCapacity: null,
+      activityCaptureEnabled: true,
     });
   });
 

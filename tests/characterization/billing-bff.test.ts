@@ -64,13 +64,24 @@ describe("billing web BFF (characterization)", () => {
     await setWorkspaceRole(admin.id, "owner");
 
     const checkout = await admin.agent.post("/api/billing/checkout").send({
-      planKey: "pro",
+      planKey: "business",
+      interval: "monthly",
       seatQuantity: 3,
       successUrl: "https://app.docuflow.test/billing/return",
       cancelUrl: "https://app.docuflow.test/billing/cancel",
     });
     expect(checkout.status).toBe(400);
     expect(checkout.body).toEqual({ message: "The seeded Workspace cannot start Checkout" });
+
+    const retired = await admin.agent.post("/api/billing/checkout").send({
+      planKey: "pro",
+      interval: "monthly",
+      seatQuantity: 3,
+      successUrl: "https://app.docuflow.test/billing/return",
+      cancelUrl: "https://app.docuflow.test/billing/cancel",
+    });
+    expect(retired.status).toBe(400);
+    expect(retired.body).toEqual({ message: "Choose Starter, Growth or Business." });
 
     const status = await admin.agent.get("/api/billing/subscription");
     expect(status.body).toMatchObject({

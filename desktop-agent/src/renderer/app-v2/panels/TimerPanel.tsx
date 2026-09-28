@@ -31,6 +31,8 @@ export function TimerPanel() {
   const active = useActiveTask();
   const bridge = window.agentBridge;
   const timer = state.agentState?.timer;
+  /** The Workspace's Plan has no Tasks: a Project is tracked directly (#299). */
+  const projectOnly = state.agentState?.timerRequiresTask === false;
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,7 +92,7 @@ export function TimerPanel() {
   }
 
   function ensureTasks(projectId: string) {
-    if (requested.current.has(projectId)) return;
+    if (projectOnly || requested.current.has(projectId)) return;
     requested.current.add(projectId);
     void bridge.getTasks({ crmProjectId: projectId }).then((r) => receiveTasks(projectId, r));
   }
@@ -157,6 +159,15 @@ export function TimerPanel() {
     );
   }
 
+  async function startProject(project: Project) {
+    clearCompleted();
+    const result = await startTimer({ crmProjectId: project.id, projectName: project.name });
+    showToast(
+      result.ok ? `Tracking “${project.name}”` : result.error ?? 'Could not start the timer',
+      result.ok ? 'now' : 'error',
+    );
+  }
+
   async function submitCreate(e: React.FormEvent) {
     e.preventDefault();
     const name = newName.trim();
@@ -185,6 +196,10 @@ export function TimerPanel() {
     setCreating(false);
     setNewName('');
     setSearch('');
+    if (projectOnly) {
+      await startProject(created);             // with no Tasks, creating a project starts tracking it
+      return;
+    }
     setOpenProjectId(created.id);              // creating a project opens it
     showToast(`“${created.name}” created`);
   }
@@ -197,14 +212,14 @@ export function TimerPanel() {
 
   return (
     <Panel>
-      <PanelHead title="Select task">
+      <PanelHead title={projectOnly ? 'Select project' : 'Select task'}>
         <div className="v2-search">
           <span className="v2-search__glyph" aria-hidden="true" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search projects or tasks…"
-            aria-label="Search projects or tasks"
+            placeholder={projectOnly ? 'Search projects…' : 'Search projects or tasks…'}
+            aria-label={projectOnly ? 'Search projects' : 'Search projects or tasks'}
           />
         </div>
       </PanelHead>
@@ -218,7 +233,7 @@ export function TimerPanel() {
                 <span className="v2-active__dot" />
                 {active.projectName}
               </span>
-              <p className="v2-active__task">{active.taskName ?? 'Untitled task'}</p>
+              <p className="v2-active__task">{active.taskName ?? (projectOnly ? 'Project time' : 'Untitled task')}</p>
               <p className="v2-active__status">{statusLabel}</p>
             </div>
           </>
@@ -314,11 +329,16 @@ export function TimerPanel() {
                   <PanelRow
                     key={project.id}
                     name={project.name}
-                    icon={<FolderIcon size={15} />}
+                    icon={projectOnly ? <PlayIcon size={13} /> : <FolderIcon size={15} />}
                     meta={tasks ? `${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}` : undefined}
                     end={isActive ? 'ACTIVE' : undefined}
                     endAccent={isActive}
-                    onClick={() => { setOpenProjectId(project.id); setCreating(false); }}
+                    selected={projectOnly && isActive}
+                    onClick={() => {
+                      setCreating(false);
+                      if (projectOnly) void startProject(project);
+                      else setOpenProjectId(project.id);
+                    }}
                   />
                 );
               })}
