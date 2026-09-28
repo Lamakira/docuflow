@@ -7,6 +7,7 @@ import ws from "ws";
 import * as schema from "@shared/schema";
 import { config } from "./config";
 import { bindWorkspaceScope } from "./workspaceScope";
+import { gateOnRuntimeRole, type RuntimeRole } from "./databaseRole";
 
 const { connectionString, driver } = config.database;
 
@@ -48,17 +49,22 @@ const usePg = driver === "pg";
 
 neonConfig.webSocketConstructor = ws;
 
-function createDb(): { pool: DbPool; db: Db } {
+function createDb(): { pool: DbPool; db: Db; verifyRuntimeRole: () => Promise<RuntimeRole> } {
+  const gate = { production: config.isProduction };
   if (usePg) {
     const pgPool = new pg.Pool({ connectionString });
     bindWorkspaceScope(pgPool);
-    return { pool: pgPool, db: drizzlePg({ client: pgPool, schema }) };
+    const verifyRuntimeRole = gateOnRuntimeRole(pgPool, gate);
+    return { pool: pgPool, db: drizzlePg({ client: pgPool, schema }), verifyRuntimeRole };
   }
   const neonPool = new NeonPool({ connectionString });
   bindWorkspaceScope(neonPool);
-  return { pool: neonPool, db: drizzleNeon({ client: neonPool, schema }) };
+  const verifyRuntimeRole = gateOnRuntimeRole(neonPool, gate);
+  return { pool: neonPool, db: drizzleNeon({ client: neonPool, schema }), verifyRuntimeRole };
 }
 
 const created = createDb();
 export const pool = created.pool;
 export const db = created.db;
+/** Row-level security's precondition on this pool's role; see `databaseRole.ts`. */
+export const verifyRuntimeRole = created.verifyRuntimeRole;
