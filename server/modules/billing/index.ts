@@ -96,6 +96,7 @@ export {
   exhaustDunning,
   expireTrial,
   markPastDue,
+  readPlanIntent,
   startTrial,
 } from "./stateMachine";
 export {

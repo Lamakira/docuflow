@@ -36,6 +36,9 @@ export type Entitlements = {
   billingState: string;
   billingInterval: BillingInterval | null;
   trialEndsAt: string | null;
+  /** The Plan picked on the pricing page before sign-up. Enterprise included; it grants nothing. */
+  intendedPlanKey: string | null;
+  intendedInterval: BillingInterval | null;
   features: Record<FeatureKey, boolean>;
   screenshotProjectCapacity: number | null;
   requiredPlan: Record<FeatureKey, string>;
@@ -150,3 +153,43 @@ export const BILLING_INTERVAL_LABEL: Record<BillingInterval, string> = {
   monthly: "Monthly",
   annual: "Annual",
 };
+
+/** A Workspace that never bought a Plan: on the Trial, or Read-only after it. */
+function awaitsCheckout(entitlements: Entitlements): boolean {
+  if (pricedPlans(entitlements).some((plan) => plan.planKey === entitlements.planKey)) return false;
+  return entitlements.billingState === "Trialing" || entitlements.billingState === "ReadOnly";
+}
+
+/** The pricing-page Plan Billing opens on, while the Workspace has not bought one. */
+export function intendedPricedPlan(entitlements: Entitlements | null | undefined): PricedPlanKey | null {
+  if (!entitlements || !awaitsCheckout(entitlements)) return null;
+  const planKey = entitlements.intendedPlanKey;
+  return pricedPlans(entitlements).some((plan) => plan.planKey === planKey) ? (planKey as PricedPlanKey) : null;
+}
+
+/** The line above the Plan cards that remembers the pricing-page choice. */
+export function planIntentNote(entitlements: Entitlements | null | undefined): string | null {
+  if (!entitlements?.intendedPlanKey || !awaitsCheckout(entitlements)) return null;
+  const label = planName(entitlements, entitlements.intendedPlanKey);
+  if (entitlements.intendedPlanKey === "enterprise") {
+    return (
+      `You chose ${label} when you signed up. ${label} is agreed with DocuFlow sales rather than bought through Checkout; ` +
+      "choose a Plan below to keep the Workspace writable in the meantime."
+    );
+  }
+  return `You chose ${label} when you signed up.`;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type TrialNotice = { copy: string; action: string };
+
+/** The shell's Trial countdown, with the pricing-page Plan as the way forward. */
+export function trialNotice(entitlements: Entitlements | null | undefined, now: Date = new Date()): TrialNotice | null {
+  if (!entitlements || entitlements.billingState !== "Trialing" || !entitlements.trialEndsAt) return null;
+  const days = Math.max(0, Math.ceil((new Date(entitlements.trialEndsAt).getTime() - now.getTime()) / DAY_MS));
+  const copy =
+    days === 0 ? "Your Trial ends today." : `Your Trial ends in ${days} ${days === 1 ? "day" : "days"}.`;
+  const intended = intendedPricedPlan(entitlements);
+  return { copy, action: intended ? `Continue with ${planName(entitlements, intended)}` : "Choose a Plan" };
+}

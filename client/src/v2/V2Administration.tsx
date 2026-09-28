@@ -99,7 +99,9 @@ import {
   FEATURE_LABEL,
   billingPlanPath,
   entitlementsPath,
+  intendedPricedPlan,
   planIncludes,
+  planIntentNote,
   pricedPlans,
   useEntitlements,
   type BillingInterval,
@@ -218,8 +220,9 @@ export function V2AdministrationPage() {
   const currentPriced = pricedPlans(entitlements).some((plan) => plan.planKey === entitlements?.planKey)
     ? (entitlements!.planKey as PricedPlanKey)
     : null;
-  const planChoice: PricedPlanKey = chosenPlan ?? currentPriced ?? "business";
-  const intervalChoice: BillingInterval = chosenInterval ?? entitlements?.billingInterval ?? "monthly";
+  const planChoice: PricedPlanKey = chosenPlan ?? currentPriced ?? intendedPricedPlan(entitlements) ?? "business";
+  const intervalChoice: BillingInterval =
+    chosenInterval ?? entitlements?.billingInterval ?? entitlements?.intendedInterval ?? "monthly";
 
   const screenshotCapacity = entitlements?.screenshotProjectCapacity ?? null;
   const { data: screenshotProjects } = useQuery<{ data: Array<{ id: string; name: string }> }>({
@@ -1584,6 +1587,7 @@ function PlanPicker({
   onChange: () => void;
 }) {
   const plans = pricedPlans(entitlements);
+  const intentNote = planIntentNote(entitlements);
   const chosen = plans.find((row) => row.planKey === plan);
   const unchanged =
     mode === "change" && plan === entitlements.planKey && interval === entitlements.billingInterval;
@@ -1602,6 +1606,11 @@ function PlanPicker({
       <p className="df-admin-billing-note" data-testid="v2-administration-plans-note">
         {planPickerNote(mode, entitlements.planLabel)}
       </p>
+      {intentNote ? (
+        <p className="df-admin-billing-note" data-testid="v2-administration-plan-intent">
+          {intentNote}
+        </p>
+      ) : null}
       <div className="df-plan-grid" data-testid="v2-administration-plans">
         {plans.map((row) => {
           const current = row.planKey === entitlements.planKey;

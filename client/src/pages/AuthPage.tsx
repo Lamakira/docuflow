@@ -25,6 +25,7 @@ import {
   type RegistrationStatus,
 } from "@/lib/registration";
 import { composeSessionTask, SESSION_TASK_COMPLETE_PATH } from "@/lib/sessionTask";
+import { capturePlanIntent } from "@/lib/planIntent";
 
 /**
  * Sign-in and sign-up (#110, #230, ADR-0007). Clerk renders both forms:
@@ -44,6 +45,8 @@ export default function AuthPage() {
  * and `POST /api/auth/user` is the step between.
  */
 export function SignUpPage() {
+  // Read before Clerk renders, because its redirect leaves the query string behind.
+  useState(() => capturePlanIntent(window.location.search));
   return <ClerkFrame surface="sign-up" />;
 }
 

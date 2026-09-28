@@ -15,7 +15,7 @@ import { V2FirstWorkspace } from "./V2FirstWorkspace";
 import { V2WorkspaceChooser } from "./V2WorkspaceChooser";
 import { selectCommandPanel } from "./chrome";
 import { canManageAdministration } from "./administration";
-import { planGateCopy, planGateFor, useEntitlements } from "./plan";
+import { planGateCopy, planGateFor, trialNotice, useEntitlements } from "./plan";
 import {
   chromeLayoutForViewport,
   contextSurface,
@@ -118,6 +118,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
   });
   const { data: entitlements } = useEntitlements();
   const planGate = planGateFor(navIdForPath(location), entitlements);
+  const trial = trialNotice(entitlements);
 
   useEffect(() => {
     setPanel(null);
@@ -314,6 +315,13 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
                             <Link href={administrationTabHref("billing")}>See Plans</Link>
                           </Button>
                         ) : null}
+                      </div>
+                    ) : trial && canManageAdministration(current?.workspaceRole ?? "") ? (
+                      <div className="df-plan-banner" role="status" data-plan-gate="trial" data-testid="v2-trial-banner">
+                        <p>{trial.copy}</p>
+                        <Button asChild variant="outline" size="sm" className="df-btn">
+                          <Link href={administrationTabHref("billing")}>{trial.action}</Link>
+                        </Button>
                       </div>
                     ) : null}
                     {children}

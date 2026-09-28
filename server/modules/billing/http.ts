@@ -15,6 +15,7 @@ import {
   changePlan,
   minimumPlanFor,
   planStanding,
+  readPlanIntent,
   InvalidBillingTransitionError,
   InvalidCheckoutError,
   PaymentMethodUpdateUnavailableError,
@@ -126,6 +127,7 @@ function billingRoute(handler: (req: Request, res: Response) => Promise<unknown>
 /** What the Workspace's Plan includes, for navigation and upgrade prompts. Any member may read it. */
 async function entitlementSummary() {
   const { projection, entitlements } = await planStanding();
+  const intent = await readPlanIntent();
   const plans = PLAN_REGISTRY[PLAN_REGISTRY_VERSION] ?? {};
   return {
     planKey: projection.planKey,
@@ -134,6 +136,8 @@ async function entitlementSummary() {
     billingState: projection.billingState,
     billingInterval: projection.billingInterval,
     trialEndsAt: projection.trialEndsAt,
+    intendedPlanKey: intent?.planKey ?? null,
+    intendedInterval: intent?.interval ?? null,
     features: entitlements.features,
     screenshotProjectCapacity: entitlements.screenshotProjectCapacity,
     requiredPlan: Object.fromEntries(FEATURE_KEYS.map((feature) => [feature, minimumPlanFor(feature)])),

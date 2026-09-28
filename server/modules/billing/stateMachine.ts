@@ -4,6 +4,7 @@
  */
 
 import { auditEvents, workspaceBilling } from "@shared/schema";
+import { parsePlanIntent, type PlanIntent } from "@shared/planIntent";
 import { db } from "../../db";
 import { inWorkspace, requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 import {
@@ -90,7 +91,7 @@ async function applyState(
  */
 export async function startTrial(
   actor: AuditActor,
-  options: { now?: Date } = {}
+  options: { now?: Date; intent?: PlanIntent | null } = {}
 ): Promise<BillingProjection> {
   const { workspaceId } = requireWorkspaceContext();
   const now = options.now ?? new Date();
@@ -124,6 +125,8 @@ export async function startTrial(
           trialEndsAt,
           periodEndsAt: null,
           cancelAtPeriodEnd: false,
+          intendedPlanKey: options.intent?.planKey ?? null,
+          intendedBillingInterval: options.intent?.interval ?? null,
         })
       )
       .returning();
@@ -141,6 +144,20 @@ export async function startTrial(
 
     return billingProjectionOf(row);
   });
+}
+
+/** The Plan chosen on the pricing page before sign-up, if one came with the first Workspace. */
+export async function readPlanIntent(): Promise<PlanIntent | null> {
+  requireWorkspaceContext();
+  const [row] = await db
+    .select({
+      planKey: workspaceBilling.intendedPlanKey,
+      interval: workspaceBilling.intendedBillingInterval,
+    })
+    .from(workspaceBilling)
+    .where(inWorkspace(workspaceBilling))
+    .limit(1);
+  return row ? parsePlanIntent(row.planKey, row.interval) : null;
 }
 
 /** Expiry of Trialing without conversion becomes ReadOnly. */

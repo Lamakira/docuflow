@@ -2095,6 +2095,9 @@ export const workspaceBilling = pgTable("workspace_billing", {
   pendingCheckoutSessionId: varchar("pending_checkout_session_id"),
   /** `monthly` or `annual`, read from the Stripe Price's recurring interval. Null without a Subscription. */
   billingInterval: varchar("billing_interval", { length: 16 }),
+  /** The Plan picked on the pricing page before sign-up; Billing offers it first. Never an Entitlement. */
+  intendedPlanKey: varchar("intended_plan_key", { length: 32 }),
+  intendedBillingInterval: varchar("intended_billing_interval", { length: 16 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [

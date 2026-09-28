@@ -44,6 +44,7 @@ journal is not part of it and is never applied.
 | 0035 | `0035_perpetual_tattoo.sql` | Document Access levels (#278): `company_document_folders.access`, `document_access_members` for Restricted items, and `files.project_id` for Project Files. Maps `everyone` to `workspace` and any unknown level to `administrators`. |
 | 0036 | `0036_flashy_mattie_franklin.sql` | Opportunity fields on `crm_projects` (#276): `opportunity_owner_id` (the Opportunity Owner, apart from the Project Manager in `assignee_id`), `source`, the Estimated value as `estimated_value_minor` (money in minor units) with `estimated_value_currency`, and `lost_reason` with `lost_reason_detail`. Fills an unset Owner from the assignee on rows that have an Opportunity; the hours budget is untouched. |
 | 0037 | `0037_flowery_spirit.sql` | Plans and Entitlements (#299): `workspace_billing.billing_interval` (`monthly` or `annual`, from the Stripe Price) and `workspace_entitlement_overrides.features` for sales-led feature grants. Moves no Workspace to registry version 2; `scripts/assign-plan.ts` does that, audited. |
+| 0038 | `0038_boring_gamma_corps.sql` | The Plan chosen on the marketing site (#299): `workspace_billing.intended_plan_key` and `intended_billing_interval`, written when the first Workspace is created from `/signup?plan=`. Billing offers that Plan first; it grants nothing. |
 
 `0000` is a squash, not the beginning of history. The schema it captures was
 built up by the hand-numbered files now in `legacy/` and by DDL that ran on
