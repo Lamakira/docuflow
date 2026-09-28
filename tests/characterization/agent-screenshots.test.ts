@@ -239,7 +239,7 @@ describe("desktop agent screenshots (characterization)", () => {
       deletedAt: null,
       // The pending placeholder is replaced with the real object path, and the
       // extension records the recompression the upload leg performs.
-      storageKey: `/objects/agent-screenshots/${screenshotId}.webp`,
+      storageKey: `/objects/ws/seeded/agent-screenshots/${screenshotId}.webp`,
     });
     // The hash is of the bytes the agent sent, not of the compressed object.
     expect(list.body.data[0].contentHash).toMatch(/^[0-9a-f]{64}$/);

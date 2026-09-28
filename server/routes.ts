@@ -12,10 +12,13 @@ import { z } from "zod";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
+  assertObjectInActiveWorkspace,
+  isObjectInActiveWorkspace,
   storagePort,
   verifyUploadGrant,
 } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
+import { contextFromUser, runWithWorkspaceContext } from "./workspaceContext";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
@@ -638,6 +641,13 @@ export async function registerRoutes(
     const objectStorageService = new ObjectStorageService();
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
+      const isPublic = await objectStorageService.canAccessObjectEntity({ objectFile });
+      if (!isPublic && userId) {
+        // Another Workspace's object is answered as absent, not as forbidden.
+        const ctx = await contextFromUser(userId).catch(() => null);
+        const owned = ctx && (await runWithWorkspaceContext(ctx, () => isObjectInActiveWorkspace(req.path)));
+        if (!owned) return res.sendStatus(404);
+      }
       const canAccess = await objectStorageService.canAccessObjectEntity({
         objectFile,
         userId: userId,
@@ -1108,7 +1118,11 @@ export async function registerRoutes(
         
         // Use vector search to find relevant documentation chunks
         try {
-          searchResults = await searchSimilarChunks(userId, message, mode === "both" ? 10 : 15);
+          searchResults = await searchSimilarChunks(
+            projects.map((project) => project.id),
+            message,
+            mode === "both" ? 10 : 15,
+          );
           
           if (searchResults.length > 0) {
             for (const result of searchResults) {
@@ -4624,6 +4638,7 @@ Instructions:
       let normalizedPath: string;
       try {
         normalizedPath = objectStorageService.normalizeObjectEntityPath(storageKey);
+        assertObjectInActiveWorkspace(normalizedPath);
       } catch {
         return res.status(400).json({ message: "Invalid storageKey" });
       }
@@ -4715,6 +4730,7 @@ Instructions:
       }
 
       const objectStorageService = new ObjectStorageService();
+      assertObjectInActiveWorkspace(screenshot.storageKey);
       const objectFile = await objectStorageService.getObjectEntityFile(screenshot.storageKey);
       objectStorageService.downloadObject(objectFile, res);
     } catch (error) {

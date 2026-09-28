@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { DOCUMENT_ACCESS_WORKSPACE } from "../../shared/schema";
 import { migrate } from "../../scripts/migrate";
 import { resetDb, urlForDatabase, withClient } from "../helpers/db";
-import { inSeededWorkspace } from "../helpers/workspace";
+import { createSeededMember, inSeededWorkspace } from "../helpers/workspace";
 import { completeUpload } from "../helpers/objects";
 import { objectExists, putObject } from "../fakes/gcs";
 
@@ -34,8 +34,7 @@ async function publicColumns(url: string, table: string): Promise<string[]> {
 }
 
 async function seedUser() {
-  const { storage } = await import("../../server/storage");
-  return storage.createUser({
+  return createSeededMember({
     email: "ada@test.invalid",
     firstName: "Ada",
   });
@@ -129,7 +128,7 @@ describe("knowledge object-storage port", () => {
 
     const file = await inSeededWorkspace(async () => {
       const slot = await port.createUploadSlot(user.id);
-      expect(slot.objectPath).toMatch(/^\/objects\/uploads\//);
+      expect(slot.objectPath).toMatch(/^\/objects\/ws\/seeded\/files\/[0-9a-f-]+\/[0-9a-f-]+$/);
       completeUpload(slot.uploadURL, "invoice-bytes", "application/pdf");
       const uploaded = await port.finalizeUpload({
         objectPath: slot.objectPath,

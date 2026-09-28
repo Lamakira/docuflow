@@ -8,6 +8,7 @@ import {
 import { resetDb } from "../helpers/db";
 import { makeApp } from "../helpers/app";
 import { registerUser } from "../helpers/auth";
+import { createSeededMember } from "../helpers/workspace";
 
 /**
  * Phase 4 ticket #95: every HTTP and Worker transaction establishes a
@@ -41,7 +42,7 @@ describe("WorkspaceContext", () => {
     const { storage } = await import("../../server/storage");
     const { MissingWorkspaceContextError } = await import("../../server/workspaceContext");
 
-    const user = await storage.createUser({
+    const user = await createSeededMember({
       email: "ada@test.invalid",
       firstName: "Ada",
     });
@@ -56,7 +57,7 @@ describe("WorkspaceContext", () => {
     const { storage } = await import("../../server/storage");
     const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
 
-    const user = await storage.createUser({
+    const user = await createSeededMember({
       email: "ada@test.invalid",
       firstName: "Ada",
     });
@@ -82,11 +83,11 @@ describe("WorkspaceContext", () => {
 
     await plantOtherWorkspace();
 
-    const ada = await storage.createUser({
+    const ada = await createSeededMember({
       email: "ada@test.invalid",
       firstName: "Ada",
     });
-    const other = await storage.createUser({
+    const other = await createSeededMember({
       email: "other@test.invalid",
       firstName: "Other",
     });
@@ -130,8 +131,8 @@ describe("WorkspaceContext", () => {
 
     await plantOtherWorkspace();
 
-    const ada = await storage.createUser({ email: "ada@test.invalid", firstName: "Ada" });
-    const other = await storage.createUser({ email: "other@test.invalid", firstName: "Other" });
+    const ada = await createSeededMember({ email: "ada@test.invalid", firstName: "Ada" });
+    const other = await createSeededMember({ email: "other@test.invalid", firstName: "Other" });
     await db.delete(memberships).where(eq(memberships.userId, other.id));
     await db.insert(memberships).values({
       workspaceId: OTHER_WORKSPACE_ID,
@@ -206,8 +207,8 @@ describe("WorkspaceContext", () => {
 
     await plantOtherWorkspace();
 
-    const ada = await storage.createUser({ email: "ada@test.invalid", firstName: "Ada" });
-    const other = await storage.createUser({ email: "other@test.invalid", firstName: "Other" });
+    const ada = await createSeededMember({ email: "ada@test.invalid", firstName: "Ada" });
+    const other = await createSeededMember({ email: "other@test.invalid", firstName: "Other" });
     await db.delete(memberships).where(eq(memberships.userId, other.id));
     await db.insert(memberships).values({
       workspaceId: OTHER_WORKSPACE_ID,
@@ -276,7 +277,7 @@ describe("WorkspaceContext", () => {
     const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
 
     await plantOtherWorkspace();
-    const stranger = await storage.createUser({
+    const stranger = await createSeededMember({
       email: "other@test.invalid",
       firstName: "Other",
     });
@@ -286,6 +287,33 @@ describe("WorkspaceContext", () => {
 
     const res = await member.agent.get(`/api/projects/${theirs.id}`);
     expect(res.status).toBe(404);
+  });
+
+  it("falls back to the oldest active Membership, not to the seeded Workspace (#297)", async () => {
+    const { storage } = await import("../../server/storage");
+    const { db } = await import("../../server/db");
+    const { contextFromUser } = await import("../../server/workspaceContext");
+
+    await plantOtherWorkspace();
+    const ada = await storage.createUser({ email: "ada@test.invalid", firstName: "Ada" });
+    await db.insert(memberships).values([
+      { workspaceId: SEEDED_WORKSPACE_ID, userId: ada.id, workspaceRoleId: "seeded-member", createdAt: new Date("2026-02-01") },
+      { workspaceId: OTHER_WORKSPACE_ID, userId: ada.id, workspaceRoleId: "other-member", createdAt: new Date("2026-01-01") },
+    ]);
+
+    await expect(contextFromUser(ada.id)).resolves.toMatchObject({ workspaceId: OTHER_WORKSPACE_ID });
+  });
+
+  it("picks the preferred Workspace while it is active, else the oldest Membership", async () => {
+    const { pickActiveMembership } = await import("../../server/workspaceContext");
+    const older = { workspaceId: "b", createdAt: new Date("2026-01-01") };
+    const newer = { workspaceId: SEEDED_WORKSPACE_ID, createdAt: new Date("2026-03-01") };
+
+    expect(pickActiveMembership([newer, older], null)).toBe(older);
+    expect(pickActiveMembership([newer, older], SEEDED_WORKSPACE_ID)).toBe(newer);
+    expect(pickActiveMembership([newer, older], "archived-or-gone")).toBe(older);
+    expect(pickActiveMembership([newer], "b")).toBe(newer);
+    expect(pickActiveMembership([], null)).toBeUndefined();
   });
 
   it("runs a Worker Job inside the Job's Workspace", async () => {

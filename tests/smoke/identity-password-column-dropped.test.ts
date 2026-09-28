@@ -34,7 +34,7 @@ describe("users.password and last_generated_password are gone (#161)", () => {
     expect(rows).toEqual([]);
   });
 
-  it("creates a User without a password column and still grants Membership", async () => {
+  it("creates a User without a password column and without a Membership", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const email = uniqueEmail("no-password");
@@ -56,14 +56,11 @@ describe("users.password and last_generated_password are gone (#161)", () => {
     ).rows[0];
     expect(user).toBeDefined();
 
+    // The platform directory is not a Workspace surface (#297, ADR-0025).
     const memberships = (
-      await pool.query<{ id: string; archived_at: Date | null }>(
-        `SELECT id, archived_at FROM memberships WHERE user_id = $1`,
-        [user.id]
-      )
+      await pool.query(`SELECT id FROM memberships WHERE user_id = $1`, [user.id])
     ).rows;
-    expect(memberships).toHaveLength(1);
-    expect(memberships[0].archived_at).toBeNull();
+    expect(memberships).toEqual([]);
   });
 });
 

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { resetDb } from "../helpers/db";
-import { inSeededWorkspace } from "../helpers/workspace";
+import { createSeededMember, inSeededWorkspace } from "../helpers/workspace";
 import { embeddingCalls } from "../fakes/openai";
 
 /**
@@ -17,7 +17,7 @@ import { embeddingCalls } from "../fakes/openai";
 async function seedProject() {
   const { storage } = await import("../../server/storage");
   const { inSeededWorkspace } = await import("../helpers/workspace");
-  const user = await storage.createUser({
+  const user = await createSeededMember({
     email: "ada@test.invalid",
     firstName: "Ada",
   });

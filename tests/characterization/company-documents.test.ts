@@ -163,7 +163,7 @@ describe("company documents and folders (characterization)", () => {
     const issued = await user.agent.post("/api/company-documents/upload-url");
     expect(issued.status).toBe(200);
     expect(issued.body.uploadURL).toMatch(
-      signedUrlPattern("test-bucket/\\.private/uploads/[0-9a-f-]+")
+      signedUrlPattern("test-bucket/\\.private/ws/seeded/files/[0-9a-f-]+/[0-9a-f-]+")
     );
     expect(signedUrlCalls()).toHaveLength(1);
     expect(signedUrlCalls()[0]).toMatchObject({ bucket: "test-bucket", action: "write" });

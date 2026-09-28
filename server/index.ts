@@ -4,6 +4,8 @@
 import "./telemetry";
 import { createApp, log } from "./app";
 import { config, logConfigSummary } from "./config";
+import { checkRuntimeRoleAtBoot } from "./databaseRole";
+import { verifyRuntimeRole } from "./db";
 import { serveStatic } from "./static";
 
 /**
@@ -20,6 +22,8 @@ import { serveStatic } from "./static";
 (async () => {
   // First line of the boot log: what this process resolved its environment to.
   logConfigSummary();
+
+  await checkRuntimeRoleAtBoot(verifyRuntimeRole);
 
   if (config.role === "worker") {
     const { startWorkerLoop } = await import("./worker");

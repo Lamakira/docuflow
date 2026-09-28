@@ -30,9 +30,9 @@
  *    provider reports an address this side never challenged — so adopting on a
  *    match would hand a stranger an existing User, its role included. Linking
  *    a legacy account stays where Phase 5 put it, with the #108 import.
- *  - **The new User joins no Workspace.** `storage.createUser` seeds a
- *    Membership in the seeded Workspace, which for a stranger off the internet
- *    is somebody else's data, so the row is written here instead.
+ *  - **The new User joins no Workspace.** The row is written here rather than
+ *    through `storage.createUser`, which in development also joins Harbour
+ *    View — for a stranger off the internet, somebody else's data.
  */
 
 import { eq } from "drizzle-orm";

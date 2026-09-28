@@ -5,6 +5,8 @@ import {
   workspaceBilling,
   workspaceRoles,
   workspaces,
+  type InsertUser,
+  type User,
 } from "../../shared/schema";
 import { runWithWorkspaceContext } from "../../server/workspaceContext";
 
@@ -63,9 +65,17 @@ export async function addWorkspaceMembership(
 }
 
 /**
- * Strip every Membership from a User — the state Flow 1 starts from, and one
- * `createUser` never leaves a User in, since it seeds a Membership.
+ * A User with a Member Membership in the seeded Workspace. `createUser` joins
+ * no Workspace (#297), so suites that need a Member add the Membership here.
  */
+export async function createSeededMember(userData: InsertUser): Promise<User> {
+  const { storage } = await import("../../server/storage");
+  const user = await storage.createUser(userData);
+  await addWorkspaceMembership(user.id, SEEDED_WORKSPACE_ID, "member", Boolean(user.isArchived));
+  return user;
+}
+
+/** Strip every Membership from a User — the state Flow 1 starts from. */
 export async function removeAllMemberships(userId: string): Promise<void> {
   const { db } = await import("../../server/db");
   const { eq } = await import("drizzle-orm");

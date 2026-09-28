@@ -13,7 +13,7 @@ import {
 import { makeApp } from "../helpers/app";
 import { newAgent, registerAdmin, registerUser, setWorkspaceRole } from "../helpers/auth";
 import { resetDb } from "../helpers/db";
-import { inSeededWorkspace } from "../helpers/workspace";
+import { createSeededMember, inSeededWorkspace } from "../helpers/workspace";
 
 /**
  * Phase 7 ticket #131: Identity & Access owns Service Account and
@@ -160,7 +160,7 @@ describe("Service Accounts (Identity & Access)", () => {
 
     await plantOtherWorkspace();
 
-    const other = await storage.createUser({
+    const other = await createSeededMember({
       email: "other@test.invalid",
       firstName: "Other",
     });

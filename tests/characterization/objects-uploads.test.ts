@@ -41,13 +41,13 @@ describe("object storage and uploads (characterization)", () => {
     const privateUrl = await user.agent.post("/api/objects/upload");
     expect(privateUrl.status).toBe(200);
     expect(privateUrl.body.uploadURL).toMatch(
-      signedUrlPattern("test-bucket/\\.private/uploads/[0-9a-f-]+")
+      signedUrlPattern("test-bucket/\\.private/ws/seeded/files/[0-9a-f-]+/[0-9a-f-]+")
     );
 
     const publicUrl = await user.agent.post("/api/objects/upload-public");
     expect(publicUrl.status).toBe(200);
     expect(publicUrl.body.uploadURL).toMatch(
-      signedUrlPattern("test-bucket/public/uploads/[0-9a-f-]+")
+      signedUrlPattern("test-bucket/public/ws/seeded/files/[0-9a-f-]+/[0-9a-f-]+")
     );
 
     expect(signedUrlCalls().map((c) => c.action)).toEqual(["write", "write"]);

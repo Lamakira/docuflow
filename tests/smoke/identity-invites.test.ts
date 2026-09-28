@@ -19,7 +19,7 @@ beforeEach(async () => {
 });
 
 describe("admin create invites at the IdentityProvider (#160)", () => {
-  it("creates a User, sends a password-set invite, and grants Membership the usual way", async () => {
+  it("creates a User and sends a password-set invite without joining a Workspace", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const email = uniqueEmail("invite-create");
@@ -42,14 +42,11 @@ describe("admin create invites at the IdentityProvider (#160)", () => {
     ).rows[0];
     expect(user).toBeDefined();
 
+    // Workspaces add people through Invitations; the directory adds none (#297).
     const memberships = (
-      await pool.query<{ id: string; archived_at: Date | null }>(
-        `SELECT id, archived_at FROM memberships WHERE user_id = $1`,
-        [user.id]
-      )
+      await pool.query(`SELECT id FROM memberships WHERE user_id = $1`, [user.id])
     ).rows;
-    expect(memberships).toHaveLength(1);
-    expect(memberships[0].archived_at).toBeNull();
+    expect(memberships).toEqual([]);
   });
 
   it("does not let a created User in without an active Membership, even after they accept the invite", async () => {
