@@ -41,6 +41,11 @@ export const PLAN_METADATA_KEY = "docuflow_plan";
 
 const PRICE_CACHE_MS = 5 * 60_000;
 
+/** Stripe's refusal to bill one Customer in two currencies. */
+function isCurrencyConflict(error: unknown): boolean {
+  return error instanceof Error && /combine currencies/i.test(error.message);
+}
+
 type ResolvedPrice = { priceId: string; currencies: string[] };
 
 /**
@@ -102,23 +107,41 @@ export class StripeBillingProvider implements BillingProvider {
     return fromStripe(() => this.checkout(request));
   }
 
+  /**
+   * A returning customer keeps their Stripe Customer. Stripe refuses one whose
+   * other billing is locked to another currency than the Price's; Checkout
+   * then runs without it and makes a new Customer, which the Subscription
+   * projection stores on completion.
+   */
   private async checkout(request: CheckoutRequest): Promise<HostedBillingSession> {
     const { priceId } = await this.priceFor(request.planKey, request.interval);
-    const session = await this.stripe.checkout.sessions.create({
-      mode: "subscription",
-      line_items: [{ price: priceId, quantity: request.seatQuantity }],
-      success_url: request.successUrl,
-      cancel_url: request.cancelUrl,
-      client_reference_id: request.workspaceId,
-      automatic_tax: { enabled: true },
-      billing_address_collection: "required",
-      ...(request.providerCustomerId ? { customer: request.providerCustomerId } : {}),
-    });
+    const create = (customer: string | null | undefined) =>
+      this.stripe.checkout.sessions.create({
+        mode: "subscription",
+        line_items: [{ price: priceId, quantity: request.seatQuantity }],
+        success_url: request.successUrl,
+        cancel_url: request.cancelUrl,
+        client_reference_id: request.workspaceId,
+        automatic_tax: { enabled: true },
+        billing_address_collection: "required",
+        ...(customer ? { customer } : {}),
+      });
+    let session: Awaited<ReturnType<typeof create>>;
+    try {
+      session = await create(request.providerCustomerId);
+    } catch (error) {
+      if (!request.providerCustomerId || !isCurrencyConflict(error)) throw error;
+      console.warn(
+        `[billing] Customer ${request.providerCustomerId} bills in another currency; Checkout starts without it`
+      );
+      session = await create(null);
+    }
     if (!session.url) {
       throw new BillingProviderError("Checkout Session has no hosted URL");
     }
     return { url: session.url, providerSessionId: session.id };
   }
+
 
   async fetchCheckoutSession(providerSessionId: string): Promise<ProviderCheckoutSession> {
     const session = await this.stripe.checkout.sessions.retrieve(providerSessionId);

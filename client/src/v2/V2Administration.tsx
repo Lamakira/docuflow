@@ -40,6 +40,7 @@ import {
   composeAdministration,
   composeTrackingPolicyEditor,
   hostedBillingSession,
+  planPickerNote,
   normalizeScreenshotPolicy,
   workspaceSettingsPath,
   removeAllowedTimezone,
@@ -754,10 +755,9 @@ export function V2AdministrationPage() {
                 onPlan={setChosenPlan}
                 onInterval={setChosenInterval}
                 pending={startCheckout.isPending || changePlan.isPending}
-                onCheckout={() => {
-                  if (!guardWrite()) return;
-                  startCheckout.mutate();
-                }}
+                // Checkout is how a Read-only Workspace recovers, so it is not a
+                // write the Read-only guard stops.
+                onCheckout={() => startCheckout.mutate()}
                 onChange={() => {
                   if (!guardWrite()) return;
                   changePlan.mutate();
@@ -1599,6 +1599,9 @@ function PlanPicker({
 
   return (
     <>
+      <p className="df-admin-billing-note" data-testid="v2-administration-plans-note">
+        {planPickerNote(mode, entitlements.planLabel)}
+      </p>
       <div className="df-plan-grid" data-testid="v2-administration-plans">
         {plans.map((row) => {
           const current = row.planKey === entitlements.planKey;
@@ -1612,7 +1615,7 @@ function PlanPicker({
             >
               <div className="df-plan-card-head">
                 <span className="df-row-title">{row.label}</span>
-                {current ? <span className="df-mono df-plan-tag">CURRENT</span> : null}
+                {current ? <span className="df-mono df-plan-tag">CURRENT PLAN</span> : null}
               </div>
               <p className="df-plan-card-includes">{planIncludes(row)}</p>
               <Button
@@ -1623,7 +1626,7 @@ function PlanPicker({
                 aria-pressed={selected}
                 onClick={() => onPlan(row.planKey as PricedPlanKey)}
               >
-                {selected ? "Chosen" : `Choose ${row.label}`}
+                {selected ? "Selected" : `Select ${row.label}`}
               </Button>
             </div>
           );
@@ -1642,8 +1645,8 @@ function PlanPicker({
           testId="v2-administration-plan-interval"
         />
         {mode === "checkout" ? (
-          <Button type="button" className="df-btn" disabled={pending} onClick={onCheckout}>
-            {pending ? "Opening Checkout…" : `Continue with ${chosen?.label ?? "this Plan"}`}
+          <Button type="button" className="df-btn" disabled={pending} onClick={onCheckout} data-testid="v2-administration-plan-checkout">
+            {pending ? "Opening Checkout…" : `Continue to Checkout with ${chosen?.label ?? "this Plan"}`}
           </Button>
         ) : (
           <AlertDialog>

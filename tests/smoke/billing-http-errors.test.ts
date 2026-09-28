@@ -184,6 +184,41 @@ describe("billing routes answer provider failures (#299)", () => {
     });
   });
 
+  it("lets a Read-only Workspace whose Subscription ended start Checkout, even with a CAD Customer", async () => {
+    const app = await makeApp();
+    const admin = await registerUser(app);
+    await plantParallelWorkspace();
+    await addWorkspaceMembership(admin.id, PARALLEL_WORKSPACE_ID, "owner");
+    await pinBilling(PARALLEL_WORKSPACE_ID, {
+      planKey: "pro",
+      registryVersion: 1,
+      billingState: "ReadOnly",
+      billingInterval: "monthly",
+      stripeCustomerId: "cus_cad",
+      stripeSubscriptionId: "sub_cad",
+    });
+    await admin.agent.put("/api/memberships/active").send({ workspaceId: PARALLEL_WORKSPACE_ID });
+    const { checkoutCreates, lockCustomerCurrency } = await import("../fakes/stripe");
+    lockCustomerCurrency("cus_cad", "cad");
+    await useStripeAdapter();
+
+    const res = await admin.agent.post("/api/billing/checkout").send({
+      planKey: "business",
+      interval: "monthly",
+      seatQuantity: 1,
+      successUrl: "https://app.docuflow.test/administration/billing",
+      cancelUrl: "https://app.docuflow.test/administration/billing",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      url: "https://checkout.stripe.test/c/cs_test_fake",
+      providerSessionId: "cs_test_fake",
+    });
+    expect(checkoutCreates()).toHaveLength(1);
+    expect(checkoutCreates()[0]).not.toHaveProperty("customer");
+  });
+
   it("hands an unexpected failure to the app's error handler instead of ending the process", async () => {
     const app = await makeApp();
     const admin = await owner(app);

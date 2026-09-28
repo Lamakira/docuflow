@@ -102,6 +102,7 @@ const subscriptionUpdates: Array<{ id: string } & SubscriptionUpdateParams> = []
 const priceLists: PriceListParams[] = [];
 const productRetrieves: string[] = [];
 const failures = new Map<string, Error>();
+const customerCurrencies = new Map<string, string>();
 let retrievedSubscription: FakeSubscription | null = null;
 let prices: FakePrice[] = defaultPrices();
 let products: FakeProduct[] = [...PLAN_PRODUCTS];
@@ -113,6 +114,13 @@ export default class Stripe {
     sessions: {
       create: async (params: CheckoutCreateParams) => {
         failIfSet("checkout.sessions.create");
+        const locked = params.customer ? customerCurrencies.get(params.customer) : undefined;
+        const price = prices.find((candidate) => candidate.id === params.line_items?.[0]?.price);
+        if (locked && price && (price.currency ?? "usd") !== locked) {
+          throw new FakeStripeError(
+            `You cannot combine currencies on a single customer. This customer has had a subscription or payment in ${locked}, but you are trying to pay in ${price.currency ?? "usd"}.`
+          );
+        }
         checkoutSessionCreates.push(params);
         return {
           id: "cs_test_fake",
@@ -242,6 +250,11 @@ export function failStripe(
   failures.set(method, error);
 }
 
+/** A Customer whose billing Stripe has locked to one currency. */
+export function lockCustomerCurrency(customer: string, currency: string): void {
+  customerCurrencies.set(customer, currency);
+}
+
 export function checkoutCreates(): CheckoutCreateParams[] {
   return checkoutSessionCreates;
 }
@@ -282,6 +295,7 @@ export function resetStripe(): void {
   productRetrieves.length = 0;
   retrievedSubscription = null;
   failures.clear();
+  customerCurrencies.clear();
   prices = defaultPrices();
   products = [...PLAN_PRODUCTS];
 }

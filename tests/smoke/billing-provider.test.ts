@@ -379,6 +379,26 @@ describe("Stripe adapter", () => {
     ]);
   });
 
+  it("starts Checkout without a returning Customer that Stripe has locked to another currency", async () => {
+    const { checkoutCreates, lockCustomerCurrency } = await import("../fakes/stripe");
+    lockCustomerCurrency("cus_cad", "cad");
+
+    const session = await (await adapter()).createCheckout({ ...CHECKOUT, providerCustomerId: "cus_cad" });
+
+    expect(session.providerSessionId).toBe("cs_test_fake");
+    expect(checkoutCreates()).toHaveLength(1);
+    expect(checkoutCreates()[0]).not.toHaveProperty("customer");
+  });
+
+  it("keeps a returning Customer whose currency matches the Price", async () => {
+    const { checkoutCreates, lockCustomerCurrency } = await import("../fakes/stripe");
+    lockCustomerCurrency("cus_usd", "usd");
+
+    await (await adapter()).createCheckout({ ...CHECKOUT, providerCustomerId: "cus_usd" });
+
+    expect(checkoutCreates()[0]?.customer).toBe("cus_usd");
+  });
+
   function cadSubscription(): FakeSubscription {
     return {
       id: "sub_cad",

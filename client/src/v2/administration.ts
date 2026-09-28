@@ -340,10 +340,24 @@ function billingCondition(
   return null;
 }
 
+/**
+ * The line above the Plan cards. The selected card is only a choice until
+ * Checkout or the confirmation runs; the Workspace's Plan is named apart.
+ */
+export function planPickerNote(mode: "checkout" | "change", currentPlanLabel: string): string {
+  return mode === "checkout"
+    ? `Current Plan: ${currentPlanLabel}. Select a Plan, then continue to Checkout. The Workspace changes Plan once Checkout completes.`
+    : `Current Plan: ${currentPlanLabel}. Select a Plan to move to; nothing changes until you confirm.`;
+}
+
 /** Whichever date actually governs the subscription next. */
 function billingTermFigure(pin: BillingInput): AnalyticsFigure {
   if (pin.planKey === "trial" && pin.trialEndsAt) {
     return { label: "TRIAL ENDS", value: formatFullDay(pin.trialEndsAt) };
+  }
+  // A Subscription that has ended renews nothing; its last period end is history.
+  if (pin.billingState === "ReadOnly") {
+    return { label: "SUBSCRIPTION", value: "Ended" };
   }
   if (pin.cancelAtPeriodEnd && pin.periodEndsAt) {
     return { label: "ACCESS ENDS", value: formatFullDay(pin.periodEndsAt) };
