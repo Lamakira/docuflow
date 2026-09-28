@@ -151,7 +151,9 @@ describe("Stripe adapter", () => {
       url: "https://checkout.stripe.test/c/cs_test_fake",
       providerSessionId: "cs_test_fake",
     });
-    expect(priceListCalls()).toEqual([{ lookup_keys: ["growth_monthly"], active: true }]);
+    expect(priceListCalls()).toEqual([
+      { lookup_keys: ["growth_monthly"], active: true, expand: ["data.currency_options"] },
+    ]);
     expect(checkoutCreates()).toEqual([
       {
         mode: "subscription",
@@ -375,6 +377,94 @@ describe("Stripe adapter", () => {
         proration_behavior: "create_prorations",
       },
     ]);
+  });
+
+  function cadSubscription(): FakeSubscription {
+    return {
+      id: "sub_cad",
+      customer: "cus_cad",
+      currency: "cad",
+      status: "active",
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          {
+            id: "si_cad",
+            quantity: 2,
+            current_period_end: PERIOD_END_UNIX,
+            price: { id: "price_pro_cad", product: "prod_pro", recurring: { interval: "month" } },
+          },
+        ],
+      },
+    };
+  }
+
+  it("refuses a Plan change whose Price is not offered in the Subscription's currency, before Stripe is asked", async () => {
+    const { BillingCurrencyUnavailableError } = await import("../../server/modules/billing");
+    const { setRetrievedSubscription, subscriptionUpdateCalls } = await import("../fakes/stripe");
+    setRetrievedSubscription(cadSubscription());
+
+    const refused = (await adapter()).changeSubscriptionPlan({
+      providerSubscriptionId: "sub_cad",
+      planKey: "business",
+      interval: "monthly",
+    });
+
+    await expect(refused).rejects.toBeInstanceOf(BillingCurrencyUnavailableError);
+    await expect(refused).rejects.toThrow(
+      "This Subscription is billed in CAD, and Business is not offered in CAD yet."
+    );
+    expect(subscriptionUpdateCalls()).toEqual([]);
+  });
+
+  it("swaps to a Price that carries the Subscription's currency in currency_options", async () => {
+    const { setRetrievedSubscription, setStripePrices, subscriptionUpdateCalls } = await import(
+      "../fakes/stripe"
+    );
+    setRetrievedSubscription(cadSubscription());
+    setStripePrices([
+      {
+        id: "price_business_monthly",
+        lookup_key: "business_monthly",
+        active: true,
+        product: "prod_business",
+        recurring: { interval: "month" },
+        currency: "usd",
+        currency_options: { cad: { unit_amount: 2700 } },
+      },
+    ]);
+
+    await (await adapter()).changeSubscriptionPlan({
+      providerSubscriptionId: "sub_cad",
+      planKey: "business",
+      interval: "monthly",
+    });
+
+    expect(subscriptionUpdateCalls()).toEqual([
+      {
+        id: "sub_cad",
+        items: [{ id: "si_cad", price: "price_business_monthly" }],
+        proration_behavior: "create_prorations",
+      },
+    ]);
+  });
+
+  it("turns a raw Stripe failure into a BillingProviderError on Checkout, the portal and a Plan change", async () => {
+    const { BillingProviderError } = await import("../../server/modules/billing");
+    const { failStripe } = await import("../fakes/stripe");
+    failStripe("checkout.sessions.create");
+    failStripe("billingPortal.sessions.create");
+    failStripe("subscriptions.update");
+    const provider = await adapter();
+
+    for (const call of [
+      provider.createCheckout(CHECKOUT),
+      provider.createPaymentMethodUpdate({ providerCustomerId: "cus_1", returnUrl: "https://app.docuflow.test/b" }),
+      provider.changeSubscriptionPlan({ providerSubscriptionId: "sub_1", planKey: "growth", interval: "annual" }),
+    ]) {
+      await expect(call).rejects.toBeInstanceOf(BillingProviderError);
+      await expect(call).rejects.toThrow(/^Stripe could not complete the request: /);
+    }
   });
 
   /**

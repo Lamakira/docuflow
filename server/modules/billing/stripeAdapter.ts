@@ -11,6 +11,7 @@
 
 import Stripe from "stripe";
 import {
+  BillingCurrencyUnavailableError,
   BillingProviderClosedError,
   BillingProviderError,
   BillingWebhookSignatureError,
@@ -27,6 +28,7 @@ import {
   type WebhookEvent,
 } from "./billingProvider";
 import {
+  PLAN_LABEL,
   PLAN_REGISTRY_VERSION,
   isPlanKey,
   planDefinition,
@@ -38,6 +40,28 @@ import {
 export const PLAN_METADATA_KEY = "docuflow_plan";
 
 const PRICE_CACHE_MS = 5 * 60_000;
+
+type ResolvedPrice = { priceId: string; currencies: string[] };
+
+/**
+ * A Stripe SDK failure becomes a BillingProviderError, so the billing routes
+ * answer it as a provider fault instead of letting a raw Stripe error escape.
+ */
+async function fromStripe<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    if (
+      error instanceof BillingProviderError ||
+      error instanceof BillingCurrencyUnavailableError ||
+      error instanceof BillingWebhookSignatureError
+    ) {
+      throw error;
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new BillingProviderError(`Stripe could not complete the request: ${detail}`);
+  }
+}
 
 function idOf(value: string | { id: string } | null | undefined): string | undefined {
   if (!value) return undefined;
@@ -62,7 +86,7 @@ type PriceLike = {
 
 export class StripeBillingProvider implements BillingProvider {
   private readonly stripe: Stripe;
-  private readonly prices = new Map<string, { priceId: string; expiresAt: number }>();
+  private readonly prices = new Map<string, ResolvedPrice & { expiresAt: number }>();
 
   constructor(
     private readonly billing: BillingProviderConfig,
@@ -75,10 +99,14 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async createCheckout(request: CheckoutRequest): Promise<HostedBillingSession> {
-    const price = await this.priceIdFor(request.planKey, request.interval);
+    return fromStripe(() => this.checkout(request));
+  }
+
+  private async checkout(request: CheckoutRequest): Promise<HostedBillingSession> {
+    const { priceId } = await this.priceFor(request.planKey, request.interval);
     const session = await this.stripe.checkout.sessions.create({
       mode: "subscription",
-      line_items: [{ price, quantity: request.seatQuantity }],
+      line_items: [{ price: priceId, quantity: request.seatQuantity }],
       success_url: request.successUrl,
       cancel_url: request.cancelUrl,
       client_reference_id: request.workspaceId,
@@ -158,34 +186,48 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async updateSeatQuantity(update: SeatQuantityUpdate): Promise<void> {
-    const itemId = await this.subscriptionItemId(update.providerSubscriptionId);
-    await this.stripe.subscriptions.update(update.providerSubscriptionId, {
-      items: [{ id: itemId, quantity: update.seatQuantity }],
-      proration_behavior: update.proration,
+    return fromStripe(async () => {
+      const { itemId } = await this.subscriptionItem(update.providerSubscriptionId);
+      await this.stripe.subscriptions.update(update.providerSubscriptionId, {
+        items: [{ id: itemId, quantity: update.seatQuantity }],
+        proration_behavior: update.proration,
+      });
     });
   }
 
+  /**
+   * A Subscription's currency is fixed. The new Price must be in that currency
+   * or carry it in `currency_options`, where Stripe bills the Subscription's
+   * currency; otherwise the swap is refused before Stripe is asked.
+   */
   async changeSubscriptionPlan(change: SubscriptionPlanChange): Promise<void> {
-    const price = await this.priceIdFor(change.planKey, change.interval);
-    const itemId = await this.subscriptionItemId(change.providerSubscriptionId);
-    await this.stripe.subscriptions.update(change.providerSubscriptionId, {
-      items: [{ id: itemId, price }],
-      proration_behavior: "create_prorations",
+    return fromStripe(async () => {
+      const price = await this.priceFor(change.planKey, change.interval);
+      const { itemId, currency } = await this.subscriptionItem(change.providerSubscriptionId);
+      if (currency && !price.currencies.includes(currency)) {
+        throw new BillingCurrencyUnavailableError(currency, PLAN_LABEL[change.planKey]);
+      }
+      await this.stripe.subscriptions.update(change.providerSubscriptionId, {
+        items: [{ id: itemId, price: price.priceId }],
+        proration_behavior: "create_prorations",
+      });
     });
   }
 
   async createPaymentMethodUpdate(
     request: PaymentMethodUpdateRequest
   ): Promise<HostedBillingSession> {
-    const session = await this.stripe.billingPortal.sessions.create({
-      customer: request.providerCustomerId,
-      return_url: request.returnUrl,
-      flow_data: { type: "payment_method_update" },
+    return fromStripe(async () => {
+      const session = await this.stripe.billingPortal.sessions.create({
+        customer: request.providerCustomerId,
+        return_url: request.returnUrl,
+        flow_data: { type: "payment_method_update" },
+      });
+      if (!session.url) {
+        throw new BillingProviderError("Payment-method session has no hosted URL");
+      }
+      return { url: session.url, providerSessionId: session.id };
     });
-    if (!session.url) {
-      throw new BillingProviderError("Payment-method session has no hosted URL");
-    }
-    return { url: session.url, providerSessionId: session.id };
   }
 
   async verifyWebhook(payload: string, signature: string): Promise<WebhookEvent> {
@@ -210,34 +252,48 @@ export class StripeBillingProvider implements BillingProvider {
     }
   }
 
-  private async subscriptionItemId(providerSubscriptionId: string): Promise<string> {
+  private async subscriptionItem(
+    providerSubscriptionId: string
+  ): Promise<{ itemId: string; currency: string | undefined }> {
     const subscription = await this.stripe.subscriptions.retrieve(providerSubscriptionId);
     const item = subscription.items.data[0];
     const itemId = item && "id" in item && typeof item.id === "string" ? item.id : undefined;
     if (!itemId) {
       throw new BillingProviderError(`Subscription ${providerSubscriptionId} has no items`);
     }
-    return itemId;
+    const currency = typeof subscription.currency === "string" ? subscription.currency.toLowerCase() : undefined;
+    return { itemId, currency };
   }
 
-  /** The active Price behind the Plan's lookup key, cached briefly. */
-  private async priceIdFor(planKey: PlanKey, interval: BillingInterval): Promise<string> {
+  /**
+   * The active Price behind the Plan's lookup key and every currency it bills
+   * in, cached briefly. `currency_options` only comes back when expanded.
+   */
+  private async priceFor(planKey: PlanKey, interval: BillingInterval): Promise<ResolvedPrice> {
     const lookupKey = planDefinition(planKey, PLAN_REGISTRY_VERSION).lookupKeys?.[interval];
     if (!lookupKey) {
       throw new BillingProviderError(`Plan ${planKey} is not sold through Checkout`);
     }
     const cached = this.prices.get(lookupKey);
-    if (cached && cached.expiresAt > this.now()) return cached.priceId;
+    if (cached && cached.expiresAt > this.now()) return cached;
 
-    const { data } = await this.stripe.prices.list({ lookup_keys: [lookupKey], active: true });
+    const { data } = await this.stripe.prices.list({
+      lookup_keys: [lookupKey],
+      active: true,
+      expand: ["data.currency_options"],
+    });
     const price = data.find((candidate) => candidate.lookup_key === lookupKey);
     if (!price) {
       throw new BillingProviderError(
         `No active Stripe Price has lookup key "${lookupKey}" (Plan ${planKey}, ${interval})`
       );
     }
-    this.prices.set(lookupKey, { priceId: price.id, expiresAt: this.now() + PRICE_CACHE_MS });
-    return price.id;
+    const currencies = [price.currency, ...Object.keys(price.currency_options ?? {})].map((code) =>
+      code.toLowerCase()
+    );
+    const resolved = { priceId: price.id, currencies };
+    this.prices.set(lookupKey, { ...resolved, expiresAt: this.now() + PRICE_CACHE_MS });
+    return resolved;
   }
 
   private async planKeyFor(price: PriceLike): Promise<PlanKey> {

@@ -1,7 +1,8 @@
-import type { Express, Request } from "express";
+import type { Express, NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { isAuthenticated, getUserId } from "../../auth";
 import {
+  BillingCurrencyUnavailableError,
   BillingProviderClosedError,
   BillingProviderError,
   BillingWebhookSignatureError,
@@ -96,11 +97,30 @@ function sendBillingError(
     res.status(400).json({ message: error.message });
     return true;
   }
+  if (error instanceof BillingCurrencyUnavailableError) {
+    res.status(409).json({ message: error.message });
+    return true;
+  }
   if (error instanceof BillingProviderError) {
     res.status(502).json({ message: error.message });
     return true;
   }
   return false;
+}
+
+/**
+ * Express 4 does not catch a rejected async handler: a rethrow inside one is an
+ * unhandled rejection, and Node ends the process. Every billing route goes
+ * through here, so a known refusal is a `{ message }` and anything else reaches
+ * the app's error handler instead.
+ */
+function billingRoute(handler: (req: Request, res: Response) => Promise<unknown>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    handler(req, res).catch((error: unknown) => {
+      if (res.headersSent) return next(error);
+      if (!sendBillingError(res, error)) next(error);
+    });
+  };
 }
 
 /** What the Workspace's Plan includes, for navigation and upgrade prompts. Any member may read it. */
@@ -133,77 +153,94 @@ async function entitlementSummary() {
  * returns without applying Entitlements (ADR-0013).
  */
 export function registerBillingRoutes(app: Express): void {
-  app.post("/api/billing/webhooks", async (req, res) => {
-    try {
-      await ingestBillingWebhook({
-        provider: billingProvider,
-        jobs: createBillingJobsPort(),
-        payload: webhookPayload(req),
-        signature: stripeSignature(req),
-      });
-      res.status(200).json({ received: true });
-    } catch (error) {
-      if (
-        error instanceof BillingWebhookSignatureError ||
-        error instanceof UnknownBillingWebhookError ||
-        error instanceof BillingProviderClosedError
-      ) {
-        res.status(400).json({ message: error.message });
-        return;
+  app.post(
+    "/api/billing/webhooks",
+    billingRoute(async (req, res) => {
+      try {
+        await ingestBillingWebhook({
+          provider: billingProvider,
+          jobs: createBillingJobsPort(),
+          payload: webhookPayload(req),
+          signature: stripeSignature(req),
+        });
+        res.status(200).json({ received: true });
+      } catch (error) {
+        if (
+          error instanceof BillingWebhookSignatureError ||
+          error instanceof UnknownBillingWebhookError ||
+          error instanceof BillingProviderClosedError
+        ) {
+          res.status(400).json({ message: error.message });
+          return;
+        }
+        throw error;
       }
-      throw error;
-    }
-  });
+    })
+  );
 
-  app.get("/api/billing/subscription", isAuthenticated, requireAdministration, async (_req, res) => {
-    res.json(await getSubscriptionStatus());
-  });
+  app.get(
+    "/api/billing/subscription",
+    isAuthenticated,
+    requireAdministration,
+    billingRoute(async (_req, res) => {
+      res.json(await getSubscriptionStatus());
+    })
+  );
 
-  app.post("/api/billing/checkout", isAuthenticated, requireAdministration, async (req, res) => {
-    try {
+  app.post(
+    "/api/billing/checkout",
+    isAuthenticated,
+    requireAdministration,
+    billingRoute(async (req, res) => {
       const body = checkoutBody.parse(req.body);
       res.json(await startCheckout(body, actorOf(req), billingProvider));
-    } catch (error) {
-      if (!sendBillingError(res, error)) throw error;
-    }
-  });
+    })
+  );
 
-  app.get("/api/billing/entitlements", isAuthenticated, async (_req, res) => {
-    res.json(await entitlementSummary());
-  });
+  app.get(
+    "/api/billing/entitlements",
+    isAuthenticated,
+    billingRoute(async (_req, res) => {
+      res.json(await entitlementSummary());
+    })
+  );
 
-  app.post("/api/billing/plan", isAuthenticated, requireAdministration, async (req, res) => {
-    try {
+  app.post(
+    "/api/billing/plan",
+    isAuthenticated,
+    requireAdministration,
+    billingRoute(async (req, res) => {
       const body = planBody.parse(req.body);
       res.json(await changePlan(body, actorOf(req), billingProvider));
-    } catch (error) {
-      if (!sendBillingError(res, error)) throw error;
-    }
-  });
+    })
+  );
 
-  app.post("/api/billing/seats", isAuthenticated, requireAdministration, async (req, res) => {
-    try {
+  app.post(
+    "/api/billing/seats",
+    isAuthenticated,
+    requireAdministration,
+    billingRoute(async (req, res) => {
       const body = seatsBody.parse(req.body);
       res.json(await changeSeats(body.seatQuantity, actorOf(req), billingProvider));
-    } catch (error) {
-      if (!sendBillingError(res, error)) throw error;
-    }
-  });
+    })
+  );
 
-  app.post("/api/billing/payment-method", isAuthenticated, requireAdministration, async (req, res) => {
-    try {
+  app.post(
+    "/api/billing/payment-method",
+    isAuthenticated,
+    requireAdministration,
+    billingRoute(async (req, res) => {
       const body = paymentMethodBody.parse(req.body);
       res.json(await startPaymentMethodUpdate(body, actorOf(req), billingProvider));
-    } catch (error) {
-      if (!sendBillingError(res, error)) throw error;
-    }
-  });
+    })
+  );
 
-  app.post("/api/billing/cancel-at-period-end", isAuthenticated, requireAdministration, async (req, res) => {
-    try {
+  app.post(
+    "/api/billing/cancel-at-period-end",
+    isAuthenticated,
+    requireAdministration,
+    billingRoute(async (req, res) => {
       res.json(await cancelAtPeriodEnd(actorOf(req)));
-    } catch (error) {
-      if (!sendBillingError(res, error)) throw error;
-    }
-  });
+    })
+  );
 }

@@ -17,6 +17,25 @@ export class BillingProviderError extends Error {
   }
 }
 
+/**
+ * The target Plan's Price is not offered in the currency the Subscription is
+ * billed in. A Subscription's currency is fixed, so the swap cannot happen.
+ */
+export class BillingCurrencyUnavailableError extends Error {
+  constructor(
+    readonly currency: string,
+    readonly planLabel: string
+  ) {
+    const code = currency.toUpperCase();
+    super(
+      `This Subscription is billed in ${code}, and ${planLabel} is not offered in ${code} yet. ` +
+        `To move to ${planLabel}, cancel at period end and choose it through Checkout once the Subscription ends, ` +
+        `or ask DocuFlow to add ${code} pricing.`
+    );
+    this.name = "BillingCurrencyUnavailableError";
+  }
+}
+
 export class BillingProviderClosedError extends BillingProviderError {
   constructor(detail = "Stripe credentials are not configured") {
     super(detail);

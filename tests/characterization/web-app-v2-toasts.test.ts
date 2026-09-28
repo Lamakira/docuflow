@@ -43,6 +43,24 @@ describe("v2 notify helper", () => {
     expect(errorMessage(new Error("Permission denied"))).toBe("This action needs a Capability. An Owner can grant it.");
   });
 
+  it("never shows the browser's own network text, even when only error.message is passed on", () => {
+    // Billing's refuseWrite hands notify the message string, not the TypeError.
+    for (const text of [
+      "Failed to fetch",
+      "NetworkError when attempting to fetch resource.",
+      "Load failed",
+      "Network request failed",
+    ]) {
+      expect(errorMessage(text)).toBe(NETWORK_FAILURE);
+      expect(errorMessage(new TypeError(text))).toBe(NETWORK_FAILURE);
+    }
+    expect(NETWORK_FAILURE).toMatch(/could not be reached/);
+    expect(errorMessage("Stripe could not fetch the Price")).toBe("Stripe could not fetch the Price");
+
+    notify.error("Failed to fetch");
+    expect(sonner.toast.error).toHaveBeenCalledWith(NETWORK_FAILURE, {});
+  });
+
   it("keeps standing refusals inline and sends every other failure to a toast", () => {
     expect(isStandingRefusal(new Error("Workspace is read-only"))).toBe(true);
     expect(isStandingRefusal(new Error("Permission denied"))).toBe(true);

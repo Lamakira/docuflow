@@ -129,6 +129,7 @@ export type {
   WebhookEvent,
 } from "./billingProvider";
 export {
+  BillingCurrencyUnavailableError,
   BillingProviderClosedError,
   BillingProviderError,
   BillingWebhookSignatureError,

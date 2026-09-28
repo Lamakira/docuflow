@@ -10,10 +10,18 @@ import { chromeRefusal } from "./chrome";
 export const NETWORK_FAILURE = "DocuFlow could not be reached. Check your connection and try again.";
 export const GENERIC_FAILURE = "Something went wrong. Try again.";
 
+/**
+ * What each browser's fetch rejects with when the server cannot be reached:
+ * Chromium, Firefox, Safari. Matched on the text as well as on TypeError,
+ * because callers often pass `error.message` on rather than the error.
+ */
+const NETWORK_REJECTION = /^(Failed to fetch|NetworkError when attempting to fetch resource\.?|Load failed|Network request failed)$/i;
+
 /** The copy a failed write shows, read from the error apiRequest throws. */
 export function errorMessage(error: unknown, fallback: string = GENERIC_FAILURE): string {
   if (error instanceof TypeError && /fetch|network/i.test(error.message)) return NETWORK_FAILURE;
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  if (NETWORK_REJECTION.test(message.trim())) return NETWORK_FAILURE;
   if (!message.trim()) return fallback;
   return chromeRefusal({ kind: "generic", message });
 }

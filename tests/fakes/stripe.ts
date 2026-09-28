@@ -29,7 +29,19 @@ export type FakePrice = {
   active: boolean;
   product: string | FakeProduct;
   recurring: { interval: string } | null;
+  /** Defaults to `usd`, as the test-mode Prices ADR-0027 asks for. */
+  currency?: string;
+  /** Returned only when the list expands `data.currency_options`, as Stripe does. */
+  currency_options?: Record<string, { unit_amount: number }>;
 };
+
+/** Shaped like the SDK's StripeInvalidRequestError, without importing it. */
+export class FakeStripeError extends Error {
+  readonly type = "StripeInvalidRequestError";
+  constructor(message: string, readonly param?: string) {
+    super(message);
+  }
+}
 
 /**
  * `current_period_end` is optional in both places on purpose. Stripe moved it
@@ -40,6 +52,7 @@ export type FakePrice = {
 export type FakeSubscription = {
   id: string;
   customer: string;
+  currency?: string;
   status: string;
   cancel_at_period_end: boolean;
   current_period_end?: number;
@@ -88,6 +101,7 @@ const billingPortalCreates: BillingPortalCreateParams[] = [];
 const subscriptionUpdates: Array<{ id: string } & SubscriptionUpdateParams> = [];
 const priceLists: PriceListParams[] = [];
 const productRetrieves: string[] = [];
+const failures = new Map<string, Error>();
 let retrievedSubscription: FakeSubscription | null = null;
 let prices: FakePrice[] = defaultPrices();
 let products: FakeProduct[] = [...PLAN_PRODUCTS];
@@ -98,6 +112,7 @@ export default class Stripe {
   checkout = {
     sessions: {
       create: async (params: CheckoutCreateParams) => {
+        failIfSet("checkout.sessions.create");
         checkoutSessionCreates.push(params);
         return {
           id: "cs_test_fake",
@@ -122,6 +137,7 @@ export default class Stripe {
       return {
         id,
         customer: "cus_test_fake",
+        currency: "usd",
         status: "active",
         cancel_at_period_end: false,
         items: {
@@ -141,6 +157,18 @@ export default class Stripe {
       };
     },
     update: async (id: string, params: SubscriptionUpdateParams) => {
+      failIfSet("subscriptions.update");
+      // Stripe refuses a Price that cannot bill in the Subscription's currency.
+      const currency = retrievedSubscription?.currency ?? "usd";
+      for (const item of params.items ?? []) {
+        const price = prices.find((candidate) => candidate.id === item.price);
+        if (price && (price.currency ?? "usd") !== currency && !price.currency_options?.[currency]) {
+          throw new FakeStripeError(
+            `The price specified only supports \`${price.currency ?? "usd"}\`. This doesn't match the expected currency: \`${currency}\`.`,
+            "items[0][price]"
+          );
+        }
+      }
       subscriptionUpdates.push({ id, ...params });
       return { id };
     },
@@ -149,11 +177,18 @@ export default class Stripe {
   prices = {
     list: async (params: PriceListParams) => {
       priceLists.push(params);
-      const data = prices.filter(
-        (price) =>
-          (!params.lookup_keys || (price.lookup_key && params.lookup_keys.includes(price.lookup_key))) &&
-          (params.active === undefined || price.active === params.active)
-      );
+      const expanded = params.expand?.includes("data.currency_options") ?? false;
+      const data = prices
+        .filter(
+          (price) =>
+            (!params.lookup_keys || (price.lookup_key && params.lookup_keys.includes(price.lookup_key))) &&
+            (params.active === undefined || price.active === params.active)
+        )
+        .map(({ currency_options, ...price }) => ({
+          ...price,
+          currency: price.currency ?? "usd",
+          ...(expanded && currency_options ? { currency_options } : {}),
+        }));
       return { object: "list", data, has_more: false };
     },
   };
@@ -170,6 +205,7 @@ export default class Stripe {
   billingPortal = {
     sessions: {
       create: async (params: BillingPortalCreateParams) => {
+        failIfSet("billingPortal.sessions.create");
         billingPortalCreates.push(params);
         return {
           id: "bps_test_fake",
@@ -191,6 +227,19 @@ export default class Stripe {
       };
     },
   };
+}
+
+function failIfSet(method: string): void {
+  const error = failures.get(method);
+  if (error) throw error;
+}
+
+/** Make one SDK method throw, as a Stripe outage or refusal would. */
+export function failStripe(
+  method: "checkout.sessions.create" | "billingPortal.sessions.create" | "subscriptions.update",
+  error: Error = new FakeStripeError("An error occurred with our connection to Stripe.")
+): void {
+  failures.set(method, error);
 }
 
 export function checkoutCreates(): CheckoutCreateParams[] {
@@ -232,6 +281,7 @@ export function resetStripe(): void {
   priceLists.length = 0;
   productRetrieves.length = 0;
   retrievedSubscription = null;
+  failures.clear();
   prices = defaultPrices();
   products = [...PLAN_PRODUCTS];
 }
