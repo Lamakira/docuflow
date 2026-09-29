@@ -2508,7 +2508,7 @@ Instructions:
       const requestingUserId = getUserId(req)!;
       const requestingUser = await storage.getUser(requestingUserId);
       const includeArchived = requestingUser?.role === "admin" && req.query.includeArchived === "true";
-      const users = await storage.getAllUsers({ includeArchived });
+      const users = await storage.getWorkspaceUsers({ includeArchived });
       res.json(users);
     } catch (error) {
       console.error("Error fetching users:", error);

@@ -1613,6 +1613,40 @@ export class DatabaseStorage implements IStorage {
   }
 
   /**
+   * The Users holding a Membership in the Active Workspace (#297). `getAllUsers`
+   * is the platform directory (ADR-0025); a Workspace surface reading it would
+   * list every account on the platform. Archived here means the account or the
+   * Membership.
+   */
+  async getWorkspaceUsers(opts: { includeArchived?: boolean } = {}): Promise<SafeUser[]> {
+    const archived = sql<boolean>`(${users.isArchived} or ${memberships.archivedAt} is not null)`;
+    return await db
+      .select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profileImageUrl: users.profileImageUrl,
+        role: users.role,
+        isMainAdmin: users.isMainAdmin,
+        canViewDailyUpdates: users.canViewDailyUpdates,
+        hoursPerDay: users.hoursPerDay,
+        lastLoginAt: users.lastLoginAt,
+        isArchived: archived,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+      })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(
+        opts.includeArchived
+          ? inWorkspace(memberships)
+          : and(inWorkspace(memberships), eq(users.isArchived, false), isNull(memberships.archivedAt))
+      )
+      .orderBy(asc(users.firstName), asc(users.lastName)) as SafeUser[];
+  }
+
+  /**
    * The platform directory (ADR-0025) archives the account, so every Membership
    * follows it. Restoring takes a Billable Seat in each Workspace it returns to.
    */
