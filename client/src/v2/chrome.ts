@@ -13,7 +13,7 @@ import {
   type DeliveryCategoryId,
 } from "@shared/deliveryPreference";
 import { documentHref, projectDocumentHref } from "./library";
-import type { V2CommandPanel } from "./presentation";
+import { administrationTabHref, type V2CommandPanel } from "./presentation";
 import { projectHref } from "./today";
 import { notificationOrigin, workspaceRoleInCopy } from "./workspace";
 
@@ -186,15 +186,22 @@ export function composeNotifications(input: {
   };
 }
 
+/** Trial ending, payment failed, and read-only notices (#298). */
+function isBillingNotice(type: string): boolean {
+  return type.startsWith("billing_");
+}
+
 function notificationKind(type: string): string {
   if (type === "daily_update_reminder") return "UPDATE";
   if (type === "mention") return "MENTION";
   if (type === "reminder") return "REMINDER";
+  if (isBillingNotice(type)) return "BILLING";
   return type.replace(/_/g, " ").toUpperCase();
 }
 
 function notificationHref(notification: ChromeNotification): string {
   if (notification.type === "daily_update_reminder") return "/daily-update";
+  if (isBillingNotice(notification.type)) return administrationTabHref("billing");
   if (notification.crmProjectId) return projectHref(notification.crmProjectId);
   return "/";
 }
