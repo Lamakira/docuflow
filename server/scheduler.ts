@@ -14,6 +14,7 @@ import {
 import { enqueueDailyUpdateNudgeJobs } from "./dailyUpdateNudge";
 import { enqueueStaleTimerJobs } from "./staleTimer";
 import { enqueueBillingDriftJobs } from "./modules/billing/projectionJobs";
+import { enqueueTrialLifecycleJobs } from "./modules/billing/trialLifecycle";
 import { completeDueAccountDeletions } from "./modules/workspace/accountDeletion";
 import type { JobsPort } from "./jobs";
 import { workspaceOfCause } from "./jobs";
@@ -25,6 +26,7 @@ const DUE_REMINDERS_LEASE = "due-reminders";
 const STALE_TIMER_LEASE = "stale-timer";
 const DAILY_UPDATE_NUDGE_LEASE = "daily-update-nudge";
 const BILLING_DRIFT_LEASE = "billing-drift";
+const TRIAL_LIFECYCLE_LEASE = "trial-lifecycle";
 const ACCOUNT_ERASURE_LEASE = "account-erasure";
 const DEFAULT_LEASE_MS = 90_000;
 
@@ -46,6 +48,7 @@ export type CreateDueReminderSchedulerOptions = CreateSchedulerOptions;
 export type StaleTimerScheduler = SchedulerTick;
 export type DailyUpdateNudgeScheduler = SchedulerTick;
 export type BillingDriftScheduler = SchedulerTick;
+export type TrialLifecycleScheduler = SchedulerTick;
 export type AccountErasureScheduler = SchedulerTick;
 
 function createLeaseElectedTick(
@@ -114,6 +117,15 @@ export function createBillingDriftScheduler(
 ): BillingDriftScheduler {
   return createLeaseElectedTick(options, BILLING_DRIFT_LEASE, (at) =>
     enqueueBillingDriftJobs(options.jobs, at)
+  );
+}
+
+/** Trial-ending notices and Trial expiry (#298). */
+export function createTrialLifecycleScheduler(
+  options: CreateSchedulerOptions
+): TrialLifecycleScheduler {
+  return createLeaseElectedTick(options, TRIAL_LIFECYCLE_LEASE, (at) =>
+    enqueueTrialLifecycleJobs(options.jobs, at)
   );
 }
 

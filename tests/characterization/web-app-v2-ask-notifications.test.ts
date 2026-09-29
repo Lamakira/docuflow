@@ -135,6 +135,27 @@ describe("Notifications inbox (#210)", () => {
     expect(askPanelSource).toContain("v2-delivery-preference");
   });
 
+  it("labels billing notices BILLING and sends them to Billing (#298)", () => {
+    const inbox = composeNotifications({
+      now: new Date(2026, 9, 12, 9, 0, 0),
+      notifications: ["billing_trial_ending", "billing_payment_failed", "billing_read_only"].map(
+        (type, index) => ({
+          id: `b${index}`,
+          type,
+          message: "Your Trial ends on October 15, 2026. Choose a Plan to keep full access.",
+          isRead: 0,
+          createdAt: new Date(2026, 9, 12, 8, 0, 0),
+          workspace: { id: "ws-a", name: "Keystone" },
+        })
+      ),
+    });
+    expect(inbox.rows.map((row) => [row.kind, row.href])).toEqual([
+      ["BILLING", "/administration/billing"],
+      ["BILLING", "/administration/billing"],
+      ["BILLING", "/administration/billing"],
+    ]);
+  });
+
   it("reaches Delivery Preference from this chrome, not a v1 settings dump", () => {
     const model = composeDeliveryPreference({
       workspaceName: "Harbour View",

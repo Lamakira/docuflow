@@ -9,6 +9,7 @@ import { auditEvents, outboxEvents, workspaceBilling } from "@shared/schema";
 import { db } from "../../db";
 import { inWorkspace, requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 import type { CollectionState, ProviderSubscription } from "./billingProvider";
+import { recordReadOnlyNotice } from "./lifecycleEmails";
 import {
   BillingPinMissingError,
   billingProjectionOf,
@@ -197,6 +198,11 @@ export async function applyProviderSubscription(
           payload: { from: pin.billingState, to: next.billingState, reason: "provider_projection" },
         })
       );
+      if (next.billingState === "ReadOnly") {
+        // Stripe ending a past-due Subscription is dunning running out.
+        const reason = pin.billingState === "PastDue" ? "dunning_exhausted" : "provider_projection";
+        await recordReadOnlyNotice(tx, reason, authorizationVersion);
+      }
     }
     if (planChanged) {
       await tx.insert(auditEvents).values(

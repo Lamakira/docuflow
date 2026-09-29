@@ -153,6 +153,22 @@ export {
 } from "./projectionJobs";
 export { applyProviderSubscription, billingStateFromCollection } from "./projection";
 export {
+  BILLING_EMAIL_JOB,
+  BILLING_EMAIL_JOB_TYPE,
+  handleBillingEmailJob,
+  recordPaymentFailedNotice,
+  recordReadOnlyNotice,
+  recordTrialEndingNotice,
+  recordWelcomeNotice,
+} from "./lifecycleEmails";
+export type { TrialEndingStage } from "./lifecycleEmails";
+export {
+  BILLING_EXPIRE_TRIAL_JOB,
+  BILLING_EXPIRE_TRIAL_JOB_TYPE,
+  enqueueTrialLifecycleJobs,
+  handleExpireTrialJob,
+} from "./trialLifecycle";
+export {
   SeededWorkspaceCheckoutError,
   InvalidCheckoutError,
   PaymentMethodUpdateUnavailableError,

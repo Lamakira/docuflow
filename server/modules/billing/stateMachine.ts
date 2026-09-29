@@ -14,6 +14,7 @@ import {
   type AuditActor,
   type BillingProjection,
 } from "./entitlements";
+import { recordReadOnlyNotice, recordWelcomeNotice } from "./lifecycleEmails";
 import { PLAN_REGISTRY, PLAN_REGISTRY_VERSION, type BillingState } from "./planRegistry";
 
 export class InvalidBillingTransitionError extends Error {
@@ -81,6 +82,9 @@ async function applyState(
       payload: { from: pin.billingState, to: next, reason },
     })
   );
+  if (next === "ReadOnly") {
+    await recordReadOnlyNotice(tx, reason, updated.authorizationVersion);
+  }
 
   return billingProjectionOf(updated);
 }
@@ -95,7 +99,8 @@ export async function startTrial(
 ): Promise<BillingProjection> {
   const { workspaceId } = requireWorkspaceContext();
   const now = options.now ?? new Date();
-  const trialEndsAt = addUtcDays(now, trialDurationDays());
+  const trialDays = trialDurationDays();
+  const trialEndsAt = addUtcDays(now, trialDays);
   const seatCapacity = PLAN_REGISTRY[PLAN_REGISTRY_VERSION]?.trial?.seatCapacity;
   if (typeof seatCapacity !== "number") {
     throw new InvalidBillingPinError("Trial seat capacity must be a number");
@@ -141,6 +146,7 @@ export async function startTrial(
         payload: { from: null, to: "Trialing", reason: "trial_started" },
       })
     );
+    await recordWelcomeNotice(tx, trialEndsAt, trialDays);
 
     return billingProjectionOf(row);
   });

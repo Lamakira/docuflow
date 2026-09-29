@@ -31,6 +31,7 @@ import {
 } from "./billingProvider";
 import { billingProviderFromAppConfig } from "./createBillingProvider";
 import { BillingPinMissingError, getBillingProjection } from "./entitlements";
+import { recordPaymentFailedNotice } from "./lifecycleEmails";
 import { applyProviderSubscription, pinAgreesWithSubscription } from "./projection";
 import { applyPendingSeatDecrease } from "./seats";
 import {
@@ -62,6 +63,12 @@ const PROJECTABLE_WEBHOOK_TYPES = new Set([
   "customer.subscription.deleted",
   "checkout.session.completed",
 ]);
+
+/**
+ * A failed payment attempt only tells the Owner (#298). It changes no billing
+ * state: PastDue still comes from the projection of the Subscription.
+ */
+const PAYMENT_FAILED_WEBHOOK = "invoice.payment_failed";
 
 export class UnknownBillingWebhookError extends Error {
   constructor() {
@@ -150,6 +157,11 @@ async function workspaceIdForWebhook(event: WebhookEvent): Promise<string | null
   if (event.type === "checkout.session.completed") {
     return workspaceIdForPendingCheckout(event.objectId);
   }
+  if (event.type === PAYMENT_FAILED_WEBHOOK) {
+    return event.providerSubscriptionId
+      ? workspaceIdForSubscription(event.providerSubscriptionId)
+      : null;
+  }
   return workspaceIdForSubscription(event.objectId);
 }
 
@@ -175,7 +187,7 @@ export async function ingestBillingWebhook(input: {
     if (error instanceof BillingWebhookSignatureError) throw error;
     throw new BillingWebhookSignatureError();
   }
-  if (!PROJECTABLE_WEBHOOK_TYPES.has(event.type)) {
+  if (!PROJECTABLE_WEBHOOK_TYPES.has(event.type) && event.type !== PAYMENT_FAILED_WEBHOOK) {
     throw new UnknownBillingWebhookError();
   }
 
@@ -239,6 +251,18 @@ export async function handleProjectBillingJob(
   }
   if (inbox.processedAt) return;
 
+  if (inbox.type === PAYMENT_FAILED_WEBHOOK) {
+    // Stripe retries a webhook for days, so the invoice may be paid by now.
+    const invoice = await provider.fetchInvoice(objectId);
+    await db.transaction(async (tx) => {
+      if (!invoice.paid) {
+        await recordPaymentFailedNotice(tx, providerEventId, invoice.nextPaymentAttemptAt);
+      }
+      await markInboxProcessed(providerEventId, tx);
+    });
+    return;
+  }
+
   if (inbox.type === "checkout.session.completed") {
     const session = await provider.fetchCheckoutSession(objectId);
     const subscription = await provider.fetchSubscription(session.providerSubscriptionId);
@@ -276,8 +300,11 @@ async function applyProjectionAndSyncSeats(
   });
 }
 
-async function markInboxProcessed(providerEventId: string): Promise<void> {
-  await db
+async function markInboxProcessed(
+  providerEventId: string,
+  writer: Pick<typeof db, "update"> = db
+): Promise<void> {
+  await writer
     .update(billingWebhookInbox)
     .set({ processedAt: new Date() })
     .where(eq(billingWebhookInbox.providerEventId, providerEventId));

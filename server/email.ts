@@ -192,3 +192,155 @@ export async function sendInvitationEmail(input: {
     return { success: false, error: message };
   }
 }
+
+/** Text a User or Workspace chose, made safe to place in an email's HTML. */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** A calendar date in words, read in UTC so every recipient sees the same day. */
+export function dateInWords(at: Date): string {
+  return at.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function emailButton(href: string, label: string): string {
+  return `<a href="${href}" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">${label}</a>`;
+}
+
+async function sendBillingEmail(input: {
+  toEmail: string;
+  subject: string;
+  body: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { client, fromEmail } = getResendClient();
+    const result = await client.emails.send({
+      from: fromEmail,
+      to: input.toEmail,
+      subject: input.subject,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          ${input.body}
+          <p style="color: #666; font-size: 12px; margin-top: 30px;">
+            You receive this email because you own this Workspace. Billing notices cannot be turned off.
+          </p>
+        </div>
+      `,
+    });
+    if (result.error) return { success: false, error: result.error.message };
+    return { success: true };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to send billing email";
+    console.error("Failed to send billing email:", error);
+    return { success: false, error: message };
+  }
+}
+
+/** Who a billing email goes to, about which Workspace, and where its links point. */
+export type BillingEmailRecipient = {
+  toEmail: string;
+  recipientName: string;
+  workspaceName: string;
+  appUrl: string;
+};
+
+export type TrialEndingStage = "three-days" | "last-day";
+
+export async function sendWelcomeEmail(
+  input: BillingEmailRecipient & { trialEndsAt: Date; trialDays: number }
+): Promise<{ success: boolean; error?: string }> {
+  const workspaceName = escapeHtml(input.workspaceName);
+  return sendBillingEmail({
+    toEmail: input.toEmail,
+    subject: `DocuFlow — Your Trial of ${input.workspaceName} has started`,
+    body: `
+      <h1 style="color: #333;">Welcome to DocuFlow</h1>
+      <p>Hello ${escapeHtml(input.recipientName)},</p>
+      <p>Your ${input.trialDays}-day Trial of <strong>${workspaceName}</strong> runs until <strong>${dateInWords(input.trialEndsAt)}</strong>. It includes the complete product.</p>
+      <p>Install the desktop app to track time and capture activity:</p>
+      <p>${emailButton(`${input.appUrl}/devices`, "Get the desktop app")}</p>
+      <p>Then invite the people you work with:</p>
+      <p>${emailButton(`${input.appUrl}/people`, "Invite Members")}</p>
+    `,
+  });
+}
+
+export async function sendTrialEndingEmail(
+  input: BillingEmailRecipient & { stage: TrialEndingStage; trialEndsAt: Date }
+): Promise<{ success: boolean; error?: string }> {
+  const workspaceName = escapeHtml(input.workspaceName);
+  return sendBillingEmail({
+    toEmail: input.toEmail,
+    subject:
+      input.stage === "three-days"
+        ? `DocuFlow — Your Trial of ${input.workspaceName} ends in 3 days`
+        : `DocuFlow — Last day of your Trial of ${input.workspaceName}`,
+    body: `
+      <h1 style="color: #333;">Your Trial is ending</h1>
+      <p>Hello ${escapeHtml(input.recipientName)},</p>
+      <p>Your Trial of <strong>${workspaceName}</strong> ends on <strong>${dateInWords(input.trialEndsAt)}</strong>.</p>
+      <p>After that, the Workspace becomes read-only: everyone keeps viewing and exporting its data, but nothing new can be recorded or changed until you choose a Plan.</p>
+      <p>${emailButton(`${input.appUrl}/administration/billing`, "Choose a Plan")}</p>
+    `,
+  });
+}
+
+export async function sendPaymentFailedEmail(
+  input: BillingEmailRecipient & { nextAttemptAt: Date | null }
+): Promise<{ success: boolean; error?: string }> {
+  const workspaceName = escapeHtml(input.workspaceName);
+  const readOnly = `<strong>${workspaceName}</strong> becomes read-only: its data is kept, but nothing new can be recorded or changed.`;
+  const outlook = input.nextAttemptAt
+    ? `<p>We will try again on <strong>${dateInWords(input.nextAttemptAt)}</strong>. Everyone keeps full access in the meantime.</p>
+       <p>If no attempt succeeds, ${readOnly}</p>`
+    : `<p>That was the last attempt. ${readOnly}</p>`;
+  return sendBillingEmail({
+    toEmail: input.toEmail,
+    subject: `DocuFlow — Payment failed for ${input.workspaceName}`,
+    body: `
+      <h1 style="color: #333;">Payment failed</h1>
+      <p>Hello ${escapeHtml(input.recipientName)},</p>
+      <p>We could not collect the latest payment for <strong>${workspaceName}</strong>.</p>
+      ${outlook}
+      <p>Update the payment method in Billing:</p>
+      <p>${emailButton(`${input.appUrl}/administration/billing`, "Update payment method")}</p>
+    `,
+  });
+}
+
+/** Why the Workspace became read-only, as the state machine and projection record it. */
+function readOnlyCause(reason: string, workspaceName: string): string {
+  if (reason === "trial_expired") return `Your Trial of <strong>${workspaceName}</strong> has ended.`;
+  if (reason === "dunning_exhausted") {
+    return `We could not collect payment for <strong>${workspaceName}</strong>.`;
+  }
+  return `The Subscription for <strong>${workspaceName}</strong> has ended.`;
+}
+
+export async function sendReadOnlyEmail(
+  input: BillingEmailRecipient & { reason: string }
+): Promise<{ success: boolean; error?: string }> {
+  const workspaceName = escapeHtml(input.workspaceName);
+  return sendBillingEmail({
+    toEmail: input.toEmail,
+    subject: `DocuFlow — ${input.workspaceName} is now read-only`,
+    body: `
+      <h1 style="color: #333;">Your Workspace is read-only</h1>
+      <p>Hello ${escapeHtml(input.recipientName)},</p>
+      <p>${readOnlyCause(input.reason, workspaceName)}</p>
+      <p><strong>${workspaceName}</strong> is now read-only. Nothing is deleted: everyone keeps viewing and exporting its data, but nothing new can be recorded or changed.</p>
+      <p>To restore full access, choose a Plan in Billing:</p>
+      <p>${emailButton(`${input.appUrl}/administration/billing`, "Restore full access")}</p>
+    `,
+  });
+}

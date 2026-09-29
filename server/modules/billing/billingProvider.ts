@@ -79,10 +79,20 @@ export type ProviderSubscription = {
   collectionState: CollectionState;
 };
 
+/** An invoice whose payment failed, as far as telling the Owner needs it. */
+export type ProviderInvoice = {
+  /** Paid since the failure was reported, so there is nothing left to tell. */
+  paid: boolean;
+  /** When the provider tries again. Null once it has stopped trying. */
+  nextPaymentAttemptAt: Date | null;
+};
+
 export type WebhookEvent = {
   providerEventId: string;
   type: string;
   objectId: string;
+  /** The Subscription an invoice event belongs to, read from the signed event. */
+  providerSubscriptionId?: string | null;
 };
 
 export type SeatProration = "create_prorations" | "none";
@@ -115,6 +125,7 @@ export interface BillingProvider {
   createCheckout(request: CheckoutRequest): Promise<HostedBillingSession>;
   fetchCheckoutSession(providerSessionId: string): Promise<ProviderCheckoutSession>;
   fetchSubscription(providerSubscriptionId: string): Promise<ProviderSubscription>;
+  fetchInvoice(providerInvoiceId: string): Promise<ProviderInvoice>;
   updateSeatQuantity(update: SeatQuantityUpdate): Promise<void>;
   /** Moves the Subscription to the Plan's current Price for the interval, prorated. */
   changeSubscriptionPlan(change: SubscriptionPlanChange): Promise<void>;
@@ -132,6 +143,10 @@ export class UnconfiguredBillingProvider implements BillingProvider {
   }
 
   async fetchSubscription(): Promise<ProviderSubscription> {
+    this.closed();
+  }
+
+  async fetchInvoice(): Promise<ProviderInvoice> {
     this.closed();
   }
 

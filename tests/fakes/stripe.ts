@@ -66,6 +66,19 @@ export type FakeSubscription = {
   };
 };
 
+/**
+ * An Invoice in either API shape: from 2025-03-31.basil its Subscription sits
+ * under `parent.subscription_details`, before that at `subscription`.
+ */
+export type FakeInvoice = {
+  id: string;
+  object: "invoice";
+  status: "draft" | "open" | "paid" | "uncollectible" | "void";
+  next_payment_attempt: number | null;
+  parent?: { type: string; subscription_details?: { subscription: string } | null } | null;
+  subscription?: string | null;
+};
+
 export type SubscriptionUpdateParams = {
   items?: Array<{ id?: string; quantity?: number; price?: string }>;
   proration_behavior?: string;
@@ -104,6 +117,7 @@ const productRetrieves: string[] = [];
 const failures = new Map<string, Error>();
 const customerCurrencies = new Map<string, string>();
 let retrievedSubscription: FakeSubscription | null = null;
+let retrievedInvoice: FakeInvoice | null = null;
 let prices: FakePrice[] = defaultPrices();
 let products: FakeProduct[] = [...PLAN_PRODUCTS];
 
@@ -223,6 +237,13 @@ export default class Stripe {
     },
   };
 
+  invoices = {
+    retrieve: async (id: string): Promise<FakeInvoice> => {
+      if (retrievedInvoice) return retrievedInvoice;
+      throw new FakeStripeError(`No such invoice: '${id}'`);
+    },
+  };
+
   webhooks = {
     constructEvent: (payload: string, signature: string, secret: string) => {
       if (signature !== `sig:${secret}`) {
@@ -279,6 +300,10 @@ export function setRetrievedSubscription(subscription: FakeSubscription | null):
   retrievedSubscription = subscription;
 }
 
+export function setRetrievedInvoice(invoice: FakeInvoice | null): void {
+  retrievedInvoice = invoice;
+}
+
 export function setStripePrices(next: FakePrice[]): void {
   prices = next;
 }
@@ -294,6 +319,7 @@ export function resetStripe(): void {
   priceLists.length = 0;
   productRetrieves.length = 0;
   retrievedSubscription = null;
+  retrievedInvoice = null;
   failures.clear();
   customerCurrencies.clear();
   prices = defaultPrices();

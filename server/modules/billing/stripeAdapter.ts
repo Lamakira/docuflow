@@ -22,6 +22,7 @@ import {
   type HostedBillingSession,
   type PaymentMethodUpdateRequest,
   type ProviderCheckoutSession,
+  type ProviderInvoice,
   type ProviderSubscription,
   type SeatQuantityUpdate,
   type SubscriptionPlanChange,
@@ -71,6 +72,19 @@ async function fromStripe<T>(call: () => Promise<T>): Promise<T> {
 function idOf(value: string | { id: string } | null | undefined): string | undefined {
   if (!value) return undefined;
   return typeof value === "string" ? value : value.id;
+}
+
+/**
+ * The Subscription an Invoice belongs to. From API version 2025-03-31.basil it
+ * sits under `parent.subscription_details`, before that at `subscription`. A
+ * webhook arrives in its endpoint's API version, so both shapes are read.
+ */
+function subscriptionOfInvoice(invoice: unknown): string | null {
+  const shaped = invoice as {
+    parent?: { subscription_details?: { subscription?: string | { id: string } | null } | null } | null;
+    subscription?: string | { id: string } | null;
+  };
+  return idOf(shaped.parent?.subscription_details?.subscription) ?? idOf(shaped.subscription) ?? null;
 }
 
 const COLLECTION_STATE: Record<string, CollectionState> = {
@@ -208,6 +222,17 @@ export class StripeBillingProvider implements BillingProvider {
     };
   }
 
+  async fetchInvoice(providerInvoiceId: string): Promise<ProviderInvoice> {
+    return fromStripe(async () => {
+      const invoice = await this.stripe.invoices.retrieve(providerInvoiceId);
+      return {
+        paid: invoice.status === "paid",
+        nextPaymentAttemptAt:
+          invoice.next_payment_attempt == null ? null : new Date(invoice.next_payment_attempt * 1000),
+      };
+    });
+  }
+
   async updateSeatQuantity(update: SeatQuantityUpdate): Promise<void> {
     return fromStripe(async () => {
       const { itemId } = await this.subscriptionItem(update.providerSubscriptionId);
@@ -263,11 +288,14 @@ export class StripeBillingProvider implements BillingProvider {
         signature,
         this.billing.webhookSecret
       );
-      const object = event.data.object as { id?: string };
+      const object = event.data.object as { id?: string; object?: string };
       return {
         providerEventId: event.id,
         type: event.type,
         objectId: object.id ?? "",
+        ...(object.object === "invoice"
+          ? { providerSubscriptionId: subscriptionOfInvoice(object) }
+          : {}),
       };
     } catch (error) {
       if (error instanceof BillingWebhookSignatureError) throw error;

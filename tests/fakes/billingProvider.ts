@@ -15,6 +15,7 @@ import {
   type HostedBillingSession,
   type PaymentMethodUpdateRequest,
   type ProviderCheckoutSession,
+  type ProviderInvoice,
   type ProviderSubscription,
   type SeatQuantityUpdate,
   type SubscriptionPlanChange,
@@ -26,6 +27,7 @@ export class FakeBillingProvider implements BillingProvider {
   readonly fetches: string[] = [];
   readonly checkoutSessions = new Map<string, ProviderCheckoutSession>();
   readonly subscriptions = new Map<string, ProviderSubscription>();
+  readonly invoices = new Map<string, ProviderInvoice>();
   readonly seatUpdates: SeatQuantityUpdate[] = [];
   readonly paymentMethodUpdates: PaymentMethodUpdateRequest[] = [];
   readonly planChanges: SubscriptionPlanChange[] = [];
@@ -63,6 +65,14 @@ export class FakeBillingProvider implements BillingProvider {
       throw new Error(`No Subscription ${providerSubscriptionId}`);
     }
     return subscription;
+  }
+
+  async fetchInvoice(providerInvoiceId: string): Promise<ProviderInvoice> {
+    const invoice = this.invoices.get(providerInvoiceId);
+    if (!invoice) {
+      throw new Error(`No Invoice ${providerInvoiceId}`);
+    }
+    return invoice;
   }
 
   async updateSeatQuantity(update: SeatQuantityUpdate): Promise<void> {

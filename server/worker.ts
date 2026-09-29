@@ -152,11 +152,17 @@ export function startWorkerLoop(options?: {
     const {
       BILLING_DRIFT_JOB,
       BILLING_DRIFT_JOB_TYPE,
+      BILLING_EMAIL_JOB,
+      BILLING_EMAIL_JOB_TYPE,
+      BILLING_EXPIRE_TRIAL_JOB,
+      BILLING_EXPIRE_TRIAL_JOB_TYPE,
       BILLING_PROJECT_JOB,
       BILLING_PROJECT_JOB_TYPE,
       billingProvider,
       featureIncluded,
       handleBillingDriftJob,
+      handleBillingEmailJob,
+      handleExpireTrialJob,
       handleProjectBillingJob,
     } = await import("./modules/billing");
     const {
@@ -164,6 +170,7 @@ export function startWorkerLoop(options?: {
       createStaleTimerScheduler,
       createDailyUpdateNudgeScheduler,
       createBillingDriftScheduler,
+      createTrialLifecycleScheduler,
       createAccountErasureScheduler,
     } = await import("./scheduler");
 
@@ -178,6 +185,8 @@ export function startWorkerLoop(options?: {
         [ACTIVITY_ATTRIBUTE_JOB]: ACTIVITY_ATTRIBUTE_JOB_TYPE,
         [BILLING_PROJECT_JOB]: BILLING_PROJECT_JOB_TYPE,
         [BILLING_DRIFT_JOB]: BILLING_DRIFT_JOB_TYPE,
+        [BILLING_EMAIL_JOB]: BILLING_EMAIL_JOB_TYPE,
+        [BILLING_EXPIRE_TRIAL_JOB]: BILLING_EXPIRE_TRIAL_JOB_TYPE,
       },
     });
     const runner = createJobRunner({
@@ -195,6 +204,8 @@ export function startWorkerLoop(options?: {
         [ACTIVITY_ATTRIBUTE_JOB]: handleAttributeEvidenceJob,
         [BILLING_PROJECT_JOB]: (job) => handleProjectBillingJob(job, billingProvider),
         [BILLING_DRIFT_JOB]: (job) => handleBillingDriftJob(job, billingProvider),
+        [BILLING_EMAIL_JOB]: handleBillingEmailJob,
+        [BILLING_EXPIRE_TRIAL_JOB]: handleExpireTrialJob,
       },
       claimerId,
     });
@@ -203,6 +214,7 @@ export function startWorkerLoop(options?: {
       createStaleTimerScheduler({ role: "worker", jobs, holderId: claimerId }),
       createDailyUpdateNudgeScheduler({ role: "worker", jobs, holderId: claimerId }),
       createBillingDriftScheduler({ role: "worker", jobs, holderId: claimerId }),
+      createTrialLifecycleScheduler({ role: "worker", jobs, holderId: claimerId }),
       createAccountErasureScheduler({ role: "worker", jobs, holderId: claimerId }),
     ];
 
