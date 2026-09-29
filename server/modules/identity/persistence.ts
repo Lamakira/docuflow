@@ -23,6 +23,7 @@ export interface IdentityPersistence extends UserImportPersistence, WebSessionPe
 
   getMainAdmin(): Promise<SafeUser | undefined>;
   getAllUsers(opts?: { includeArchived?: boolean }): Promise<SafeUser[]>;
+  getWorkspaceUsers(opts?: { includeArchived?: boolean }): Promise<SafeUser[]>;
   archiveUser(userId: string, isArchived: boolean): Promise<SafeUser | undefined>;
   updateUserRole(userId: string, role: string): Promise<SafeUser | undefined>;
   updateUser(

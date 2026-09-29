@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   PARALLEL_WORKSPACE_ID,
@@ -11,7 +11,7 @@ import { db } from "../../server/db";
 import { runWithWorkspaceContext, stampWorkspace } from "../../server/workspaceContext";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { newAgent, registerUser, type TestUser } from "../helpers/auth";
+import { newAgent, promoteToAdmin, registerUser, type TestUser } from "../helpers/auth";
 import { loginDevice, PNG_1X1 } from "../helpers/agent";
 import { createCrmProject, createDocument, createTask, startTimer, tiptap } from "../helpers/fixtures";
 import { completeUpload, objectPathFor } from "../helpers/objects";
@@ -310,6 +310,66 @@ describe("platform archive and restore (#297)", () => {
     await inB(() => setEntitlementOverride({ seatCapacity: consumed + 1 }, { kind: "system" }));
     await storage.archiveUser(ada.id, false);
     expect(await membershipsOf(ada.id)).toEqual({ [SEEDED_WORKSPACE_ID]: false, [PARALLEL_WORKSPACE_ID]: false });
+  });
+});
+
+describe("the people a Workspace lists (#297)", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  const idsOf = (body: Array<{ id: string }>) => body.map((row) => row.id).sort();
+
+  it("lists only the Owner in a Workspace just created, and nobody from another Workspace", async () => {
+    const app = await makeApp();
+    const seededAdmin = await registerUser(app, { firstName: "Ann" });
+    await promoteToAdmin(seededAdmin.id);
+    const seededMember = await registerUser(app, { firstName: "Bob" });
+    const b = await memberOfB(app);
+
+    const founder = await registerUser(app, { firstName: "Dario" });
+    await removeAllMemberships(founder.id);
+    const created = await founder.agent.post("/api/workspaces").send({ name: "Dario's Workspace" });
+    expect(created.status).toBe(201);
+    const workspaceId: string = created.body.workspaceId;
+
+    const held = await db
+      .select({ userId: memberships.userId })
+      .from(memberships)
+      .where(eq(memberships.workspaceId, workspaceId));
+    expect(held).toEqual([{ userId: founder.id }]);
+
+    // The rail's People count and the switcher's "N MEMBERS" are this list's length.
+    const listed = await founder.agent.get("/api/users");
+    expect(listed.status).toBe(200);
+    expect(idsOf(listed.body)).toEqual([founder.id]);
+    const people = await founder.agent.get("/api/workspace/memberships");
+    expect(people.body.memberships.map((row: { userId: string }) => row.userId)).toEqual([founder.id]);
+
+    const seeded = await seededMember.agent.get("/api/users");
+    expect(idsOf(seeded.body)).toEqual(idsOf([seededAdmin, seededMember]));
+    const seededArchivedToo = await seededAdmin.agent.get("/api/users").query({ includeArchived: "true" });
+    expect(idsOf(seededArchivedToo.body)).toEqual(idsOf([seededAdmin, seededMember]));
+    expect(idsOf((await b.agent.get("/api/users")).body)).toEqual([b.id]);
+
+    // The platform directory stays global (ADR-0025).
+    const directory = await seededAdmin.agent.get("/api/admin/users");
+    expect(idsOf(directory.body)).toEqual(idsOf([seededAdmin, seededMember, b, founder]));
+  });
+
+  it("reports a Membership archived in this Workspace as archived, and only when asked", async () => {
+    const app = await makeApp();
+    const admin = await registerUser(app, { firstName: "Ann" });
+    await promoteToAdmin(admin.id);
+    const leaver = await registerUser(app, { firstName: "Lee" });
+    await db
+      .update(memberships)
+      .set({ archivedAt: new Date() })
+      .where(and(eq(memberships.userId, leaver.id), eq(memberships.workspaceId, SEEDED_WORKSPACE_ID)));
+
+    expect(idsOf((await admin.agent.get("/api/users")).body)).toEqual([admin.id]);
+    const asking = await admin.agent.get("/api/users").query({ includeArchived: "true" });
+    expect(asking.body.find((row: { id: string }) => row.id === leaver.id)).toMatchObject({ isArchived: true });
   });
 });
 
