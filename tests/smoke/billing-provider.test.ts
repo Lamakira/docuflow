@@ -167,6 +167,63 @@ describe("Stripe adapter", () => {
     ]);
   });
 
+  it("reads a failed payment's Subscription from the signed event, in either API shape", async () => {
+    const { createBillingProvider } = await import("../../server/modules/billing");
+    const provider = createBillingProvider({ secretKey: "sk_test_fake", webhookSecret: "whsec_test" });
+    const failed = (id: string, invoice: Record<string, unknown>) =>
+      JSON.stringify({ id, type: "invoice.payment_failed", data: { object: invoice } });
+
+    await expect(
+      provider.verifyWebhook(
+        failed("evt_basil", {
+          id: "in_basil",
+          object: "invoice",
+          parent: { type: "subscription_details", subscription_details: { subscription: "sub_basil" } },
+        }),
+        "sig:whsec_test"
+      )
+    ).resolves.toEqual({
+      providerEventId: "evt_basil",
+      type: "invoice.payment_failed",
+      objectId: "in_basil",
+      providerSubscriptionId: "sub_basil",
+    });
+    await expect(
+      provider.verifyWebhook(
+        failed("evt_legacy", { id: "in_legacy", object: "invoice", subscription: "sub_legacy" }),
+        "sig:whsec_test"
+      )
+    ).resolves.toEqual({
+      providerEventId: "evt_legacy",
+      type: "invoice.payment_failed",
+      objectId: "in_legacy",
+      providerSubscriptionId: "sub_legacy",
+    });
+  });
+
+  it("re-fetches a failed invoice as whether it is paid and when the next attempt is", async () => {
+    const { createBillingProvider } = await import("../../server/modules/billing");
+    const { setRetrievedInvoice } = await import("../fakes/stripe");
+    const provider = createBillingProvider({ secretKey: "sk_test_fake" });
+
+    setRetrievedInvoice({
+      id: "in_open",
+      object: "invoice",
+      status: "open",
+      next_payment_attempt: 1791104400,
+    });
+    await expect(provider.fetchInvoice("in_open")).resolves.toEqual({
+      paid: false,
+      nextPaymentAttemptAt: new Date("2026-10-04T09:00:00.000Z"),
+    });
+
+    setRetrievedInvoice({ id: "in_paid", object: "invoice", status: "paid", next_payment_attempt: null });
+    await expect(provider.fetchInvoice("in_paid")).resolves.toEqual({
+      paid: true,
+      nextPaymentAttemptAt: null,
+    });
+  });
+
   it("resolves each priced Plan and interval to its own lookup key", async () => {
     const { createBillingProvider } = await import("../../server/modules/billing");
     const { checkoutCreates } = await import("../fakes/stripe");
