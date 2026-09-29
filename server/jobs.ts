@@ -82,6 +82,15 @@ export interface CreateJobsPortOptions {
 
 const CONCURRENCY_CLASSES: ReadonlySet<string> = new Set(concurrencyClassValues);
 
+/**
+ * `jobs` holds UTC wall-clock times in `timestamp` columns, which is what the
+ * query builder writes. A Date bound into raw SQL goes out in the process's
+ * local time instead, so outside UTC every lease would look already expired.
+ */
+function utc(at: Date): string {
+  return at.toISOString();
+}
+
 export function createJobsPort(options: CreateJobsPortOptions): JobsPort {
   const clock = options.now ?? (() => new Date());
   const types = validateTypes(options.types);
@@ -140,8 +149,8 @@ export function createJobsPort(options: CreateJobsPortOptions): JobsPort {
             SELECT id
             FROM jobs
             WHERE completed_at IS NULL
-              AND available_at <= ${at}
-              AND (claimed_at IS NULL OR claim_expires_at <= ${at})
+              AND available_at <= ${utc(at)}
+              AND (claimed_at IS NULL OR claim_expires_at <= ${utc(at)})
             ORDER BY available_at ASC, created_at ASC
             FOR UPDATE SKIP LOCKED
             LIMIT 1
@@ -200,7 +209,7 @@ export function createJobsPort(options: CreateJobsPortOptions): JobsPort {
             AND claimed_by = ${claimerId}
             AND completed_at IS NULL
             AND claimed_at IS NOT NULL
-            AND claim_expires_at > ${at}
+            AND claim_expires_at > ${utc(at)}
           FOR UPDATE
         `);
         if ((locked.rows as { id: string }[]).length === 0) {

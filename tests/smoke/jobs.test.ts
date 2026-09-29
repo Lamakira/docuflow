@@ -129,6 +129,24 @@ describe("jobs port", () => {
     });
   });
 
+  it("holds a lease and records a failure whatever the process time zone", async () => {
+    // UTC+1 all year, like the machine where leases looked expired on claim.
+    process.env.TZ = "Africa/Lagos";
+    try {
+      const jobs = await openPort();
+      const enqueued = await jobs.enqueue({ type: WORK, payload: { n: 1 } });
+      const claimed = await jobs.claim("worker-a");
+
+      expect(await jobs.claim("worker-b")).toBeNull();
+      await jobs.fail(claimed!.id, "worker-a", "delivery refused");
+      expect(await jobs.claim("worker-b")).toBeNull();
+      now = new Date(now.getTime() + WORK_TYPE.backoffMs);
+      expect(await jobs.claim("worker-b")).toMatchObject({ id: enqueued.id, attempt: 2 });
+    } finally {
+      process.env.TZ = "UTC";
+    }
+  });
+
   it("moves a Job that has exhausted its attempts to a Dead Letter with provenance", async () => {
     const jobs = await openPort({
       [WORK]: { ...WORK_TYPE, attempts: 2, backoffMs: 0 },
