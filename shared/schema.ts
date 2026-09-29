@@ -1660,6 +1660,11 @@ export interface ScreenshotPolicy {
   idleTimeoutMinutes: number;
   /** Seconds the idle prompt counts down before the Timer pauses. Range: 15–120. */
   idleCountdownSeconds: number;
+  /**
+   * Projects screenshots are captured on. Null captures on every Project; a
+   * Plan with a screenshot Project capacity (Starter) captures only on these.
+   */
+  screenshotProjectIds: string[] | null;
 }
 
 /** A Tracking Policy clock time: 24-hour "HH:mm". */
@@ -1677,6 +1682,7 @@ export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
   idlePromptEnabled: true,
   idleTimeoutMinutes: 10,
   idleCountdownSeconds: 60,
+  screenshotProjectIds: null,
 };
 
 /** IANA timezone strings the admin allows in the Screencasts timezone selector.
@@ -2087,6 +2093,11 @@ export const workspaceBilling = pgTable("workspace_billing", {
   cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
   pendingSeatQuantity: integer("pending_seat_quantity"),
   pendingCheckoutSessionId: varchar("pending_checkout_session_id"),
+  /** `monthly` or `annual`, read from the Stripe Price's recurring interval. Null without a Subscription. */
+  billingInterval: varchar("billing_interval", { length: 16 }),
+  /** The Plan picked on the pricing page before sign-up; Billing offers it first. Never an Entitlement. */
+  intendedPlanKey: varchar("intended_plan_key", { length: 32 }),
+  intendedBillingInterval: varchar("intended_billing_interval", { length: 16 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -2103,6 +2114,8 @@ export const workspaceEntitlementOverrides = pgTable("workspace_entitlement_over
   seatCapacity: integer("seat_capacity"),
   serviceAccountRequestsPerMinute: integer("service_account_requests_per_minute"),
   workspaceRequestsPerMinute: integer("workspace_requests_per_minute"),
+  /** Sales-led feature grants (#299): feature key → included, over the Plan's own answer. */
+  features: jsonb("features").$type<Record<string, boolean>>(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

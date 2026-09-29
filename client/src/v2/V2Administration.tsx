@@ -40,6 +40,7 @@ import {
   composeAdministration,
   composeTrackingPolicyEditor,
   hostedBillingSession,
+  planPickerNote,
   normalizeScreenshotPolicy,
   workspaceSettingsPath,
   removeAllowedTimezone,
@@ -92,6 +93,21 @@ import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
 import { V2FormDialog } from "./V2FormDialog";
 import { AnalyticsRegister, FigureBand, readBehindAdministration } from "./V2Analytics";
+import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
+import {
+  BILLING_INTERVAL_LABEL,
+  FEATURE_LABEL,
+  billingPlanPath,
+  entitlementsPath,
+  intendedPricedPlan,
+  planIncludes,
+  planIntentNote,
+  pricedPlans,
+  useEntitlements,
+  type BillingInterval,
+  type Entitlements,
+  type PricedPlanKey,
+} from "./plan";
 
 type WorkspaceMembershipsResponse = {
   memberships: Array<{
@@ -147,6 +163,8 @@ export function V2AdministrationPage() {
   const [endpointUrl, setEndpointUrl] = useState("");
   const [eventTypes, setEventTypes] = useState<string[]>([]);
   const [seatQuantity, setSeatQuantity] = useState("");
+  const [chosenPlan, setChosenPlan] = useState<PricedPlanKey | null>(null);
+  const [chosenInterval, setChosenInterval] = useState<BillingInterval | null>(null);
   const [revealedSecret, setRevealedSecret] = useState<RevealedSecretInput | null>(null);
   const [actionRefusal, setActionRefusal] = useState<string | null>(null);
   const [policyDraft, setPolicyDraft] = useState<ScreenshotPolicy>(() => normalizeScreenshotPolicy(null));
@@ -196,6 +214,21 @@ export function V2AdministrationPage() {
       if (!res.ok) throw new Error("Failed to fetch billing");
       return res.json();
     },
+  });
+
+  const { data: entitlements } = useEntitlements();
+  const currentPriced = pricedPlans(entitlements).some((plan) => plan.planKey === entitlements?.planKey)
+    ? (entitlements!.planKey as PricedPlanKey)
+    : null;
+  const planChoice: PricedPlanKey = chosenPlan ?? currentPriced ?? intendedPricedPlan(entitlements) ?? "business";
+  const intervalChoice: BillingInterval =
+    chosenInterval ?? entitlements?.billingInterval ?? entitlements?.intendedInterval ?? "monthly";
+
+  const screenshotCapacity = entitlements?.screenshotProjectCapacity ?? null;
+  const { data: screenshotProjects } = useQuery<{ data: Array<{ id: string; name: string }> }>({
+    queryKey: ["/api/crm/projects", { pageSize: 500 }],
+    enabled: canManage && screenshotCapacity != null,
+    queryFn: () => fetch("/api/crm/projects?pageSize=500", { credentials: "include" }).then((res) => res.json()),
   });
 
   const { data: workspaceSettings, isLoading: workspaceSettingsLoading } =
@@ -334,13 +367,27 @@ export function V2AdministrationPage() {
     mutationFn: async () => {
       const seats = Math.max(billing?.consumedSeatCount ?? 1, billing?.purchasedSeatCapacity ?? 1, 1);
       const session = await apiRequest("POST", billingCheckoutPath(), {
-        planKey: "pro",
+        planKey: planChoice,
+        interval: intervalChoice,
         seatQuantity: seats,
         successUrl: returnUrl(),
         cancelUrl: returnUrl(),
       });
       const redirect = hostedBillingSession({ url: session.url });
       window.location.assign(redirect.url);
+    },
+    onError: (error: Error) => refuseWrite(error.message),
+  });
+
+  const changePlan = useMutation({
+    mutationFn: () => apiRequest("POST", billingPlanPath(), { planKey: planChoice, interval: intervalChoice }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [billingSubscriptionPath()] });
+      queryClient.invalidateQueries({ queryKey: [entitlementsPath()] });
+      setChosenPlan(null);
+      setChosenInterval(null);
+      setActionRefusal(null);
+      notify.success("Plan changed");
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -702,6 +749,25 @@ export function V2AdministrationPage() {
               <p className="df-admin-billing-note">{page.billing.entitlementNote}</p>
             ) : null}
 
+            {entitlements && page.billing.actions.some((action) => action.id === "checkout" || action.id === "plan") ? (
+              <PlanPicker
+                entitlements={entitlements}
+                mode={page.billing.actions.some((action) => action.id === "plan") ? "change" : "checkout"}
+                plan={planChoice}
+                interval={intervalChoice}
+                onPlan={setChosenPlan}
+                onInterval={setChosenInterval}
+                pending={startCheckout.isPending || changePlan.isPending}
+                // Checkout is how a Read-only Workspace recovers, so it is not a
+                // write the Read-only guard stops.
+                onCheckout={() => startCheckout.mutate()}
+                onChange={() => {
+                  if (!guardWrite()) return;
+                  changePlan.mutate();
+                }}
+              />
+            ) : null}
+
             {page.billing.actions.some((action) => action.id === "seats") ? (
               <form
                 className="df-admin-form df-inline-form df-admin-seat-form"
@@ -730,14 +796,7 @@ export function V2AdministrationPage() {
 
             <div className="df-billing-actions">
               {page.billing.actions.filter((action) => action.tone !== "destructive").map((action) => {
-                if (action.id === "seats") return null;
-                if (action.id === "checkout") {
-                  return (
-                    <Button variant="default" key={action.id} type="button" disabled={startCheckout.isPending} onClick={() => startCheckout.mutate()} className="df-btn">
-                      {action.label}
-                    </Button>
-                  );
-                }
+                if (action.id === "seats" || action.id === "checkout" || action.id === "plan") return null;
                 return (
                   <Button variant="outline" key={action.id} type="button" disabled={updatePaymentMethod.isPending} onClick={() => updatePaymentMethod.mutate()} className="df-btn">
                     {action.label}
@@ -1034,6 +1093,28 @@ export function V2AdministrationPage() {
                     disabled={!trackingPolicy.editable}
                     onChange={(next) => editPolicy({ screenshotsEnabled: next })}
                   />
+                  {policyDraft.screenshotsEnabled && screenshotCapacity != null ? (
+                    <div className="df-policy-group" data-testid="v2-administration-screenshot-project">
+                      <p className="df-policy-hint">
+                        The {entitlements?.planLabel} Plan captures screenshots on {screenshotCapacity} Project.
+                        Time on every other Project is still tracked, without screenshots.
+                      </p>
+                      <V2FilterSelect
+                        label="PROJECT"
+                        ariaLabel="Screenshot Project"
+                        value={policyDraft.screenshotProjectIds?.[0] ?? V2_SELECT_NONE}
+                        disabled={!trackingPolicy.editable}
+                        onChange={(next) =>
+                          editPolicy({ screenshotProjectIds: next === V2_SELECT_NONE ? null : [next] })
+                        }
+                        options={[
+                          { value: V2_SELECT_NONE, label: "Choose a Project" },
+                          ...(screenshotProjects?.data ?? []).map((project) => ({ value: project.id, label: project.name })),
+                        ]}
+                        testId="v2-administration-screenshot-project-select"
+                      />
+                    </div>
+                  ) : null}
                   {policyDraft.screenshotsEnabled ? (
                     <div className="df-policy-group">
                       <p className="df-policy-hint">
@@ -1476,6 +1557,138 @@ function CancelControl({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+/**
+ * The Plans a Workspace can buy or move to (#299). Checkout opens Stripe; a
+ * change to a live Subscription asks first, because a lower Plan leaves areas
+ * read-only and Stripe prorates the difference.
+ */
+function PlanPicker({
+  entitlements,
+  mode,
+  plan,
+  interval,
+  onPlan,
+  onInterval,
+  pending,
+  onCheckout,
+  onChange,
+}: {
+  entitlements: Entitlements;
+  mode: "checkout" | "change";
+  plan: PricedPlanKey;
+  interval: BillingInterval;
+  onPlan: (plan: PricedPlanKey) => void;
+  onInterval: (interval: BillingInterval) => void;
+  pending: boolean;
+  onCheckout: () => void;
+  onChange: () => void;
+}) {
+  const plans = pricedPlans(entitlements);
+  const intentNote = planIntentNote(entitlements);
+  const chosen = plans.find((row) => row.planKey === plan);
+  const unchanged =
+    mode === "change" && plan === entitlements.planKey && interval === entitlements.billingInterval;
+  const lost = chosen
+    ? (Object.keys(entitlements.features) as (keyof Entitlements["features"])[]).filter(
+        (feature) => entitlements.features[feature] && !chosen.features[feature],
+      )
+    : [];
+  const consequence =
+    lost.length > 0
+      ? `${chosen?.label} leaves out ${lost.map((feature) => FEATURE_LABEL[feature]).join(", ")}. What is already there stays visible but read-only. Stripe prorates the difference on the next invoice.`
+      : "Stripe prorates the difference on the next invoice.";
+
+  return (
+    <>
+      <p className="df-admin-billing-note" data-testid="v2-administration-plans-note">
+        {planPickerNote(mode, entitlements.planLabel)}
+      </p>
+      {intentNote ? (
+        <p className="df-admin-billing-note" data-testid="v2-administration-plan-intent">
+          {intentNote}
+        </p>
+      ) : null}
+      <div className="df-plan-grid" data-testid="v2-administration-plans">
+        {plans.map((row) => {
+          const current = row.planKey === entitlements.planKey;
+          const selected = row.planKey === plan;
+          return (
+            <div
+              key={row.planKey}
+              className="df-plan-card"
+              data-current={current ? "true" : "false"}
+              data-testid={`v2-administration-plan-${row.planKey}`}
+            >
+              <div className="df-plan-card-head">
+                <span className="df-row-title">{row.label}</span>
+                {current ? <span className="df-mono df-plan-tag">CURRENT PLAN</span> : null}
+              </div>
+              <p className="df-plan-card-includes">{planIncludes(row)}</p>
+              <Button
+                type="button"
+                variant={selected ? "default" : "outline"}
+                size="sm"
+                className="df-btn"
+                aria-pressed={selected}
+                onClick={() => onPlan(row.planKey as PricedPlanKey)}
+              >
+                {selected ? "Selected" : `Select ${row.label}`}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="df-plan-controls">
+        <V2FilterSelect
+          label="BILLING"
+          ariaLabel="Billing interval"
+          value={interval}
+          onChange={(next) => onInterval(next as BillingInterval)}
+          options={(Object.keys(BILLING_INTERVAL_LABEL) as BillingInterval[]).map((value) => ({
+            value,
+            label: BILLING_INTERVAL_LABEL[value],
+          }))}
+          testId="v2-administration-plan-interval"
+        />
+        {mode === "checkout" ? (
+          <Button type="button" className="df-btn" disabled={pending} onClick={onCheckout} data-testid="v2-administration-plan-checkout">
+            {pending ? "Opening Checkout…" : `Continue to Checkout with ${chosen?.label ?? "this Plan"}`}
+          </Button>
+        ) : (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button type="button" className="df-btn" disabled={pending || unchanged}>
+                {unchanged ? "Current Plan" : `Change to ${chosen?.label ?? "this Plan"}`}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="df-v2 df-alert">
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Change to {chosen?.label}, billed {BILLING_INTERVAL_LABEL[interval].toLowerCase()}
+                </AlertDialogTitle>
+                <AlertDialogDescription>{consequence}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="df-btn" autoFocus>
+                  Keep {entitlements.planLabel}
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className={lost.length > 0 ? "df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90" : "df-btn"}
+                  disabled={pending}
+                  data-testid="v2-administration-plan-confirm"
+                  onClick={onChange}
+                >
+                  {pending ? "Changing…" : `Change to ${chosen?.label}`}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+      </div>
+    </>
   );
 }
 

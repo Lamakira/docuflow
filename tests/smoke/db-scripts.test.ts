@@ -1,10 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { assignPlan, migrateV1Plans } from "../../scripts/assign-plan";
 import { backfillCrmLinks } from "../../scripts/backfill-crm-links";
 import { openDb } from "../../scripts/lib/db";
 import { seedDefaults } from "../../scripts/seed-defaults";
-import { crmModuleFields, crmModules, orgSettings, projects, users, SEEDED_WORKSPACE_ID } from "../../shared/schema";
+import {
+  auditEvents,
+  crmModuleFields,
+  crmModules,
+  orgSettings,
+  outboxEvents,
+  projects,
+  users,
+  workspaceBilling,
+  SEEDED_WORKSPACE_ID,
+} from "../../shared/schema";
 import { resetDb } from "../helpers/db";
 import { resolveTestDatabaseUrl } from "../test-db-url";
 
@@ -212,5 +223,57 @@ describe("db:backfill:crm-links", () => {
 
     expect(result).toEqual({ linkedCount: 0, failedCount: 0, remainingOrphans: 1 });
     expect(await db.query.crmProjects.findMany()).toHaveLength(0);
+  });
+});
+
+describe("billing:assign-plan (#299)", () => {
+  async function pin(planKey: string, registryVersion: number) {
+    await db
+      .update(workspaceBilling)
+      .set({ planKey, registryVersion })
+      .where(eq(workspaceBilling.workspaceId, SEEDED_WORKSPACE_ID));
+  }
+
+  async function billing() {
+    const [row] = await db
+      .select()
+      .from(workspaceBilling)
+      .where(eq(workspaceBilling.workspaceId, SEEDED_WORKSPACE_ID));
+    return row;
+  }
+
+  it("moves v1 pro to Business v2 once, audited as the system, and leaves legacy alone", async () => {
+    await pin("pro", 1);
+    const before = await billing();
+
+    const preview = await migrateV1Plans(db, { dryRun: true });
+    expect(preview.changed).toEqual([SEEDED_WORKSPACE_ID]);
+    expect((await billing()).planKey).toBe("pro");
+
+    await migrateV1Plans(db);
+    const after = await billing();
+    expect(after).toMatchObject({ planKey: "business", registryVersion: 2 });
+    expect(after.authorizationVersion).toBe(before.authorizationVersion + 1);
+
+    const [audit] = await db.select().from(auditEvents).where(eq(auditEvents.action, "billing.plan_change"));
+    expect(audit).toMatchObject({ actorKind: "system", workspaceId: SEEDED_WORKSPACE_ID });
+    expect(audit.payload).toMatchObject({ from: "pro", to: "business", fromRegistryVersion: 1, toRegistryVersion: 2, reason: "registry_migration" });
+    const outbox = await db.select().from(outboxEvents).where(eq(outboxEvents.type, "billing.entitlements_changed"));
+    expect(outbox).toHaveLength(1);
+
+    expect((await migrateV1Plans(db)).changed).toEqual([]);
+
+    await pin("legacy", 1);
+    expect((await migrateV1Plans(db)).changed).toEqual([]);
+    expect((await billing()).planKey).toBe("legacy");
+  });
+
+  it("puts one Workspace on Enterprise with agreed seats, and refuses a Plan that does not exist", async () => {
+    await assignPlan(db, { workspaceId: SEEDED_WORKSPACE_ID, planKey: "enterprise", seats: 40 });
+    expect(await billing()).toMatchObject({ planKey: "enterprise", registryVersion: 2, purchasedSeatCapacity: 40 });
+
+    await expect(assignPlan(db, { workspaceId: SEEDED_WORKSPACE_ID, planKey: "platinum" })).rejects.toThrow(
+      /not a Plan/
+    );
   });
 });

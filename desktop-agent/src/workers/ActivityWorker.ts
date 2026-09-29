@@ -122,6 +122,7 @@ export class ActivityWorker {
   // ─── Idle timeout (admin-configurable, updated via applyIdleTimeout()) ───
   private idleUxThresholdSeconds = IDLE_UX_THRESHOLD_SECONDS;
   private lastIdleProgressLogMs = 0;
+  private activityCaptureEnabled = true;
 
   // ─── uiohook mode: per-second circular buffers ───
   /** 60-slot ring buffer. Slot = 1 if ≥1 keydown event occurred in that second, else 0. */
@@ -188,6 +189,20 @@ export class ActivityWorker {
     if (next === this.idleUxThresholdSeconds) return;
     this.idleUxThresholdSeconds = next;
     console.log(`[ActivityWorker] Idle timeout updated: ${effectiveMinutes}min (${next}s)`);
+  }
+
+  /**
+   * Apply the Plan's activity capture (#299). Off, no activity events are
+   * queued and idle never pauses the Timer; screenshot metrics stay local.
+   */
+  applyActivityCapture(enabled: boolean): void {
+    if (enabled === this.activityCaptureEnabled) return;
+    this.activityCaptureEnabled = enabled;
+    if (!enabled) {
+      this.wasIdle = false;
+      this.idleUxTriggered = false;
+    }
+    console.log(`[ActivityWorker] Activity capture ${enabled ? "on" : "off (not in the Workspace's Plan)"}`);
   }
 
   start(): void {
@@ -441,6 +456,7 @@ export class ActivityWorker {
   }
 
   private checkIdle(): void {
+    if (!this.activityCaptureEnabled) return;
     const idleSeconds = this.getEffectiveIdleSeconds();
     const timerStatus = this.store.getTimerStatus();
 
@@ -512,7 +528,7 @@ export class ActivityWorker {
   }
 
   private captureActiveWindow(): void {
-    if (this.store.getTimerStatus() !== "running") return;
+    if (!this.activityCaptureEnabled || this.store.getTimerStatus() !== "running") return;
 
     const windowInfo = `${process.platform}-desktop`;
     if (windowInfo !== this.lastWindowInfo) {

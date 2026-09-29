@@ -47,7 +47,6 @@ const CONFIG_VARS = [
   "DOCUFLOW_HTTP_BACKGROUND_INTERVALS",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
-  "STRIPE_PRICE_PRO",
   "CLERK_SECRET_KEY",
   "CLERK_PUBLISHABLE_KEY",
 ] as const;
@@ -687,7 +686,6 @@ describe("config — Stripe billing", () => {
     expect(config.billing).toEqual({
       secretKey: undefined,
       webhookSecret: undefined,
-      pricePro: undefined,
     });
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -699,18 +697,16 @@ describe("config — Stripe billing", () => {
     }
   });
 
-  it("enables Stripe from optional test-mode credentials without putting Price ids on the boot line", async () => {
+  it("enables Stripe from optional test-mode credentials without putting secrets on the boot line", async () => {
     const { config, logConfigSummary } = await load({
       ...BOOTABLE,
       STRIPE_SECRET_KEY: "sk_test_not-a-real-key",
       STRIPE_WEBHOOK_SECRET: "whsec_not-a-real-secret",
-      STRIPE_PRICE_PRO: "price_pro_test",
     });
 
     expect(config.billing).toEqual({
       secretKey: "sk_test_not-a-real-key",
       webhookSecret: "whsec_not-a-real-secret",
-      pricePro: "price_pro_test",
     });
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -720,7 +716,6 @@ describe("config — Stripe billing", () => {
       expect(line).toContain("Stripe enabled");
       expect(line).not.toContain("sk_test_not-a-real-key");
       expect(line).not.toContain("whsec_not-a-real-secret");
-      expect(line).not.toContain("price_pro_test");
     } finally {
       spy.mockRestore();
     }

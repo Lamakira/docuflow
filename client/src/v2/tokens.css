@@ -1533,6 +1533,87 @@ button.df-activity-row {
   padding: var(--df-space-4);
 }
 
+/* Plans (#299). A rail item the Plan leaves out names the Plan that has it. */
+.df-plan-tag {
+  font-size: var(--df-text-1);
+  letter-spacing: 0.04em;
+  padding: 0 var(--df-space-1);
+  border: 1px solid var(--df-active-line);
+  border-radius: var(--df-radius-1);
+  color: var(--df-active-ink);
+  background: var(--df-amber-wash);
+  white-space: nowrap;
+}
+
+.df-plan-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-3);
+  margin: var(--df-space-4) var(--df-space-6) 0;
+  padding: var(--df-space-3) var(--df-space-4);
+  border: 1px solid var(--df-active-line);
+  border-radius: var(--df-radius-3);
+  background: var(--df-amber-wash);
+  color: var(--df-case-ink);
+  font-size: var(--df-text-2);
+  line-height: 1.45;
+}
+
+.df-plan-banner p {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.df-v2[data-chrome="mobile"] .df-plan-banner {
+  margin: var(--df-space-3) var(--df-space-4) 0;
+  flex-wrap: wrap;
+}
+
+.df-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--df-space-3);
+  padding: 0 var(--df-space-5) var(--df-space-4);
+}
+
+.df-plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
+  padding: var(--df-space-4);
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-3);
+  background: var(--df-card-white);
+}
+
+.df-plan-card[data-current="true"] {
+  border-color: var(--df-active-line);
+  background: var(--df-amber-wash);
+}
+
+.df-plan-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--df-space-2);
+}
+
+.df-plan-card-includes {
+  margin: 0;
+  flex: 1;
+  font-size: var(--df-text-2);
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+}
+
+.df-plan-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--df-space-3);
+  padding: 0 var(--df-space-5) var(--df-space-4);
+}
+
 .df-analytics-group-label {
   margin: 0;
   padding: var(--df-space-4) var(--df-space-5) 0;

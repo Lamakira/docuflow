@@ -1,9 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import type { SafeUser } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { V2AppBar } from "./V2AppBar";
 import { V2CommandBar } from "./V2CommandBar";
@@ -13,9 +14,13 @@ import { V2TimerChip } from "./V2TimerChip";
 import { V2FirstWorkspace } from "./V2FirstWorkspace";
 import { V2WorkspaceChooser } from "./V2WorkspaceChooser";
 import { selectCommandPanel } from "./chrome";
+import { canManageAdministration } from "./administration";
+import { planGateCopy, planGateFor, trialNotice, useEntitlements } from "./plan";
 import {
   chromeLayoutForViewport,
   contextSurface,
+  administrationTabHref,
+  navIdForPath,
   readRailCollapsed,
   writeRailCollapsed,
   type V2ChromeLayout,
@@ -111,6 +116,9 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
     queryKey: [myInvitationsPath()],
     enabled: Boolean(memberships),
   });
+  const { data: entitlements } = useEntitlements();
+  const planGate = planGateFor(navIdForPath(location), entitlements);
+  const trial = trialNotice(entitlements);
 
   useEffect(() => {
     setPanel(null);
@@ -299,6 +307,23 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
                     data-motion={WORKSPACE_SWITCH_MOTION}
                     data-testid="v2-workspace-content"
                   >
+                    {planGate && entitlements ? (
+                      <div className="df-plan-banner" role="status" data-plan-gate={planGate.kind} data-testid="v2-plan-banner">
+                        <p>{planGateCopy(planGate, entitlements)}</p>
+                        {canManageAdministration(current?.workspaceRole ?? "") ? (
+                          <Button asChild variant="outline" size="sm" className="df-btn">
+                            <Link href={administrationTabHref("billing")}>See Plans</Link>
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : trial && canManageAdministration(current?.workspaceRole ?? "") ? (
+                      <div className="df-plan-banner" role="status" data-plan-gate="trial" data-testid="v2-trial-banner">
+                        <p>{trial.copy}</p>
+                        <Button asChild variant="outline" size="sm" className="df-btn">
+                          <Link href={administrationTabHref("billing")}>{trial.action}</Link>
+                        </Button>
+                      </div>
+                    ) : null}
                     {children}
                   </div>
                 </main>

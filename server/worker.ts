@@ -81,6 +81,20 @@ export function createJobRunner(options: CreateJobRunnerOptions): JobRunner {
   };
 }
 
+/** Completes, without running, a Job whose area the Workspace's Plan leaves out (#299). */
+export function whenPlanIncludes(
+  included: () => Promise<boolean>,
+  handler: JobHandler
+): JobHandler {
+  return async (job) => {
+    if (!(await included())) {
+      logWarn("worker.job_skipped_by_plan", { jobId: job.id, type: job.type, workspaceId: job.workspaceId });
+      return;
+    }
+    await handler(job);
+  };
+}
+
 const TICK_EVERY_MS = 60_000;
 const POLL_MS = 1_000;
 
@@ -141,6 +155,7 @@ export function startWorkerLoop(options?: {
       BILLING_PROJECT_JOB,
       BILLING_PROJECT_JOB_TYPE,
       billingProvider,
+      featureIncluded,
       handleBillingDriftJob,
       handleProjectBillingJob,
     } = await import("./modules/billing");
@@ -172,8 +187,11 @@ export function startWorkerLoop(options?: {
         [DUE_REMINDER_JOB]: handleDueReminderJob,
         [STALE_TIMER_JOB]: handleStaleTimerJob,
         [DAILY_UPDATE_NUDGE_JOB]: handleDailyUpdateNudgeJob,
-        [DOCUMENT_EMBED_JOB]: handleDocumentEmbedJob,
-        [DOCUMENT_TRANSCRIPT_JOB]: handleDocumentTranscriptJob,
+        [DOCUMENT_EMBED_JOB]: whenPlanIncludes(() => featureIncluded("knowledge"), handleDocumentEmbedJob),
+        [DOCUMENT_TRANSCRIPT_JOB]: whenPlanIncludes(
+          () => featureIncluded("knowledge"),
+          handleDocumentTranscriptJob
+        ),
         [ACTIVITY_ATTRIBUTE_JOB]: handleAttributeEvidenceJob,
         [BILLING_PROJECT_JOB]: (job) => handleProjectBillingJob(job, billingProvider),
         [BILLING_DRIFT_JOB]: (job) => handleBillingDriftJob(job, billingProvider),

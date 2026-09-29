@@ -64,7 +64,7 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | --- | --- |
 | `GCS_PROJECT_ID` | The project is taken from the key file's `project_id` |
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Email sends fail and report why; the request that triggered them still succeeds |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO` | Checkout and other money movement fail closed. Entitlement reads for Workspaces with no Stripe objects still succeed. A named secret must be test-mode (`sk_test_`); live keys are refused at boot. Live Stripe is optional test-mode operator config, not required to boot |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Checkout and other money movement fail closed. Entitlement reads for Workspaces with no Stripe objects still succeed. A named secret must be test-mode (`sk_test_`); live keys are refused at boot. Live Stripe is optional test-mode operator config, not required to boot |
 | `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | IdentityProvider operations fail closed, and since [#110](https://github.com/Lamakira/docuflow/issues/110) that means nobody can sign in to the web. Boot still succeeds, so an environment can be brought up and then given its keys. A named secret must be test-mode (`sk_test_` / `pk_test_`); live keys are refused at boot |
 | `OPENAI_API_KEY` | Embeddings, chat, and transcription fail when used |
 | `FATHOM_API_KEY` | Fathom transcripts fall back to the browser scraper |

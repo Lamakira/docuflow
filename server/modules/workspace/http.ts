@@ -331,7 +331,11 @@ function lifecycleError(res: Responder, error: unknown): boolean {
   return refuse(res, error, LIFECYCLE_REFUSALS);
 }
 
-const createWorkspaceBody = z.object({ name: z.string() });
+const createWorkspaceBody = z.object({
+  name: z.string(),
+  intendedPlan: z.unknown().optional(),
+  intendedInterval: z.unknown().optional(),
+});
 const successorBody = z.object({ userId: z.string().min(1) });
 const deleteWorkspaceBody = z.object({ confirmName: z.string() });
 
@@ -353,7 +357,7 @@ export function registerWorkspaceLifecycleRoutes(app: Express): void {
     const parsed = createWorkspaceBody.safeParse(req.body);
     if (!parsed.success) return badRequest(res, parsed.error);
     try {
-      res.status(201).json(await createWorkspace(userId, { name: parsed.data.name }));
+      res.status(201).json(await createWorkspace(userId, parsed.data));
     } catch (error) {
       if (!lifecycleError(res, error)) throw error;
     }

@@ -56,6 +56,7 @@ import {
   composeTrackingPolicyEditor,
   TRACKING_POLICY_SAVED,
   hostedBillingSession,
+  planPickerNote,
   workspaceSettingsPath,
   removeAllowedTimezone,
   rotateServiceAccountPath,
@@ -740,7 +741,9 @@ describe("Administration from operator routes (#193)", () => {
     expect(active.billing.plan).toBe("Pro");
     expect(active.billing.condition).toBe("Active");
     expect(active.billing.seats).toBe("3 of 8 Billable Seats consumed.");
+    // #299: a live Subscription moves between Plans from the card.
     expect(active.billing.actions.map((action) => action.id)).toEqual([
+      "plan",
       "seats",
       "payment-method",
       "cancel",
@@ -773,7 +776,8 @@ describe("Administration from operator routes (#193)", () => {
     expect(page.billing.condition).toBe("Read-only");
     expect(page.billing.figures).toContainEqual({ label: "WRITES", value: "Blocked" });
     expect(page.billing.entitlementNote).toContain("Writes blocked");
-    expect(page.billing.actions.map((action) => action.id)).toEqual(["payment-method"]);
+    // #299: a lapsed Subscription comes back through Checkout.
+    expect(page.billing.actions.map((action) => action.id)).toEqual(["checkout", "payment-method"]);
     expect(page.serviceAccounts.createAllowed).toBe(false);
     expect(page.webhookEndpoints.createAllowed).toBe(false);
     expect(page.writeRefusal).toBe(
@@ -1845,5 +1849,47 @@ describe("Administration billing remainder (#212)", () => {
         errorMessage: "Checkout is not available for this Workspace",
       }),
     ).toBe("Checkout is not available for this Workspace");
+  });
+});
+
+describe("A Read-only Workspace recovers through Checkout (#299)", () => {
+  const ended = composeAdministration(
+    emptyAdmin({
+      condition: "Read-only",
+      billing: {
+        planKey: "pro",
+        billingState: "ReadOnly",
+        purchasedSeatCapacity: 3,
+        consumedSeatCount: 2,
+        trialEndsAt: null,
+        periodEndsAt: "2026-10-18T09:51:36.000Z",
+        cancelAtPeriodEnd: false,
+        stripeCustomerId: "cus_cad",
+      },
+    }),
+  );
+
+  it("offers Checkout and says the Subscription ended instead of a renewal date", () => {
+    expect(ended.kind).toBe("ready");
+    if (ended.kind !== "ready") return;
+    expect(ended.billing.actions.map((action) => action.id)).toEqual(["checkout", "payment-method"]);
+    expect(ended.billing.figures).toContainEqual({ label: "SUBSCRIPTION", value: "Ended" });
+    expect(ended.billing.figures.map((figure) => figure.label)).not.toContain("RENEWS");
+  });
+
+  it("does not let the Read-only guard stop Checkout", () => {
+    const checkout = pageSource.slice(pageSource.indexOf("onCheckout={"), pageSource.indexOf("onChange={() =>"));
+    expect(checkout).toContain("startCheckout.mutate()");
+    expect(checkout).not.toContain("guardWrite");
+  });
+
+  it("names the current Plan apart from the card that is only selected", () => {
+    expect(planPickerNote("checkout", "Pro")).toBe(
+      "Current Plan: Pro. Select a Plan, then continue to Checkout. The Workspace changes Plan once Checkout completes.",
+    );
+    expect(planPickerNote("change", "Growth")).toMatch(/^Current Plan: Growth\. .*until you confirm\.$/);
+    expect(pageSource).toContain('"Selected"');
+    expect(pageSource).not.toContain('"Chosen"');
+    expect(pageSource).toContain("CURRENT PLAN");
   });
 });

@@ -11,7 +11,8 @@ import { inSeededWorkspace } from "../helpers/workspace";
  */
 
 const CHECKOUT = {
-  planKey: "pro" as const,
+  planKey: "business" as const,
+  interval: "monthly" as const,
   seatQuantity: 3,
   successUrl: "https://app.docuflow.test/billing/return",
   cancelUrl: "https://app.docuflow.test/billing/cancel",
@@ -108,8 +109,9 @@ describe("Checkout pending then Active", () => {
     );
     expect(pending).toMatchObject({
       planKey: "trial",
+      registryVersion: 2,
       billingState: "Trialing",
-      purchasedSeatCapacity: 1,
+      purchasedSeatCapacity: 3,
       stripeCustomerId: null,
       stripeSubscriptionId: null,
     });
@@ -117,7 +119,8 @@ describe("Checkout pending then Active", () => {
     provider.subscriptions.set("sub_fake_1", {
       providerCustomerId: "cus_fake_1",
       providerSubscriptionId: "sub_fake_1",
-      planKey: "pro",
+      planKey: "business",
+      interval: "monthly",
       seatQuantity: 3,
       currentPeriodEnd: PERIOD_END,
       cancelAtPeriodEnd: false,
@@ -157,7 +160,9 @@ describe("Checkout pending then Active", () => {
       getBillingProjection()
     );
     expect(active).toMatchObject({
-      planKey: "pro",
+      planKey: "business",
+      registryVersion: 2,
+      billingInterval: "monthly",
       billingState: "Active",
       purchasedSeatCapacity: 3,
       stripeCustomerId: "cus_fake_1",
@@ -316,6 +321,7 @@ describe("seat changes", () => {
       providerCustomerId: "cus_fake_1",
       providerSubscriptionId: SUBSCRIPTION_ID,
       planKey: "pro",
+      interval: "monthly",
       seatQuantity: 5,
       currentPeriodEnd: nextPeriodEnd,
       cancelAtPeriodEnd: false,
@@ -379,6 +385,7 @@ describe("seat changes", () => {
       providerCustomerId: "cus_fake_1",
       providerSubscriptionId: SUBSCRIPTION_ID,
       planKey: "pro",
+      interval: "monthly",
       seatQuantity: 3,
       currentPeriodEnd: PERIOD_END,
       cancelAtPeriodEnd: false,
@@ -411,6 +418,143 @@ describe("seat changes", () => {
       getBillingProjection()
     );
     expect(pin.purchasedSeatCapacity).toBe(5);
+  });
+});
+
+describe("Plan change (#299)", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it("swaps the Stripe Price, then applies the new Plan in DocuFlow at once, audited", async () => {
+    const { changePlan, effectiveEntitlements, getBillingProjection } = await import(
+      "../../server/modules/billing"
+    );
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
+    const { db } = await import("../../server/db");
+    const { auditEvents, outboxEvents } = await import("../../shared/schema");
+    const provider = new FakeBillingProvider();
+    await plantPaidWorkspace(3);
+
+    const moved = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
+      changePlan({ planKey: "starter", interval: "annual" }, SYSTEM, provider)
+    );
+
+    expect(provider.planChanges).toEqual([
+      { providerSubscriptionId: SUBSCRIPTION_ID, planKey: "starter", interval: "annual" },
+    ]);
+    expect(moved).toMatchObject({
+      planKey: "starter",
+      registryVersion: 2,
+      billingInterval: "annual",
+      authorizationVersion: 2,
+    });
+    const entitlements = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
+      effectiveEntitlements()
+    );
+    expect(entitlements).toMatchObject({ seatCapacity: 3, screenshotProjectCapacity: 1 });
+    expect(entitlements.features.crm).toBe(false);
+
+    const audit = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
+      db.select().from(auditEvents)
+    );
+    expect(audit).toEqual([
+      expect.objectContaining({
+        action: "billing.plan_change",
+        payload: expect.objectContaining({ from: "pro", to: "starter", toRegistryVersion: 2 }),
+      }),
+    ]);
+    const outbox = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
+      db.select().from(outboxEvents)
+    );
+    expect(outbox).toEqual([expect.objectContaining({ type: "billing.entitlements_changed" })]);
+
+    const pin = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
+      getBillingProjection()
+    );
+    expect(pin.planKey).toBe("starter");
+  });
+
+  it("refuses Checkout for a Workspace that already pays, and a Plan change without a Subscription", async () => {
+    const { changePlan, startCheckout, InvalidCheckoutError } = await import(
+      "../../server/modules/billing"
+    );
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
+    const provider = new FakeBillingProvider();
+    await plantPaidWorkspace(3);
+    await plantTrialWorkspace();
+
+    await expect(
+      runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
+        startCheckout(CHECKOUT, SYSTEM, provider)
+      )
+    ).rejects.toBeInstanceOf(InvalidCheckoutError);
+    await expect(
+      runWithWorkspaceContext({ workspaceId: TRIAL_WORKSPACE_ID }, () =>
+        changePlan({ planKey: "growth", interval: "monthly" }, SYSTEM, provider)
+      )
+    ).rejects.toBeInstanceOf(InvalidCheckoutError);
+    await expect(
+      runWithWorkspaceContext({ workspaceId: TRIAL_WORKSPACE_ID }, () =>
+        startCheckout({ ...CHECKOUT, planKey: "enterprise" }, SYSTEM, provider)
+      )
+    ).rejects.toThrow(/not sold through Checkout/);
+    expect(provider.checkouts).toEqual([]);
+    expect(provider.planChanges).toEqual([]);
+  });
+
+  it("keeps an Enterprise Workspace on Enterprise whatever Price Stripe reports", async () => {
+    const {
+      getBillingProjection,
+      ingestBillingWebhook,
+      handleProjectBillingJob,
+      BILLING_PROJECT_JOB,
+    } = await import("../../server/modules/billing");
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
+    const { createJobRunner } = await import("../../server/worker");
+    const { db } = await import("../../server/db");
+    const { workspaceBilling } = await import("../../shared/schema");
+    const provider = new FakeBillingProvider();
+    await plantPaidWorkspace(3);
+    const { eq } = await import("drizzle-orm");
+    await db
+      .update(workspaceBilling)
+      .set({ planKey: "enterprise", registryVersion: 2 })
+      .where(eq(workspaceBilling.workspaceId, PAID_WORKSPACE_ID));
+
+    provider.subscriptions.set(SUBSCRIPTION_ID, {
+      providerCustomerId: "cus_fake_1",
+      providerSubscriptionId: SUBSCRIPTION_ID,
+      planKey: "business",
+      interval: "annual",
+      seatQuantity: 3,
+      currentPeriodEnd: PERIOD_END,
+      cancelAtPeriodEnd: false,
+      collectionState: "Current",
+    });
+    const jobsPort = await billingJobs();
+    await ingestBillingWebhook({
+      provider,
+      jobs: jobsPort,
+      payload: JSON.stringify({
+        providerEventId: "evt_enterprise",
+        type: "customer.subscription.updated",
+        objectId: SUBSCRIPTION_ID,
+      }),
+      signature: "signed",
+    });
+    const worker = createJobRunner({
+      role: "worker",
+      jobs: jobsPort,
+      handlers: { [BILLING_PROJECT_JOB]: (job) => handleProjectBillingJob(job, provider) },
+      claimerId: "worker-1",
+    });
+    await worker.runOne();
+
+    const pin = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
+      getBillingProjection()
+    );
+    expect(pin).toMatchObject({ planKey: "enterprise", registryVersion: 2, billingInterval: "annual" });
   });
 });
 

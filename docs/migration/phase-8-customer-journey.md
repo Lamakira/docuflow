@@ -64,7 +64,7 @@ the agent's switch plus `src/renderer/app/`. Those belong to their own ticket.
 | --- | --- | --- | --- |
 | 1 | Postgres on **5434** up | The dev database does not survive a reboot here | |
 | 2 | **Every pending migration applied** (`npm run db:migrate`) | The Worker calls `completeDueAccountDeletions` on its first tick and exits if `account_deletions` is absent | |
-| 3 | `stripe listen --forward-to http://localhost:5000/api/billing/webhooks` running **first** | It prints the `whsec_` the HTTP server must already hold at boot | |
+| 3 | `npm run stripe:listen` running **first** | It prints the `whsec_` the HTTP server must already hold at boot, and listens on the account of `.env`'s `STRIPE_SECRET_KEY`, not the one `stripe login` chose | |
 | 4 | HTTP server started **after** the CLI, with that `whsec_` in `.env` | A secret from another Stripe account rejects every delivery; since Defect C that now logs `billing.webhook_secret_mismatch` | |
 | 5 | A **`DOCUFLOW_ROLE=worker`** process running | Without it the projection Job never runs and the Workspace never leaves `Trialing`. The Checkout redirect returns before the Job | |
 | 6 | The marketing site on `APP_URL=http://localhost:5000 npm run dev` | So the run starts where a visitor starts, and the CTA reaches this application | |

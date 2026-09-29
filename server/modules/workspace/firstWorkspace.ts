@@ -23,6 +23,7 @@ import {
   workspaces,
 } from "@shared/schema";
 import { WORKSPACE_NAME_MAX, workspaceNameError } from "@shared/workspaceName";
+import { parsePlanIntent } from "@shared/planIntent";
 import { db } from "../../db";
 import { runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 import { startTrial } from "../billing/stateMachine";
@@ -116,9 +117,10 @@ function cleanName(raw: unknown): string {
  */
 export async function createWorkspace(
   userId: string,
-  input: { name: unknown },
+  input: { name: unknown; intendedPlan?: unknown; intendedInterval?: unknown },
 ): Promise<CreatedWorkspace> {
   const name = cleanName(input.name);
+  const intent = parsePlanIntent(input.intendedPlan, input.intendedInterval);
   // A standing intent to leave and a brand-new Workspace to own cannot both be
   // true: the deletion would archive the Owner Membership it was just given.
   await assertNoPendingAccountDeletion(userId);
@@ -179,7 +181,7 @@ export async function createWorkspace(
   // Flow 5 begins here. Outside the transaction above because the trial writes
   // its own audit row through the billing state machine.
   const projection = await runWithWorkspaceContext({ workspaceId }, async () => {
-    const trial = await startTrial({ kind: "user", id: userId });
+    const trial = await startTrial({ kind: "user", id: userId }, { intent });
     await db.insert(auditEvents).values(
       stampWorkspace({
         actorKind: "user" as const,

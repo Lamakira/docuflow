@@ -19,6 +19,7 @@ import {
 import { SeatExhaustedError } from "./writeClassification";
 import type { BillingProvider } from "./billingProvider";
 import { InvalidBillingTransitionError } from "./stateMachine";
+import { isPlanKey, purchasesSeats } from "./planRegistry";
 
 type SeatReader = { select: typeof db.select };
 
@@ -109,7 +110,7 @@ export async function changeSeats(
   provider: BillingProvider
 ): Promise<BillingProjection> {
   const pin = await getCurrentPin();
-  if (pin.planKey !== "pro" || !pin.stripeSubscriptionId) {
+  if (!isPlanKey(pin.planKey) || !purchasesSeats(pin.planKey, pin.registryVersion) || !pin.stripeSubscriptionId) {
     throw new SeatChangeUnavailableError();
   }
   if (next > pin.purchasedSeatCapacity) {

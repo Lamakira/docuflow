@@ -4,6 +4,7 @@
  */
 
 import { auditEvents, workspaceBilling } from "@shared/schema";
+import { parsePlanIntent, type PlanIntent } from "@shared/planIntent";
 import { db } from "../../db";
 import { inWorkspace, requireWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 import {
@@ -31,9 +32,11 @@ function addUtcDays(from: Date, days: number): Date {
 }
 
 function trialDurationDays(): number {
-  const days = PLAN_REGISTRY[PLAN_REGISTRY_VERSION]?.trial.trialDurationDays;
+  const days = PLAN_REGISTRY[PLAN_REGISTRY_VERSION]?.trial?.trialDurationDays;
   if (days == null) {
-    throw new InvalidBillingPinError("Trial duration missing from registry version 1");
+    throw new InvalidBillingPinError(
+      `Trial duration missing from registry version ${PLAN_REGISTRY_VERSION}`
+    );
   }
   return days;
 }
@@ -84,16 +87,16 @@ async function applyState(
 
 /**
  * Pin an unpinned Workspace to Plan `trial` / Trialing. No Stripe objects.
- * Duration is the 14-day DocuFlow value from registry version 1.
+ * Duration and seats come from the current registry version.
  */
 export async function startTrial(
   actor: AuditActor,
-  options: { now?: Date } = {}
+  options: { now?: Date; intent?: PlanIntent | null } = {}
 ): Promise<BillingProjection> {
   const { workspaceId } = requireWorkspaceContext();
   const now = options.now ?? new Date();
   const trialEndsAt = addUtcDays(now, trialDurationDays());
-  const seatCapacity = PLAN_REGISTRY[PLAN_REGISTRY_VERSION].trial.seatCapacity;
+  const seatCapacity = PLAN_REGISTRY[PLAN_REGISTRY_VERSION]?.trial?.seatCapacity;
   if (typeof seatCapacity !== "number") {
     throw new InvalidBillingPinError("Trial seat capacity must be a number");
   }
@@ -122,6 +125,8 @@ export async function startTrial(
           trialEndsAt,
           periodEndsAt: null,
           cancelAtPeriodEnd: false,
+          intendedPlanKey: options.intent?.planKey ?? null,
+          intendedBillingInterval: options.intent?.interval ?? null,
         })
       )
       .returning();
@@ -139,6 +144,20 @@ export async function startTrial(
 
     return billingProjectionOf(row);
   });
+}
+
+/** The Plan chosen on the pricing page before sign-up, if one came with the first Workspace. */
+export async function readPlanIntent(): Promise<PlanIntent | null> {
+  requireWorkspaceContext();
+  const [row] = await db
+    .select({
+      planKey: workspaceBilling.intendedPlanKey,
+      interval: workspaceBilling.intendedBillingInterval,
+    })
+    .from(workspaceBilling)
+    .where(inWorkspace(workspaceBilling))
+    .limit(1);
+  return row ? parsePlanIntent(row.planKey, row.interval) : null;
 }
 
 /** Expiry of Trialing without conversion becomes ReadOnly. */

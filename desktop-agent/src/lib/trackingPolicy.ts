@@ -23,10 +23,16 @@ export interface TrackingPolicy {
   idleTimeoutMinutes: number;
   /** Seconds the idle prompt counts down before the Timer pauses (15–120). */
   idleCountdownSeconds: number;
+  /** Projects the Plan lets screenshots be captured on; null is every Project (#299). */
+  screenshotProjectIds: string[] | null;
+  /** Off when the Plan leaves activity and idle detection out: no activity events, no idle pause. */
+  activityCaptureEnabled: boolean;
 }
 
 /** Mirrors the server's DEFAULT_SCREENSHOT_POLICY. Used only when no policy was ever received. */
 export const DEFAULT_TRACKING_POLICY: TrackingPolicy = {
+  screenshotProjectIds: null,
+  activityCaptureEnabled: true,
   screenshotsEnabled: true,
   captureIntervalMinMin: 3,
   captureIntervalMaxMin: 5,
@@ -111,6 +117,14 @@ export function normalizeTrackingPolicy(
     idlePromptEnabled: bool("idlePromptEnabled"),
     idleTimeoutMinutes: num("idleTimeoutMinutes"),
     idleCountdownSeconds: num("idleCountdownSeconds"),
+    screenshotProjectIds:
+      value.screenshotProjectIds === null
+        ? null
+        : Array.isArray(value.screenshotProjectIds) &&
+            value.screenshotProjectIds.every((id) => typeof id === "string")
+          ? (value.screenshotProjectIds as string[])
+          : fallback.screenshotProjectIds,
+    activityCaptureEnabled: bool("activityCaptureEnabled"),
   };
 }
 

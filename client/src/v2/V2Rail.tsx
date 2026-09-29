@@ -31,6 +31,7 @@ import {
   workspaceRoleLabel,
 } from "./presentation";
 import { workspaceSwitcher, type MembershipOption, type MembershipsResponse } from "./workspace";
+import { planGateFor, useEntitlements } from "./plan";
 
 type V2RailProps = {
   collapsed: boolean;
@@ -74,6 +75,7 @@ export function V2Rail({
   // Undefined memberships is "not loaded", not a Member. Do not pass "" into reach (#258).
   const roleForReach = memberships === undefined ? null : workspaceRole;
   const role = current ? workspaceRoleLabel(current.workspaceRole) : "";
+  const { data: entitlements } = useEntitlements();
 
   async function handleSignOut() {
     try {
@@ -142,6 +144,7 @@ export function V2Rail({
             ) : null}
             {destinationsInReach(section.items, roleForReach).map((item) => {
               const active = activeId === item.id;
+              const gate = planGateFor(item.id, entitlements);
               const count =
                 item.countKey === "projects"
                   ? projectCount
@@ -154,7 +157,8 @@ export function V2Rail({
                   href={item.href}
                   className="df-rail-item df-nav"
                   data-active={active ? "true" : "false"}
-                  title={item.label}
+                  title={gate ? `${item.label} · ${gate.requiredPlan}` : item.label}
+                  data-plan-gate={gate?.kind}
                 >
                   <span className="df-rail-label">
                     <RailIcon id={item.id} active={active} />
@@ -164,7 +168,11 @@ export function V2Rail({
                       </span>
                     ) : null}
                   </span>
-                  {!collapsed && count != null ? (
+                  {!collapsed && gate ? (
+                    <span className="df-mono df-plan-tag" data-testid={`v2-plan-tag-${item.id}`}>
+                      {gate.requiredPlan.toUpperCase()}
+                    </span>
+                  ) : !collapsed && count != null ? (
                     <span className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)" }}>
                       {count}
                     </span>

@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { SafeUser } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { clearPlanIntent, readPlanIntent } from "@/lib/planIntent";
 import { motionForSurface } from "./motion";
 import { notify } from "./notify";
 import {
@@ -43,7 +44,12 @@ export function V2FirstWorkspace({ belongedBefore = false }: { belongedBefore?: 
     setStatus("creating");
     setMessage(undefined);
     try {
-      await apiRequest("POST", workspacesPath(), { name: name.trim() });
+      const intent = readPlanIntent();
+      await apiRequest("POST", workspacesPath(), {
+        name: name.trim(),
+        ...(intent ? { intendedPlan: intent.planKey, intendedInterval: intent.interval } : {}),
+      });
+      clearPlanIntent();
       setStatus("created");
       // The new Workspace is now the active one, so every Workspace-scoped read
       // in the shell is stale — the same sweep a Workspace switch does.

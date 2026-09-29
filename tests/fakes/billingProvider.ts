@@ -17,6 +17,7 @@ import {
   type ProviderCheckoutSession,
   type ProviderSubscription,
   type SeatQuantityUpdate,
+  type SubscriptionPlanChange,
   type WebhookEvent,
 } from "../../server/modules/billing/billingProvider";
 
@@ -27,6 +28,7 @@ export class FakeBillingProvider implements BillingProvider {
   readonly subscriptions = new Map<string, ProviderSubscription>();
   readonly seatUpdates: SeatQuantityUpdate[] = [];
   readonly paymentMethodUpdates: PaymentMethodUpdateRequest[] = [];
+  readonly planChanges: SubscriptionPlanChange[] = [];
 
   async createCheckout(request: CheckoutRequest): Promise<HostedBillingSession> {
     this.checkouts.push(request);
@@ -65,6 +67,18 @@ export class FakeBillingProvider implements BillingProvider {
 
   async updateSeatQuantity(update: SeatQuantityUpdate): Promise<void> {
     this.seatUpdates.push(update);
+  }
+
+  async changeSubscriptionPlan(change: SubscriptionPlanChange): Promise<void> {
+    this.planChanges.push(change);
+    const subscription = this.subscriptions.get(change.providerSubscriptionId);
+    if (subscription) {
+      this.subscriptions.set(change.providerSubscriptionId, {
+        ...subscription,
+        planKey: change.planKey,
+        interval: change.interval,
+      });
+    }
   }
 
   async createPaymentMethodUpdate(

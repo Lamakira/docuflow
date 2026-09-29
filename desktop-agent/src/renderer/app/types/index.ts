@@ -41,6 +41,8 @@ export interface AgentState {
   apiBase: string | null;
   apiBaseSource: string | null;
   timer: TimerState;
+  /** False when the Workspace's Plan has no Tasks: the timer tracks the Project itself (#299). */
+  timerRequiresTask?: boolean;
 }
 
 export interface RecentTask {

@@ -15,6 +15,5 @@ export function billingProviderFromAppConfig(billing: BillingConfig): BillingPro
   return createBillingProvider({
     secretKey: billing.secretKey,
     webhookSecret: billing.webhookSecret,
-    priceIds: billing.pricePro ? { pro: billing.pricePro } : {},
   });
 }

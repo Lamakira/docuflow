@@ -10,23 +10,39 @@ import { chromeRefusal } from "./chrome";
 export const NETWORK_FAILURE = "DocuFlow could not be reached. Check your connection and try again.";
 export const GENERIC_FAILURE = "Something went wrong. Try again.";
 
+/**
+ * What each browser's fetch rejects with when the server cannot be reached:
+ * Chromium, Firefox, Safari. Matched on the text as well as on TypeError,
+ * because callers often pass `error.message` on rather than the error.
+ */
+const NETWORK_REJECTION = /^(Failed to fetch|NetworkError when attempting to fetch resource\.?|Load failed|Network request failed)$/i;
+
 /** The copy a failed write shows, read from the error apiRequest throws. */
 export function errorMessage(error: unknown, fallback: string = GENERIC_FAILURE): string {
   if (error instanceof TypeError && /fetch|network/i.test(error.message)) return NETWORK_FAILURE;
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  if (NETWORK_REJECTION.test(message.trim())) return NETWORK_FAILURE;
   if (!message.trim()) return fallback;
   return chromeRefusal({ kind: "generic", message });
 }
 
 const STANDING_REFUSAL = /read-only|permission denied|not authorized|access denied|forbidden|capability/i;
+const PLAN_REFUSAL = /\bUpgrade to [A-Z]\w* to\b/;
+
+/** The server's refusal for an area the Workspace's Plan leaves out; it names the Plan to move to. */
+export function isPlanRefusal(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return PLAN_REFUSAL.test(message);
+}
 
 /**
  * A refusal that explains the reader's standing — a Capability, the Workspace
- * Role, a Read-only Workspace — stays beside the control that raised it.
+ * Role, a Read-only Workspace — stays beside the control that raised it. A
+ * Plan refusal is a toast: its own words are the whole explanation.
  */
 export function isStandingRefusal(error: unknown): boolean {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  return STANDING_REFUSAL.test(message);
+  return STANDING_REFUSAL.test(message) && !isPlanRefusal(message);
 }
 
 type NotifyOptions = {

@@ -49,7 +49,18 @@ import {
   type OpportunityFieldsState,
 } from "@shared/opportunityFields";
 import { projectHasOpportunity } from "@shared/projectLifecycle";
-import { SeatExhaustedError } from "./modules/billing";
+import {
+  assertScreenshotProject,
+  assertScreenshotProjectCapacity,
+  deliveredTrackingPolicy,
+} from "./modules/activity/policy";
+import {
+  PlanFeatureNotIncludedError,
+  SeatExhaustedError,
+  featureIncluded,
+  planStanding,
+  projectWriteFeature,
+} from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
 import mammoth from "mammoth";
 import { 
@@ -1718,6 +1729,15 @@ Instructions:
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
 
+      // A Plan without Clients and Opportunities creates light Projects: Internal, Active.
+      const { projection: planPin, entitlements } = await planStanding();
+      const lightProject =
+        !entitlements.features.crm && parsed.data.projectType === undefined && !parsed.data.clientId;
+      if (lightProject) {
+        parsed.data.projectType = "internal";
+        parsed.data.status ??= "won_in_progress";
+      }
+
       // v1 names only an assignee; while the row is an Opportunity, that is its Owner too.
       const hasOpportunity = projectHasOpportunity({
         isDocumentationOnly: parsed.data.isDocumentationOnly ? 1 : 0,
@@ -1750,6 +1770,12 @@ Instructions:
       if (opportunityIssue) {
         return res.status(400).json({ message: opportunityIssue });
       }
+      const refusedFeature = projectWriteFeature(entitlements, parsed.data, { opportunity: hasOpportunity });
+      if (refusedFeature) {
+        return res
+          .status(403)
+          .json(new PlanFeatureNotIncludedError(refusedFeature, planPin.planKey, "write").body());
+      }
       
       // Enforce unique project name per user
       const existing = await storage.getCrmProjects(userId, { pageSize: 1000 });
@@ -1760,7 +1786,7 @@ Instructions:
         return res.status(409).json({ message: `A project named "${parsed.data.name}" already exists` });
       }
 
-      const { project, crmProject } = await storage.createCrmProjectWithBase(
+      const { project, crmProject: created } = await storage.createCrmProjectWithBase(
         {
           name: parsed.data.name,
           description: parsed.data.description || null,
@@ -1784,6 +1810,10 @@ Instructions:
           ...opportunityFields,
         }
       );
+      // Creation keeps its default Project type; a light Project is Internal.
+      const crmProject = lightProject
+        ? ((await storage.updateCrmProject(created.id, { projectType: "internal" })) ?? created)
+        : created;
 
       // Handle memberIds provided at creation time
       // createCrmProjectWithBase always auto-adds the creator; honour the caller's explicit selection
@@ -2009,6 +2039,21 @@ Instructions:
       );
       if (opportunityIssue) {
         return res.status(400).json({ message: opportunityIssue });
+      }
+      // An open or Lost Opportunity is pipeline work; a won Client Project stays a Project.
+      const { projection: planPin, entitlements } = await planStanding();
+      const nextRow = { status: pick("status"), projectType: pick("projectType"), isDocumentationOnly: crmProject.isDocumentationOnly };
+      const pipeline =
+        projectHasOpportunity(nextRow) &&
+        (!nextRow.status.startsWith("won") || !projectHasOpportunity(crmProject));
+      const refusedFeature = projectWriteFeature(entitlements, parsed.data, {
+        opportunity: pipeline,
+        current: crmProject,
+      });
+      if (refusedFeature) {
+        return res
+          .status(403)
+          .json(new PlanFeatureNotIncludedError(refusedFeature, planPin.planKey, "write").body());
       }
       
       // Update base project name and/or description if provided
@@ -3100,6 +3145,17 @@ Instructions:
         for (const key of ["activeHoursStart", "activeHoursEnd"] as const) {
           if (p[key] !== undefined && !isTrackingPolicyClockTime(p[key]))
             return res.status(400).json({ message: "Active hours must be 24-hour HH:mm times, for example 08:00" });
+        }
+        if (p.screenshotProjectIds !== undefined) {
+          const ids = p.screenshotProjectIds;
+          if (ids !== null && !(Array.isArray(ids) && ids.every((id: unknown) => typeof id === "string" && id)))
+            return res.status(400).json({ message: "Screenshot Projects must be a list of Project ids" });
+          try {
+            await assertScreenshotProjectCapacity(ids);
+          } catch (error) {
+            if (error instanceof PlanFeatureNotIncludedError) return res.status(403).json(error.body());
+            throw error;
+          }
         }
         ops.push(storage.upsertScreenshotPolicy(screenshotPolicy));
       }
@@ -4195,15 +4251,15 @@ Instructions:
     }
   });
 
-  /** Whether the client must supply a task when starting the timer. */
+  /** Whether the client must supply a task when starting the timer: a Plan without Tasks tracks the Project. */
   app.get("/api/time-tracking/capabilities", isAuthenticated, async (_req: any, res) => {
-    res.json({ requiresTask: true });
+    res.json({ requiresTask: await featureIncluded("projectManagement") });
   });
 
   /** Tracking Policy applied to the caller. Members may inspect it (#191). */
   app.get("/api/time-tracking/tracking-policy", isAuthenticated, async (_req: any, res) => {
     try {
-      const screenshotPolicy = await storage.getScreenshotPolicy();
+      const screenshotPolicy = await deliveredTrackingPolicy();
       res.json({ screenshotPolicy });
     } catch (error) {
       console.error("Error fetching Tracking Policy:", error);
@@ -4222,15 +4278,21 @@ Instructions:
         return res.status(400).json({ message: "Project is required" });
       }
 
-      if (!taskId || typeof taskId !== "string") {
-        return res.status(400).json({ message: "taskId is required" });
-      }
-      const task = await storage.getTask(taskId);
-      if (!task || task.crmProjectId !== crmProjectId) {
-        return res.status(400).json({ message: "Invalid task for this project" });
-      }
-      if (task.status === "archived") {
-        return res.status(400).json({ message: "Cannot start timer on an archived task" });
+      if (taskId === null && !(await featureIncluded("projectManagement"))) {
+        if (!(await storage.getCrmProject(crmProjectId))) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+      } else {
+        if (!taskId || typeof taskId !== "string") {
+          return res.status(400).json({ message: "taskId is required" });
+        }
+        const task = await storage.getTask(taskId);
+        if (!task || task.crmProjectId !== crmProjectId) {
+          return res.status(400).json({ message: "Invalid task for this project" });
+        }
+        if (task.status === "archived") {
+          return res.status(400).json({ message: "Cannot start timer on an archived task" });
+        }
       }
       
       const now = new Date();
@@ -4607,6 +4669,12 @@ Instructions:
       if (entry.userId !== userId) {
         return res.status(403).json({ message: "Not authorized" });
       }
+      try {
+        await assertScreenshotProject(entry.crmProjectId);
+      } catch (error) {
+        if (error instanceof PlanFeatureNotIncludedError) return res.status(403).json(error.body());
+        throw error;
+      }
 
       const objectStorageService = new ObjectStorageService();
       const { uploadURL, objectPath } = await objectStorageService.getObjectEntityUpload();
@@ -4632,6 +4700,12 @@ Instructions:
       }
       if (entry.userId !== userId) {
         return res.status(403).json({ message: "Not authorized" });
+      }
+      try {
+        await assertScreenshotProject(entry.crmProjectId);
+      } catch (error) {
+        if (error instanceof PlanFeatureNotIncludedError) return res.status(403).json(error.body());
+        throw error;
       }
 
       const objectStorageService = new ObjectStorageService();

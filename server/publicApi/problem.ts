@@ -48,6 +48,12 @@ export const READ_ONLY_WORKSPACE: Problem = {
   status: 403,
 };
 
+export const PLAN_UPGRADE_REQUIRED: Problem = {
+  type: "urn:docuflow:problem:plan-upgrade-required",
+  title: "The Workspace's Plan does not include this",
+  status: 403,
+};
+
 export const SEAT_EXHAUSTED: Problem = {
   type: "urn:docuflow:problem:seat-exhausted",
   title: "Billable Seat capacity is exhausted",

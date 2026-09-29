@@ -11,34 +11,150 @@ import { inSeededWorkspace } from "../helpers/workspace";
  * Characterization of `/api/*` stays green. Stripe is not this suite.
  */
 
-describe("Plan Registry catalog", () => {
-  it("defines version 1 Plans legacy, trial, and pro with Entitlement values, not a second rate-limit module", async () => {
-    const { PLAN_REGISTRY, PLAN_REGISTRY_VERSION, PUBLIC_API_RATE_LIMITS } = await import(
-      "../../server/modules/billing"
-    );
+const EVERY_FEATURE = {
+  activityCapture: true,
+  payrollExports: true,
+  crm: true,
+  projectManagement: true,
+  knowledge: true,
+  advancedAnalytics: true,
+  sso: true,
+};
 
-    expect(PLAN_REGISTRY_VERSION).toBe(1);
+/** The pricing page's comparison table (#299), one row per Plan. */
+const PRICING_TABLE = {
+  starter: {
+    activityCapture: false,
+    payrollExports: false,
+    crm: false,
+    projectManagement: false,
+    knowledge: false,
+    advancedAnalytics: false,
+    sso: false,
+  },
+  growth: {
+    activityCapture: true,
+    payrollExports: true,
+    crm: true,
+    projectManagement: true,
+    knowledge: true,
+    advancedAnalytics: false,
+    sso: false,
+  },
+  business: {
+    activityCapture: true,
+    payrollExports: true,
+    crm: true,
+    projectManagement: true,
+    knowledge: true,
+    advancedAnalytics: true,
+    sso: false,
+  },
+  enterprise: EVERY_FEATURE,
+} as const;
+
+const RATE_LIMITS = { serviceAccountRequestsPerMinute: 60, workspaceRequestsPerMinute: 120 };
+
+describe("Plan Registry catalog", () => {
+  it("keeps version 1 Plans legacy, trial, and pro as the whole product, not a second rate-limit module", async () => {
+    const { PLAN_REGISTRY, PUBLIC_API_RATE_LIMITS } = await import("../../server/modules/billing");
+
     expect(PLAN_REGISTRY[1]?.legacy).toEqual({
       seatCapacity: 500,
-      serviceAccountRequestsPerMinute: 60,
-      workspaceRequestsPerMinute: 120,
+      ...RATE_LIMITS,
+      features: EVERY_FEATURE,
+      screenshotProjectCapacity: null,
     });
     expect(PLAN_REGISTRY[1]?.trial).toEqual({
       seatCapacity: 1,
       trialDurationDays: 14,
-      serviceAccountRequestsPerMinute: 60,
-      workspaceRequestsPerMinute: 120,
+      ...RATE_LIMITS,
+      features: EVERY_FEATURE,
+      screenshotProjectCapacity: null,
     });
     expect(PLAN_REGISTRY[1]?.pro).toEqual({
       seatCapacity: "purchased",
       minimumSeatCapacity: 1,
-      serviceAccountRequestsPerMinute: 60,
-      workspaceRequestsPerMinute: 120,
+      ...RATE_LIMITS,
+      features: EVERY_FEATURE,
+      screenshotProjectCapacity: null,
     });
     expect(PUBLIC_API_RATE_LIMITS).toEqual({
-      serviceAccountRequestsPerMinute: PLAN_REGISTRY[1].legacy.serviceAccountRequestsPerMinute,
-      workspaceRequestsPerMinute: PLAN_REGISTRY[1].legacy.workspaceRequestsPerMinute,
+      serviceAccountRequestsPerMinute: PLAN_REGISTRY[1].legacy!.serviceAccountRequestsPerMinute,
+      workspaceRequestsPerMinute: PLAN_REGISTRY[1].legacy!.workspaceRequestsPerMinute,
     });
+  });
+
+  it("defines version 2 as the pricing page's table, per seat, with no storage, AI or Device limits", async () => {
+    const { PLAN_REGISTRY, PLAN_REGISTRY_VERSION } = await import("../../server/modules/billing");
+
+    expect(PLAN_REGISTRY_VERSION).toBe(2);
+    const v2 = PLAN_REGISTRY[2]!;
+    expect(Object.keys(v2).sort()).toEqual(["business", "enterprise", "growth", "starter", "trial"]);
+    for (const [planKey, features] of Object.entries(PRICING_TABLE)) {
+      const plan = v2[planKey as keyof typeof PRICING_TABLE]!;
+      expect(plan.features, planKey).toEqual(features);
+      expect(plan.seatCapacity, planKey).toBe("purchased");
+      expect(plan, planKey).toMatchObject(RATE_LIMITS);
+      expect(Object.keys(plan).some((key) => /storage|ai|device/i.test(key)), planKey).toBe(false);
+    }
+    expect(v2.starter!.screenshotProjectCapacity).toBe(1);
+    expect(v2.growth!.screenshotProjectCapacity).toBeNull();
+    expect(v2.business!.screenshotProjectCapacity).toBeNull();
+    expect(v2.enterprise!.screenshotProjectCapacity).toBeNull();
+    expect(v2.enterprise!.salesLed).toBe(true);
+    expect(v2.enterprise!.lookupKeys).toBeUndefined();
+  });
+
+  it("names the six Stripe lookup keys in the registry, not in env vars", async () => {
+    const { PLAN_REGISTRY } = await import("../../server/modules/billing");
+
+    expect(PLAN_REGISTRY[2]!.starter!.lookupKeys).toEqual({
+      monthly: "starter_monthly",
+      annual: "starter_annual",
+    });
+    expect(PLAN_REGISTRY[2]!.growth!.lookupKeys).toEqual({
+      monthly: "growth_monthly",
+      annual: "growth_annual",
+    });
+    expect(PLAN_REGISTRY[2]!.business!.lookupKeys).toEqual({
+      monthly: "business_monthly",
+      annual: "business_annual",
+    });
+  });
+
+  it("gives the v2 Trial Business features, 3 seats and 14 days", async () => {
+    const { PLAN_REGISTRY } = await import("../../server/modules/billing");
+
+    expect(PLAN_REGISTRY[2]!.trial).toEqual({
+      seatCapacity: 3,
+      trialDurationDays: 14,
+      ...RATE_LIMITS,
+      features: PRICING_TABLE.business,
+      screenshotProjectCapacity: null,
+    });
+  });
+
+  it("names the cheapest Plan that includes each area, for upgrade messages", async () => {
+    const { minimumPlanFor } = await import("../../server/modules/billing");
+
+    expect(minimumPlanFor("crm")).toBe("growth");
+    expect(minimumPlanFor("knowledge")).toBe("growth");
+    expect(minimumPlanFor("activityCapture")).toBe("growth");
+    expect(minimumPlanFor("payrollExports")).toBe("growth");
+    expect(minimumPlanFor("projectManagement")).toBe("growth");
+    expect(minimumPlanFor("advancedAnalytics")).toBe("business");
+    expect(minimumPlanFor("sso")).toBe("enterprise");
+  });
+
+  it("places a v1 pro Subscription under v1 until migrated, then as Business", async () => {
+    const { placePlan, PLAN_MIGRATIONS } = await import("../../server/modules/billing");
+
+    expect(PLAN_MIGRATIONS[1]).toEqual({ pro: "business" });
+    expect(placePlan("pro", 1)).toEqual({ planKey: "pro", registryVersion: 1 });
+    expect(placePlan("pro", 2)).toEqual({ planKey: "business", registryVersion: 2 });
+    expect(placePlan("starter", 1)).toEqual({ planKey: "starter", registryVersion: 2 });
+    expect(placePlan("growth", 2)).toEqual({ planKey: "growth", registryVersion: 2 });
   });
 
   it("derives Entitlements from billing state, Plan, and registry version; a newer version does not change a v1 pin", async () => {
@@ -52,21 +168,22 @@ describe("Plan Registry catalog", () => {
     });
     expect(v1Legacy).toEqual({
       seatCapacity: 500,
-      serviceAccountRequestsPerMinute: 60,
-      workspaceRequestsPerMinute: 120,
+      ...RATE_LIMITS,
       writesAllowed: true,
+      features: EVERY_FEATURE,
+      screenshotProjectCapacity: null,
     });
 
-    const v2Registry = {
+    const v3Registry = {
       ...PLAN_REGISTRY,
-      2: {
+      3: {
         legacy: {
           seatCapacity: 10,
           serviceAccountRequestsPerMinute: 1,
           workspaceRequestsPerMinute: 2,
+          features: PRICING_TABLE.starter,
+          screenshotProjectCapacity: 1,
         },
-        trial: PLAN_REGISTRY[1].trial,
-        pro: PLAN_REGISTRY[1].pro,
       },
     };
 
@@ -78,7 +195,7 @@ describe("Plan Registry catalog", () => {
           billingState: "Active",
           purchasedSeatCapacity: 500,
         },
-        v2Registry
+        v3Registry
       )
     ).toEqual(v1Legacy);
 
@@ -86,11 +203,11 @@ describe("Plan Registry catalog", () => {
       deriveEntitlements(
         {
           planKey: "legacy",
-          registryVersion: 2,
+          registryVersion: 3,
           billingState: "Active",
           purchasedSeatCapacity: 500,
         },
-        v2Registry
+        v3Registry
       ).serviceAccountRequestsPerMinute
     ).toBe(1);
 
@@ -101,7 +218,7 @@ describe("Plan Registry catalog", () => {
         billingState: "Trialing",
         purchasedSeatCapacity: 1,
       })
-    ).toMatchObject({ seatCapacity: 1, writesAllowed: true });
+    ).toMatchObject({ seatCapacity: 1, writesAllowed: true, features: EVERY_FEATURE });
 
     expect(
       deriveEntitlements({
@@ -109,8 +226,17 @@ describe("Plan Registry catalog", () => {
         registryVersion: 1,
         billingState: "Active",
         purchasedSeatCapacity: 8,
-      }).seatCapacity
-    ).toBe(8);
+      })
+    ).toMatchObject({ seatCapacity: 8, features: EVERY_FEATURE, screenshotProjectCapacity: null });
+
+    expect(
+      deriveEntitlements({
+        planKey: "starter",
+        registryVersion: 2,
+        billingState: "Active",
+        purchasedSeatCapacity: 4,
+      })
+    ).toMatchObject({ seatCapacity: 4, features: PRICING_TABLE.starter, screenshotProjectCapacity: 1 });
 
     expect(
       deriveEntitlements({
@@ -120,6 +246,20 @@ describe("Plan Registry catalog", () => {
         purchasedSeatCapacity: 500,
       }).writesAllowed
     ).toBe(false);
+  });
+
+  it("applies an Enterprise-style feature override over the Plan's own features", async () => {
+    const { deriveEntitlements } = await import("../../server/modules/billing");
+
+    expect(
+      deriveEntitlements({
+        planKey: "growth",
+        registryVersion: 2,
+        billingState: "Active",
+        purchasedSeatCapacity: 5,
+        overrides: { features: { advancedAnalytics: true } },
+      }).features
+    ).toEqual({ ...PRICING_TABLE.growth, advancedAnalytics: true });
   });
 });
 
@@ -146,13 +286,15 @@ describe("seeded Workspace pin", () => {
       trialEndsAt: null,
       periodEndsAt: null,
       cancelAtPeriodEnd: false,
+      billingInterval: null,
     });
 
     await expect(inSeededWorkspace(() => effectiveEntitlements())).resolves.toEqual({
       seatCapacity: 500,
-      serviceAccountRequestsPerMinute: 60,
-      workspaceRequestsPerMinute: 120,
+      ...RATE_LIMITS,
       writesAllowed: true,
+      features: EVERY_FEATURE,
+      screenshotProjectCapacity: null,
     });
   });
 

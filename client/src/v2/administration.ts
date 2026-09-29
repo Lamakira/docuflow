@@ -86,7 +86,7 @@ export type WebhookEndpointInput = {
 };
 
 export type BillingInput = {
-  planKey: "legacy" | "trial" | "pro" | string;
+  planKey: "legacy" | "trial" | "pro" | "starter" | "growth" | "business" | "enterprise" | string;
   billingState: "Trialing" | "Active" | "PastDue" | "ReadOnly" | string;
   purchasedSeatCapacity: number;
   consumedSeatCount: number;
@@ -143,7 +143,7 @@ export type WebhookEndpointRow = {
 };
 
 export type BillingAction = {
-  id: "checkout" | "seats" | "payment-method" | "cancel";
+  id: "checkout" | "plan" | "seats" | "payment-method" | "cancel";
   label: string;
   /**
    * A destructive action is set apart, so the reflex that reaches a routine
@@ -313,11 +313,21 @@ function capabilityLabel(capabilityIds: string[]): string {
   return capabilityIds.map((id) => CAPABILITY_LABELS.get(id) ?? id).join(" · ");
 }
 
+const PLAN_LABEL: Record<string, string> = {
+  trial: "Trial",
+  legacy: "Legacy",
+  pro: "Pro",
+  starter: "Starter",
+  growth: "Growth",
+  business: "Business",
+  enterprise: "Enterprise",
+};
+
+/** Plans whose Subscription buys Billable Seats; Enterprise is agreed with sales. */
+const SEAT_PLANS = new Set(["pro", "starter", "growth", "business"]);
+
 function planLabel(planKey: string): string {
-  if (planKey === "trial") return "Trial";
-  if (planKey === "pro") return "Pro";
-  if (planKey === "legacy") return "Legacy";
-  return planKey;
+  return PLAN_LABEL[planKey] ?? planKey;
 }
 
 function billingCondition(
@@ -330,10 +340,24 @@ function billingCondition(
   return null;
 }
 
+/**
+ * The line above the Plan cards. The selected card is only a choice until
+ * Checkout or the confirmation runs; the Workspace's Plan is named apart.
+ */
+export function planPickerNote(mode: "checkout" | "change", currentPlanLabel: string): string {
+  return mode === "checkout"
+    ? `Current Plan: ${currentPlanLabel}. Select a Plan, then continue to Checkout. The Workspace changes Plan once Checkout completes.`
+    : `Current Plan: ${currentPlanLabel}. Select a Plan to move to; nothing changes until you confirm.`;
+}
+
 /** Whichever date actually governs the subscription next. */
 function billingTermFigure(pin: BillingInput): AnalyticsFigure {
   if (pin.planKey === "trial" && pin.trialEndsAt) {
     return { label: "TRIAL ENDS", value: formatFullDay(pin.trialEndsAt) };
+  }
+  // A Subscription that has ended renews nothing; its last period end is history.
+  if (pin.billingState === "ReadOnly") {
+    return { label: "SUBSCRIPTION", value: "Ended" };
   }
   if (pin.cancelAtPeriodEnd && pin.periodEndsAt) {
     return { label: "ACCESS ENDS", value: formatFullDay(pin.periodEndsAt) };
@@ -384,10 +408,14 @@ function composeBilling(input: AdministrationInput): BillingModel {
   });
 
   const actions: BillingAction[] = [];
-  if (pin.planKey === "trial") {
-    actions.push(routine("checkout", "Start Pro"));
+  // A lapsed Subscription comes back through Checkout, as a Trial does.
+  if (pin.planKey === "trial" || (pin.billingState === "ReadOnly" && SEAT_PLANS.has(pin.planKey))) {
+    actions.push(routine("checkout", "Choose a Plan"));
   }
-  if (!readOnly && pin.planKey === "pro") {
+  if (!readOnly && SEAT_PLANS.has(pin.planKey) && (pin.billingState === "Active" || pin.billingState === "PastDue")) {
+    actions.push(routine("plan", "Change Plan"));
+  }
+  if (!readOnly && SEAT_PLANS.has(pin.planKey)) {
     actions.push(routine("seats", "Change seats"));
   }
   if (pin.stripeCustomerId) {
@@ -1363,7 +1391,10 @@ export function removeAllowedTimezone(timezones: string[], value: string): strin
 
 function samePolicy(a: ScreenshotPolicy, b: ScreenshotPolicy): boolean {
   return (Object.keys(DEFAULT_SCREENSHOT_POLICY) as Array<keyof ScreenshotPolicy>).every(
-    (key) => a[key] === b[key],
+    (key) =>
+      key === "screenshotProjectIds"
+        ? (a[key] ?? []).join("\n") === (b[key] ?? []).join("\n") && (a[key] === null) === (b[key] === null)
+        : a[key] === b[key],
   );
 }
 

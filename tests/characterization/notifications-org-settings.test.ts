@@ -84,6 +84,7 @@ describe("notifications and org settings (characterization)", () => {
       idlePromptEnabled: true,
       idleTimeoutMinutes: 10,
       idleCountdownSeconds: 60,
+      screenshotProjectIds: null,
     });
     expect(res.body.allowedTimezones).toEqual([]);
     expect(res.body.helpCenterScreenshots).toEqual({});
