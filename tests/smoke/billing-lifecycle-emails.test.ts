@@ -7,7 +7,7 @@ import type {
 import { createUnlinkedUser } from "../helpers/auth";
 import { resetDb } from "../helpers/db";
 import { FakeBillingProvider } from "../fakes/billingProvider";
-import { emailsTo, resetEmails } from "../fakes/resend";
+import { emailsTo, failNextSend, resetEmails } from "../fakes/resend";
 
 /**
  * Lifecycle emails (#298). Each trigger writes the Owner's in-app Notification
@@ -219,6 +219,23 @@ describe("Trial ending", () => {
       "DocuFlow — Last day of your Trial of Keystone",
     ]);
     expect(await notificationsOf(owner.id)).toHaveLength(2);
+  });
+
+  it("does not warn the Owner again once the warning's email ran out of attempts", async () => {
+    const { owner } = await trialWorkspace();
+
+    vi.setSystemTime(new Date("2026-10-12T09:00:00.000Z"));
+    await tickTrialScheduler();
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      failNextSend("You can only send testing emails to your own email address");
+      await runBillingJobs();
+      vi.setSystemTime(new Date(Date.now() + 61_000));
+    }
+    await tickTrialScheduler();
+    await runBillingJobs();
+
+    expect(emailsTo(owner.email)).toEqual([]);
+    expect(await notificationsOf(owner.id)).toHaveLength(1);
   });
 
   it("makes an expired Trial read-only without anyone stepping in, and tells the Owner once", async () => {

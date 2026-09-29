@@ -10,8 +10,15 @@
  * notices are enqueued and written here, where their causes are.
  */
 
-import { and, eq, isNull } from "drizzle-orm";
-import { memberships, notifications, users, workspaceRoles, workspaces } from "@shared/schema";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import {
+  deadLetters,
+  memberships,
+  notifications,
+  users,
+  workspaceRoles,
+  workspaces,
+} from "@shared/schema";
 import { config } from "../../config";
 import { db } from "../../db";
 import {
@@ -96,6 +103,20 @@ async function recordNotice(
     return false;
   }
   const { email, notification } = compose(ownerId);
+  // A dead-lettered email leaves `jobs`, which frees its occurrence key. Recording
+  // the notice again would replay it, and replay is an operator's call (ADR-0013).
+  const [spent] = await tx
+    .select({ jobId: deadLetters.jobId })
+    .from(deadLetters)
+    .where(
+      and(
+        inWorkspace(deadLetters),
+        eq(deadLetters.type, BILLING_EMAIL_JOB),
+        sql`${deadLetters.payload} = ${JSON.stringify(email)}::jsonb`
+      )
+    )
+    .limit(1);
+  if (spent) return false;
   const job = await billingEmailJobs.enqueue(
     {
       type: BILLING_EMAIL_JOB,
