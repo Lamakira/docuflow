@@ -84,6 +84,20 @@ export type DossierTabId = (typeof DOSSIER_TAB_IDS)[number];
 
 const DOSSIER_TAB_SET = new Set<string>(DOSSIER_TAB_IDS);
 
+export const DOSSIER_TAB_LABEL: Record<DossierTabId, string> = {
+  overview: "Overview",
+  tasks: "Tasks",
+  time: "Time",
+  activity: "Activity",
+  updates: "Updates",
+  notes: "Notes",
+  reminders: "Reminders",
+  // So it is not mistaken for Workspace Documents (#307). The URL keeps `documents`.
+  documents: "Documentation",
+  files: "Files",
+  settings: "Settings",
+};
+
 /**
  * Time Tracking holds three views of one domain (#214): the Time Entry
  * register, the Workday totals the v1 dashboard showed, and the Projects &
@@ -196,7 +210,15 @@ export type V2Match =
   | { kind: "auth-redirect"; title: "Today"; href: "/" }
   | { kind: "projects"; title: "Projects"; href: "/projects" }
   | { kind: "legacy-project"; title: "Projects"; href: "/projects"; legacyProjectId: string }
-  | { kind: "dossier"; title: string; href: "/projects"; projectId: string; tab: DossierTabId }
+  | {
+      kind: "dossier";
+      title: string;
+      href: "/projects";
+      projectId: string;
+      tab: DossierTabId;
+      /** The page open in the Documentation tab (#307). */
+      documentId: string | null;
+    }
   | { kind: "documents"; title: "Workspace Documents"; href: "/documents" }
   | { kind: "project-documentation"; title: "Project Documentation"; href: "/project-documentation" }
   | { kind: "document-editor"; title: string; href: string; documentId: string; source: "workspace" | "project" }
@@ -401,14 +423,24 @@ function parseActivityPath(pathname: string): ActivityTabId | null {
   return parseTabPath(pathname, "activity", ACTIVITY_TAB_SET, "register") as ActivityTabId | null;
 }
 
-export function parseDossierPath(pathname: string): { projectId: string; tab: DossierTabId } | null {
+export function parseDossierPath(
+  pathname: string,
+): { projectId: string; tab: DossierTabId; documentId: string | null } | null {
   const parts = pathname.split("/").filter(Boolean);
   if (parts[0] !== "projects" || parts.length < 2) return null;
-  if (parts.length === 2) return { projectId: parts[1], tab: "overview" };
+  if (parts.length === 2) return { projectId: parts[1], tab: "overview", documentId: null };
   if (parts.length === 3 && DOSSIER_TAB_SET.has(parts[2])) {
-    return { projectId: parts[1], tab: parts[2] as DossierTabId };
+    return { projectId: parts[1], tab: parts[2] as DossierTabId, documentId: null };
+  }
+  if (parts.length === 4 && parts[2] === "documents") {
+    return { projectId: parts[1], tab: "documents", documentId: parts[3] };
   }
   return null;
+}
+
+/** A Project Document's own page, in its Project Dossier's Documentation tab (#307). */
+export function dossierDocumentHref(projectId: string, documentId: string): string {
+  return `/projects/${projectId}/documents/${documentId}`;
 }
 
 export function matchV2Route(path: string): V2Match {
@@ -560,6 +592,7 @@ export function matchV2Route(path: string): V2Match {
       href: "/projects",
       projectId,
       tab: "overview",
+      documentId: null,
     };
   }
 
@@ -577,10 +610,11 @@ export function matchV2Route(path: string): V2Match {
   if (dossier) {
     return {
       kind: "dossier",
-      title: dossier.tab === "overview" ? "Overview" : dossier.tab.replace(/^\w/, (ch) => ch.toUpperCase()),
+      title: DOSSIER_TAB_LABEL[dossier.tab],
       href: "/projects",
       projectId: dossier.projectId,
       tab: dossier.tab,
+      documentId: dossier.documentId,
     };
   }
 
@@ -636,7 +670,7 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     return [
       { label: workspace, href: "/" },
       { label: "PROJECTS", href: "/projects" },
-      { label: match.tab.toUpperCase() },
+      { label: DOSSIER_TAB_LABEL[match.tab].toUpperCase() },
     ];
   }
   if (match.kind === "projects" || match.kind === "legacy-project") {

@@ -228,3 +228,22 @@ function rule(selector: string): string {
 function source(file: string): string {
   return readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2", file), "utf8");
 }
+
+describe("the command bar search shrinks with the window", () => {
+  const commandBar = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2CommandBar.tsx"),
+    "utf8",
+  );
+
+  // The command bar is at least the desktop content width (1060px); below the
+  // mobile breakpoint the app bar replaces it. So the label only needs to give way.
+  it("keeps its label on one line, cut with an ellipsis, instead of wrapping", () => {
+    expect(rule(".df-search")).toMatch(/min-width:\s*0/);
+    expect(rule(".df-search-label")).toMatch(/white-space:\s*nowrap/);
+    expect(rule(".df-search-label")).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule(".df-search-label")).toMatch(/overflow:\s*hidden/);
+    expect(commandBar).toContain('<span className="df-search-label">Search {workspaceName}</span>');
+    // A cut label still leaves the button its whole name.
+    expect(commandBar).toContain("aria-label={`Search ${workspaceName}`}");
+  });
+});

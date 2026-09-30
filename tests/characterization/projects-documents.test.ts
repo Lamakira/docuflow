@@ -14,8 +14,9 @@ import { createCrmProject, createDocument, tiptap } from "../helpers/fixtures";
  *    they answer 400 with a `redirectTo` pointing at the CRM routes.
  *  - `PATCH /api/projects/:id` accepts only `name`; other fields are silently
  *    dropped rather than rejected.
- *  - `GET /api/search` scopes project hits to the caller's own projects but
- *    document hits to every project, and matches case-sensitively.
+ *  - `GET /api/search` scopes project hits to the caller's own projects, and
+ *    document hits to the Projects the caller may see (#307). It matches
+ *    case-sensitively.
  *  - Document delete answers 204 and cascades to descendants; document reorder
  *    answers `{ success: true }` whatever it did.
  */
@@ -280,13 +281,14 @@ describe("projects and documents (characterization)", () => {
     expect(wrongProject.body).toEqual({ message: "Document does not belong to this project" });
   });
 
-  it("searches titles case-sensitively, scoping projects to the caller but documents to everyone", async () => {
+  it("searches titles case-sensitively, scoping projects to the caller and documents to the Projects they may see", async () => {
     const app = await makeApp();
     const owner = await registerUser(app);
     const other = await registerUser(app);
 
     const mine = await createCrmProject(owner.agent, { name: "Reporting Portal" });
     const theirs = await createCrmProject(other.agent, { name: "Reporting Engine" });
+    await createDocument(owner.agent, mine.project.id, { title: "Reporting plan" });
     await createDocument(other.agent, theirs.project.id, { title: "Reporting notes" });
 
     const res = await owner.agent.get("/api/search").query({ q: "Reporting" });
@@ -295,9 +297,10 @@ describe("projects and documents (characterization)", () => {
     const documentHits = res.body.filter((r: { type: string }) => r.type === "document");
     // Quirk: project hits are owner-scoped …
     expect(projectHits.map((r: { id: string }) => r.id)).toEqual([mine.project.id]);
-    // … while document hits span every project in the workspace.
-    expect(documentHits.map((r: { title: string }) => r.title)).toEqual(["Reporting notes"]);
-    expect(documentHits[0].projectName).toBe("Reporting Engine");
+    // … and document hits come from the Projects the caller may see (#307), so
+    // the other Member's page stays out.
+    expect(documentHits.map((r: { title: string }) => r.title)).toEqual(["Reporting plan"]);
+    expect(documentHits[0].projectName).toBe("Reporting Portal");
 
     // Quirk: LIKE is case-sensitive in Postgres, so the lowercase query misses.
     const lowercase = await owner.agent.get("/api/search").query({ q: "reporting" });

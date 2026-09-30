@@ -18,6 +18,7 @@ import { chromeRefusal } from "./chrome";
 import { formatRelativeTime } from "./devices";
 import { formatHours, memberName } from "./today";
 import { workspaceRoleInCopy, type WorkspaceCondition, type WorkspaceMemberRow } from "./workspace";
+import { dayToDate, type DayRange } from "./dates";
 
 /**
  * Administration is a destination governed by the Workspace Role (#238), not a
@@ -553,21 +554,47 @@ export function composeAdministration(input: AdministrationInput): Administratio
  * read, never animated: no chart decoration and no counting digits.
  */
 
-export type AnalyticsRangePreset = "7d" | "30d" | "90d";
+export type AnalyticsRangePreset = "7d" | "30d" | "90d" | "month" | "custom";
 
 export type AnalyticsRange = { start: Date; end: Date };
 
 export const ANALYTICS_RANGE_PRESETS: Array<{ id: AnalyticsRangePreset; label: string }> = [
-  { id: "7d", label: "7 days" },
-  { id: "30d", label: "30 days" },
-  { id: "90d", label: "90 days" },
+  { id: "7d", label: "Last 7 days" },
+  { id: "30d", label: "Last 30 days" },
+  { id: "90d", label: "Last 90 days" },
+  { id: "month", label: "This month" },
+  { id: "custom", label: "Custom range…" },
 ];
 
-const RANGE_DAYS: Record<AnalyticsRangePreset, number> = { "7d": 7, "30d": 30, "90d": 90 };
+type RollingPreset = "7d" | "30d" | "90d";
 
-export function analyticsRange(preset: AnalyticsRangePreset, now: Date): AnalyticsRange {
+const RANGE_DAYS: Record<RollingPreset, number> = { "7d": 7, "30d": 30, "90d": 90 };
+
+/**
+ * The period Analytics reads. The rolling ranges end now; This month runs from
+ * the 1st at midnight to now, which is not the last 30 days (#307); a custom
+ * range covers its first and last days in full. A custom range with no days
+ * yet reads as the default week.
+ */
+export function analyticsRange(
+  preset: AnalyticsRangePreset,
+  now: Date,
+  custom?: DayRange | null,
+): AnalyticsRange {
+  if (preset === "month") {
+    return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: new Date(now.getTime()) };
+  }
+  if (preset === "custom") {
+    const from = custom ? dayToDate(custom.from) : undefined;
+    const to = custom ? dayToDate(custom.to) : undefined;
+    if (from && to) {
+      const [first, last] = from <= to ? [from, to] : [to, from];
+      return { start: first, end: new Date(last.getFullYear(), last.getMonth(), last.getDate(), 23, 59, 59, 999) };
+    }
+  }
+  const rolling: RollingPreset = preset === "30d" || preset === "90d" ? preset : "7d";
   const end = new Date(now.getTime());
-  const start = new Date(end.getTime() - RANGE_DAYS[preset] * 24 * 60 * 60 * 1000);
+  const start = new Date(end.getTime() - RANGE_DAYS[rolling] * 24 * 60 * 60 * 1000);
   return { start, end };
 }
 

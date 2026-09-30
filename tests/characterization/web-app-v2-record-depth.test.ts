@@ -4,8 +4,6 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   composeDossier,
-  documentDuplicatePath,
-  documentsReorderPath,
   projectClonePath,
   projectDocumentationPath,
   projectMemberPath,
@@ -218,30 +216,12 @@ describe("A named member can be taken off a Project (#260, C)", () => {
 });
 
 describe("A Project's Documents can be duplicated and reordered (#260, E)", () => {
-  it("names the routes", () => {
-    expect(documentDuplicatePath("d-1")).toBe("/api/documents/d-1/duplicate");
-    expect(documentsReorderPath("doc-1")).toBe("/api/projects/doc-1/documents/reorder");
-  });
-
-  it("moves a Document among its siblings only, by the index the route expects", () => {
-    const at = new Date(2026, 8, 22, 9, 0, 0);
-    const dossier = composeDossier(
-      emptyInput({
-        project: liveProject(),
-        documents: [
-          { id: "a", title: "A", updatedAt: at, parentId: null, position: 0 },
-          { id: "child", title: "Child", updatedAt: at, parentId: "a", position: 0 },
-          { id: "b", title: "B", updatedAt: at, parentId: null, position: 1 },
-          { id: "c", title: "C", updatedAt: at, parentId: null, position: 2 },
-        ],
-      }),
-    );
-    const byId = new Map(dossier.documents.rows.map((row) => [row.id, row]));
-
-    expect(byId.get("a")?.order).toEqual({ parentId: null, up: null, down: 1 });
-    expect(byId.get("b")?.order).toEqual({ parentId: null, up: 0, down: 2 });
-    expect(byId.get("c")?.order).toEqual({ parentId: null, up: 1, down: null });
-    expect(byId.get("child")?.order).toEqual({ parentId: "a", up: null, down: null });
+  it("does both in the page tree the Documentation tab hosts, v1's drag and drop included (#307)", () => {
+    expect(read("client/src/v2/V2Dossier.tsx")).toContain("<PageTree");
+    const tree = read("client/src/components/PageTree.tsx");
+    expect(tree).toContain('apiRequest("POST", `/api/documents/${id}/duplicate`)');
+    expect(tree).toContain('apiRequest("POST", `/api/projects/${projectId}/documents/reorder`, data)');
+    expect(tree).toContain("<DragDropContext onDragEnd={handleDragEnd}>");
   });
 });
 
@@ -370,8 +350,6 @@ describe("the v2 screens call what they now offer (#260)", () => {
       "projectClonePath",
       "projectMemberPath",
       "projectDocumentationPath",
-      "documentDuplicatePath",
-      "documentsReorderPath",
     ]) {
       expect(dossierPage).toContain(`${helper}(`);
     }

@@ -63,7 +63,39 @@ export async function listTimerCommands(userId: string): Promise<TimerCommand[]>
     .orderBy(asc(timerCommands.claimedEffectiveAt), asc(timerCommands.sequence));
 }
 
+/** The partial unique index that allows one running or paused Timer per User. */
+const ONE_ACTIVE_TIMER_INDEX = "idx_time_entries_one_active_timer_per_user";
+
+/** A race with another start of the same User's Timer (#307). */
+function isActiveTimerRace(error: unknown): boolean {
+  for (let current = error as { code?: string; constraint?: string; cause?: unknown } | undefined; current; ) {
+    if (current.code === "23505" && current.constraint === ONE_ACTIVE_TIMER_INDEX) return true;
+    current = current.cause as typeof current;
+  }
+  return false;
+}
+
+/**
+ * Two starts can race: each reads that no Timer runs, and the second insert
+ * then meets the first's running Time Entry on the one-active-Timer index.
+ * The loser runs again, and supersedes the winner like any later start (#307).
+ */
+const TIMER_RACE_ATTEMPTS = 3;
+
 export async function applyTimerCommand(
+  input: ApplyTimerCommandInput
+): Promise<ApplyTimerCommandResult> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await applyTimerCommandOnce(input);
+    } catch (error) {
+      if (attempt < TIMER_RACE_ATTEMPTS && isActiveTimerRace(error)) continue;
+      throw error;
+    }
+  }
+}
+
+async function applyTimerCommandOnce(
   input: ApplyTimerCommandInput
 ): Promise<ApplyTimerCommandResult> {
   requireWorkspaceContext();

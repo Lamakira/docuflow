@@ -70,6 +70,7 @@ export function V2AuthenticatedApp() {
           </Route>
           <Route path="/crm/client/:id" component={V2ClientRecordRedirect} />
           <Route path="/projects" component={V2ProjectsPage} />
+          <Route path="/projects/:id/documents/:documentId" component={V2DossierPage} />
           <Route path="/projects/:id/:tab?" component={V2DossierPage} />
           <Route path="/crm/project/new">
             <Redirect to="/projects?new=1" />

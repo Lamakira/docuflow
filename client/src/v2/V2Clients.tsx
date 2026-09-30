@@ -94,6 +94,7 @@ function toRegisterClient(client: CrmClient & { projectCount: number }): ClientR
     status: client.status,
     source: client.source,
     projectCount: client.projectCount,
+    createdAt: client.createdAt,
   };
 }
 
@@ -174,6 +175,14 @@ function ClientRegisterTable({
           id: "projects",
           header: "PROJECTS",
           cell: ({ row }) => <span className="df-mono" style={{ fontSize: 12 }}>{row.original.projectCount}</span>,
+        }),
+        clientColumn.accessor("created", {
+          header: "CREATED",
+          cell: ({ row }) => (
+            <span className="df-mono df-meta" style={{ whiteSpace: "nowrap" }}>
+              {row.original.created}
+            </span>
+          ),
         }),
       ]),
     [],
@@ -379,7 +388,7 @@ export function V2ClientsPage() {
       <V2PageSkeleton title="Clients" testId="v2-clients" status="Loading Clients for this Workspace.">
         <SkeletonRegister
           className="df-clients-register"
-          heads={["CLIENT", "COMPANY", "STATUS", "SOURCE", "PROJECTS"]}
+          heads={["CLIENT", "COMPANY", "STATUS", "SOURCE", "PROJECTS", "CREATED"]}
         />
       </V2PageSkeleton>
     );
@@ -739,10 +748,10 @@ export function V2ClientRecordPage() {
         {isLoading ? (
           <div className="df-overview" aria-busy="true">
             <div className="df-stack">
+              <SkeletonSection title="Client details" lines={4} />
               <SkeletonSection title="On this Client" lines={3} />
             </div>
             <div className="df-stack">
-              <SkeletonSection title="Client details" lines={4} />
               <SkeletonSection title="Client Projects" lines={2} />
             </div>
           </div>
@@ -751,6 +760,96 @@ export function V2ClientRecordPage() {
         ) : (
           <div className="df-overview">
             <div className="df-stack">
+              <section className="df-card">
+                <div className="df-card-head">
+                  <h2 className="df-card-title">Client details</h2>
+                  <Button variant="outline" type="button" onClick={openEdit} className="df-btn">
+                    Edit Client
+                  </Button>
+                </div>
+                <V2FormDialog
+                  open={editing}
+                  onOpenChange={setEditing}
+                  title="Edit Client"
+                  description={`How to reach ${record.identity?.title ?? "this Client"}, and where they came from.`}
+                  submitLabel="Save Client"
+                  pending={updateClient.isPending}
+                  canSubmit
+                  onSubmit={() => {
+                    if (readOnly) return refuse();
+                    updateClient.mutate();
+                  }}
+                  refusal={writeRefusal}
+                  testId="v2-client-edit"
+                >
+                  {DETAIL_FIELDS.map((field, index) => (
+                    <label key={field.id} className="df-daily-field">
+                      {field.label}
+                      <input
+                        type={field.type}
+                        value={draft[field.id]}
+                        autoFocus={index === 0}
+                        placeholder={field.placeholder}
+                        aria-label={`Client ${field.id}`}
+                        onChange={(event) => setDraft((value) => ({ ...value, [field.id]: event.target.value }))}
+                      />
+                    </label>
+                  ))}
+                  <label className="df-daily-field">
+                    SOURCE
+                    <V2FilterSelect
+                      label=""
+                      ariaLabel="Client source"
+                      value={draft.source || "none"}
+                      options={withSourceMarks(clientSourceChoices(draft.source, sourceOptions))}
+                      onChange={(next) => setDraft((value) => ({ ...value, source: next === "none" ? "" : next }))}
+                    />
+                  </label>
+                  {draft.source === "fiverr" ? (
+                    <label className="df-daily-field">
+                      FIVERR USERNAME
+                      <input
+                        type="text"
+                        value={draft.fiverrUsername}
+                        placeholder="username"
+                        aria-label="Fiverr username"
+                        onChange={(event) => setDraft((value) => ({ ...value, fiverrUsername: event.target.value }))}
+                      />
+                    </label>
+                  ) : null}
+                  <label className="df-daily-field">
+                    NOTES
+                    <textarea
+                      value={draft.notes}
+                      placeholder="What to know about this Client"
+                      aria-label="Client notes"
+                      onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))}
+                    />
+                  </label>
+                </V2FormDialog>
+                <div className="df-record-fields">
+                  {record.details.map((row) => (
+                    <div
+                      key={row.label}
+                      className="df-record-field"
+                      data-wide={row.wide ? "true" : "false"}
+                    >
+                      <span className="df-record-field-label">{row.label}</span>
+                      <span className="df-record-field-value" data-empty={row.value === "—" ? "true" : "false"}>
+                        {row.label === "SOURCE" && sourceIcon(record.identity?.sourceValue) ? (
+                          <span className="df-source-cell">
+                            <SourceMark value={record.identity?.sourceValue} />
+                            {row.value}
+                          </span>
+                        ) : (
+                          row.value
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
               <section className="df-card df-client-contacts">
                 <div className="df-card-head">
                   <h2 className="df-card-title">On this Client</h2>
@@ -858,96 +957,6 @@ export function V2ClientRecordPage() {
                   ))}
                   </>
                 )}
-              </section>
-
-              <section className="df-card">
-                <div className="df-card-head">
-                  <h2 className="df-card-title">Client details</h2>
-                  <Button variant="outline" type="button" onClick={openEdit} className="df-btn">
-                    Edit Client
-                  </Button>
-                </div>
-                <V2FormDialog
-                  open={editing}
-                  onOpenChange={setEditing}
-                  title="Edit Client"
-                  description={`How to reach ${record.identity?.title ?? "this Client"}, and where they came from.`}
-                  submitLabel="Save Client"
-                  pending={updateClient.isPending}
-                  canSubmit
-                  onSubmit={() => {
-                    if (readOnly) return refuse();
-                    updateClient.mutate();
-                  }}
-                  refusal={writeRefusal}
-                  testId="v2-client-edit"
-                >
-                  {DETAIL_FIELDS.map((field, index) => (
-                    <label key={field.id} className="df-daily-field">
-                      {field.label}
-                      <input
-                        type={field.type}
-                        value={draft[field.id]}
-                        autoFocus={index === 0}
-                        placeholder={field.placeholder}
-                        aria-label={`Client ${field.id}`}
-                        onChange={(event) => setDraft((value) => ({ ...value, [field.id]: event.target.value }))}
-                      />
-                    </label>
-                  ))}
-                  <label className="df-daily-field">
-                    SOURCE
-                    <V2FilterSelect
-                      label=""
-                      ariaLabel="Client source"
-                      value={draft.source || "none"}
-                      options={withSourceMarks(clientSourceChoices(draft.source, sourceOptions))}
-                      onChange={(next) => setDraft((value) => ({ ...value, source: next === "none" ? "" : next }))}
-                    />
-                  </label>
-                  {draft.source === "fiverr" ? (
-                    <label className="df-daily-field">
-                      FIVERR USERNAME
-                      <input
-                        type="text"
-                        value={draft.fiverrUsername}
-                        placeholder="username"
-                        aria-label="Fiverr username"
-                        onChange={(event) => setDraft((value) => ({ ...value, fiverrUsername: event.target.value }))}
-                      />
-                    </label>
-                  ) : null}
-                  <label className="df-daily-field">
-                    NOTES
-                    <textarea
-                      value={draft.notes}
-                      placeholder="What to know about this Client"
-                      aria-label="Client notes"
-                      onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))}
-                    />
-                  </label>
-                </V2FormDialog>
-                <div className="df-record-fields">
-                  {record.details.map((row) => (
-                    <div
-                      key={row.label}
-                      className="df-record-field"
-                      data-wide={row.wide ? "true" : "false"}
-                    >
-                      <span className="df-record-field-label">{row.label}</span>
-                      <span className="df-record-field-value" data-empty={row.value === "—" ? "true" : "false"}>
-                        {row.label === "SOURCE" && sourceIcon(record.identity?.sourceValue) ? (
-                          <span className="df-source-cell">
-                            <SourceMark value={record.identity?.sourceValue} />
-                            {row.value}
-                          </span>
-                        ) : (
-                          row.value
-                        )}
-                      </span>
-                    </div>
-                  ))}
-                </div>
               </section>
             </div>
 

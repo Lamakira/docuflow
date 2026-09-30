@@ -1,5 +1,6 @@
 import { builtInList, defaultFieldOptions, parseFieldOptions } from "@shared/pipelineLists";
 import { chromeRefusal } from "./chrome";
+import { formatFullDate } from "./dates";
 import { clientStatusColor, projectStatusColor } from "./palette";
 import { readPage, readPageSize, writePaging } from "./paging";
 import { projectHref } from "./today";
@@ -17,6 +18,7 @@ export type ClientRegisterRowInput = {
   status: string | null;
   source: string | null;
   projectCount: number;
+  createdAt?: Date | string | null;
 };
 
 export type ClientRegisterInput = {
@@ -42,6 +44,8 @@ export type ClientRegisterRow = {
   /** The stored value, for `SourceMark`. */
   sourceValue: string | null;
   projectCount: number;
+  /** When the Client was created, in full (#307). */
+  created: string;
   href: string;
   selected: boolean;
 };
@@ -100,6 +104,7 @@ export function composeClientRegister(input: ClientRegisterInput): ClientRegiste
       source: sourceLabel(client.source),
       sourceValue: client.source || null,
       projectCount: client.projectCount,
+      created: formatFullDate(client.createdAt),
       href: clientHref(client.id),
       selected: client.id === input.selectedId,
     }));
@@ -177,7 +182,7 @@ export type ClientRegisterFilters = {
 };
 
 /** The register columns the server orders by (`CRM_CLIENT_SORTS`). */
-export const CLIENT_SORTS = ["name", "company", "status", "source", "projects"] as const;
+export const CLIENT_SORTS = ["name", "company", "status", "source", "projects", "created"] as const;
 export type ClientSort = (typeof CLIENT_SORTS)[number];
 
 const CLIENT_FILTER_PARAMS = ["status", "source", "open"] as const;

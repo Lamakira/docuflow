@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { PanelLeft, PanelLeftClose } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -22,8 +23,6 @@ import { chromeRefusal } from "./chrome";
 import {
   composeDossier,
   DOSSIER_FIELD,
-  documentDuplicatePath,
-  documentsReorderPath,
   projectClonePath,
   projectDocumentationPath,
   projectMemberPath,
@@ -46,8 +45,17 @@ import { TaskCheckIcon, type EmptyStateIconId } from "./icons";
 import { motionForSurface } from "./motion";
 import { isStandingRefusal, notify } from "./notify";
 import { meterTone, swatchStyle } from "./palette";
-import { matchV2Route } from "./presentation";
-import { composeBudgetForm, projectBudgetDraft, type ProjectBudgetDraft } from "./projects";
+import { dossierDocumentHref, matchV2Route } from "./presentation";
+import { V2DocumentEditor } from "./V2Document";
+import { PageTree } from "@/components/PageTree";
+import {
+  composeBudgetForm,
+  composeProjectDatesForm,
+  projectBudgetDraft,
+  type ProjectBudgetDraft,
+  type ProjectDatesDraft,
+} from "./projects";
+import { V2DateField } from "./V2DateField";
 import { TASK_STATUS_OPTIONS } from "./tasks";
 import { memberName, projectHref } from "./today";
 import { formatFileSize, projectFileHref } from "./fileViewer";
@@ -62,7 +70,6 @@ import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2EmptyState } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
-import { V2RowMenu } from "./V2RowMenu";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
 import {
@@ -137,7 +144,9 @@ function toDossierProject(project: CrmProjectWithDetails): DossierProject {
     startDate: project.startDate,
     dueDate: project.dueDate,
     documentationEnabled: project.documentationEnabled,
-    project: project.project ? { id: project.project.id, name: project.project.name } : null,
+    project: project.project
+      ? { id: project.project.id, name: project.project.name, description: project.project.description ?? null }
+      : null,
     client: project.client
       ? {
           id: project.client.id,
@@ -255,6 +264,7 @@ export function V2DossierPage() {
   const match = matchV2Route(location);
   const projectId = match.kind === "dossier" ? match.projectId : "";
   const tab = match.kind === "dossier" ? match.tab : "overview";
+  const openDocumentId = match.kind === "dossier" ? match.documentId : null;
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
   const { memberships } = useV2Chrome();
@@ -279,6 +289,7 @@ export function V2DossierPage() {
   const [tagName, setTagName] = useState("");
   const [budgetDraft, setBudgetDraft] = useState<ProjectBudgetDraft>(projectBudgetDraft(null));
   const [creatingDocument, setCreatingDocument] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [documentName, setDocumentName] = useState("");
   const [creatingNote, setCreatingNote] = useState(false);
@@ -304,12 +315,13 @@ export function V2DossierPage() {
   });
 
   const projectRecordId = project?.project?.id;
-  const { data: documents = [] } = useQuery<Document[]>({
+  const { data: documents = [], isPending: documentsPending } = useQuery<Document[]>({
     queryKey: ["/api/projects", projectRecordId, "documents"],
     enabled: Boolean(projectRecordId),
+    // A Member who is not on this Project is answered 404 (#307): no pages to draw.
     queryFn: () =>
       fetch(`/api/projects/${projectRecordId}/documents`, { credentials: "include" }).then((res) =>
-        res.json(),
+        res.ok ? res.json() : [],
       ),
   });
 
@@ -326,7 +338,7 @@ export function V2DossierPage() {
           projectId: projectRecordId,
           id: file.id,
           name: file.name,
-          back: `${projectHref(projectId)}/documents`,
+          back: `${projectHref(projectId)}/files`,
         }),
       }))
     : [];
@@ -458,6 +470,7 @@ export function V2DossierPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
       setTaskName("");
+      setCreatingTask(false);
       setWriteRefusal(null);
       notify.success("Task created");
     },
@@ -493,6 +506,20 @@ export function V2DossierPage() {
     },
   });
 
+  const saveDates = useMutation({
+    mutationFn: (patch: { startDate?: string | null; dueDate?: string | null }) =>
+      apiRequest("PATCH", `/api/crm/projects/${projectId}`, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      invalidateProject();
+      setWriteRefusal(null);
+      notify.success("Dates saved");
+    },
+    onError: (error: Error) => {
+      refuseWrite(error.message);
+    },
+  });
+
   const deleteProject = useMutation({
     mutationFn: () => apiRequest("DELETE", `/api/crm/projects/${projectId}`),
     onSuccess: () => {
@@ -520,7 +547,7 @@ export function V2DossierPage() {
       setDocumentName("");
       setWriteRefusal(null);
       notify.success("Document created");
-      if (created?.id) navigate(`/document/${created.id}`);
+      if (created?.id) navigate(dossierDocumentHref(projectId, created.id));
     },
     onError: (error: Error) => refuseWrite(error.message, "Manage Project Documents"),
   });
@@ -721,28 +748,6 @@ export function V2DossierPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"] });
   }
 
-  const duplicateDocument = useMutation({
-    mutationFn: (documentId: string) => apiRequest("POST", documentDuplicatePath(documentId)),
-    onSuccess: () => {
-      invalidateDocuments();
-      setWriteRefusal(null);
-      notify.success("Document duplicated");
-    },
-    onError: (error: Error) => refuseWrite(error.message, "Manage Project Documents"),
-  });
-
-  const reorderDocument = useMutation({
-    mutationFn: (move: { documentId: string; newParentId: string | null; newPosition: number }) => {
-      if (!projectRecordId) throw new Error("This Project has no Documents yet.");
-      return apiRequest("POST", documentsReorderPath(projectRecordId), move);
-    },
-    onSuccess: () => {
-      invalidateDocuments();
-      setWriteRefusal(null);
-    },
-    onError: (error: Error) => refuseWrite(error.message, "Manage Project Documents"),
-  });
-
   async function attachNoteFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
     if (refuseWrite()) return;
@@ -784,6 +789,7 @@ export function V2DossierPage() {
     now,
     currentUserId: user?.id ?? "",
     tab,
+    documentId: openDocumentId,
     project: project ? toDossierProject(project) : null,
     tasks: (tasksResponse?.data ?? []).map(toDossierTask),
     documents: documents.map(toDossierDocument),
@@ -826,11 +832,26 @@ export function V2DossierPage() {
     handleStart(projectId, firstTodoTask?.id);
   }
 
-  function onCreateTask(event: FormEvent) {
-    event.preventDefault();
-    const name = taskName.trim();
-    if (!name) return;
+  function onSaveDate(field: keyof ProjectDatesDraft, day: string) {
+    const form = composeProjectDatesForm({ ...dossier.settings.dates, [field]: day }, project);
+    if (form.issue) {
+      setWriteRefusal(form.issue);
+      return;
+    }
+    if (!form.patch || refuseWrite()) return;
+    saveDates.mutate(form.patch);
+  }
+
+  function onNewTask() {
     if (refuseWrite()) return;
+    setTaskName("");
+    setWriteRefusal(null);
+    setCreatingTask(true);
+  }
+
+  function onCreateTask() {
+    const name = taskName.trim();
+    if (!name || refuseWrite()) return;
     createTask.mutate(name);
   }
 
@@ -1017,9 +1038,9 @@ export function V2DossierPage() {
                 <Button variant="outline" type="button" onClick={onStartTimer} className="df-btn">
                   Start Timer
                 </Button>
-                <Button asChild variant="default" className="df-btn"><Link href={`/projects/${projectId}/tasks`}>
+                <Button variant="default" type="button" onClick={onNewTask} className="df-btn">
                   New Task
-                </Link></Button>
+                </Button>
               </div>
             </div>
           ) : null}
@@ -1040,6 +1061,35 @@ export function V2DossierPage() {
           </nav>
         ) : null}
       </header>
+
+      <V2FormDialog
+        open={creatingTask}
+        onOpenChange={(open) => {
+          setCreatingTask(open);
+          if (!open) setWriteRefusal(null);
+        }}
+        title="New Task"
+        description={dossier.tasks.assignment}
+        submitLabel="Create Task"
+        pending={createTask.isPending}
+        canSubmit={Boolean(taskName.trim())}
+        onSubmit={onCreateTask}
+        refusal={writeRefusal}
+        testId="v2-dossier-new-task"
+      >
+        <label className="df-daily-field">
+          NAME
+          <input
+            id={DOSSIER_FIELD.taskName}
+            type="text"
+            value={taskName}
+            autoFocus
+            onChange={(event) => setTaskName(event.target.value)}
+            placeholder="Task name"
+            aria-label="Task name"
+          />
+        </label>
+      </V2FormDialog>
 
       <V2FormDialog
         open={creatingDocument}
@@ -1202,7 +1252,7 @@ export function V2DossierPage() {
       </V2FormDialog>
 
       <div className="df-dossier-body">
-        {writeRefusal && !creatingDocument && !creatingNote && !creatingReminder && !uploadingFiles ? (
+        {writeRefusal && !creatingTask && !creatingDocument && !creatingNote && !creatingReminder && !uploadingFiles ? (
           <p className="df-refusal">{writeRefusal}</p>
         ) : null}
         {dossier.identity ? (
@@ -1214,10 +1264,7 @@ export function V2DossierPage() {
           >
             {renderDossierTab({
               dossier,
-              taskName,
-              setTaskName,
-              onCreateTask,
-              createPending: createTask.isPending,
+              onNewTask,
               onComplete: (id, status) => {
                 if (refuseWrite()) return;
                 completeTask.mutate({ id, status });
@@ -1237,6 +1284,7 @@ export function V2DossierPage() {
               setBudgetDraft,
               onSaveBudget,
               budgetPending: saveBudget.isPending,
+              onSaveDate,
               onDeleteProject: () => { if (!refuseWrite()) deleteProject.mutate(); },
               deletePending: deleteProject.isPending,
               projectName,
@@ -1269,11 +1317,10 @@ export function V2DossierPage() {
               onSetTagAttached: (id, attached) => { if (!refuseWrite()) setTagAttached.mutate({ id, attached }); },
               onEditTag: (id, draft) => { if (!refuseWrite()) updateTag.mutate({ id, ...draft }); },
               onDeleteTag: (id) => { if (!refuseWrite()) deleteTag.mutate(id); },
-              onDuplicateDocument: (id) => { if (!refuseWrite()) duplicateDocument.mutate(id); },
-              onMoveDocument: (id, parentId, position) => {
-                if (refuseWrite()) return;
-                reorderDocument.mutate({ documentId: id, newParentId: parentId, newPosition: position });
-              },
+              crmProjectId: projectId,
+              documentProjectId: projectRecordId ?? null,
+              documentsLoading: Boolean(projectRecordId) && documentsPending,
+              documentProjectName: project?.project?.name ?? "",
             })}
           </div>
         ) : null}
@@ -1284,10 +1331,7 @@ export function V2DossierPage() {
 
 function renderDossierTab(props: {
   dossier: DossierModel;
-  taskName: string;
-  setTaskName: (value: string) => void;
-  onCreateTask: (event: FormEvent) => void;
-  createPending: boolean;
+  onNewTask: () => void;
   onComplete: (id: string, status: string) => void;
   onStartTask: (taskId: string) => void;
   onStartTimer: () => void;
@@ -1298,6 +1342,7 @@ function renderDossierTab(props: {
   setBudgetDraft: (draft: ProjectBudgetDraft) => void;
   onSaveBudget: (event: FormEvent) => void;
   budgetPending: boolean;
+  onSaveDate: (field: keyof ProjectDatesDraft, day: string) => void;
   onDeleteProject: () => void;
   deletePending: boolean;
   projectName: string;
@@ -1325,8 +1370,12 @@ function renderDossierTab(props: {
   onSetTagAttached: (id: string, attached: boolean) => void;
   onEditTag: (id: string, draft: { name: string; color: string }) => void;
   onDeleteTag: (id: string) => void;
-  onDuplicateDocument: (id: string) => void;
-  onMoveDocument: (id: string, parentId: string | null, position: number) => void;
+  crmProjectId: string;
+  /** The `projects` row the Documentation tab's pages belong to. */
+  documentProjectId: string | null;
+  /** The pages are still on their way: no empty state yet. */
+  documentsLoading: boolean;
+  documentProjectName: string;
 }): ReactNode {
   const { dossier } = props;
   if (dossier.tab === "tasks") return <DossierTasks {...props} />;
@@ -1335,8 +1384,8 @@ function renderDossierTab(props: {
   if (dossier.tab === "updates") return <DossierUpdates dossier={dossier} />;
   if (dossier.tab === "notes") return <DossierNotes {...props} />;
   if (dossier.tab === "reminders") return <DossierReminders {...props} />;
-  if (dossier.tab === "documents") return <DossierDocuments {...props} />;
-  if (dossier.tab === "files") return <DossierFiles dossier={dossier} />;
+  if (dossier.tab === "documents") return <DossierDocumentation {...props} />;
+  if (dossier.tab === "files") return <DossierFiles {...props} />;
   if (dossier.tab === "settings") return <DossierSettings {...props} />;
   return <DossierOverview {...props} />;
 }
@@ -1554,20 +1603,15 @@ function DossierOverview({
   );
 }
 
+/** Tasks are added in the New Task dialog (#307); the tab lists them. */
 function DossierTasks({
   dossier,
-  taskName,
-  setTaskName,
-  onCreateTask,
-  createPending,
+  onNewTask,
   onComplete,
   onStartTask,
 }: {
   dossier: DossierModel;
-  taskName: string;
-  setTaskName: (value: string) => void;
-  onCreateTask: (event: FormEvent) => void;
-  createPending: boolean;
+  onNewTask: () => void;
   onComplete: (id: string, status: string) => void;
   onStartTask: (taskId: string) => void;
 }) {
@@ -1575,30 +1619,22 @@ function DossierTasks({
     <section className="df-card">
       <div className="df-card-head">
         <h2 className="df-card-title">Tasks</h2>
-        <span className="df-count-chip">{dossier.tasks.rows.length}</span>
+        <span className="df-cluster">
+          <span className="df-count-chip">{dossier.tasks.rows.length}</span>
+          {!dossier.tasks.empty ? (
+            <Button variant="outline" type="button" onClick={onNewTask} className="df-btn">
+              New Task
+            </Button>
+          ) : null}
+        </span>
       </div>
-      <form className="df-filter-bar df-inset-bar" onSubmit={onCreateTask}>
-        <label className="df-filter-input">
-          <input
-            id={DOSSIER_FIELD.taskName}
-            type="text"
-            value={taskName}
-            onChange={(event) => setTaskName(event.target.value)}
-            placeholder="Task name"
-            aria-label="Task name"
-          />
-        </label>
-        <Button variant="default" type="submit" disabled={createPending || !taskName.trim()} className="df-btn">
-          Create
-        </Button>
-      </form>
-      {dossier.tasks.assignees.length > 0 ? (
-        <p className="df-mono df-meta df-inset-meta">
-          PROJECT ASSIGNMENT · {dossier.tasks.assignees.map((member) => member.name).join(" · ")}
-        </p>
-      ) : null}
       {dossier.tasks.empty ? (
-        <DossierEmptyStateView state={dossier.tasks.emptyState} icon="tasks" testId="v2-dossier-tasks-empty" />
+        <DossierEmptyStateView
+          state={dossier.tasks.emptyState}
+          icon="tasks"
+          testId="v2-dossier-tasks-empty"
+          onCompose={onNewTask}
+        />
       ) : (
         dossier.tasks.rows.map((row) => (
           <div key={row.id} className="df-task-row" data-done={row.done ? "true" : "false"}>
@@ -2029,43 +2065,122 @@ function DossierReminders({
 }
 
 /**
- * Duplicate and reorder sit in the row's overflow menu (#214): opening the
- * Document stays the row's primary action (#260).
+ * v1's documentation layout in the Dossier (#307): the page tree beside the
+ * open page, each page at its own URL. With no page yet, the tab's empty state
+ * creates the first one; Files live in the Files tab.
  */
-function DossierDocuments({
+function DossierDocumentation({
   dossier,
-  onDuplicateDocument,
-  onMoveDocument,
   onNewDocument,
+  crmProjectId: projectId,
+  documentProjectId,
+  documentProjectName,
+  documentsLoading,
+}: {
+  dossier: DossierModel;
+  onNewDocument: () => void;
+  crmProjectId: string;
+  documentProjectId: string | null;
+  documentProjectName: string;
+  documentsLoading: boolean;
+}) {
+  const documents = dossier.documents;
+  const [pagesShown, setPagesShown] = useState(true);
+  if (documentsLoading) return <SkeletonSection title="Documentation" lines={4} />;
+  if (documents.empty || !documentProjectId) {
+    return (
+      <section className="df-card">
+        <div className="df-card-head">
+          <h2 className="df-card-title">Documentation</h2>
+        </div>
+        <DossierEmptyStateView
+          state={dossier.documents.emptyState}
+          icon="documents"
+          testId="v2-dossier-documents-empty"
+          onNewDocument={onNewDocument}
+        />
+      </section>
+    );
+  }
+  return (
+    <div
+      className="df-documentation"
+      data-pages={pagesShown ? "shown" : "hidden"}
+      data-testid="v2-dossier-documentation"
+    >
+      <div className="df-documentation-bar no-print">
+        <Button
+          variant="ghost"
+          type="button"
+          className="df-btn"
+          onClick={() => setPagesShown((shown) => !shown)}
+          aria-expanded={pagesShown}
+          data-testid="v2-dossier-documentation-pages-toggle"
+        >
+          {pagesShown ? <PanelLeftClose aria-hidden="true" /> : <PanelLeft aria-hidden="true" />}
+          {pagesShown ? "Hide pages" : "Show pages"}
+        </Button>
+      </div>
+      {pagesShown ? (
+        <aside className="df-documentation-tree no-print" aria-label="Pages">
+          <PageTree
+            projectId={documentProjectId}
+            currentDocumentId={documents.selected?.id}
+            pageHref={(id) => dossierDocumentHref(projectId, id)}
+            afterDeleteHref={`${projectHref(projectId)}/documents`}
+            report={{
+              success: (message) => notify.success(message),
+              failure: (message) => notify.error(message),
+            }}
+          />
+        </aside>
+      ) : null}
+      <section className="df-documentation-page">
+        {documents.selected ? (
+          <V2DocumentEditor
+            key={documents.selected.id}
+            source="project"
+            documentId={documents.selected.id}
+            embedded
+            projectName={documentProjectName}
+          />
+        ) : documents.missing ? (
+          <p className="df-empty" data-testid="v2-dossier-documentation-missing">
+            This page is not in this Project&apos;s documentation.
+          </p>
+        ) : documents.selectPage ? (
+          <div className="df-documentation-select" data-testid="v2-dossier-documentation-select">
+            <h2 className="df-card-title">{documents.selectPage.title}</h2>
+            <p className="df-card-sub">{documents.selectPage.copy}</p>
+            {documents.selectPage.description ? (
+              <p className="df-prose df-documentation-description">{documents.selectPage.description}</p>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+/** Note attachments and, since #307, the Project Files the Documentation tab no longer lists. */
+function DossierFiles({
+  dossier,
   projectFiles,
   onUploadFile,
 }: {
   dossier: DossierModel;
-  onDuplicateDocument: (id: string) => void;
-  onMoveDocument: (id: string, parentId: string | null, position: number) => void;
-  onNewDocument: () => void;
   projectFiles: ProjectFileRow[];
   onUploadFile: () => void;
 }) {
   return (
     <section className="df-card">
       <div className="df-card-head">
-        <h2 className="df-card-title">Project Documents</h2>
+        <h2 className="df-card-title">Files</h2>
         <span className="df-cluster">
-          <span className="df-count-chip">{dossier.documents.count} DOCS</span>
-          {projectFiles.length > 0 ? (
-            <span className="df-count-chip">
-              {projectFiles.length} {projectFiles.length === 1 ? "FILE" : "FILES"}
-            </span>
-          ) : null}
+          <span className="df-count-chip">{dossier.files.rows.length + projectFiles.length}</span>
           {dossier.documents.canCreate ? (
             <Button variant="outline" type="button" onClick={onUploadFile} className="df-btn">
               Upload File
-            </Button>
-          ) : null}
-          {dossier.documents.canCreate && !dossier.documents.empty ? (
-            <Button variant="outline" type="button" onClick={onNewDocument} className="df-btn">
-              New Document
             </Button>
           ) : null}
         </span>
@@ -2082,57 +2197,9 @@ function DossierDocuments({
           <span className="df-mono df-meta">{file.meta}</span>
         </Link>
       ))}
-      {dossier.documents.empty ? (
-        <DossierEmptyStateView
-          state={dossier.documents.emptyState}
-          icon="documents"
-          testId="v2-dossier-documents-empty"
-          onNewDocument={onNewDocument}
-        />
-      ) : (
-        dossier.documents.rows.map((row) => {
-          const { parentId, up, down } = row.order;
-          return (
-            <div key={row.id} className="df-doc-row" data-testid={`v2-dossier-document-${row.id}`}>
-              <Link href={row.href} className="df-row-title df-doc-link">
-                {row.title}
-              </Link>
-              <span className="df-mono df-meta">{row.meta}</span>
-              <V2RowMenu
-                ariaLabel={`Actions on ${row.title}`}
-                testId={`v2-dossier-document-menu-${row.id}`}
-                items={[
-                  { label: "Duplicate", onSelect: () => onDuplicateDocument(row.id) },
-                  {
-                    label: "Move up",
-                    disabled: up == null,
-                    onSelect: () => { if (up != null) onMoveDocument(row.id, parentId, up); },
-                  },
-                  {
-                    label: "Move down",
-                    disabled: down == null,
-                    onSelect: () => { if (down != null) onMoveDocument(row.id, parentId, down); },
-                  },
-                ]}
-              />
-            </div>
-          );
-        })
-      )}
-    </section>
-  );
-}
-
-function DossierFiles({ dossier }: { dossier: DossierModel }) {
-  return (
-    <section className="df-card">
-      <div className="df-card-head">
-        <h2 className="df-card-title">Files</h2>
-        <span className="df-count-chip">{dossier.files.rows.length}</span>
-      </div>
-      {dossier.files.empty ? (
+      {dossier.files.empty && projectFiles.length === 0 ? (
         <DossierEmptyStateView state={dossier.files.emptyState} icon="files" testId="v2-dossier-files-empty" />
-      ) : (
+      ) : dossier.files.empty ? null : (
         dossier.files.rows.map((row) => {
           const body = (
             <>
@@ -2256,6 +2323,7 @@ function DossierSettings({
   setBudgetDraft,
   onSaveBudget,
   budgetPending,
+  onSaveDate,
   onDeleteProject,
   deletePending,
 }: {
@@ -2283,6 +2351,7 @@ function DossierSettings({
   setBudgetDraft: (draft: ProjectBudgetDraft) => void;
   onSaveBudget: (event: FormEvent) => void;
   budgetPending: boolean;
+  onSaveDate: (field: keyof ProjectDatesDraft, day: string) => void;
   onDeleteProject: () => void;
   deletePending: boolean;
 }) {
@@ -2355,9 +2424,24 @@ function DossierSettings({
 
       <SettingsCard title="Lifecycle" sub={settings.lifecycle.note} testId="v2-dossier-settings-lifecycle">
         <div className="df-settings-grid">
-          {settings.lifecycle.rows.map((row) => (
-            <SettingRow key={row.label} row={row} />
-          ))}
+          {settings.lifecycle.rows.map((row) => {
+            const field = row.date;
+            if (!field) return <SettingRow key={row.label} row={row} />;
+            // START and DUE are set here (#307); a pick saves at once.
+            return (
+              <div key={row.label} className="df-settings-row">
+                <span className="df-settings-label">{row.label}</span>
+                <span className="df-settings-value">
+                  <V2DateField
+                    value={settings.dates[field]}
+                    onChange={(day) => onSaveDate(field, day)}
+                    ariaLabel={field === "startDate" ? "Start date" : "Due date"}
+                    testId={`v2-dossier-settings-${field}`}
+                  />
+                </span>
+              </div>
+            );
+          })}
         </div>
       </SettingsCard>
 

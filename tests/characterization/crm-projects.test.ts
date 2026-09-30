@@ -4,6 +4,12 @@ import { resetDb } from "../helpers/db";
 import { registerUser, setWorkspaceRole } from "../helpers/auth";
 import { createClient, createCrmProject } from "../helpers/fixtures";
 import { emailsTo } from "../fakes/resend";
+import {
+  composeProjectDatesForm,
+  EMPTY_PROJECT_BUDGET_DRAFT,
+  newProjectPayload,
+  projectDatesDraft,
+} from "../../client/src/v2/projects";
 
 /**
  * Characterization: CRM projects — the source of truth from which documentation
@@ -289,6 +295,48 @@ describe("CRM projects (characterization)", () => {
     expect(second.body.data[0].project.name).toBe("bravo");
     // An unknown column falls back to most recently updated.
     expect((await names({ sort: "nope" }))[0]).toBe("Alpha");
+  });
+
+  it("saves the start and due dates v2's New Project and Settings send, and clears one (#307)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const payload = newProjectPayload("Pier survey", EMPTY_PROJECT_BUDGET_DRAFT, {
+      startDate: "2026-10-01",
+      dueDate: "2026-12-15",
+    });
+    const created = await user.agent.post("/api/crm/projects").send(payload!);
+    expect(created.status).toBe(201);
+    const id = created.body.crmProject.id;
+    const read = async () => (await user.agent.get(`/api/crm/projects/${id}`)).body;
+    expect(projectDatesDraft(await read())).toEqual({ startDate: "2026-10-01", dueDate: "2026-12-15" });
+
+    // Settings moves the due date, then clears the start date.
+    const moved = composeProjectDatesForm({ startDate: "2026-10-01", dueDate: "2027-01-10" }, await read());
+    expect((await user.agent.patch(`/api/crm/projects/${id}`).send(moved.patch!)).status).toBe(200);
+    expect(projectDatesDraft(await read())).toEqual({ startDate: "2026-10-01", dueDate: "2027-01-10" });
+
+    const cleared = composeProjectDatesForm({ startDate: "", dueDate: "2027-01-10" }, await read());
+    expect(cleared.patch).toEqual({ startDate: null });
+    expect((await user.agent.patch(`/api/crm/projects/${id}`).send(cleared.patch!)).status).toBe(200);
+    expect(projectDatesDraft(await read())).toEqual({ startDate: "", dueDate: "2027-01-10" });
+  });
+
+  it("sorts by creation date and by due date, a Project with no due date last (#307)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    await createCrmProject(user.agent, { name: "Zulu", dueDate: "2026-12-01" });
+    await createCrmProject(user.agent, { name: "Yankee", dueDate: "2026-10-15" });
+    await createCrmProject(user.agent, { name: "Xray" });
+
+    const names = async (query: Record<string, string>) =>
+      (await user.agent.get("/api/crm/projects").query({ pageSize: 50, ...query })).body.data.map(
+        (p: { project: { name: string } }) => p.project.name,
+      );
+
+    expect(await names({ sort: "created" })).toEqual(["Zulu", "Yankee", "Xray"]);
+    expect(await names({ sort: "created", dir: "desc" })).toEqual(["Xray", "Yankee", "Zulu"]);
+    expect(await names({ sort: "due" })).toEqual(["Yankee", "Zulu", "Xray"]);
+    expect(await names({ sort: "due", dir: "desc" })).toEqual(["Zulu", "Yankee", "Xray"]);
   });
 
   it("pages only what a Member may see with scope=visible, and everything for an Administrator", async () => {

@@ -18,6 +18,9 @@ import type {
   ProjectDailyUpdateWithDetails,
 } from "@shared/schema";
 
+/** A Member reads only the Projects, and Project Documents, they may see (#307); Owners and Administrators leave it unset. */
+export type ProjectDocumentScope = { visibleToUserId?: string };
+
 /** Every filter narrows the set before it is paged, so `total` counts what the filters kept (#275). */
 export type CrmProjectListOptions = {
   page?: number;
@@ -45,7 +48,7 @@ export type CrmProjectListOptions = {
   dir?: "asc" | "desc";
 };
 
-export const CRM_PROJECT_SORTS = ["name", "status", "budget"] as const;
+export const CRM_PROJECT_SORTS = ["name", "status", "budget", "created", "due"] as const;
 export type CrmProjectSort = (typeof CRM_PROJECT_SORTS)[number];
 
 /** The Project Documentation register, paged by Project (#275). */
@@ -100,8 +103,10 @@ export type ProjectDocumentationPage = {
 };
 
 export interface ProjectsPersistence {
-  getProjects(userId: string): Promise<Project[]>;
+  getProjects(userId: string, scope?: ProjectDocumentScope): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
+  /** Whether a Member may see this Project (a `projects` id), by the rule `visibleToUserId` applies. */
+  isProjectVisibleTo(projectId: string, userId: string): Promise<boolean>;
   createProject(
     project: InsertProject & { ownerId: string },
     writer?: ProjectWriter

@@ -11,6 +11,8 @@ import {
   navIdForPath,
 } from "../../client/src/v2/presentation";
 import {
+  ANALYTICS_RANGE_PRESETS,
+  analyticsOverviewPath,
   analyticsRange,
   composeAdministration,
   composeAnalytics,
@@ -444,5 +446,67 @@ describe("A destructive row action asks before it runs (#281)", () => {
     const confirm = adminSource.slice(adminSource.indexOf("function DestructiveConfirm("));
     expect(confirm).toContain("<AlertDialogCancel className=\"df-btn\" autoFocus>");
     expect(confirm).toContain('variant="destructiveOutline"');
+  });
+});
+
+describe("Analytics: This month and a custom range (#307)", () => {
+  // TZ is pinned to UTC, so local midnight is UTC midnight here.
+  const MID_MONTH = new Date(2026, 8, 15, 14, 30);
+  const query = (path: string) => new URL(path, "http://docuflow.test").searchParams;
+
+  it("offers the rolling ranges as the last N days, then This month and a custom range", () => {
+    expect(ANALYTICS_RANGE_PRESETS.map((preset) => [preset.id, preset.label])).toEqual([
+      ["7d", "Last 7 days"],
+      ["30d", "Last 30 days"],
+      ["90d", "Last 90 days"],
+      ["month", "This month"],
+      ["custom", "Custom range…"],
+    ]);
+  });
+
+  it("starts This month on the 1st at midnight and ends now, which the last 30 days does not", () => {
+    expect(analyticsRange("month", MID_MONTH)).toEqual({ start: new Date(2026, 8, 1), end: MID_MONTH });
+    expect(analyticsRange("30d", MID_MONTH).start).toEqual(new Date(2026, 7, 16, 14, 30));
+
+    // On the 1st, This month is that day only.
+    const firstOfMonth = new Date(2026, 9, 1, 9, 0);
+    expect(analyticsRange("month", firstOfMonth)).toEqual({ start: new Date(2026, 9, 1), end: firstOfMonth });
+  });
+
+  it("covers both end days of a custom range in full", () => {
+    expect(analyticsRange("custom", MID_MONTH, { from: "2026-09-03", to: "2026-09-10" })).toEqual({
+      start: new Date(2026, 8, 3),
+      end: new Date(2026, 8, 10, 23, 59, 59, 999),
+    });
+    // One day is a range too.
+    expect(analyticsRange("custom", MID_MONTH, { from: "2026-09-03", to: "2026-09-03" })).toEqual({
+      start: new Date(2026, 8, 3),
+      end: new Date(2026, 8, 3, 23, 59, 59, 999),
+    });
+  });
+
+  it("exports the same dates the figures read, and names them on the totals line", () => {
+    for (const range of [
+      analyticsRange("month", MID_MONTH),
+      analyticsRange("custom", MID_MONTH, { from: "2026-09-03", to: "2026-09-10" }),
+    ]) {
+      const model = composeAnalytics(analyticsInput({ range }));
+      if (model.kind !== "ready") throw new Error("Analytics should be ready for an Owner");
+      const exported = query(model.export.href);
+      const figures = query(analyticsOverviewPath(range));
+      expect([exported.get("start"), exported.get("end")]).toEqual([figures.get("start"), figures.get("end")]);
+    }
+    const custom = composeAnalytics(
+      analyticsInput({ range: analyticsRange("custom", MID_MONTH, { from: "2026-09-03", to: "2026-09-10" }) }),
+    );
+    if (custom.kind !== "ready") throw new Error("Analytics should be ready for an Owner");
+    expect(custom.rangeLabel).toBe("3 SEP – 10 SEP");
+  });
+
+  it("picks the custom range on one shadcn range calendar, beside the RANGE select", () => {
+    expect(analyticsSource).toContain("<V2DateRangeField");
+    const picker = read("../../client/src/v2/V2DateField.tsx");
+    expect(picker).toContain('mode="range"');
+    expect(picker).toContain("numberOfMonths={2}");
   });
 });

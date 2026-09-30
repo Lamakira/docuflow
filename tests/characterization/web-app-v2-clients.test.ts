@@ -9,6 +9,7 @@ import {
   clientSourceOptions,
   CLIENT_SOURCE_OPTIONS,
   clientWriteRefusal,
+  CLIENT_SORTS,
   composeClientRecord,
   composeClientRegister,
   type ClientRegisterInput,
@@ -657,3 +658,60 @@ function reducedMotionCss(): string {
     .map((match) => match[1])
     .join("\n");
 }
+
+describe("Clients register: when each Client was created (#307)", () => {
+  const clientsSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
+    "utf8",
+  );
+
+  it("shows the creation date in full, and orders by it on the server", () => {
+    const register = composeClientRegister({
+      workspaceName: "Harbor Co",
+      clients: [
+        { id: "c-1", name: "Harbor", company: null, status: "client", source: null, projectCount: 0, createdAt: "2026-09-29T10:15:00.000Z" },
+        { id: "c-2", name: "Pier", company: null, status: "lead", source: null, projectCount: 0, createdAt: null },
+      ],
+      filterQuery: "",
+      selectedId: null,
+    });
+    expect(register.rows.map((row) => row.created)).toEqual(["29 Sep 2026", "—"]);
+    expect(CLIENT_SORTS).toContain("created");
+    expect(clientsSource).toMatch(/clientColumn\.accessor\("created", \{\s*header: "CREATED"/);
+  });
+});
+
+describe("Client record order (#307)", () => {
+  const source = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Clients.tsx"),
+    "utf8",
+  );
+  const title = (text: string) => `<h2 className="df-card-title">${text}</h2>`;
+
+  it("shows the Client details first, then the contacts, with Client Projects beside them", () => {
+    for (const layout of [
+      source.slice(source.indexOf('<div className="df-overview">')),
+      source.slice(source.indexOf('<div className="df-overview" aria-busy="true">')),
+    ]) {
+      const details = layout.search(/Client details/);
+      const contacts = layout.search(/On this Client/);
+      const projects = layout.search(/Client Projects/);
+      expect(details).toBeGreaterThan(-1);
+      expect(details).toBeLessThan(contacts);
+      expect(contacts).toBeLessThan(projects);
+    }
+    // The contacts card keeps its title.
+    expect(source).toContain(title("On this Client"));
+  });
+
+  it("stacks Client Projects below the details and contacts on a phone", () => {
+    const css = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/tokens.css"),
+      "utf8",
+    );
+    const stacked = css.match(
+      /\.df-v2\[data-chrome="mobile"\] \.df-client-record-body \.df-overview\s*\{([^}]*)\}/,
+    );
+    expect(stacked?.[1]).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
+  });
+});

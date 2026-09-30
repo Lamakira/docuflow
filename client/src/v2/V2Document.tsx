@@ -11,6 +11,7 @@ import { isStandingRefusal, notify } from "./notify";
 import { composeFileViewer } from "./fileViewer";
 import {
   composeDocumentEditor,
+  projectDocumentDossierHref,
   type DocumentEditorRecord,
   type DocumentEditorSaveState,
   type DocumentEditorSource,
@@ -72,11 +73,90 @@ async function loadDocument(source: DocumentEditorSource, documentId: string): P
   };
 }
 
+function documentQueryKey(source: DocumentEditorSource, documentId: string) {
+  return [source === "project" ? "/api/documents" : "/api/company-documents", documentId, "v2-editor"];
+}
+
+const ASSIGNMENT_PROJECTS_KEY = ["/api/crm/projects", "document-assignment"];
+
+async function loadAssignmentProjects(): Promise<CrmProjectWithDetails[]> {
+  const res = await fetch("/api/crm/projects?pageSize=500", { credentials: "include" });
+  if (!res.ok) return [];
+  const body = (await res.json()) as { data?: CrmProjectWithDetails[] };
+  return body.data ?? [];
+}
+
+/** The Document routes. A Project Document opens in its Project Dossier since #307. */
 export function V2DocumentPage() {
   const [location] = useLocation();
   const match = matchV2Route(location);
   const documentId = match.kind === "document-editor" ? match.documentId : "";
   const source: DocumentEditorSource = match.kind === "document-editor" ? match.source : "workspace";
+
+  if (!documentId) {
+    return <Redirect to={source === "project" ? "/project-documentation" : "/documents"} />;
+  }
+  if (source === "project") return <ProjectDocumentRedirect documentId={documentId} />;
+  return <V2DocumentEditor source="workspace" documentId={documentId} />;
+}
+
+/**
+ * An old `/document/:id` link moves to the page's place in its Project
+ * Dossier. A page no known Project owns stays here, where the editor says why
+ * it cannot open.
+ */
+function ProjectDocumentRedirect({ documentId }: { documentId: string }) {
+  const { data, isLoading } = useQuery<LoadedDocument>({
+    queryKey: documentQueryKey("project", documentId),
+    queryFn: () => loadDocument("project", documentId),
+  });
+  const projectId = data?.record?.projectId ?? null;
+  const { data: projects, isLoading: projectsLoading } = useQuery<CrmProjectWithDetails[]>({
+    queryKey: ASSIGNMENT_PROJECTS_KEY,
+    enabled: Boolean(projectId),
+    queryFn: loadAssignmentProjects,
+  });
+  const href =
+    data?.record && projectId && projects
+      ? projectDocumentDossierHref({ id: data.record.id, projectId }, projects)
+      : null;
+
+  if (href) return <Redirect to={href} />;
+  if (isLoading || (projectId && projectsLoading)) return <EditorLoading embedded={false} />;
+  return <V2DocumentEditor source="project" documentId={documentId} />;
+}
+
+function EditorLoading({ embedded }: { embedded: boolean }) {
+  return (
+    <div className="df-editor-page" data-testid="v2-document-editor">
+      {embedded ? null : (
+        <header className="df-editor-head">
+          <h1 className="df-title" style={{ fontSize: 22 }}>
+            Document
+          </h1>
+        </header>
+      )}
+      <p className="df-subhead df-page-inset">Loading this Document…</p>
+    </div>
+  );
+}
+
+/**
+ * One Document in the editor: on its own page, or `embedded` beside the page
+ * tree in a Project Dossier (#307), where the tree replaces the way back and
+ * Print prints the page as v1 did, titled "Project - Page".
+ */
+export function V2DocumentEditor({
+  source,
+  documentId,
+  embedded = false,
+  projectName,
+}: {
+  source: DocumentEditorSource;
+  documentId: string;
+  embedded?: boolean;
+  projectName?: string;
+}) {
   const { user } = useAuth();
   const { memberships } = useV2Chrome();
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
@@ -92,19 +172,14 @@ export function V2DocumentPage() {
 
   const ownerName = useWorkspaceOwnerName();
   const { data, isLoading } = useQuery<LoadedDocument>({
-    queryKey: [source === "project" ? "/api/documents" : "/api/company-documents", documentId, "v2-editor"],
+    queryKey: documentQueryKey(source, documentId),
     enabled: Boolean(documentId),
     queryFn: () => loadDocument(source, documentId),
   });
   const { data: projects = [], isLoading: projectsLoading } = useQuery<CrmProjectWithDetails[]>({
-    queryKey: ["/api/crm/projects", "document-assignment"],
+    queryKey: ASSIGNMENT_PROJECTS_KEY,
     enabled: source === "project" && Boolean(data?.record?.projectId),
-    queryFn: async () => {
-      const res = await fetch("/api/crm/projects?pageSize=500", { credentials: "include" });
-      if (!res.ok) return [];
-      const body = (await res.json()) as { data?: CrmProjectWithDetails[] };
-      return body.data ?? [];
-    },
+    queryFn: loadAssignmentProjects,
   });
 
   const assigned =
@@ -139,6 +214,13 @@ export function V2DocumentPage() {
     setReadyId(data.record.id);
   }, [data?.record?.id]);
 
+  // A rename from the page tree (#307) reaches an editor with nothing unsaved,
+  // so the next save does not write the old title back.
+  useEffect(() => {
+    if (!data?.record || readyId !== data.record.id) return;
+    if (saveState === "idle" || saveState === "saved") setTitle(data.record.name);
+  }, [data?.record?.name]);
+
   const editor = composeDocumentEditor({
     source,
     document: assigned ? data?.record ?? null : null,
@@ -166,6 +248,11 @@ export function V2DocumentPage() {
       queryClient.invalidateQueries({
         queryKey: [source === "project" ? "/api/documents" : "/api/company-documents", documentId],
       });
+      // The page tree beside the editor lists the new title too.
+      const pageProjectId = data?.record?.projectId;
+      if (source === "project" && pageProjectId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", pageProjectId, "documents"] });
+      }
       setSaveState("saved");
       setWriteRefusal(null);
     },
@@ -348,33 +435,30 @@ export function V2DocumentPage() {
       </>
     ) : null;
 
-  if (!documentId) {
-    return <Redirect to={source === "project" ? "/project-documentation" : "/documents"} />;
-  }
+  const handlePrint = () => {
+    const original = window.document.title;
+    window.document.title = [projectName, title.trim() || "Untitled"].filter(Boolean).join(" - ");
+    const restore = () => {
+      window.document.title = original;
+      window.removeEventListener("afterprint", restore);
+    };
+    window.addEventListener("afterprint", restore);
+    // v1 waits a beat so the browser takes the new title as the PDF name.
+    window.setTimeout(() => window.print(), 100);
+  };
 
-  if (isLoading || assignmentPending) {
-    return (
-      <div className="df-editor-page" data-testid="v2-document-editor">
-        <header className="df-editor-head">
-          <h1 className="df-title" style={{ fontSize: 22 }}>
-            Document
-          </h1>
-        </header>
-        <p className="df-subhead df-page-inset">
-          Loading this Document…
-        </p>
-      </div>
-    );
-  }
+  if (isLoading || assignmentPending) return <EditorLoading embedded={embedded} />;
 
   if (editor.missing) {
     return (
       <div className="df-editor-page" data-testid="v2-document-editor">
-        <header className="df-editor-head">
-          <Button asChild variant="outline" className="df-btn"><Link href={editor.backHref}>
-            Back to {editor.backLabel}
-          </Link></Button>
-        </header>
+        {embedded ? null : (
+          <header className="df-editor-head">
+            <Button asChild variant="outline" className="df-btn"><Link href={editor.backHref}>
+              Back to {editor.backLabel}
+            </Link></Button>
+          </header>
+        )}
         {editor.refusal ? <p className="df-refusal">{editor.refusal}</p> : <p className="df-empty">{editor.emptyCopy}</p>}
       </div>
     );
@@ -407,9 +491,11 @@ export function V2DocumentPage() {
   return (
     <div className="df-editor-page" data-testid="v2-document-editor">
       <header className="df-editor-head">
-        <Button asChild variant="outline" className="df-btn"><Link href={editor.backHref}>
-          Back to {editor.backLabel}
-        </Link></Button>
+        {embedded ? null : (
+          <Button asChild variant="outline" className="df-btn"><Link href={editor.backHref}>
+            Back to {editor.backLabel}
+          </Link></Button>
+        )}
         {editor.saveLabel ? (
           <span className="df-save-state" data-state={saveState} data-motion={saveState === "idle" ? "none" : "standard"}>
             {editor.saveLabel}
@@ -421,6 +507,17 @@ export function V2DocumentPage() {
           </p>
         ) : null}
         {manageAccess}
+        {embedded ? (
+          <Button
+            variant="outline"
+            type="button"
+            className="df-btn df-editor-print"
+            onClick={handlePrint}
+            data-testid="v2-document-print"
+          >
+            Print
+          </Button>
+        ) : null}
       </header>
       <div className="df-editor">
         {readyId === documentId && content ? (
