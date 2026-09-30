@@ -315,7 +315,7 @@ export function V2DossierPage() {
   });
 
   const projectRecordId = project?.project?.id;
-  const { data: documents = [] } = useQuery<Document[]>({
+  const { data: documents = [], isPending: documentsPending } = useQuery<Document[]>({
     queryKey: ["/api/projects", projectRecordId, "documents"],
     enabled: Boolean(projectRecordId),
     // A Member who is not on this Project is answered 404 (#307): no pages to draw.
@@ -1319,6 +1319,7 @@ export function V2DossierPage() {
               onDeleteTag: (id) => { if (!refuseWrite()) deleteTag.mutate(id); },
               crmProjectId: projectId,
               documentProjectId: projectRecordId ?? null,
+              documentsLoading: Boolean(projectRecordId) && documentsPending,
               documentProjectName: project?.project?.name ?? "",
             })}
           </div>
@@ -1372,6 +1373,8 @@ function renderDossierTab(props: {
   crmProjectId: string;
   /** The `projects` row the Documentation tab's pages belong to. */
   documentProjectId: string | null;
+  /** The pages are still on their way: no empty state yet. */
+  documentsLoading: boolean;
   documentProjectName: string;
 }): ReactNode {
   const { dossier } = props;
@@ -2072,15 +2075,18 @@ function DossierDocumentation({
   crmProjectId: projectId,
   documentProjectId,
   documentProjectName,
+  documentsLoading,
 }: {
   dossier: DossierModel;
   onNewDocument: () => void;
   crmProjectId: string;
   documentProjectId: string | null;
   documentProjectName: string;
+  documentsLoading: boolean;
 }) {
   const documents = dossier.documents;
   const [pagesShown, setPagesShown] = useState(true);
+  if (documentsLoading) return <SkeletonSection title="Documentation" lines={4} />;
   if (documents.empty || !documentProjectId) {
     return (
       <section className="df-card">

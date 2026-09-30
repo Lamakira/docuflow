@@ -178,7 +178,11 @@ function ClientRegisterTable({
         }),
         clientColumn.accessor("created", {
           header: "CREATED",
-          cell: ({ row }) => <span className="df-mono df-meta">{row.original.created}</span>,
+          cell: ({ row }) => (
+            <span className="df-mono df-meta" style={{ whiteSpace: "nowrap" }}>
+              {row.original.created}
+            </span>
+          ),
         }),
       ]),
     [],
