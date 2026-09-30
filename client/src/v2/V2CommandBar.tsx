@@ -80,9 +80,15 @@ export function V2CommandBar({
           ))}
         </nav>
 
-        <button type="button" className="df-search" onClick={() => setSearchOpen(true)} data-testid="v2-search">
+        <button
+          type="button"
+          className="df-search"
+          onClick={() => setSearchOpen(true)}
+          aria-label={`Search ${workspaceName}`}
+          data-testid="v2-search"
+        >
           <SearchIcon />
-          <span style={{ flex: 1, textAlign: "left" }}>Search {workspaceName}</span>
+          <span className="df-search-label">Search {workspaceName}</span>
           <span className="df-keycap">/</span>
         </button>
 

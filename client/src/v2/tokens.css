@@ -452,6 +452,7 @@
 
 .df-search {
   flex: 1;
+  min-width: 0;
   max-width: 360px;
   display: flex;
   align-items: center;
@@ -467,6 +468,21 @@
 
 .df-search:hover {
   border-color: var(--df-case-ink);
+}
+
+.df-search > svg,
+.df-search .df-keycap {
+  flex: none;
+}
+
+/* One line, cut with an ellipsis, rather than a label that wraps and grows the bar. */
+.df-search-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .df-keycap {
