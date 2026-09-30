@@ -150,6 +150,13 @@ describe("Project Dossier Overview from live Workspace records (#173)", () => {
     expect(empty.evidence.tiles).toEqual([]);
     expect(empty.dailyUpdate.kind).toBe("empty");
     expect(missing.missing).toBe(true);
+    // A Project the reader cannot reach is the same 404, drawn as this missing Project (#310).
+    const dossierPage = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Dossier.tsx"),
+      "utf8",
+    );
+    expect(dossierPage).toContain("if (res.status === 404) return null");
+    expect(dossierPage).toContain("Project not found");
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
     }

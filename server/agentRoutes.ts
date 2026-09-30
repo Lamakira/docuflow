@@ -21,6 +21,7 @@ let sharpLib: ((input: Buffer) => any) | null = null;
   }
 })();
 import { storage } from "./storage";
+import { canAccessCrmProject, visibleProjectScope } from "./modules/projects/access";
 import { isAuthenticated, getUserId } from "./auth";
 import { config } from "./config";
 import { agentProtocolHandshake, allowAgentProtocol } from "./agentProtocol";
@@ -72,33 +73,10 @@ function hashToken(token: string): string {
 }
 
 // ─── Project access policy ───
-
-// Existing is enough: any CRM project id the server can find will answer its
-// tasks, take a new one, and start a timer against it. There is no membership
-// gate on the agent routes and no visibility check either — the picker's list is
-// workspace-wide, so for everything it offers, existing and being listed are the
-// same thing. They part on documentation-only projects: `getCrmProjects` filters
-// those out, so the picker never offers one, but an id held from elsewhere still
-// works here. The SPA answers the same way — `/api/time-tracking/start` does not
-// look the project up at all.
 //
-// #31 settled this, and ADR-0019 records it. Three routes — task list, task
-// create, timer start — used to require a membership row or ownership of the
-// underlying project, while `GET /api/agent/projects` listed every project in
-// the workspace. The picker offered a project and the next call refused it with
-// 403, once per project viewed. The gate was also the only one of its kind:
-// `getCrmProjects` takes a user id and ignores it, and the SPA's `/api/tasks`,
-// `POST /api/tasks` and `/api/time-tracking/start` never checked membership at
-// all. So the refusal protected nothing — the same user could open the browser
-// and do exactly what the desktop denied — while making the agent the one
-// surface where the picker lied about what it could open.
-//
-// Dropping it is the parity fix, not a widening: nothing became possible that a
-// browser session could not already do. ADR-0019 has the rejected alternatives
-// and the supersession: it is a deliberate, temporary exception to ADR-0004 and
-// ADR-0006, and when the workspace-permissions design those describe lands (#18)
-// these three routes, the SPA's, and the characterization suites that freeze the
-// current answer move together.
+// The desktop uses the same Project Assignment as the browser (ADR-0028, #310).
+// The picker lists the Projects this Member may see, and the task and timer
+// routes answer any other Project as if it were not there.
 
 // ─── Agent auth middleware ───
 
@@ -929,8 +907,9 @@ export function registerAgentRoutes(app: Express): void {
       const userId = req.agentUserId!;
       const { crmProjectId } = req.query as { crmProjectId?: string };
       if (!crmProjectId) return res.status(400).json({ message: "crmProjectId is required" });
-      const crmProject = await storage.getCrmProject(crmProjectId);
-      if (!crmProject) return res.status(404).json({ message: "Project not found" });
+      if (!(await canAccessCrmProject(userId, crmProjectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const taskList = await storage.getTasks({ crmProjectId });
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -968,8 +947,9 @@ export function registerAgentRoutes(app: Express): void {
       if (!crmProjectId || !name?.trim()) {
         return res.status(400).json({ message: "crmProjectId and name are required" });
       }
-      const crmProject = await storage.getCrmProject(crmProjectId);
-      if (!crmProject) return res.status(404).json({ message: "Project not found" });
+      if (!(await canAccessCrmProject(userId, crmProjectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const task = await storage.createTask({
         crmProjectId,
         name: name.trim(),
@@ -994,7 +974,7 @@ export function registerAgentRoutes(app: Express): void {
   app.get("/api/agent/projects", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     try {
       const userId = req.agentUserId!;
-      const result = await storage.getCrmProjects(userId, { pageSize: 100 });
+      const result = await storage.getCrmProjects(userId, { pageSize: 100, ...(await visibleProjectScope(userId)) });
       // Return simplified list for agent UI
       const projects = result.data.map((p: any) => ({
         id: p.id,
@@ -1049,9 +1029,7 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(400).json({ message: "crmProjectId is required" });
       }
 
-      // The project must exist; seeing it is enough to track against it (#31).
-      const crmProject = await storage.getCrmProject(crmProjectId);
-      if (!crmProject) {
+      if (!(await canAccessCrmProject(userId, crmProjectId))) {
         return res.status(404).json({ message: "Project not found" });
       }
 

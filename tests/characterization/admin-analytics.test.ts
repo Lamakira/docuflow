@@ -128,7 +128,7 @@ describe("admin analytics (characterization)", () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const member = await registerUser(app);
-    const { crmProject } = await createCrmProject(admin.agent);
+    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [admin.id, member.id] });
     const task = await createTask(admin.agent, crmProject.id);
     const entry = await startTimer(member.agent, crmProject.id, task.id);
     await member.agent.post(`/api/time-tracking/${entry.id}/stop`);

@@ -302,6 +302,7 @@ export function V2DossierPage() {
     enabled: Boolean(projectId),
     queryFn: async () => {
       const res = await fetch(`/api/crm/projects/${projectId}`, { credentials: "include" });
+      // A Project this reader cannot reach is 404, the same answer as one that is not there (#310).
       if (res.status === 404) return null;
       if (!res.ok) throw new Error("Failed to fetch Project");
       return res.json();

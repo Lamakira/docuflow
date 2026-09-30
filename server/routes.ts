@@ -32,6 +32,7 @@ import {
   registerWorkspaceLifecycleRoutes,
 } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
+import { canAccessCrmProject, canAccessProject, visibleProjectScope } from "./modules/projects/access";
 import { CRM_PROJECT_SORTS } from "./modules/projects/persistence";
 import { CRM_CLIENT_SORTS, type OptionRenameColumn } from "./modules/clients-sales/persistence";
 import {
@@ -247,7 +248,7 @@ export async function registerRoutes(
   app.get("/api/projects", isAuthenticated, async (req: Request, res) => {
     try {
       const userId = getUserId(req)!;
-      const projects = await storage.getProjects(userId);
+      const projects = await storage.getProjects(userId, await visibleProjectScope(userId));
       res.json(projects);
     } catch (error) {
       console.error("Error fetching projects:", error);
@@ -291,11 +292,10 @@ export async function registerRoutes(
     try {
       const project = await storage.getProject(req.params.id);
 
-      if (!project) {
+      if (!project || !(await canAccessProject(getUserId(req)!, project.id))) {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide visibility - all authenticated users can view any project
       res.json(project);
     } catch (error) {
       console.error("Error fetching project:", error);
@@ -319,11 +319,10 @@ export async function registerRoutes(
     try {
       const project = await storage.getProject(req.params.id);
 
-      if (!project) {
+      if (!project || !(await canAccessProject(getUserId(req)!, project.id))) {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide access - all authenticated users can update projects
       // Only allow name updates from this endpoint - other fields should go through CRM
       const updateSchema = z.object({
         name: z.string().min(1).optional(),
@@ -353,19 +352,11 @@ export async function registerRoutes(
   });
 
   // CONTEXT.md: a Project Document is "visible exactly to members who can access
-  // that project" (#307). Owners and Administrators reach every Project; a Member
-  // reaches the Projects the register shows them. Anyone else is answered as if
-  // the Project, or its Document, were not there.
-  const canAccessProject = async (userId: string, projectId: string): Promise<boolean> =>
-    (await canManageAdministration()) || (await storage.isProjectVisibleTo(projectId, userId));
-
+  // that project" (#307). The same Project Assignment decides every project route (#310).
   const accessibleProject = async (userId: string, projectId: string) => {
     const project = await storage.getProject(projectId);
     return project && (await canAccessProject(userId, project.id)) ? project : undefined;
   };
-
-  const projectDocumentScope = async (userId: string) =>
-    (await canManageAdministration()) ? {} : { visibleToUserId: userId };
 
   const accessibleDocument = async (userId: string, documentId: string) => {
     const document = await storage.getDocument(documentId);
@@ -431,7 +422,7 @@ export async function registerRoutes(
   app.get("/api/documents/recent", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const documents = await storage.getRecentDocuments(userId, 10, await projectDocumentScope(userId));
+      const documents = await storage.getRecentDocuments(userId, 10, await visibleProjectScope(userId));
       res.json(documents);
     } catch (error) {
       console.error("Error fetching recent documents:", error);
@@ -626,7 +617,7 @@ export async function registerRoutes(
         return res.json([]);
       }
 
-      const results = await storage.search(userId, query, await projectDocumentScope(userId));
+      const results = await storage.search(userId, query, await visibleProjectScope(userId));
       res.json(results);
     } catch (error) {
       console.error("Error searching:", error);
@@ -1128,7 +1119,7 @@ export async function registerRoutes(
       // Get project overview and docs if mode includes projects. A Member reads
       // only the Projects they may see (#307), in the overview, the search and
       // the fallback alike.
-      const scope = await projectDocumentScope(userId);
+      const scope = await visibleProjectScope(userId);
       if (mode === "projects" || mode === "both") {
         const projects = await storage.getProjects(userId, scope);
         projectOverview = "# Available Projects\n\n";
@@ -1626,7 +1617,7 @@ Instructions:
   app.get("/api/crm/projects/all", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000 });
+      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000, ...(await visibleProjectScope(userId)) });
       res.json(result);
     } catch (error) {
       console.error("Error fetching Projects:", error);
@@ -1639,7 +1630,7 @@ Instructions:
       const userId = getUserId(req)!;
       
       // Fetch all projects without pagination for kanban view
-      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000 });
+      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000, ...(await visibleProjectScope(userId)) });
       res.json(result);
     } catch (error) {
       console.error("Error fetching CRM projects for kanban:", error);
@@ -1663,10 +1654,9 @@ Instructions:
         const parsed = value ? new Date(value) : null;
         return parsed && !Number.isNaN(parsed.getTime()) ? parsed : undefined;
       };
-      // `scope=visible` pages what this Member may see, so a page is never short
-      // of rows the browser would hide. Owners and Administrators see every one.
-      const visibleToUserId =
-        text("scope") === "visible" && !(await canManageAdministration()) ? userId : undefined;
+      // A Member's page holds only the Projects they may see. Owners and
+      // Administrators see every one. `scope=visible` is the same rule (#310).
+      const { visibleToUserId } = await visibleProjectScope(userId);
 
       const result = await storage.getCrmProjects(userId, {
         page,
@@ -1698,11 +1688,10 @@ Instructions:
       const userId = getUserId(req)!;
       const crmProject = await storage.getCrmProject(req.params.id);
       
-      if (!crmProject) {
+      if (!crmProject || !(await canAccessProject(userId, crmProject.projectId))) {
         return res.status(404).json({ message: "CRM Project not found" });
       }
       
-      // Company-wide visibility - all authenticated users can view CRM projects
       res.json(crmProject);
     } catch (error) {
       console.error("Error fetching CRM project:", error);
@@ -1862,7 +1851,7 @@ Instructions:
       const userId = getUserId(req)!;
       const sourceProject = await storage.getCrmProject(req.params.id);
       
-      if (!sourceProject) {
+      if (!sourceProject || !(await canAccessProject(userId, sourceProject.projectId))) {
         return res.status(404).json({ message: "Source project not found" });
       }
       
@@ -1918,11 +1907,10 @@ Instructions:
       const userId = getUserId(req)!;
       const crmProject = await storage.getCrmProject(req.params.id);
       
-      if (!crmProject) {
+      if (!crmProject || !(await canAccessProject(userId, crmProject.projectId))) {
         return res.status(404).json({ message: "CRM Project not found" });
       }
       
-      // Company-wide access - all authenticated users can toggle documentation
       const toggleSchema = z.object({
         enabled: z.boolean(),
       });
@@ -1945,7 +1933,7 @@ Instructions:
   app.post("/api/crm/projects/:id/lost", isAuthenticated, async (req: any, res) => {
     try {
       const crmProject = await storage.getCrmProject(req.params.id);
-      if (!crmProject) {
+      if (!crmProject || !(await canAccessProject(getUserId(req)!, crmProject.projectId))) {
         return res.status(404).json({ message: "CRM Project not found" });
       }
       if (!projectHasOpportunity(crmProject)) {
@@ -1994,11 +1982,10 @@ Instructions:
       const userId = getUserId(req)!;
       const crmProject = await storage.getCrmProject(req.params.id);
       
-      if (!crmProject) {
+      if (!crmProject || !(await canAccessProject(userId, crmProject.projectId))) {
         return res.status(404).json({ message: "CRM Project not found" });
       }
       
-      // Company-wide access - all authenticated users can update CRM projects
       const updateSchema = z.object({
         projectName: z.string().optional(),
         clientId: z.string().nullable().optional(),
@@ -2209,7 +2196,7 @@ Instructions:
     try {
       const crmProject = await storage.getCrmProjectByProjectId(req.params.projectId);
       
-      if (!crmProject) {
+      if (!crmProject || !(await canAccessProject(getUserId(req)!, req.params.projectId))) {
         return res.status(404).json({ message: "Project not found in CRM" });
       }
       
@@ -2330,6 +2317,9 @@ Instructions:
   // Get tags for a specific project
   app.get("/api/crm/projects/:id/tags", isAuthenticated, async (req: any, res) => {
     try {
+      if (!(await canAccessCrmProject(getUserId(req)!, req.params.id))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const tags = await storage.getCrmProjectTags(req.params.id);
       res.json(tags);
     } catch (error) {
@@ -2341,6 +2331,9 @@ Instructions:
   // Add tag to project
   app.post("/api/crm/projects/:id/tags/:tagId", isAuthenticated, async (req: any, res) => {
     try {
+      if (!(await canAccessCrmProject(getUserId(req)!, req.params.id))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const projectTag = await storage.addTagToProject(req.params.id, req.params.tagId);
       res.status(201).json(projectTag);
     } catch (error) {
@@ -2352,6 +2345,9 @@ Instructions:
   // Remove tag from project
   app.delete("/api/crm/projects/:id/tags/:tagId", isAuthenticated, async (req: any, res) => {
     try {
+      if (!(await canAccessCrmProject(getUserId(req)!, req.params.id))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       await storage.removeTagFromProject(req.params.id, req.params.tagId);
       res.status(204).send();
     } catch (error) {
@@ -2365,6 +2361,9 @@ Instructions:
   // Get stage history for a CRM project
   app.get("/api/crm/projects/:id/stage-history", isAuthenticated, async (req: any, res) => {
     try {
+      if (!(await canAccessCrmProject(getUserId(req)!, req.params.id))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const history = await storage.getCrmProjectStageHistory(req.params.id);
       res.json(history);
     } catch (error) {
@@ -2378,6 +2377,9 @@ Instructions:
   // Get notes for a CRM project
   app.get("/api/crm/projects/:id/notes", isAuthenticated, async (req: any, res) => {
     try {
+      if (!(await canAccessCrmProject(getUserId(req)!, req.params.id))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const notes = await storage.getCrmProjectNotes(req.params.id);
       res.json(notes);
     } catch (error) {
@@ -2390,6 +2392,9 @@ Instructions:
   app.post("/api/crm/projects/:id/notes", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
+      if (!(await canAccessCrmProject(userId, req.params.id))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const createSchema = z.object({
         content: z.string().min(1, "Note content is required"),
         mentionedUserIds: z.array(z.string()).optional(),
@@ -2445,6 +2450,9 @@ Instructions:
   app.patch("/api/crm/projects/:projectId/notes/:noteId", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
+      if (!(await canAccessCrmProject(userId, req.params.projectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const updateSchema = z.object({
         content: z.string().min(1, "Note content is required").optional(),
         mentionedUserIds: z.array(z.string()).optional().nullable(),
@@ -2464,7 +2472,10 @@ Instructions:
       // Get existing note to compare mentions
       const existingNotes = await storage.getCrmProjectNotes(req.params.projectId);
       const existingNote = existingNotes.find(n => n.id === req.params.noteId);
-      const oldMentions = existingNote?.mentionedUserIds || [];
+      if (!existingNote) {
+        return res.status(404).json({ message: "Note not found" });
+      }
+      const oldMentions = existingNote.mentionedUserIds || [];
       
       const updateData: { content?: string; mentionedUserIds?: string[] | null; attachments?: string | null } = {};
       if (parsed.data.content !== undefined) {
@@ -2507,7 +2518,13 @@ Instructions:
   // Delete a note
   app.delete("/api/crm/projects/:projectId/notes/:noteId", isAuthenticated, async (req: any, res) => {
     try {
-      await storage.deleteCrmProjectNote(req.params.noteId);
+      if (!(await canAccessCrmProject(getUserId(req)!, req.params.projectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      const notes = await storage.getCrmProjectNotes(req.params.projectId);
+      if (notes.some((note) => note.id === req.params.noteId)) {
+        await storage.deleteCrmProjectNote(req.params.noteId);
+      }
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting CRM project note:", error);
@@ -3927,6 +3944,9 @@ Instructions:
     try {
       const { crmProjectId, includeArchived } = req.query;
       if (!crmProjectId) return res.status(400).json({ message: "crmProjectId is required" });
+      if (!(await canAccessCrmProject(getUserId(req)!, crmProjectId as string))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const taskList = await storage.getTasks({
         crmProjectId: crmProjectId as string,
         includeArchived: includeArchived === "true",
@@ -3944,6 +3964,9 @@ Instructions:
       if (!crmProjectId || !name?.trim()) {
         return res.status(400).json({ message: "crmProjectId and name are required" });
       }
+      if (!(await canAccessCrmProject(userId, crmProjectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const task = await storage.createTask({
         crmProjectId,
         name: name.trim(),
@@ -3960,7 +3983,9 @@ Instructions:
   app.patch("/api/tasks/:id", isAuthenticated, async (req: any, res) => {
     try {
       const task = await storage.getTask(req.params.id);
-      if (!task) return res.status(404).json({ message: "Task not found" });
+      if (!task || !(await canAccessCrmProject(getUserId(req)!, task.crmProjectId))) {
+        return res.status(404).json({ message: "Task not found" });
+      }
       const { name, description, status } = req.body;
       const updated = await storage.updateTask(req.params.id, {
         ...(name !== undefined && { name: name.trim() }),
@@ -3976,7 +4001,9 @@ Instructions:
   app.delete("/api/tasks/:id", isAuthenticated, async (req: any, res) => {
     try {
       const task = await storage.getTask(req.params.id);
-      if (!task) return res.status(404).json({ message: "Task not found" });
+      if (!task || !(await canAccessCrmProject(getUserId(req)!, task.crmProjectId))) {
+        return res.status(404).json({ message: "Task not found" });
+      }
       await storage.deleteTask(req.params.id);
       res.json({ ok: true });
     } catch (error) {
@@ -3989,7 +4016,9 @@ Instructions:
   app.get("/api/crm/projects/:id/members", isAuthenticated, async (req: any, res) => {
     try {
       const crmProject = await storage.getCrmProject(req.params.id);
-      if (!crmProject) return res.status(404).json({ message: "Project not found" });
+      if (!crmProject || !(await canAccessProject(getUserId(req)!, crmProject.projectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const members = await storage.getProjectMembers(req.params.id);
       res.json(members);
     } catch (error) {
@@ -4003,7 +4032,9 @@ Instructions:
     try {
       const callerId = getUserId(req)!;
       const crmProject = await storage.getCrmProject(req.params.id);
-      if (!crmProject) return res.status(404).json({ message: "Project not found" });
+      if (!crmProject || !(await canAccessProject(callerId, crmProject.projectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
 
       const targetUserId: string = req.body?.userId || callerId;
 
@@ -4028,6 +4059,9 @@ Instructions:
   app.delete("/api/crm/projects/:id/members/me", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
+      if (!(await canAccessCrmProject(userId, req.params.id))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       await storage.removeProjectMember(req.params.id, userId);
       res.json({ ok: true });
     } catch (error) {
@@ -4041,6 +4075,9 @@ Instructions:
     try {
       const callerId = getUserId(req)!;
       const { id: projectId, userId: targetUserId } = req.params;
+      if (!(await canAccessCrmProject(callerId, projectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
 
       if (targetUserId !== callerId) {
         const crmProject = await storage.getCrmProject(projectId);
@@ -4065,6 +4102,9 @@ Instructions:
   app.get("/api/crm/projects/:id/reminders", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
+      if (!(await canAccessCrmProject(userId, req.params.id))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const list = await storage.getUserRemindersForProject(userId, req.params.id);
       res.json(list);
     } catch (error) {
@@ -4077,7 +4117,9 @@ Instructions:
     try {
       const userId = getUserId(req)!;
       const crmProject = await storage.getCrmProject(req.params.id);
-      if (!crmProject) return res.status(404).json({ message: "Project not found" });
+      if (!crmProject || !(await canAccessProject(userId, crmProject.projectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
 
       // userId and crmProjectId come from the session/route, never the client body.
       const bodySchema = insertReminderSchema.omit({ userId: true, crmProjectId: true }).extend({
@@ -4291,11 +4333,11 @@ Instructions:
         return res.status(400).json({ message: "Project is required" });
       }
 
-      if (taskId === null && !(await featureIncluded("projectManagement"))) {
-        if (!(await storage.getCrmProject(crmProjectId))) {
-          return res.status(404).json({ message: "Project not found" });
-        }
-      } else {
+      if (!(await canAccessCrmProject(userId, crmProjectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      if (!(taskId === null && !(await featureIncluded("projectManagement")))) {
         if (!taskId || typeof taskId !== "string") {
           return res.status(400).json({ message: "taskId is required" });
         }
@@ -4870,6 +4912,9 @@ Instructions:
   app.post("/api/daily-updates", isAuthenticated, async (req, res) => {
     try {
       const data = createProjectDailyUpdateApiSchema.parse(req.body);
+      if (!(await canAccessCrmProject(getUserId(req)!, data.crmProjectId))) {
+        return res.status(404).json({ message: "Project not found" });
+      }
       const update = await storage.createProjectDailyUpdate({
         ...data,
         userId: getUserId(req)!,

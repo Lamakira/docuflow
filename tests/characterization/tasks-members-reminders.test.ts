@@ -70,7 +70,7 @@ describe("tasks, members and reminders (characterization)", () => {
     expect(deletedAgain.body).toEqual({ message: "Task not found" });
   });
 
-  it("validates the task payload, but not that the project exists", async () => {
+  it("validates the task payload, and refuses a project that is not there", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
 
@@ -89,16 +89,14 @@ describe("tasks, members and reminders (characterization)", () => {
       .send({ crmProjectId: "00000000-0000-0000-0000-000000000000", name: "   " });
     expect(blankName.status).toBe(400);
 
-    // Quirk: only the foreign key stops a task on a project that does not exist,
-    // and the failure is reported as a 500.
     const unknownProject = await user.agent
       .post("/api/tasks")
       .send({ crmProjectId: "00000000-0000-0000-0000-000000000000", name: "Orphan" });
-    expect(unknownProject.status).toBe(500);
-    expect(unknownProject.body).toEqual({ message: "Failed to create task" });
+    expect(unknownProject.status).toBe(404);
+    expect(unknownProject.body).toEqual({ message: "Project not found" });
   });
 
-  it("lets anyone join a project but restricts adding and removing other people", async () => {
+  it("refuses a Member who is not on the Project, and lets its owner add and remove people", async () => {
     const app = await makeApp();
     const owner = await registerUser(app);
     const outsider = await registerUser(app);
@@ -106,13 +104,20 @@ describe("tasks, members and reminders (characterization)", () => {
     const { crmProject } = await createCrmProject(owner.agent);
 
     const joined = await outsider.agent.post(`/api/crm/projects/${crmProject.id}/members`).send({});
-    expect(joined.status).toBe(201);
-    expect(joined.body).toMatchObject({ crmProjectId: crmProject.id, userId: outsider.id });
+    expect(joined.status).toBe(404);
+    expect(joined.body).toEqual({ message: "Project not found" });
 
-    // Joining twice returns the row that already existed.
-    const again = await outsider.agent.post(`/api/crm/projects/${crmProject.id}/members`).send({});
+    const added = await owner.agent
+      .post(`/api/crm/projects/${crmProject.id}/members`)
+      .send({ userId: outsider.id });
+    expect(added.status).toBe(201);
+    expect(added.body).toMatchObject({ crmProjectId: crmProject.id, userId: outsider.id });
+
+    const again = await owner.agent
+      .post(`/api/crm/projects/${crmProject.id}/members`)
+      .send({ userId: outsider.id });
     expect(again.status).toBe(201);
-    expect(again.body.id).toBe(joined.body.id);
+    expect(again.body.id).toBe(added.body.id);
 
     const refused = await outsider.agent
       .post(`/api/crm/projects/${crmProject.id}/members`)
@@ -149,12 +154,11 @@ describe("tasks, members and reminders (characterization)", () => {
     expect(left.status).toBe(200);
     expect(left.body).toEqual({ ok: true });
 
-    // Quirk: leaving is unconditional — no membership, no project check, still ok.
     const leftAgain = await outsider.agent.delete(
       "/api/crm/projects/00000000-0000-0000-0000-000000000000/members/me"
     );
-    expect(leftAgain.status).toBe(200);
-    expect(leftAgain.body).toEqual({ ok: true });
+    expect(leftAgain.status).toBe(404);
+    expect(leftAgain.body).toEqual({ message: "Project not found" });
 
     const removedByOwner = await owner.agent.delete(
       `/api/crm/projects/${crmProject.id}/members/${bystander.id}`
@@ -190,7 +194,7 @@ describe("tasks, members and reminders (characterization)", () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const other = await registerUser(app);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { memberIds: [user.id, other.id] });
     const otherProject = await createCrmProject(user.agent);
     const task = await createTask(user.agent, crmProject.id);
     const foreignTask = await createTask(user.agent, otherProject.crmProject.id);
