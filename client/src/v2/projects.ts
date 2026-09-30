@@ -480,6 +480,7 @@ export function projectVisibleTo(input: {
   userId: string;
   memberIds: string[];
   assigneeId: string | null;
+  opportunityOwnerId: string | null;
 }): boolean {
   // `/api/memberships` answers "OWNER"; some callers lowercased it and some did
   // not, and an Owner passed through as-is was treated as a Member.
@@ -487,6 +488,8 @@ export function projectVisibleTo(input: {
   if (role === "owner" || role === "administrator") return true;
   if (input.memberIds.includes(input.userId)) return true;
   if (input.memberIds.length === 0 && input.assigneeId && input.assigneeId === input.userId) return true;
+  // The server lets the Opportunity Owner reach it too (#310).
+  if (input.opportunityOwnerId && input.opportunityOwnerId === input.userId) return true;
   return false;
 }
 

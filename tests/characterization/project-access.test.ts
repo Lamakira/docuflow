@@ -127,4 +127,85 @@ describe("Project access follows Project Assignment (#310)", () => {
     const assigneeList = await assignee.agent.get("/api/projects");
     expect(assigneeList.body.map((project: { name: string }) => project.name)).toContain("Assigned");
   });
+
+  it("lets a Member reach the Opportunities they own, though someone else created them", async () => {
+    const app = await makeApp();
+    const admin = await registerAdmin(app);
+    const seller = await registerUser(app);
+    const successor = await registerUser(app);
+    const created = await createCrmProject(admin.agent, {
+      name: "Beacon deal",
+      status: "lead",
+      opportunityOwnerId: seller.id,
+    });
+    const id = created.crmProject.id;
+    const listed = async (reader: typeof seller) =>
+      (await reader.agent.get("/api/crm/projects").query({ pageSize: 50 })).body.data.map(
+        (row: { project: { name: string } }) => row.project.name,
+      );
+
+    expect((await seller.agent.get(`/api/crm/projects/${id}`)).status).toBe(200);
+    expect(await listed(seller)).toContain("Beacon deal");
+    expect((await seller.agent.get(`/api/projects/${created.project.id}/files`)).status).toBe(200);
+    expect((await successor.agent.get(`/api/crm/projects/${id}`)).status).toBe(404);
+
+    const handedOver = await admin.agent.patch(`/api/crm/projects/${id}`).send({ opportunityOwnerId: successor.id });
+    expect(handedOver.status).toBe(200);
+    expect((await successor.agent.get(`/api/crm/projects/${id}`)).status).toBe(200);
+    expect(await listed(successor)).toContain("Beacon deal");
+  });
+
+  it("lets only its author edit or delete a note, not even the Owner or Administrators", async () => {
+    const app = await makeApp();
+    const author = await registerUser(app);
+    const teammate = await registerUser(app);
+    const admin = await registerAdmin(app);
+    const owner = await registerUser(app);
+    await setWorkspaceRole(owner.id, "owner");
+    const created = await createCrmProject(author.agent, { name: "Harbor", memberIds: [author.id, teammate.id] });
+    const id = created.crmProject.id;
+    const note = await author.agent.post(`/api/crm/projects/${id}/notes`).send({ content: "Kickoff done" });
+    const contents = async () =>
+      (await author.agent.get(`/api/crm/projects/${id}/notes`)).body.map((row: { content: string }) => row.content);
+
+    for (const other of [teammate, admin, owner]) {
+      const edited = await other.agent.patch(`/api/crm/projects/${id}/notes/${note.body.id}`).send({ content: "Rewritten" });
+      expect(edited.status).toBe(403);
+      expect((await other.agent.delete(`/api/crm/projects/${id}/notes/${note.body.id}`)).status).toBe(403);
+    }
+    expect(await contents()).toEqual(["Kickoff done"]);
+
+    const own = await author.agent.patch(`/api/crm/projects/${id}/notes/${note.body.id}`).send({ content: "Kickoff moved" });
+    expect(own.status).toBe(200);
+    expect(await contents()).toEqual(["Kickoff moved"]);
+    expect((await author.agent.delete(`/api/crm/projects/${id}/notes/${note.body.id}`)).status).toBe(204);
+    expect(await contents()).toEqual([]);
+  });
+
+  it("leaves a Project the Member cannot reach out of the documentation lists", async () => {
+    const app = await makeApp();
+    const lead = await registerUser(app);
+    const outsider = await registerUser(app);
+    const created = await createCrmProject(lead.agent, { name: "Harbor" });
+    const enabled = await lead.agent
+      .patch(`/api/crm/projects/${created.crmProject.id}/documentation`)
+      .send({ enabled: true });
+    expect(enabled.status).toBe(200);
+
+    const everyName = (body: Array<{ name: string }>) => body.map((project) => project.name);
+    const pageNames = (body: { data: Array<{ project: { name: string } }>; projects: Array<{ name: string }> }) => [
+      ...body.data.map((row) => row.project.name),
+      ...body.projects.map((project) => project.name),
+    ];
+
+    const whole = await outsider.agent.get("/api/projects/documentable");
+    expect(whole.status).toBe(200);
+    expect(everyName(whole.body)).not.toContain("Harbor");
+    const paged = await outsider.agent.get("/api/projects/documentable").query({ page: 1 });
+    expect(paged.status).toBe(200);
+    expect(pageNames(paged.body)).not.toContain("Harbor");
+
+    expect(everyName((await lead.agent.get("/api/projects/documentable")).body)).toContain("Harbor");
+    expect(pageNames((await lead.agent.get("/api/projects/documentable").query({ page: 1 })).body)).toContain("Harbor");
+  });
 });

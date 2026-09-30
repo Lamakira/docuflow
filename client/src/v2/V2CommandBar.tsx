@@ -162,6 +162,7 @@ async function loadSearch(
         userId: viewer.userId,
         memberIds,
         assigneeId: project.assigneeId ?? project.assignee?.id ?? null,
+        opportunityOwnerId: project.opportunityOwnerId ?? null,
       });
     })
     .map((project) => project.project?.name)

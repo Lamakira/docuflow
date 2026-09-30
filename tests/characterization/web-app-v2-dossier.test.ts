@@ -98,6 +98,18 @@ describe("Project Dossier routing (#173)", () => {
     expect(matchV2Route("/crm/project/1").kind).toBe("dossier");
   });
 
+  it("offers Delete only on the notes the viewer wrote (#310)", () => {
+    const dossier = composeDossier(emptyInput({
+      tab: "notes",
+      project: liveProject(),
+      notes: [
+        { id: "mine", content: "Kickoff done", createdById: "user-1" },
+        { id: "theirs", content: "Scope agreed", createdById: "user-2" },
+      ],
+    }));
+    expect(dossier.notes.rows.map((row) => row.canChange)).toEqual([true, false]);
+  });
+
   it("composes Reminders CRUD, notes with audio, and openable File rows (#213)", () => {
     const dossier = composeDossier(emptyInput({
       tab: "notes",

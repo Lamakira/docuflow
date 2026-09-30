@@ -128,7 +128,7 @@ export interface ProjectsPersistence {
   updateCrmProject(id: string, data: Partial<InsertCrmProject>): Promise<CrmProject | undefined>;
   deleteCrmProject(id: string): Promise<void>;
   toggleDocumentation(crmProjectId: string, enabled: boolean): Promise<CrmProject | undefined>;
-  getDocumentationEnabledProjects(userId?: string): Promise<Project[]>;
+  getDocumentationEnabledProjects(userId?: string, scope?: ProjectDocumentScope): Promise<Project[]>;
   getProjectDocumentationPage(options: ProjectDocumentationListOptions): Promise<ProjectDocumentationPage>;
 
   getTasks(options: { crmProjectId: string; includeArchived?: boolean }): Promise<Task[]>;

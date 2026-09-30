@@ -197,6 +197,7 @@ export function V2DocumentEditor({
                 userId: user?.id ?? "",
                 memberIds,
                 assigneeId: project.assigneeId ?? project.assignee?.id ?? null,
+                opportunityOwnerId: project.opportunityOwnerId ?? null,
               });
             }),
         );

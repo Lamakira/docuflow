@@ -178,9 +178,9 @@ function workspaceUserIds() {
 }
 
 /**
- * The Projects a Member may see: one they belong to, or one they are assigned
- * while it has no Members. Owners and Administrators see every Project, so
- * callers leave this condition out for them.
+ * The Projects a Member may see: one they belong to, one they are assigned
+ * while it has no Members, or an Opportunity they own (#310). Owners and
+ * Administrators see every Project, so callers leave this condition out for them.
  */
 function crmProjectVisibleTo(viewer: string) {
   return or(
@@ -192,6 +192,7 @@ function crmProjectVisibleTo(viewer: string) {
       eq(crmProjects.assigneeId, viewer),
       sql`not exists (select 1 from ${projectMembers} where ${projectMembers.crmProjectId} = ${crmProjects.id})`,
     ),
+    eq(crmProjects.opportunityOwnerId, viewer),
   );
 }
 
@@ -1491,10 +1492,9 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getDocumentationEnabledProjects(userId?: string): Promise<Project[]> {
-    // Visible to the whole Workspace, which is what "company-wide" meant when
-    // there was one company per install. It is not visible across Workspaces:
-    // both sides of the join are Workspace-owned, so both are scoped.
+  async getDocumentationEnabledProjects(userId?: string, scope: ProjectDocumentScope = {}): Promise<Project[]> {
+    // Both sides of the join are Workspace-owned, so both are scoped. Within the
+    // Workspace, `scope` holds a Member to the Projects they may see (#310).
     const result = await db
       .select({ project: projects })
       .from(projects)
@@ -1502,7 +1502,8 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(crmProjects.documentationEnabled, 1),
         inWorkspace(projects),
-        inWorkspace(crmProjects)
+        inWorkspace(crmProjects),
+        scope.visibleToUserId ? crmProjectVisibleTo(scope.visibleToUserId) : undefined
       ))
       .orderBy(desc(projects.updatedAt));
     

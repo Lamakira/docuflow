@@ -135,6 +135,7 @@ function toRegisterProject(
       userId: viewer.userId,
       memberIds,
       assigneeId: project.assigneeId ?? project.assignee?.id ?? null,
+      opportunityOwnerId: project.opportunityOwnerId ?? null,
     }),
   };
 }
@@ -551,6 +552,7 @@ export function V2ProjectsPage() {
           userId: viewer.userId,
           memberIds,
           assigneeId: project.assigneeId ?? project.assignee?.id ?? null,
+          opportunityOwnerId: project.opportunityOwnerId ?? null,
         }),
       };
     }),

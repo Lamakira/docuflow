@@ -333,13 +333,26 @@ describe("Stage history and notes", () => {
     const thread = composeOpportunityNotes(
       [{ id: "n1", content: "Called the buyer.", createdAt: "2026-09-26T10:00:00Z", createdBy: { firstName: "Kofi" } }],
       now,
+      "user-1",
     );
     expect(thread.rows[0].meta).toContain("KOFI");
     expect(thread.rows[0].deleteConsequence).toMatch(/This cannot be undone\.$/);
-    expect(composeOpportunityNotes([], now)).toMatchObject({
+    expect(composeOpportunityNotes([], now, "user-1")).toMatchObject({
       empty: true,
       emptyState: { title: "No notes yet", action: "Write the first note" },
     });
+  });
+
+  it("offers Edit and Delete only on the notes the viewer wrote (#310)", () => {
+    const thread = composeOpportunityNotes(
+      [
+        { id: "n1", content: "Called the buyer.", createdAt: "2026-09-26T10:00:00Z", createdById: "user-1" },
+        { id: "n2", content: "Sent the proposal.", createdAt: "2026-09-27T10:00:00Z", createdById: "user-2" },
+      ],
+      now,
+      "user-1",
+    );
+    expect(thread.rows.map((row) => row.canChange)).toEqual([true, false]);
   });
 
   it("builds every select, dialog and confirmation from the shared components", () => {

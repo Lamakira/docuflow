@@ -603,6 +603,7 @@ type NoteComposer = { mode: "new" } | { mode: "edit"; id: string };
 
 /** A thread of dated notes, written and edited in a dialog, as the Dossier's Notes tab. */
 function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
+  const { user } = useAuth();
   const writes = useWorkspaceWrites();
   const [composer, setComposer] = useState<NoteComposer | null>(null);
   const [content, setContent] = useState("");
@@ -612,7 +613,7 @@ function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
     queryKey: notesKey,
     queryFn: () => apiRequest("GET", opportunityNotesPath(opportunityId)),
   });
-  const thread = composeOpportunityNotes(notes, new Date());
+  const thread = composeOpportunityNotes(notes, new Date(), user?.id ?? "");
 
   const onNoteError = (error: Error) => setRefusal(writes.failed(error, "Manage Opportunity Notes"));
   const saveNote = useMutation({
@@ -680,49 +681,51 @@ function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
         <article key={note.id} className="df-update-body" data-testid={`v2-opportunity-note-${note.id}`}>
           <div className="df-mono df-meta">{note.meta}</div>
           <p className="df-prose">{note.content}</p>
-          <div className="df-cluster">
-            <Button
-              variant="outline"
-              type="button"
-              className="df-btn"
-              onClick={() => open({ mode: "edit", id: note.id }, note.content)}
-              data-testid={`v2-opportunity-edit-note-${note.id}`}
-            >
-              Edit
-            </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="destructiveOutline"
-                  type="button"
-                  className="df-btn"
-                  data-testid={`v2-opportunity-delete-note-${note.id}`}
-                >
-                  Delete
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent className="df-v2 df-alert">
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete note</AlertDialogTitle>
-                  <AlertDialogDescription>{note.deleteConsequence}</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel className="df-btn" autoFocus>
-                    Keep note
-                  </AlertDialogCancel>
-                  <AlertDialogAction
-                    className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    onClick={() => {
-                      if (writes.readOnly) setRefusal(writes.refusal());
-                      else deleteNote.mutate(note.id);
-                    }}
+          {note.canChange ? (
+            <div className="df-cluster">
+              <Button
+                variant="outline"
+                type="button"
+                className="df-btn"
+                onClick={() => open({ mode: "edit", id: note.id }, note.content)}
+                data-testid={`v2-opportunity-edit-note-${note.id}`}
+              >
+                Edit
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructiveOutline"
+                    type="button"
+                    className="df-btn"
+                    data-testid={`v2-opportunity-delete-note-${note.id}`}
                   >
-                    Delete note
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="df-v2 df-alert">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete note</AlertDialogTitle>
+                    <AlertDialogDescription>{note.deleteConsequence}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="df-btn" autoFocus>
+                      Keep note
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={() => {
+                        if (writes.readOnly) setRefusal(writes.refusal());
+                        else deleteNote.mutate(note.id);
+                      }}
+                    >
+                      Delete note
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          ) : null}
         </article>
       ))}
       <V2FormDialog

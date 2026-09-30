@@ -261,9 +261,12 @@ export async function registerRoutes(
   app.get("/api/projects/documentable", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      // Without `page` the route answers every documentation-enabled Project, as before.
+      // A Member lists only the Projects they may see; Owners and Administrators
+      // see every one. `scope=visible` is the same rule (#310).
+      const scope = await visibleProjectScope(userId);
+      // Without `page` the route answers every documentation-enabled Project in that scope.
       if (req.query.page === undefined) {
-        const projects = await storage.getDocumentationEnabledProjects(userId);
+        const projects = await storage.getDocumentationEnabledProjects(userId, scope);
         return res.json(projects);
       }
       const text = (name: string) => {
@@ -278,8 +281,7 @@ export async function registerRoutes(
         projectId: text("projectId"),
         clientId: text("clientId"),
         documentation: documentation === "disabled" || documentation === "all" ? documentation : "enabled",
-        // As on the Projects register: a Member's page holds only what they may see.
-        visibleToUserId: text("scope") === "visible" && !(await canManageAdministration()) ? userId : undefined,
+        visibleToUserId: scope.visibleToUserId,
       });
       res.json(result);
     } catch (error) {
@@ -2475,6 +2477,10 @@ Instructions:
       if (!existingNote) {
         return res.status(404).json({ message: "Note not found" });
       }
+      // Only its author edits a note, the Owner and Administrators included (#310).
+      if (existingNote.createdById !== userId) {
+        return res.status(403).json({ message: "Only the author of a note can edit it" });
+      }
       const oldMentions = existingNote.mentionedUserIds || [];
       
       const updateData: { content?: string; mentionedUserIds?: string[] | null; attachments?: string | null } = {};
@@ -2518,12 +2524,18 @@ Instructions:
   // Delete a note
   app.delete("/api/crm/projects/:projectId/notes/:noteId", isAuthenticated, async (req: any, res) => {
     try {
-      if (!(await canAccessCrmProject(getUserId(req)!, req.params.projectId))) {
+      const userId = getUserId(req)!;
+      if (!(await canAccessCrmProject(userId, req.params.projectId))) {
         return res.status(404).json({ message: "Project not found" });
       }
       const notes = await storage.getCrmProjectNotes(req.params.projectId);
-      if (notes.some((note) => note.id === req.params.noteId)) {
-        await storage.deleteCrmProjectNote(req.params.noteId);
+      const note = notes.find((row) => row.id === req.params.noteId);
+      // Only its author deletes a note, the Owner and Administrators included (#310).
+      if (note && note.createdById !== userId) {
+        return res.status(403).json({ message: "Only the author of a note can delete it" });
+      }
+      if (note) {
+        await storage.deleteCrmProjectNote(note.id);
       }
       res.status(204).send();
     } catch (error) {

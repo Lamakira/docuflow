@@ -3,9 +3,9 @@ import { canManageAdministration } from "../../workspaceRole";
 
 /**
  * Project Assignment (#310). Owners and Administrators reach every Project.
- * A Member reaches a Project they belong to, or one they are assigned while
- * it has no Members. Callers answer anyone else the way they answer a Project
- * that is not there.
+ * A Member reaches a Project they belong to, one they are assigned while it
+ * has no Members, or an Opportunity they own. Callers answer anyone else the
+ * way they answer a Project that is not there.
  */
 export async function canAccessProject(userId: string, projectId: string): Promise<boolean> {
   if (await canManageAdministration()) return true;
