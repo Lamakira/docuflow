@@ -18,13 +18,9 @@ import { loginDevice, type AgentDevice } from "../helpers/agent";
  * `/api/agent/worked-today`, `/api/agent/today-breakdown` — is undocumented.
  *
  * Behavior quirks frozen here:
- *  - Existence is the whole rule: the picker is workspace-wide, and the
- *    endpoints behind it check only that the id resolves. Anything the desktop
- *    offers, it can open; a documentation-only project, which the picker never
- *    offers, opens too. #31 removed the membership gate that used to make the
- *    picker lie — it was the only such gate in the product, and the SPA's task
- *    routes never had one. ADR-0019 records that as a temporary exception to
- *    ADR-0004 and ADR-0006, which these assertions move with when it lifts.
+ *  - The picker and the routes behind it follow Project Assignment (#310,
+ *    ADR-0028). A Member sees a Project they belong to. Anything else is
+ *    answered as a Project that is not there, on the desktop and in the browser.
  *  - The agent and the SPA share one workspace: a project created from the
  *    desktop is a normal CRM project, owned by whoever created it.
  *  - Day totals count stopped entries only; the running one is the client's job
@@ -74,7 +70,7 @@ describe("desktop agent workspace (characterization)", () => {
     expect(res.body).toEqual({ requiresTask: true });
   });
 
-  it("lists every project in the workspace, and opens the ones it lists", async () => {
+  it("lists the Projects this Member may see, and refuses the ones it leaves out", async () => {
     const app = await makeApp();
     const { user, device } = await agentUser(app);
     const stranger = await registerUser(app);
@@ -86,23 +82,16 @@ describe("desktop agent workspace (characterization)", () => {
     const { crmProject } = await createCrmProject(user.agent, { name: "Agent Visible" });
     const theirs = await createCrmProject(stranger.agent, { name: "Someone Else's" });
 
-    // Quirk: the picker is workspace-wide. `getCrmProjects` takes a user id and
-    // ignores it, so the desktop offers every project to every agent. New
-    // projects sort first, by `updatedAt` descending.
     const listed = await device.request.get("/api/agent/projects");
     expect(listed.body.data).toEqual([
-      { id: theirs.crmProject.id, name: "Someone Else's", status: "lead" },
       { id: crmProject.id, name: "Agent Visible", status: "lead" },
     ]);
 
-    // And picking the stranger's project works — the list and the endpoints
-    // behind it agree now (#31). Before, this was a 403 on every project the
-    // caller could see but held no membership on.
     const tasks = await device.request
       .get("/api/agent/tasks")
       .query({ crmProjectId: theirs.crmProject.id });
-    expect(tasks.status).toBe(200);
-    expect(tasks.body).toEqual({ data: [] });
+    expect(tasks.status).toBe(404);
+    expect(tasks.body).toEqual({ message: "Project not found" });
   });
 
   it("creates a CRM project the browser sees too", async () => {
@@ -161,21 +150,11 @@ describe("desktop agent workspace (characterization)", () => {
     expect(unknownProject.status).toBe(404);
     expect(unknownProject.body).toEqual({ message: "Project not found" });
 
-    // A caller with no membership on the project reads its tasks like anyone
-    // else — `durationToday` is per-caller, so the stranger's own total is zero.
     const foreign = await strangersDevice.request
       .get("/api/agent/tasks")
       .query({ crmProjectId: crmProject.id });
-    expect(foreign.status).toBe(200);
-    expect(foreign.body.data).toEqual([
-      {
-        id: task.id,
-        name: "Write the runbook",
-        status: "open",
-        durationToday: 0,
-        crmProjectId: crmProject.id,
-      },
-    ]);
+    expect(foreign.status).toBe(404);
+    expect(foreign.body).toEqual({ message: "Project not found" });
 
     const listed = await device.request
       .get("/api/agent/tasks")
@@ -229,13 +208,11 @@ describe("desktop agent workspace (characterization)", () => {
       .send({ crmProjectId: randomUUID(), name: "Orphan" });
     expect(unknownProject.status).toBe(404);
 
-    // The project must exist, but the caller need not belong to it — the same
-    // rule the SPA's `POST /api/tasks` has always had (#31).
     const foreign = await strangersDevice.request
       .post("/api/agent/tasks")
       .send({ crmProjectId: crmProject.id, name: "Not mine" });
-    expect(foreign.status).toBe(201);
-    expect(foreign.body.name).toBe("Not mine");
+    expect(foreign.status).toBe(404);
+    expect(foreign.body).toEqual({ message: "Project not found" });
 
     const created = await device.request
       .post("/api/agent/tasks")

@@ -302,6 +302,7 @@ export function V2DossierPage() {
     enabled: Boolean(projectId),
     queryFn: async () => {
       const res = await fetch(`/api/crm/projects/${projectId}`, { credentials: "include" });
+      // A Project this reader cannot reach is 404, the same answer as one that is not there (#310).
       if (res.status === 404) return null;
       if (!res.ok) throw new Error("Failed to fetch Project");
       return res.json();
@@ -1861,30 +1862,32 @@ function DossierNotes({
           <div className="df-mono df-meta">{note.meta}</div>
           <p className="df-prose">{note.content}</p>
           {note.audioUrl ? <V2NoteAudioPlayer audioUrl={note.audioUrl} audioRecordingId={note.audioRecordingId ?? undefined} transcriptStatus={note.transcriptStatus ?? undefined} audioTranscript={note.audioTranscript ?? undefined} /> : null}
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructiveOutline" type="button" className="df-btn" data-testid={`v2-dossier-delete-note-${note.id}`}>
-                Delete
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent className="df-v2 df-alert">
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete note</AlertDialogTitle>
-                <AlertDialogDescription>{note.deleteConsequence}</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel className="df-btn" autoFocus>
-                  Keep note
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  onClick={() => onDeleteNote(note.id)}
-                >
-                  Delete note
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          {note.canChange ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructiveOutline" type="button" className="df-btn" data-testid={`v2-dossier-delete-note-${note.id}`}>
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="df-v2 df-alert">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete note</AlertDialogTitle>
+                  <AlertDialogDescription>{note.deleteConsequence}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="df-btn" autoFocus>
+                    Keep note
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => onDeleteNote(note.id)}
+                  >
+                    Delete note
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null}
         </article>
       ))}
     </section>

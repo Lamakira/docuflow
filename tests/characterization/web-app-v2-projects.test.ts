@@ -174,6 +174,7 @@ describe("Projects register from live Project rows (#185)", () => {
         userId: "user-1",
         memberIds: ["user-2"],
         assigneeId: null,
+        opportunityOwnerId: null,
       }),
     ).toBe(false);
     expect(
@@ -182,6 +183,7 @@ describe("Projects register from live Project rows (#185)", () => {
         userId: "user-1",
         memberIds: ["user-1"],
         assigneeId: null,
+        opportunityOwnerId: null,
       }),
     ).toBe(true);
     expect(
@@ -190,6 +192,19 @@ describe("Projects register from live Project rows (#185)", () => {
         userId: "user-1",
         memberIds: ["user-2"],
         assigneeId: null,
+        opportunityOwnerId: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("shows a Member the Opportunity they own, as the server does (#310)", () => {
+    expect(
+      projectVisibleTo({
+        role: "member",
+        userId: "user-1",
+        memberIds: ["user-2"],
+        assigneeId: null,
+        opportunityOwnerId: "user-1",
       }),
     ).toBe(true);
   });

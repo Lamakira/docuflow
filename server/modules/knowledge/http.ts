@@ -4,16 +4,16 @@
  */
 
 import type { Express, Response } from "express";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { crmProjects, files, projectMembers } from "@shared/schema";
+import { files } from "@shared/schema";
 import { ACCESS_LEVELS, type AccessLevel } from "@shared/documentAccess";
 import { isAuthenticated, getUserId } from "../../auth";
 import { db } from "../../db";
 import { storage } from "../../storage";
 import { ObjectNotFoundError, ObjectStorageService } from "../../objectStorage";
-import { canManageAdministration } from "../../workspaceRole";
 import { inWorkspace } from "../../workspaceContext";
+import { canAccessProject } from "../projects/access";
 import {
   AccessChangeError,
   accessViewer,
@@ -71,31 +71,10 @@ async function saveAccess(req: any, res: Response, state: AccessState | null, no
   return null;
 }
 
-/**
- * Who may reach a Project's Files: the Owner and Administrators, and Members
- * with a Project Assignment — or the Project Manager when nobody is assigned,
- * as the Project Documentation register already scopes its page.
- */
+/** Who may reach a Project's Files: whoever may reach the Project (#310). */
 async function canReachProject(projectId: string, userId: string): Promise<boolean> {
   const project = await storage.getProject(projectId);
-  if (!project) return false;
-  if (await canManageAdministration()) return true;
-  const [row] = await db
-    .select({ id: crmProjects.id })
-    .from(crmProjects)
-    .where(
-      and(
-        eq(crmProjects.projectId, projectId),
-        inWorkspace(crmProjects),
-        sql`(
-          exists (select 1 from ${projectMembers} where ${projectMembers.crmProjectId} = ${crmProjects.id} and ${projectMembers.userId} = ${userId})
-          or (${crmProjects.assigneeId} = ${userId}
-              and not exists (select 1 from ${projectMembers} where ${projectMembers.crmProjectId} = ${crmProjects.id}))
-        )`,
-      ),
-    )
-    .limit(1);
-  return Boolean(row);
+  return Boolean(project) && (await canAccessProject(userId, projectId));
 }
 
 async function projectFile(projectId: string, fileId: string) {

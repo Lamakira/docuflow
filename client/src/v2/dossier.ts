@@ -153,6 +153,7 @@ export type DossierNote = {
   transcriptStatus?: string | null;
   audioTranscript?: string | null;
   attachments?: string | null;
+  createdById?: string | null;
   createdBy?: DossierPerson | null;
 };
 
@@ -318,7 +319,8 @@ export type DossierModel = {
     emptyState: DossierEmptyState;
   };
   notes: {
-    rows: Array<{ id: string; content: string; meta: string; audioUrl: string | null; audioRecordingId: string | null; transcriptStatus: string | null; audioTranscript: string | null; deleteConsequence: string }>;
+    /** `canChange`: only its author deletes a note (#310). */
+    rows: Array<{ id: string; content: string; meta: string; audioUrl: string | null; audioRecordingId: string | null; transcriptStatus: string | null; audioTranscript: string | null; deleteConsequence: string; canChange: boolean }>;
     empty: boolean;
     emptyCopy: string;
     emptyState: DossierEmptyState;
@@ -786,6 +788,7 @@ function composeNotes(input: DossierInput): DossierModel["notes"] {
     transcriptStatus: note.transcriptStatus ?? null,
     audioTranscript: note.audioTranscript ?? null,
     deleteConsequence: `${noteName(note.content)} will be deleted from this Project, with its recording and attached Files. This cannot be undone.`,
+    canChange: Boolean(note.createdById) && note.createdById === input.currentUserId,
   }));
   return {
     rows,

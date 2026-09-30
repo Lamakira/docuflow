@@ -129,7 +129,7 @@ describe("desktop agent timer (characterization)", () => {
     expect(refresh.body).toEqual({ code: "device_revoked", message: "Device has been revoked" });
   });
 
-  it("validates a start against the project and the task, but not membership", async () => {
+  it("validates a start against the project and the task, and against Project Assignment", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const stranger = await registerUser(app);
@@ -147,16 +147,12 @@ describe("desktop agent timer (characterization)", () => {
     expect(unknownProject.status).toBe(404);
     expect(unknownProject.body).toEqual({ message: "Project not found" });
 
-    // A stranger to the project starts a timer on it (#31): visibility is the
-    // rule, as it already was on the SPA's `/api/time-tracking/start`. The entry
-    // belongs to whoever started it, not to the project's owner.
     const strangerDevice = await loginDevice(app, stranger);
     const foreign = await strangerDevice.request
       .post("/api/agent/timer/start")
       .send({ crmProjectId, taskId });
-    expect(foreign.status).toBe(200);
-    expect(foreign.body.userId).toBe(stranger.id);
-    await strangerDevice.request.post(`/api/agent/timer/${foreign.body.id}/stop`);
+    expect(foreign.status).toBe(404);
+    expect(foreign.body).toEqual({ message: "Project not found" });
 
     // With the tasks migration applied, a task is mandatory — the same rule the
     // SPA's `/api/time-tracking/capabilities` advertises.

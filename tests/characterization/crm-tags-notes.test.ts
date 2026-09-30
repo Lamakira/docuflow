@@ -84,20 +84,17 @@ describe("CRM tags and notes (characterization)", () => {
     expect(detached.status).toBe(204);
     expect((await user.agent.get(`/api/crm/projects/${crmProject.id}/tags`)).body).toEqual([]);
 
-    // Quirk: no existence check, so the foreign key rejects it and the generic
-    // catch turns that into a 500.
     const unknownProject = await user.agent.post(
       `/api/crm/projects/00000000-0000-0000-0000-000000000000/tags/${tag.body.id}`
     );
-    expect(unknownProject.status).toBe(500);
-    expect(unknownProject.body).toEqual({ message: "Failed to add tag to project" });
+    expect(unknownProject.status).toBe(404);
+    expect(unknownProject.body).toEqual({ message: "Project not found" });
 
-    // Reading tags for an unknown project is simply empty.
     const unknownTags = await user.agent.get(
       "/api/crm/projects/00000000-0000-0000-0000-000000000000/tags"
     );
-    expect(unknownTags.status).toBe(200);
-    expect(unknownTags.body).toEqual([]);
+    expect(unknownTags.status).toBe(404);
+    expect(unknownTags.body).toEqual({ message: "Project not found" });
   });
 
   it("creates a note with its author inlined and attachments stringified", async () => {
@@ -134,12 +131,11 @@ describe("CRM tags and notes (characterization)", () => {
     expect(invalid.status).toBe(400);
     expect(invalid.body.message).toBe("Invalid data");
 
-    // Quirk: an unknown project is only caught by the foreign key.
     const unknownProject = await user.agent
       .post("/api/crm/projects/00000000-0000-0000-0000-000000000000/notes")
       .send({ content: "Orphan note" });
-    expect(unknownProject.status).toBe(500);
-    expect(unknownProject.body).toEqual({ message: "Failed to create note" });
+    expect(unknownProject.status).toBe(404);
+    expect(unknownProject.body).toEqual({ message: "Project not found" });
   });
 
   it("notifies mentioned users on create, and only new mentions on update", async () => {

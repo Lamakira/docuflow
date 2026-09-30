@@ -134,7 +134,7 @@ describe("project daily updates (characterization)", () => {
     const admin = await registerAdmin(app);
     const manager = await registerUser(app);
     const member = await registerUser(app);
-    const { crmProject } = await createCrmProject(admin.agent);
+    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [member.id] });
 
     await member.agent
       .post("/api/daily-updates")
@@ -168,7 +168,7 @@ describe("project daily updates (characterization)", () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const member = await registerUser(app);
-    const { crmProject } = await createCrmProject(admin.agent);
+    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [member.id] });
 
     await member.agent.post("/api/daily-updates").send({
       crmProjectId: crmProject.id,
@@ -199,7 +199,7 @@ describe("project daily updates (characterization)", () => {
     const admin = await registerAdmin(app);
     const submitted = await registerUser(app, { firstName: "Sub" });
     const missing = await registerUser(app, { firstName: "Miss" });
-    const { crmProject } = await createCrmProject(admin.agent);
+    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [submitted.id] });
 
     await submitted.agent
       .post("/api/daily-updates")
@@ -226,7 +226,7 @@ describe("project daily updates (characterization)", () => {
     await grantDailyUpdatesAccess(manager.id);
     const submitted = await registerUser(app, { firstName: "Sub" });
     const missing = await registerUser(app, { firstName: "Miss" });
-    const { crmProject } = await createCrmProject(manager.agent);
+    const { crmProject } = await createCrmProject(manager.agent, { memberIds: [manager.id, submitted.id] });
 
     await submitted.agent
       .post("/api/daily-updates")

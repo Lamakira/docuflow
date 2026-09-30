@@ -756,17 +756,19 @@ export type OpportunityNoteInput = {
   id: string;
   content: string;
   createdAt: Date | string | null;
+  createdById?: string | null;
   createdBy?: Person | null;
 };
 
 export type OpportunityNotesModel = {
-  rows: Array<{ id: string; content: string; meta: string; deleteConsequence: string }>;
+  /** `canChange`: only its author edits or deletes a note (#310). */
+  rows: Array<{ id: string; content: string; meta: string; deleteConsequence: string; canChange: boolean }>;
   empty: boolean;
   emptyState: { title: string; copy: string; action: string };
 };
 
 /** The Opportunity's thread of dated notes, as the Dossier's Notes tab shows a Project's. */
-export function composeOpportunityNotes(notes: OpportunityNoteInput[], now: Date): OpportunityNotesModel {
+export function composeOpportunityNotes(notes: OpportunityNoteInput[], now: Date, viewerId: string): OpportunityNotesModel {
   const rows = notes.map((note) => ({
     id: note.id,
     content: note.content,
@@ -774,6 +776,7 @@ export function composeOpportunityNotes(notes: OpportunityNoteInput[], now: Date
       .filter(Boolean)
       .join(" · "),
     deleteConsequence: `${noteName(note.content)} will be deleted from this Opportunity. This cannot be undone.`,
+    canChange: Boolean(note.createdById) && note.createdById === viewerId,
   }));
   return {
     rows,

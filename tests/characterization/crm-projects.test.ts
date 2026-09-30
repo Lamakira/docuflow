@@ -147,10 +147,14 @@ describe("CRM projects (characterization)", () => {
       name: "Explicit members",
       memberIds: [teammate.id],
     });
-    const explicitMembers = await owner.agent.get(
+    // Passing memberIds without the creator removes them, and with that their access.
+    const hiddenFromCreator = await owner.agent.get(
       `/api/crm/projects/${excludingCreator.crmProject.id}/members`
     );
-    // Quirk: passing memberIds without the creator removes the creator again.
+    expect(hiddenFromCreator.status).toBe(404);
+    const explicitMembers = await teammate.agent.get(
+      `/api/crm/projects/${excludingCreator.crmProject.id}/members`
+    );
     expect(explicitMembers.body.map((m: { userId: string }) => m.userId)).toEqual([teammate.id]);
 
     const withAssignee = await createCrmProject(owner.agent, {
@@ -226,6 +230,7 @@ describe("CRM projects (characterization)", () => {
   it("narrows by Project Status, Client, Lead, Tag, Project type and due date (#275)", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
+    await setWorkspaceRole(user.id, "administrator");
     const teammate = await registerUser(app);
     const client = await createClient(user.agent, { name: "Acme" });
     const acme = await createCrmProject(user.agent, {
@@ -367,9 +372,9 @@ describe("CRM projects (characterization)", () => {
       "With member",
     ]);
 
-    // Without the scope the route answers as it always has.
+    // The list uses the same rule without `scope=visible` (#310).
     const unscoped = await member.agent.get("/api/crm/projects").query({ pageSize: 50 });
-    expect(unscoped.body.total).toBe(4);
+    expect(unscoped.body.total).toBe(2);
 
     const adminView = await admin.agent.get("/api/crm/projects").query({ scope: "visible", pageSize: 50 });
     expect(adminView.body.total).toBe(4);

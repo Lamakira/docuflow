@@ -8,8 +8,8 @@ import { createCrmProject, createDocument, tiptap } from "../helpers/fixtures";
  * Characterization: projects and their TipTap document tree.
  *
  * Quirks frozen here:
- *  - Every project is visible to every authenticated user. `getProjects` takes a
- *    user id and ignores it, so "my projects" is really "all projects".
+ *  - A Member lists and opens only the Projects they may see (#310). `getProjects`
+ *    takes a user id for that scope.
  *  - `POST /api/projects` and `DELETE /api/projects/:id` are retired in place:
  *    they answer 400 with a `redirectTo` pointing at the CRM routes.
  *  - `PATCH /api/projects/:id` accepts only `name`; other fields are silently
@@ -25,7 +25,7 @@ describe("projects and documents (characterization)", () => {
     await resetDb();
   });
 
-  it("lists every project regardless of who owns it, newest update first", async () => {
+  it("lists the Projects a Member may see, newest update first", async () => {
     const app = await makeApp();
     const owner = await registerUser(app);
     const other = await registerUser(app);
@@ -35,16 +35,16 @@ describe("projects and documents (characterization)", () => {
 
     const asOwner = await owner.agent.get("/api/projects");
     expect(asOwner.status).toBe(200);
-    // Quirk: company-wide visibility — the other user's project is listed too.
-    expect(asOwner.body.map((p: { id: string }) => p.id)).toEqual([
-      second.project.id,
-      first.project.id,
-    ]);
+    expect(asOwner.body.map((p: { id: string }) => p.id)).toEqual([first.project.id]);
 
     const asOther = await other.agent.get("/api/projects");
-    expect(asOther.body).toHaveLength(2);
+    expect(asOther.body.map((p: { id: string }) => p.id)).toEqual([second.project.id]);
 
-    const single = await other.agent.get(`/api/projects/${first.project.id}`);
+    const hidden = await other.agent.get(`/api/projects/${first.project.id}`);
+    expect(hidden.status).toBe(404);
+    expect(hidden.body).toEqual({ message: "Project not found" });
+
+    const single = await owner.agent.get(`/api/projects/${first.project.id}`);
     expect(single.status).toBe(200);
     expect(single.body).toMatchObject({ id: first.project.id, name: "Alpha", ownerId: owner.id });
 
