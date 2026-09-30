@@ -184,6 +184,15 @@ describe("Dossier Settings reads as labelled groups (#277)", () => {
     expect(dossierSource).toMatch(/<V2FilterSelect\s+label=""\s+ariaLabel="Add Project Assignment"/);
   });
 
+  it("offers the Danger zone to the Owner and Administrators only, who alone may delete a Project", () => {
+    expect(composeDossier(input({ tab: "settings", canDeleteProject: true })).settings.canDelete).toBe(true);
+    expect(composeDossier(input({ tab: "settings", canDeleteProject: false })).settings.canDelete).toBe(false);
+    // A reader whose Workspace Role is not known yet sees no delete.
+    expect(composeDossier(input({ tab: "settings" })).settings.canDelete).toBe(false);
+    expect(dossierSource).toMatch(/\{settings\.canDelete \? \(\s*<SettingsCard\s+title="Danger zone"/);
+    expect(dossierSource).toContain("canDeleteProject: canManageAdministration(current?.workspaceRole ?? \"\")");
+  });
+
   it("asks before deleting a Project, and names everything the delete takes", () => {
     const dossier = composeDossier(input({ tab: "settings" }));
     expect(dossier.settings.deleteConsequence).toContain("Onboarding");

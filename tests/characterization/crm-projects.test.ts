@@ -411,6 +411,8 @@ describe("CRM projects (characterization)", () => {
     expect(missing.status).toBe(404);
     expect(missing.body).toEqual({ message: "Project not found in CRM" });
 
+    // Deleting a Project is the Owner's and Administrators' to do.
+    await setWorkspaceRole(user.id, "administrator");
     const deleted = await user.agent.delete(`/api/crm/projects/by-project/${created.project.id}`);
     expect(deleted.status).toBe(204);
 
@@ -618,9 +620,36 @@ describe("CRM projects (characterization)", () => {
     expect(missing.body).toEqual({ message: "Source project not found" });
   });
 
+  it("lets only the Owner and Administrators delete a Project, by either route", async () => {
+    const app = await makeApp();
+    const member = await registerUser(app);
+    const admin = await registerUser(app);
+    await setWorkspaceRole(admin.id, "administrator");
+    const owner = await registerUser(app);
+    await setWorkspaceRole(owner.id, "owner");
+    // The Member created it, so they are on it: still not theirs to delete.
+    const first = await createCrmProject(member.agent, { name: "First" });
+    const second = await createCrmProject(member.agent, { name: "Second" });
+
+    for (const path of [
+      `/api/crm/projects/${first.crmProject.id}`,
+      `/api/crm/projects/by-project/${first.project.id}`,
+    ]) {
+      const refused = await member.agent.delete(path);
+      expect(refused.status).toBe(403);
+      expect(refused.body).toEqual({ message: "Access denied" });
+    }
+    expect((await member.agent.get(`/api/crm/projects/${first.crmProject.id}`)).status).toBe(200);
+
+    expect((await admin.agent.delete(`/api/crm/projects/${first.crmProject.id}`)).status).toBe(204);
+    expect((await owner.agent.delete(`/api/crm/projects/by-project/${second.project.id}`)).status).toBe(204);
+    expect((await member.agent.get(`/api/crm/projects/${second.crmProject.id}`)).status).toBe(404);
+  });
+
   it("deletes a CRM project and its `project` row", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
+    await setWorkspaceRole(user.id, "administrator");
     const created = await createCrmProject(user.agent);
 
     const res = await user.agent.delete(`/api/crm/projects/${created.crmProject.id}`);

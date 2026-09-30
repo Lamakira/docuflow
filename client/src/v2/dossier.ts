@@ -162,6 +162,8 @@ export type DossierInput = {
   tab: DossierTabId;
   /** The page the Documentation tab opens (#307). */
   documentId?: string | null;
+  /** The reader is the Owner or an Administrator, who alone may delete a Project. */
+  canDeleteProject?: boolean;
   project: DossierProject | null;
   tasks: DossierTask[];
   documents: DossierDocument[];
@@ -338,6 +340,8 @@ export type DossierModel = {
     memberRows: Array<{ id: string; name: string; self: boolean; action: string; consequence: string }>;
     documentationEnabled: boolean;
     documentation: { row: DossierSettingRow; copy: string; action: string };
+    /** Only the Owner and Administrators see the Danger zone. */
+    canDelete: boolean;
     deleteConsequence: string;
   };
   history: {
@@ -822,6 +826,7 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
       memberRows: [],
       documentationEnabled,
       documentation,
+      canDelete: false,
       deleteConsequence: "",
     };
   }
@@ -888,6 +893,7 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
     memberRows,
     documentationEnabled,
     documentation,
+    canDelete: input.canDeleteProject === true,
     deleteConsequence: `${name} and everything filed under it — its Tasks, Time Entries, Notes, Reminders and Project Documents — will be deleted for everyone in this Workspace. This cannot be undone.`,
   };
 }

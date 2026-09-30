@@ -2222,7 +2222,9 @@ Instructions:
 
   // Delete CRM project by project ID (for Documentation page)
   // NOTE: This route MUST come before /api/crm/projects/:id to avoid matching "by-project" as :id
-  app.delete("/api/crm/projects/by-project/:projectId", isAuthenticated, async (req: any, res) => {
+  // Deleting a Project takes everything filed under it, so it is the Owner's
+  // and Administrators' to do, on either route.
+  app.delete("/api/crm/projects/by-project/:projectId", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const crmProject = await storage.getCrmProjectByProjectId(req.params.projectId);
       
@@ -2230,7 +2232,6 @@ Instructions:
         return res.status(404).json({ message: "Project not found in CRM" });
       }
       
-      // Company-wide access - all authenticated users can delete CRM projects
       await storage.deleteCrmProject(crmProject.id);
       res.status(204).send();
     } catch (error) {
@@ -2240,7 +2241,7 @@ Instructions:
   });
 
   // Delete CRM project by CRM project ID
-  app.delete("/api/crm/projects/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/crm/projects/:id", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
       const crmProject = await storage.getCrmProject(req.params.id);
@@ -2249,7 +2250,6 @@ Instructions:
         return res.status(404).json({ message: "CRM Project not found" });
       }
       
-      // Company-wide access - all authenticated users can delete CRM projects
       await storage.deleteCrmProject(req.params.id);
       res.status(204).send();
     } catch (error) {

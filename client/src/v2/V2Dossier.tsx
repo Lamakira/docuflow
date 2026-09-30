@@ -46,6 +46,7 @@ import { motionForSurface } from "./motion";
 import { isStandingRefusal, notify } from "./notify";
 import { meterTone, swatchStyle } from "./palette";
 import { dossierDocumentHref, matchV2Route } from "./presentation";
+import { canManageAdministration } from "./administration";
 import { V2DocumentEditor } from "./V2Document";
 import { PageTree } from "@/components/PageTree";
 import {
@@ -790,6 +791,7 @@ export function V2DossierPage() {
     currentUserId: user?.id ?? "",
     tab,
     documentId: openDocumentId,
+    canDeleteProject: canManageAdministration(current?.workspaceRole ?? ""),
     project: project ? toDossierProject(project) : null,
     tasks: (tasksResponse?.data ?? []).map(toDossierTask),
     documents: documents.map(toDossierDocument),
@@ -2599,51 +2601,53 @@ function DossierSettings({
         </div>
       </SettingsCard>
 
-      <SettingsCard
-        title="Danger zone"
-        sub="What happens here cannot be undone."
-        testId="v2-dossier-settings-danger"
-        danger
-      >
-        <div className="df-settings-grid">
-          <div className="df-settings-row">
-            <span className="df-settings-label">DELETE</span>
-            <span className="df-settings-value df-settings-inline">
-              <span className="df-settings-copy">Delete this Project and everything filed under it.</span>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="destructiveOutline"
-                    type="button"
-                    className="df-btn"
-                    disabled={deletePending}
-                    data-testid="v2-dossier-delete-project"
-                  >
-                    {deletePending ? "Deleting…" : "Delete Project"}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="df-v2 df-alert">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Project</AlertDialogTitle>
-                    <AlertDialogDescription>{settings.deleteConsequence}</AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="df-btn" autoFocus>
-                      Keep Project
-                    </AlertDialogCancel>
-                    <AlertDialogAction
-                      className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      onClick={onDeleteProject}
+      {settings.canDelete ? (
+        <SettingsCard
+          title="Danger zone"
+          sub="What happens here cannot be undone."
+          testId="v2-dossier-settings-danger"
+          danger
+        >
+          <div className="df-settings-grid">
+            <div className="df-settings-row">
+              <span className="df-settings-label">DELETE</span>
+              <span className="df-settings-value df-settings-inline">
+                <span className="df-settings-copy">Delete this Project and everything filed under it.</span>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="destructiveOutline"
+                      type="button"
+                      className="df-btn"
+                      disabled={deletePending}
+                      data-testid="v2-dossier-delete-project"
                     >
-                      Delete Project
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </span>
+                      {deletePending ? "Deleting…" : "Delete Project"}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="df-v2 df-alert">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Project</AlertDialogTitle>
+                      <AlertDialogDescription>{settings.deleteConsequence}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="df-btn" autoFocus>
+                        Keep Project
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={onDeleteProject}
+                      >
+                        Delete Project
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </span>
+            </div>
           </div>
-        </div>
-      </SettingsCard>
+        </SettingsCard>
+      ) : null}
     </div>
   );
 }
