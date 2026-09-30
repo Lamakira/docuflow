@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { registerUser } from "../helpers/auth";
+import { registerAdmin, registerUser } from "../helpers/auth";
 import { createCrmProject, createDocument, createFolder, tiptap } from "../helpers/fixtures";
 import { chatCalls, embeddingCalls, setChatReply } from "../fakes/openai";
 import { completeUpload } from "../helpers/objects";
@@ -21,8 +21,8 @@ import { pdfSaying } from "../helpers/pdf";
  *  - `citations` lists Documents included in the prompt so Ask can inspect sources.
  *  - With no embeddings to match, chat falls back to pasting whole documents
  *    into the prompt and reports `usedFallback: true`.
- *  - Every user's chat sees every project in the workspace, because the project
- *    overview is built from the company-wide project list.
+ *  - A Member's chat sees only the Projects they may see, in the overview, the
+ *    search and the fallback; Owners and Administrators see every one (#307).
  */
 describe("chat and embeddings (characterization)", () => {
   beforeEach(async () => {
@@ -49,7 +49,9 @@ describe("chat and embeddings (characterization)", () => {
     // synchronous path), so vector search comes back empty — which is what puts
     // chat on the fallback path deterministically.
     const user = await registerUser(app);
-    const { project } = await createCrmProject(author.agent, { name: "Atlas" });
+    // The reader is on the Project: a Member reads only the pages of the
+    // Projects they may see (#307).
+    const { project } = await createCrmProject(author.agent, { name: "Atlas", memberIds: [author.id, user.id] });
     await createDocument(author.agent, project.id, {
       title: "Runbook",
       content: tiptap("Restart the ingest worker"),
@@ -71,9 +73,7 @@ describe("chat and embeddings (characterization)", () => {
     const systemPrompt = call.messages[0].content;
     expect(systemPrompt).toContain("# Available Projects");
     expect(systemPrompt).toContain("Atlas");
-    // Quirk: the fallback pastes page text straight into the prompt, and
-    // `getAllUserDocuments` is company-wide — so a user who owns nothing still
-    // gets someone else's page content in their prompt.
+    // Quirk: the fallback pastes page text straight into the prompt.
     expect(systemPrompt).toContain("Restart the ingest worker");
     expect(call.messages.at(-1)).toEqual({ role: "user", content: "How do I restart?" });
   });
@@ -204,16 +204,18 @@ describe("chat and embeddings (characterization)", () => {
     expect(systemPrompt).toContain("Atlas / Deployment");
   });
 
-  it("shows every user's chat the whole workspace", async () => {
+  it("shows a Member's chat only the Projects they may see, and an Administrator's every one (#307)", async () => {
     const app = await makeApp();
     const owner = await registerUser(app);
     const stranger = await registerUser(app);
+    const admin = await registerAdmin(app);
     await createCrmProject(owner.agent, { name: "Someone Elses Project" });
 
     const res = await stranger.agent.post("/api/chat").send({ message: "what exists?" });
     expect(res.status).toBe(200);
-    // Quirk: the project overview is built from the company-wide list, so a user
-    // with no projects still sees every project name in the prompt.
+    expect(chatCalls().at(-1)!.messages[0].content).not.toContain("Someone Elses Project");
+
+    expect((await admin.agent.post("/api/chat").send({ message: "what exists?" })).status).toBe(200);
     expect(chatCalls().at(-1)!.messages[0].content).toContain("Someone Elses Project");
   });
 

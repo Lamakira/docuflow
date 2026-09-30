@@ -43,7 +43,7 @@ export type CrmClientListOptions = {
   dir?: "asc" | "desc";
 };
 
-export const CRM_CLIENT_SORTS = ["name", "company", "status", "source", "projects"] as const;
+export const CRM_CLIENT_SORTS = ["name", "company", "status", "source", "projects", "created"] as const;
 export type CrmClientSort = (typeof CRM_CLIENT_SORTS)[number];
 
 /** A register row: the Client, and how many Projects it has. */

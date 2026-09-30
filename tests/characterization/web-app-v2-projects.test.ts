@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
 import { projectStatusFromCombined } from "../../shared/projectLifecycle";
@@ -5,7 +8,12 @@ import {
   PROJECT_BOARD_COLUMNS,
   combinedStatusForProjectStatus,
   composeProjectBoard,
+  composeProjectDatesForm,
   composeProjectRegister,
+  EMPTY_PROJECT_BUDGET_DRAFT,
+  newProjectPayload,
+  PROJECT_SORTS,
+  projectDatesDraft,
   projectsAllPath,
   projectsKanbanPath,
   projectVisibleTo,
@@ -359,5 +367,78 @@ describe("Projects board (#259)", () => {
     expect(board.empty).toBe(true);
     expect(board.emptyCopy).toBe("No Projects match this filter.");
     expect(board.count).toBe(0);
+  });
+});
+
+describe("Projects register: created and due dates (#307)", () => {
+  const projectsSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Projects.tsx"),
+    "utf8",
+  );
+
+  it("shows when each Project was created and when it is due, in full, and orders by both on the server", () => {
+    const row = {
+      id: "prj-1",
+      name: "Pier survey",
+      clientName: null,
+      projectType: "internal",
+      projectStatus: "active",
+      leadName: null,
+      budgetPercent: null,
+      trackedMtd: "0.0 h",
+      visible: true,
+      tags: [],
+    };
+    const register = composeProjectRegister(
+      emptyInput({
+        projects: [
+          { ...row, createdAt: "2026-09-29T10:15:00.000Z", dueDate: "2026-10-15T00:00:00.000Z" },
+          { ...row, id: "prj-2", name: "Quay audit", createdAt: null, dueDate: null },
+        ],
+      }),
+    );
+    expect(register.rows.map((project) => [project.created, project.due])).toEqual([
+      ["29 Sep 2026", "15 Oct 2026"],
+      ["—", "—"],
+    ]);
+    expect(PROJECT_SORTS).toEqual(expect.arrayContaining(["created", "due"]));
+    expect(projectsSource).toMatch(/projectColumn\.accessor\("created", \{\s*header: "CREATED"/);
+    expect(projectsSource).toMatch(/projectColumn\.accessor\("due", \{\s*header: "DUE"/);
+  });
+});
+
+describe("A Project's start and due dates, set in v2 (#307)", () => {
+  it("holds the saved dates as the date pickers do, and sends only what changed", () => {
+    const saved = { startDate: "2026-08-01T00:00:00.000Z", dueDate: null };
+    expect(projectDatesDraft(saved)).toEqual({ startDate: "2026-08-01", dueDate: "" });
+    expect(projectDatesDraft(null)).toEqual({ startDate: "", dueDate: "" });
+
+    expect(composeProjectDatesForm({ startDate: "2026-08-01", dueDate: "2026-10-30" }, saved)).toMatchObject({
+      issue: null,
+      canSave: true,
+      patch: { dueDate: "2026-10-30" },
+    });
+    expect(composeProjectDatesForm({ startDate: "", dueDate: "" }, saved).patch).toEqual({ startDate: null });
+    expect(composeProjectDatesForm(projectDatesDraft(saved), saved)).toMatchObject({ dirty: false, patch: null });
+    expect(composeProjectDatesForm({ startDate: "2026-08-01", dueDate: "2026-07-01" }, saved)).toMatchObject({
+      canSave: false,
+      patch: null,
+      issue: "The due date comes before the start date.",
+    });
+  });
+
+  it("creates a Project with the dates New Project was given", () => {
+    const none = EMPTY_PROJECT_BUDGET_DRAFT;
+    expect(newProjectPayload("Pier", none, { startDate: "2026-10-01", dueDate: "2026-12-15" })).toEqual({
+      name: "Pier",
+      startDate: "2026-10-01",
+      dueDate: "2026-12-15",
+    });
+    expect(newProjectPayload("Pier", none, { startDate: "2026-10-01", dueDate: "" })).toEqual({
+      name: "Pier",
+      startDate: "2026-10-01",
+    });
+    expect(newProjectPayload("Pier", none)).toEqual({ name: "Pier" });
+    expect(newProjectPayload("Pier", none, { startDate: "2026-12-01", dueDate: "2026-10-01" })).toBeNull();
   });
 });

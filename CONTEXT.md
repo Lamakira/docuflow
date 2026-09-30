@@ -211,7 +211,7 @@ A Document attached to one project and visible exactly to members who can access
 _Avoid_: Documentation project, workspace document
 
 **Project File**:
-A File attached to one project, listed with that project's Project Documents and visible exactly to members who can access that project.
+A File attached to one project, listed with that project's Project Documents in Project Documentation and in the Files tab of its Project Dossier, and visible exactly to members who can access that project.
 _Avoid_: Project attachment, note attachment
 
 **Folder**:

@@ -17,8 +17,8 @@ import { createCrmProject, createDocument, tiptap } from "../helpers/fixtures";
  *    videos rather than 404 or an empty body.
  *  - Sync on a page with no content short-circuits to "No content to sync"
  *    without the `added`/`removed` counters the other branch returns.
- *  - Retrying an unknown transcript is a 404; there is no ownership check
- *    beyond the document and project existing.
+ *  - Retrying an unknown transcript is a 404, as is retrying one on a Project
+ *    the caller may not see (#307).
  */
 describe("video transcripts (characterization)", () => {
   beforeEach(async () => {

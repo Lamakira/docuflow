@@ -50,14 +50,33 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Document, DocumentWithChildren } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { pageTemplates, type PageTemplate } from "@/lib/pageTemplates";
+import { buildPageTree, pageAncestorIds } from "@/lib/pageTree";
+
+/** How the tree reports what happened: v1's toast unless the host passes its own. */
+export type PageTreeReport = { success: (message: string) => void; failure: (message: string) => void };
 
 interface PageTreeProps {
   projectId: string;
   currentDocumentId?: string;
+  /** Where a page opens. v1 opens `/document/:id`; v2 opens it in the Project Dossier (#307). */
+  pageHref?: (documentId: string) => string;
+  /** Where deleting the open page leaves the reader. */
+  afterDeleteHref?: string;
+  report?: PageTreeReport;
 }
 
-export function PageTree({ projectId, currentDocumentId }: PageTreeProps) {
+export function PageTree({
+  projectId,
+  currentDocumentId,
+  pageHref = (documentId) => `/document/${documentId}`,
+  afterDeleteHref = `/project/${projectId}`,
+  report,
+}: PageTreeProps) {
   const { toast } = useToast();
+  const notify: PageTreeReport = report ?? {
+    success: (message) => toast({ title: message }),
+    failure: (message) => toast({ title: message, variant: "destructive" }),
+  };
   const [, setLocation] = useLocation();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [showEditPage, setShowEditPage] = useState(false);
@@ -84,6 +103,14 @@ export function PageTree({ projectId, currentDocumentId }: PageTreeProps) {
     queryKey: ["/api/projects", projectId, "documents"],
   });
 
+  // The open page shows in the tree: every page above it opens.
+  useEffect(() => {
+    if (!currentDocumentId) return;
+    const above = pageAncestorIds(documents, currentDocumentId);
+    if (above.length === 0) return;
+    setExpandedIds((prev) => (above.every((id) => prev.has(id)) ? prev : new Set([...Array.from(prev), ...above])));
+  }, [documents, currentDocumentId]);
+
   const createDocumentMutation = useMutation({
     mutationFn: async (data: { title: string; parentId: string | null; content?: any; icon?: string }) => {
       return await apiRequest("POST", `/api/projects/${projectId}/documents`, data);
@@ -91,11 +118,11 @@ export function PageTree({ projectId, currentDocumentId }: PageTreeProps) {
     onSuccess: (newDoc: Document) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "documents"] });
       cancelInlineCreate();
-      toast({ title: "Page created successfully" });
-      setLocation(`/document/${newDoc.id}`);
+      notify.success("Page created successfully");
+      setLocation(pageHref(newDoc.id));
     },
     onError: () => {
-      toast({ title: "Failed to create page", variant: "destructive" });
+      notify.failure("Failed to create page");
     },
   });
 
@@ -109,10 +136,10 @@ export function PageTree({ projectId, currentDocumentId }: PageTreeProps) {
       setShowEditPage(false);
       setSelectedDocument(null);
       setPageName("");
-      toast({ title: "Page renamed successfully" });
+      notify.success("Page renamed successfully");
     },
     onError: () => {
-      toast({ title: "Failed to rename page", variant: "destructive" });
+      notify.failure("Failed to rename page");
     },
   });
 
@@ -124,13 +151,13 @@ export function PageTree({ projectId, currentDocumentId }: PageTreeProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "documents"] });
       setShowDeletePage(false);
       setSelectedDocument(null);
-      toast({ title: "Page deleted successfully" });
+      notify.success("Page deleted successfully");
       if (currentDocumentId === selectedDocument?.id) {
-        setLocation(`/project/${projectId}`);
+        setLocation(afterDeleteHref);
       }
     },
     onError: () => {
-      toast({ title: "Failed to delete page", variant: "destructive" });
+      notify.failure("Failed to delete page");
     },
   });
 
@@ -140,11 +167,11 @@ export function PageTree({ projectId, currentDocumentId }: PageTreeProps) {
     },
     onSuccess: (newDoc: Document) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "documents"] });
-      toast({ title: "Page duplicated successfully" });
-      setLocation(`/document/${newDoc.id}`);
+      notify.success("Page duplicated successfully");
+      setLocation(pageHref(newDoc.id));
     },
     onError: () => {
-      toast({ title: "Failed to duplicate page", variant: "destructive" });
+      notify.failure("Failed to duplicate page");
     },
   });
 
@@ -156,39 +183,9 @@ export function PageTree({ projectId, currentDocumentId }: PageTreeProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "documents"] });
     },
     onError: () => {
-      toast({ title: "Failed to reorder page", variant: "destructive" });
+      notify.failure("Failed to reorder page");
     },
   });
-
-  const buildTree = (docs: Document[]): DocumentWithChildren[] => {
-    const map = new Map<string, DocumentWithChildren>();
-    const roots: DocumentWithChildren[] = [];
-
-    docs.forEach((doc) => {
-      map.set(doc.id, { ...doc, children: [] });
-    });
-
-    docs.forEach((doc) => {
-      const node = map.get(doc.id)!;
-      if (doc.parentId && map.has(doc.parentId)) {
-        map.get(doc.parentId)!.children!.push(node);
-      } else {
-        roots.push(node);
-      }
-    });
-
-    const sortNodes = (nodes: DocumentWithChildren[]) => {
-      nodes.sort((a, b) => a.position - b.position);
-      nodes.forEach((node) => {
-        if (node.children && node.children.length > 0) {
-          sortNodes(node.children);
-        }
-      });
-    };
-
-    sortNodes(roots);
-    return roots;
-  };
 
   // Flatten tree to get all nodes with their parent info for drag and drop
   const flattenTree = useCallback((nodes: DocumentWithChildren[], parentId: string | null = null): Array<{ node: DocumentWithChildren; parentId: string | null; index: number }> => {
@@ -305,7 +302,7 @@ export function PageTree({ projectId, currentDocumentId }: PageTreeProps) {
     duplicateDocumentMutation.mutate(doc.id);
   };
 
-  const tree = buildTree(documents);
+  const tree = buildPageTree(documents);
 
   // Inline creation row component
   const renderInlineCreateRow = (depth: number = 0) => {
@@ -381,8 +378,23 @@ export function PageTree({ projectId, currentDocumentId }: PageTreeProps) {
               >
                 <GripVertical className="w-3 h-3 text-muted-foreground" />
               </div>
+              {hasChildren ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 flex-shrink-0 text-muted-foreground"
+                  onClick={() => toggleExpand(node.id)}
+                  aria-label={isExpanded ? `Collapse ${node.title}` : `Expand ${node.title}`}
+                  aria-expanded={isExpanded}
+                  data-testid={`button-toggle-page-${node.id}`}
+                >
+                  {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                </Button>
+              ) : (
+                <span className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
+              )}
               <Link
-                href={`/document/${node.id}`}
+                href={pageHref(node.id)}
                 className="flex items-center gap-2 flex-1 min-w-0 py-1"
                 data-testid={`link-page-${node.id}`}
               >
@@ -494,7 +506,7 @@ export function PageTree({ projectId, currentDocumentId }: PageTreeProps) {
           style={{ paddingLeft: `${depth * 20 + 8}px` }}
         >
           <Link
-            href={`/document/${node.id}`}
+            href={pageHref(node.id)}
             className="flex items-center gap-2 flex-1 min-w-0 py-1"
             data-testid={`link-page-${node.id}`}
           >

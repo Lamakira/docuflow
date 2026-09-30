@@ -32,6 +32,8 @@ import {
 import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
+import { V2DateRangeField } from "./V2DateField";
+import { dateToDay, type DayRange } from "./dates";
 
 type WorkspaceMembershipsResponse = {
   memberships: Array<{
@@ -66,8 +68,20 @@ export function V2AnalyticsPage() {
   const workspaceRole = current?.workspaceRole ?? "MEMBER";
   const canManage = canManageAdministration(workspaceRole);
   const [rangePreset, setRangePreset] = useState<AnalyticsRangePreset>("7d");
+  const [customRange, setCustomRange] = useState<DayRange | null>(null);
   const [rangeAnchor] = useState(() => new Date());
-  const range = useMemo(() => analyticsRange(rangePreset, rangeAnchor), [rangePreset, rangeAnchor]);
+  const range = useMemo(
+    () => analyticsRange(rangePreset, rangeAnchor, customRange),
+    [rangePreset, rangeAnchor, customRange],
+  );
+
+  // A custom range starts from the dates on screen, so the figures never go blank (#307).
+  function onRangeChange(preset: AnalyticsRangePreset) {
+    if (preset === "custom" && !customRange) {
+      setCustomRange({ from: dateToDay(range.start), to: dateToDay(range.end) });
+    }
+    setRangePreset(preset);
+  }
 
   const { data: people, isLoading: peopleLoading } = useQuery<WorkspaceMembershipsResponse>({
     queryKey: ["/api/workspace/memberships"],
@@ -188,7 +202,9 @@ export function V2AnalyticsPage() {
         loading={analyticsLoading}
         stacked={layout.stackedRegister}
         rangePreset={rangePreset}
-        onRangeChange={setRangePreset}
+        onRangeChange={onRangeChange}
+        customRange={customRange}
+        onCustomRangeChange={setCustomRange}
         recordedTimeRead={reportRead(recordedTimeLoading, recordedTimeFailed, recordedTime)}
         screenshotsRead={reportRead(screenshotsLoading, screenshotsFailed, screenshots)}
         evidenceQualityRead={reportRead(evidenceQualityLoading, evidenceQualityFailed, evidenceQuality)}
@@ -227,6 +243,8 @@ function AnalyticsSections({
   stacked,
   rangePreset,
   onRangeChange,
+  customRange,
+  onCustomRangeChange,
   recordedTimeRead,
   screenshotsRead,
   evidenceQualityRead,
@@ -236,6 +254,8 @@ function AnalyticsSections({
   stacked: boolean;
   rangePreset: AnalyticsRangePreset;
   onRangeChange: (preset: AnalyticsRangePreset) => void;
+  customRange: DayRange | null;
+  onCustomRangeChange: (range: DayRange) => void;
   recordedTimeRead: ReportRead;
   screenshotsRead: ReportRead;
   evidenceQualityRead: ReportRead;
@@ -277,6 +297,14 @@ function AnalyticsSections({
             active={rangePreset !== "7d"}
             testId="v2-analytics-range"
           />
+          {rangePreset === "custom" ? (
+            <V2DateRangeField
+              value={customRange}
+              onChange={onCustomRangeChange}
+              ariaLabel="Custom range"
+              testId="v2-analytics-custom-range"
+            />
+          ) : null}
           <Button asChild variant="outline" className="df-btn">
             <a
               href={analytics.export.href}

@@ -3,6 +3,7 @@ import { stageColor, stageInk } from "./stageColor";
 import { projectStatusColor } from "./palette";
 import { budgetedHoursTotal, projectHref } from "./today";
 import { readPage, readPageSize, writePaging } from "./paging";
+import { formatFullDate, utcDay } from "./dates";
 
 /**
  * Projects register (#185).
@@ -21,6 +22,8 @@ export type ProjectRegisterRowInput = {
   trackedMtd: string;
   visible: boolean;
   tags: Array<{ id: string; name: string }>;
+  createdAt?: Date | string | null;
+  dueDate?: Date | string | null;
 };
 
 export type ProjectRegisterInput = {
@@ -49,6 +52,9 @@ export type ProjectRegisterRow = {
   lead: string;
   budgetPercent: number | null;
   trackedMtd: string;
+  /** When the Project was created and when it is due, in full (#307). */
+  created: string;
+  due: string;
   href: string;
   selected: boolean;
   tags: string[];
@@ -141,7 +147,7 @@ export type ProjectRegisterFilters = {
 };
 
 /** The register columns the server orders by (`CRM_PROJECT_SORTS`). PROJECT MANAGER and TRACKED MTD are not among them. */
-export const PROJECT_SORTS = ["name", "status", "budget"] as const;
+export const PROJECT_SORTS = ["name", "status", "budget", "created", "due"] as const;
 export type ProjectSort = (typeof PROJECT_SORTS)[number];
 
 const FILTER_PARAMS = ["status", "client", "lead", "tag", "type", "due"] as const;
@@ -290,6 +296,8 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
       lead: project.leadName || "—",
       budgetPercent: project.budgetPercent,
       trackedMtd: project.trackedMtd,
+      created: formatFullDate(project.createdAt),
+      due: formatFullDate(project.dueDate, { dateOnly: true }),
       href: projectHref(project.id),
       selected: project.id === input.selectedId,
       tags: project.tags.map((tag) => tag.name),
@@ -570,14 +578,62 @@ export function composeBudgetForm(draft: ProjectBudgetDraft, saved: SavedBudget 
   };
 }
 
-/** What New Project posts; null while the name is blank or the budget does not read. */
+/**
+ * A Project's start and due dates as the date pickers hold them (#307):
+ * `YYYY-MM-DD`, or `""` while unset. Both are date-only fields stored at UTC
+ * midnight, so the UTC day is the one the Project was given.
+ */
+export type ProjectDatesDraft = { startDate: string; dueDate: string };
+
+export const EMPTY_PROJECT_DATES_DRAFT: ProjectDatesDraft = { startDate: "", dueDate: "" };
+
+type SavedProjectDates = { startDate?: Date | string | null; dueDate?: Date | string | null };
+
+export function projectDatesDraft(saved: SavedProjectDates | null | undefined): ProjectDatesDraft {
+  return { startDate: utcDay(saved?.startDate), dueDate: utcDay(saved?.dueDate) };
+}
+
+const DUE_BEFORE_START = "The due date comes before the start date.";
+
+/** Why a Project cannot take these dates, or null. */
+export function projectDatesIssue(draft: ProjectDatesDraft): string | null {
+  return draft.startDate && draft.dueDate && draft.dueDate < draft.startDate ? DUE_BEFORE_START : null;
+}
+
+export type ProjectDatesForm = {
+  issue: string | null;
+  dirty: boolean;
+  canSave: boolean;
+  /** Only the dates that change, as `PATCH /api/crm/projects/:id` names them; null clears one. */
+  patch: { startDate?: string | null; dueDate?: string | null } | null;
+};
+
+export function composeProjectDatesForm(draft: ProjectDatesDraft, saved: SavedProjectDates | null | undefined): ProjectDatesForm {
+  const issue = projectDatesIssue(draft);
+  const current = projectDatesDraft(saved);
+  const patch: NonNullable<ProjectDatesForm["patch"]> = {};
+  if (draft.startDate !== current.startDate) patch.startDate = draft.startDate || null;
+  if (draft.dueDate !== current.dueDate) patch.dueDate = draft.dueDate || null;
+  const dirty = Object.keys(patch).length > 0;
+  if (issue) return { issue, dirty, canSave: false, patch: null };
+  return { issue: null, dirty, canSave: dirty, patch: dirty ? patch : null };
+}
+
+/** What New Project posts; null while the name is blank, or the budget or the dates do not read. */
 export function newProjectPayload(
   name: string,
   draft: ProjectBudgetDraft,
-): { name: string; budgetedHours?: number; budgetedMinutes?: number } | null {
+  dates: ProjectDatesDraft = EMPTY_PROJECT_DATES_DRAFT,
+): { name: string; budgetedHours?: number; budgetedMinutes?: number; startDate?: string; dueDate?: string } | null {
   const trimmed = name.trim();
   const read = readProjectBudget(draft);
-  if (!trimmed || !read.budget) return null;
-  if (read.budget.budgetedHours == null) return { name: trimmed };
-  return { name: trimmed, budgetedHours: read.budget.budgetedHours, budgetedMinutes: read.budget.budgetedMinutes };
+  if (!trimmed || !read.budget || projectDatesIssue(dates)) return null;
+  return {
+    name: trimmed,
+    ...(read.budget.budgetedHours == null
+      ? {}
+      : { budgetedHours: read.budget.budgetedHours, budgetedMinutes: read.budget.budgetedMinutes }),
+    ...(dates.startDate ? { startDate: dates.startDate } : {}),
+    ...(dates.dueDate ? { dueDate: dates.dueDate } : {}),
+  };
 }

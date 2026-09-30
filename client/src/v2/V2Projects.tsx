@@ -16,6 +16,9 @@ import {
   combinedStatusForProjectStatus,
   composeProjectBoard,
   newProjectPayload,
+  projectDatesIssue,
+  EMPTY_PROJECT_DATES_DRAFT,
+  type ProjectDatesDraft,
   projectBudgetPercent,
   readProjectBudget,
   EMPTY_PROJECT_BUDGET_DRAFT,
@@ -39,6 +42,7 @@ import {
   type ProjectRegisterRowInput,
   type ProjectSort,
 } from "./projects";
+import { V2DateField } from "./V2DateField";
 import { composePaging } from "./paging";
 import { formatHours, memberName, mobileProjectMeta } from "./today";
 import { useV2Chrome } from "./V2Shell";
@@ -123,6 +127,8 @@ function toRegisterProject(
     leadName: leadName(project),
     budgetPercent: projectBudgetPercent(project),
     trackedMtd: formatHours(monthSeconds),
+    createdAt: project.createdAt,
+    dueDate: project.dueDate,
     tags: (project.tags ?? []).map((tag) => ({ id: tag.id, name: tag.name })),
     visible: projectVisibleTo({
       role: viewer.role,
@@ -302,6 +308,14 @@ function ProjectRegisterTable({
           enableSorting: false,
           cell: ({ row }) => <span className="df-mono" style={{ fontSize: 12 }}>{row.original.trackedMtd}</span>,
         }),
+        projectColumn.accessor("created", {
+          header: "CREATED",
+          cell: ({ row }) => <span className="df-mono df-meta">{row.original.created}</span>,
+        }),
+        projectColumn.accessor("due", {
+          header: "DUE",
+          cell: ({ row }) => <span className="df-mono df-meta">{row.original.due}</span>,
+        }),
       ]),
     [],
   );
@@ -404,6 +418,7 @@ export function V2ProjectsPage() {
   );
   const [name, setName] = useState("");
   const [budgetDraft, setBudgetDraft] = useState(EMPTY_PROJECT_BUDGET_DRAFT);
+  const [datesDraft, setDatesDraft] = useState<ProjectDatesDraft>(EMPTY_PROJECT_DATES_DRAFT);
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
   const monthStart = useMemo(() => startOfMonth(now), [now]);
@@ -603,6 +618,7 @@ export function V2ProjectsPage() {
       setSelectedId(createdId);
       setName("");
       setBudgetDraft(EMPTY_PROJECT_BUDGET_DRAFT);
+      setDatesDraft(EMPTY_PROJECT_DATES_DRAFT);
       setCreating(false);
       setWriteRefusal(null);
       notify.success("Project created");
@@ -613,10 +629,10 @@ export function V2ProjectsPage() {
     },
   });
 
-  const budgetIssue = readProjectBudget(budgetDraft).issue;
+  const formIssue = readProjectBudget(budgetDraft).issue ?? projectDatesIssue(datesDraft);
 
   function onCreate() {
-    const payload = newProjectPayload(name, budgetDraft);
+    const payload = newProjectPayload(name, budgetDraft, datesDraft);
     if (!payload) return;
     if (readOnly) {
       setWriteRefusal(
@@ -639,7 +655,7 @@ export function V2ProjectsPage() {
         ) : (
           <SkeletonRegister
             className="df-projects-register"
-            heads={["PROJECT / CLIENT", "STATUS", "PROJECT MANAGER", "BUDGET USED", "TRACKED MTD"]}
+            heads={["PROJECT / CLIENT", "STATUS", "PROJECT MANAGER", "BUDGET USED", "TRACKED MTD", "CREATED", "DUE"]}
           />
         )}
       </V2PageSkeleton>
@@ -691,9 +707,9 @@ export function V2ProjectsPage() {
         description="A Project is the delivery work Tasks and Time Entries hang from. Its budget can wait for its Dossier's Settings, like everything else past its name."
         submitLabel="Create Project"
         pending={createProject.isPending}
-        canSubmit={newProjectPayload(name, budgetDraft) !== null}
+        canSubmit={newProjectPayload(name, budgetDraft, datesDraft) !== null}
         onSubmit={onCreate}
-        refusal={budgetIssue ?? writeRefusal}
+        refusal={formIssue ?? writeRefusal}
         testId="v2-projects-new"
       >
         <label className="df-daily-field">
@@ -735,6 +751,26 @@ export function V2ProjectsPage() {
               aria-label="Budget minutes"
             />
           </label>
+        </div>
+        <div className="df-field-pair">
+          <div className="df-daily-field">
+            START DATE
+            <V2DateField
+              value={datesDraft.startDate}
+              onChange={(startDate) => setDatesDraft((draft) => ({ ...draft, startDate }))}
+              ariaLabel="Start date"
+              testId="v2-projects-new-start"
+            />
+          </div>
+          <div className="df-daily-field">
+            DUE DATE
+            <V2DateField
+              value={datesDraft.dueDate}
+              onChange={(dueDate) => setDatesDraft((draft) => ({ ...draft, dueDate }))}
+              ariaLabel="Due date"
+              testId="v2-projects-new-due"
+            />
+          </div>
         </div>
       </V2FormDialog>
       {writeRefusal && !creating ? <p className="df-refusal">{writeRefusal}</p> : null}

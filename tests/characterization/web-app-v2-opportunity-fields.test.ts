@@ -52,6 +52,7 @@ function row(overrides: Partial<OpportunityPipelineRowInput> = {}): OpportunityP
 
 const saved: SavedOpportunity = {
   name: "Harbour survey",
+  status: "proposal_sent",
   clientId: "client-1",
   opportunityOwnerId: "user-1",
   dueDate: "2026-10-15T00:00:00.000Z",
@@ -274,12 +275,13 @@ describe("Mark as won and Mark as lost", () => {
 });
 
 describe("The record's empty states", () => {
-  it("chooses the Client in the record's form, and shows the Client card only once one is set", () => {
+  it("chooses the Client in the record's form, and links it from the header only (#307)", () => {
     expect(composeOpportunityRecord({ ...row(), clientName: null }).clientHref).toBeNull();
     expect(composeOpportunityRecord({ ...row(), clientId: "client-1" }).clientHref).toBe("/clients/client-1");
 
-    expect(pageSource).toMatch(/\{record\.clientHref \? \(\s*<section className="df-card" data-testid="v2-opportunity-client">/);
-    expect(pageSource).toContain('<Link href={record.clientHref}>Open Client</Link>');
+    // The separate Client card repeated the header's link; it is gone.
+    expect(pageSource).not.toContain('data-testid="v2-opportunity-client"');
+    expect(pageSource).toMatch(/<Link href=\{record\.clientHref\} className="df-mono df-meta">/);
     expect(pageSource).toContain('ariaLabel="Client"');
     expect(pageSource).not.toContain("No Client yet. Choose");
     expect(pageSource).not.toContain("v2-opportunity-client-empty");
@@ -346,5 +348,57 @@ describe("Stage history and notes", () => {
     expect(pageSource).toContain("<AlertDialogContent className=\"df-v2 df-alert\">");
     expect(pageSource).toContain('icon="notes"');
     expect(pageSource).toContain("opportunityNotesPath(result.crmProject.id)");
+  });
+});
+
+describe("The record reads first, and Edit changes it (#307)", () => {
+  it("starts Edit from the saved values, the stage included", () => {
+    const draft = opportunityDraft(saved);
+    expect(draft).toMatchObject({
+      name: "Harbour survey",
+      clientId: "client-1",
+      ownerId: "user-1",
+      closeDate: "2026-10-15",
+      source: "zoho",
+      currency: "EUR",
+      stage: "proposal_sent",
+    });
+    expect(composeOpportunityForm(draft, saved)).toMatchObject({ dirty: false, canSave: false, patch: null, outcome: null });
+  });
+
+  it("restores the saved values on Cancel: the next Edit starts again from them", () => {
+    const edited = { ...opportunityDraft(saved), name: "Harbour audit", stage: "in_negotiation" };
+    expect(composeOpportunityForm(edited, saved).dirty).toBe(true);
+    // The form, and the draft it holds, exist only while editing: Cancel drops
+    // them, and the next Edit starts again from the saved values.
+    expect(pageSource).toMatch(/\{editing \? \(\s*<OpportunityEditForm/);
+    expect(pageSource).toMatch(/useState<OpportunityDraft>\(\(\) => opportunityDraft\(saved\)\)/);
+    expect(pageSource).toContain("onCancel={() => setEditing(false)}");
+  });
+
+  it("moves an open stage with the other fields, and leaves Won and Lost to their dialog", () => {
+    expect(composeOpportunityForm({ ...opportunityDraft(saved), stage: "in_negotiation" }, saved)).toMatchObject({
+      dirty: true,
+      canSave: true,
+      outcome: null,
+      patch: { status: "in_negotiation" },
+    });
+    expect(
+      composeOpportunityForm({ ...opportunityDraft(saved), stage: "won", name: "Harbour audit" }, saved),
+    ).toMatchObject({ dirty: true, canSave: true, outcome: "won", patch: { projectName: "Harbour audit" } });
+    expect(composeOpportunityForm({ ...opportunityDraft(saved), stage: "lost" }, saved)).toMatchObject({
+      dirty: true,
+      canSave: true,
+      outcome: "lost",
+      patch: null,
+    });
+
+    // A Won or Lost Opportunity keeps its stage: the pipeline is closed.
+    const won = { ...saved, status: "won_in_progress" };
+    expect(composeOpportunityForm({ ...opportunityDraft(won), stage: "lead" }, won)).toMatchObject({
+      dirty: false,
+      patch: null,
+      outcome: null,
+    });
   });
 });

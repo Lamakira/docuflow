@@ -1,3 +1,4 @@
+import type { ProjectDocumentScope } from "../projects/persistence";
 import type { DocumentWriter } from "../writers";
 import type { ProjectDocumentationFile } from "../projects/persistence";
 import type {
@@ -20,7 +21,7 @@ export interface KnowledgePersistence {
   getDocuments(projectId: string): Promise<Document[]>;
   getDocument(id: string): Promise<Document | undefined>;
   getDocumentAncestors(id: string): Promise<Document[]>;
-  getRecentDocuments(userId: string, limit?: number): Promise<Document[]>;
+  getRecentDocuments(userId: string, limit?: number, scope?: ProjectDocumentScope): Promise<Document[]>;
   createDocument(document: InsertDocument, writer?: DocumentWriter): Promise<Document>;
   updateDocument(
     id: string,
@@ -76,9 +77,10 @@ export interface KnowledgePersistence {
   /** Project+document LIKE lookup for the chatbot corpus, not Intelligence index artifacts. */
   search(
     userId: string,
-    query: string
+    query: string,
+    scope?: ProjectDocumentScope
   ): Promise<Array<{ type: string; id: string; title: string; projectName?: string }>>;
-  getAllUserDocuments(userId: string): Promise<Array<Document & { projectName: string }>>;
+  getAllUserDocuments(userId: string, scope?: ProjectDocumentScope): Promise<Array<Document & { projectName: string }>>;
 }
 
 export type { DocumentWriter };

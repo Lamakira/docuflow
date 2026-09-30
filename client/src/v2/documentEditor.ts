@@ -1,8 +1,22 @@
 import { isReadableDocument } from "@shared/documentAccess";
 import { chromeRefusal } from "./chrome";
 import { documentHref } from "./library";
+import { dossierDocumentHref } from "./presentation";
 
 export { projectDocumentHref } from "./library";
+
+/**
+ * Where an old `/document/:id` link to a Project Document opens now (#307):
+ * the page's place in its Project Dossier, found through the CRM Project that
+ * owns the page's Project. Null while no such Project is known.
+ */
+export function projectDocumentDossierHref(
+  document: { id: string; projectId: string },
+  projects: Array<{ id: string; project?: { id: string } | null }>,
+): string | null {
+  const owner = projects.find((row) => row.project?.id === document.projectId);
+  return owner ? dossierDocumentHref(owner.id, document.id) : null;
+}
 
 export type DocumentEditorSource = "workspace" | "project";
 

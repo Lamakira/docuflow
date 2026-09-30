@@ -127,7 +127,8 @@ describe("a Project's budget reads and writes hours and minutes (#277)", () => {
     expect(projectsSource).toContain('apiRequest("POST", "/api/crm/projects", payload)');
     expect(projectsSource).toContain('aria-label="Budget hours"');
     expect(projectsSource).toContain('aria-label="Budget minutes"');
-    expect(projectsSource).toContain("canSubmit={newProjectPayload(name, budgetDraft) !== null}");
+    // The dates New Project was given travel with the budget (#307).
+    expect(projectsSource).toContain("canSubmit={newProjectPayload(name, budgetDraft, datesDraft) !== null}");
   });
 
   it("Settings writes the budget through the route v1's Project page used", () => {
@@ -228,11 +229,8 @@ describe("every Dossier tab empties into a designed empty state (#277)", () => {
       expect(state.copy.length, tab).toBeGreaterThan(40);
       expect(state.action, tab).not.toBeNull();
     }
-    expect(dossier.tasks.emptyState.action).toEqual({
-      kind: "focus",
-      label: "Create the first Task",
-      target: DOSSIER_FIELD.taskName,
-    });
+    // The empty Tasks tab opens the New Task dialog, not a field over it (#307).
+    expect(dossier.tasks.emptyState.action).toEqual({ kind: "compose", label: "Create the first Task" });
     expect(dossier.notes.emptyState.action).toEqual({ kind: "compose", label: "Write the first note" });
     expect(dossier.reminders.emptyState.action).toEqual({ kind: "compose", label: "Add a Reminder" });
     expect(dossier.time.emptyState.action).toEqual({ kind: "start-timer", label: "Start Timer" });
@@ -295,7 +293,7 @@ describe("every Dossier tab empties into a designed empty state (#277)", () => {
     );
     expect(activity).toMatch(/\) : \(\s*<>[\s\S]*df-evidence-grid[\s\S]*dossier\.evidence\.footnote[\s\S]*<\/>/);
     // Each focus target is a real field on its tab.
-    for (const key of ["taskName", "note", "reminderTitle"] as const) {
+    for (const key of ["note", "reminderTitle"] as const) {
       expect(dossierSource).toContain(`id={DOSSIER_FIELD.${key}}`);
     }
     // The empty Documents tab creates in a dialog, like every other New action.
@@ -320,14 +318,31 @@ describe("Notes, Reminders and Documents all create through a dialog (#277)", ()
   const body = (name: string, next: string) =>
     dossierSource.slice(dossierSource.indexOf(`function ${name}(`), dossierSource.indexOf(`function ${next}(`));
   const notes = body("DossierNotes", "ReminderRow");
-  const reminders = body("DossierReminders", "DossierDocuments");
-  const documents = body("DossierDocuments", "DossierFiles");
+  const reminders = body("DossierReminders", "DossierDocumentation");
+  const documents = body("DossierDocumentation", "DossierFiles");
   const dialog = (testId: string) => {
     const end = dossierSource.indexOf("</V2FormDialog>", dossierSource.indexOf(`testId="${testId}"`));
     return dossierSource.slice(dossierSource.lastIndexOf("<V2FormDialog", end), end);
   };
   const noteDialog = dialog("v2-dossier-new-note");
   const reminderDialog = dialog("v2-dossier-new-reminder");
+  const tasks = body("DossierTasks", "DossierEmptyStateView");
+  const taskDialog = dialog("v2-dossier-new-task");
+
+  it("keeps no Task form in the Tasks tab: New Task opens a dialog from the card, the empty state and the header (#307)", () => {
+    expect(tasks).not.toContain("<form");
+    expect(tasks).not.toContain("<input");
+    expect(tasks).toContain("onCompose={onNewTask}");
+    expect(tasks).toMatch(
+      /\{!dossier\.tasks\.empty \? \(\s*<Button variant="outline" type="button" onClick=\{onNewTask\} className="df-btn">\s*New Task/,
+    );
+    // The header's New Task opens the same dialog from any tab.
+    const actions = dossierSource.slice(dossierSource.indexOf('<div className="df-dossier-actions">'));
+    expect(actions.slice(0, actions.indexOf("</div>"))).toMatch(/onClick=\{onNewTask\}[^>]*>\s*New Task/);
+    expect(taskDialog).toContain('title="New Task"');
+    expect(taskDialog).toContain("description={dossier.tasks.assignment}");
+    expect(taskDialog).toMatch(/id=\{DOSSIER_FIELD\.taskName\}[\s\S]*?autoFocus/);
+  });
 
   it("keeps no inline composer in the Notes or Reminders tab", () => {
     for (const [tab, source] of [["notes", notes], ["reminders", reminders]] as const) {
@@ -349,10 +364,10 @@ describe("Notes, Reminders and Documents all create through a dialog (#277)", ()
         new RegExp(`\\{!dossier\\.${tab}\\.empty \\? \\(\\s*<Button variant="outline" type="button" onClick=\\{${open}\\} className="df-btn">\\s*${label}`),
       );
     }
-    // Documents works the same way: New Document hides while the tab is empty and the
-    // empty state's action opens the same dialog.
-    expect(documents).toContain("dossier.documents.canCreate && !dossier.documents.empty");
+    // Documentation's empty state opens the New Document dialog; once there are
+    // pages, the page tree adds the next ones, as v1's did (#307).
     expect(documents).toContain("onNewDocument={onNewDocument}");
+    expect(documents).toContain("<PageTree");
   });
 
   it("holds the note, Record audio and Attach file in the New Note dialog, with Add note in its footer", () => {
@@ -380,7 +395,9 @@ describe("Notes, Reminders and Documents all create through a dialog (#277)", ()
     expect(dossierSource).toMatch(/const createReminder = useMutation\([\s\S]*?onSuccess:[\s\S]*?setCreatingReminder\(false\)/);
     expect(noteDialog).toContain("refusal={writeRefusal}");
     expect(reminderDialog).toContain("refusal={writeRefusal}");
-    expect(dossierSource).toContain("writeRefusal && !creatingDocument && !creatingNote && !creatingReminder");
+    expect(dossierSource).toMatch(/const createTask = useMutation\([\s\S]*?onSuccess:[\s\S]*?setCreatingTask\(false\)/);
+    expect(taskDialog).toContain("refusal={writeRefusal}");
+    expect(dossierSource).toContain("writeRefusal && !creatingTask && !creatingDocument && !creatingNote && !creatingReminder");
   });
 
   it("gives the compose action the primary fill", () => {

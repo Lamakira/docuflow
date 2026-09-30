@@ -73,4 +73,18 @@ describe("the Clients register page (#275)", () => {
     // An unknown column falls back to name order.
     expect(await names({ sort: "nope" })).toEqual(["acme", "Bolt", "Cairn"]);
   });
+
+  it("sorts by creation date, oldest or newest first (#307)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    await createClient(user.agent, { name: "Zephyr" });
+    await createClient(user.agent, { name: "Alder" });
+    const names = async (query: Record<string, string>) =>
+      (await user.agent.get("/api/crm/clients").query({ page: 1, ...query })).body.data.map(
+        (client: { name: string }) => client.name,
+      );
+
+    expect(await names({ sort: "created" })).toEqual(["Zephyr", "Alder"]);
+    expect(await names({ sort: "created", dir: "desc" })).toEqual(["Alder", "Zephyr"]);
+  });
 });

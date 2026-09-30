@@ -467,6 +467,8 @@ export function withSavedChoice(options: ListOption[], saved: string | null | un
 
 export type SavedOpportunity = {
   name: string;
+  /** The combined lifecycle the stage is read from. */
+  status: string;
   clientId: string | null;
   opportunityOwnerId: string | null;
   dueDate: Date | string | null;
@@ -484,9 +486,11 @@ export type OpportunityDraft = {
   source: string;
   amount: string;
   currency: string;
+  /** The stage, which Edit changes with the other fields (#307). */
+  stage: string;
 };
 
-export type NewOpportunityDraft = OpportunityDraft & { stage: string; note: string };
+export type NewOpportunityDraft = OpportunityDraft & { note: string };
 
 type OpportunityFields = {
   name: string;
@@ -526,6 +530,7 @@ export function opportunityDraft(saved: SavedOpportunity): OpportunityDraft {
     source: saved.source ?? "",
     amount: amountText(saved.estimatedValueMinor, currency),
     currency,
+    stage: opportunityStageFromCombined(saved.status),
   };
 }
 
@@ -562,6 +567,9 @@ export function newOpportunityPayload(
   return { body: { ...read.fields, status: stage }, note: draft.note.trim() || null, issue: null };
 }
 
+/** The two stages that close the pipeline, each recorded through its own dialog. */
+export type OpportunityOutcome = "won" | "lost";
+
 export type OpportunityForm = {
   issue: string | null;
   dirty: boolean;
@@ -569,14 +577,20 @@ export type OpportunityForm = {
   note: string;
   /** Only the keys that change, as `PATCH /api/crm/projects/:id` names them. */
   patch: Record<string, unknown> | null;
+  /** Saving moves the Opportunity to Won or Lost, which their dialog records. */
+  outcome: OpportunityOutcome | null;
 };
 
 /** The Opportunity record's edit form: what would be written, and whether it changes anything. */
 export function composeOpportunityForm(draft: OpportunityDraft, saved: SavedOpportunity): OpportunityForm {
   const read = readOpportunityDraft(draft);
-  if (!read.fields) return { issue: read.issue, dirty: true, canSave: false, note: read.issue, patch: null };
+  if (!read.fields) return { issue: read.issue, dirty: true, canSave: false, note: read.issue, patch: null, outcome: null };
   const next = read.fields;
   const patch: Record<string, unknown> = {};
+  const savedStage = opportunityStageFromCombined(saved.status);
+  const stageMoves = canChangeOpportunityStage(savedStage, draft.stage);
+  const outcome = stageMoves && (draft.stage === "won" || draft.stage === "lost") ? draft.stage : null;
+  if (stageMoves && !outcome) patch.status = combinedStatusForStage(draft.stage, saved.status);
   if (next.name !== saved.name) patch.projectName = next.name;
   if (next.clientId !== (saved.clientId ?? null)) patch.clientId = next.clientId;
   if (next.opportunityOwnerId !== (saved.opportunityOwnerId ?? null)) patch.opportunityOwnerId = next.opportunityOwnerId;
@@ -589,13 +603,15 @@ export function composeOpportunityForm(draft: OpportunityDraft, saved: SavedOppo
     patch.estimatedValueMinor = next.estimatedValueMinor;
     patch.estimatedValueCurrency = next.estimatedValueCurrency;
   }
-  const dirty = Object.keys(patch).length > 0;
+  const changed = Object.keys(patch).length > 0;
+  const dirty = changed || outcome !== null;
   return {
     issue: null,
     dirty,
     canSave: dirty,
     note: dirty ? "Unsaved changes." : "Every field is saved.",
-    patch: dirty ? patch : null,
+    patch: changed ? patch : null,
+    outcome,
   };
 }
 

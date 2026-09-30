@@ -3106,6 +3106,38 @@ button.df-activity-row {
   padding: var(--df-space-4);
 }
 
+/* Opportunity record (#307): the record and its notes beside the stage and its history. */
+.df-opportunity-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: var(--df-space-4);
+  align-items: start;
+}
+
+.df-opportunity-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-4);
+  min-width: 0;
+}
+
+.df-opportunity-head-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--df-space-3);
+}
+
+.df-v2[data-chrome="mobile"] .df-opportunity-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Client record (#307): Client Projects stacks below the details and contacts. */
+.df-v2[data-chrome="mobile"] .df-client-record-body .df-overview {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .df-form-dialog-body > .df-opportunity-fields {
   padding: 0;
 }
@@ -4345,6 +4377,85 @@ button.df-activity-row {
 .df-editor .ProseMirror {
   transition: none;
   animation: none;
+}
+
+/* Documentation tab (#307): v1's page tree beside the open page. */
+.df-documentation {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: var(--df-space-4);
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
+  min-height: 560px;
+}
+
+.df-documentation-bar {
+  grid-column: 1 / -1;
+  display: flex;
+}
+
+.df-documentation[data-pages="hidden"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.df-documentation-tree,
+.df-documentation-page {
+  min-width: 0;
+  background: var(--df-card-white);
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-3);
+  overflow: hidden;
+}
+
+.df-documentation-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.df-documentation-page > .df-empty {
+  padding: var(--df-space-6);
+}
+
+.df-documentation-select {
+  margin: auto;
+  max-width: 420px;
+  padding: var(--df-space-8) var(--df-space-6);
+  text-align: center;
+}
+
+.df-documentation-description {
+  margin-top: var(--df-space-5);
+  padding-top: var(--df-space-5);
+  border-top: 1px solid var(--df-divider-light);
+}
+
+.df-editor-print {
+  margin-left: auto;
+}
+
+.df-v2[data-chrome="mobile"] .df-documentation {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+}
+
+@media print {
+  .df-rail,
+  .df-dossier-head,
+  .df-tabs,
+  .df-documentation-tree,
+  .df-editor-head {
+    display: none !important;
+  }
+
+  .df-documentation {
+    display: block;
+  }
+
+  .df-documentation-page,
+  .df-editor {
+    border: 0;
+    overflow: visible;
+  }
 }
 
 .df-library-foot {
@@ -5859,6 +5970,32 @@ button.df-activity-row {
 .df-v2.df-timezone-picker {
   width: 280px;
   padding: var(--df-space-1);
+}
+
+/* Date pickers (#307): the shadcn Calendar in a v2 popover, one or two months wide. */
+.df-date-field {
+  gap: var(--df-space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.df-date-field svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--df-archive-slate);
+}
+
+.df-v2.df-date-picker {
+  width: auto;
+  padding: 0;
+}
+
+.df-date-picker-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0;
+  padding: var(--df-space-2) var(--df-space-3);
+  border-top: 1px solid var(--df-divider-light);
 }
 
 .df-note-attachments {

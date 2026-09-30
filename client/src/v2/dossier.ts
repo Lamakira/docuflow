@@ -1,8 +1,15 @@
 import { dossierFileDestination } from "./fileViewer";
 import { budgetedHoursTotal, formatHours, memberInitials, memberName, projectHref } from "./today";
-import { DOSSIER_TAB_IDS, type DossierTabId } from "./presentation";
+import { DOSSIER_TAB_IDS, DOSSIER_TAB_LABEL, dossierDocumentHref, type DossierTabId } from "./presentation";
 import { lifecycleColor, projectStatusColor } from "./palette";
-import { budgetLabel, projectBudgetDraft, projectBudgetPercent, type ProjectBudgetDraft } from "./projects";
+import {
+  budgetLabel,
+  projectBudgetDraft,
+  projectBudgetPercent,
+  projectDatesDraft,
+  type ProjectBudgetDraft,
+  type ProjectDatesDraft,
+} from "./projects";
 import { taskStatusLabel } from "./tasks";
 
 export type DossierPerson = {
@@ -23,7 +30,7 @@ export type DossierProject = {
   startDate?: Date | string | null;
   dueDate?: Date | string | null;
   documentationEnabled?: number | null;
-  project?: { id: string; name: string } | null;
+  project?: { id: string; name: string; description?: string | null } | null;
   client?: {
     id?: string;
     name: string;
@@ -153,6 +160,8 @@ export type DossierInput = {
   now: Date;
   currentUserId: string;
   tab: DossierTabId;
+  /** The page the Documentation tab opens (#307). */
+  documentId?: string | null;
   project: DossierProject | null;
   tasks: DossierTask[];
   documents: DossierDocument[];
@@ -211,9 +220,11 @@ export type DossierSettingRow = {
   /** Drawn as a status chip; `swatch` is its board colour, when it has one. */
   chip?: boolean;
   swatch?: string;
+  /** The date this row sets with the date picker (#307). */
+  date?: keyof ProjectDatesDraft;
 };
 
-/** The add fields an empty tab's action moves focus to. */
+/** The fields the New dialogs focus first; the Tasks tab's opens in the New Task dialog (#307). */
 export const DOSSIER_FIELD = {
   taskName: "df-dossier-task-name",
   note: "df-dossier-note",
@@ -265,6 +276,8 @@ export type DossierModel = {
     emptyCopy: string;
     emptyState: DossierEmptyState;
     assignees: Array<{ id: string; name: string }>;
+    /** The New Task dialog's description: who this Project is assigned to (#307). */
+    assignment: string;
   };
   time: {
     rows: Array<{
@@ -312,6 +325,8 @@ export type DossierModel = {
   settings: {
     identity: DossierSettingRow[];
     lifecycle: { rows: DossierSettingRow[]; note: string };
+    /** START and DUE as the date pickers hold them (#307). */
+    dates: ProjectDatesDraft;
     budget: {
       draft: ProjectBudgetDraft;
       saved: { budgetedHours: number | null; budgetedMinutes: number };
@@ -370,8 +385,6 @@ export type DossierModel = {
       title: string;
       meta: string;
       href: string;
-      /** Sibling indexes the reorder route takes; null where the move goes nowhere. */
-      order: { parentId: string | null; up: number | null; down: number | null };
     }>;
     count: number;
     empty: boolean;
@@ -379,6 +392,12 @@ export type DossierModel = {
     emptyState: DossierEmptyState;
     /** New Document writes a Document only where Documentation is on. */
     canCreate: boolean;
+    /** The page the URL opens, when this Project has it (#307). */
+    selected: { id: string; title: string } | null;
+    /** The URL names a page this Project does not have. */
+    missing: boolean;
+    /** What the editor side says while no page is open: v1's words, then the Project description. */
+    selectPage: { title: string; copy: string; description: string | null } | null;
   };
   client: {
     name: string;
@@ -398,19 +417,6 @@ const PROJECT_STATUS_LABEL: Record<string, string> = {
   on_hold: "ON HOLD",
   in_review: "IN REVIEW",
   completed: "COMPLETED",
-};
-
-const TAB_LABEL: Record<DossierTabId, string> = {
-  overview: "Overview",
-  tasks: "Tasks",
-  time: "Time",
-  activity: "Activity",
-  updates: "Updates",
-  notes: "Notes",
-  reminders: "Reminders",
-  documents: "Documents",
-  files: "Files",
-  settings: "Settings",
 };
 
 const VIEW_DAILY_UPDATES_CAPABILITY = "View Daily Updates";
@@ -449,15 +455,6 @@ export function tagsPath(): string {
 
 export function tagPath(tagId: string): string {
   return `/api/crm/tags/${tagId}`;
-}
-
-export function documentDuplicatePath(documentId: string): string {
-  return `/api/documents/${documentId}/duplicate`;
-}
-
-/** Keyed by the `projects` row a Document belongs to, not the CRM Project. */
-export function documentsReorderPath(documentProjectId: string): string {
-  return `/api/projects/${documentProjectId}/documents/reorder`;
 }
 
 export function parseDate(value: Date | string | null | undefined): Date | null {
@@ -814,6 +811,7 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
     return {
       identity: [],
       lifecycle: { rows: [], note: lifecycleNote },
+      dates: projectDatesDraft(null),
       budget: {
         draft: projectBudgetDraft(null),
         saved: { budgetedHours: null, budgetedMinutes: 0 },
@@ -849,8 +847,8 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
       chip: true,
       swatch: projectStatusColor(project.projectStatus),
     },
-    { label: "START", value: start ? formatDayStamp(start) : "—" },
-    { label: "DUE", value: due ? formatDayStamp(due) : "—" },
+    { label: "START", value: start ? formatDayStamp(start) : "—", date: "startDate" },
+    { label: "DUE", value: due ? formatDayStamp(due) : "—", date: "dueDate" },
     { label: "LAST CHANGE", value: lastChange ? `${lastChange.when} · ${lastChange.who}` : "—" },
   ];
   const budgeted = budgetedHoursTotal(project);
@@ -879,6 +877,7 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
   return {
     identity,
     lifecycle: { rows: lifecycle, note: lifecycleNote },
+    dates: projectDatesDraft(project),
     budget: {
       draft: projectBudgetDraft(project),
       saved: { budgetedHours: project.budgetedHours ?? null, budgetedMinutes: project.budgetedMinutes ?? 0 },
@@ -954,29 +953,6 @@ function composeTags(input: DossierInput): DossierModel["tags"] {
   };
 }
 
-/** Siblings share a parent; the reorder route takes an index among them, the moved one excluded. */
-function documentOrder(documents: DossierDocument[]): Map<string, DossierModel["documents"]["rows"][number]["order"]> {
-  const byParent = new Map<string | null, DossierDocument[]>();
-  for (const document of documents) {
-    const parentId = document.parentId ?? null;
-    const list = byParent.get(parentId) ?? [];
-    list.push(document);
-    byParent.set(parentId, list);
-  }
-  const order = new Map<string, DossierModel["documents"]["rows"][number]["order"]>();
-  byParent.forEach((siblings, parentId) => {
-    const sorted = [...siblings].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-    sorted.forEach((document, index) => {
-      order.set(document.id, {
-        parentId,
-        up: index > 0 ? index - 1 : null,
-        down: index < sorted.length - 1 ? index + 1 : null,
-      });
-    });
-  });
-  return order;
-}
-
 export function composeDossier(input: DossierInput): DossierModel {
   const project = input.project;
   const missing = !project;
@@ -990,7 +966,8 @@ export function composeDossier(input: DossierInput): DossierModel {
   const history = composeHistory(input);
   const settings = composeSettings(input, history);
   const tags = composeTags(input);
-  const order = documentOrder(documents);
+  const openDocumentId = input.documentId ?? null;
+  const openDocument = openDocumentId ? documents.find((document) => document.id === openDocumentId) ?? null : null;
   const assignees = projectAssignees(project);
   const trackedMtd = formatHours(input.monthSeconds);
   const budgeted = project ? budgetedHoursTotal(project) : 0;
@@ -1002,7 +979,7 @@ export function composeDossier(input: DossierInput): DossierModel {
   const tabs: DossierTab[] = project
     ? DOSSIER_TAB_IDS.map((id) => ({
         id,
-        label: TAB_LABEL[id],
+        label: DOSSIER_TAB_LABEL[id],
         href: id === "overview" ? projectHref(project.id) : `${projectHref(project.id)}/${id}`,
         count:
           id === "tasks"
@@ -1105,9 +1082,13 @@ export function composeDossier(input: DossierInput): DossierModel {
       emptyState: {
         title: "No Tasks yet",
         copy: "Tasks are the steps of this Project. Each one carries its own status and timer, so tracked time lands on the right step.",
-        action: { kind: "focus", label: "Create the first Task", target: DOSSIER_FIELD.taskName },
+        action: { kind: "compose", label: "Create the first Task" },
       },
       assignees,
+      assignment:
+        assignees.length > 0
+          ? `The Task joins this Project. Project assignment: ${assignees.map((member) => member.name).join(" · ")}.`
+          : "The Task joins this Project.",
     },
     time,
     updates,
@@ -1150,8 +1131,7 @@ export function composeDossier(input: DossierInput): DossierModel {
         id: document.id,
         title: document.title,
         meta: formatWhen(document.updatedAt, input.now),
-        href: `/document/${document.id}`,
-        order: order.get(document.id) ?? { parentId: null, up: null, down: null },
+        href: project ? dossierDocumentHref(project.id, document.id) : `/document/${document.id}`,
       })),
       count: documents.length,
       empty: documents.length === 0,
@@ -1168,6 +1148,15 @@ export function composeDossier(input: DossierInput): DossierModel {
             action: project ? { kind: "link", label: "Open Settings", href: `${projectHref(project.id)}/settings` } : null,
           },
       canCreate: settings.documentationEnabled,
+      selected: openDocument ? { id: openDocument.id, title: openDocument.title } : null,
+      missing: Boolean(openDocumentId) && !openDocument,
+      selectPage: openDocumentId
+        ? null
+        : {
+            title: "Select a page to get started",
+            copy: "Choose a page from the tree or create a new one to begin documenting this Project.",
+            description: project?.project?.description?.trim() || null,
+          },
     },
     client,
     filed,

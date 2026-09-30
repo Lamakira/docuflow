@@ -352,15 +352,34 @@ export async function registerRoutes(
     });
   });
 
+  // CONTEXT.md: a Project Document is "visible exactly to members who can access
+  // that project" (#307). Owners and Administrators reach every Project; a Member
+  // reaches the Projects the register shows them. Anyone else is answered as if
+  // the Project, or its Document, were not there.
+  const canAccessProject = async (userId: string, projectId: string): Promise<boolean> =>
+    (await canManageAdministration()) || (await storage.isProjectVisibleTo(projectId, userId));
+
+  const accessibleProject = async (userId: string, projectId: string) => {
+    const project = await storage.getProject(projectId);
+    return project && (await canAccessProject(userId, project.id)) ? project : undefined;
+  };
+
+  const projectDocumentScope = async (userId: string) =>
+    (await canManageAdministration()) ? {} : { visibleToUserId: userId };
+
+  const accessibleDocument = async (userId: string, documentId: string) => {
+    const document = await storage.getDocument(documentId);
+    return document && (await canAccessProject(userId, document.projectId)) ? document : undefined;
+  };
+
   app.get("/api/projects/:projectId/documents", isAuthenticated, async (req: any, res) => {
     try {
-      const project = await storage.getProject(req.params.projectId);
+      const project = await accessibleProject(getUserId(req)!, req.params.projectId);
 
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide visibility - all authenticated users can view documents
       const documents = await storage.getDocuments(req.params.projectId);
       res.json(documents);
     } catch (error) {
@@ -372,13 +391,12 @@ export async function registerRoutes(
   app.post("/api/projects/:projectId/documents", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const project = await storage.getProject(req.params.projectId);
+      const project = await accessibleProject(userId, req.params.projectId);
 
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide access - all authenticated users can create documents
       const createSchema = z.object({
         title: z.string().min(1),
         parentId: z.string().nullable().optional(),
@@ -413,7 +431,7 @@ export async function registerRoutes(
   app.get("/api/documents/recent", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const documents = await storage.getRecentDocuments(userId, 10);
+      const documents = await storage.getRecentDocuments(userId, 10, await projectDocumentScope(userId));
       res.json(documents);
     } catch (error) {
       console.error("Error fetching recent documents:", error);
@@ -424,7 +442,7 @@ export async function registerRoutes(
   app.get("/api/documents/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const document = await storage.getDocument(req.params.id);
+      const document = await accessibleDocument(userId, req.params.id);
 
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -435,7 +453,6 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide visibility - all authenticated users can view documents
       // Get creator info if createdById is set
       let createdBy = null;
       if (document.createdById) {
@@ -452,7 +469,7 @@ export async function registerRoutes(
   app.get("/api/documents/:id/ancestors", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const document = await storage.getDocument(req.params.id);
+      const document = await accessibleDocument(userId, req.params.id);
 
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -463,7 +480,6 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide visibility
       const ancestors = await storage.getDocumentAncestors(req.params.id);
       res.json(ancestors);
     } catch (error) {
@@ -475,7 +491,7 @@ export async function registerRoutes(
   app.patch("/api/documents/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const document = await storage.getDocument(req.params.id);
+      const document = await accessibleDocument(userId, req.params.id);
 
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -486,7 +502,6 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide access - all authenticated users can edit documents
       const updateSchema = z.object({
         title: z.string().optional(),
         content: z.any().optional(),
@@ -518,7 +533,7 @@ export async function registerRoutes(
   app.delete("/api/documents/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const document = await storage.getDocument(req.params.id);
+      const document = await accessibleDocument(userId, req.params.id);
 
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -529,7 +544,6 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide access - all authenticated users can delete documents
       // Delete embeddings first (cascade should handle this, but be explicit)
       try {
         await deleteDocumentEmbeddings(req.params.id);
@@ -556,7 +570,7 @@ export async function registerRoutes(
   app.post("/api/documents/:id/duplicate", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const document = await storage.getDocument(req.params.id);
+      const document = await accessibleDocument(userId, req.params.id);
 
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -567,7 +581,6 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide access - all authenticated users can duplicate documents
       const newDoc = await storage.duplicateDocument(req.params.id);
       res.status(201).json(newDoc);
     } catch (error) {
@@ -586,7 +599,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "documentId and newPosition are required" });
       }
 
-      const document = await storage.getDocument(documentId);
+      const document = await accessibleDocument(getUserId(req)!, documentId);
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
@@ -613,7 +626,7 @@ export async function registerRoutes(
         return res.json([]);
       }
 
-      const results = await storage.search(userId, query);
+      const results = await storage.search(userId, query, await projectDocumentScope(userId));
       res.json(results);
     } catch (error) {
       console.error("Error searching:", error);
@@ -963,7 +976,7 @@ export async function registerRoutes(
   app.get("/api/documents/:id/transcripts", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const document = await storage.getDocument(req.params.id);
+      const document = await accessibleDocument(userId, req.params.id);
 
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -974,7 +987,6 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide visibility
       const status = await getTranscriptStatus(req.params.id);
       res.json(status);
     } catch (error) {
@@ -998,11 +1010,10 @@ export async function registerRoutes(
         .from(videoTranscripts)
         .where(eq(videoTranscripts.id, req.params.id));
 
-      if (!transcript) {
+      if (!transcript || !(await canAccessProject(userId, transcript.projectId))) {
         return res.status(404).json({ message: "Transcript not found" });
       }
 
-      // Company-wide access - all authenticated users can retry transcripts
       const document = await storage.getDocument(transcript.documentId);
       const project = await storage.getProject(transcript.projectId);
       
@@ -1036,7 +1047,7 @@ export async function registerRoutes(
   app.post("/api/documents/:id/sync-transcripts", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const document = await storage.getDocument(req.params.id);
+      const document = await accessibleDocument(userId, req.params.id);
 
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
@@ -1047,7 +1058,6 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Company-wide access
       if (!document.content) {
         return res.json({ message: "No content to sync", added: 0, removed: 0 });
       }
@@ -1115,9 +1125,12 @@ export async function registerRoutes(
       let usedFallback = false;
       const citations: ChatCitation[] = [];
       
-      // Get project overview and docs if mode includes projects
+      // Get project overview and docs if mode includes projects. A Member reads
+      // only the Projects they may see (#307), in the overview, the search and
+      // the fallback alike.
+      const scope = await projectDocumentScope(userId);
       if (mode === "projects" || mode === "both") {
-        const projects = await storage.getProjects(userId);
+        const projects = await storage.getProjects(userId, scope);
         projectOverview = "# Available Projects\n\n";
         for (const project of projects) {
           projectOverview += `- **${project.name}**`;
@@ -1169,8 +1182,8 @@ export async function registerRoutes(
         // Fallback for project docs
         if (searchResults.length === 0) {
           usedFallback = true;
-          const allDocuments = await storage.getAllUserDocuments(userId);
-          const projects = await storage.getProjects(userId);
+          const allDocuments = await storage.getAllUserDocuments(userId, scope);
+          const projects = await storage.getProjects(userId, scope);
           const projectMap = new Map(projects.map(p => [p.id, p]));
           
           if (allDocuments.length > 0) {

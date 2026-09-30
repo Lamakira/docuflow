@@ -157,11 +157,13 @@ import type { ImportableUser } from "./identity/userImport";
 import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike, type AnyColumn } from "drizzle-orm";
 import type {
   CrmProjectListOptions,
+  ProjectDocumentScope,
   ProjectDocumentationListOptions,
   ProjectDocumentationPage,
   ProjectDocumentationFile,
 } from "./projects/persistence";
 import type { CrmClientListOptions, CrmClientRegisterRow } from "./clients-sales/persistence";
+
 
 /**
  * Devices and Users carry no `workspace_id` of their own — a Device belongs to
@@ -173,6 +175,24 @@ function workspaceUserIds() {
     .select({ userId: memberships.userId })
     .from(memberships)
     .where(inWorkspace(memberships));
+}
+
+/**
+ * The Projects a Member may see: one they belong to, or one they are assigned
+ * while it has no Members. Owners and Administrators see every Project, so
+ * callers leave this condition out for them.
+ */
+function crmProjectVisibleTo(viewer: string) {
+  return or(
+    inArray(
+      crmProjects.id,
+      db.select({ id: projectMembers.crmProjectId }).from(projectMembers).where(eq(projectMembers.userId, viewer)),
+    ),
+    and(
+      eq(crmProjects.assigneeId, viewer),
+      sql`not exists (select 1 from ${projectMembers} where ${projectMembers.crmProjectId} = ${crmProjects.id})`,
+    ),
+  );
 }
 
 export class DatabaseStorage implements IStorage {
@@ -326,7 +346,17 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async getProjects(userId?: string): Promise<Project[]> {
+  async getProjects(userId?: string, scope: ProjectDocumentScope = {}): Promise<Project[]> {
+    // A Member reads only the Projects they may see (#307).
+    if (scope.visibleToUserId) {
+      const rows = await db
+        .select({ project: projects })
+        .from(projects)
+        .innerJoin(crmProjects, eq(crmProjects.projectId, projects.id))
+        .where(and(inWorkspace(projects), inWorkspace(crmProjects), crmProjectVisibleTo(scope.visibleToUserId)))
+        .orderBy(desc(projects.updatedAt));
+      return rows.map((row) => row.project);
+    }
     // Return all projects for company-wide visibility inside the Active Workspace.
     return db
       .select()
@@ -341,6 +371,15 @@ export class DatabaseStorage implements IStorage {
       .from(projects)
       .where(and(eq(projects.id, id), inWorkspace(projects)));
     return project;
+  }
+
+  async isProjectVisibleTo(projectId: string, userId: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: crmProjects.id })
+      .from(crmProjects)
+      .where(and(eq(crmProjects.projectId, projectId), inWorkspace(crmProjects), crmProjectVisibleTo(userId)))
+      .limit(1);
+    return Boolean(row);
   }
 
   async createProject(
@@ -410,8 +449,8 @@ export class DatabaseStorage implements IStorage {
     return ancestors;
   }
 
-  async getRecentDocuments(userId: string, limit: number = 10): Promise<Document[]> {
-    const userProjects = await this.getProjects(userId);
+  async getRecentDocuments(userId: string, limit: number = 10, scope?: ProjectDocumentScope): Promise<Document[]> {
+    const userProjects = await this.getProjects(userId, scope);
     const projectIds = userProjects.map((p) => p.id);
 
     if (projectIds.length === 0) return [];
@@ -646,7 +685,11 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async search(userId: string, query: string): Promise<Array<{ type: string; id: string; title: string; projectName?: string }>> {
+  async search(
+    userId: string,
+    query: string,
+    scope?: ProjectDocumentScope,
+  ): Promise<Array<{ type: string; id: string; title: string; projectName?: string }>> {
     const results: Array<{ type: string; id: string; title: string; projectName?: string }> = [];
     const searchPattern = `%${query}%`;
 
@@ -663,7 +706,7 @@ export class DatabaseStorage implements IStorage {
       });
     }
 
-    const allUserProjects = await this.getProjects(userId);
+    const allUserProjects = await this.getProjects(userId, scope);
     const projectIds = allUserProjects.map((p) => p.id);
     const projectMap = new Map(allUserProjects.map((p) => [p.id, p.name]));
 
@@ -692,8 +735,8 @@ export class DatabaseStorage implements IStorage {
     return results.slice(0, 20);
   }
 
-  async getAllUserDocuments(userId: string): Promise<Array<Document & { projectName: string }>> {
-    const userProjects = await this.getProjects(userId);
+  async getAllUserDocuments(userId: string, scope?: ProjectDocumentScope): Promise<Array<Document & { projectName: string }>> {
+    const userProjects = await this.getProjects(userId, scope);
     const projectIds = userProjects.map((p) => p.id);
     const projectMap = new Map(userProjects.map((p) => [p.id, p.name]));
 
@@ -756,6 +799,7 @@ export class DatabaseStorage implements IStorage {
       status: sql`${crmClients.status}`,
       source: sql`${crmClients.source}`,
       projects: projectCount,
+      created: sql`${crmClients.createdAt}`,
     };
     const lead = options.sort ? sortExpression[options.sort] : sortExpression.name;
     const rows = await db
@@ -893,19 +937,7 @@ export class DatabaseStorage implements IStorage {
       ) = ${options.leadId}`);
     }
     if (options?.visibleToUserId) {
-      const viewer = options.visibleToUserId;
-      conditions.push(
-        or(
-          inArray(
-            crmProjects.id,
-            db.select({ id: projectMembers.crmProjectId }).from(projectMembers).where(eq(projectMembers.userId, viewer)),
-          ),
-          and(
-            eq(crmProjects.assigneeId, viewer),
-            sql`not exists (select 1 from ${projectMembers} where ${projectMembers.crmProjectId} = ${crmProjects.id})`,
-          ),
-        ),
-      );
+      conditions.push(crmProjectVisibleTo(options.visibleToUserId));
     }
     const needle = options?.search?.trim();
     if (needle) {
@@ -938,6 +970,9 @@ export class DatabaseStorage implements IStorage {
       // BUDGET USED: no budget sorts last either way.
       budget: sql`case when coalesce(${crmProjects.budgetedHours}, 0) > 0
         then coalesce(${crmProjects.actualHours}, 0)::float / ${crmProjects.budgetedHours} end`,
+      created: sql`${crmProjects.createdAt}`,
+      // DUE: no due date sorts last either way.
+      due: sql`${crmProjects.dueDate}`,
     };
     const order = options?.sort
       ? [sql`${sortExpression[options.sort]} ${direction}`, desc(crmProjects.updatedAt), asc(crmProjects.id)]
@@ -1478,19 +1513,7 @@ export class DatabaseStorage implements IStorage {
     const { page, pageSize } = options;
     const scope: any[] = [inWorkspace(projects), inWorkspace(crmProjects)];
     if (options.visibleToUserId) {
-      const viewer = options.visibleToUserId;
-      scope.push(
-        or(
-          inArray(
-            crmProjects.id,
-            db.select({ id: projectMembers.crmProjectId }).from(projectMembers).where(eq(projectMembers.userId, viewer)),
-          ),
-          and(
-            eq(crmProjects.assigneeId, viewer),
-            sql`not exists (select 1 from ${projectMembers} where ${projectMembers.crmProjectId} = ${crmProjects.id})`,
-          ),
-        ),
-      );
+      scope.push(crmProjectVisibleTo(options.visibleToUserId));
     }
 
     const conditions = [...scope];

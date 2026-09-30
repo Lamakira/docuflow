@@ -68,6 +68,8 @@ import {
   type LostDraft,
   type OpportunityCard,
   type OpportunityDraft,
+  type OpportunityOutcome,
+  type OpportunityRecordModel,
   type OpportunityPipelineRowInput,
   type OpportunityStageOption,
   type SavedOpportunity,
@@ -130,6 +132,7 @@ function toPipelineRow(row: CrmProjectWithDetails): OpportunityPipelineRowInput 
 function toSavedOpportunity(row: CrmProjectWithDetails): SavedOpportunity {
   return {
     name: row.project?.name ?? "",
+    status: row.status,
     clientId: row.clientId,
     opportunityOwnerId: row.opportunityOwnerId,
     dueDate: row.dueDate,
@@ -377,7 +380,7 @@ function OpportunityFieldInputs({
   );
 }
 
-type Outcome = { kind: "won" | "lost"; row: CrmProjectWithDetails };
+type Outcome = { kind: OpportunityOutcome; row: CrmProjectWithDetails };
 
 /**
  * Mark as won asks for the Client Project the win makes (ADR-0001): its
@@ -753,13 +756,85 @@ function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
   );
 }
 
+/**
+ * The Opportunity record (#307): it reads first. Edit turns it into the form,
+ * the stage included, and Save changes or Cancel turn it back. Won and Lost
+ * still ask their questions in the outcome dialog.
+ */
 function OpportunityDetailsCard({
   row,
+  record,
+  stages,
+  editing,
+  onCancel,
+  onSaved,
+  onOutcome,
   clients,
   users,
   sources,
 }: {
   row: CrmProjectWithDetails;
+  record: OpportunityRecordModel;
+  stages: OpportunityStageOption[];
+  editing: boolean;
+  onCancel: () => void;
+  onSaved: () => void;
+  onOutcome: (kind: OpportunityOutcome) => void;
+  clients: CrmClient[];
+  users: SafeUser[];
+  sources: ListOption[];
+}) {
+  return (
+    <section className="df-card" data-testid="v2-opportunity-details">
+      <div className="df-card-head">
+        <div className="df-card-head-text">
+          <h2 className="df-card-title">Opportunity record</h2>
+          <p className="df-card-sub">What this sale is, who owns it, and what it is expected to bring in.</p>
+        </div>
+      </div>
+      {editing ? (
+        <OpportunityEditForm
+          row={row}
+          terminal={record.terminal}
+          stages={stages}
+          onCancel={onCancel}
+          onSaved={onSaved}
+          onOutcome={onOutcome}
+          clients={clients}
+          users={users}
+          sources={sources}
+        />
+      ) : (
+        <div className="df-settings-grid" data-testid="v2-opportunity-fields-read">
+          {record.fields.map((field) => (
+            <div key={field.label} className="df-settings-row">
+              <span className="df-settings-label">{field.label}</span>
+              <span className="df-settings-value">{field.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OpportunityEditForm({
+  row,
+  terminal,
+  stages,
+  onCancel,
+  onSaved,
+  onOutcome,
+  clients,
+  users,
+  sources,
+}: {
+  row: CrmProjectWithDetails;
+  terminal: boolean;
+  stages: OpportunityStageOption[];
+  onCancel: () => void;
+  onSaved: () => void;
+  onOutcome: (kind: OpportunityOutcome) => void;
   clients: CrmClient[];
   users: SafeUser[];
   sources: ListOption[];
@@ -770,56 +845,71 @@ function OpportunityDetailsCard({
   const [refusal, setRefusal] = useState<string | null>(null);
   const form = composeOpportunityForm(draft, saved);
 
+  function finish(outcome: OpportunityOutcome | null) {
+    onSaved();
+    if (outcome) onOutcome(outcome);
+  }
+
   const save = useMutation({
-    mutationFn: (patch: Record<string, unknown>) => apiRequest("PATCH", `/api/crm/projects/${row.id}`, patch),
-    onSuccess: () => {
+    mutationFn: ({ patch }: { patch: Record<string, unknown>; outcome: OpportunityOutcome | null }) =>
+      apiRequest("PATCH", `/api/crm/projects/${row.id}`, patch),
+    onSuccess: (_result, { outcome }) => {
       setRefusal(null);
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
       notify.success("Opportunity saved");
+      finish(outcome);
     },
     onError: (error: Error) => setRefusal(writes.failed(error, "Edit Opportunities")),
   });
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!form.canSave || !form.patch) return;
+    if (!form.canSave) return;
     if (writes.readOnly) {
       setRefusal(writes.refusal());
       return;
     }
-    save.mutate(form.patch);
+    if (form.patch) save.mutate({ patch: form.patch, outcome: form.outcome });
+    else finish(form.outcome);
   }
 
   const note = refusal ?? form.note;
   return (
-    <section className="df-card" data-testid="v2-opportunity-details">
-      <div className="df-card-head">
-        <div className="df-card-head-text">
-          <h2 className="df-card-title">Opportunity record</h2>
-          <p className="df-card-sub">What this sale is, who owns it, and what it is expected to bring in.</p>
-        </div>
-      </div>
-      <form onSubmit={onSubmit}>
-        <div className="df-opportunity-fields">
-          <OpportunityFieldInputs
-            draft={draft}
-            onChange={setDraft}
-            clients={clients}
-            users={users}
-            sources={sources}
-            savedSource={row.source}
+    <form onSubmit={onSubmit}>
+      <div className="df-opportunity-fields">
+        <label className="df-daily-field">
+          STAGE
+          <V2FilterSelect
+            label=""
+            ariaLabel="Stage"
+            value={draft.stage}
+            options={stages.map((stage) => ({ value: stage.id, label: stage.label }))}
+            onChange={(stage) => setDraft({ ...draft, stage })}
+            disabled={terminal}
           />
-        </div>
-        <div className="df-form-actions">
-          <p className={refusal || form.issue ? "df-form-note df-refusal-inline" : "df-form-note"} role="status">
-            {note}
-          </p>
-          <Button variant="default" type="submit" disabled={!form.canSave || save.isPending} className="df-btn">
-            {save.isPending ? "Saving…" : "Save changes"}
-          </Button>
-        </div>
-      </form>
-    </section>
+        </label>
+        <OpportunityFieldInputs
+          draft={draft}
+          onChange={setDraft}
+          clients={clients}
+          users={users}
+          sources={sources}
+          savedSource={row.source}
+          autoFocus
+        />
+      </div>
+      <div className="df-form-actions">
+        <p className={refusal || form.issue ? "df-form-note df-refusal-inline" : "df-form-note"} role="status">
+          {note}
+        </p>
+        <Button variant="outline" type="button" onClick={onCancel} className="df-btn" data-testid="v2-opportunity-cancel">
+          Cancel
+        </Button>
+        <Button variant="default" type="submit" disabled={!form.canSave || save.isPending} className="df-btn">
+          {save.isPending ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -828,6 +918,7 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
   const writes = useWorkspaceWrites();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
   const { data: clients = [] } = useQuery<CrmClient[]>({ queryKey: ["/api/crm/clients"] });
 
@@ -844,39 +935,25 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
     lostReasonOptions: lists.lostReasons,
   });
 
-  const changeStage = useMutation({
-    mutationFn: (status: string) => apiRequest("PATCH", `/api/crm/projects/${row.id}`, { status }),
-    onSuccess: () => {
-      setRefusal(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
-    },
-    onError: (error: Error) => setRefusal(writes.failed(error, "Change Opportunity Stage")),
-  });
-
-  function onStage(next: string) {
-    if (!canChangeOpportunityStage(record.stageId, next)) return;
+  function onEdit() {
     if (writes.readOnly) {
       setRefusal(writes.refusal());
       return;
     }
-    if (next === "won" || next === "lost") {
-      setOutcome({ kind: next, row });
-      return;
-    }
-    changeStage.mutate(combinedStatusForStage(next, row.status));
+    setRefusal(null);
+    setEditing(true);
+  }
+
+  function onLostReason() {
+    if (writes.readOnly) setRefusal(writes.refusal());
+    else setOutcome({ kind: "lost", row });
   }
 
   return (
     <div className="df-page" data-testid="v2-opportunity-record">
       <header className="df-dossier-head">
-        <div className="df-dossier-identity">
+        <div className="df-dossier-identity df-opportunity-identity">
           <div className="df-dossier-copy">
-            <div className="df-dossier-meta">
-              <span className="df-status">OPPORTUNITY</span>
-              <span className="df-status" data-status={record.stage} data-swatch="" style={swatchStyle(record.stageColor)}>
-                {record.stage}
-              </span>
-            </div>
             <h1 className="df-record-title">{record.title}</h1>
             <div className="df-dossier-provenance">
               {record.clientHref ? (
@@ -887,99 +964,89 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
               <span className="df-mono df-meta">{record.terminal ? "TERMINAL" : "OPEN"}</span>
             </div>
           </div>
+          <div className="df-opportunity-head-side">
+            <div className="df-dossier-meta">
+              <span className="df-status">OPPORTUNITY</span>
+              <span className="df-status" data-status={record.stage} data-swatch="" style={swatchStyle(record.stageColor)}>
+                {record.stage}
+              </span>
+            </div>
+            {editing ? null : (
+              <Button variant="outline" type="button" onClick={onEdit} className="df-btn" data-testid="v2-opportunity-edit">
+                Edit
+              </Button>
+            )}
+          </div>
         </div>
       </header>
       {refusal ? <p className="df-refusal">{refusal}</p> : null}
 
-      <section className="df-card" data-testid="v2-opportunity-stage">
-        <div className="df-card-head">
-          <div className="df-card-head-text">
-            <h2 className="df-card-title">Stage</h2>
-            <p className="df-card-sub">Won and Lost close the pipeline. Marking it won makes it a Client Project; marking it lost asks why.</p>
-          </div>
+      <div className="df-opportunity-layout">
+        <div className="df-opportunity-column">
+          <OpportunityDetailsCard
+            key={`${row.id}-${String(row.updatedAt)}`}
+            row={row}
+            record={record}
+            stages={lists.stages}
+            editing={editing}
+            onCancel={() => setEditing(false)}
+            onSaved={() => setEditing(false)}
+            onOutcome={(kind) => setOutcome({ kind, row })}
+            clients={clients}
+            users={users}
+            sources={lists.sources}
+          />
+          <OpportunityNotesCard opportunityId={row.id} />
         </div>
-        <div className="df-settings-grid">
-          <div className="df-settings-row">
-            <span className="df-settings-label">STAGE</span>
-            <span className="df-settings-value">
-              <V2FilterSelect
-                label=""
-                ariaLabel="Stage"
-                value={record.stageId}
-                options={lists.stages.map((stage) => ({ value: stage.id, label: stage.label }))}
-                onChange={onStage}
-                disabled={record.terminal || changeStage.isPending}
-              />
-            </span>
-          </div>
-          {record.lostReason ? (
-            <div className="df-settings-row" data-testid="v2-opportunity-lost-reason">
-              <span className="df-settings-label">LOST REASON</span>
-              <span className="df-settings-value df-settings-inline">
-                <span>
-                  {record.lostReason.label}
-                  {record.lostReason.detail ? <span className="df-settings-copy"> · {record.lostReason.detail}</span> : null}
+
+        <div className="df-opportunity-column">
+          <section className="df-card" data-testid="v2-opportunity-stage">
+            <div className="df-card-head">
+              <div className="df-card-head-text">
+                <h2 className="df-card-title">Stage</h2>
+                <p className="df-card-sub">Won and Lost close the pipeline. Marking it won makes it a Client Project; marking it lost asks why. Edit changes the stage.</p>
+              </div>
+            </div>
+            <div className="df-settings-grid">
+              <div className="df-settings-row">
+                <span className="df-settings-label">STAGE</span>
+                <span className="df-settings-value">
+                  <span className="df-status" data-swatch="" style={swatchStyle(record.stageColor)}>
+                    {record.stage}
+                  </span>
                 </span>
-                <Button
-                  variant="outline"
-                  type="button"
-                  className="df-btn"
-                  onClick={() => (writes.readOnly ? setRefusal(writes.refusal()) : setOutcome({ kind: "lost", row }))}
-                >
-                  Change reason
-                </Button>
-              </span>
+              </div>
+              {record.lostReason ? (
+                <div className="df-settings-row" data-testid="v2-opportunity-lost-reason">
+                  <span className="df-settings-label">LOST REASON</span>
+                  <span className="df-settings-value df-settings-inline">
+                    <span>
+                      {record.lostReason.label}
+                      {record.lostReason.detail ? <span className="df-settings-copy"> · {record.lostReason.detail}</span> : null}
+                    </span>
+                    <Button variant="outline" type="button" className="df-btn" onClick={onLostReason}>
+                      Change reason
+                    </Button>
+                  </span>
+                </div>
+              ) : null}
+              {record.lostReasonMissing ? (
+                <div className="df-settings-row" data-testid="v2-opportunity-lost-reason">
+                  <span className="df-settings-label">LOST REASON</span>
+                  <span className="df-settings-value df-settings-inline">
+                    <span className="df-settings-copy">Not recorded</span>
+                    <Button variant="outline" type="button" className="df-btn" onClick={onLostReason}>
+                      Add reason
+                    </Button>
+                  </span>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-          {record.lostReasonMissing ? (
-            <div className="df-settings-row" data-testid="v2-opportunity-lost-reason">
-              <span className="df-settings-label">LOST REASON</span>
-              <span className="df-settings-value df-settings-inline">
-                <span className="df-settings-copy">Not recorded</span>
-                <Button
-                  variant="outline"
-                  type="button"
-                  className="df-btn"
-                  onClick={() => (writes.readOnly ? setRefusal(writes.refusal()) : setOutcome({ kind: "lost", row }))}
-                >
-                  Add reason
-                </Button>
-              </span>
-            </div>
-          ) : null}
-          {record.fields.map((field) => (
-            <div key={field.label} className="df-settings-row">
-              <span className="df-settings-label">{field.label}</span>
-              <span className="df-settings-value">{field.value}</span>
-            </div>
-          ))}
+          </section>
+
+          <StageHistoryCard opportunityId={row.id} stages={lists.stages} />
         </div>
-      </section>
-
-      <OpportunityDetailsCard
-        key={`${row.id}-${String(row.updatedAt)}`}
-        row={row}
-        clients={clients}
-        users={users}
-        sources={lists.sources}
-      />
-
-      <StageHistoryCard opportunityId={row.id} stages={lists.stages} />
-
-      <OpportunityNotesCard opportunityId={row.id} />
-
-      {record.clientHref ? (
-        <section className="df-card" data-testid="v2-opportunity-client">
-          <div className="df-card-head">
-            <h2 className="df-card-title">Client</h2>
-            <Button asChild variant="outline" className="df-btn">
-              <Link href={record.clientHref}>Open Client</Link>
-            </Button>
-          </div>
-          <p className="df-update-body">{record.clientLabel}</p>
-        </section>
-      ) : null}
-
+      </div>
 
       {outcome ? (
         <OpportunityOutcomeDialog

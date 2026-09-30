@@ -219,11 +219,15 @@ describe("Project Dossier Overview from live Workspace records (#173)", () => {
         id: "d1",
         title: "Scope notes",
         meta: "12:41",
-        href: "/document/d1",
-        order: { parentId: null, up: null, down: null },
+        href: "/projects/prj-live/documents/d1",
       },
     ]);
-    expect(matchV2Route(dossier.documents.rows[0].href).kind).toBe("document-editor");
+    // A Project Document opens in its Dossier's Documentation tab (#307).
+    expect(matchV2Route(dossier.documents.rows[0].href)).toMatchObject({
+      kind: "dossier",
+      tab: "documents",
+      documentId: "d1",
+    });
     expect(dossier.evidence.tiles).toHaveLength(1);
     expect(dossier.evidence.tiles[0].kind).toBe("screenshot");
     expect(dossier.client?.name).toBe("Harbor Co");
@@ -480,6 +484,9 @@ describe("Project Dossier remaining tabs from live records (#188)", () => {
       ["DUE", "30 OCT"],
       ["LAST CHANGE", "—"],
     ]);
+    // START and DUE are set right there, with the date picker (#307).
+    expect(dossier.settings.lifecycle.rows.map((row) => row.date ?? null)).toEqual([null, "startDate", "dueDate", null]);
+    expect(dossier.settings.dates).toEqual({ startDate: "2026-08-01", dueDate: "2026-10-30" });
     expect(dossier.settings.budget.draft).toEqual({ hours: "120", minutes: "" });
     expect(dossier.settings.documentation.row).toMatchObject({ label: "DOCUMENTATION", value: "ON" });
     expect(dossier.settings.lead?.id).toBe("user-1");
@@ -669,3 +676,47 @@ describe("Dossier Files open the File (#213)", () => {
   });
 });
 
+describe("Project Dossier Documentation tab (#307)", () => {
+  const at = new Date(2026, 8, 8, 12, 41, 0);
+  const pages = [
+    { id: "scope", title: "Scope", updatedAt: at, parentId: null, position: 0 },
+    { id: "handover", title: "Handover", updatedAt: at, parentId: null, position: 1 },
+  ];
+
+  function documentation(overrides: Partial<DossierInput> = {}) {
+    return composeDossier(emptyInput({ tab: "documents", project: liveProject(), documents: pages, ...overrides }))
+      .documents;
+  }
+
+  it("opens the page its URL names", () => {
+    const tab = documentation({ documentId: "handover" });
+    expect(tab.selected).toEqual({ id: "handover", title: "Handover" });
+    expect(tab.missing).toBe(false);
+    expect(tab.selectPage).toBeNull();
+  });
+
+  it("asks for a page, with the Project description, when none is open", () => {
+    const described = {
+      ...liveProject(),
+      project: { id: "doc-1", name: "Ledger rebuild", description: "Rebuild the harbor ledger before the audit." },
+    };
+    const tab = documentation({ project: described, documentId: null });
+    expect(tab.selected).toBeNull();
+    expect(tab.missing).toBe(false);
+    // v1's Project page words, with the Project description under them.
+    expect(tab.selectPage).toEqual({
+      title: "Select a page to get started",
+      copy: "Choose a page from the tree or create a new one to begin documenting this Project.",
+      description: "Rebuild the harbor ledger before the audit.",
+    });
+
+    expect(documentation({ documentId: null }).selectPage?.description).toBeNull();
+  });
+
+  it("says so when the URL names a page this Project does not have", () => {
+    const tab = documentation({ documentId: "someone-elses-page" });
+    expect(tab.selected).toBeNull();
+    expect(tab.missing).toBe(true);
+    expect(tab.selectPage).toBeNull();
+  });
+});
