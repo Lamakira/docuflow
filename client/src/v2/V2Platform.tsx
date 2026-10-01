@@ -1,7 +1,19 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import { Redirect } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Calendar,
+  Circle,
+  Clock,
+  Mail,
+  Search,
+  Shield,
+  ShieldOff,
+  ShieldPlus,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { SafeUser } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -34,6 +46,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { SkeletonRows } from "./V2Skeleton";
+
+const ICON = { width: 14, height: 14, strokeWidth: 1.4, "aria-hidden": true } as const;
 
 /** v1's `/admin`, `/admin/create` and `/admin/user/:id` (#266). */
 export function V2LegacyAdminRedirect() {
@@ -212,19 +226,19 @@ export function V2PlatformPage() {
           <V2PreviewHead kicker="USER" title={detail.name} meta={detail.email} onClose={closeDetail} />
           <div className="df-panel-scroll">
             <div className="df-kv">
-              <span>ROLE</span>
+              <span className="df-kv-label"><Shield {...ICON} /> ROLE</span>
               <span>{detail.role}</span>
             </div>
             <div className="df-kv">
-              <span>STATUS</span>
+              <span className="df-kv-label">{detail.archived ? <Archive {...ICON} /> : <Circle {...ICON} />} STATUS</span>
               <span>{detail.status}</span>
             </div>
             <div className="df-kv">
-              <span>LAST SIGN-IN</span>
+              <span className="df-kv-label"><Clock {...ICON} /> LAST SIGN-IN</span>
               <span>{detail.lastSignIn}</span>
             </div>
             <div className="df-kv">
-              <span>JOINED</span>
+              <span className="df-kv-label"><Calendar {...ICON} /> JOINED</span>
               <span>{detail.joined}</span>
             </div>
             {detail.note ? <p className="df-empty df-flush">{detail.note}</p> : null}
@@ -247,6 +261,20 @@ export function V2PlatformPage() {
   );
 }
 
+function ActionIcon({ action }: { action: PlatformAction }) {
+  const Icon: LucideIcon =
+    action.kind === "reset"
+      ? Mail
+      : action.kind === "archive"
+        ? Archive
+        : action.kind === "restore"
+          ? ArchiveRestore
+          : action.destructive
+            ? ShieldOff
+            : ShieldPlus;
+  return <Icon {...ICON} />;
+}
+
 function PlatformActionControl({
   action,
   pending,
@@ -264,9 +292,10 @@ function PlatformActionControl({
         type="button"
         disabled={pending}
         onClick={onRun}
-        className="df-btn"
+        className="df-btn df-platform-action"
         data-testid={`v2-platform-${action.kind}`}
       >
+        <ActionIcon action={action} />
         {action.label}
       </Button>
     );
@@ -278,9 +307,10 @@ function PlatformActionControl({
           variant={destructive ? "destructiveOutline" : "outline"}
           type="button"
           disabled={pending}
-          className="df-btn"
+          className="df-btn df-platform-action"
           data-testid={`v2-platform-${action.kind}`}
         >
+          <ActionIcon action={action} />
           {action.label}
         </Button>
       </AlertDialogTrigger>

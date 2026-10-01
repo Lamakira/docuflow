@@ -4099,6 +4099,12 @@ button.df-activity-row {
   color: var(--df-archive-slate);
 }
 
+.df-kv-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .df-meter-wide {
   width: 96px;
   margin-top: 6px;
@@ -6260,6 +6266,12 @@ button.df-activity-row {
 .df-platform-actions {
   flex-wrap: wrap;
   gap: var(--df-space-3);
+}
+
+.df-platform-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /*
