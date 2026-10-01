@@ -6236,7 +6236,11 @@ button.df-activity-row {
    keeps its actions in one menu. */
 .df-platform-register .df-register-head,
 .df-platform-register .df-register-row {
-  grid-template-columns: minmax(0, 2fr) minmax(0, 0.9fr) minmax(0, 0.7fr) minmax(0, 0.8fr) minmax(0, 0.7fr) auto;
+  /* The menu track is fixed. `auto` sized the row to the button and the head
+     to an empty cell, so the dates sat left of their labels. */
+  grid-template-columns: minmax(0, 2fr) minmax(0, 0.9fr) minmax(0, 0.7fr) minmax(0, 0.8fr) minmax(0, 0.7fr) var(--df-control-h);
+  padding-left: var(--df-space-4);
+  padding-right: var(--df-space-4);
 }
 
 .df-v2 .df-platform-register .df-register-row {

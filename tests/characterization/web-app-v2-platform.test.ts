@@ -230,6 +230,10 @@ describe("the console page (#266)", () => {
     expect(page).toContain("@/components/ui/alert-dialog");
     expect(page).not.toContain("<select");
     expect(page).not.toContain("df-folder-preview");
+    const css = read("client/src/v2/tokens.css");
+    expect(css).toMatch(
+      /\.df-platform-register \.df-register-head,\s*\.df-platform-register \.df-register-row\s*\{[^}]*var\(--df-control-h\)/,
+    );
     // The confirm cannot fire twice, as Billing's cancel cannot.
     expect(page).toMatch(/<AlertDialogAction[\s\S]*?disabled=\{pending\}/);
   });
