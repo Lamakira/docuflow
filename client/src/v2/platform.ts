@@ -3,12 +3,12 @@ import { formatWhen, memberName } from "./today";
 /**
  * The platform console (#266, decided on #261).
  *
- * The User directory is a platform surface, not a Workspace one: `users` has no
- * `workspace_id`, so ADR-0025 keeps it on the global `users.role` column behind
- * `requirePlatformAdmin`. The console lives outside the Workspace chrome and
- * reaches five routes. Create, delete and profile edit stay on the server and
- * out of v2: Invitations and Clerk create Users, archive covers delete, and a
- * Membership's profile is People's.
+ * The User directory is a platform surface, not a Workspace one. Operator
+ * routes answer a Platform Staff session (#300, ADR-0015), never `users.role`.
+ * The console lives outside the Workspace chrome and reaches five routes.
+ * Create, delete and profile edit stay on the server and out of v2: Invitations
+ * and Clerk create Users, archive covers delete, and a Membership's profile is
+ * People's.
  */
 
 export const PLATFORM_CONSOLE_LABEL = "Platform console";
@@ -110,9 +110,11 @@ export function platformUserArchivePath(userId: string): string {
   return `/api/admin/users/${userId}/archive`;
 }
 
-/** The console's gate on the client. `requirePlatformAdmin` stays the real one. */
-export function isPlatformAdmin(user: { role?: string | null } | null | undefined): boolean {
-  return user?.role === "admin";
+/** The console opens for a Platform Staff session, never for `users.role` (#300). */
+export function isPlatformAdmin(
+  user: { platformStaff?: boolean | null; role?: string | null } | null | undefined,
+): boolean {
+  return user?.platformStaff === true;
 }
 
 /** Where v1's `/admin`, `/admin/create` and `/admin/user/:id` land. */

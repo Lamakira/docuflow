@@ -252,7 +252,8 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
 
     // No Membership means no Workspace to read from — not the seeded one either.
     expect((await visitor.agent.get("/api/projects")).status).toBe(401);
-    expect((await visitor.agent.get("/api/admin/users")).status).toBe(401);
+    // The directory is an operator route. A new User is not Platform Staff.
+    expect((await visitor.agent.get("/api/admin/users")).status).toBe(403);
 
     // And the seeded Workspace gained nobody.
     const seeded = await db

@@ -83,9 +83,10 @@ describe("the platform console reaches the five kept routes (#266)", () => {
 });
 
 describe("the console is a platform surface, not a Workspace one (#266)", () => {
-  it("is reached on the global role only", () => {
-    expect(isPlatformAdmin({ role: "admin" })).toBe(true);
-    expect(isPlatformAdmin({ role: "user" })).toBe(false);
+  it("is reached on a Platform Staff session only", () => {
+    expect(isPlatformAdmin({ platformStaff: true })).toBe(true);
+    expect(isPlatformAdmin({ platformStaff: false, role: "admin" })).toBe(false);
+    expect(isPlatformAdmin({ role: "admin" })).toBe(false);
     expect(isPlatformAdmin(null)).toBe(false);
   });
 

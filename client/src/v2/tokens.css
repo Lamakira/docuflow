@@ -3584,6 +3584,31 @@ button.df-activity-row {
   display: none;
 }
 
+.df-support-grants {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.df-support-grants li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--df-space-3);
+  padding: var(--df-space-3) var(--df-space-4);
+  border-bottom: 1px solid var(--df-divider);
+  font-size: var(--df-text-2);
+  color: var(--df-case-ink);
+}
+
+.df-support-note {
+  margin: 0;
+  padding: var(--df-space-4);
+  font-size: var(--df-text-2);
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+}
+
 .df-danger-row {
   display: flex;
   align-items: center;

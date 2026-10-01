@@ -4,6 +4,7 @@ import { resetDb } from "../helpers/db";
 import {
   makeMainAdmin,
   registerAdmin,
+  registerPlatformStaff,
   registerUser,
   uniqueEmail,
 } from "../helpers/auth";
@@ -33,7 +34,8 @@ describe("users and admin management (characterization)", () => {
 
   it("lists non-archived users to everyone, and archived ones only to admins who ask", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app, { firstName: "Ann" });
+    const admin = await registerPlatformStaff(app, { firstName: "Ann" });
+    const customerAdmin = await registerAdmin(app, { firstName: "Ada" });
     const member = await registerUser(app, { firstName: "Bob" });
     const archived = await registerUser(app, { firstName: "Cid" });
 
@@ -41,23 +43,25 @@ describe("users and admin management (characterization)", () => {
 
     const asMember = await member.agent.get("/api/users");
     expect(asMember.status).toBe(200);
-    expect(asMember.body.map((u: { id: string }) => u.id).sort()).toEqual([admin.id, member.id].sort());
+    expect(asMember.body.map((u: { id: string }) => u.id).sort()).toEqual(
+      [admin.id, customerAdmin.id, member.id].sort(),
+    );
     // The directory is the "safe" projection: no password, no generated password.
     expect(asMember.body[0]).not.toHaveProperty("password");
     expect(asMember.body[0]).not.toHaveProperty("lastGeneratedPassword");
 
     // Quirk: a non-admin asking for archived users is ignored rather than refused.
     const memberAsking = await member.agent.get("/api/users").query({ includeArchived: "true" });
-    expect(memberAsking.body).toHaveLength(2);
+    expect(memberAsking.body).toHaveLength(3);
 
-    const adminAsking = await admin.agent.get("/api/users").query({ includeArchived: "true" });
-    expect(adminAsking.body).toHaveLength(3);
+    const adminAsking = await customerAdmin.agent.get("/api/users").query({ includeArchived: "true" });
+    expect(adminAsking.body).toHaveLength(4);
     expect(adminAsking.body.find((u: { id: string }) => u.id === archived.id).isArchived).toBe(true);
   });
 
   it("lists archived users on the platform directory only when asked (#266)", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app, { firstName: "Ann" });
+    const admin = await registerPlatformStaff(app, { firstName: "Ann" });
     const archived = await registerUser(app, { firstName: "Cid" });
     await admin.agent.patch(`/api/admin/users/${archived.id}/archive`).send({ isArchived: true });
 
@@ -87,7 +91,7 @@ describe("users and admin management (characterization)", () => {
 
   it("creates a user, invites them at the IdentityProvider, and reports the pre-promotion row", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const email = uniqueEmail("created");
 
     const res = await admin.agent.post("/api/admin/users").send({
@@ -131,7 +135,7 @@ describe("users and admin management (characterization)", () => {
 
   it("serves admin user details minus the hash and any generated password", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const created = await admin.agent
       .post("/api/admin/users")
       .send({ email: uniqueEmail("details"), firstName: "De", lastName: "Tails" });
@@ -148,7 +152,7 @@ describe("users and admin management (characterization)", () => {
 
   it("changes a role and validates the value", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const member = await registerUser(app);
 
     const promoted = await admin.agent
@@ -174,7 +178,7 @@ describe("users and admin management (characterization)", () => {
 
   it("updates profile fields and rejects an email already in use", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const member = await registerUser(app);
 
     const updated = await admin.agent.patch(`/api/admin/users/${member.id}`).send({
@@ -205,7 +209,7 @@ describe("users and admin management (characterization)", () => {
 
   it("archives and restores a user, refusing self-archival", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const member = await registerUser(app);
 
     const archived = await admin.agent
@@ -245,7 +249,7 @@ describe("users and admin management (characterization)", () => {
 
   it("resets by sending a password-set invite and does not return a password", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const member = await registerUser(app);
 
     const res = await admin.agent.post(`/api/admin/users/${member.id}/reset-password`);
@@ -266,7 +270,7 @@ describe("users and admin management (characterization)", () => {
 
   it("deletes a user with 200 and refuses self-deletion", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const member = await registerUser(app);
 
     const res = await admin.agent.delete(`/api/admin/users/${member.id}`);
@@ -283,9 +287,9 @@ describe("users and admin management (characterization)", () => {
 
   it("shields the SuperAdmin from other admins, one route at a time", async () => {
     const app = await makeApp();
-    const superAdmin = await registerAdmin(app);
+    const superAdmin = await registerPlatformStaff(app);
     await makeMainAdmin(superAdmin.id);
-    const otherAdmin = await registerAdmin(app);
+    const otherAdmin = await registerPlatformStaff(app);
 
     const details = await otherAdmin.agent.get(`/api/admin/users/${superAdmin.id}`);
     expect(details.status).toBe(403);

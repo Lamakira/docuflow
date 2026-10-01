@@ -13,7 +13,7 @@ import {
 } from "../../shared/schema";
 import { db } from "../../server/db";
 import { makeApp } from "../helpers/app";
-import { newAgent, promoteToAdmin, registerUser, setWorkspaceRole } from "../helpers/auth";
+import { newAgent, promoteToAdmin, registerPlatformStaff, registerUser, setWorkspaceRole } from "../helpers/auth";
 import { resetDb } from "../helpers/db";
 import { addWorkspaceMembership, plantParallelWorkspace, removeAllMemberships } from "../helpers/workspace";
 
@@ -261,9 +261,7 @@ describe("account deletion is guided and reversible (#217, Flow 10)", () => {
 
   it("keeps the existing admin rule that a User cannot delete their own account", async () => {
     const app = await makeApp();
-    const admin = await registerUser(app);
-    await setWorkspaceRole(admin.id, "owner");
-    await promoteToAdmin(admin.id);
+    const admin = await registerPlatformStaff(app);
 
     const own = await admin.agent.delete(`/api/admin/users/${admin.id}`);
     expect(own.status).toBe(400);

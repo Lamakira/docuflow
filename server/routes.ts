@@ -22,6 +22,7 @@ import { contextFromUser, runWithWorkspaceContext } from "./workspaceContext";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
+import { registerOperatorRoutes, requirePlatformStaff } from "./modules/identity/operatorHttp";
 import { webAuthConfigRoute, identityProvider, selfServiceRegistrationRoute } from "./modules/identity";
 import { registerDeliveryPreferenceRoutes } from "./modules/notifications/http";
 import { emailEnabledForUser } from "./modules/notifications/deliveryPreference";
@@ -200,6 +201,7 @@ export async function registerRoutes(
 
   // Service Accounts (Identity & Access). Session BFF; not /api/v1.
   registerServiceAccountRoutes(app);
+  registerOperatorRoutes(app);
 
   // Billing recovery (Billing). Session BFF; not /api/v1.
   registerBillingRoutes(app);
@@ -226,9 +228,13 @@ export async function registerRoutes(
       if (!user) {
         return res.json(null);
       }
-      
-      // Return user without the IdentityProvider subject
-      res.json(toSafeUser(user));
+
+      // Return user without the IdentityProvider subject. Platform Staff is a
+      // property of this session, not of `users.role` (#300).
+      res.json({
+        ...toSafeUser(user),
+        platformStaff: (req as { platformStaffSession?: boolean }).platformStaffSession === true,
+      });
     } catch (error) {
       console.error("Error fetching auth user:", error);
       res.json(null);
@@ -3112,22 +3118,9 @@ Instructions:
   // once read the global `users.role` column, which no Workspace created
   // through #217 ever sets — its Owner was refused their own Workspace.
   //
-  // `/api/admin/users*` is the exception and keeps the old column. It reads and
-  // writes `users`, which is global by design (no `workspace_id`, so no RLS and
-  // no query scope), so it is a platform directory, not a Workspace surface.
-  // Opening it on a Workspace Role would let anyone who signs up and creates a
-  // Workspace list, re-role, reset and delete every account on the platform.
-  const requirePlatformAdmin = async (req: any, res: any, next: any) => {
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    const user = await storage.getUser(userId);
-    if (!user || user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied" });
-    }
-    next();
-  };
+  // `/api/admin/users*` is the platform directory, not a Workspace surface.
+  // It is an operator route: Platform Staff only. `users.role` grants nothing
+  // here (#300, ADR-0015). A customer User with `role = "admin"` is refused.
 
   // Administration reaches the daily-updates dashboard, and so does any
   // Membership granted the "view daily updates" Capability.
@@ -3264,7 +3257,7 @@ Instructions:
   });
 
   // Get all users (admin only)
-  app.get("/api/admin/users", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
+  app.get("/api/admin/users", requirePlatformStaff, async (req: any, res) => {
     try {
       // The platform console lists archived accounts on request, so it can restore them (#266).
       const users = await storage.getAllUsers({ includeArchived: req.query.includeArchived === "true" });
@@ -3276,7 +3269,7 @@ Instructions:
   });
 
   // Get single user details (admin only)
-  app.get("/api/admin/users/:id", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
+  app.get("/api/admin/users/:id", requirePlatformStaff, async (req: any, res) => {
     try {
       const user = await storage.getAdminUserDetails(req.params.id);
       if (!user) {
@@ -3299,7 +3292,7 @@ Instructions:
   });
 
   // Update user role (admin only)
-  app.patch("/api/admin/users/:id/role", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
+  app.patch("/api/admin/users/:id/role", requirePlatformStaff, async (req: any, res) => {
     try {
       // Check if target user is SuperAdmin
       const targetUser = await storage.getUser(req.params.id);
@@ -3329,7 +3322,7 @@ Instructions:
   });
 
   // Create new user (admin only)
-  app.post("/api/admin/users", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
+  app.post("/api/admin/users", requirePlatformStaff, async (req: any, res) => {
     try {
       const createUserSchema = z.object({
         email: z.string().email(),
@@ -3376,7 +3369,7 @@ Instructions:
 
   // Update user info (admin only)
   // Archive / unarchive a user (soft delete — data is preserved)
-  app.patch("/api/admin/users/:id/archive", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
+  app.patch("/api/admin/users/:id/archive", requirePlatformStaff, async (req: any, res) => {
     try {
       const targetUser = await storage.getUser(req.params.id);
       if (!targetUser) return res.status(404).json({ message: "User not found" });
@@ -3395,7 +3388,7 @@ Instructions:
     }
   });
 
-  app.patch("/api/admin/users/:id", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
+  app.patch("/api/admin/users/:id", requirePlatformStaff, async (req: any, res) => {
     try {
       // Check if target user is SuperAdmin
       const targetUser = await storage.getUser(req.params.id);
@@ -3437,7 +3430,7 @@ Instructions:
   });
 
   // Reset user password (admin only)
-  app.post("/api/admin/users/:id/reset-password", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
+  app.post("/api/admin/users/:id/reset-password", requirePlatformStaff, async (req: any, res) => {
     try {
       const user = await storage.getUser(req.params.id);
       if (!user) {
@@ -3458,7 +3451,7 @@ Instructions:
   });
 
   // Delete user (admin only)
-  app.delete("/api/admin/users/:id", isAuthenticated, requirePlatformAdmin, async (req: any, res) => {
+  app.delete("/api/admin/users/:id", requirePlatformStaff, async (req: any, res) => {
     try {
       const userId = req.params.id;
       

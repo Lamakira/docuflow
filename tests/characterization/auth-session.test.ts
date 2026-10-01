@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { login, newAgent, promoteToAdmin, registerUser, uniqueEmail } from "../helpers/auth";
+import { login, newAgent, promoteToAdmin, registerPlatformStaff, registerUser, uniqueEmail } from "../helpers/auth";
 
 /**
  * Characterization: web auth and the session contract, as of Clerk-only web
@@ -113,8 +113,7 @@ describe("auth and session (characterization)", () => {
 
   it("answers null when the session names a user that no longer exists", async () => {
     const app = await makeApp();
-    const admin = await registerUser(app);
-    await promoteToAdmin(admin.id);
+    const admin = await registerPlatformStaff(app);
     const victim = await registerUser(app);
 
     const deleted = await admin.agent.delete(`/api/admin/users/${victim.id}`);

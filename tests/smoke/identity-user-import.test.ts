@@ -171,13 +171,13 @@ describe("User import against the database", () => {
 
   it("keeps the provider subject id off every User the API returns", async () => {
     const { makeApp } = await import("../helpers/app");
-    const { registerAdmin, registerUser } = await import("../helpers/auth");
+    const { registerPlatformStaff, registerUser } = await import("../helpers/auth");
     const { storage } = await import("../../server/storage");
     const { importUsersIntoIdentityProvider } = await import(
       "../../server/modules/identity/userImport"
     );
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const member = await registerUser(app);
 
     await importUsersIntoIdentityProvider({

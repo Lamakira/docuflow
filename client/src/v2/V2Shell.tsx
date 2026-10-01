@@ -11,6 +11,7 @@ import { V2CommandBar } from "./V2CommandBar";
 import { V2ContextPanel } from "./V2ContextPanel";
 import { V2Rail } from "./V2Rail";
 import { V2TimerChip } from "./V2TimerChip";
+import { WorkspaceSecondFactor } from "./V2SupportAccess";
 import { V2FirstWorkspace } from "./V2FirstWorkspace";
 import { V2WorkspaceChooser } from "./V2WorkspaceChooser";
 import { selectCommandPanel } from "./chrome";
@@ -29,6 +30,14 @@ import {
 import { motionForSurface } from "./motion";
 import { notify } from "./notify";
 import { invitationAcceptPath, myInvitationsPath } from "./people";
+import {
+  SUPPORT_GRANTS_PATH,
+  supportAccessNotice,
+  TWO_FACTOR_PATH,
+  workspaceNeedsSecondFactor,
+  type SupportGrantView,
+  type WorkspaceAssurance,
+} from "./supportAccess";
 import { chooserInvitationRows, workspaceEntry, type MembershipsResponse, type PendingInvitationOption } from "./workspace";
 import "./tokens.css";
 
@@ -117,6 +126,16 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
     enabled: Boolean(memberships),
   });
   const { data: entitlements } = useEntitlements();
+  const { data: assurance, isLoading: assuranceLoading } = useQuery<WorkspaceAssurance>({
+    queryKey: [TWO_FACTOR_PATH],
+    enabled: Boolean(memberships?.activeWorkspaceId),
+  });
+  const secondFactorBlocked = workspaceNeedsSecondFactor(assurance);
+  const { data: supportGrants = [] } = useQuery<SupportGrantView[]>({
+    queryKey: [SUPPORT_GRANTS_PATH],
+    enabled: Boolean(memberships?.activeWorkspaceId) && !assuranceLoading && !secondFactorBlocked,
+  });
+  const supportNotice = supportAccessNotice(supportGrants);
   const planGate = planGateFor(navIdForPath(location), entitlements);
   const trial = trialNotice(entitlements);
 
@@ -324,7 +343,16 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
                         </Button>
                       </div>
                     ) : null}
-                    {children}
+                    {!secondFactorBlocked && supportNotice ? (
+                      <div className="df-plan-banner" role="status" data-testid="v2-support-access-banner">
+                        <p>{supportNotice}</p>
+                      </div>
+                    ) : null}
+                    {secondFactorBlocked ? (
+                      <WorkspaceSecondFactor />
+                    ) : assuranceLoading && memberships?.activeWorkspaceId ? null : (
+                      children
+                    )}
                   </div>
                 </main>
               </div>
