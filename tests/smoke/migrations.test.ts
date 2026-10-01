@@ -207,6 +207,7 @@ describe("migration journal", () => {
       "0036_flashy_mattie_franklin",
       "0037_flowery_spirit",
       "0038_boring_gamma_corps",
+      "0039_platform_staff_access",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -253,6 +254,7 @@ describe("migration journal", () => {
       { version: "0036_flashy_mattie_franklin", baselined: false },
       { version: "0037_flowery_spirit", baselined: false },
       { version: "0038_boring_gamma_corps", baselined: false },
+      { version: "0039_platform_staff_access", baselined: false },
     ]);
   });
 

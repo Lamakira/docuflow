@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { promoteToAdmin, registerAdmin, registerUser, setWorkspaceRole } from "../helpers/auth";
+import { promoteToAdmin, registerPlatformStaff, registerUser, setWorkspaceRole } from "../helpers/auth";
 import { removeAllMemberships } from "../helpers/workspace";
 
 /**
@@ -105,7 +105,7 @@ describe("the Workspace Role governs Administration (#238)", () => {
     // Administrator in the promoter's active Workspace. The two roles are
     // separate (ADR-0025, ADR-0026): the global column writes nothing else.
     const app = await makeApp();
-    const platformAdmin = await registerAdmin(app);
+    const platformAdmin = await registerPlatformStaff(app);
     const member = await registerUser(app);
     const administrator = await registerUser(app);
     await setWorkspaceRole(administrator.id, "administrator");
@@ -130,7 +130,7 @@ describe("the Workspace Role governs Administration (#238)", () => {
     const app = await makeApp();
     const owner = await registerUser(app);
     await setWorkspaceRole(owner.id, "owner");
-    const platformAdmin = await registerAdmin(app);
+    const platformAdmin = await registerPlatformStaff(app);
 
     const demoted = await platformAdmin.agent
       .patch(`/api/admin/users/${owner.id}/role`)

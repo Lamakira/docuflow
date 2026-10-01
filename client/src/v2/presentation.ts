@@ -128,6 +128,7 @@ export const ADMINISTRATION_TAB_IDS = [
   "tracking-policy",
   "pipeline-lists",
   "integrations",
+  "support-access",
 ] as const;
 
 export type AdministrationTabId = (typeof ADMINISTRATION_TAB_IDS)[number];
@@ -141,6 +142,7 @@ export const ADMINISTRATION_TAB_LABEL: Record<AdministrationTabId, string> = {
   "tracking-policy": "Tracking Policy",
   "pipeline-lists": "Pipeline & lists",
   integrations: "Integrations",
+  "support-access": "Support access",
 };
 
 const TIME_TAB_CRUMB: Record<TimeTabId, string> = {

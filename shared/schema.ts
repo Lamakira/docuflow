@@ -107,6 +107,22 @@ export function toSafeUser<
   return safe;
 }
 
+/**
+ * Platform Staff (#300, ADR-0015). An operator principal from a dedicated
+ * identity pool, not a User and not `users.role`. The subject is the staff
+ * Clerk instance's; `linked_user_id` is only the account a former platform
+ * admin was moved from.
+ */
+export const platformStaff = pgTable("platform_staff", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  subjectId: varchar("subject_id").notNull().unique(),
+  email: varchar("email"),
+  linkedUserId: varchar("linked_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type PlatformStaff = typeof platformStaff.$inferSelect;
+
 // Projects table - folders containing documents
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1705,6 +1721,8 @@ export const orgSettings = pgTable("org_settings", {
   allowedTimezones: jsonb("allowed_timezones").$type<string[]>(),
   /** Help Center images: slot id → `/public-objects/…` path after admin upload. */
   helpCenterScreenshots: jsonb("help_center_screenshots").$type<HelpCenterScreenshotsMap>(),
+  /** Owner-controlled. Off until set. Enforced from the session, not the Workspace Role (#300). */
+  requireTwoFactor: boolean("require_two_factor").notNull().default(false),
   updatedAt: timestamp("updated_at").defaultNow(),
   workspaceId: workspaceIdColumn(),
 }, (table) => [
@@ -2453,6 +2471,58 @@ export const auditEvents = pgTable(
 );
 
 export type AuditEvent = typeof auditEvents.$inferSelect;
+
+/**
+ * Support Access Grant (#300, ADR-0015). Read-only, time-boxed, and visible to
+ * the Workspace while active. Named Platform Staff, never a session in a
+ * customer's name.
+ */
+export const supportAccessGrants = pgTable(
+  "support_access_grants",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    platformStaffId: varchar("platform_staff_id")
+      .notNull()
+      .references(() => platformStaff.id, { onDelete: "cascade" }),
+    createdByUserId: varchar("created_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    expiresAt: timestamp("expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    revokedByUserId: varchar("revoked_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    workspaceId: workspaceIdColumn(),
+  },
+  (table) => [
+    index("idx_support_access_grants_staff").on(table.workspaceId, table.platformStaffId),
+    idInWorkspace(table, "support_access_grants"),
+  ],
+);
+
+export type SupportAccessGrant = typeof supportAccessGrants.$inferSelect;
+
+/**
+ * Audited break-glass (#300). The only way Platform Staff read Workspace
+ * content without a Support Access Grant. The reason is the evidence.
+ */
+export const breakGlassAccess = pgTable(
+  "break_glass_access",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    platformStaffId: varchar("platform_staff_id")
+      .notNull()
+      .references(() => platformStaff.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    workspaceId: workspaceIdColumn(),
+  },
+  (table) => [
+    index("idx_break_glass_access_staff").on(table.workspaceId, table.platformStaffId),
+    idInWorkspace(table, "break_glass_access"),
+  ],
+);
+
+export type BreakGlassAccess = typeof breakGlassAccess.$inferSelect;
 
 // ─── Daily Update status set (single source of truth for form + admin dashboard) ───
 // Combines project-management statuses with predefined progress statuses.

@@ -81,7 +81,11 @@ export class FakeIdentityProvider implements IdentityProvider {
     );
     if (!stored) throw new IdentitySessionError();
     const token = `sess_fake_${providerSubjectId}`;
-    this.sessions.set(token, { providerSubjectId: stored.providerSubjectId });
+    this.sessions.set(token, {
+      providerSubjectId: stored.providerSubjectId,
+      secondFactorVerified: false,
+      platformStaff: false,
+    });
     return token;
   }
 

@@ -74,6 +74,8 @@ export interface IdentityConfig {
   /** Absent means IdentityProvider operations fail closed, and nobody can sign in to the web. */
   secretKey?: string;
   publishableKey?: string;
+  /** Dedicated Clerk instance for Platform Staff. Absent uses the staff-pool claim on the customer instance. */
+  platformSecretKey?: string;
 }
 
 export interface DesktopTokenConfig {
@@ -572,7 +574,13 @@ function resolveIdentity(missing: string[]): IdentityConfig {
       "CLERK_PUBLISHABLE_KEY must be a test-mode key (pk_test_…) — this environment never holds a live Clerk instance (ADR-0018)"
     );
   }
-  return { secretKey, publishableKey };
+  const platformSecretKey = read("PLATFORM_CLERK_SECRET_KEY");
+  if (platformSecretKey && !platformSecretKey.startsWith("sk_test_")) {
+    missing.push(
+      "PLATFORM_CLERK_SECRET_KEY must be a test-mode key (sk_test_…) — this environment never holds a live Clerk instance (ADR-0018)"
+    );
+  }
+  return { secretKey, publishableKey, platformSecretKey };
 }
 
 function resolveConfig(): AppConfig {

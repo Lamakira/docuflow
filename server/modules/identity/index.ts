@@ -1,6 +1,6 @@
 import type { IdentityPersistence } from "./persistence";
 import { config } from "../../config";
-import { identityProviderFromAppConfig } from "./createIdentityProvider";
+import { createIdentityProvider, identityProviderFromAppConfig } from "./createIdentityProvider";
 import {
   createServiceAccount,
   listServiceAccounts,
@@ -58,10 +58,11 @@ export {
   importUsersIntoIdentityProvider,
   planUserImport,
 } from "./userImport";
-export type { WebSessionPersistence } from "./webSession";
+export type { ResolvedIdentitySession, WebSessionPersistence } from "./webSession";
 export {
   bearerToken,
   isWebSessionPath,
+  resolveIdentitySession,
   userIdFromIdentitySession,
   WEB_SESSION_AGENT_PATHS,
 } from "./webSession";
@@ -85,6 +86,14 @@ export {
 /** Process-wide IdentityProvider. Missing Clerk credentials fail closed. HTTP still authenticates as today. */
 export const identityProvider = identityProviderFromAppConfig(config.identity);
 
+/**
+ * The Platform Staff Clerk instance (#300). Absent means staff tokens are the
+ * customer instance's `pla: "staff"` claim — an equivalent pool, not a second login.
+ */
+export const platformIdentityProvider = config.identity.platformSecretKey
+  ? createIdentityProvider({ secretKey: config.identity.platformSecretKey })
+  : null;
+
 export const IDENTITY_TABLES = [
   "users",
   "devices",
@@ -94,6 +103,9 @@ export const IDENTITY_TABLES = [
   "service_accounts",
   "service_account_capabilities",
   "account_deletions",
+  "platform_staff",
+  "support_access_grants",
+  "break_glass_access",
 ] as const;
 
 export const identityPersistence: ServiceAccountPersistence = {

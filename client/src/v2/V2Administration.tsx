@@ -90,6 +90,7 @@ import {
   type AdministrationTabId,
 } from "./presentation";
 import { workspaceOwnerName } from "./workspace";
+import { V2SupportAccess } from "./V2SupportAccess";
 import { useV2Chrome } from "./V2Shell";
 import { V2FormDialog } from "./V2FormDialog";
 import { AnalyticsRegister, FigureBand, readBehindAdministration } from "./V2Analytics";
@@ -1340,6 +1341,10 @@ export function V2AdministrationPage() {
               </section>
             </>
           )}
+        </TabsContent>
+
+        <TabsContent value="support-access" className="df-admin-panel" data-testid="v2-administration-panel-support-access">
+          <V2SupportAccess workspaceRole={workspaceRole} />
         </TabsContent>
       </Tabs>
     </div>

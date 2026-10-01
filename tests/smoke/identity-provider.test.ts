@@ -67,6 +67,8 @@ describe("IdentityProvider fake", () => {
 
     await expect(provider.verifySessionToken(token)).resolves.toEqual({
       providerSubjectId: "user_fake_1",
+      secondFactorVerified: false,
+      platformStaff: false,
     });
   });
 
@@ -218,6 +220,8 @@ describe("Clerk adapter", () => {
 
     await expect(provider.verifySessionToken(token)).resolves.toEqual({
       providerSubjectId: "user_test_1",
+      secondFactorVerified: false,
+      platformStaff: false,
     });
   });
 

@@ -740,6 +740,7 @@ describe("config — Clerk identity", () => {
     expect(config.identity).toEqual({
       secretKey: undefined,
       publishableKey: undefined,
+      platformSecretKey: undefined,
     });
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -761,6 +762,7 @@ describe("config — Clerk identity", () => {
     expect(config.identity).toEqual({
       secretKey: "sk_test_not-a-real-key",
       publishableKey: "pk_test_not-a-real-key",
+      platformSecretKey: undefined,
     });
 
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});

@@ -19,6 +19,7 @@ import {
   type PasswordSetInviteRequest,
   type ProviderIdentity,
 } from "./identityProvider";
+import { isPlatformStaffToken, secondFactorVerified } from "./sessionClaims";
 
 type ClerkEmailAddress = {
   id?: string;
@@ -76,10 +77,17 @@ function toIdentity(user: ClerkUser, fallbackEmail?: string): ProviderIdentity {
   };
 }
 
+type SessionClaims = {
+  sub?: string;
+  fva?: unknown;
+  twoFactorEnabled?: unknown;
+  pla?: unknown;
+};
+
 /** @clerk/backend `verifyToken` returns `{ data }` or `{ errors }`, not a bare payload. */
-function sessionPayloadFromVerifyResult(result: unknown): { sub?: string } {
+function sessionPayloadFromVerifyResult(result: unknown): SessionClaims {
   if (!result || typeof result !== "object") throw new IdentitySessionError();
-  const record = result as { data?: { sub?: string }; errors?: unknown[]; sub?: string };
+  const record = result as { data?: SessionClaims; errors?: unknown[] } & SessionClaims;
   if (Array.isArray(record.errors) && record.errors.length > 0) {
     throw new IdentitySessionError();
   }
@@ -149,7 +157,11 @@ export class ClerkIdentityProvider implements IdentityProvider {
       );
       const subject = payload.sub;
       if (typeof subject !== "string" || subject.length === 0) throw new IdentitySessionError();
-      return { providerSubjectId: subject };
+      return {
+        providerSubjectId: subject,
+        secondFactorVerified: secondFactorVerified(payload),
+        platformStaff: isPlatformStaffToken(payload),
+      };
     } catch (error) {
       if (error instanceof IdentityProviderError) throw error;
       if (process.env.NODE_ENV !== "test") {

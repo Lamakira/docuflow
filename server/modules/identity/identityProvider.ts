@@ -64,6 +64,10 @@ export type ProviderIdentity = {
  */
 export type IdentitySession = {
   providerSubjectId: string;
+  /** Clerk `fva[1] >= 0` or `twoFactorEnabled`. DocuFlow decides; Clerk enrolled the factor. */
+  secondFactorVerified: boolean;
+  /** Token issued for the Platform Staff pool (`pla: "staff"`), not a customer User. */
+  platformStaff: boolean;
 };
 
 export type PasswordSetInviteRequest = {

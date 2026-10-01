@@ -5,8 +5,9 @@ import {
   bearerToken,
   identityProvider,
   isWebSessionPath,
-  userIdFromIdentitySession,
+  resolveIdentitySession,
 } from "./modules/identity";
+import { workspaceRequiresTwoFactor } from "./modules/identity/operatorAccess";
 import {
   ArchivedMembershipError,
   NoActiveMembershipError,
@@ -38,13 +39,20 @@ export const identitySession: RequestHandler = async (req, res, next) => {
   const token = bearerToken(req.headers.authorization);
   if (!token) return next();
   try {
-    const userId = await userIdFromIdentitySession({
+    const resolved = await resolveIdentitySession({
       provider: identityProvider,
       persistence: storage,
       token,
     });
-    (req as any).identitySessionUserId = userId;
-    if (userId) await recordProviderSessionLogin(userId);
+    if (resolved) {
+      (req as any).secondFactorVerified = resolved.secondFactorVerified;
+      (req as any).platformStaffSession = resolved.platformStaff;
+      (req as any).sessionSubjectId = resolved.subjectId;
+      if (resolved.userId) {
+        (req as any).identitySessionUserId = resolved.userId;
+        await recordProviderSessionLogin(resolved.userId);
+      }
+    }
     next();
   } catch (error) {
     next(error);
@@ -88,6 +96,13 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   return res.status(401).json({ message: "Unauthorized" });
 };
 
+/** The assurance read itself, so a blocked Member can be sent to set a factor up. */
+const TWO_FACTOR_EXEMPT = new Set(["/api/workspace/two-factor"]);
+
+function twoFactorExempt(path: string): boolean {
+  return TWO_FACTOR_EXEMPT.has(path);
+}
+
 /**
  * Bind the rest of this request to the User's active Membership. Archived
  * Memberships and Users with none cannot enter the Workspace.
@@ -99,7 +114,15 @@ async function enterWorkspace(req: any, res: any, next: (err?: unknown) => void)
   }
   try {
     const ctx = await contextFromUser(userId);
-    return runWithWorkspaceContext(ctx, () => gateSessionWrite(req, res, next));
+    return runWithWorkspaceContext(ctx, async () => {
+      if (!twoFactorExempt(req.path) && (await workspaceRequiresTwoFactor()) && !req.secondFactorVerified) {
+        return res.status(403).json({
+          message: "This Workspace requires a second factor",
+          code: "setup-mfa",
+        });
+      }
+      return gateSessionWrite(req, res, next);
+    });
   } catch (error) {
     if (error instanceof ArchivedMembershipError || error instanceof NoActiveMembershipError) {
       return res.status(401).json({ message: "Unauthorized" });

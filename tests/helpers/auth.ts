@@ -152,7 +152,11 @@ async function updateUserRow(userId: string, assignment: string): Promise<void> 
  * provider is reached through the port; `vitest.config.ts` aliases the Clerk
  * SDK to `tests/fakes/clerk.ts`, so no run leaves the process.
  */
-export async function signIn(app: Express, userId: string): Promise<Agent> {
+export async function signIn(
+  app: Express,
+  userId: string,
+  options?: { secondFactor?: boolean },
+): Promise<Agent> {
   const { storage } = await import("../../server/storage");
   const { identityProvider } = await import("../../server/modules/identity");
   const { issueClerkSession } = await import("../fakes/clerk");
@@ -172,7 +176,39 @@ export async function signIn(app: Express, userId: string): Promise<Agent> {
     await storage.linkUserToIdentityProvider(user.id, subjectId);
   }
 
-  return newAgent(app).set("Authorization", `Bearer ${issueClerkSession(subjectId)}`);
+  return newAgent(app).set(
+    "Authorization",
+    `Bearer ${issueClerkSession(subjectId, { secondFactor: options?.secondFactor })}`,
+  );
+}
+
+/**
+ * Platform Staff (#300). Not a customer User with `users.role = admin`: the
+ * agent carries a staff-pool session with a verified second factor, linked to
+ * a User only so directory self-checks still have an id.
+ */
+export async function registerPlatformStaff(
+  app: Express,
+  overrides: { email?: string; firstName?: string; lastName?: string; secondFactor?: boolean } = {},
+): Promise<TestUser & { staffId: string }> {
+  const user = await registerUser(app, overrides);
+  const { db } = await import("../../server/db");
+  const { platformStaff } = await import("@shared/schema");
+  const { issuePlatformStaffSession } = await import("../fakes/clerk");
+  const subjectId = `staff_${user.id}`;
+  const [row] = await db
+    .insert(platformStaff)
+    .values({ subjectId, email: user.email, linkedUserId: user.id })
+    .returning({ id: platformStaff.id });
+  return {
+    id: user.id,
+    email: user.email,
+    staffId: row.id,
+    agent: newAgent(app).set(
+      "Authorization",
+      `Bearer ${issuePlatformStaffSession(subjectId, { secondFactor: overrides.secondFactor })}`,
+    ),
+  };
 }
 
 /** Sign an existing User in by address, for suites that only kept the email. */
