@@ -31,7 +31,6 @@ export type PlatformDirectoryInput = {
   users: PlatformUser[];
   currentUserId: string;
   filterQuery: string;
-  selectedId: string | null;
 };
 
 export type PlatformActionKind = "role" | "reset" | "archive" | "restore";
@@ -60,33 +59,23 @@ export type PlatformRow = {
   archived: boolean;
   superAdmin: boolean;
   self: boolean;
-  selected: boolean;
   lastSignIn: string;
   joined: string;
+  actions: PlatformAction[];
+  /** Why a User shows no actions, when that is the case. */
+  note: string | null;
 };
 
 export type PlatformDirectoryModel = {
   title: typeof PLATFORM_CONSOLE_LABEL;
   subhead: string;
   filterPlaceholder: string;
-  columns: ["USER", "ROLE", "STATUS"];
+  columns: ["USER", "ROLE", "STATUS", "LAST SIGN-IN", "JOINED"];
   rows: PlatformRow[];
   count: number;
   countLabel: string;
   empty: boolean;
   emptyCopy: string;
-  detail:
-    | (PlatformRow & {
-        actions: PlatformAction[];
-        /** Why a User shows no actions, when that is the case. */
-        note: string | null;
-        /**
-         * Whether the detail route will answer. It refuses the SuperAdmin to
-         * every other platform admin, so the page does not ask.
-         */
-        readable: boolean;
-      })
-    | null;
 };
 
 /** The whole directory, archived Users included, so one can be restored. */
@@ -213,6 +202,8 @@ function composeActions(target: PlatformUser, self: boolean): PlatformAction[] {
 }
 
 function composeRow(user: PlatformUser, input: PlatformDirectoryInput): PlatformRow {
+  const self = user.id === input.currentUserId;
+  const actions = composeActions(user, self);
   return {
     id: user.id,
     name: memberName(user),
@@ -221,10 +212,11 @@ function composeRow(user: PlatformUser, input: PlatformDirectoryInput): Platform
     status: user.isArchived ? "ARCHIVED" : "ACTIVE",
     archived: user.isArchived,
     superAdmin: user.superAdmin,
-    self: user.id === input.currentUserId,
-    selected: user.id === input.selectedId,
+    self,
     lastSignIn: formatWhen(user.lastLoginAt, input.now) || "—",
     joined: formatWhen(user.createdAt, input.now) || "—",
+    actions,
+    note: actions.length === 0 ? "Only the SuperAdmin can change the SuperAdmin." : null,
   };
 }
 
@@ -234,31 +226,16 @@ export function composePlatformDirectory(input: PlatformDirectoryInput): Platfor
     .filter((user) => !needle || `${memberName(user)} ${user.email ?? ""}`.toLowerCase().includes(needle))
     .map((user) => composeRow(user, input));
 
-  const selected = input.users.find((user) => user.id === input.selectedId) ?? null;
-  const viewer = input.users.find((user) => user.id === input.currentUserId) ?? null;
-  let detail: PlatformDirectoryModel["detail"] = null;
-  if (selected) {
-    const row = composeRow(selected, input);
-    const actions = composeActions(selected, row.self);
-    detail = {
-      ...row,
-      actions,
-      note: actions.length === 0 ? "Only the SuperAdmin can change the SuperAdmin." : null,
-      readable: !selected.superAdmin || viewer?.superAdmin === true,
-    };
-  }
-
   const empty = rows.length === 0;
   return {
     title: PLATFORM_CONSOLE_LABEL,
     subhead: "Every User on the platform, across all Workspaces. Only platform admins see this console.",
     filterPlaceholder: "Filter by name or email",
-    columns: ["USER", "ROLE", "STATUS"],
+    columns: ["USER", "ROLE", "STATUS", "LAST SIGN-IN", "JOINED"],
     rows,
     count: rows.length,
     countLabel: rows.length === 1 ? "1 USER" : `${rows.length} USERS`,
     empty,
     emptyCopy: empty ? (needle ? "No User matches this filter." : "No Users on the platform yet.") : "",
-    detail,
   };
 }

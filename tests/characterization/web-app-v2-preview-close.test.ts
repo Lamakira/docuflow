@@ -6,8 +6,7 @@ import { previewClosesOnKey, togglePreviewSelection } from "../../client/src/v2/
 
 /**
  * A register preview can be closed (#278 follow-up): the close button, Escape,
- * and clicking the row that opened it. Workspace Documents and the platform
- * console share the panel.
+ * and clicking the row that opened it. Workspace Documents uses the panel.
  */
 
 const v2 = (name: string) =>
@@ -55,10 +54,7 @@ describe("the preview header carries a close button", () => {
     expect(head).toMatch(/className="df-preview-close"/);
   });
 
-  for (const [page, opener] of [
-    ["V2Documents.tsx", "v2-folder-row-"],
-    ["V2Platform.tsx", "v2-platform-row-"],
-  ] as const) {
+  for (const [page, opener] of [["V2Documents.tsx", "v2-folder-row-"]] as const) {
     it(`${page} closes by button, Escape and row, and returns focus to the row`, () => {
       const source = v2(page);
       expect(source).toMatch(/<V2PreviewHead[\s\S]*?onClose=\{/);

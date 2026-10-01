@@ -4099,12 +4099,6 @@ button.df-activity-row {
   color: var(--df-archive-slate);
 }
 
-.df-kv-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .df-meter-wide {
   width: 96px;
   margin-top: 6px;
@@ -6238,10 +6232,11 @@ button.df-activity-row {
   justify-content: space-between;
 }
 
-/* The platform console (#266): three columns, and an archived User reads as one. */
+/* The platform console (#266): the register carries the facts, and each row
+   keeps its actions in one menu. */
 .df-platform-register .df-register-head,
 .df-platform-register .df-register-row {
-  grid-template-columns: 2fr 1fr 0.8fr;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 0.9fr) minmax(0, 0.7fr) minmax(0, 0.8fr) minmax(0, 0.7fr) auto;
 }
 
 .df-v2 .df-platform-register .df-register-row {
@@ -6252,38 +6247,14 @@ button.df-activity-row {
   background: none;
   text-align: left;
   font: inherit;
-  cursor: pointer;
 }
 
-.df-platform-register .df-register-row[data-selected="true"] {
-  background: var(--df-cold-stock);
+.df-platform-register .df-row-actions {
+  justify-content: flex-end;
 }
 
 .df-platform-register .df-register-row[data-archived="true"] .df-row-title {
   color: var(--df-archive-slate);
-}
-
-.df-platform-actions {
-  flex-wrap: wrap;
-  gap: var(--df-space-3);
-}
-
-.df-platform-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Four facts and a few actions. The drawer does not stretch into an empty
-   column, and the actions sit under the facts. */
-.df-platform-detail {
-  align-self: flex-start;
-  height: auto;
-  max-height: 100%;
-}
-
-.df-platform-detail > .df-panel-scroll {
-  flex: none;
 }
 
 /*
