@@ -6274,6 +6274,18 @@ button.df-activity-row {
   gap: 6px;
 }
 
+/* Four facts and a few actions. The drawer does not stretch into an empty
+   column, and the actions sit under the facts. */
+.df-platform-detail {
+  align-self: flex-start;
+  height: auto;
+  max-height: 100%;
+}
+
+.df-platform-detail > .df-panel-scroll {
+  flex: none;
+}
+
 /*
  * Colour on the boards (v1 parity). The column carries its stage or Project
  * Status colour as --df-stage; the pill is filled with it and the column wears

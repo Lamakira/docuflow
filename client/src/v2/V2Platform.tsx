@@ -222,7 +222,7 @@ export function V2PlatformPage() {
       </div>
 
       {detail ? (
-        <aside className="df-panel df-folder-preview" data-testid="v2-platform-detail">
+        <aside className="df-panel df-folder-preview df-platform-detail" data-testid="v2-platform-detail">
           <V2PreviewHead kicker="USER" title={detail.name} meta={detail.email} onClose={closeDetail} />
           <div className="df-panel-scroll">
             <div className="df-kv">
