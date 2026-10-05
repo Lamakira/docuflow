@@ -9,7 +9,7 @@ import { chatCalls } from "../fakes/openai";
 
 /**
  * #307: a Project Document is "visible exactly to members who can access that
- * project" (CONTEXT.md). The project-document routes answered the whole
+ * project" (GLOSSARY.md). The project-document routes answered the whole
  * Workspace, and v2 only hid another Project's pages. A Member who is not on
  * the Project now gets the answer a Project they cannot see gets.
  */

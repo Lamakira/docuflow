@@ -480,7 +480,7 @@ describe("the Project's person in charge is its Project Manager, never a Lead (#
   });
 
   it("defines Project Manager in the glossary and retires Lead for it", () => {
-    const glossary = read("CONTEXT.md");
+    const glossary = read("GLOSSARY.md");
     expect(glossary).toMatch(
       /\*\*Project Manager\*\*:\nThe one member accountable for a project, chosen in the project's Settings\.[^\n]*\n_Avoid_: Lead, Project lead, Project owner/,
     );

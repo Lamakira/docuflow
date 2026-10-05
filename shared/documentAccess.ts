@@ -1,5 +1,5 @@
 /**
- * Document Access as CONTEXT.md uses it (#278): Everyone, Restricted to named
+ * Document Access as GLOSSARY.md uses it (#278): Everyone, Restricted to named
  * Members, or Administrators only, on a Workspace Document, File, or Folder.
  *
  * An item's own level narrows its Folder's; it never widens it. Visibility is

@@ -147,7 +147,7 @@ control. The first is a one-line fix.
 it with `TYPE: FOLDER`, an item count, and a path — so a Project is presented as
 a folder everywhere on the page, and the word Project appears nowhere.
 
-`CONTEXT.md` has no **Folder** term at all. It has **Workspace**, **Project**
+`GLOSSARY.md` has no **Folder** term at all. It has **Workspace**, **Project**
 (through `crm_projects`, the pivot the whole product hangs off) and
 **Document**. The screen introduces a fourth word for the second one.
 

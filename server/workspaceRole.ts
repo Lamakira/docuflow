@@ -4,7 +4,7 @@
  * The Workspace Role is the authority. The global `users.role` column is the
  * single-tenant era's and carries none: a Workspace created through #217 leaves
  * its Owner on `role = 'user'`, so a column check refuses the one Membership
- * CONTEXT.md calls the ultimate authority over that Workspace.
+ * GLOSSARY.md calls the ultimate authority over that Workspace.
  *
  * Administration is not a Capability. `capabilities` holds one member-facing
  * grant (`view_daily_updates`) and the Public API grants Service Accounts

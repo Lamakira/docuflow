@@ -14,7 +14,7 @@ Generate the anchor batch only. Do not generate the entire product suite until t
 
 When sources disagree, use this order:
 
-1. `CONTEXT.md` — confirmed product vocabulary and domain boundaries.
+1. `GLOSSARY.md` — confirmed product vocabulary and domain boundaries.
 2. `docs/adr/` — confirmed hard-to-reverse decisions.
 3. `FLOWS.md` — confirmed sequence, branching, and division of responsibility between Clerk, Stripe, and DocuFlow. Authoritative over this document on flow order and on who renders what; this document remains authoritative on everything visual.
 4. `PRODUCT.md` — web-app purpose, audiences, capabilities, and constraints.

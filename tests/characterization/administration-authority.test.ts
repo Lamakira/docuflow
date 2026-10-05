@@ -137,7 +137,7 @@ describe("the Workspace Role governs Administration (#238)", () => {
       .send({ role: "user" });
     expect(demoted.status).toBe(200);
 
-    // Ownership is transferred, never taken by a role write (CONTEXT.md).
+    // Ownership is transferred, never taken by a role write (GLOSSARY.md).
     const still = await owner.agent.get("/api/admin/analytics/overview");
     expect(still.status).toBe(200);
   });

@@ -162,7 +162,7 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
 
 /* ---------------------------------------------------------------------------
  * Time stats (#214) — the v1 `/time-tracking/dashboard` figures, composed from
- * `/api/time-tracking/stats`. CONTEXT.md: Activity Evidence is never converted
+ * `/api/time-tracking/stats`. GLOSSARY.md: Activity Evidence is never converted
  * into productivity scores or member rankings, so the v1 "Productivity %" KPI
  * does not come across, and the by-Member breakdown is alphabetical with no
  * share bar to rank people against each other.

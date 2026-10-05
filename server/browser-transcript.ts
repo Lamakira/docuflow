@@ -39,7 +39,7 @@ const TIMESTAMPS_REQUIRED = 3;
  * like data.
  *
  * Timestamps are the test because they are the definition — a Transcript is the
- * "immutable, timestamped text record" (`CONTEXT.md`). Prose about cookies
+ * "immutable, timestamped text record" (`GLOSSARY.md`). Prose about cookies
  * carries none, and no amount of it ever will. A page holding no transcript now
  * fails, which is the outcome this replaces.
  */
