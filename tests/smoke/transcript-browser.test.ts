@@ -166,7 +166,7 @@ describe("what a scrape may call a transcript", () => {
     const { looksLikeTranscript } = await import("../../server/browser-transcript");
 
     // The general rule under the specific banner: a Transcript is the
-    // "immutable, timestamped text record" (CONTEXT.md), so length is never the
+    // "immutable, timestamped text record" (GLOSSARY.md), so length is never the
     // evidence and no quantity of untimed prose becomes one.
     expect(looksLikeTranscript("word ".repeat(4000))).toBe(false);
   });

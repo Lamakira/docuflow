@@ -203,7 +203,7 @@ describe("Project Documentation library from live Project Documents (#189)", () 
     expect(library.rows.find((row) => row.id === "crm-1")).toMatchObject({
       // `kind` is the row's shape in the register — an expandable parent. The
       // TYPE column is the word the reader sees, and a row in `projects` is a
-      // Project; CONTEXT.md has no Folder at all (#245, F4).
+      // Project; GLOSSARY.md has no Folder at all (#245, F4).
       kind: "folder",
       name: "Ledger rebuild",
       type: "PROJECT",

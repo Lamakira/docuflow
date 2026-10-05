@@ -359,7 +359,7 @@ export async function registerRoutes(
     });
   });
 
-  // CONTEXT.md: a Project Document is "visible exactly to members who can access
+  // GLOSSARY.md: a Project Document is "visible exactly to members who can access
   // that project" (#307). The same Project Assignment decides every project route (#310).
   const accessibleProject = async (userId: string, projectId: string) => {
     const project = await storage.getProject(projectId);

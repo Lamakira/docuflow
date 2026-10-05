@@ -1,6 +1,6 @@
 /**
  * The Task protocol (#214). A Task belongs to exactly one Project
- * (CONTEXT.md, "Task"), and there is exactly one of these: the Dossier Tasks
+ * (GLOSSARY.md, "Task"), and there is exactly one of these: the Dossier Tasks
  * list and the Projects & Tasks manager under Time Tracking read and write the
  * same `/api/tasks` records, with the same Task Status words.
  */

@@ -426,7 +426,7 @@ export const fileScanStatusValues = [
 export type FileScanStatus = (typeof fileScanStatusValues)[number];
 export const FILE_SCAN_AVAILABLE: FileScanStatus = "available";
 
-/** Index Artifact source. Derived; never a source of truth (CONTEXT.md). */
+/** Index Artifact source. Derived; never a source of truth (GLOSSARY.md). */
 export const indexArtifactSourceKinds = ["document", "file"] as const;
 export type IndexArtifactSourceKind = (typeof indexArtifactSourceKinds)[number];
 

@@ -6,7 +6,7 @@ import { createCrmProject, createTask, startTimer } from "../helpers/fixtures";
 import { loginDevice } from "../helpers/agent";
 
 /**
- * #307: CONTEXT.md defines the Timer as "a user's single globally active work
+ * #307: GLOSSARY.md defines the Timer as "a user's single globally active work
  * tracker". Starting it on the web while the desktop agent tracks, or the other
  * way round, must leave one running Timer and no overlapping Time Entries, and
  * the time tracked must be the time that passed — never counted twice.

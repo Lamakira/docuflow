@@ -110,7 +110,7 @@ export type LibraryRow = {
   path: string;
   /**
    * The word the reader sees in the TYPE column. `PROJECT` where a parent row
-   * is a row in `projects` (#245, F4) — CONTEXT.md has no Folder term, and
+   * is a row in `projects` (#245, F4) — GLOSSARY.md has no Folder term, and
    * calling one a folder sent both an operator and an investigation astray.
    */
   type: "FOLDER" | "PROJECT" | "DOCUMENT" | "FILE";

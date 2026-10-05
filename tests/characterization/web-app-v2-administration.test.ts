@@ -1302,7 +1302,7 @@ describe("Administration analytics (#212)", () => {
 
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
-    // CONTEXT.md Activity Evidence: no productivity scores or member rankings.
+    // GLOSSARY.md Activity Evidence: no productivity scores or member rankings.
     expect(JSON.stringify(page.activity.rows)).not.toContain("50%");
     expect(Object.keys(page.activity.rows[0])).toEqual([
       "userId",
