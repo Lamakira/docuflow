@@ -24,6 +24,7 @@ import {
   Send,
   Square,
   Settings,
+  ShieldCheck,
   Sparkles,
   StickyNote,
   Target,
@@ -123,7 +124,8 @@ export type EmptyStateIconId =
   | "documents"
   | "files"
   | "search"
-  | "filters";
+  | "filters"
+  | "access";
 
 const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
   tasks: ListChecks,
@@ -136,6 +138,7 @@ const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
   files: Paperclip,
   search: SearchX,
   filters: FilterX,
+  access: ShieldCheck,
 };
 
 export function EmptyStateIcon({ id }: { id: EmptyStateIconId }) {

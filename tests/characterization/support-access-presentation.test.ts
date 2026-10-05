@@ -47,12 +47,29 @@ describe("Support access in the Workspace (#300)", () => {
   });
 
   it("lets only the Owner change the requirement", () => {
-    const owner = composeTwoFactorSetting({ required: false, workspaceRole: "OWNER" });
+    const owner = composeTwoFactorSetting({ required: false, workspaceRole: "OWNER", secondFactorVerified: true });
     expect(owner.canChange).toBe(true);
     expect(owner.action).toBe("Require a second factor");
-    const admin = composeTwoFactorSetting({ required: true, workspaceRole: "ADMINISTRATOR" });
+    const admin = composeTwoFactorSetting({ required: true, workspaceRole: "ADMINISTRATOR", secondFactorVerified: true });
     expect(admin.canChange).toBe(false);
     expect(admin.action).toBe("Stop requiring a second factor");
+  });
+
+  it("keeps an Owner without a second factor from requiring one", () => {
+    const blocked = composeTwoFactorSetting({ required: false, workspaceRole: "OWNER", secondFactorVerified: false });
+    expect(blocked.canChange).toBe(true);
+    expect(blocked.blocked).toBe(
+      "Set up a second factor on your own account first. Requiring one now would lock you out of this Workspace too.",
+    );
+    expect(
+      composeTwoFactorSetting({ required: false, workspaceRole: "OWNER", secondFactorVerified: true }).blocked,
+    ).toBeNull();
+    expect(
+      composeTwoFactorSetting({ required: true, workspaceRole: "OWNER", secondFactorVerified: false }).blocked,
+    ).toBeNull();
+    expect(
+      composeTwoFactorSetting({ required: false, workspaceRole: "ADMINISTRATOR", secondFactorVerified: false }).blocked,
+    ).toBeNull();
   });
 
   it("shows the grant in the shell and the section in Administration", () => {
@@ -62,5 +79,12 @@ describe("Support access in the Workspace (#300)", () => {
     expect(shell).toContain("<WorkspaceSecondFactor />");
     expect(admin).toContain('<TabsContent value="support-access"');
     expect(admin).toContain("<V2SupportAccess");
+  });
+
+  it("draws no active grant as the designed empty state", () => {
+    const screen = read("../../client/src/v2/V2SupportAccess.tsx");
+    expect(screen).toContain("<V2EmptyState");
+    expect(screen).toContain('icon="access"');
+    expect(screen).toContain('testId="v2-support-access-empty"');
   });
 });

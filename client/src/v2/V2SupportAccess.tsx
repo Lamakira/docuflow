@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { composeSessionTask, SESSION_TASK_COMPLETE_PATH } from "@/lib/sessionTask";
 import { notify } from "./notify";
+import { V2EmptyState } from "./V2EmptyState";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import {
   composeTwoFactorSetting,
@@ -36,6 +37,7 @@ export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
   const setting = composeTwoFactorSetting({
     required: assurance?.required === true,
     workspaceRole,
+    secondFactorVerified: assurance?.secondFactorVerified === true,
   });
 
   const grant = useMutation({
@@ -70,8 +72,8 @@ export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
   });
 
   return (
-    <div data-testid="v2-administration-support-access">
-      <section className="df-card">
+    <>
+      <section className="df-card" data-testid="v2-administration-support-access">
         <div className="df-card-head">
           <div className="df-card-head-text">
             <h2 className="df-card-title">Support access</h2>
@@ -83,9 +85,12 @@ export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
         {grantsLoading ? (
           <p className="df-support-note">Reading active grants…</p>
         ) : grants.length === 0 ? (
-          <p className="df-support-note" data-testid="v2-support-access-empty">
-            No active Support Access Grant.
-          </p>
+          <V2EmptyState
+            icon="access"
+            title="No active Support Access Grant"
+            copy="When DocuFlow support needs to look into a problem, grant read-only access below. It ends on its own."
+            testId="v2-support-access-empty"
+          />
         ) : (
           <ul className="df-support-grants" data-testid="v2-support-access-grants">
             {grants.map((row) => (
@@ -151,23 +156,30 @@ export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
           </div>
         </div>
         {setting.canChange ? (
-          <div className="df-form-actions">
-            <Button
-              type="button"
-              variant={setting.required ? "outline" : "default"}
-              className="df-btn"
-              disabled={requireFactor.isPending}
-              onClick={() => requireFactor.mutate()}
-              data-testid="v2-two-factor-toggle"
-            >
-              {setting.action}
-            </Button>
-          </div>
+          <>
+            {setting.blocked ? (
+              <p className="df-support-note" data-testid="v2-two-factor-blocked">
+                {setting.blocked}
+              </p>
+            ) : null}
+            <div className="df-form-actions">
+              <Button
+                type="button"
+                variant={setting.required ? "outline" : "default"}
+                className="df-btn"
+                disabled={requireFactor.isPending || setting.blocked !== null}
+                onClick={() => requireFactor.mutate()}
+                data-testid="v2-two-factor-toggle"
+              >
+                {setting.action}
+              </Button>
+            </div>
+          </>
         ) : (
           <p className="df-support-note">Only the Owner can change this.</p>
         )}
       </section>
-    </div>
+    </>
   );
 }
 

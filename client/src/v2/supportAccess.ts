@@ -65,9 +65,15 @@ export type TwoFactorSetting = {
   canChange: boolean;
   action: string;
   note: string;
+  /** Why the Owner cannot turn the requirement on yet; null when nothing stops them. */
+  blocked: string | null;
 };
 
-export function composeTwoFactorSetting(input: { required: boolean; workspaceRole: string }): TwoFactorSetting {
+export function composeTwoFactorSetting(input: {
+  required: boolean;
+  workspaceRole: string;
+  secondFactorVerified: boolean;
+}): TwoFactorSetting {
   const owner = input.workspaceRole.trim().toUpperCase() === "OWNER";
   return {
     required: input.required,
@@ -76,6 +82,10 @@ export function composeTwoFactorSetting(input: { required: boolean; workspaceRol
     note: input.required
       ? "Everyone in this Workspace must verify a second factor before they can use it."
       : "A second factor is optional. Turning this on sends anyone without one to set it up.",
+    blocked:
+      owner && !input.required && !input.secondFactorVerified
+        ? "Set up a second factor on your own account first. Requiring one now would lock you out of this Workspace too."
+        : null,
   };
 }
 

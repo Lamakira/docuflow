@@ -204,10 +204,13 @@ describe("operator access is Platform Staff, not users.role (#300)", () => {
     const refused = await administrator.agent.patch("/api/admin/two-factor").send({ required: true });
     expect(refused.status).toBe(403);
 
-    const required = await owner.agent.patch("/api/admin/two-factor").send({ required: true });
+    const verified = await signIn(app, owner.id, { secondFactor: true });
+    const required = await verified.patch("/api/admin/two-factor").send({ required: true });
     expect(required.status).toBe(200);
     expect(required.body).toEqual({ required: true });
 
+    // The fake issues one token per subject, so signing in again drops the factor from `owner.agent` too.
+    await signIn(app, owner.id);
     const blockedInvite = await owner.agent.post("/api/workspace/invitations").send({
       email: uniqueEmail("invitee"),
       workspaceRole: "MEMBER",
@@ -228,11 +231,40 @@ describe("operator access is Platform Staff, not users.role (#300)", () => {
     expect(blockedCheckout.status).toBe(403);
     expect(blockedCheckout.body.code).toBe("setup-mfa");
 
-    const verified = await signIn(app, owner.id, { secondFactor: true });
+    await signIn(app, owner.id, { secondFactor: true });
     const allowed = await verified.post("/api/workspace/invitations").send({
       email: uniqueEmail("invitee"),
       workspaceRole: "MEMBER",
     });
     expect(allowed.status).toBe(201);
+  });
+
+  it("refuses to require a second factor from an Owner who has none, so the Owner cannot lock themselves out", async () => {
+    const app = await makeApp();
+    const owner = await registerUser(app);
+    await setWorkspaceRole(owner.id, "owner");
+
+    const refused = await owner.agent.patch("/api/admin/two-factor").send({ required: true });
+    expect(refused.status).toBe(409);
+    expect(refused.body.message).toBe(
+      "Set up a second factor on your own account before requiring one for the Workspace",
+    );
+
+    const state = await owner.agent.get("/api/workspace/two-factor");
+    expect(state.status).toBe(200);
+    expect(state.body.required).toBe(false);
+
+    const invite = await owner.agent.post("/api/workspace/invitations").send({
+      email: uniqueEmail("invitee"),
+      workspaceRole: "MEMBER",
+    });
+    expect(invite.status).toBe(201);
+
+    const verified = await signIn(app, owner.id, { secondFactor: true });
+    const on = await verified.patch("/api/admin/two-factor").send({ required: true });
+    expect(on.status).toBe(200);
+    const off = await verified.patch("/api/admin/two-factor").send({ required: false });
+    expect(off.status).toBe(200);
+    expect(off.body).toEqual({ required: false });
   });
 });

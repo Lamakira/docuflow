@@ -81,6 +81,14 @@ export class NotWorkspaceOwnerError extends Error {
   }
 }
 
+export class OwnerSecondFactorMissingError extends Error {
+  readonly statusCode = 409;
+  constructor() {
+    super("Set up a second factor on your own account before requiring one for the Workspace");
+    this.name = "OwnerSecondFactorMissingError";
+  }
+}
+
 export type PlatformStaffRecord = {
   id: string;
   email: string | null;
@@ -395,8 +403,15 @@ export async function workspaceRequiresTwoFactor(): Promise<boolean> {
   return row?.requireTwoFactor === true;
 }
 
-export async function setWorkspaceTwoFactor(required: boolean, actorId: string): Promise<{ required: boolean }> {
+export async function setWorkspaceTwoFactor(
+  required: boolean,
+  actorId: string,
+  actorHasSecondFactor: boolean,
+): Promise<{ required: boolean }> {
   if ((await currentWorkspaceRoleSlug()) !== "owner") throw new NotWorkspaceOwnerError();
+  // Once the requirement is on, this toggle itself needs a verified factor:
+  // an Owner without one would lock themselves out.
+  if (required && !actorHasSecondFactor) throw new OwnerSecondFactorMissingError();
   await db
     .insert(orgSettings)
     .values(stampWorkspace({ id: "default", requireTwoFactor: required, updatedAt: new Date() }))

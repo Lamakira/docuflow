@@ -19,6 +19,7 @@ import {
   NotWorkspaceOwnerError,
   openBreakGlass,
   OperatorAccessDeniedError,
+  OwnerSecondFactorMissingError,
   PlatformStaffNotFoundError,
   readOperatorWorkspace,
   refuseOperatorWrite,
@@ -42,6 +43,7 @@ const REFUSALS = [
   SupportGrantNotFoundError,
   WorkspaceNotFoundError,
   NotWorkspaceOwnerError,
+  OwnerSecondFactorMissingError,
 ] as const;
 
 function refuse(res: Responder, error: unknown): boolean {
@@ -211,7 +213,8 @@ export function registerOperatorRoutes(app: Express): void {
     const parsed = twoFactorBody.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Invalid request" });
     try {
-      res.json(await setWorkspaceTwoFactor(parsed.data.required, userId));
+      const secondFactorVerified = (req as { secondFactorVerified?: boolean }).secondFactorVerified === true;
+      res.json(await setWorkspaceTwoFactor(parsed.data.required, userId, secondFactorVerified));
     } catch (error) {
       if (refuse(res, error)) return;
       throw error;
