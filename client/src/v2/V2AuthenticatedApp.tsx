@@ -95,6 +95,7 @@ export function V2AuthenticatedApp() {
           <Route path="/devices" component={V2DevicesPage} />
           <Route path="/account" component={V2AccountPage} />
           <Route path="/platform" component={V2PlatformPage} />
+          <Route path="/platform/:rest*" component={V2PlatformPage} />
           <Route path="/help/:slug" component={V2HelpPage} />
           <Route path="/help" component={V2HelpPage} />
           <Route path="/help-center/:slug" component={V2HelpPage} />

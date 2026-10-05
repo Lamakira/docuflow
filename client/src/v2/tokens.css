@@ -6350,3 +6350,75 @@ button.df-activity-row {
 .df-skeleton-pane {
   display: contents;
 }
+
+/* The back office (#314): registers share one grid, set per register in --df-bo-cols. */
+.df-backoffice-register .df-register-head,
+.df-backoffice-register .df-register-row {
+  grid-template-columns: var(--df-bo-cols, repeat(5, minmax(0, 1fr)));
+  padding-left: var(--df-space-4);
+  padding-right: var(--df-space-4);
+}
+
+.df-backoffice-register a.df-register-row {
+  text-decoration: none;
+}
+
+.df-backoffice-figure {
+  font-size: var(--df-text-4);
+  overflow-wrap: anywhere;
+}
+
+.df-backoffice-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-4);
+}
+
+.df-backoffice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--df-space-3);
+  padding: var(--df-space-4);
+  border-top: 1px solid var(--df-divider-light);
+}
+
+.df-backoffice-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-3);
+  padding: var(--df-space-4);
+}
+
+.df-backoffice-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
+  padding: var(--df-space-4);
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-3);
+  white-space: pre-wrap;
+}
+
+/* An internal note is visibly not an answer: tinted and dashed. */
+.df-backoffice-entry[data-kind="note"] {
+  background: var(--df-cold-stock);
+  border-style: dashed;
+}
+
+.df-backoffice-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
+  padding: var(--df-space-4);
+}
+
+.df-backoffice-line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--df-space-4);
+}
+
+.df-backoffice-note {
+  padding: 0 var(--df-space-4) var(--df-space-4);
+}

@@ -3,7 +3,18 @@ import { Link, useLocation } from "wouter";
 import { HELP_HUB_ITEMS } from "../content/help-center/helpCenterConfig";
 import { HelpSurfaceProvider } from "../components/help-center/helpSurface";
 import { HELP_ARTICLE_COMPONENTS } from "../pages/help-center/articleRegistry";
-import { composeHelp } from "./help";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import {
+  CONTACT_SUPPORT_COPY,
+  SUPPORT_REQUESTS_PATH,
+  composeHelp,
+  supportRequestCategories,
+  validateSupportRequest,
+} from "./help";
+import { notify } from "./notify";
+import { V2FilterSelect } from "./V2Select";
+import { Textarea } from "@/components/ui/textarea";
 import { motionForSurface } from "./motion";
 import { matchV2Route } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
@@ -127,6 +138,79 @@ export function V2HelpPage() {
           })
         )}
       </section>
+
+      <ContactSupport />
     </div>
   );
 }
+
+/** A Support Request reaches Platform Staff with the Workspace and the account, never Workspace content. */
+function ContactSupport() {
+  const [category, setCategory] = useState<string>("billing");
+  const [message, setMessage] = useState("");
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const request = validateSupportRequest({ category, message });
+
+  const send = useMutation({
+    mutationFn: (body: { category: string; message: string }) => apiRequest("POST", SUPPORT_REQUESTS_PATH, body),
+    onSuccess: () => {
+      setMessage("");
+      setRefusal(null);
+      notify.success(CONTACT_SUPPORT_COPY.sent);
+    },
+    onError: (error: Error) => setRefusal(error.message),
+  });
+
+  return (
+    <section className="df-card" data-testid="v2-help-contact-support">
+      <div className="df-card-head">
+        <div className="df-card-head-text">
+          <h2 className="df-card-title">{CONTACT_SUPPORT_COPY.title}</h2>
+          <p className="df-card-sub">{CONTACT_SUPPORT_COPY.description}</p>
+        </div>
+      </div>
+      <form
+        className="df-daily-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (request.ok) send.mutate(request.body);
+        }}
+      >
+        <div className="df-daily-field">
+          CATEGORY
+          <V2FilterSelect
+            label=""
+            ariaLabel="Support category"
+            value={category}
+            onChange={setCategory}
+            options={supportRequestCategories}
+            testId="v2-help-support-category"
+          />
+        </div>
+        <label className="df-daily-field">
+          MESSAGE
+          <Textarea
+            value={message}
+            rows={5}
+            aria-label="Support message"
+            placeholder="Tell us what you need help with"
+            onChange={(event) => setMessage(event.target.value)}
+          />
+        </label>
+        {refusal ? <p className="df-refusal">{refusal}</p> : null}
+        <div className="df-form-actions">
+          <Button
+            variant="default"
+            type="submit"
+            className="df-btn"
+            disabled={!request.ok || send.isPending}
+            data-testid="v2-help-support-send"
+          >
+            {send.isPending ? "Sending…" : "Send Support Request"}
+          </Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
