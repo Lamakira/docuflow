@@ -77,14 +77,41 @@ export type ProviderSubscription = {
   currentPeriodEnd: Date;
   cancelAtPeriodEnd: boolean;
   collectionState: CollectionState;
+  /** Per-seat unit amount in minor units as the provider bills it. Null when the Price is not a flat unit price. */
+  unitAmountMinor: number | null;
+  /** The Subscription's billing currency, lowercase ISO. */
+  currency: string | null;
 };
 
-/** An invoice whose payment failed, as far as telling the Owner needs it. */
+/** An invoice's outcome, as far as telling the Owner and the back office need it. */
 export type ProviderInvoice = {
   /** Paid since the failure was reported, so there is nothing left to tell. */
   paid: boolean;
   /** When the provider tries again. Null once it has stopped trying. */
   nextPaymentAttemptAt: Date | null;
+  /** Amount due in minor units, in `currency`. */
+  amountMinor: number | null;
+  currency: string | null;
+};
+
+/** A payment dispute as the provider last reported it. */
+export type ProviderDispute = {
+  providerDisputeId: string;
+  providerChargeId: string | null;
+  /** The customer the disputed charge belongs to; a dispute event carries none. */
+  providerCustomerId: string | null;
+  amountMinor: number;
+  currency: string;
+  reason: string;
+  status: string;
+  openedAt: Date;
+};
+
+export type ProviderResourceKind = "customer" | "subscription" | "invoice" | "dispute";
+
+export type CancelAtPeriodEndUpdate = {
+  providerSubscriptionId: string;
+  cancel: boolean;
 };
 
 export type WebhookEvent = {
@@ -126,11 +153,16 @@ export interface BillingProvider {
   fetchCheckoutSession(providerSessionId: string): Promise<ProviderCheckoutSession>;
   fetchSubscription(providerSubscriptionId: string): Promise<ProviderSubscription>;
   fetchInvoice(providerInvoiceId: string): Promise<ProviderInvoice>;
+  fetchDispute(providerDisputeId: string): Promise<ProviderDispute>;
   updateSeatQuantity(update: SeatQuantityUpdate): Promise<void>;
   /** Moves the Subscription to the Plan's current Price for the interval, prorated. */
   changeSubscriptionPlan(change: SubscriptionPlanChange): Promise<void>;
+  /** Back-office command: ends or keeps the Subscription at its period end. */
+  setCancelAtPeriodEnd(update: CancelAtPeriodEndUpdate): Promise<void>;
   createPaymentMethodUpdate(request: PaymentMethodUpdateRequest): Promise<HostedBillingSession>;
   verifyWebhook(payload: string, signature: string): Promise<WebhookEvent>;
+  /** A link to the provider's own dashboard for staff, or null when none is known. Never an API call. */
+  dashboardUrl(kind: ProviderResourceKind, id: string): string | null;
 }
 
 export class UnconfiguredBillingProvider implements BillingProvider {
@@ -150,7 +182,15 @@ export class UnconfiguredBillingProvider implements BillingProvider {
     this.closed();
   }
 
+  async fetchDispute(): Promise<ProviderDispute> {
+    this.closed();
+  }
+
   async updateSeatQuantity(): Promise<void> {
+    this.closed();
+  }
+
+  async setCancelAtPeriodEnd(): Promise<void> {
     this.closed();
   }
 
@@ -164,6 +204,10 @@ export class UnconfiguredBillingProvider implements BillingProvider {
 
   async verifyWebhook(): Promise<WebhookEvent> {
     this.closed();
+  }
+
+  dashboardUrl(): string | null {
+    return null;
   }
 
   private closed(): never {

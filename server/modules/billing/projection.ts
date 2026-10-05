@@ -39,6 +39,9 @@ type ProjectedPin = {
   periodEndsAt: Date;
   cancelAtPeriodEnd: boolean;
   trialEndsAt: Date | null;
+  /** Price as Stripe last reported it. Shown in the back office; never an Entitlement. */
+  unitAmountMinor: number | null;
+  currency: string | null;
 };
 
 export function billingStateFromCollection(collection: CollectionState): BillingState {
@@ -88,6 +91,8 @@ export function projectedPinFromSubscription(
     periodEndsAt: subscription.currentPeriodEnd,
     cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
     trialEndsAt: billingState === "Active" ? null : trialEndsAt,
+    unitAmountMinor: subscription.unitAmountMinor ?? null,
+    currency: subscription.currency ?? null,
   };
 }
 
@@ -151,6 +156,8 @@ export async function applyProviderSubscription(
       pin.cancelAtPeriodEnd === next.cancelAtPeriodEnd &&
       sameInstant(pin.periodEndsAt ?? null, next.periodEndsAt) &&
       sameInstant(pin.trialEndsAt ?? null, next.trialEndsAt) &&
+      (pin.unitAmountMinor ?? null) === next.unitAmountMinor &&
+      (pin.currency ?? null) === next.currency &&
       (pin.pendingSeatQuantity ?? null) === (seats.pendingSeatQuantity ?? null);
 
     if (pinUnchanged) {

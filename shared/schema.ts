@@ -2116,6 +2116,9 @@ export const workspaceBilling = pgTable("workspace_billing", {
   /** The Plan picked on the pricing page before sign-up; Billing offers it first. Never an Entitlement. */
   intendedPlanKey: varchar("intended_plan_key", { length: 32 }),
   intendedBillingInterval: varchar("intended_billing_interval", { length: 16 }),
+  /** Per-seat unit amount (minor units) and currency of the Subscription as Stripe last reported them (#314). Null without a Subscription. */
+  unitAmountMinor: integer("unit_amount_minor"),
+  currency: varchar("currency", { length: 3 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -2597,3 +2600,110 @@ export interface EvidenceQualityReport {
   };
   byUser: EvidenceUserScore[];
 }
+
+/**
+ * Invoice outcomes the back office shows (#314): one row per `invoice.paid` or
+ * `invoice.payment_failed` event, written by the projection Job. A record of
+ * what Stripe reported; it changes no billing state.
+ */
+export const billingPayments = pgTable(
+  "billing_payments",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    workspaceId: workspaceIdColumn(),
+    providerEventId: varchar("provider_event_id").notNull().unique(),
+    providerInvoiceId: varchar("provider_invoice_id").notNull(),
+    /** `paid` or `failed`. */
+    outcome: varchar("outcome", { length: 16 }).notNull(),
+    amountMinor: integer("amount_minor"),
+    currency: varchar("currency", { length: 3 }),
+    occurredAt: timestamp("occurred_at").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_billing_payments_workspace_occurred").on(table.workspaceId, table.occurredAt),
+    idInWorkspace(table, "billing_payments"),
+  ],
+);
+
+/**
+ * A payment dispute as Stripe last reported it (#314). Managed Payments
+ * answers disputes; DocuFlow only records them so the back office can see them.
+ */
+export const paymentDisputes = pgTable(
+  "payment_disputes",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    workspaceId: workspaceIdColumn(),
+    providerDisputeId: varchar("provider_dispute_id").notNull().unique(),
+    providerChargeId: varchar("provider_charge_id"),
+    amountMinor: integer("amount_minor").notNull(),
+    currency: varchar("currency", { length: 3 }).notNull(),
+    reason: varchar("reason", { length: 64 }).notNull(),
+    status: varchar("status", { length: 64 }).notNull(),
+    openedAt: timestamp("opened_at").notNull(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [
+    index("idx_payment_disputes_workspace_opened").on(table.workspaceId, table.openedAt),
+    idInWorkspace(table, "payment_disputes"),
+  ],
+);
+
+export const supportCategoryValues = ["billing", "bug", "account", "other"] as const;
+export type SupportCategory = (typeof supportCategoryValues)[number];
+export const supportStatusValues = ["open", "in_progress", "resolved"] as const;
+export type SupportStatus = (typeof supportStatusValues)[number];
+
+/**
+ * A Support Request a Member sends from the app (#314). It belongs to the
+ * Workspace it was sent from; Platform Staff read it in the back office.
+ */
+export const supportRequests = pgTable(
+  "support_requests",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    workspaceId: workspaceIdColumn(),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    category: varchar("category", { length: 16 }).notNull(),
+    message: text("message").notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("open"),
+    assignedStaffId: varchar("assigned_staff_id").references(() => platformStaff.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_support_requests_workspace_created").on(table.workspaceId, table.createdAt),
+    idInWorkspace(table, "support_requests"),
+  ],
+);
+
+export type SupportRequest = typeof supportRequests.$inferSelect;
+
+/** An answer (emailed to the User) or an internal note on a Support Request (#314). */
+export const supportRequestEntries = pgTable(
+  "support_request_entries",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    workspaceId: workspaceIdColumn(),
+    supportRequestId: varchar("support_request_id").notNull(),
+    /** `answer` or `note`. */
+    kind: varchar("kind", { length: 16 }).notNull(),
+    body: text("body").notNull(),
+    platformStaffId: varchar("platform_staff_id").references(() => platformStaff.id, { onDelete: "set null" }),
+    emailedAt: timestamp("emailed_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_support_request_entries_request").on(table.workspaceId, table.supportRequestId, table.createdAt),
+    workspaceScopedFk(
+      "support_request_entries_request_workspace_fk",
+      [table.supportRequestId, table.workspaceId],
+      supportRequests,
+    ),
+  ],
+);
+
+export type SupportRequestEntry = typeof supportRequestEntries.$inferSelect;

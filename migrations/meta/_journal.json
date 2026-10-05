@@ -281,6 +281,13 @@
       "when": 1790848499070,
       "tag": "0039_platform_staff_access",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791203932856,
+      "tag": "0040_back_office",
+      "breakpoints": true
     }
   ]
 }

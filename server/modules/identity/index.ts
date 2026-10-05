@@ -106,6 +106,8 @@ export const IDENTITY_TABLES = [
   "platform_staff",
   "support_access_grants",
   "break_glass_access",
+  "support_requests",
+  "support_request_entries",
 ] as const;
 
 export const identityPersistence: ServiceAccountPersistence = {

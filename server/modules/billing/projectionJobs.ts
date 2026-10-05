@@ -5,7 +5,13 @@
  */
 
 import { eq } from "drizzle-orm";
-import { auditEvents, billingWebhookInbox, workspaceBilling } from "@shared/schema";
+import {
+  auditEvents,
+  billingPayments,
+  billingWebhookInbox,
+  paymentDisputes,
+  workspaceBilling,
+} from "@shared/schema";
 import { db } from "../../db";
 import { config } from "../../config";
 import {
@@ -21,6 +27,7 @@ import {
   forEachWorkspace,
   inWorkspace,
   requireWorkspaceContext,
+  runWithWorkspaceContext,
   stampWorkspace,
 } from "../../workspaceContext";
 import {
@@ -66,9 +73,25 @@ const PROJECTABLE_WEBHOOK_TYPES = new Set([
 
 /**
  * A failed payment attempt only tells the Owner (#298). It changes no billing
- * state: PastDue still comes from the projection of the Subscription.
+ * state: PastDue still comes from the projection of the Subscription. Both
+ * invoice outcomes are recorded for the back office (#314).
  */
 const PAYMENT_FAILED_WEBHOOK = "invoice.payment_failed";
+const PAYMENT_PAID_WEBHOOK = "invoice.paid";
+const PAYMENT_WEBHOOKS = new Set([PAYMENT_FAILED_WEBHOOK, PAYMENT_PAID_WEBHOOK]);
+
+/**
+ * Disputes (#314). Managed Payments answers a dispute with the card network, so
+ * DocuFlow only records what Stripe reports and runs no Job on it. The latest
+ * event's status wins.
+ */
+const DISPUTE_WEBHOOKS = new Set([
+  "charge.dispute.created",
+  "charge.dispute.updated",
+  "charge.dispute.closed",
+  "charge.dispute.funds_withdrawn",
+  "charge.dispute.funds_reinstated",
+]);
 
 export class UnknownBillingWebhookError extends Error {
   constructor() {
@@ -133,6 +156,19 @@ async function workspaceIdForSubscription(objectId: string): Promise<string | nu
   return matches.find((id): id is string => id != null) ?? null;
 }
 
+async function workspaceIdForCustomer(customerId: string): Promise<string | null> {
+  const matches = await forEachWorkspace(async () => {
+    try {
+      const pin = await getBillingProjection();
+      return pin.stripeCustomerId === customerId ? pin.workspaceId : null;
+    } catch (error) {
+      if (error instanceof BillingPinMissingError) return null;
+      throw error;
+    }
+  });
+  return matches.find((id): id is string => id != null) ?? null;
+}
+
 async function workspaceIdForPendingCheckout(sessionId: string): Promise<string | null> {
   const matches = await forEachWorkspace(async () => {
     try {
@@ -157,7 +193,7 @@ async function workspaceIdForWebhook(event: WebhookEvent): Promise<string | null
   if (event.type === "checkout.session.completed") {
     return workspaceIdForPendingCheckout(event.objectId);
   }
-  if (event.type === PAYMENT_FAILED_WEBHOOK) {
+  if (PAYMENT_WEBHOOKS.has(event.type)) {
     return event.providerSubscriptionId
       ? workspaceIdForSubscription(event.providerSubscriptionId)
       : null;
@@ -187,8 +223,15 @@ export async function ingestBillingWebhook(input: {
     if (error instanceof BillingWebhookSignatureError) throw error;
     throw new BillingWebhookSignatureError();
   }
-  if (!PROJECTABLE_WEBHOOK_TYPES.has(event.type) && event.type !== PAYMENT_FAILED_WEBHOOK) {
+  const known =
+    PROJECTABLE_WEBHOOK_TYPES.has(event.type) ||
+    PAYMENT_WEBHOOKS.has(event.type) ||
+    DISPUTE_WEBHOOKS.has(event.type);
+  if (!known) {
     throw new UnknownBillingWebhookError();
+  }
+  if (DISPUTE_WEBHOOKS.has(event.type)) {
+    return ingestDisputeWebhook(event, input.provider);
   }
 
   const workspaceId = await workspaceIdForWebhook(event);
@@ -227,6 +270,58 @@ export async function ingestBillingWebhook(input: {
   });
 }
 
+/**
+ * A dispute event carries no customer, so the dispute is re-fetched before the
+ * transaction and its customer names the Workspace. The inbox row and the
+ * dispute row commit together; an unmatched dispute is inbox-only, as an
+ * unmatched Subscription event is.
+ */
+async function ingestDisputeWebhook(
+  event: WebhookEvent,
+  provider: BillingProvider
+): Promise<IngestBillingWebhookResult> {
+  const dispute = await provider.fetchDispute(event.objectId);
+  const workspaceId = dispute.providerCustomerId
+    ? await workspaceIdForCustomer(dispute.providerCustomerId)
+    : null;
+
+  const record = () =>
+    db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(billingWebhookInbox)
+        .values({
+          providerEventId: event.providerEventId,
+          type: event.type,
+          objectId: event.objectId,
+        })
+        .onConflictDoNothing()
+        .returning({ providerEventId: billingWebhookInbox.providerEventId });
+      if (!inserted) {
+        return { accepted: true as const, duplicate: true, enqueued: false };
+      }
+      if (workspaceId) {
+        const values = {
+          providerChargeId: dispute.providerChargeId,
+          amountMinor: dispute.amountMinor,
+          currency: dispute.currency,
+          reason: dispute.reason,
+          status: dispute.status,
+          openedAt: dispute.openedAt,
+        };
+        await tx
+          .insert(paymentDisputes)
+          .values(stampWorkspace({ providerDisputeId: dispute.providerDisputeId, ...values }))
+          .onConflictDoUpdate({
+            target: paymentDisputes.providerDisputeId,
+            set: { ...values, updatedAt: new Date() },
+          });
+      }
+      await markInboxProcessed(event.providerEventId, tx);
+      return { accepted: true as const, duplicate: false, enqueued: false };
+    });
+  return workspaceId ? runWithWorkspaceContext({ workspaceId }, record) : record();
+}
+
 export async function handleProjectBillingJob(
   job: Job,
   provider: BillingProvider = billingProviderFromAppConfig(config.billing)
@@ -251,11 +346,24 @@ export async function handleProjectBillingJob(
   }
   if (inbox.processedAt) return;
 
-  if (inbox.type === PAYMENT_FAILED_WEBHOOK) {
+  if (PAYMENT_WEBHOOKS.has(inbox.type)) {
     // Stripe retries a webhook for days, so the invoice may be paid by now.
     const invoice = await provider.fetchInvoice(objectId);
     await db.transaction(async (tx) => {
-      if (!invoice.paid) {
+      await tx
+        .insert(billingPayments)
+        .values(
+          stampWorkspace({
+            providerEventId,
+            providerInvoiceId: objectId,
+            outcome: inbox.type === PAYMENT_PAID_WEBHOOK ? "paid" : "failed",
+            amountMinor: invoice.amountMinor ?? null,
+            currency: invoice.currency ?? null,
+            occurredAt: new Date(),
+          })
+        )
+        .onConflictDoNothing();
+      if (inbox.type === PAYMENT_FAILED_WEBHOOK && !invoice.paid) {
         await recordPaymentFailedNotice(tx, providerEventId, invoice.nextPaymentAttemptAt);
       }
       await markInboxProcessed(providerEventId, tx);
@@ -329,6 +437,17 @@ export async function handleBillingDriftJob(
   if (!pin.stripeSubscriptionId) return;
 
   const subscription = await provider.fetchSubscription(pin.stripeSubscriptionId);
+  // Only a webhook writes the price, so a Subscription that existed before the
+  // columns did has none. Record it here: a price fact, not an Entitlement, so
+  // no authorization version bump, Audit Event or Outbox Event.
+  const unitAmountMinor = subscription.unitAmountMinor ?? null;
+  const currency = subscription.currency ?? null;
+  if ((row.unitAmountMinor ?? null) !== unitAmountMinor || (row.currency ?? null) !== currency) {
+    await db
+      .update(workspaceBilling)
+      .set({ unitAmountMinor, currency })
+      .where(inWorkspace(workspaceBilling));
+  }
   if (pinAgreesWithSubscription(pin, subscription)) return;
 
   const { workspaceId } = requireWorkspaceContext();

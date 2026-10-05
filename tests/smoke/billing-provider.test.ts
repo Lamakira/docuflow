@@ -211,16 +211,22 @@ describe("Stripe adapter", () => {
       object: "invoice",
       status: "open",
       next_payment_attempt: 1791104400,
+      amount_due: 3600,
+      currency: "USD",
     });
     await expect(provider.fetchInvoice("in_open")).resolves.toEqual({
       paid: false,
       nextPaymentAttemptAt: new Date("2026-10-04T09:00:00.000Z"),
+      amountMinor: 3600,
+      currency: "usd",
     });
 
     setRetrievedInvoice({ id: "in_paid", object: "invoice", status: "paid", next_payment_attempt: null });
     await expect(provider.fetchInvoice("in_paid")).resolves.toEqual({
       paid: true,
       nextPaymentAttemptAt: null,
+      amountMinor: null,
+      currency: null,
     });
   });
 
@@ -336,7 +342,96 @@ describe("Stripe adapter", () => {
       currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: true,
       collectionState: "PastDue",
+      unitAmountMinor: null,
+      currency: null,
     });
+  });
+
+  it("reads the per-seat unit amount in the Subscription's currency, from currency_options when it differs", async () => {
+    const { createBillingProvider } = await import("../../server/modules/billing");
+    const { setRetrievedSubscription } = await import("../fakes/stripe");
+    const provider = createBillingProvider({ secretKey: "sk_test_fake" });
+    const subscription = (currency: string): FakeSubscription => ({
+      id: "sub_test_1",
+      customer: "cus_test_1",
+      currency,
+      status: "active",
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          {
+            quantity: 2,
+            current_period_end: 1791104400,
+            price: {
+              id: "price_growth_monthly",
+              product: { id: "prod_growth", metadata: { docuflow_plan: "growth" } },
+              recurring: { interval: "month" },
+              currency: "usd",
+              unit_amount: 1200,
+              currency_options: { eur: { unit_amount: 1100 } },
+            },
+          },
+        ],
+      },
+    });
+
+    setRetrievedSubscription(subscription("usd"));
+    await expect(provider.fetchSubscription("sub_test_1")).resolves.toMatchObject({
+      unitAmountMinor: 1200,
+      currency: "usd",
+    });
+    setRetrievedSubscription(subscription("EUR"));
+    await expect(provider.fetchSubscription("sub_test_1")).resolves.toMatchObject({
+      unitAmountMinor: 1100,
+      currency: "eur",
+    });
+    setRetrievedSubscription(subscription("gbp"));
+    await expect(provider.fetchSubscription("sub_test_1")).resolves.toMatchObject({
+      unitAmountMinor: null,
+      currency: "gbp",
+    });
+  });
+
+  it("re-fetches a dispute with its customer from the expanded charge", async () => {
+    const { createBillingProvider } = await import("../../server/modules/billing");
+    const { setRetrievedDispute } = await import("../fakes/stripe");
+    const provider = createBillingProvider({ secretKey: "sk_test_fake" });
+    setRetrievedDispute({
+      id: "dp_1",
+      amount: 3000,
+      currency: "USD",
+      reason: "fraudulent",
+      status: "needs_response",
+      created: 1791104400,
+      charge: { id: "ch_1", customer: "cus_1" },
+    });
+    await expect(provider.fetchDispute("dp_1")).resolves.toEqual({
+      providerDisputeId: "dp_1",
+      providerChargeId: "ch_1",
+      providerCustomerId: "cus_1",
+      amountMinor: 3000,
+      currency: "usd",
+      reason: "fraudulent",
+      status: "needs_response",
+      openedAt: new Date("2026-10-04T09:00:00.000Z"),
+    });
+  });
+
+  it("flags a Subscription to end at its period end, and links to the dashboard by key mode", async () => {
+    const { createBillingProvider } = await import("../../server/modules/billing");
+    const { subscriptionUpdateCalls } = await import("../fakes/stripe");
+    const test = createBillingProvider({ secretKey: "sk_test_fake" });
+    await test.setCancelAtPeriodEnd({ providerSubscriptionId: "sub_1", cancel: true });
+    expect(subscriptionUpdateCalls().at(-1)).toEqual({ id: "sub_1", cancel_at_period_end: true });
+
+    expect(test.dashboardUrl("customer", "cus_1")).toBe("https://dashboard.stripe.com/test/customers/cus_1");
+    expect(test.dashboardUrl("dispute", "dp_1")).toBe("https://dashboard.stripe.com/test/disputes/dp_1");
+    expect(createBillingProvider({ secretKey: "rk_test_fake" }).dashboardUrl("invoice", "in_1")).toBe(
+      "https://dashboard.stripe.com/test/invoices/in_1"
+    );
+    expect(createBillingProvider({ secretKey: "sk_live_fake" }).dashboardUrl("subscription", "sub_1")).toBe(
+      "https://dashboard.stripe.com/subscriptions/sub_1"
+    );
   });
 
   it("still recognises a grandfathered Price after its lookup key moved to a new Price", async () => {

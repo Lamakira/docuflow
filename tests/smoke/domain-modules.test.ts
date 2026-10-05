@@ -87,6 +87,8 @@ describe("domain module layout", () => {
       "workspace_billing",
       "workspace_entitlement_overrides",
       "billing_webhook_inbox",
+      "billing_payments",
+      "payment_disputes",
     ]);
 
     for (const id of SHELLS) {
@@ -135,6 +137,8 @@ describe("domain module layout", () => {
       "workspace_billing",
       "workspace_entitlement_overrides",
       "billing_webhook_inbox",
+      "billing_payments",
+      "payment_disputes",
     ]);
     expect(Object.keys(billing?.persistence as object).sort()).toEqual([
       "applyPeriodEnd",

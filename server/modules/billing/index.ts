@@ -76,6 +76,8 @@ export {
   InvalidBillingPinError,
   effectiveEntitlements,
   getBillingProjection,
+  hasPaidSubscription,
+  isOfferedPlan,
   planStanding,
   setEntitlementOverride,
 } from "./entitlements";
@@ -128,6 +130,19 @@ export type {
   SubscriptionPlanChange,
   PaymentMethodUpdateRequest,
   WebhookEvent,
+} from "./billingProvider";
+export {
+  OfferedPlanUnknownError,
+  PaidSubscriptionError,
+  extendTrial,
+  offerPlan,
+  setOperatorCancelAtPeriodEnd,
+} from "./operatorCommands";
+export type {
+  CancelAtPeriodEndUpdate,
+  ProviderDispute,
+  ProviderInvoice,
+  ProviderResourceKind,
 } from "./billingProvider";
 export {
   BillingCurrencyUnavailableError,
@@ -191,6 +206,8 @@ export const BILLING_TABLES = [
   "workspace_billing",
   "workspace_entitlement_overrides",
   "billing_webhook_inbox",
+  "billing_payments",
+  "payment_disputes",
 ] as const;
 
 export interface BillingEntitlementsPersistence {

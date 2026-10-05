@@ -61,7 +61,14 @@ export type FakeSubscription = {
       id?: string;
       quantity: number;
       current_period_end?: number;
-      price: { id: string; product?: string | FakeProduct; recurring?: { interval: string } | null };
+      price: {
+        id: string;
+        product?: string | FakeProduct;
+        recurring?: { interval: string } | null;
+        currency?: string;
+        unit_amount?: number | null;
+        currency_options?: Record<string, { unit_amount: number }>;
+      };
     }>;
   };
 };
@@ -75,6 +82,8 @@ export type FakeInvoice = {
   object: "invoice";
   status: "draft" | "open" | "paid" | "uncollectible" | "void";
   next_payment_attempt: number | null;
+  amount_due?: number;
+  currency?: string;
   parent?: { type: string; subscription_details?: { subscription: string } | null } | null;
   subscription?: string | null;
 };
@@ -82,6 +91,18 @@ export type FakeInvoice = {
 export type SubscriptionUpdateParams = {
   items?: Array<{ id?: string; quantity?: number; price?: string }>;
   proration_behavior?: string;
+  cancel_at_period_end?: boolean;
+};
+
+/** A dispute as `disputes.retrieve` returns it with `charge` expanded. */
+export type FakeDispute = {
+  id: string;
+  amount: number;
+  currency: string;
+  reason: string;
+  status: string;
+  created: number;
+  charge: string | { id: string; customer?: string | null };
 };
 
 export type BillingPortalCreateParams = {
@@ -118,6 +139,7 @@ const failures = new Map<string, Error>();
 const customerCurrencies = new Map<string, string>();
 let retrievedSubscription: FakeSubscription | null = null;
 let retrievedInvoice: FakeInvoice | null = null;
+const retrievedDisputes = new Map<string, FakeDispute>();
 let prices: FakePrice[] = defaultPrices();
 let products: FakeProduct[] = [...PLAN_PRODUCTS];
 
@@ -244,6 +266,14 @@ export default class Stripe {
     },
   };
 
+  disputes = {
+    retrieve: async (id: string, _params?: { expand?: string[] }): Promise<FakeDispute> => {
+      const dispute = retrievedDisputes.get(id);
+      if (!dispute) throw new FakeStripeError(`No such dispute: '${id}'`);
+      return dispute;
+    },
+  };
+
   webhooks = {
     constructEvent: (payload: string, signature: string, secret: string) => {
       if (signature !== `sig:${secret}`) {
@@ -304,6 +334,10 @@ export function setRetrievedInvoice(invoice: FakeInvoice | null): void {
   retrievedInvoice = invoice;
 }
 
+export function setRetrievedDispute(dispute: FakeDispute): void {
+  retrievedDisputes.set(dispute.id, dispute);
+}
+
 export function setStripePrices(next: FakePrice[]): void {
   prices = next;
 }
@@ -320,6 +354,7 @@ export function resetStripe(): void {
   productRetrieves.length = 0;
   retrievedSubscription = null;
   retrievedInvoice = null;
+  retrievedDisputes.clear();
   failures.clear();
   customerCurrencies.clear();
   prices = defaultPrices();
