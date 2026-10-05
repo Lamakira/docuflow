@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { PARALLEL_WORKSPACE_ID } from "../../shared/schema";
 import { makeApp } from "../helpers/app";
-import { newAgent, registerAdmin, registerUser, setWorkspaceRole } from "../helpers/auth";
+import { newAgent, registerAdmin, registerPlatformStaff, registerUser, setWorkspaceRole } from "../helpers/auth";
 import { resetDb } from "../helpers/db";
 import { addWorkspaceMembership } from "../helpers/workspace";
 
@@ -52,10 +52,11 @@ describe("Workspace Memberships HTTP (#192)", () => {
     const app = await makeApp();
     const admin = await registerAdmin(app, { firstName: "Ann" });
     await setWorkspaceRole(admin.id, "administrator");
+    const staff = await registerPlatformStaff(app);
     const archived = await registerUser(app, { firstName: "Cid" });
     const member = await registerUser(app, { firstName: "Bob" });
 
-    await admin.agent.patch(`/api/admin/users/${archived.id}/archive`).send({ isArchived: true });
+    await staff.agent.patch(`/api/admin/users/${archived.id}/archive`).send({ isArchived: true });
 
     const asMember = await member.agent.get("/api/workspace/memberships");
     expect(asMember.body.memberships.map((row: { userId: string }) => row.userId)).not.toContain(

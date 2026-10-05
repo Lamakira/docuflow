@@ -16,6 +16,7 @@ const OTHER_WORKSPACE_ID = "other";
 
 const GLOBAL_ALLOWLIST = [
   "users",
+  "platform_staff",
   "sessions",
   "desktop_releases",
   "scheduler_leases",

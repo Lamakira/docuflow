@@ -12,7 +12,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { newAgent, registerAdmin, registerUser, uniqueEmail } from "../helpers/auth";
+import { newAgent, registerPlatformStaff, registerUser, uniqueEmail } from "../helpers/auth";
 import { loginDevice } from "../helpers/agent";
 
 beforeEach(async () => {
@@ -36,7 +36,7 @@ describe("users.password and last_generated_password are gone (#161)", () => {
 
   it("creates a User without a password column and without a Membership", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const email = uniqueEmail("no-password");
 
     const res = await admin.agent.post("/api/admin/users").send({

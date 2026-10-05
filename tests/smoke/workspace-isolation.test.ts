@@ -11,7 +11,7 @@ import { db } from "../../server/db";
 import { runWithWorkspaceContext, stampWorkspace } from "../../server/workspaceContext";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { newAgent, promoteToAdmin, registerUser, type TestUser } from "../helpers/auth";
+import { newAgent, promoteToAdmin, registerPlatformStaff, registerUser, type TestUser } from "../helpers/auth";
 import { loginDevice, PNG_1X1 } from "../helpers/agent";
 import { createCrmProject, createDocument, createTask, startTimer, tiptap } from "../helpers/fixtures";
 import { completeUpload, objectPathFor } from "../helpers/objects";
@@ -353,8 +353,9 @@ describe("the people a Workspace lists (#297)", () => {
     expect(idsOf((await b.agent.get("/api/users")).body)).toEqual([b.id]);
 
     // The platform directory stays global (ADR-0025).
-    const directory = await seededAdmin.agent.get("/api/admin/users");
-    expect(idsOf(directory.body)).toEqual(idsOf([seededAdmin, seededMember, b, founder]));
+    const staff = await registerPlatformStaff(app);
+    const directory = await staff.agent.get("/api/admin/users");
+    expect(idsOf(directory.body)).toEqual(idsOf([seededAdmin, seededMember, b, founder, staff]));
   });
 
   it("reports a Membership archived in this Workspace as archived, and only when asked", async () => {

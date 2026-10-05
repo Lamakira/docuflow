@@ -54,7 +54,6 @@ function input(overrides: Partial<PlatformDirectoryInput> = {}): PlatformDirecto
     users: [ann, bob, cid, sue],
     currentUserId: "ann",
     filterQuery: "",
-    selectedId: null,
     ...overrides,
   };
 }
@@ -83,9 +82,10 @@ describe("the platform console reaches the five kept routes (#266)", () => {
 });
 
 describe("the console is a platform surface, not a Workspace one (#266)", () => {
-  it("is reached on the global role only", () => {
-    expect(isPlatformAdmin({ role: "admin" })).toBe(true);
-    expect(isPlatformAdmin({ role: "user" })).toBe(false);
+  it("is reached on a Platform Staff session only", () => {
+    expect(isPlatformAdmin({ platformStaff: true })).toBe(true);
+    expect(isPlatformAdmin({ platformStaff: false, role: "admin" })).toBe(false);
+    expect(isPlatformAdmin({ role: "admin" })).toBe(false);
     expect(isPlatformAdmin(null)).toBe(false);
   });
 
@@ -143,28 +143,29 @@ describe("the platform directory register (#266)", () => {
 });
 
 describe("what the console offers on one User (#266)", () => {
-  const actions = (selectedId: string, currentUserId = "ann") =>
-    composePlatformDirectory(input({ selectedId, currentUserId })).detail?.actions.map((action) => action.kind);
+  const rowOf = (userId: string, currentUserId = "ann") =>
+    composePlatformDirectory(input({ currentUserId })).rows.find((row) => row.id === userId);
+  const actions = (userId: string, currentUserId = "ann") => rowOf(userId, currentUserId)?.actions.map((action) => action.kind);
 
   it("offers role, reset and archive on another User, confirming role and archive", () => {
-    const detail = composePlatformDirectory(input({ selectedId: "bob" })).detail;
-    expect(detail?.actions.map((action) => [action.kind, action.label, action.confirm])).toEqual([
+    const row = rowOf("bob");
+    expect(row?.actions.map((action) => [action.kind, action.label, action.confirm])).toEqual([
       ["role", "Make platform admin", true],
       ["reset", "Send password reset", false],
       ["archive", "Archive", true],
     ]);
-    const role = detail?.actions.find((action) => action.kind === "role");
+    const role = row?.actions.find((action) => action.kind === "role");
     expect(role?.body).toEqual({ role: "admin" });
     // The side effect #266 removed must not come back in the copy.
     expect(role?.consequence).toContain("Their role in each Workspace does not change.");
-    expect(detail?.actions.find((action) => action.kind === "archive")?.consequence).toBe(
+    expect(row?.actions.find((action) => action.kind === "archive")?.consequence).toBe(
       "Bob Ray's Memberships in every Workspace will be archived, so they reach no Workspace. Their records stay, and the User can be restored here.",
     );
     // What a platform admin reaches is wider than the console itself.
     expect(role?.consequence).toBe(
       "Bob Ray will reach this console, every User on the platform and the controls kept for platform admins. Their role in each Workspace does not change.",
     );
-    expect(detail?.actions.map((action) => [action.kind, action.destructive])).toEqual([
+    expect(row?.actions.map((action) => [action.kind, action.destructive])).toEqual([
       ["role", false],
       ["reset", false],
       ["archive", true],
@@ -177,46 +178,37 @@ describe("what the console offers on one User (#266)", () => {
     expect(toPlatformUser({ ...row, isMainAdmin: 0 }).superAdmin).toBe(false);
   });
 
-  it("does not ask the detail route for the SuperAdmin unless the SuperAdmin is asking", () => {
-    // GET /api/admin/users/:id answers 403 "Cannot view SuperAdmin details" otherwise.
-    expect(composePlatformDirectory(input({ selectedId: "sue" })).detail?.readable).toBe(false);
-    expect(composePlatformDirectory(input({ selectedId: "sue", currentUserId: "sue" })).detail?.readable).toBe(true);
-    expect(composePlatformDirectory(input({ selectedId: "bob" })).detail?.readable).toBe(true);
-  });
-
   it("says a password reset went out, since nothing in the register shows it", () => {
-    const reset = composePlatformDirectory(input({ selectedId: "bob" })).detail?.actions.find(
-      (action) => action.kind === "reset",
-    );
+    const reset = rowOf("bob")?.actions.find((action) => action.kind === "reset");
     expect(reset?.done).toBe("Password reset sent to bob@example.com.");
   });
 
   it("restores an archived User without asking", () => {
-    const detail = composePlatformDirectory(input({ selectedId: "cid" })).detail;
-    const restore = detail?.actions.find((action) => action.kind === "restore");
+    const restore = rowOf("cid")?.actions.find((action) => action.kind === "restore");
     expect(restore).toMatchObject({ label: "Restore", confirm: false, body: { isArchived: false } });
   });
 
   it("offers nothing on the SuperAdmin to anyone but the SuperAdmin, since every route refuses it", () => {
     expect(actions("sue")).toEqual([]);
-    expect(composePlatformDirectory(input({ selectedId: "sue" })).detail?.note).toBe(
-      "Only the SuperAdmin can change the SuperAdmin.",
-    );
+    expect(rowOf("sue")?.note).toBe("Only the SuperAdmin can change the SuperAdmin.");
     // Archive refuses the SuperAdmin even for itself, and refuses anyone archiving themselves.
     expect(actions("sue", "sue")).toEqual(["role", "reset"]);
   });
 
   it("lets a platform admin drop their own role, saying what it costs, but never archive themselves", () => {
-    const detail = composePlatformDirectory(input({ selectedId: "ann" })).detail;
-    expect(detail?.actions.map((action) => action.kind)).toEqual(["role", "reset"]);
-    expect(detail?.actions[0]).toMatchObject({ label: "Remove platform admin", body: { role: "user" }, destructive: true });
-    expect(detail?.actions[0].consequence).toBe(
+    const row = rowOf("ann");
+    expect(row?.actions.map((action) => action.kind)).toEqual(["role", "reset"]);
+    expect(row?.actions[0]).toMatchObject({ label: "Remove platform admin", body: { role: "user" }, destructive: true });
+    expect(row?.actions[0].consequence).toBe(
       "You will lose access to this console at once, and to every User on the platform and the controls kept for platform admins. Your role in each Workspace does not change.",
     );
   });
 
-  it("has no detail when nothing is selected", () => {
-    expect(composePlatformDirectory(input()).detail).toBeNull();
+  it("carries last sign-in and joined on every row, with no side panel", () => {
+    const directory = composePlatformDirectory(input());
+    expect(directory.columns).toEqual(["USER", "ROLE", "STATUS", "LAST SIGN-IN", "JOINED"]);
+    expect(directory.rows.map((row) => row.lastSignIn)).toEqual(["—", "—", "—", "—"]);
+    expect(directory.rows.every((row) => row.actions.length > 0 || row.note)).toBe(true);
   });
 });
 
@@ -226,19 +218,24 @@ describe("the console page (#266)", () => {
   it("reads and writes through the path helpers, and confirms in the shared modal", () => {
     for (const helper of [
       "platformUsersPath(",
-      "platformUserPath(",
       "platformUserRolePath(",
       "platformUserResetPath(",
       "platformUserArchivePath(",
     ]) {
       expect(page).toContain(helper);
     }
+    // The list already holds each row, so the page never opens one User.
+    expect(page).not.toContain("platformUserPath(");
+    expect(page).toContain("V2RowMenu");
     expect(page).toContain("@/components/ui/alert-dialog");
     expect(page).not.toContain("<select");
+    expect(page).not.toContain("df-folder-preview");
+    const css = read("client/src/v2/tokens.css");
+    expect(css).toMatch(
+      /\.df-platform-register \.df-register-head,\s*\.df-platform-register \.df-register-row\s*\{[^}]*var\(--df-control-h\)/,
+    );
     // The confirm cannot fire twice, as Billing's cancel cannot.
     expect(page).toMatch(/<AlertDialogAction[\s\S]*?disabled=\{pending\}/);
-    // The detail read waits on the composer's word that the route will answer.
-    expect(page).toContain("readable === true");
   });
 
   it("sends a User without the global role away", () => {

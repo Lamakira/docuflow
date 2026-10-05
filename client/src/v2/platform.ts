@@ -3,12 +3,12 @@ import { formatWhen, memberName } from "./today";
 /**
  * The platform console (#266, decided on #261).
  *
- * The User directory is a platform surface, not a Workspace one: `users` has no
- * `workspace_id`, so ADR-0025 keeps it on the global `users.role` column behind
- * `requirePlatformAdmin`. The console lives outside the Workspace chrome and
- * reaches five routes. Create, delete and profile edit stay on the server and
- * out of v2: Invitations and Clerk create Users, archive covers delete, and a
- * Membership's profile is People's.
+ * The User directory is a platform surface, not a Workspace one. Operator
+ * routes answer a Platform Staff session (#300, ADR-0015), never `users.role`.
+ * The console lives outside the Workspace chrome and reaches five routes.
+ * Create, delete and profile edit stay on the server and out of v2: Invitations
+ * and Clerk create Users, archive covers delete, and a Membership's profile is
+ * People's.
  */
 
 export const PLATFORM_CONSOLE_LABEL = "Platform console";
@@ -31,7 +31,6 @@ export type PlatformDirectoryInput = {
   users: PlatformUser[];
   currentUserId: string;
   filterQuery: string;
-  selectedId: string | null;
 };
 
 export type PlatformActionKind = "role" | "reset" | "archive" | "restore";
@@ -60,33 +59,23 @@ export type PlatformRow = {
   archived: boolean;
   superAdmin: boolean;
   self: boolean;
-  selected: boolean;
   lastSignIn: string;
   joined: string;
+  actions: PlatformAction[];
+  /** Why a User shows no actions, when that is the case. */
+  note: string | null;
 };
 
 export type PlatformDirectoryModel = {
   title: typeof PLATFORM_CONSOLE_LABEL;
   subhead: string;
   filterPlaceholder: string;
-  columns: ["USER", "ROLE", "STATUS"];
+  columns: ["USER", "ROLE", "STATUS", "LAST SIGN-IN", "JOINED"];
   rows: PlatformRow[];
   count: number;
   countLabel: string;
   empty: boolean;
   emptyCopy: string;
-  detail:
-    | (PlatformRow & {
-        actions: PlatformAction[];
-        /** Why a User shows no actions, when that is the case. */
-        note: string | null;
-        /**
-         * Whether the detail route will answer. It refuses the SuperAdmin to
-         * every other platform admin, so the page does not ask.
-         */
-        readable: boolean;
-      })
-    | null;
 };
 
 /** The whole directory, archived Users included, so one can be restored. */
@@ -110,9 +99,11 @@ export function platformUserArchivePath(userId: string): string {
   return `/api/admin/users/${userId}/archive`;
 }
 
-/** The console's gate on the client. `requirePlatformAdmin` stays the real one. */
-export function isPlatformAdmin(user: { role?: string | null } | null | undefined): boolean {
-  return user?.role === "admin";
+/** The console opens for a Platform Staff session, never for `users.role` (#300). */
+export function isPlatformAdmin(
+  user: { platformStaff?: boolean | null; role?: string | null } | null | undefined,
+): boolean {
+  return user?.platformStaff === true;
 }
 
 /** Where v1's `/admin`, `/admin/create` and `/admin/user/:id` land. */
@@ -211,6 +202,8 @@ function composeActions(target: PlatformUser, self: boolean): PlatformAction[] {
 }
 
 function composeRow(user: PlatformUser, input: PlatformDirectoryInput): PlatformRow {
+  const self = user.id === input.currentUserId;
+  const actions = composeActions(user, self);
   return {
     id: user.id,
     name: memberName(user),
@@ -219,10 +212,11 @@ function composeRow(user: PlatformUser, input: PlatformDirectoryInput): Platform
     status: user.isArchived ? "ARCHIVED" : "ACTIVE",
     archived: user.isArchived,
     superAdmin: user.superAdmin,
-    self: user.id === input.currentUserId,
-    selected: user.id === input.selectedId,
+    self,
     lastSignIn: formatWhen(user.lastLoginAt, input.now) || "—",
     joined: formatWhen(user.createdAt, input.now) || "—",
+    actions,
+    note: actions.length === 0 ? "Only the SuperAdmin can change the SuperAdmin." : null,
   };
 }
 
@@ -232,31 +226,16 @@ export function composePlatformDirectory(input: PlatformDirectoryInput): Platfor
     .filter((user) => !needle || `${memberName(user)} ${user.email ?? ""}`.toLowerCase().includes(needle))
     .map((user) => composeRow(user, input));
 
-  const selected = input.users.find((user) => user.id === input.selectedId) ?? null;
-  const viewer = input.users.find((user) => user.id === input.currentUserId) ?? null;
-  let detail: PlatformDirectoryModel["detail"] = null;
-  if (selected) {
-    const row = composeRow(selected, input);
-    const actions = composeActions(selected, row.self);
-    detail = {
-      ...row,
-      actions,
-      note: actions.length === 0 ? "Only the SuperAdmin can change the SuperAdmin." : null,
-      readable: !selected.superAdmin || viewer?.superAdmin === true,
-    };
-  }
-
   const empty = rows.length === 0;
   return {
     title: PLATFORM_CONSOLE_LABEL,
     subhead: "Every User on the platform, across all Workspaces. Only platform admins see this console.",
     filterPlaceholder: "Filter by name or email",
-    columns: ["USER", "ROLE", "STATUS"],
+    columns: ["USER", "ROLE", "STATUS", "LAST SIGN-IN", "JOINED"],
     rows,
     count: rows.length,
     countLabel: rows.length === 1 ? "1 USER" : `${rows.length} USERS`,
     empty,
     emptyCopy: empty ? (needle ? "No User matches this filter." : "No Users on the platform yet.") : "",
-    detail,
   };
 }

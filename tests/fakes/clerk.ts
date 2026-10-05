@@ -48,7 +48,7 @@ const users: StoredUser[] = [];
 const createUserCalls: CreateUserParams[] = [];
 const invitations: StoredInvitation[] = [];
 const createInvitationCalls: CreateInvitationParams[] = [];
-const sessions = new Map<string, { sub: string }>();
+const sessions = new Map<string, { sub: string; fva?: [number, number]; pla?: string; twoFactorEnabled?: boolean }>();
 
 export function createClerkClient(_options: { secretKey?: string; publishableKey?: string }) {
   return {
@@ -130,9 +130,38 @@ export async function verifyToken(token: string, _options: { secretKey?: string 
 }
 
 /** Test helper — not on the port. */
-export function issueClerkSession(providerSubjectId: string): string {
+export function issueClerkSession(
+  providerSubjectId: string,
+  options?: { secondFactor?: boolean },
+): string {
   const token = `sess_test_${providerSubjectId}`;
-  sessions.set(token, { sub: providerSubjectId });
+  const payload: { sub: string; fva?: [number, number]; twoFactorEnabled?: boolean } = {
+    sub: providerSubjectId,
+  };
+  if (options?.secondFactor === true) {
+    payload.fva = [0, 0];
+    payload.twoFactorEnabled = true;
+  }
+  sessions.set(token, payload);
+  return token;
+}
+
+/**
+ * A session from the Platform Staff pool (#300). `pla: "staff"` is the
+ * equivalent of a dedicated Clerk instance when that instance is not configured.
+ */
+export function issuePlatformStaffSession(
+  subjectId: string,
+  options?: { secondFactor?: boolean },
+): string {
+  const token = `staff_sess_${subjectId}`;
+  const secondFactor = options?.secondFactor !== false;
+  sessions.set(token, {
+    sub: subjectId,
+    pla: "staff",
+    fva: [0, secondFactor ? 0 : -1],
+    twoFactorEnabled: secondFactor,
+  });
   return token;
 }
 

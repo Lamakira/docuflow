@@ -58,20 +58,28 @@ export interface WebSessionPersistence {
   getUserByIdentityProviderSubjectId(subjectId: string): Promise<{ id: string } | undefined>;
 }
 
+export type ResolvedIdentitySession = {
+  userId?: string;
+  subjectId: string;
+  secondFactorVerified: boolean;
+  platformStaff: boolean;
+};
+
 /**
- * The `users.id` behind an IdentityProvider session token, or `undefined` when
- * the token does not name one. The link is read from DocuFlow's own table: a
- * subject the provider will vouch for but nobody imported is not a User here.
+ * The session behind a token: the linked User when there is one, and the
+ * claims DocuFlow authorizes on (#300). A subject the provider will vouch for
+ * but nobody imported is not a User here — Platform Staff are that case on
+ * purpose, and they are not given a `users.id`.
  */
-export async function userIdFromIdentitySession(deps: {
+export async function resolveIdentitySession(deps: {
   provider: IdentityProvider;
   persistence: WebSessionPersistence;
   token: string;
-}): Promise<string | undefined> {
+}): Promise<ResolvedIdentitySession | undefined> {
   const { provider, persistence, token } = deps;
-  let providerSubjectId: string;
+  let session;
   try {
-    ({ providerSubjectId } = await provider.verifySessionToken(token));
+    session = await provider.verifySessionToken(token);
   } catch (error) {
     // Every port failure — an invalid token, absent credentials, a provider that
     // cannot be reached — is the same answer: this request has no Clerk-mapped
@@ -80,6 +88,24 @@ export async function userIdFromIdentitySession(deps: {
     throw error;
   }
 
-  const user = await persistence.getUserByIdentityProviderSubjectId(providerSubjectId);
-  return user?.id;
+  const user = await persistence.getUserByIdentityProviderSubjectId(session.providerSubjectId);
+  return {
+    userId: user?.id,
+    subjectId: session.providerSubjectId,
+    secondFactorVerified: session.secondFactorVerified,
+    platformStaff: session.platformStaff,
+  };
+}
+
+/**
+ * The `users.id` behind an IdentityProvider session token, or `undefined` when
+ * the token does not name one.
+ */
+export async function userIdFromIdentitySession(deps: {
+  provider: IdentityProvider;
+  persistence: WebSessionPersistence;
+  token: string;
+}): Promise<string | undefined> {
+  const resolved = await resolveIdentitySession(deps);
+  return resolved?.userId;
 }

@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
-import { newAgent, registerAdmin, registerUser, uniqueEmail } from "../helpers/auth";
+import { newAgent, registerPlatformStaff, registerUser, uniqueEmail } from "../helpers/auth";
 import { clerkCreateInvitationCalls, createClerkClient, issueClerkSession } from "../fakes/clerk";
 
 beforeEach(async () => {
@@ -21,7 +21,7 @@ beforeEach(async () => {
 describe("admin create invites at the IdentityProvider (#160)", () => {
   it("creates a User and sends a password-set invite without joining a Workspace", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const email = uniqueEmail("invite-create");
 
     const res = await admin.agent.post("/api/admin/users").send({
@@ -51,7 +51,7 @@ describe("admin create invites at the IdentityProvider (#160)", () => {
 
   it("does not let a created User in without an active Membership, even after they accept the invite", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const email = uniqueEmail("invite-archived");
 
     const created = await admin.agent.post("/api/admin/users").send({
@@ -82,7 +82,7 @@ describe("admin create invites at the IdentityProvider (#160)", () => {
 describe("admin reset invites at the IdentityProvider (#160)", () => {
   it("sends a password-set invite and does not write a User password", async () => {
     const app = await makeApp();
-    const admin = await registerAdmin(app);
+    const admin = await registerPlatformStaff(app);
     const member = await registerUser(app);
 
     const res = await admin.agent.post(`/api/admin/users/${member.id}/reset-password`);

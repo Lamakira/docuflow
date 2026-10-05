@@ -236,6 +236,7 @@ describe("Administration shows one configuration section at a time (#281)", () =
       "tracking-policy",
       "pipeline-lists",
       "integrations",
+      "support-access",
     ]);
     expect(administrationTabHref("workspace")).toBe("/administration");
     expect(administrationTabHref("billing")).toBe("/administration/billing");
@@ -293,9 +294,10 @@ describe("Administration shows one configuration section at a time (#281)", () =
       "Tracking Policy",
       "Pipeline & lists",
       "Integrations",
+      "Support access",
     ]);
     expect(owner.filter((tab) => tab.active).map((tab) => tab.id)).toEqual(["billing"]);
-    expect(administrationTabs("workspace", "ADMINISTRATOR")).toHaveLength(6);
+    expect(administrationTabs("workspace", "ADMINISTRATOR")).toHaveLength(7);
     expect(administrationTabs("workspace", "MEMBER")).toEqual([]);
   });
 
