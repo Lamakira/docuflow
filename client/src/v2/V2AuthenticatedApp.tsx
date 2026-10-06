@@ -36,7 +36,7 @@ export function V2AuthenticatedApp() {
     <>
       <Switch>
         <Route path="/platform" component={V2PlatformPage} />
-        <Route path="/platform/:rest*" component={V2PlatformPage} />
+        <Route path="/platform/*" component={V2PlatformPage} />
         <Route component={V2WorkspaceApp} />
       </Switch>
       <V2Toaster />

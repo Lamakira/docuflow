@@ -121,9 +121,23 @@ describe("tabs and routes", () => {
     ]);
   });
 
-  it("registers the routes and keeps the legacy redirect", () => {
+  it("routes every console path, deep links included, to the console and not the Workspace shell", async () => {
+    // wouter matches with regexparam, where `:rest*` takes one segment only, so
+    // a Workspace or Support Request page fell through to the Workspace shell.
+    const { parse } = await import("regexparam");
     const app = read("client/src/v2/V2AuthenticatedApp.tsx");
-    expect(app).toContain('<Route path="/platform/:rest*" component={V2PlatformPage}');
+    const patterns = [...app.matchAll(/<Route path="([^"]+)" component=\{V2PlatformPage\}/g)].map(
+      (match) => parse(match[1]).pattern,
+    );
+    expect(patterns.length).toBeGreaterThan(0);
+    for (const path of [
+      "/platform",
+      "/platform/stats",
+      workspacePageHref("w1"),
+      supportRequestHref("r1"),
+    ]) {
+      expect(patterns.some((pattern) => pattern.test(path)), path).toBe(true);
+    }
     expect(app).toContain("V2LegacyAdminRedirect");
   });
 });
