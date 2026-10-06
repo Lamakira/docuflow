@@ -1516,10 +1516,13 @@ describe("Administration controls (#212)", () => {
   });
 
   it("draws a visible tick on every checked v2 checkbox, in light and dark", () => {
-    // `.df-v2 button:not(.df-btn) { color: inherit }` (0,2,1) outranks
-    // `.df-v2 .df-checkbox` (0,2,0), so a colour on the button itself loses and
-    // the tick took the ink of the checked fill. It must sit on the indicator span.
-    expect(rule(".df-v2 button:not(.df-btn),\n.df-v2 input")).toMatch(/color:\s*inherit/);
+    // `.df-v2 button:not(.df-btn) { color: inherit }` (0,3,1 since Clerk's
+    // controls are left out, #316) outranks `.df-v2 .df-checkbox` (0,2,0), so a
+    // colour on the button itself loses and the tick took the ink of the
+    // checked fill. It must sit on the indicator span.
+    expect(
+      rule('.df-v2 button:not(.df-btn):not([class*="cl-"]),\n.df-v2 input:not([class*="cl-"])'),
+    ).toMatch(/color:\s*inherit/);
     expect(rule(".df-v2 .df-checkbox > span")).toMatch(/color:\s*var\(--df-on-ink\)/);
     expect(rule(".df-v2 .df-checkbox svg")).not.toMatch(/(^|[^-])color:/);
 
