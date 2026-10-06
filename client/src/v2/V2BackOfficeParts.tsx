@@ -90,9 +90,21 @@ export function BackOfficeRegister({
   );
 }
 
-export function FigureGrid({ figures, testId }: { figures: Array<{ label: string; value: string }>; testId?: string }) {
+/**
+ * The console's facts and counts as one strip inside its card: hairlines
+ * between them rather than grey boxes. `stat` sets the value at headline size.
+ */
+export function FigureGrid({
+  figures,
+  testId,
+  size = "fact",
+}: {
+  figures: Array<{ label: string; value: string }>;
+  testId?: string;
+  size?: "fact" | "stat";
+}) {
   return (
-    <div className="df-figure-band" data-testid={testId}>
+    <div className="df-figure-band df-stat-strip" data-size={size} data-testid={testId}>
       {figures.map((figure) => (
         <div key={figure.label} className="df-analytics-figure">
           <span className="df-analytics-figure-label">{figure.label}</span>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
+import { ArrowRight, CalendarDays, Lock, PenLine, Users } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   PUBLIC_API_CAPABILITIES,
@@ -22,7 +23,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -93,7 +96,7 @@ import { workspaceOwnerName } from "./workspace";
 import { V2SupportAccess } from "./V2SupportAccess";
 import { useV2Chrome } from "./V2Shell";
 import { V2FormDialog } from "./V2FormDialog";
-import { AnalyticsRegister, FigureBand, readBehindAdministration } from "./V2Analytics";
+import { AnalyticsRegister, readBehindAdministration } from "./V2Analytics";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import {
   BILLING_INTERVAL_LABEL,
@@ -674,7 +677,40 @@ export function V2AdministrationPage() {
                 <p className="df-card-sub">Who owns {workspaceName}, and the Workspace Role you hold in it.</p>
               </div>
             </div>
-            <FigureBand figures={page.workspace.figures} testId="v2-administration-workspace-figures" />
+            <div className="df-admin-identity" data-testid="v2-administration-workspace-identity">
+              <span className="df-admin-identity-tile" aria-hidden="true">{page.workspace.initials}</span>
+              <div className="df-admin-identity-text">
+                <span className="df-admin-identity-name">{workspaceName}</span>
+                <span className="df-admin-identity-sub">Your Workspace</span>
+              </div>
+              <span className="df-status df-admin-identity-role" data-tone="active">{page.workspace.roleBadge}</span>
+            </div>
+            <div className="df-admin-facts" data-testid="v2-administration-workspace-facts">
+              <div className="df-admin-fact">
+                <Avatar className="df-admin-fact-avatar">
+                  <AvatarFallback className="df-admin-fact-avatar-fallback">
+                    {page.workspace.owner?.initials ?? "—"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="df-admin-fact-text">
+                  <span className="df-admin-fact-label">Owner</span>
+                  <span className="df-admin-fact-value">{page.workspace.owner?.name ?? "—"}</span>
+                </div>
+              </div>
+              {page.workspace.members ? (
+                <div className="df-admin-fact">
+                  <Users size={16} strokeWidth={1.5} className="df-admin-fact-icon" aria-hidden="true" />
+                  <div className="df-admin-fact-text">
+                    <span className="df-admin-fact-label">Members</span>
+                    <span className="df-admin-fact-value">{page.workspace.members}</span>
+                  </div>
+                  <Link href="/people" className="df-admin-fact-link" data-testid="v2-administration-workspace-people">
+                    Manage in People
+                    <ArrowRight size={14} strokeWidth={1.5} aria-hidden="true" />
+                  </Link>
+                </div>
+              ) : null}
+            </div>
           </section>
         </TabsContent>
 
@@ -724,31 +760,59 @@ export function V2AdministrationPage() {
                   Plan, Billable Seats, and the term for this Workspace. Card details stay with Stripe.
                 </p>
               </div>
-              {page.billing.condition ? (
-                <span className="df-status" data-status={page.billing.condition} data-tone={billingConditionTone(page.billing.condition)}>
-                  {page.billing.condition}
-                </span>
-              ) : null}
             </div>
 
-            {page.billing.available ? (
-              <div className="df-figure-band" data-testid="v2-administration-billing-figures">
-                {page.billing.figures.map((figure) => (
-                  <div key={figure.label} className="df-analytics-figure">
-                    <span className="df-analytics-figure-label">{figure.label}</span>
-                    <span className="df-analytics-figure-value df-admin-billing-figure">
-                      {figure.value}
-                    </span>
+            {page.billing.summary ? (
+              <div className="df-billing-summary" data-testid="v2-administration-billing-summary">
+                <div className="df-billing-plan">
+                  <span className="df-billing-label">Current Plan</span>
+                  <div className="df-billing-plan-line">
+                    <span className="df-billing-plan-name">{page.billing.summary.plan}</span>
+                    {page.billing.condition ? (
+                      <span
+                        className="df-status"
+                        data-status={page.billing.condition}
+                        data-tone={billingConditionTone(page.billing.condition)}
+                      >
+                        {page.billing.condition}
+                      </span>
+                    ) : null}
                   </div>
-                ))}
+                  {page.billing.summary.lead ? (
+                    <p className="df-billing-lead">{page.billing.summary.lead}</p>
+                  ) : null}
+                </div>
+                <div className="df-billing-seats">
+                  <div className="df-billing-seats-row">
+                    <span className="df-billing-label">Billable Seats</span>
+                    <span className="df-billing-seats-count">{page.billing.summary.seats.label}</span>
+                  </div>
+                  <Progress
+                    value={page.billing.summary.seats.percent}
+                    className="df-billing-meter"
+                    data-tone={page.billing.summary.seats.over ? "over" : "within"}
+                    aria-label="Billable Seats used"
+                  />
+                </div>
+                <div className="df-billing-facts">
+                  <div className="df-billing-fact">
+                    {page.billing.summary.writes.allowed ? (
+                      <PenLine size={16} strokeWidth={1.5} className="df-billing-fact-icon" data-tone="allowed" aria-hidden="true" />
+                    ) : (
+                      <Lock size={16} strokeWidth={1.5} className="df-billing-fact-icon" data-tone="blocked" aria-hidden="true" />
+                    )}
+                    <span className="df-billing-fact-text">{page.billing.summary.writes.label}</span>
+                  </div>
+                  <div className="df-billing-fact">
+                    <CalendarDays size={16} strokeWidth={1.5} className="df-billing-fact-icon" aria-hidden="true" />
+                    <span className="df-billing-label">{page.billing.summary.term.label}</span>
+                    <span className="df-billing-term-value">{page.billing.summary.term.value}</span>
+                  </div>
+                </div>
               </div>
             ) : (
               <p className="df-empty">{page.billing.seats}</p>
             )}
-
-            {page.billing.entitlementNote ? (
-              <p className="df-admin-billing-note">{page.billing.entitlementNote}</p>
-            ) : null}
 
             {entitlements && page.billing.actions.some((action) => action.id === "checkout" || action.id === "plan") ? (
               <PlanPicker

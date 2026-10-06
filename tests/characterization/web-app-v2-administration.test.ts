@@ -715,8 +715,7 @@ describe("Administration from operator routes (#193)", () => {
     expect(trial.billing.plan).toBe("Trial");
     expect(trial.billing.condition).toBe("Trial");
     expect(trial.billing.seats).toBe("1 of 1 Billable Seats consumed.");
-    expect(trial.billing.figures).toContainEqual({ label: "WRITES", value: "Allowed" });
-    expect(trial.billing.entitlementNote).toBeNull();
+    expect(trial.billing.summary?.writes).toEqual({ allowed: true, label: "Writes allowed" });
     expect(trial.billing.actions.map((action) => action.id)).toEqual(["checkout"]);
     expect(trial.billing.checkout).toBe("redirect");
     expect(pageSource).not.toMatch(/card number|cvc|cardholder/i);
@@ -774,8 +773,8 @@ describe("Administration from operator routes (#193)", () => {
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
     expect(page.billing.condition).toBe("Read-only");
-    expect(page.billing.figures).toContainEqual({ label: "WRITES", value: "Blocked" });
-    expect(page.billing.entitlementNote).toContain("Writes blocked");
+    expect(page.billing.summary?.writes).toEqual({ allowed: false, label: "Writes blocked" });
+    expect(page.billing.summary?.lead).toContain("Writes are blocked");
     // #299: a lapsed Subscription comes back through Checkout.
     expect(page.billing.actions.map((action) => action.id)).toEqual(["checkout", "payment-method"]);
     expect(page.serviceAccounts.createAllowed).toBe(false);
@@ -848,7 +847,6 @@ describe("Administration secret confirmation motion (#193)", () => {
     expect(rule('.df-secret-once[data-motion="standard"]')).toMatch(/var\(--ease-out\)/);
     expect(rule('.df-secret-once[data-motion="standard"]')).not.toMatch(/transition\s*:\s*all\b/);
     expect(rule(".df-admin-form input")).toMatch(/animation:\s*none/);
-    expect(rule(".df-admin-billing-figure")).toMatch(/animation:\s*none/);
     expect(reducedMotionCss()).toMatch(
       /\.df-secret-once\[data-motion="standard"\][^{]*\{[^}]*transform:\s*none/,
     );
@@ -1562,7 +1560,8 @@ describe("Administration controls (#212)", () => {
     expect(analyticsSource).toContain('<SkeletonSection title="Analytics"');
     expect(analyticsSource).toContain('<SkeletonSection title="Warnings"');
     // The wait reuses the real bands and rows, so nothing moves on arrival.
-    expect(skeletonSource).toContain('className="df-figure-band"');
+    // The band, or the console's strip variant of it (#318).
+    expect(skeletonSource).toMatch(/"df-figure-band( df-stat-strip)?"/);
     expect(skeletonSource).toContain('className="df-register-row"');
     expect(skeletonSource).toContain('aria-busy="true"');
     expect(skeletonSource).toContain('role="status"');
@@ -1716,34 +1715,68 @@ describe("The Billing card reads as one card (#245, F1)", () => {
     expect(confirmBody.slice(0, 320)).toContain("cancelAtPeriodEnd.mutate()");
   });
 
-  it("puts the entitlement status in the figure band, in the domain's words", () => {
+  it("summarises the subscription: Plan, seats meter, writes and term", () => {
     const page = composeAdministration(activeBilling());
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
 
-    expect(page.billing.figures).toEqual([
-      { label: "PLAN", value: "Pro" },
-      // CONDITION was neither the domain's word nor distinct from the header chip.
-      { label: "BILLING STATE", value: "Active" },
-      { label: "WRITES", value: "Allowed" },
-      { label: "RENEWS", value: "1 OCT 2026" },
-      // Last of five in a four-column band, so it lands on the row above the
-      // seat control instead of two figures away from it.
-      { label: "BILLABLE SEATS", value: "3 of 8" },
-    ]);
-    // The sentence is only worth showing when it carries more than the figure.
-    expect(page.billing.entitlementNote).toBeNull();
+    expect(page.billing.summary).toEqual({
+      plan: "Pro",
+      lead: "Billed for each Billable Seat.",
+      seats: { label: "3 of 8", percent: 38, over: false },
+      writes: { allowed: true, label: "Writes allowed" },
+      term: { label: "Renews", value: "1 OCT 2026" },
+    });
   });
 
-  it("keeps the read-only sentence, which says more than the figure can", () => {
+  it("makes the read-only sentence the lead", () => {
     const page = composeAdministration(activeBilling({ billingState: "ReadOnly" }));
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
 
-    expect(page.billing.figures[2]).toEqual({ label: "WRITES", value: "Blocked" });
-    expect(page.billing.entitlementNote).toBe(
-      "Writes blocked. Viewing, export, and recovery stay available.",
+    expect(page.billing.summary?.writes).toEqual({ allowed: false, label: "Writes blocked" });
+    expect(page.billing.summary?.lead).toBe("Writes are blocked. Viewing, export, and recovery stay available.");
+  });
+
+  it("clamps the seats meter and flags an overrun", () => {
+    const over = composeAdministration(activeBilling({ consumedSeatCount: 12 }));
+    expect(over.kind).toBe("ready");
+    if (over.kind !== "ready") return;
+    expect(over.billing.summary?.seats).toEqual({ label: "12 of 8", percent: 100, over: true });
+
+    const full = composeAdministration(activeBilling({ consumedSeatCount: 8 }));
+    expect(full.kind).toBe("ready");
+    if (full.kind !== "ready") return;
+    expect(full.billing.summary?.seats).toEqual({ label: "8 of 8", percent: 100, over: false });
+
+    const none = composeAdministration(activeBilling({ purchasedSeatCapacity: 0, consumedSeatCount: 0 }));
+    expect(none.kind).toBe("ready");
+    if (none.kind !== "ready") return;
+    expect(none.billing.summary?.seats.percent).toBe(0);
+  });
+
+  it("words the lead for each state, first match winning", () => {
+    const lead = (overrides: Partial<BillingInput>) => {
+      const page = composeAdministration(activeBilling(overrides));
+      if (page.kind !== "ready") throw new Error("expected ready");
+      return page.billing.summary?.lead;
+    };
+    expect(lead({ billingState: "PastDue" })).toBe(
+      "The last payment failed. Update the payment method to keep this Plan.",
     );
+    expect(lead({ cancelAtPeriodEnd: true, periodEndsAt: "2026-10-01T00:00:00.000Z" })).toBe(
+      "Cancelled. Pro stays until 1 OCT 2026.",
+    );
+    expect(lead({ planKey: "trial", billingState: "Trialing" })).toBe(
+      "Every Business feature, free, until the Trial ends.",
+    );
+    expect(lead({ planKey: "pro", billingState: "Trialing" })).toBe(
+      "Offered by DocuFlow. Nothing is charged until it ends.",
+    );
+    expect(lead({ planKey: "legacy" })).toBe("Kept from before self-service billing. Nothing renews.");
+    expect(lead({ planKey: "enterprise" })).toBe("Agreed with sales.");
+    expect(lead({ planKey: "pro" })).toBe("Billed for each Billable Seat.");
+    expect(lead({ planKey: "mystery" as BillingInput["planKey"] })).toBeNull();
   });
 });
 
@@ -1789,13 +1822,13 @@ describe("Administration billing remainder (#212)", () => {
     );
     expect(trial.kind).toBe("ready");
     if (trial.kind !== "ready") return;
-    expect(trial.billing.figures).toEqual([
-      { label: "PLAN", value: "Trial" },
-      { label: "BILLING STATE", value: "Trial" },
-      { label: "WRITES", value: "Allowed" },
-      { label: "TRIAL ENDS", value: "20 SEP 2026" },
-      { label: "BILLABLE SEATS", value: "1 of 1" },
-    ]);
+    expect(trial.billing.summary).toEqual({
+      plan: "Trial",
+      lead: "Every Business feature, free, until the Trial ends.",
+      seats: { label: "1 of 1", percent: 100, over: false },
+      writes: { allowed: true, label: "Writes allowed" },
+      term: { label: "Trial ends", value: "20 SEP 2026" },
+    });
 
     const cancelling = composeAdministration(
       emptyAdmin({
@@ -1813,10 +1846,7 @@ describe("Administration billing remainder (#212)", () => {
     );
     expect(cancelling.kind).toBe("ready");
     if (cancelling.kind !== "ready") return;
-    expect(cancelling.billing.figures[3]).toEqual({
-      label: "ACCESS ENDS",
-      value: "1 OCT 2026",
-    });
+    expect(cancelling.billing.summary?.term).toEqual({ label: "Access ends", value: "1 OCT 2026" });
 
     const renewing = composeAdministration(
       emptyAdmin({
@@ -1834,13 +1864,13 @@ describe("Administration billing remainder (#212)", () => {
     );
     expect(renewing.kind).toBe("ready");
     if (renewing.kind !== "ready") return;
-    expect(renewing.billing.figures[3]).toEqual({ label: "RENEWS", value: "1 OCT 2026" });
+    expect(renewing.billing.summary?.term).toEqual({ label: "Renews", value: "1 OCT 2026" });
 
     const none = composeAdministration(emptyAdmin());
     expect(none.kind).toBe("ready");
     if (none.kind !== "ready") return;
     expect(none.billing.available).toBe(false);
-    expect(none.billing.figures).toEqual([]);
+    expect(none.billing.summary).toBeNull();
   });
 
   it("names the refusal when Checkout is refused for a seeded Workspace", () => {
@@ -1876,8 +1906,7 @@ describe("A Read-only Workspace recovers through Checkout (#299)", () => {
     expect(ended.kind).toBe("ready");
     if (ended.kind !== "ready") return;
     expect(ended.billing.actions.map((action) => action.id)).toEqual(["checkout", "payment-method"]);
-    expect(ended.billing.figures).toContainEqual({ label: "SUBSCRIPTION", value: "Ended" });
-    expect(ended.billing.figures.map((figure) => figure.label)).not.toContain("RENEWS");
+    expect(ended.billing.summary?.term).toEqual({ label: "Subscription", value: "Ended" });
   });
 
   it("does not let the Read-only guard stop Checkout", () => {

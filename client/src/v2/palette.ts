@@ -41,6 +41,7 @@ export function statusTone(status: string | null | undefined): StatusTone {
 /** Read-only is a Workspace blocked from writing; Past due is overdue. */
 export function billingConditionTone(condition: string | null | undefined): StatusTone {
   if (condition === "Past due" || condition === "Read-only") return "alert";
+  if (condition === "Active") return "positive";
   return "neutral";
 }
 

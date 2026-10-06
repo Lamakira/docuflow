@@ -155,21 +155,24 @@ export type BillingAction = {
   consequence: string | null;
 };
 
+export type BillingSummary = {
+  plan: string;
+  /** One sentence on why the Plan stands as it does. `null` when there is nothing to add. */
+  lead: string | null;
+  seats: { label: string; percent: number; over: boolean };
+  writes: { allowed: boolean; label: "Writes allowed" | "Writes blocked" };
+  term: { label: string; value: string };
+};
+
 export type BillingModel = {
   available: boolean;
   plan: string;
   condition: "Trial" | "Active" | "Past due" | "Read-only" | null;
   seats: string;
-  /**
-   * The entitlement sentence, and only when it says more than the WRITES figure
-   * does. "Writes allowed." beside a figure reading Allowed is the same fact
-   * twice; read-only carries a clause the figure cannot.
-   */
-  entitlementNote: string | null;
   /** What the seat field starts from, so it never contradicts the figure above it. */
   seatQuantityDefault: string;
-  /** The subscription read as discrete facts, so the card is not three loose lines. */
-  figures: AnalyticsFigure[];
+  /** The subscription read as a summary; `null` exactly when billing is not available. */
+  summary: BillingSummary | null;
   actions: BillingAction[];
   checkout: "redirect";
 };
@@ -199,7 +202,13 @@ export type AdministrationModel =
         createAllowed: boolean;
       };
       billing: BillingModel;
-      workspace: { figures: AnalyticsFigure[] };
+      workspace: {
+        name: string;
+        initials: string;
+        roleBadge: string;
+        owner: { name: string; initials: string } | null;
+        members: string | null;
+      };
       members: {
         empty: boolean;
         emptyCopy: string;
@@ -352,21 +361,49 @@ export function planPickerNote(mode: "checkout" | "change", currentPlanLabel: st
 }
 
 /** Whichever date actually governs the subscription next. */
-function billingTermFigure(pin: BillingInput): AnalyticsFigure {
+function billingTerm(pin: BillingInput): { label: string; value: string } {
   if (pin.planKey === "trial" && pin.trialEndsAt) {
-    return { label: "TRIAL ENDS", value: formatFullDay(pin.trialEndsAt) };
+    return { label: "Trial ends", value: formatFullDay(pin.trialEndsAt) };
   }
   // A Subscription that has ended renews nothing; its last period end is history.
   if (pin.billingState === "ReadOnly") {
-    return { label: "SUBSCRIPTION", value: "Ended" };
+    return { label: "Subscription", value: "Ended" };
   }
   if (pin.cancelAtPeriodEnd && pin.periodEndsAt) {
-    return { label: "ACCESS ENDS", value: formatFullDay(pin.periodEndsAt) };
+    return { label: "Access ends", value: formatFullDay(pin.periodEndsAt) };
   }
   if (pin.periodEndsAt) {
-    return { label: "RENEWS", value: formatFullDay(pin.periodEndsAt) };
+    return { label: "Renews", value: formatFullDay(pin.periodEndsAt) };
   }
-  return { label: "RENEWS", value: "—" };
+  return { label: "Renews", value: "—" };
+}
+
+/** Why the Plan stands as it does; the first state that applies wins. */
+function billingLead(pin: BillingInput, readOnly: boolean): string | null {
+  if (readOnly) return "Writes are blocked. Viewing, export, and recovery stay available.";
+  if (pin.billingState === "PastDue") {
+    return "The last payment failed. Update the payment method to keep this Plan.";
+  }
+  if (pin.cancelAtPeriodEnd && pin.periodEndsAt) {
+    return `Cancelled. ${planLabel(pin.planKey)} stays until ${formatFullDay(pin.periodEndsAt)}.`;
+  }
+  if (pin.billingState === "Trialing") {
+    return pin.planKey === "trial"
+      ? "Every Business feature, free, until the Trial ends."
+      // Any other Plan on a Trial is an Offered Plan (ADR-0029).
+      : "Offered by DocuFlow. Nothing is charged until it ends.";
+  }
+  if (pin.planKey === "legacy") return "Kept from before self-service billing. Nothing renews.";
+  if (pin.planKey === "enterprise") return "Agreed with sales.";
+  if (SEAT_PLANS.has(pin.planKey)) return "Billed for each Billable Seat.";
+  return null;
+}
+
+/** Initials from the first two words; kept here because presentation.ts imports this module. */
+function nameInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return name.trim().slice(0, 2).toUpperCase();
 }
 
 /** What cancelling ends, and when — the card says it before the action runs. */
@@ -391,9 +428,8 @@ function composeBilling(input: AdministrationInput): BillingModel {
         ? input.condition
         : null,
       seats: "Seat counts are not available.",
-      entitlementNote: null,
       seatQuantityDefault: "",
-      figures: [],
+      summary: null,
       actions: [],
       checkout: "redirect",
     };
@@ -436,24 +472,23 @@ function composeBilling(input: AdministrationInput): BillingModel {
     plan: planLabel(pin.planKey),
     condition,
     seats: `${pin.consumedSeatCount} of ${pin.purchasedSeatCapacity} Billable Seats consumed.`,
-    entitlementNote: readOnly
-      ? "Writes blocked. Viewing, export, and recovery stay available."
-      : null,
     seatQuantityDefault: String(pin.purchasedSeatCapacity),
-    figures: [
-      { label: "PLAN", value: planLabel(pin.planKey) },
-      // The domain calls this the billing state. "CONDITION" was this card's own
-      // word for it, and said the same thing as the chip in the header.
-      { label: "BILLING STATE", value: condition ?? "—" },
-      { label: "WRITES", value: readOnly ? "Blocked" : "Allowed" },
-      billingTermFigure(pin),
-      // Last, so the four-column band wraps it onto the row directly above the
-      // seat control, and the number sits with what edits it (#245, F1).
-      {
-        label: "BILLABLE SEATS",
-        value: `${pin.consumedSeatCount} of ${pin.purchasedSeatCapacity}`,
+    summary: {
+      plan: planLabel(pin.planKey),
+      lead: billingLead(pin, readOnly),
+      seats: {
+        label: `${pin.consumedSeatCount} of ${pin.purchasedSeatCapacity}`,
+        percent:
+          pin.purchasedSeatCapacity > 0
+            ? Math.min(100, Math.round((pin.consumedSeatCount / pin.purchasedSeatCapacity) * 100))
+            : 0,
+        over: pin.consumedSeatCount > pin.purchasedSeatCapacity,
       },
-    ],
+      writes: readOnly
+        ? { allowed: false, label: "Writes blocked" }
+        : { allowed: true, label: "Writes allowed" },
+      term: billingTerm(pin),
+    },
     actions,
     checkout: "redirect",
   };
@@ -502,13 +537,6 @@ export function composeAdministration(input: AdministrationInput): Administratio
     email: row.email ?? "",
     workspaceRole: workspaceRoleInCopy(row.workspaceRole),
   }));
-  const workspaceFigures: AnalyticsFigure[] = [
-    { label: "WORKSPACE", value: input.workspaceName },
-    { label: "OWNER", value: input.ownerName ?? "—" },
-    { label: "YOUR WORKSPACE ROLE", value: workspaceRoleInCopy(input.workspaceRole) },
-    ...(input.members ? [{ label: "MEMBERS", value: String(input.members.length) }] : []),
-  ];
-
   return {
     kind: "ready",
     subhead: `Operator controls for ${input.workspaceName}.`,
@@ -539,7 +567,15 @@ export function composeAdministration(input: AdministrationInput): Administratio
       createAllowed: !readOnly,
     },
     billing,
-    workspace: { figures: workspaceFigures },
+    workspace: {
+      name: input.workspaceName,
+      initials: nameInitials(input.workspaceName) || "WS",
+      roleBadge: `You are ${workspaceRoleInCopy(input.workspaceRole)}`,
+      owner: input.ownerName ? { name: input.ownerName, initials: nameInitials(input.ownerName) } : null,
+      members: input.members
+        ? `${input.members.length} ${input.members.length === 1 ? "Member" : "Members"}`
+        : null,
+    },
     members: {
       empty: memberRows.length === 0,
       emptyCopy: "No active Memberships in this Workspace.",

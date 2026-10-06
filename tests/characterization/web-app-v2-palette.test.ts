@@ -289,11 +289,11 @@ describe("status and meter tones", () => {
     }
   });
 
-  it("tones a blocked or overdue Workspace in carmine and leaves the rest neutral", () => {
+  it("tones a blocked or overdue Workspace in carmine, an Active one green, the rest neutral", () => {
     expect(billingConditionTone("Past due")).toBe("alert");
     expect(billingConditionTone("Read-only")).toBe("alert");
     expect(billingConditionTone("Trial")).toBe("neutral");
-    expect(billingConditionTone("Active")).toBe("neutral");
+    expect(billingConditionTone("Active")).toBe("positive");
     expect(billingConditionTone(null)).toBe("neutral");
   });
 

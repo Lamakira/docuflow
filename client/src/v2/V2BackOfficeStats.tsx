@@ -76,7 +76,7 @@ export function V2BackOfficeStats() {
         </section>
       ) : (
         <section className="df-card" data-testid="v2-backoffice-stats-kpis">
-          {isLoading || !growth ? <SkeletonBand tiles={4} /> : <FigureGrid figures={growth.tiles} />}
+          {isLoading || !growth ? <SkeletonBand tiles={4} strip /> : <FigureGrid figures={growth.tiles} size="stat" />}
         </section>
       )}
 
@@ -101,13 +101,13 @@ export function V2BackOfficeStats() {
             <h2 className="df-card-title">Revenue</h2>
           </div>
           {isLoading || !revenue ? (
-            <SkeletonBand tiles={4} />
+            <SkeletonBand tiles={4} strip />
           ) : (
             <>
               {charts.mrr.length === 0 ? (
                 <p className="df-card-note">{charts.mrrEmptyCopy}</p>
               ) : (
-                <div className="df-mrr-grid" data-testid="v2-backoffice-mrr">
+                <div className="df-figure-band df-stat-strip" data-size="stat" data-testid="v2-backoffice-mrr">
                   {/* One tile per currency: amounts in different currencies are never added. */}
                   {charts.mrr.map((tile) => (
                     <div key={tile.currency} className="df-analytics-figure" data-testid={`v2-backoffice-mrr-${tile.currency}`}>
@@ -117,7 +117,7 @@ export function V2BackOfficeStats() {
                   ))}
                 </div>
               )}
-              <FigureGrid figures={revenue.tiles} />
+              <FigureGrid figures={revenue.tiles} size="stat" />
             </>
           )}
         </section>
@@ -133,7 +133,7 @@ export function V2BackOfficeStats() {
             // The summary line already says how many payments failed.
             <FigureGrid figures={payments.tiles.filter((tile) => tile.label !== "FAILED PAYMENTS")} />
           ) : !error ? (
-            <SkeletonBand tiles={1} />
+            <SkeletonBand tiles={1} strip />
           ) : null
         }
       >
@@ -170,7 +170,7 @@ export function V2BackOfficeStats() {
           <div className="df-card-head">
             <h2 className="df-card-title">Usage</h2>
           </div>
-          {isLoading || !usage ? <SkeletonBand tiles={3} /> : <FigureGrid figures={usage.tiles} />}
+          {isLoading || !usage ? <SkeletonBand tiles={3} strip /> : <FigureGrid figures={usage.tiles} size="stat" />}
         </section>
       ) : null}
     </div>

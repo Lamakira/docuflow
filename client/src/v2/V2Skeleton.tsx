@@ -23,9 +23,9 @@ export function SkeletonBar({ width, role }: { width?: "short" | "medium" | "lon
   return <Skeleton className="df-skeleton" data-width={width} data-role={role} />;
 }
 
-export function SkeletonBand({ tiles }: { tiles: number }) {
+export function SkeletonBand({ tiles, strip = false }: { tiles: number; strip?: boolean }) {
   return (
-    <div className="df-figure-band">
+    <div className={strip ? "df-figure-band df-stat-strip" : "df-figure-band"}>
       {Array.from({ length: tiles }, (_, index) => (
         <div key={index} className="df-analytics-figure">
           <SkeletonBar width="short" />

@@ -377,12 +377,30 @@ describe("The Workspace, Members & Roles and Billing tabs (#281)", () => {
     );
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
-    expect(page.workspace.figures).toEqual([
-      { label: "WORKSPACE", value: "Harbor Co" },
-      { label: "OWNER", value: "Sam Lee" },
-      { label: "YOUR WORKSPACE ROLE", value: "Administrator" },
-      { label: "MEMBERS", value: "2" },
-    ]);
+    expect(page.workspace).toEqual({
+      name: "Harbor Co",
+      initials: "HC",
+      roleBadge: "You are Administrator",
+      owner: { name: "Sam Lee", initials: "SL" },
+      members: "2 Members",
+    });
+  });
+
+  it("leaves the owner and members empty when unknown, and singularises one Member", () => {
+    const unknown = composeAdministration(adminInput({ ownerName: null, members: undefined }));
+    expect(unknown.kind).toBe("ready");
+    if (unknown.kind !== "ready") return;
+    expect(unknown.workspace.owner).toBeNull();
+    expect(unknown.workspace.members).toBeNull();
+
+    const one = composeAdministration(
+      adminInput({
+        members: [{ firstName: "Sam", lastName: "Lee", email: "sam@harbor.test", workspaceRole: "OWNER" }],
+      }),
+    );
+    expect(one.kind).toBe("ready");
+    if (one.kind !== "ready") return;
+    expect(one.workspace.members).toBe("1 Member");
   });
 
   it("lists each Member's Workspace Role and sends a change to People", () => {
