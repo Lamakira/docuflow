@@ -542,6 +542,14 @@ describe("the vertical rail (#314)", () => {
       expect(frame).toContain(icon);
     }
   });
+
+  it("offers the theme as a segmented toggle that keeps the menu open", () => {
+    const frame = read("client/src/v2/V2PlatformFrame.tsx");
+    expect(frame).toContain("df-theme-toggle");
+    for (const icon of ["Sun", "Moon", "Monitor"]) expect(frame).toContain(icon);
+    // A prevented select skips Radix's own onValueChange, so the item sets the theme itself.
+    expect(frame).toMatch(/event\.preventDefault\(\);\s*setTheme\(option\.id\);/);
+  });
 });
 
 const point = (date: string, over: Partial<PlatformStatsSeries["points"][number]> = {}) => ({

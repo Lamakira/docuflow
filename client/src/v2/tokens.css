@@ -6846,3 +6846,66 @@ button.df-activity-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Console account menu: the theme as a segmented toggle (#314). The items stay
+   menu radio items, so arrow keys reach them; shadcn's indicator dot is hidden
+   because the checked segment shows the choice. */
+.df-v2 .df-theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--df-space-3);
+  padding: var(--df-space-2) var(--df-space-3);
+}
+
+.df-v2 .df-theme-label {
+  font-family: var(--df-font-ui);
+  font-weight: 500;
+  font-size: var(--df-text-2);
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-theme-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--df-hover);
+}
+
+.df-v2 .df-theme-toggle-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--df-archive-slate);
+  cursor: pointer;
+  outline: none;
+}
+
+.df-v2 .df-theme-toggle-item > span:first-child {
+  display: none;
+}
+
+.df-v2 .df-theme-toggle-item[data-highlighted],
+.df-v2 .df-theme-toggle-item:focus {
+  background: transparent;
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-theme-toggle-item:focus-visible {
+  box-shadow: 0 0 0 2px var(--df-amber-500);
+}
+
+.df-v2 .df-theme-toggle-item[data-state="checked"] {
+  background: var(--df-card-white);
+  color: var(--df-case-ink);
+  box-shadow: 0 1px 2px rgba(15, 21, 36, 0.12);
+}
+
+.df-v2 .df-theme-toggle-item[data-state="checked"]:focus-visible {
+  box-shadow: 0 0 0 2px var(--df-amber-500);
+}

@@ -1,6 +1,18 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { Building2, BarChart3, ChevronsUpDown, CreditCard, KeyRound, LifeBuoy, Users, type LucideIcon } from "lucide-react";
+import {
+  Building2,
+  BarChart3,
+  ChevronsUpDown,
+  CreditCard,
+  KeyRound,
+  LifeBuoy,
+  Monitor,
+  Moon,
+  Sun,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "@/components/ThemeProvider";
 import { useAuth } from "@/hooks/useAuth";
@@ -58,6 +70,8 @@ const TAB_ICON: Record<BackOfficeTabId, LucideIcon> = {
   stats: BarChart3,
   access: KeyRound,
 };
+
+const THEME_ICON: Record<AccountTheme, LucideIcon> = { light: Sun, dark: Moon, system: Monitor };
 
 /** The collapsed state survives a reload, like the Workspace rail's; storage may be blocked. */
 function readCollapsed(): boolean {
@@ -202,21 +216,36 @@ function PlatformRail({ activeTab }: { activeTab: BackOfficeTabId }) {
                 className="df-v2 df-menu"
                 data-testid="v2-account-menu"
               >
-                <DropdownMenuRadioGroup
-                  value={account.themeOptions.find((option) => option.selected)?.id ?? "light"}
-                  onValueChange={(value) => setTheme(value as AccountTheme)}
-                >
-                  {account.themeOptions.map((option) => (
-                    <DropdownMenuRadioItem
-                      key={option.id}
-                      value={option.id}
-                      className="df-menu-item"
-                      data-testid={`v2-theme-${option.id}`}
-                    >
-                      {option.label}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
+                {/* A segmented toggle, still menu radio items so the keyboard reaches it. */}
+                <div className="df-theme-row">
+                  <span className="df-theme-label">Theme</span>
+                  <DropdownMenuRadioGroup
+                    className="df-theme-toggle"
+                    value={account.themeOptions.find((option) => option.selected)?.id ?? "light"}
+                  >
+                    {account.themeOptions.map((option) => {
+                      const Icon = THEME_ICON[option.id];
+                      return (
+                        <DropdownMenuRadioItem
+                          key={option.id}
+                          value={option.id}
+                          className="df-theme-toggle-item"
+                          aria-label={option.label}
+                          title={option.label}
+                          data-testid={`v2-theme-${option.id}`}
+                          // Keeps the menu open; a prevented select also skips Radix's
+                          // own value change, so the theme is set here.
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            setTheme(option.id);
+                          }}
+                        >
+                          <Icon width={15} height={15} strokeWidth={1.5} aria-hidden />
+                        </DropdownMenuRadioItem>
+                      );
+                    })}
+                  </DropdownMenuRadioGroup>
+                </div>
                 <DropdownMenuSeparator className="df-menu-separator" />
                 {frame.showOpenDocuFlow ? (
                   <DropdownMenuItem asChild className="df-menu-item">
