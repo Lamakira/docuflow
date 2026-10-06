@@ -55,6 +55,8 @@ export type ProviderIdentity = {
    * address is DocuFlow's policy, and self-service registration refuses one.
    */
   emailVerified?: boolean;
+  /** The profile photo the User uploaded at the provider; null when they have none, never Clerk's generated default. */
+  imageUrl?: string | null;
 };
 
 /**

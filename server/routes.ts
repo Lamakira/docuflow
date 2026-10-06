@@ -2,7 +2,7 @@ import express from "express";
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, getUserId } from "./auth";
+import { setupAuth, isAuthenticated, isIdentified, getUserId } from "./auth";
 import {
   canManageAdministration,
   requireAdministration,
@@ -24,7 +24,12 @@ import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
 import { registerOperatorRoutes, requirePlatformStaff } from "./modules/identity/operatorHttp";
 import { registerBackOfficeRoutes } from "./modules/identity/backOfficeHttp";
-import { webAuthConfigRoute, identityProvider, selfServiceRegistrationRoute } from "./modules/identity";
+import {
+  accountProfileSyncRoute,
+  webAuthConfigRoute,
+  identityProvider,
+  selfServiceRegistrationRoute,
+} from "./modules/identity";
 import { registerDeliveryPreferenceRoutes } from "./modules/notifications/http";
 import { emailEnabledForUser } from "./modules/notifications/deliveryPreference";
 import {
@@ -248,6 +253,10 @@ export async function registerRoutes(
   // creates its own User and takes over. Outside `isAuthenticated` on purpose —
   // there is no User yet, and no Membership to enter a Workspace with.
   app.post("/api/auth/user", selfServiceRegistrationRoute);
+  // #316: the browser changed the profile at Clerk and asks DocuFlow to follow.
+  // Identified, not authenticated: no Workspace is entered, so a Workspace that
+  // requires a second factor cannot lock a User out of their own account.
+  app.post("/api/account/profile/sync", isIdentified, accountProfileSyncRoute);
 
   // What the SPA needs before it can offer a sign-in box: Clerk's publishable
   // key, read at runtime because one image serves every environment (ADR-0018).

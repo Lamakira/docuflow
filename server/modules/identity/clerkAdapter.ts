@@ -33,6 +33,8 @@ type ClerkUser = {
   primaryEmailAddressId?: string | null;
   firstName?: string | null;
   lastName?: string | null;
+  imageUrl?: string | null;
+  hasImage?: boolean;
 };
 
 /**
@@ -74,6 +76,7 @@ function toIdentity(user: ClerkUser, fallbackEmail?: string): ProviderIdentity {
     // address being reported: a confirmed secondary says nothing about this one.
     emailVerified:
       primary?.emailAddress === email && primary?.verification?.status === "verified",
+    imageUrl: user.hasImage ? (user.imageUrl ?? null) : null,
   };
 }
 

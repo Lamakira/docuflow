@@ -76,6 +76,13 @@ export type { WebAuthConfig } from "@shared/webAuth";
 export { webAuthConfig, webAuthConfigRoute } from "./webAuth";
 export type { RegistrationOutcome } from "./selfServiceRegistration";
 export {
+  AccountProfileEmailTakenError,
+  AccountProfileUnauthorizedError,
+  AccountProfileUnverifiedEmailError,
+  accountProfileSyncRoute,
+  syncAccountProfile,
+} from "./accountProfile";
+export {
   registerIdentity,
   RegistrationEmailTakenError,
   RegistrationUnauthorizedError,
