@@ -60,6 +60,15 @@ export function workspaceNeedsSecondFactor(assurance: WorkspaceAssurance | null 
   return assurance?.required === true && assurance.secondFactorVerified !== true;
 }
 
+/**
+ * A Workspace that requires a second factor closes every page but the account
+ * one, where the User sets that factor up.
+ */
+export function secondFactorBlocksPage(assurance: WorkspaceAssurance | null | undefined, location: string): boolean {
+  if (location === "/account" || location.startsWith("/account/")) return false;
+  return workspaceNeedsSecondFactor(assurance);
+}
+
 export type TwoFactorSetting = {
   required: boolean;
   canChange: boolean;

@@ -33,6 +33,7 @@ import { notify } from "./notify";
 import { invitationAcceptPath, myInvitationsPath } from "./people";
 import {
   SUPPORT_GRANTS_PATH,
+  secondFactorBlocksPage,
   supportAccessNotice,
   TWO_FACTOR_PATH,
   workspaceNeedsSecondFactor,
@@ -128,10 +129,11 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
     queryKey: [TWO_FACTOR_PATH],
     enabled: Boolean(memberships?.activeWorkspaceId),
   });
-  const secondFactorBlocked = workspaceNeedsSecondFactor(assurance);
+  const secondFactorRequired = workspaceNeedsSecondFactor(assurance);
+  const secondFactorBlocked = secondFactorBlocksPage(assurance, location);
   const { data: supportGrants = [] } = useQuery<SupportGrantView[]>({
     queryKey: [SUPPORT_GRANTS_PATH],
-    enabled: Boolean(memberships?.activeWorkspaceId) && !assuranceLoading && !secondFactorBlocked,
+    enabled: Boolean(memberships?.activeWorkspaceId) && !assuranceLoading && !secondFactorRequired,
   });
   const supportNotice = supportAccessNotice(supportGrants);
   const planGate = planGateFor(navIdForPath(location), entitlements);
@@ -331,7 +333,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
                         </Button>
                       </div>
                     ) : null}
-                    {!secondFactorBlocked && supportNotice ? (
+                    {!secondFactorRequired && supportNotice ? (
                       <div className="df-plan-banner" role="status" data-testid="v2-support-access-banner">
                         <p>{supportNotice}</p>
                       </div>

@@ -6,6 +6,7 @@ import {
   composeTwoFactorSetting,
   grantExpiryLabel,
   grantHours,
+  secondFactorBlocksPage,
   supportAccessNotice,
   workspaceNeedsSecondFactor,
 } from "../../client/src/v2/supportAccess";
@@ -44,6 +45,15 @@ describe("Support access in the Workspace (#300)", () => {
     expect(workspaceNeedsSecondFactor({ required: false, secondFactorVerified: false })).toBe(false);
     expect(workspaceNeedsSecondFactor({ required: true, secondFactorVerified: true })).toBe(false);
     expect(workspaceNeedsSecondFactor({ required: true, secondFactorVerified: false })).toBe(true);
+  });
+
+  it("lets a User reach the account page to set up a second factor", () => {
+    const required = { required: true, secondFactorVerified: false };
+    expect(secondFactorBlocksPage(required, "/projects")).toBe(true);
+    expect(secondFactorBlocksPage(required, "/account")).toBe(false);
+    expect(secondFactorBlocksPage(required, "/account/security")).toBe(false);
+    expect(secondFactorBlocksPage(required, "/accounting")).toBe(true);
+    expect(secondFactorBlocksPage({ required: false, secondFactorVerified: false }, "/projects")).toBe(false);
   });
 
   it("lets only the Owner change the requirement", () => {

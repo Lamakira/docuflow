@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { composeAccountMenu } from "./chrome";
 import { V2ThemeToggle } from "./V2ThemeToggle";
+import { V2UserAvatar } from "./V2UserAvatar";
 import { backOfficeTabs, composePlatformFrame, type BackOfficeTabId } from "./backOffice";
 import { PLATFORM_CONSOLE_LABEL } from "./platform";
 import { readRailCollapsed, writeRailCollapsed } from "./presentation";
@@ -191,9 +192,11 @@ function PlatformRail({ activeTab }: { activeTab: BackOfficeTabId }) {
                   aria-label={`Account, ${frame.email}`}
                   data-testid="v2-platform-account-menu"
                 >
-                  <span className="df-platform-avatar" aria-hidden="true">
-                    {(frame.email[0] ?? "S").toUpperCase()}
-                  </span>
+                  <V2UserAvatar
+                    imageUrl={user?.profileImageUrl}
+                    initials={(frame.email[0] ?? "S").toUpperCase()}
+                    fallbackClassName="df-platform-avatar"
+                  />
                   {collapsed ? null : (
                     <>
                       <span className="df-mono df-platform-email" data-testid="v2-platform-email">

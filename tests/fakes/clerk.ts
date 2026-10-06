@@ -36,7 +36,11 @@ type StoredUser = {
   primaryEmailAddressId: string | null;
   firstName: string | null;
   lastName: string | null;
+  imageUrl: string;
+  hasImage: boolean;
 };
+
+const DEFAULT_IMAGE_URL = "https://img.clerk.test/default.png";
 
 type StoredInvitation = {
   id: string;
@@ -73,6 +77,8 @@ export function createClerkClient(_options: { secretKey?: string; publishableKey
           primaryEmailAddressId: addressId,
           firstName: params.firstName ?? null,
           lastName: params.lastName ?? null,
+          imageUrl: DEFAULT_IMAGE_URL,
+          hasImage: false,
         };
         users.push(stored);
         return stored;
@@ -189,8 +195,46 @@ export function plantClerkUser(input: {
     primaryEmailAddressId: primary >= 0 ? addresses[primary].id : null,
     firstName: null,
     lastName: null,
+    imageUrl: DEFAULT_IMAGE_URL,
+    hasImage: false,
   });
   return id;
+}
+
+/**
+ * Test helper — not on the Clerk surface. What a person does in Clerk's
+ * `<UserProfile />` (#316): change their names, upload or remove a photo, or
+ * make a new address primary. A new address is verified unless said otherwise.
+ */
+export function updateClerkUser(
+  id: string,
+  changes: {
+    firstName?: string | null;
+    lastName?: string | null;
+    imageUrl?: string | null;
+    primaryEmail?: { email: string; verified?: boolean };
+  },
+): void {
+  const user = users.find((entry) => entry.id === id);
+  if (!user) throw new Error(`No User ${id}`);
+  if ("firstName" in changes) user.firstName = changes.firstName ?? null;
+  if ("lastName" in changes) user.lastName = changes.lastName ?? null;
+  if ("imageUrl" in changes) {
+    user.hasImage = typeof changes.imageUrl === "string";
+    user.imageUrl = changes.imageUrl ?? DEFAULT_IMAGE_URL;
+  }
+  if (changes.primaryEmail) {
+    const address: StoredEmailAddress = {
+      id: `idn_updated_${user.emailAddresses.length + 1}`,
+      emailAddress: changes.primaryEmail.email,
+      verification: {
+        status: changes.primaryEmail.verified === false ? "unverified" : "verified",
+      },
+    };
+    user.emailAddresses.push(address);
+    user.primaryEmailAddressId = address.id;
+    user.email = address.emailAddress;
+  }
 }
 
 export function clerkCreateUserCalls(): CreateUserParams[] {
