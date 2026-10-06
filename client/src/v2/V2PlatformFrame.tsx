@@ -207,10 +207,12 @@ function PlatformRail({ activeTab }: { activeTab: BackOfficeTabId }) {
                   )}
                 </button>
               </DropdownMenuTrigger>
+              {/* Above the account button and as wide as it, like the Workspace
+                  rail's; beside it only when the rail is collapsed to icons. */}
               <DropdownMenuContent
-                side={isMobile ? "top" : "right"}
-                align="end"
-                className="df-v2 df-menu"
+                side={collapsed ? "right" : "top"}
+                align={collapsed ? "end" : "start"}
+                className={`df-v2 df-menu${collapsed ? "" : " df-menu-match-trigger"}`}
                 data-testid="v2-account-menu"
               >
                 <V2ThemeToggle />
