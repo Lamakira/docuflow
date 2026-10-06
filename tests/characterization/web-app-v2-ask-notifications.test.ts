@@ -200,7 +200,8 @@ describe("Account menu (#210)", () => {
     expect(railSource).toContain("composeAccountMenu");
     expect(railSource).toContain("v2-account-menu");
     expect(railSource).toContain("v2-sign-out");
-    expect(railSource).toContain("setTheme");
+    // The theme row is the shared segmented toggle (#314), which sets the theme.
+    expect(railSource).toContain("<V2ThemeToggle");
     expect(railSource).not.toContain("password");
     expect(railSource).not.toMatch(/href="\/devices"/);
   });

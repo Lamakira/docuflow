@@ -160,7 +160,9 @@ describe("floating surfaces are shadcn primitives (#249)", () => {
     expect(today).toContain("V2RefusalPopover");
     expect(fileViewer).toContain("V2RefusalPopover");
     expect(rail).toContain('from "@/components/ui/dropdown-menu"');
-    expect(rail).toContain("DropdownMenuRadioGroup");
+    // The theme radio group moved into the shared toggle (#314).
+    expect(rail).toContain("<V2ThemeToggle");
+    expect(source("client/src/v2/V2ThemeToggle.tsx")).toContain("DropdownMenuRadioGroup");
     expect(rail).toContain("DropdownMenuSeparator");
     expect(rail).toContain("account.structure");
     expect(rail).not.toContain("v2-theme-dark");

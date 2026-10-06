@@ -7,9 +7,6 @@ import {
   CreditCard,
   KeyRound,
   LifeBuoy,
-  Monitor,
-  Moon,
-  Sun,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -35,12 +32,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { composeAccountMenu, type AccountTheme } from "./chrome";
+import { composeAccountMenu } from "./chrome";
+import { V2ThemeToggle } from "./V2ThemeToggle";
 import { backOfficeTabs, composePlatformFrame, type BackOfficeTabId } from "./backOffice";
 import { PLATFORM_CONSOLE_LABEL } from "./platform";
 import { readRailCollapsed, writeRailCollapsed } from "./presentation";
@@ -70,8 +66,6 @@ const TAB_ICON: Record<BackOfficeTabId, LucideIcon> = {
   stats: BarChart3,
   access: KeyRound,
 };
-
-const THEME_ICON: Record<AccountTheme, LucideIcon> = { light: Sun, dark: Moon, system: Monitor };
 
 /** The collapsed state survives a reload, like the Workspace rail's; storage may be blocked. */
 function readCollapsed(): boolean {
@@ -124,7 +118,7 @@ export function V2PlatformFrame({ activeTab, children }: { activeTab: BackOffice
 
 function PlatformRail({ activeTab }: { activeTab: BackOfficeTabId }) {
   const { user } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
   const { state, isMobile } = useSidebar();
   const collapsed = state === "collapsed" && !isMobile;
   // Read the way V2Shell does; an error or an empty list hides "Open DocuFlow".
@@ -216,36 +210,7 @@ function PlatformRail({ activeTab }: { activeTab: BackOfficeTabId }) {
                 className="df-v2 df-menu"
                 data-testid="v2-account-menu"
               >
-                {/* A segmented toggle, still menu radio items so the keyboard reaches it. */}
-                <div className="df-theme-row">
-                  <span className="df-theme-label">Theme</span>
-                  <DropdownMenuRadioGroup
-                    className="df-theme-toggle"
-                    value={account.themeOptions.find((option) => option.selected)?.id ?? "light"}
-                  >
-                    {account.themeOptions.map((option) => {
-                      const Icon = THEME_ICON[option.id];
-                      return (
-                        <DropdownMenuRadioItem
-                          key={option.id}
-                          value={option.id}
-                          className="df-theme-toggle-item"
-                          aria-label={option.label}
-                          title={option.label}
-                          data-testid={`v2-theme-${option.id}`}
-                          // Keeps the menu open; a prevented select also skips Radix's
-                          // own value change, so the theme is set here.
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            setTheme(option.id);
-                          }}
-                        >
-                          <Icon width={15} height={15} strokeWidth={1.5} aria-hidden />
-                        </DropdownMenuRadioItem>
-                      );
-                    })}
-                  </DropdownMenuRadioGroup>
-                </div>
+                <V2ThemeToggle />
                 <DropdownMenuSeparator className="df-menu-separator" />
                 {frame.showOpenDocuFlow ? (
                   <DropdownMenuItem asChild className="df-menu-item">
