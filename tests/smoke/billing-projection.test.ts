@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { workspaces, workspaceRoles } from "../../shared/schema";
 import { FakeBillingProvider } from "../fakes/billingProvider";
@@ -380,6 +381,39 @@ describe("drift Job", () => {
       expect.objectContaining({ workspaceId: PAID_WORKSPACE_ID })
     );
     expect(provider.fetches).toEqual([SUBSCRIPTION_ID]);
+    logWarn.mockRestore();
+  });
+
+  it("records the Subscription's unit amount and currency without an Entitlement change", async () => {
+    const logger = await import("../../server/logger");
+    const logWarn = vi.spyOn(logger, "logWarn").mockImplementation(() => {});
+    const { handleBillingDriftJob } = await import("../../server/modules/billing");
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
+    const { db } = await import("../../server/db");
+    const { auditEvents, outboxEvents, workspaceBilling } = await import("../../shared/schema");
+
+    await plantPaidWorkspace();
+    const provider = new FakeBillingProvider();
+    provider.subscriptions.set(SUBSCRIPTION_ID, {
+      ...PROVIDER_SUB,
+      unitAmountMinor: 1500,
+      currency: "eur",
+    });
+
+    await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
+      handleBillingDriftJob({ id: "job-price" } as Parameters<typeof handleBillingDriftJob>[0], provider)
+    );
+
+    const [pin, events, outbox] = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
+      Promise.all([
+        db.select().from(workspaceBilling).where(eq(workspaceBilling.workspaceId, PAID_WORKSPACE_ID)),
+        db.select().from(auditEvents),
+        db.select().from(outboxEvents),
+      ])
+    );
+    expect(pin[0]).toMatchObject({ unitAmountMinor: 1500, currency: "eur", authorizationVersion: 1 });
+    expect(events.map((event) => event.action)).toEqual(["billing.drift_detected"]);
+    expect(outbox).toEqual([]);
     logWarn.mockRestore();
   });
 

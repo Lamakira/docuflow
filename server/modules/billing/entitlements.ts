@@ -52,7 +52,7 @@ export type BillingProjection = {
 };
 
 export type AuditActor = {
-  kind: "user" | "service_account" | "system";
+  kind: "user" | "service_account" | "system" | "platform_staff";
   id?: string;
 };
 
@@ -163,6 +163,22 @@ export function billingProjectionOf(row: {
     cancelAtPeriodEnd: row.cancelAtPeriodEnd,
     billingInterval: asBillingInterval(row.billingInterval),
   };
+}
+
+/** The Workspace is on a paid Stripe Subscription: it has an id and is Active or PastDue. */
+export function hasPaidSubscription(pin: {
+  stripeSubscriptionId: string | null;
+  billingState: string;
+}): boolean {
+  return (
+    pin.stripeSubscriptionId != null &&
+    (pin.billingState === "Active" || pin.billingState === "PastDue")
+  );
+}
+
+/** An Offered Plan (#314) is Trialing on a Plan other than the `trial` Plan. */
+export function isOfferedPlan(pin: { billingState: string; planKey: string }): boolean {
+  return pin.billingState === "Trialing" && pin.planKey !== "trial";
 }
 
 export async function getBillingProjection(): Promise<BillingProjection> {

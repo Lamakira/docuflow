@@ -11,6 +11,7 @@ import { V2CommandBar } from "./V2CommandBar";
 import { V2ContextPanel } from "./V2ContextPanel";
 import { V2Rail } from "./V2Rail";
 import { V2TimerChip } from "./V2TimerChip";
+import { useV2Fonts } from "./useV2Fonts";
 import { WorkspaceSecondFactor } from "./V2SupportAccess";
 import { V2FirstWorkspace } from "./V2FirstWorkspace";
 import { V2WorkspaceChooser } from "./V2WorkspaceChooser";
@@ -43,9 +44,6 @@ import "./tokens.css";
 
 const RAIL_DESTINATION_MOTION = motionForSurface("rail-destination").enterExit;
 const WORKSPACE_SWITCH_MOTION = motionForSurface("workspace-switch").enterExit;
-
-const FONTSHARE_HREF =
-  "https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700&f[]=switzer@400,500,600,700&display=swap";
 
 const DESKTOP_LAYOUT = chromeLayoutForViewport(1280);
 
@@ -158,17 +156,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  useEffect(() => {
-    if (document.querySelector(`link[data-df-v2-fonts="true"]`)) return;
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = FONTSHARE_HREF;
-    link.setAttribute("data-df-v2-fonts", "true");
-    document.head.appendChild(link);
-    return () => {
-      link.remove();
-    };
-  }, []);
+  useV2Fonts();
 
   const chrome = useMemo(
     () => ({

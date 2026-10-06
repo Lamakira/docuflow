@@ -321,6 +321,9 @@ export async function sendPaymentFailedEmail(
 /** Why the Workspace became read-only, as the state machine and projection record it. */
 function readOnlyCause(reason: string, workspaceName: string): string {
   if (reason === "trial_expired") return `Your Trial of <strong>${workspaceName}</strong> has ended.`;
+  if (reason === "offer_expired") {
+    return `The Plan offered to <strong>${workspaceName}</strong> has ended. Choose a Plan to restore full access.`;
+  }
   if (reason === "dunning_exhausted") {
     return `We could not collect payment for <strong>${workspaceName}</strong>.`;
   }
@@ -341,6 +344,69 @@ export async function sendReadOnlyEmail(
       <p><strong>${workspaceName}</strong> is now read-only. Nothing is deleted: everyone keeps viewing and exporting its data, but nothing new can be recorded or changed.</p>
       <p>To restore full access, choose a Plan in Billing:</p>
       <p>${emailButton(`${input.appUrl}/administration/billing`, "Restore full access")}</p>
+    `,
+  });
+}
+
+async function sendSupportEmail(input: {
+  toEmail: string;
+  subject: string;
+  body: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { client, fromEmail } = getResendClient();
+    const result = await client.emails.send({
+      from: fromEmail,
+      to: input.toEmail,
+      subject: input.subject,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          ${input.body}
+          <p style="color: #666; font-size: 12px; margin-top: 30px;">
+            You receive this email because you sent a Support Request to DocuFlow.
+          </p>
+        </div>
+      `,
+    });
+    if (result.error) return { success: false, error: result.error.message };
+    return { success: true };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to send support email";
+    console.error("Failed to send support email:", error);
+    return { success: false, error: message };
+  }
+}
+
+/** A Platform Staff answer to a Support Request, mailed to the User who sent it. */
+export async function sendSupportAnswerEmail(input: {
+  toEmail: string;
+  recipientName: string;
+  answer: string;
+}): Promise<{ success: boolean; error?: string }> {
+  return sendSupportEmail({
+    toEmail: input.toEmail,
+    subject: "DocuFlow — An answer to your Support Request",
+    body: `
+      <h1 style="color: #333;">An answer to your Support Request</h1>
+      <p>Hello ${escapeHtml(input.recipientName)},</p>
+      <p style="white-space: pre-wrap;">${escapeHtml(input.answer)}</p>
+    `,
+  });
+}
+
+/** Tells the User their Support Request moved, without repeating what it said. */
+export async function sendSupportStatusEmail(input: {
+  toEmail: string;
+  recipientName: string;
+  statusLabel: string;
+}): Promise<{ success: boolean; error?: string }> {
+  return sendSupportEmail({
+    toEmail: input.toEmail,
+    subject: `DocuFlow — Your Support Request is now ${input.statusLabel}`,
+    body: `
+      <h1 style="color: #333;">Support Request update</h1>
+      <p>Hello ${escapeHtml(input.recipientName)},</p>
+      <p>Your Support Request is now <strong>${escapeHtml(input.statusLabel)}</strong>.</p>
     `,
   });
 }

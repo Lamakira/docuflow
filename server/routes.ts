@@ -23,6 +23,7 @@ import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
 import { registerServiceAccountRoutes } from "./modules/identity/http";
 import { registerOperatorRoutes, requirePlatformStaff } from "./modules/identity/operatorHttp";
+import { registerBackOfficeRoutes } from "./modules/identity/backOfficeHttp";
 import { webAuthConfigRoute, identityProvider, selfServiceRegistrationRoute } from "./modules/identity";
 import { registerDeliveryPreferenceRoutes } from "./modules/notifications/http";
 import { emailEnabledForUser } from "./modules/notifications/deliveryPreference";
@@ -202,6 +203,7 @@ export async function registerRoutes(
   // Service Accounts (Identity & Access). Session BFF; not /api/v1.
   registerServiceAccountRoutes(app);
   registerOperatorRoutes(app);
+  registerBackOfficeRoutes(app);
 
   // Billing recovery (Billing). Session BFF; not /api/v1.
   registerBillingRoutes(app);

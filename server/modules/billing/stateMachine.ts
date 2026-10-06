@@ -11,6 +11,7 @@ import {
   BillingPinMissingError,
   billingProjectionOf,
   InvalidBillingPinError,
+  isOfferedPlan,
   type AuditActor,
   type BillingProjection,
 } from "./entitlements";
@@ -26,7 +27,7 @@ export class InvalidBillingTransitionError extends Error {
 
 type BillingWriter = Pick<typeof db, "insert" | "update" | "select">;
 
-function addUtcDays(from: Date, days: number): Date {
+export function addUtcDays(from: Date, days: number): Date {
   const next = new Date(from.getTime());
   next.setUTCDate(next.getUTCDate() + days);
   return next;
@@ -166,7 +167,7 @@ export async function readPlanIntent(): Promise<PlanIntent | null> {
   return row ? parsePlanIntent(row.planKey, row.interval) : null;
 }
 
-/** Expiry of Trialing without conversion becomes ReadOnly. */
+/** Expiry of Trialing (a Trial or an Offered Plan) without conversion becomes ReadOnly. */
 export async function expireTrial(
   actor: AuditActor,
   options: { now?: Date } = {}
@@ -180,7 +181,14 @@ export async function expireTrial(
     if (!pin.trialEndsAt || now.getTime() < pin.trialEndsAt.getTime()) {
       throw new InvalidBillingTransitionError("Trial has not expired");
     }
-    return applyState(tx, pin, "ReadOnly", actor, "trial_expired");
+    // An Offered Plan (#314) is a Trial on another Plan and ends the same way.
+    return applyState(
+      tx,
+      pin,
+      "ReadOnly",
+      actor,
+      isOfferedPlan(pin) ? "offer_expired" : "trial_expired"
+    );
   });
 }
 

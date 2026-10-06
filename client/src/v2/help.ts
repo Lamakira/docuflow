@@ -101,3 +101,39 @@ export function composeHelp(input: { path: string; query: string }): HelpModel {
 
   return { kind: "hub", topics };
 }
+
+/* ------------------------------------------------------- Contact support --- */
+
+export const SUPPORT_REQUESTS_PATH = "/api/support-requests";
+export const SUPPORT_REQUEST_MAX = 5000;
+
+export const supportRequestCategories: Array<{ value: "billing" | "bug" | "account" | "other"; label: string }> = [
+  { value: "billing", label: "Billing" },
+  { value: "bug", label: "Bug" },
+  { value: "account", label: "Account" },
+  { value: "other", label: "Other" },
+];
+
+export const CONTACT_SUPPORT_COPY = {
+  title: "Contact support",
+  description:
+    "Platform Staff answer by email. Your request carries your Workspace and your account, never anything inside the Workspace.",
+  sent: "Support Request sent. Platform Staff answer by email.",
+} as const;
+
+export function validateSupportRequest(input: {
+  category: string;
+  message: string;
+}):
+  | { ok: true; body: { category: string; message: string } }
+  | { ok: false; reason: string } {
+  if (!supportRequestCategories.some((category) => category.value === input.category)) {
+    return { ok: false, reason: "Choose a category." };
+  }
+  const message = input.message.trim();
+  if (!message) return { ok: false, reason: "Describe what you need help with." };
+  if (message.length > SUPPORT_REQUEST_MAX) {
+    return { ok: false, reason: `Keep your message under ${SUPPORT_REQUEST_MAX} characters.` };
+  }
+  return { ok: true, body: { category: input.category, message } };
+}

@@ -14,8 +14,11 @@ import {
   type CheckoutRequest,
   type HostedBillingSession,
   type PaymentMethodUpdateRequest,
+  type CancelAtPeriodEndUpdate,
   type ProviderCheckoutSession,
+  type ProviderDispute,
   type ProviderInvoice,
+  type ProviderResourceKind,
   type ProviderSubscription,
   type SeatQuantityUpdate,
   type SubscriptionPlanChange,
@@ -28,6 +31,8 @@ export class FakeBillingProvider implements BillingProvider {
   readonly checkoutSessions = new Map<string, ProviderCheckoutSession>();
   readonly subscriptions = new Map<string, ProviderSubscription>();
   readonly invoices = new Map<string, ProviderInvoice>();
+  readonly disputes = new Map<string, ProviderDispute>();
+  readonly cancelAtPeriodEndUpdates: CancelAtPeriodEndUpdate[] = [];
   readonly seatUpdates: SeatQuantityUpdate[] = [];
   readonly paymentMethodUpdates: PaymentMethodUpdateRequest[] = [];
   readonly planChanges: SubscriptionPlanChange[] = [];
@@ -73,6 +78,29 @@ export class FakeBillingProvider implements BillingProvider {
       throw new Error(`No Invoice ${providerInvoiceId}`);
     }
     return invoice;
+  }
+
+  async fetchDispute(providerDisputeId: string): Promise<ProviderDispute> {
+    const dispute = this.disputes.get(providerDisputeId);
+    if (!dispute) {
+      throw new Error(`No Dispute ${providerDisputeId}`);
+    }
+    return dispute;
+  }
+
+  async setCancelAtPeriodEnd(update: CancelAtPeriodEndUpdate): Promise<void> {
+    this.cancelAtPeriodEndUpdates.push(update);
+    const subscription = this.subscriptions.get(update.providerSubscriptionId);
+    if (subscription) {
+      this.subscriptions.set(update.providerSubscriptionId, {
+        ...subscription,
+        cancelAtPeriodEnd: update.cancel,
+      });
+    }
+  }
+
+  dashboardUrl(kind: ProviderResourceKind, id: string): string | null {
+    return `https://dashboard.stripe.test/${kind}/${id}`;
   }
 
   async updateSeatQuantity(update: SeatQuantityUpdate): Promise<void> {

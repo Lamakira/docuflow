@@ -1,3 +1,4 @@
+import { BACK_OFFICE_HOME, backOfficeTabs, parseBackOfficePath } from "./backOffice";
 import { canManageAdministration } from "./administration";
 import { workspaceRoleInCopy } from "./workspace";
 
@@ -451,7 +452,10 @@ export function matchV2Route(path: string): V2Match {
   // Account lifecycle (#217, Flow 10) is the User's own, not a rail destination.
   if (pathname === "/account") return { kind: "account", title: "Account", href: "/account" };
   // The platform console (#266) is the platform admin's, not a Workspace destination.
-  if (pathname === "/platform") return { kind: "platform", title: "Platform", href: "/platform" };
+  // Its back-office tabs and pages (#314) live under the same prefix.
+  if (pathname === "/platform" || pathname.startsWith("/platform/")) {
+    return { kind: "platform", title: "Platform", href: "/platform" };
+  }
   // Flow 4's secondary action: creating another Workspace from the chooser or
   // the rail switcher reaches the same naming screen Flow 1 uses.
   if (pathname === "/workspaces/new") {
@@ -667,7 +671,17 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     ];
   }
   // Above every Workspace, so no Workspace crumb (#266).
-  if (match.kind === "platform") return [{ label: "PLATFORM" }];
+  if (match.kind === "platform") {
+    const location = parseBackOfficePath(path);
+    if (!location || (location.kind === "tab" && path.split("?")[0].replace(/\/+$/, "") === "/platform")) {
+      return [{ label: "PLATFORM" }];
+    }
+    const crumbs: Array<{ label: string; href?: string }> = [{ label: "PLATFORM", href: BACK_OFFICE_HOME }];
+    const tab = backOfficeTabs(location.tab).find((item) => item.current)!;
+    if (location.kind === "tab") return [...crumbs, { label: tab.label.toUpperCase() }];
+    crumbs.push({ label: tab.label.toUpperCase(), href: tab.href });
+    return [...crumbs, { label: location.kind === "workspace" ? "WORKSPACE" : "SUPPORT REQUEST" }];
+  }
   if (match.kind === "dossier") {
     return [
       { label: workspace, href: "/" },

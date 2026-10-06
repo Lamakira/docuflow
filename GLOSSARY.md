@@ -274,9 +274,17 @@ _Avoid_: Module bundle, feature flag
 A 14-day, 3-seat, no-card period on Business, so the Workspace sees the complete product. When it expires without a paid subscription, the workspace becomes read-only while retaining access to its data, exports, and billing controls.
 _Avoid_: Free plan, limited-feature trial
 
+**Offered Plan**:
+A Plan that Platform Staff give a Workspace for a set number of days without charging it, only when the Workspace has no paid Subscription. It ends like a Trial: the Owner is warned three days before and on the last day, and the Workspace becomes read-only until the Owner subscribes (ADR-0029).
+_Avoid_: Free plan, comp, coupon, discount
+
 **Read-only Workspace**:
-A workspace state that preserves viewing, authorized export, and subscription recovery while preventing operational changes. It follows trial expiry, cancellation at period end, or unresolved payment failure and is distinct from deletion.
+A workspace state that preserves viewing, authorized export, and subscription recovery while preventing operational changes. It follows trial expiry, the end of an Offered Plan, cancellation at period end, or unresolved payment failure and is distinct from deletion.
 _Avoid_: Deleted workspace, locked account
+
+**Payment Dispute**:
+A chargeback a cardholder's bank opens against a Subscription payment. Stripe, as merchant of record, answers it; DocuFlow only records what Stripe reports and shows it to Platform Staff.
+_Avoid_: Support Request, complaint, refund request
 
 **Billable Seat**:
 An accepted, active membership that consumes subscription capacity. Pending invitations and archived or removed memberships do not consume seats.
@@ -339,6 +347,10 @@ _Avoid_: Super admin, support user, impersonation account
 **Support Access Grant**:
 A time-boxed, workspace-visible authorization allowing named Platform Staff to access a workspace's content for support. Absent a grant, only audited break-glass access exists.
 _Avoid_: Impersonation, admin override
+
+**Support Request**:
+A message a User sends to DocuFlow from the app, with a category (billing, bug, account, other), carrying their Workspace and User but never Workspace content. Platform Staff handle it in the back office: it is open, in progress or resolved, may carry internal notes, and each answer is emailed to the User and kept on the request. The User is told when its status changes.
+_Avoid_: Ticket, case, Payment Dispute, Support Access Grant
 
 **Subprocessor Registry**:
 The published list of vendors processing customer data on DocuFlow's behalf, recording each vendor's purpose, region, and no-training terms. Vendor changes update the registry and notify customers before material changes take effect.

@@ -138,13 +138,21 @@ export async function contextFromDevice(
   };
 }
 
-export async function forEachWorkspace<T>(fn: () => Promise<T>): Promise<T[]> {
-  const rows = await db.select({ id: workspaces.id }).from(workspaces);
+/** Runs `fn` once per given Workspace, in order, inside that Workspace's context. */
+export async function forWorkspaces<R extends { id: string }, T>(
+  refs: R[],
+  fn: (ref: R) => Promise<T>
+): Promise<T[]> {
   const out: T[] = [];
-  for (const row of rows) {
-    out.push(await runWithWorkspaceContext({ workspaceId: row.id }, fn));
+  for (const ref of refs) {
+    out.push(await runWithWorkspaceContext({ workspaceId: ref.id }, () => fn(ref)));
   }
   return out;
+}
+
+export async function forEachWorkspace<T>(fn: () => Promise<T>): Promise<T[]> {
+  const rows = await db.select({ id: workspaces.id }).from(workspaces);
+  return forWorkspaces(rows, fn);
 }
 
 export async function activeMemberUserIds(): Promise<Set<string>> {

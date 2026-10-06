@@ -20,9 +20,12 @@ import {
   type CheckoutRequest,
   type CollectionState,
   type HostedBillingSession,
+  type CancelAtPeriodEndUpdate,
   type PaymentMethodUpdateRequest,
   type ProviderCheckoutSession,
+  type ProviderDispute,
   type ProviderInvoice,
+  type ProviderResourceKind,
   type ProviderSubscription,
   type SeatQuantityUpdate,
   type SubscriptionPlanChange,
@@ -101,6 +104,16 @@ type PriceLike = {
   id: string;
   product?: string | { id: string; metadata?: Record<string, string> | null; deleted?: boolean } | null;
   recurring?: { interval?: string } | null;
+  currency?: string | null;
+  unit_amount?: number | null;
+  currency_options?: Record<string, { unit_amount?: number | null }> | null;
+};
+
+const DASHBOARD_PATH: Record<ProviderResourceKind, string> = {
+  customer: "customers",
+  subscription: "subscriptions",
+  invoice: "invoices",
+  dispute: "disputes",
 };
 
 export class StripeBillingProvider implements BillingProvider {
@@ -181,7 +194,7 @@ export class StripeBillingProvider implements BillingProvider {
 
   async fetchSubscription(providerSubscriptionId: string): Promise<ProviderSubscription> {
     const subscription = await this.stripe.subscriptions.retrieve(providerSubscriptionId, {
-      expand: ["items.data.price.product"],
+      expand: ["items.data.price.product", "items.data.price.currency_options"],
     });
     const item = subscription.items.data[0];
     if (!item) {
@@ -203,6 +216,8 @@ export class StripeBillingProvider implements BillingProvider {
     if (!providerCustomerId) {
       throw new BillingProviderError(`Subscription ${providerSubscriptionId} has no customer`);
     }
+    const currency =
+      typeof subscription.currency === "string" ? subscription.currency.toLowerCase() : null;
     const collectionState = COLLECTION_STATE[subscription.status];
     if (!collectionState) {
       throw new BillingProviderError(
@@ -219,6 +234,8 @@ export class StripeBillingProvider implements BillingProvider {
       currentPeriodEnd: new Date(periodEnd * 1000),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
       collectionState,
+      unitAmountMinor: unitAmountOf(price, currency),
+      currency,
     };
   }
 
@@ -229,8 +246,42 @@ export class StripeBillingProvider implements BillingProvider {
         paid: invoice.status === "paid",
         nextPaymentAttemptAt:
           invoice.next_payment_attempt == null ? null : new Date(invoice.next_payment_attempt * 1000),
+        amountMinor: typeof invoice.amount_due === "number" ? invoice.amount_due : null,
+        currency: typeof invoice.currency === "string" ? invoice.currency.toLowerCase() : null,
       };
     });
+  }
+
+  async fetchDispute(providerDisputeId: string): Promise<ProviderDispute> {
+    return fromStripe(async () => {
+      const dispute = await this.stripe.disputes.retrieve(providerDisputeId, { expand: ["charge"] });
+      const charge = dispute.charge as string | { id: string; customer?: string | { id: string } | null } | null;
+      return {
+        providerDisputeId: dispute.id,
+        providerChargeId: idOf(charge) ?? null,
+        providerCustomerId:
+          charge && typeof charge !== "string" ? (idOf(charge.customer) ?? null) : null,
+        amountMinor: dispute.amount,
+        currency: dispute.currency.toLowerCase(),
+        reason: dispute.reason,
+        status: dispute.status,
+        openedAt: new Date(dispute.created * 1000),
+      };
+    });
+  }
+
+  async setCancelAtPeriodEnd(update: CancelAtPeriodEndUpdate): Promise<void> {
+    return fromStripe(async () => {
+      await this.stripe.subscriptions.update(update.providerSubscriptionId, {
+        cancel_at_period_end: update.cancel,
+      });
+    });
+  }
+
+  /** Test-mode keys link to the test-mode dashboard. */
+  dashboardUrl(kind: ProviderResourceKind, id: string): string | null {
+    const testMode = /^(sk|rk)_test_/.test(this.billing.secretKey ?? "");
+    return `https://dashboard.stripe.com/${testMode ? "test/" : ""}${DASHBOARD_PATH[kind]}/${id}`;
   }
 
   async updateSeatQuantity(update: SeatQuantityUpdate): Promise<void> {
@@ -368,6 +419,20 @@ function intervalOf(price: PriceLike): BillingInterval {
     throw new BillingProviderError(`Stripe Price ${price.id} is not billed monthly or yearly`);
   }
   return interval;
+}
+
+/**
+ * The per-seat amount in the Subscription's currency: the Price's own amount
+ * when it bills in that currency, else the `currency_options` entry. Null for
+ * a tiered or metered Price, which has no flat unit amount.
+ */
+function unitAmountOf(price: PriceLike, currency: string | null): number | null {
+  const own = price.currency?.toLowerCase() ?? null;
+  if (currency && own && currency !== own) {
+    const option = price.currency_options?.[currency]?.unit_amount;
+    return typeof option === "number" ? option : null;
+  }
+  return typeof price.unit_amount === "number" ? price.unit_amount : null;
 }
 
 function unixPeriodEnd(value: unknown): number | undefined {

@@ -7,12 +7,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { composeAccountMenu, type AccountTheme } from "./chrome";
+import { composeAccountMenu } from "./chrome";
+import { V2ThemeToggle } from "./V2ThemeToggle";
 import { isPlatformAdmin } from "./platform";
 import {
   CloseIcon,
@@ -58,7 +57,7 @@ export function V2Rail({
 }: V2RailProps) {
   const [location] = useLocation();
   const { user } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
   const account = composeAccountMenu({ theme, platformAdmin: isPlatformAdmin(user) });
   const activeId = navIdForPath(location);
   const initials = workspaceInitials(workspaceName);
@@ -238,24 +237,7 @@ export function V2Rail({
           >
             {account.structure.map((part) => {
               if (part === "theme") {
-                return (
-                  <DropdownMenuRadioGroup
-                    key={part}
-                    value={account.themeOptions.find((option) => option.selected)?.id ?? "light"}
-                    onValueChange={(value) => setTheme(value as AccountTheme)}
-                  >
-                    {account.themeOptions.map((option) => (
-                      <DropdownMenuRadioItem
-                        key={option.id}
-                        value={option.id}
-                        className="df-menu-item"
-                        data-testid={`v2-theme-${option.id}`}
-                      >
-                        {option.label}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                );
+                return <V2ThemeToggle key={part} />;
               }
               if (part === "separator") {
                 return <DropdownMenuSeparator key={part} className="df-menu-separator" />;

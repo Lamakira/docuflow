@@ -14,6 +14,7 @@ import {
   notifications,
   orgSettings,
   platformStaff,
+  projects,
   supportAccessGrants,
   workspaceRoles,
   workspaces,
@@ -193,7 +194,17 @@ export type OperatorRead = {
   id: string;
   name: string;
   access: "grant" | "break_glass";
+  /** Content, so only on this grant or break-glass path (#314). */
+  projects: Array<{ id: string; name: string }>;
 };
+
+async function projectsInWorkspace(): Promise<Array<{ id: string; name: string }>> {
+  return db
+    .select({ id: projects.id, name: projects.name })
+    .from(projects)
+    .where(inWorkspace(projects))
+    .orderBy(projects.name);
+}
 
 /** Workspace content for Platform Staff. A grant or break-glass, and nothing else. */
 export async function readOperatorWorkspace(
@@ -216,7 +227,7 @@ export async function readOperatorWorkspace(
           payload: { via: "grant" },
         }),
       );
-      return { id: workspaceId, name, access: "grant" as const };
+      return { id: workspaceId, name, access: "grant" as const, projects: await projectsInWorkspace() };
     }
 
     const [glass] = await db
@@ -235,7 +246,7 @@ export async function readOperatorWorkspace(
           payload: { via: "break_glass" },
         }),
       );
-      return { id: workspaceId, name, access: "break_glass" as const };
+      return { id: workspaceId, name, access: "break_glass" as const, projects: await projectsInWorkspace() };
     }
 
     await recordExpiry(grants, now);
