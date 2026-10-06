@@ -187,7 +187,7 @@ export function V2BackOfficeSupportRequest({ requestId }: { requestId: string })
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           {back}
-          <h2 className="df-title">{page.title}</h2>
+          <h1 className="df-title">{page.title}</h1>
           <p className="df-subhead">{page.subhead}</p>
         </div>
       </header>

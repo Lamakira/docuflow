@@ -9,7 +9,6 @@ import { chromeRefusal } from "./chrome";
 import { isStandingRefusal, notify } from "./notify";
 import { QueryRefusal } from "./V2BackOfficeParts";
 import {
-  PLATFORM_CONSOLE_LABEL,
   composePlatformDirectory,
   isPlatformAdmin,
   legacyAdminDestination,
@@ -30,7 +29,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Link } from "wouter";
 import {
@@ -63,7 +61,7 @@ export function V2LegacyAdminRedirect() {
  */
 export function V2PlatformPage() {
   const { user, isLoading: userLoading } = useAuth();
-  const [location, navigate] = useLocation();
+  const [location] = useLocation();
   const allowed = isPlatformAdmin(user);
   const parsed = parseBackOfficePath(location);
 
@@ -72,57 +70,36 @@ export function V2PlatformPage() {
   if (!parsed) return <Redirect to={BACK_OFFICE_HOME} />;
   if (location.replace(/\/+$/, "") === "/platform") return <Redirect to={BACK_OFFICE_HOME} />;
 
-  const tabs = backOfficeTabs(parsed.tab);
+  const heading = backOfficeTabs(parsed.tab).find((item) => item.id === parsed.tab)?.label ?? "";
 
   return (
-    <V2PlatformFrame>
+    <V2PlatformFrame activeTab={parsed.tab}>
       <div className="df-platform-page" data-testid="v2-platform">
-        {/* Manual activation: arrowing across the tabs moves focus, not history. */}
-        <Tabs
-          value={parsed.tab}
-          onValueChange={(next) => {
-            const target = tabs.find((item) => item.id === next);
-            if (target) navigate(target.href);
-          }}
-          activationMode="manual"
-          className="df-admin-tabs"
-        >
-          <div className="df-platform-tabbar">
-            <TabsList className="df-tabs df-platform-tabs" aria-label={PLATFORM_CONSOLE_LABEL}>
-              {tabs.map((item) => (
-                <TabsTrigger key={item.id} value={item.id} className="df-tab" data-testid={`v2-platform-tab-${item.id}`}>
-                  {item.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
-          <TabsContent value="workspaces" className="df-admin-panel">
-            {parsed.kind === "workspace" ? (
-              <V2BackOfficeWorkspace key={parsed.workspaceId} workspaceId={parsed.workspaceId} />
-            ) : (
-              <V2BackOfficeWorkspaces />
-            )}
-          </TabsContent>
-          <TabsContent value="users" className="df-admin-panel">
+        {/* Stats and the detail pages carry their own title. */}
+        {parsed.kind === "tab" && parsed.tab !== "stats" ? (
+          <h1 className="df-title" data-testid="v2-platform-heading">
+            {heading}
+          </h1>
+        ) : null}
+        <div className="df-admin-panel" data-testid={`v2-platform-panel-${parsed.tab}`}>
+          {parsed.kind === "workspace" ? (
+            <V2BackOfficeWorkspace key={parsed.workspaceId} workspaceId={parsed.workspaceId} />
+          ) : parsed.kind === "support-request" ? (
+            <V2BackOfficeSupportRequest key={parsed.requestId} requestId={parsed.requestId} />
+          ) : parsed.tab === "workspaces" ? (
+            <V2BackOfficeWorkspaces />
+          ) : parsed.tab === "users" ? (
             <V2PlatformUsers />
-          </TabsContent>
-          <TabsContent value="subscriptions" className="df-admin-panel">
+          ) : parsed.tab === "subscriptions" ? (
             <V2BackOfficeSubscriptions />
-          </TabsContent>
-          <TabsContent value="disputes" className="df-admin-panel">
-            {parsed.kind === "support-request" ? (
-              <V2BackOfficeSupportRequest key={parsed.requestId} requestId={parsed.requestId} />
-            ) : (
-              <V2BackOfficeDisputes />
-            )}
-          </TabsContent>
-          <TabsContent value="stats" className="df-admin-panel">
+          ) : parsed.tab === "disputes" ? (
+            <V2BackOfficeDisputes />
+          ) : parsed.tab === "stats" ? (
             <V2BackOfficeStats />
-          </TabsContent>
-          <TabsContent value="access" className="df-admin-panel">
+          ) : (
             <V2BackOfficeAccess />
-          </TabsContent>
-        </Tabs>
+          )}
+        </div>
       </div>
     </V2PlatformFrame>
   );

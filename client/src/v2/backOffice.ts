@@ -139,6 +139,23 @@ export type PlatformStats = {
   usage: { hoursTracked: number; activeDesktopAgents: number; screenshotsCaptured: number };
 };
 
+/** One UTC day of the stats series, zero-filled. */
+export type PlatformStatsPoint = {
+  date: string;
+  newUsers: number;
+  newWorkspaces: number;
+  activeWorkspaces: number;
+  paidPayments: number;
+  failedPayments: number;
+};
+
+export type PlatformStatsSeries = {
+  days: number;
+  from: string;
+  to: string;
+  points: PlatformStatsPoint[];
+};
+
 export type PlatformUserWorkspace = {
   workspaceId: string;
   workspaceName: string;
@@ -263,6 +280,7 @@ export const platformSupportRequestPath = (id: string) => `/api/platform/support
 export const platformSupportAnswersPath = (id: string) => `/api/platform/support-requests/${id}/answers`;
 export const platformSupportNotesPath = (id: string) => `/api/platform/support-requests/${id}/notes`;
 export const platformStatsPath = (days: number) => `/api/platform/stats?days=${days}`;
+export const platformStatsSeriesPath = (days: number) => `/api/platform/stats/series?days=${days}`;
 export const platformStaffPath = () => "/api/platform/staff";
 export const platformSupportAccessPath = () => "/api/platform/support-access";
 export const operatorWorkspacePath = (id: string) => `/api/operator/workspaces/${id}`;
@@ -945,6 +963,16 @@ export const READ_ONLY_REASON_LABEL: Record<string, string> = {
   unknown: "Unknown",
 };
 
+/** A count with digit grouping: `5,820`. */
+export function formatCount(value: number): string {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
+}
+
+/** Hours with grouping and at most one decimal: `1,243.5`. */
+export function formatHours(value: number): string {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
+}
+
 export function readOnlyReasonLabel(reason: string): string {
   return READ_ONLY_REASON_LABEL[reason] ?? READ_ONLY_REASON_LABEL.unknown;
 }
@@ -957,7 +985,7 @@ export type StatsGroup = {
 };
 
 export function composeStats(stats: PlatformStats): { period: string; groups: StatsGroup[] } {
-  const count = (value: number) => String(value);
+  const count = formatCount;
   return {
     period: `${stats.days} days`,
     groups: [
@@ -1015,11 +1043,228 @@ export function composeStats(stats: PlatformStats): { period: string; groups: St
         id: "usage",
         title: "Usage",
         tiles: [
-          { label: "HOURS TRACKED", value: stats.usage.hoursTracked.toFixed(1) },
+          { label: "HOURS TRACKED", value: formatHours(stats.usage.hoursTracked) },
           { label: "ACTIVE DESKTOP AGENTS", value: count(stats.usage.activeDesktopAgents) },
           { label: "SCREENSHOTS CAPTURED", value: count(stats.usage.screenshotsCaptured) },
         ],
         lists: [],
+      },
+    ],
+  };
+}
+
+/* ------------------------------------------------------------ stats charts --- */
+
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** `2026-10-06` as `6 Oct`. Read from the text, so no time zone can shift the day. */
+export function shortDateLabel(date: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
+  if (!match) return date;
+  const month = SHORT_MONTHS[Number(match[2]) - 1];
+  return month ? `${Number(match[3])} ${month}` : date;
+}
+
+export type DistributionEntry = { key: string; label: string; count: number };
+
+/** Largest first; equal counts keep the order they were counted in. */
+function sortedDistribution(entries: DistributionEntry[]): DistributionEntry[] {
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => b.entry.count - a.entry.count || a.index - b.index)
+    .map(({ entry }) => entry);
+}
+
+/** Workspaces per billing state. A state nobody is in is left out. */
+export function distributionByStatus(rows: PlatformWorkspaceRow[]): DistributionEntry[] {
+  const counts = new Map<BackOfficeStatus, number>();
+  for (const row of rows) {
+    if (row.status) counts.set(row.status, (counts.get(row.status) ?? 0) + 1);
+  }
+  return sortedDistribution(
+    (Object.keys(BACK_OFFICE_STATUS_LABEL) as BackOfficeStatus[])
+      .filter((status) => counts.has(status))
+      .map((status) => ({ key: status, label: BACK_OFFICE_STATUS_LABEL[status], count: counts.get(status) ?? 0 })),
+  );
+}
+
+/** Workspaces per Plan, in the order the Plans first appear before sorting. */
+export function distributionByPlan(rows: PlatformWorkspaceRow[]): DistributionEntry[] {
+  const plans = new Map<string, DistributionEntry>();
+  for (const row of rows) {
+    const key = row.planKey ?? "none";
+    const entry = plans.get(key) ?? { key, label: row.planLabel ?? (row.planKey ? row.planKey : "No Plan"), count: 0 };
+    entry.count += 1;
+    plans.set(key, entry);
+  }
+  return sortedDistribution([...plans.values()]);
+}
+
+export type StatsChartTable = { columns: string[]; rows: string[][] };
+
+export type StatsChartsModel = {
+  days: number;
+  growth: null | {
+    points: Array<{ date: string; label: string; newWorkspaces: number; newUsers: number }>;
+    /** Fixed order: color follows the series, never its rank. */
+    series: Array<{ key: "newWorkspaces" | "newUsers"; label: string; empty: boolean; emptyCopy: string }>;
+    empty: boolean;
+    table: StatsChartTable;
+  };
+  activeWorkspaces: null | {
+    points: Array<{ date: string; label: string; activeWorkspaces: number }>;
+    empty: boolean;
+    emptyCopy: string;
+    caption: string;
+    table: StatsChartTable;
+  };
+  payments: null | {
+    points: Array<{ date: string; label: string; paid: number; failed: number }>;
+    totals: { paid: number; failed: number };
+    totalsLabel: string;
+    empty: boolean;
+    emptyCopy: string;
+    table: StatsChartTable;
+  };
+  /** One tile per currency. Amounts in different currencies are never added. */
+  mrr: Array<{ currency: string; label: string; value: string }>;
+  mrrEmptyCopy: string;
+  distributions: Array<{
+    id: "status" | "plan" | "reason";
+    title: string;
+    entries: DistributionEntry[] | null;
+    empty: boolean;
+    emptyCopy: string;
+    table: StatsChartTable;
+  }>;
+};
+
+function distributionTable(entries: DistributionEntry[] | null): StatsChartTable {
+  return { columns: ["Label", "Workspaces"], rows: (entries ?? []).map((entry) => [entry.label, formatCount(entry.count)]) };
+}
+
+/**
+ * Everything the Stats charts draw, shaped here so the screen only paints it.
+ * The series and the Workspace rows load on their own, so each may still be null.
+ */
+export function composeStatsCharts(
+  stats: PlatformStats | null,
+  series: PlatformStatsSeries | null,
+  rows: PlatformWorkspaceRow[] | null,
+): StatsChartsModel {
+  // A server that predates the series route answers with the app's HTML, not points.
+  const points = Array.isArray(series?.points) ? series.points : [];
+  const dated = points.map((point) => ({ point, label: shortDateLabel(point.date) }));
+
+  const growthPoints = dated.map(({ point, label }) => ({
+    date: point.date,
+    label,
+    newWorkspaces: point.newWorkspaces,
+    newUsers: point.newUsers,
+  }));
+  const workspacesEmpty = growthPoints.every((point) => point.newWorkspaces === 0);
+  const usersEmpty = growthPoints.every((point) => point.newUsers === 0);
+
+  const activePoints = dated.map(({ point, label }) => ({
+    date: point.date,
+    label,
+    activeWorkspaces: point.activeWorkspaces,
+  }));
+
+  const paymentPoints = dated.map(({ point, label }) => ({
+    date: point.date,
+    label,
+    paid: point.paidPayments,
+    failed: point.failedPayments,
+  }));
+  const totals = paymentPoints.reduce(
+    (sum, point) => ({ paid: sum.paid + point.paid, failed: sum.failed + point.failed }),
+    { paid: 0, failed: 0 },
+  );
+
+  const byStatus = rows ? distributionByStatus(rows) : null;
+  const byPlan = rows ? distributionByPlan(rows) : null;
+  const byReason = stats
+    ? sortedDistribution(
+        stats.payments.readOnlyByReason.map((entry) => ({
+          key: entry.reason,
+          label: readOnlyReasonLabel(entry.reason),
+          count: entry.count,
+        })),
+      )
+    : null;
+
+  return {
+    days: stats?.days ?? series?.days ?? 0,
+    growth: series
+      ? {
+          points: growthPoints,
+          series: [
+            { key: "newWorkspaces", label: "New Workspaces", empty: workspacesEmpty, emptyCopy: "No new Workspaces in this period." },
+            { key: "newUsers", label: "New Users", empty: usersEmpty, emptyCopy: "No new Users in this period." },
+          ],
+          empty: workspacesEmpty && usersEmpty,
+          table: {
+            columns: ["Date", "New Workspaces", "New Users"],
+            rows: growthPoints.map((point) => [point.label, formatCount(point.newWorkspaces), formatCount(point.newUsers)]),
+          },
+        }
+      : null,
+    activeWorkspaces: series
+      ? {
+          points: activePoints,
+          empty: activePoints.every((point) => point.activeWorkspaces === 0),
+          emptyCopy: "No Workspace tracked time in this period.",
+          caption: "Counts Workspaces with a Time Entry that day. Sign-ins are not stored per day.",
+          table: {
+            columns: ["Date", "Workspaces with tracked time"],
+            rows: activePoints.map((point) => [point.label, formatCount(point.activeWorkspaces)]),
+          },
+        }
+      : null,
+    payments: series
+      ? {
+          points: paymentPoints,
+          totals,
+          totalsLabel: `${formatCount(totals.paid)} paid · ${formatCount(totals.failed)} failed in this period`,
+          empty: totals.paid === 0 && totals.failed === 0,
+          emptyCopy: "No payment in this period.",
+          table: {
+            columns: ["Date", "Paid", "Failed"],
+            rows: paymentPoints.map((point) => [point.label, formatCount(point.paid), formatCount(point.failed)]),
+          },
+        }
+      : null,
+    mrr: (stats?.revenue.mrr ?? []).map((line) => ({
+      currency: line.currency.toUpperCase(),
+      label: `MRR · ${line.currency.toUpperCase()}`,
+      value: formatMoney(line.amountMinor, line.currency),
+    })),
+    mrrEmptyCopy: "No recurring revenue yet",
+    distributions: [
+      {
+        id: "status",
+        title: "Workspaces by state",
+        entries: byStatus,
+        empty: byStatus?.length === 0,
+        emptyCopy: "No Workspace yet.",
+        table: distributionTable(byStatus),
+      },
+      {
+        id: "plan",
+        title: "Workspaces by Plan",
+        entries: byPlan,
+        empty: byPlan?.length === 0,
+        emptyCopy: "No Workspace yet.",
+        table: distributionTable(byPlan),
+      },
+      {
+        id: "reason",
+        title: "Read-only Workspaces by reason",
+        entries: byReason,
+        empty: byReason?.length === 0,
+        emptyCopy: "No Workspace is Read-only.",
+        table: distributionTable(byReason),
       },
     ],
   };

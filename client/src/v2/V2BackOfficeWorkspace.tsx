@@ -107,7 +107,7 @@ export function V2BackOfficeWorkspace({ workspaceId }: { workspaceId: string }) 
           <Link href={BACK_OFFICE_HOME} className="df-ghost-link">
             Workspaces
           </Link>
-          <h2 className="df-title">{page.title}</h2>
+          <h1 className="df-title">{page.title}</h1>
           <p className="df-subhead">
             <StatusPill status={page.status} label={page.statusLabel} /> {page.subhead}
           </p>

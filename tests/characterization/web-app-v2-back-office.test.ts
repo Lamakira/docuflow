@@ -9,6 +9,13 @@ import {
   composeBreakGlass,
   composeDisputes,
   composeStats,
+  composeStatsCharts,
+  distributionByPlan,
+  formatCount,
+  formatHours,
+  distributionByStatus,
+  platformStatsSeriesPath,
+  shortDateLabel,
   queryRefusalCopy,
   composeSubscriptions,
   composeSupportAccess,
@@ -29,6 +36,7 @@ import {
   workspacePageHref,
   type BackOfficeStatus,
   type PlatformStats,
+  type PlatformStatsSeries,
   type PlatformSupportRequestDetail,
   type PlatformWorkspaceDetail,
   type PlatformWorkspaceRow,
@@ -332,7 +340,7 @@ describe("stats", () => {
   });
 
   it("shows hours with one decimal", () => {
-    expect(groups[3].tiles[0]).toEqual({ label: "HOURS TRACKED", value: "1234.6" });
+    expect(groups[3].tiles[0]).toEqual({ label: "HOURS TRACKED", value: formatHours(1234.56) });
   });
 });
 
@@ -495,7 +503,8 @@ describe("the console is its own space (#314)", () => {
     expect(app.indexOf('<Route path="/platform"')).toBeLessThan(app.indexOf("<TimeTrackerProvider>"));
     expect(app.indexOf('<Route path="/platform/:rest*"')).toBeLessThan(shell);
     expect(app.slice(shell)).not.toContain('path="/platform');
-    expect(read("client/src/v2/V2Platform.tsx")).toContain("<V2PlatformFrame>");
+    expect(read("client/src/v2/V2Platform.tsx")).toContain("<V2PlatformFrame activeTab");
+    expect(read("client/src/v2/V2Platform.tsx")).not.toContain("components/ui/tabs");
   });
 });
 
@@ -518,5 +527,157 @@ describe("queryRefusalCopy", () => {
 
   it("falls back when the error carries no message", () => {
     expect(queryRefusalCopy(undefined)).toBe("This could not be loaded. Try again.");
+  });
+});
+
+describe("the vertical rail (#314)", () => {
+  it("builds the rail on the shadcn Sidebar, six items, account in the footer", () => {
+    const frame = read("client/src/v2/V2PlatformFrame.tsx");
+    expect(frame).toContain('collapsible="icon"');
+    expect(frame).toContain("SidebarFooter");
+    expect(frame).toContain("SidebarTrigger");
+    expect(frame).toContain("localStorage");
+    expect(frame).not.toContain("df-platform-header");
+    for (const icon of ["Building2", "Users", "CreditCard", "LifeBuoy", "BarChart3", "KeyRound"]) {
+      expect(frame).toContain(icon);
+    }
+  });
+});
+
+const point = (date: string, over: Partial<PlatformStatsSeries["points"][number]> = {}) => ({
+  date,
+  newUsers: 0,
+  newWorkspaces: 0,
+  activeWorkspaces: 0,
+  paidPayments: 0,
+  failedPayments: 0,
+  ...over,
+});
+
+const statsFixture = (mrr: PlatformStats["revenue"]["mrr"], readOnlyByReason: PlatformStats["payments"]["readOnlyByReason"] = []): PlatformStats => ({
+  days: 7,
+  from: "2026-09-30",
+  to: "2026-10-06",
+  growth: { newUsers: 0, newWorkspaces: 0, activeWorkspaces7d: 0, activeWorkspaces30d: 0 },
+  revenue: { mrr, trialsInProgress: 0, offeredPlansInProgress: 0, trialConversions: 0, cancellations: 0 },
+  payments: { failedPayments: 0, readOnlyByReason, openDisputes: 0 },
+  usage: { hoursTracked: 0, activeDesktopAgents: 0, screenshotsCaptured: 0 },
+});
+
+describe("stats charts (#314)", () => {
+  it("has the series path and a short date label", () => {
+    expect(platformStatsSeriesPath(30)).toBe("/api/platform/stats/series?days=30");
+    expect(shortDateLabel("2026-10-06")).toBe("6 Oct");
+    expect(shortDateLabel("2026-01-31")).toBe("31 Jan");
+  });
+
+  it("maps the series in a fixed order and flags empty series", () => {
+    const series: PlatformStatsSeries = {
+      days: 7,
+      from: "2026-10-05",
+      to: "2026-10-06",
+      points: [point("2026-10-05", { newUsers: 2, activeWorkspaces: 1 }), point("2026-10-06", { newUsers: 1 })],
+    };
+    const charts = composeStatsCharts(statsFixture([]), series, []);
+    expect(charts.growth?.series.map((item) => [item.key, item.label, item.empty])).toEqual([
+      ["newWorkspaces", "New Workspaces", true],
+      ["newUsers", "New Users", false],
+    ]);
+    expect(charts.growth?.series[0].emptyCopy).toBe("No new Workspaces in this period.");
+    expect(charts.growth?.empty).toBe(false);
+    expect(charts.growth?.points.map((item) => [item.label, item.newWorkspaces, item.newUsers])).toEqual([
+      ["5 Oct", 0, 2],
+      ["6 Oct", 0, 1],
+    ]);
+    expect(charts.activeWorkspaces?.empty).toBe(false);
+    expect(charts.activeWorkspaces?.caption).toBe(
+      "Counts Workspaces with a Time Entry that day. Sign-ins are not stored per day.",
+    );
+    const zero = composeStatsCharts(null, { days: 7, from: "a", to: "b", points: [point("2026-10-06")] }, null);
+    expect(zero.growth?.empty).toBe(true);
+    expect(zero.payments?.empty).toBe(true);
+    expect(composeStatsCharts(null, null, null).growth).toBeNull();
+    // A server without the series route answers with HTML, which apiRequest hands back as a Response.
+    const notSeries = {} as unknown as Parameters<typeof composeStatsCharts>[1];
+    expect(() => composeStatsCharts(null, notSeries, null)).not.toThrow();
+  });
+
+  it("totals payments for the period", () => {
+    const series: PlatformStatsSeries = {
+      days: 7,
+      from: "a",
+      to: "b",
+      points: [point("2026-10-05", { paidPayments: 3, failedPayments: 1 }), point("2026-10-06", { paidPayments: 2 })],
+    };
+    const payments = composeStatsCharts(null, series, null).payments;
+    expect(payments?.totals).toEqual({ paid: 5, failed: 1 });
+    expect(payments?.totalsLabel).toBe("5 paid · 1 failed in this period");
+    expect(payments?.points[0]).toMatchObject({ label: "5 Oct", paid: 3, failed: 1 });
+  });
+
+  it("gives one MRR tile per currency and never sums them", () => {
+    const charts = composeStatsCharts(
+      statsFixture([
+        { currency: "eur", amountMinor: 10000 },
+        { currency: "usd", amountMinor: 5000 },
+      ]),
+      null,
+      null,
+    );
+    expect(charts.mrr.map((tile) => tile.label)).toEqual(["MRR · EUR", "MRR · USD"]);
+    expect(charts.mrr[0].value).toBe(formatMoney(10000, "eur"));
+    expect(charts.mrr[1].value).toBe(formatMoney(5000, "usd"));
+    expect(charts.mrr).toHaveLength(2);
+  });
+
+  it("counts Workspaces by state and by Plan, largest first", () => {
+    const data = [
+      row({ id: "1", status: "active", planKey: "pro", planLabel: "Pro" }),
+      row({ id: "2", status: "active", planKey: "pro", planLabel: "Pro" }),
+      row({ id: "3", status: "trial", planKey: "team", planLabel: "Team" }),
+      row({ id: "4", status: "active", planKey: "team", planLabel: "Team" }),
+      row({ id: "5", status: "cancelled", planKey: "pro", planLabel: "Pro" }),
+    ];
+    expect(distributionByStatus(data)).toEqual([
+      { key: "active", label: "Active", count: 3 },
+      { key: "trial", label: "Trial", count: 1 },
+      { key: "cancelled", label: "Cancelled", count: 1 },
+    ]);
+    expect(distributionByPlan(data).map((entry) => [entry.label, entry.count])).toEqual([
+      ["Pro", 3],
+      ["Team", 2],
+    ]);
+  });
+
+  it("reads Read-only by reason from the stats, sorted, with the reason labels", () => {
+    const charts = composeStatsCharts(
+      statsFixture([], [
+        { reason: "trial_expired", count: 1 },
+        { reason: "dunning_exhausted", count: 4 },
+      ]),
+      null,
+      [],
+    );
+    const reason = charts.distributions.find((item) => item.id === "reason");
+    expect(reason?.entries?.map((entry) => [entry.label, entry.count])).toEqual([
+      ["Payment retries ran out", 4],
+      ["Trial ended", 1],
+    ]);
+    expect(charts.distributions.find((item) => item.id === "status")?.empty).toBe(true);
+  });
+
+  it("groups counts and hours, with at most one decimal", () => {
+    const group = (value: number, digits: number) =>
+      new Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(value);
+    expect(formatCount(5820)).toBe(group(5820, 0));
+    expect(formatCount(5820)).not.toBe("5820.0");
+    expect(formatHours(1243.54)).toBe(group(1243.54, 1));
+    expect(formatCount(7)).toBe("7");
+  });
+
+  it("draws linear lines and a container-query grid", () => {
+    expect(read("client/src/v2/V2BackOfficeCharts.tsx")).toContain('type="linear"');
+    expect(read("client/src/v2/V2BackOfficeCharts.tsx")).not.toContain('type="monotone"');
+    expect(read("client/src/v2/tokens.css")).toContain("@container (min-width: 1100px)");
   });
 });
