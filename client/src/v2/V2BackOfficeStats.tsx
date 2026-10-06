@@ -2,14 +2,14 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { composeStats, platformStatsPath, statsPeriods, type PlatformStats } from "./backOffice";
-import { FigureGrid } from "./V2BackOfficeParts";
+import { FigureGrid, QueryRefusal } from "./V2BackOfficeParts";
 import { V2FilterSelect } from "./V2Select";
 import { SkeletonBand } from "./V2Skeleton";
 
 export function V2BackOfficeStats() {
   const [days, setDays] = useState<"7" | "30" | "90">("30");
   const path = platformStatsPath(Number(days));
-  const { data, isLoading } = useQuery<PlatformStats>({
+  const { data, isLoading, error } = useQuery<PlatformStats>({
     queryKey: [path],
     queryFn: () => apiRequest("GET", path),
   });
@@ -27,7 +27,11 @@ export function V2BackOfficeStats() {
           testId="v2-backoffice-stats-period"
         />
       </div>
-      {isLoading || !stats ? (
+      {error ? (
+        <section className="df-card">
+          <QueryRefusal error={error} />
+        </section>
+      ) : isLoading || !stats ? (
         <section className="df-card">
           <SkeletonBand tiles={4} />
         </section>

@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Link } from "wouter";
 import { SkeletonRows } from "./V2Skeleton";
-import { statusTone, type BackOfficeStatus } from "./backOffice";
+import { queryRefusalCopy, statusTone, type BackOfficeStatus } from "./backOffice";
 
 /** The pill every back-office state wears. */
 export function StatusPill({ status, label }: { status: BackOfficeStatus | null; label: string }) {
@@ -9,6 +9,15 @@ export function StatusPill({ status, label }: { status: BackOfficeStatus | null;
     <span className="df-status" data-status={label} data-tone={statusTone(status)}>
       {label}
     </span>
+  );
+}
+
+/** The line a failed query shows in place of its empty copy. */
+export function QueryRefusal({ error, flush }: { error: unknown; flush?: boolean }) {
+  return (
+    <p className={flush ? "df-refusal df-flush" : "df-refusal"} role="alert" data-testid="v2-query-refusal">
+      {queryRefusalCopy(error)}
+    </p>
   );
 }
 
@@ -29,6 +38,7 @@ export function BackOfficeRegister({
   widths,
   rows,
   loading,
+  error,
   emptyCopy,
   foot,
   testId,
@@ -37,6 +47,8 @@ export function BackOfficeRegister({
   widths: string;
   rows: RegisterRow[];
   loading?: boolean;
+  /** A failed query: the refusal replaces the empty copy and the count. */
+  error?: unknown;
   emptyCopy: string;
   foot?: string;
   testId?: string;
@@ -51,6 +63,8 @@ export function BackOfficeRegister({
       </div>
       {loading ? (
         <SkeletonRows columns={columns.length} rows={5} />
+      ) : error ? (
+        <QueryRefusal error={error} />
       ) : rows.length === 0 ? (
         <p className="df-empty">{emptyCopy}</p>
       ) : (
@@ -67,7 +81,7 @@ export function BackOfficeRegister({
           );
         })
       )}
-      {foot ? (
+      {foot && !error ? (
         <div className="df-library-foot">
           <span>{foot}</span>
         </div>

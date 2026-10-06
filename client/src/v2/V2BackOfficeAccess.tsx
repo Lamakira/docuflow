@@ -133,7 +133,7 @@ export function V2BackOfficeAccess() {
   const [staffId, setStaffId] = useState(V2_SELECT_NONE);
   const [action, setAction] = useState("");
 
-  const { data: grants = [], isLoading: grantsLoading } = useQuery<PlatformSupportGrant[]>({
+  const { data: grants = [], isLoading: grantsLoading, error: grantsError } = useQuery<PlatformSupportGrant[]>({
     queryKey: [platformSupportAccessPath()],
     queryFn: () => apiRequest("GET", platformSupportAccessPath()),
   });
@@ -151,7 +151,7 @@ export function V2BackOfficeAccess() {
     action,
   };
   const auditPath = platformAuditEventsPath(filters);
-  const { data: events = [], isLoading: eventsLoading } = useQuery<PlatformAuditEventRow[]>({
+  const { data: events = [], isLoading: eventsLoading, error: eventsError } = useQuery<PlatformAuditEventRow[]>({
     queryKey: [auditPath],
     queryFn: () => apiRequest("GET", auditPath),
   });
@@ -174,6 +174,7 @@ export function V2BackOfficeAccess() {
           columns={[...access.columns, ""]}
           widths="minmax(0,2fr) minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr)"
           loading={grantsLoading}
+          error={grantsError}
           emptyCopy={access.emptyCopy}
           testId="v2-backoffice-grants"
           rows={access.rows.map((row) => ({
@@ -243,6 +244,7 @@ export function V2BackOfficeAccess() {
           columns={audit.columns}
           widths="minmax(0,1.4fr) minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr)"
           loading={eventsLoading}
+          error={eventsError}
           emptyCopy={audit.emptyCopy}
           foot={audit.countLabel}
           testId="v2-backoffice-audit-register"

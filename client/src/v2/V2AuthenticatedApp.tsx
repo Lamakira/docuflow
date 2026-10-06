@@ -27,7 +27,24 @@ import { V2ProjectRecordRedirect, V2LegacyProjectPage, V2ProjectsPage } from "./
 import { V2Shell } from "./V2Shell";
 import { V2Toaster } from "./V2Toast";
 
+/**
+ * The platform console is its own space (ADR-0015): it renders outside the
+ * Workspace tree, so none of the Workspace gates, rail, timer or banners apply.
+ */
 export function V2AuthenticatedApp() {
+  return (
+    <>
+      <Switch>
+        <Route path="/platform" component={V2PlatformPage} />
+        <Route path="/platform/:rest*" component={V2PlatformPage} />
+        <Route component={V2WorkspaceApp} />
+      </Switch>
+      <V2Toaster />
+    </>
+  );
+}
+
+function V2WorkspaceApp() {
   return (
     <TimeTrackerProvider>
       <V2Shell>
@@ -94,8 +111,6 @@ export function V2AuthenticatedApp() {
           <Route path="/analytics" component={V2AnalyticsPage} />
           <Route path="/devices" component={V2DevicesPage} />
           <Route path="/account" component={V2AccountPage} />
-          <Route path="/platform" component={V2PlatformPage} />
-          <Route path="/platform/:rest*" component={V2PlatformPage} />
           <Route path="/help/:slug" component={V2HelpPage} />
           <Route path="/help" component={V2HelpPage} />
           <Route path="/help-center/:slug" component={V2HelpPage} />
@@ -150,7 +165,6 @@ export function V2AuthenticatedApp() {
           <Route component={V2PlaceholderPage} />
         </Switch>
       </V2Shell>
-      <V2Toaster />
     </TimeTrackerProvider>
   );
 }

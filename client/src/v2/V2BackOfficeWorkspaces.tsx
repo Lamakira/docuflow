@@ -21,7 +21,7 @@ export function V2BackOfficeWorkspaces() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [plan, setPlan] = useState(ALL_PLANS);
-  const { data: rows = [], isLoading } = useQuery<PlatformWorkspaceRow[]>({
+  const { data: rows = [], isLoading, error } = useQuery<PlatformWorkspaceRow[]>({
     queryKey: [platformWorkspacesPath()],
     queryFn: () => apiRequest("GET", platformWorkspacesPath()),
   });
@@ -63,6 +63,7 @@ export function V2BackOfficeWorkspaces() {
         columns={register.columns}
         widths="minmax(0,2fr) minmax(0,1.3fr) minmax(0,0.7fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.8fr)"
         loading={isLoading}
+        error={error}
         emptyCopy={register.emptyCopy}
         foot={register.countLabel}
         testId="v2-backoffice-workspace-register"
@@ -93,7 +94,7 @@ export function V2BackOfficeWorkspaces() {
 }
 
 export function V2BackOfficeSubscriptions() {
-  const { data: rows = [], isLoading } = useQuery<PlatformWorkspaceRow[]>({
+  const { data: rows = [], isLoading, error } = useQuery<PlatformWorkspaceRow[]>({
     queryKey: [platformSubscriptionsPath()],
     queryFn: () => apiRequest("GET", platformSubscriptionsPath()),
   });
@@ -104,6 +105,7 @@ export function V2BackOfficeSubscriptions() {
         columns={register.columns}
         widths="minmax(0,2fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.7fr) minmax(0,0.9fr) minmax(0,1.1fr)"
         loading={isLoading}
+        error={error}
         emptyCopy={register.emptyCopy}
         foot={register.countLabel}
         testId="v2-backoffice-subscription-register"

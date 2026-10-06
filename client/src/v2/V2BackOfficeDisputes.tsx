@@ -33,11 +33,11 @@ import { SkeletonBand, V2PageSkeleton } from "./V2Skeleton";
 export function V2BackOfficeDisputes() {
   const now = useMemo(() => new Date(), []);
   const [status, setStatus] = useState<SupportStatusFilter>("open");
-  const { data: disputeRows = [], isLoading: disputesLoading } = useQuery<PlatformDisputeRow[]>({
+  const { data: disputeRows = [], isLoading: disputesLoading, error: disputesError } = useQuery<PlatformDisputeRow[]>({
     queryKey: [platformDisputesPath()],
     queryFn: () => apiRequest("GET", platformDisputesPath()),
   });
-  const { data: requestRows = [], isLoading: requestsLoading } = useQuery<PlatformSupportRequestRow[]>({
+  const { data: requestRows = [], isLoading: requestsLoading, error: requestsError } = useQuery<PlatformSupportRequestRow[]>({
     queryKey: [platformSupportRequestsPath()],
     queryFn: () => apiRequest("GET", platformSupportRequestsPath()),
   });
@@ -56,6 +56,7 @@ export function V2BackOfficeDisputes() {
         columns={[...disputes.columns, ""]}
         widths="minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.8fr)"
         loading={disputesLoading}
+        error={disputesError}
         emptyCopy={disputes.emptyCopy}
         foot={disputes.countLabel}
         testId="v2-backoffice-dispute-register"
@@ -94,6 +95,7 @@ export function V2BackOfficeDisputes() {
         columns={requests.columns}
         widths="minmax(0,1.2fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,2fr) minmax(0,0.8fr) minmax(0,1fr) minmax(0,0.7fr)"
         loading={requestsLoading}
+        error={requestsError}
         emptyCopy={requests.emptyCopy}
         foot={requests.countLabel}
         testId="v2-backoffice-support-register"

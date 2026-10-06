@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import { isStandingRefusal, notify } from "./notify";
+import { QueryRefusal } from "./V2BackOfficeParts";
 import {
   PLATFORM_CONSOLE_LABEL,
   composePlatformDirectory,
@@ -40,6 +41,7 @@ import {
   platformUserWorkspacesPath,
   type PlatformUserWorkspace,
 } from "./backOffice";
+import { V2PlatformFrame } from "./V2PlatformFrame";
 import { V2BackOfficeAccess } from "./V2BackOfficeAccess";
 import { V2BackOfficeDisputes, V2BackOfficeSupportRequest } from "./V2BackOfficeDisputes";
 import { V2BackOfficeStats } from "./V2BackOfficeStats";
@@ -55,8 +57,8 @@ export function V2LegacyAdminRedirect() {
 }
 
 /**
- * The platform console (#266) and its back office (#314). Outside the Workspace
- * rail and above every Workspace. The tab and the page live in the path, so
+ * The platform console (#266) and its back office (#314). Its own frame, outside
+ * the Workspace shell and above every Workspace. The tab and the page live in the path, so
  * every Workspace and Support Request is deep-linkable.
  */
 export function V2PlatformPage() {
@@ -73,60 +75,56 @@ export function V2PlatformPage() {
   const tabs = backOfficeTabs(parsed.tab);
 
   return (
-    <div className="df-page" data-testid="v2-platform">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">{PLATFORM_CONSOLE_LABEL}</h1>
-          <p className="df-subhead">
-            Workspaces, billing, Support Requests and Users across the platform. Only Platform Staff see this console.
-          </p>
-        </div>
-      </header>
-      {/* Manual activation: arrowing across the tabs moves focus, not history. */}
-      <Tabs
-        value={parsed.tab}
-        onValueChange={(next) => {
-          const target = tabs.find((item) => item.id === next);
-          if (target) navigate(target.href);
-        }}
-        activationMode="manual"
-        className="df-admin-tabs"
-      >
-        <TabsList className="df-tabs" aria-label="Platform console">
-          {tabs.map((item) => (
-            <TabsTrigger key={item.id} value={item.id} className="df-tab" data-testid={`v2-platform-tab-${item.id}`}>
-              {item.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <TabsContent value="workspaces" className="df-admin-panel">
-          {parsed.kind === "workspace" ? (
-            <V2BackOfficeWorkspace key={parsed.workspaceId} workspaceId={parsed.workspaceId} />
-          ) : (
-            <V2BackOfficeWorkspaces />
-          )}
-        </TabsContent>
-        <TabsContent value="users" className="df-admin-panel">
-          <V2PlatformUsers />
-        </TabsContent>
-        <TabsContent value="subscriptions" className="df-admin-panel">
-          <V2BackOfficeSubscriptions />
-        </TabsContent>
-        <TabsContent value="disputes" className="df-admin-panel">
-          {parsed.kind === "support-request" ? (
-            <V2BackOfficeSupportRequest key={parsed.requestId} requestId={parsed.requestId} />
-          ) : (
-            <V2BackOfficeDisputes />
-          )}
-        </TabsContent>
-        <TabsContent value="stats" className="df-admin-panel">
-          <V2BackOfficeStats />
-        </TabsContent>
-        <TabsContent value="access" className="df-admin-panel">
-          <V2BackOfficeAccess />
-        </TabsContent>
-      </Tabs>
-    </div>
+    <V2PlatformFrame>
+      <div className="df-platform-page" data-testid="v2-platform">
+        {/* Manual activation: arrowing across the tabs moves focus, not history. */}
+        <Tabs
+          value={parsed.tab}
+          onValueChange={(next) => {
+            const target = tabs.find((item) => item.id === next);
+            if (target) navigate(target.href);
+          }}
+          activationMode="manual"
+          className="df-admin-tabs"
+        >
+          <div className="df-platform-tabbar">
+            <TabsList className="df-tabs df-platform-tabs" aria-label={PLATFORM_CONSOLE_LABEL}>
+              {tabs.map((item) => (
+                <TabsTrigger key={item.id} value={item.id} className="df-tab" data-testid={`v2-platform-tab-${item.id}`}>
+                  {item.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+          <TabsContent value="workspaces" className="df-admin-panel">
+            {parsed.kind === "workspace" ? (
+              <V2BackOfficeWorkspace key={parsed.workspaceId} workspaceId={parsed.workspaceId} />
+            ) : (
+              <V2BackOfficeWorkspaces />
+            )}
+          </TabsContent>
+          <TabsContent value="users" className="df-admin-panel">
+            <V2PlatformUsers />
+          </TabsContent>
+          <TabsContent value="subscriptions" className="df-admin-panel">
+            <V2BackOfficeSubscriptions />
+          </TabsContent>
+          <TabsContent value="disputes" className="df-admin-panel">
+            {parsed.kind === "support-request" ? (
+              <V2BackOfficeSupportRequest key={parsed.requestId} requestId={parsed.requestId} />
+            ) : (
+              <V2BackOfficeDisputes />
+            )}
+          </TabsContent>
+          <TabsContent value="stats" className="df-admin-panel">
+            <V2BackOfficeStats />
+          </TabsContent>
+          <TabsContent value="access" className="df-admin-panel">
+            <V2BackOfficeAccess />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </V2PlatformFrame>
   );
 }
 
@@ -140,7 +138,7 @@ function V2PlatformUsers() {
   const [confirming, setConfirming] = useState<{ userId: string; action: PlatformAction } | null>(null);
   const allowed = isPlatformAdmin(user);
 
-  const { data: users = [], isLoading } = useQuery<SafeUser[]>({
+  const { data: users = [], isLoading, error: usersError } = useQuery<SafeUser[]>({
     queryKey: [platformUsersPath()],
     enabled: allowed,
     queryFn: () => apiRequest("GET", platformUsersPath()),
@@ -214,6 +212,8 @@ function V2PlatformUsers() {
           </div>
           {isLoading ? (
             <SkeletonRows columns={6} rows={6} />
+          ) : usersError ? (
+            <QueryRefusal error={usersError} />
           ) : directory.empty ? (
             <p className="df-empty">{directory.emptyCopy}</p>
           ) : (
@@ -261,9 +261,11 @@ function V2PlatformUsers() {
               </div>
             ))
           )}
-          <div className="df-library-foot">
-            <span>{directory.countLabel}</span>
-          </div>
+          {usersError ? null : (
+            <div className="df-library-foot">
+              <span>{directory.countLabel}</span>
+            </div>
+          )}
         </section>
       </div>
 
@@ -308,7 +310,7 @@ function V2PlatformUsers() {
 /** The Workspaces one User belongs to, with the Workspace Role in each. */
 function UserWorkspacesSheet({ user, onClose }: { user: { id: string; name: string } | null; onClose: () => void }) {
   const path = platformUserWorkspacesPath(user?.id ?? "");
-  const { data: rows = [], isLoading } = useQuery<PlatformUserWorkspace[]>({
+  const { data: rows = [], isLoading, error } = useQuery<PlatformUserWorkspace[]>({
     queryKey: [path],
     enabled: user !== null,
     queryFn: () => apiRequest("GET", path),
@@ -323,7 +325,8 @@ function UserWorkspacesSheet({ user, onClose }: { user: { id: string; name: stri
         </SheetHeader>
         <div className="df-backoffice-lines">
           {isLoading ? <p className="df-empty df-flush">Loading Workspaces…</p> : null}
-          {!isLoading && list.empty ? <p className="df-empty df-flush">{list.emptyCopy}</p> : null}
+          {error ? <QueryRefusal error={error} flush /> : null}
+          {!isLoading && !error && list.empty ? <p className="df-empty df-flush">{list.emptyCopy}</p> : null}
           {list.rows.map((row) => (
             <div key={row.id} className="df-backoffice-line">
               <Link href={row.href} className="df-row-title" onClick={onClose}>

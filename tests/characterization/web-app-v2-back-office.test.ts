@@ -5,9 +5,11 @@ import { describe, expect, it } from "vitest";
 import {
   backOfficeTabs,
   composeAuditLog,
+  composePlatformFrame,
   composeBreakGlass,
   composeDisputes,
   composeStats,
+  queryRefusalCopy,
   composeSubscriptions,
   composeSupportAccess,
   composeSupportRequest,
@@ -467,5 +469,54 @@ describe("Contact support on the Help page", () => {
     expect(help).toContain("SUPPORT_REQUESTS_PATH");
     expect(help).toContain("@/components/ui/textarea");
     expect(read("client/src/v2/help.ts")).toContain('"/api/support-requests"');
+  });
+});
+
+describe("the console is its own space (#314)", () => {
+  it("composes the header, offering Open DocuFlow only with a Membership", () => {
+    expect(composePlatformFrame({ email: "staff@docuflow.test", hasMembership: true })).toMatchObject({
+      brand: "DocuFlow",
+      title: "Platform console",
+      email: "staff@docuflow.test",
+      showOpenDocuFlow: true,
+      openDocuFlowLabel: "Open DocuFlow",
+      openDocuFlowHref: "/",
+    });
+    expect(composePlatformFrame({ email: null, hasMembership: false })).toMatchObject({
+      email: "",
+      showOpenDocuFlow: false,
+    });
+  });
+
+  it("routes /platform outside TimeTrackerProvider and V2Shell", () => {
+    const app = read("client/src/v2/V2AuthenticatedApp.tsx");
+    const shell = app.indexOf("<V2Shell>");
+    expect(app.indexOf('<Route path="/platform"')).toBeGreaterThan(-1);
+    expect(app.indexOf('<Route path="/platform"')).toBeLessThan(app.indexOf("<TimeTrackerProvider>"));
+    expect(app.indexOf('<Route path="/platform/:rest*"')).toBeLessThan(shell);
+    expect(app.slice(shell)).not.toContain('path="/platform');
+    expect(read("client/src/v2/V2Platform.tsx")).toContain("<V2PlatformFrame>");
+  });
+});
+
+describe("queryRefusalCopy", () => {
+  it("reads a 403 Access denied as a refusal, not an empty list", () => {
+    const copy = queryRefusalCopy(new Error("Access denied"));
+    expect(copy).toBe("Only Platform Staff can see this.");
+    expect(copy).not.toMatch(/Capability/);
+    expect(copy).not.toMatch(/yet/);
+  });
+
+  it("reads a 401 without a session as a signed-out session", () => {
+    expect(queryRefusalCopy(new Error("Unauthorized"))).toBe("Your session has ended. Sign in again.");
+    expect(queryRefusalCopy(new Error("Not authenticated"))).toBe("Your session has ended. Sign in again.");
+  });
+
+  it("passes a second-factor refusal through in its own words", () => {
+    expect(queryRefusalCopy(new Error("A second factor is required"))).toBe("A second factor is required");
+  });
+
+  it("falls back when the error carries no message", () => {
+    expect(queryRefusalCopy(undefined)).toBe("This could not be loaded. Try again.");
   });
 });

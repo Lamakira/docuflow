@@ -11,6 +11,8 @@
  */
 
 import { formatWhen } from "./today";
+import { errorMessage } from "./notify";
+import { PLATFORM_CONSOLE_LABEL } from "./platform";
 
 export type BillingStateName = "Trialing" | "Active" | "PastDue" | "ReadOnly";
 export type BackOfficeStatus = "trial" | "offered" | "active" | "past_due" | "read_only" | "cancelled";
@@ -193,6 +195,28 @@ export function backOfficeTabs(current: BackOfficeTabId): Array<{
     href: backOfficeTabHref(id),
     current: id === current,
   }));
+}
+
+/**
+ * The console's own header (ADR-0015): no Workspace name, no switcher. "Open
+ * DocuFlow" shows only for a User who holds at least one active Membership.
+ */
+export function composePlatformFrame(input: { email: string | null | undefined; hasMembership: boolean }): {
+  brand: string;
+  title: string;
+  email: string;
+  showOpenDocuFlow: boolean;
+  openDocuFlowLabel: string;
+  openDocuFlowHref: string;
+} {
+  return {
+    brand: "DocuFlow",
+    title: PLATFORM_CONSOLE_LABEL,
+    email: input.email ?? "",
+    showOpenDocuFlow: input.hasMembership,
+    openDocuFlowLabel: "Open DocuFlow",
+    openDocuFlowHref: "/",
+  };
 }
 
 export function workspacePageHref(workspaceId: string): string {
@@ -1106,4 +1130,16 @@ export function statusTone(status: BackOfficeStatus | null): "positive" | "activ
   if (status === "trial" || status === "offered") return "active";
   if (status) return "alert";
   return undefined;
+}
+
+/**
+ * What a list that failed to load says. A refusal is never "there is nothing yet".
+ * Here a refusal means the session is not Platform Staff, never a missing
+ * Capability: Capabilities are Workspace grants and reach nothing on this surface.
+ */
+export function queryRefusalCopy(error: unknown): string {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  if (/access denied|forbidden/i.test(message)) return "Only Platform Staff can see this.";
+  if (/^(unauthorized|not authenticated)$/i.test(message.trim())) return "Your session has ended. Sign in again.";
+  return errorMessage(error, "This could not be loaded. Try again.");
 }
