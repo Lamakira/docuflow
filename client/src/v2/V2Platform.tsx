@@ -164,7 +164,7 @@ function V2PlatformUsers() {
 
   return (
     <div data-testid="v2-platform-users">
-      <div>
+      <div className="df-backoffice-section">
         <p className="df-subhead">{directory.subhead}</p>
         <div className="df-filter-bar">
           <label className="df-filter-input">
