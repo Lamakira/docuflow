@@ -6867,9 +6867,9 @@ button.df-activity-row {
 
 .df-v2 .df-theme-toggle {
   display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
+  gap: var(--df-space-1);
+  padding: var(--df-space-1);
+  border-radius: var(--df-radius-3);
   background: var(--df-hover);
 }
 
@@ -6880,7 +6880,7 @@ button.df-activity-row {
   width: 30px;
   height: 26px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: var(--df-radius-2);
   color: var(--df-archive-slate);
   cursor: pointer;
   outline: none;
