@@ -5668,13 +5668,14 @@ button.df-activity-row {
   color: var(--df-muted-ink);
 }
 
-/* Under the card head, aligned with its title rather than flush on its rule. */
+/* Under the card head, aligned with its title rather than flush on its rule,
+   and as wide as the card so the copy does not leave it half empty. */
 .df-account-precondition,
 .df-account-survives .df-card-sub,
 .df-account-grace .df-card-sub {
   margin: 0;
   padding: var(--df-space-3) var(--df-space-4) 0;
-  max-width: 70ch;
+  max-width: none;
 }
 
 .df-account-survives .df-card-sub {
