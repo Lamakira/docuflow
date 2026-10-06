@@ -6746,22 +6746,11 @@ button.df-activity-row {
   color: var(--df-case-ink);
 }
 
+/* The active destination wears the amber wash alone, with no edge bar. */
 .df-v2 .df-platform-rail .df-platform-nav-item[data-active="true"] {
   background: var(--df-amber-wash);
   color: var(--df-case-ink);
   font-weight: 500;
-}
-
-/* The approved active treatment: the wash and a 3px amber bar on the left edge. */
-.df-v2 .df-platform-rail .df-platform-nav-item[data-active="true"]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--df-amber);
-  border-radius: 0 var(--df-radius-1) var(--df-radius-1) 0;
 }
 
 .df-v2 .df-platform-nav-item svg {
