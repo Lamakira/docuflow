@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { composeAccountMenu } from "./chrome";
 import { V2ThemeToggle } from "./V2ThemeToggle";
+import { V2UserAvatar } from "./V2UserAvatar";
 import { isPlatformAdmin } from "./platform";
 import {
   CloseIcon,
@@ -209,12 +210,11 @@ export function V2Rail({
               className="df-user-card"
               title={displayName}
             >
-              <span
-                className="df-tile"
-                style={{ width: 26, height: 26, borderRadius: "50%", fontSize: 10, fontWeight: 500 }}
-              >
-                {userInitials}
-              </span>
+              <V2UserAvatar
+                imageUrl={user?.profileImageUrl}
+                initials={userInitials}
+                fallbackClassName="df-tile df-user-avatar-initials"
+              />
               {!collapsed ? (
                 <>
                   <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>

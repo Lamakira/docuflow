@@ -45,7 +45,10 @@ const PALETTE: Record<
   dark: { card: "#161d30", ink: "#e8ecf2", slate: "#9aa6b8", onInk: "#0f1524", danger: "#e0676e", success: "#4cc393", divider: "#2a3348", stock: "#0f1524" },
 };
 
-const UI_FONT = "Switzer, system-ui, sans-serif";
+/** `.df-btn.bg-primary`: amber 500 over amber 600, ink text. */
+const PRIMARY_ACTION = { fill: "#e9a23b", edge: "#d8912f", ink: "#0f1524" };
+
+const UI_FONT ="Switzer, system-ui, sans-serif";
 
 export function accountProfileAppearance(mode: AccountThemeMode): ClerkAppearance {
   const c = PALETTE[mode];
@@ -71,6 +74,14 @@ export function accountProfileAppearance(mode: AccountThemeMode): ClerkAppearanc
     elements: {
       rootBox: { width: "100%", maxWidth: "100%" },
       cardBox: { width: "100%", maxWidth: "100%", boxShadow: "none", border: `1px solid ${c.divider}` },
+      // The page's primary action wears the v2 amber fill with ink, in both modes.
+      formButtonPrimary: {
+        backgroundColor: PRIMARY_ACTION.fill,
+        borderColor: PRIMARY_ACTION.edge,
+        color: PRIMARY_ACTION.ink,
+        boxShadow: "none",
+        "&:hover, &:active": { backgroundColor: PRIMARY_ACTION.edge },
+      },
       // Account deletion is DocuFlow's own flow (ADR-0015), below the profile.
       profileSection__danger: { display: "none" },
     },

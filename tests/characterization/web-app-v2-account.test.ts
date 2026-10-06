@@ -76,5 +76,11 @@ describe("account profile (#316)", () => {
     expect(elements.profileSection__danger).toEqual({ display: "none" });
     expect(elements.cardBox.boxShadow).toBe("none");
     expect(elements.cardBox.border).toContain(resolve(vars, "--df-divider"));
+    // Clerk's primary action reads like `.df-btn.bg-primary`: amber fill, ink text.
+    expect(elements.formButtonPrimary).toMatchObject({
+      backgroundColor: resolve(vars, "--df-amber-500"),
+      borderColor: resolve(vars, "--df-amber-600"),
+      color: resolve(vars, "--df-fill-ink"),
+    });
   });
 });

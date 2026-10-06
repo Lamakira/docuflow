@@ -200,8 +200,9 @@
   box-sizing: border-box;
 }
 
-.df-v2 button:not(.df-btn),
-.df-v2 input {
+/* Clerk's embedded components (`cl-*`) style their own controls (#316). */
+.df-v2 button:not(.df-btn):not([class*="cl-"]),
+.df-v2 input:not([class*="cl-"]) {
   font: inherit;
   color: inherit;
 }
@@ -5667,11 +5668,17 @@ button.df-activity-row {
   color: var(--df-muted-ink);
 }
 
+/* Under the card head, aligned with its title rather than flush on its rule. */
 .df-account-precondition,
 .df-account-survives .df-card-sub,
 .df-account-grace .df-card-sub {
-  padding: 0 var(--df-space-5) var(--df-space-1);
+  margin: 0;
+  padding: var(--df-space-3) var(--df-space-4) 0;
   max-width: 70ch;
+}
+
+.df-account-survives .df-card-sub {
+  padding-bottom: var(--df-space-4);
 }
 
 .df-account-deletion-heading {
@@ -5693,8 +5700,8 @@ button.df-activity-row {
 }
 
 .df-account-date {
-  padding: 0 var(--df-space-5);
-  margin: 0 0 10px;
+  padding: var(--df-space-3) var(--df-space-4) 0;
+  margin: 0;
   font-size: var(--df-text-3);
   letter-spacing: 0.01em;
   /* A recorded date never truncates. */
@@ -5707,7 +5714,7 @@ button.df-activity-row {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--df-space-2);
-  padding: 0 var(--df-space-5) var(--df-space-5);
+  padding: var(--df-space-4);
 }
 
 .df-account-confirm-label {
@@ -6578,7 +6585,22 @@ button.df-activity-row {
   padding: var(--df-space-1);
 }
 
-.df-platform-avatar {
+/* The account menu's photo, or initials behind it (#316). */
+.df-v2 .df-user-avatar {
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+
+/* Outranks the shadcn fallback's `bg-muted`, so the tile keeps its ink. */
+.df-v2 .df-user-avatar-initials {
+  background: var(--df-case-ink);
+  border-radius: 50%;
+  font-size: var(--df-text-1);
+  font-weight: 500;
+}
+
+.df-v2 .df-platform-avatar {
   flex: none;
   display: inline-flex;
   align-items: center;
