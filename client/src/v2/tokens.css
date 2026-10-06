@@ -5669,10 +5669,16 @@ button.df-activity-row {
 
 .df-account-precondition,
 .df-account-survives .df-card-sub,
-.df-account-grace .df-card-sub,
-.df-account-session .df-card-sub {
+.df-account-grace .df-card-sub {
   padding: 0 var(--df-space-5) var(--df-space-1);
   max-width: 70ch;
+}
+
+.df-account-deletion-heading {
+  margin-top: var(--df-space-7);
+  font-family: var(--df-font-display);
+  font-size: var(--df-text-5);
+  color: var(--df-case-ink);
 }
 
 .df-account-grace {
@@ -5696,7 +5702,6 @@ button.df-activity-row {
 }
 
 .df-account-confirm,
-.df-account-session > button,
 .df-account-grace > button {
   display: flex;
   flex-direction: column;

@@ -1,8 +1,16 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { UserProfile, useUser } from "@clerk/clerk-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  ACCOUNT_PAGE,
+  accountProfileAppearance,
+  accountProfileSyncPath,
+  profileSignature,
+  type AccountThemeMode,
+} from "./account";
 import { motionForSurface } from "./motion";
-import { isStandingRefusal, notify } from "./notify";
+import { errorMessage, isStandingRefusal, NETWORK_FAILURE, notify } from "./notify";
 import { V2FilterSelect } from "./V2Select";
 import {
   accountDeletionPath,
@@ -13,10 +21,61 @@ import {
   type OwnedWorkspaceRow,
 } from "./lifecycle";
 import { Button } from "@/components/ui/button";
+import { useTheme } from "@/components/ThemeProvider";
 import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 const GRACE_MOTION = motionForSurface("account-deletion-grace").enterExit;
 const CONFIRM_MOTION = motionForSurface("account-confirm-typing").enterExit;
+
+/** The mode Clerk's profile should wear: System follows the OS, like the chrome. */
+function useAccountThemeMode(): AccountThemeMode {
+  const { theme } = useTheme();
+  const [systemDark, setSystemDark] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setSystemDark(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  if (theme === "system") return systemDark ? "dark" : "light";
+  return theme === "dark" ? "dark" : "light";
+}
+
+/**
+ * Copies the Clerk User's name, photo and email onto the DocuFlow User whenever
+ * they change, including the first read on mount (#316).
+ */
+function useProfileSync() {
+  const { user } = useUser();
+  const signature = profileSignature(user);
+  const synced = useRef<string | null>(null);
+  const [refusal, setRefusal] = useState<string | null>(null);
+
+  const sync = useMutation({
+    mutationFn: () => apiRequest("POST", accountProfileSyncPath()),
+    onSuccess: async () => {
+      setRefusal(null);
+      // Names show across the app, so every read is stale.
+      await queryClient.invalidateQueries();
+    },
+    onError: (error: Error) => {
+      if (errorMessage(error) === NETWORK_FAILURE) return notify.error(error);
+      // A refusal of the sync is about this page's profile, so it stays beside it.
+      setRefusal(error.message);
+    },
+  });
+
+  useEffect(() => {
+    if (signature === null || synced.current === signature) return;
+    synced.current = signature;
+    sync.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+
+  return refusal;
+}
 
 /**
  * Flow 10. The precondition is stated before anything else: every owned
@@ -27,6 +86,8 @@ const CONFIRM_MOTION = motionForSurface("account-confirm-typing").enterExit;
 export function V2AccountPage() {
   const [confirmation, setConfirmation] = useState("");
   const [refusal, setRefusal] = useState<string | null>(null);
+  const mode = useAccountThemeMode();
+  const profileRefusal = useProfileSync();
 
   const { data, isLoading, isError } = useQuery<AccountDeletionState>({
     queryKey: [accountDeletionPath()],
@@ -75,10 +136,11 @@ export function V2AccountPage() {
   if (isLoading) {
     return (
       <V2PageSkeleton
-        title={page.title}
+        title={ACCOUNT_PAGE.title}
         testId="v2-account"
         status="Loading your account."
       >
+        <SkeletonSection title="Profile" lines={4} />
         <SkeletonSection title="Workspaces you own" lines={2} />
         <SkeletonSection title="What stays behind" lines={3} />
       </V2PageSkeleton>
@@ -89,11 +151,21 @@ export function V2AccountPage() {
     <div className="df-page" data-testid="v2-account">
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
-          <div className="df-mono df-account-kicker">{page.kicker}</div>
-          <h1 className="df-title">{page.title}</h1>
-          <p className="df-subhead">{page.lead}</p>
+          <div className="df-mono df-account-kicker">{ACCOUNT_PAGE.kicker}</div>
+          <h1 className="df-title">{ACCOUNT_PAGE.title}</h1>
+          <p className="df-subhead">{ACCOUNT_PAGE.lead}</p>
         </div>
       </header>
+
+      {profileRefusal ? (
+        <p className="df-refusal" data-testid="v2-account-profile-refusal">{profileRefusal}</p>
+      ) : null}
+      <section className="df-account-profile" data-testid="v2-account-profile">
+        <UserProfile routing="hash" appearance={accountProfileAppearance(mode)} />
+      </section>
+
+      <h2 className="df-account-deletion-heading">{page.title}</h2>
+      <p className="df-subhead">{page.lead}</p>
 
       {isError ? <p className="df-empty">Your account could not be loaded.</p> : null}
       {refusal ? <p className="df-refusal" data-testid="v2-account-refusal">{refusal}</p> : null}
@@ -166,18 +238,6 @@ export function V2AccountPage() {
             </Button>
           </form>
         )}
-      </section>
-
-      {/* Credentials are Clerk's (ADR-0007), so this page says where they live
-          rather than offering a second set of controls for them. Sign out stays
-          in the account menu, which already owns it. */}
-      <section className="df-card df-account-session" data-testid="v2-account-session">
-        <div className="df-card-head">
-          <h2 className="df-card-title">Credentials</h2>
-        </div>
-        <p className="df-card-sub">
-          Your password, email address, and multi-factor settings are held by the identity provider, not here.
-        </p>
       </section>
     </div>
   );

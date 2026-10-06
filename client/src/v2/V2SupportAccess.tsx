@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { TaskSetupMFA, useSession } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
@@ -197,9 +198,12 @@ export function WorkspaceSecondFactor() {
           <p className="df-subhead">{page.note}</p>
         </div>
       </header>
-      <p className="df-support-note">This Workspace requires a second factor before you can use it.</p>
+      <p className="df-support-note">This Workspace requires a second factor before you can use it. Add an authenticator app from your account, then continue.</p>
       {pending ? <TaskSetupMFA redirectUrlComplete={SESSION_TASK_COMPLETE_PATH} /> : null}
       <div className="df-form-actions">
+        <Button asChild variant="outline" className="df-btn">
+          <Link href="/account" data-testid="v2-workspace-second-factor-account">Set up in your account</Link>
+        </Button>
         <Button
           type="button"
           className="df-btn"
