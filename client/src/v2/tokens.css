@@ -6569,6 +6569,35 @@ button.df-activity-row {
   overflow-wrap: anywhere;
 }
 
+/* The console's figures as one strip inside the card: hairlines between the
+   cells instead of grey boxes. Each cell draws its right and bottom rule and
+   the strip clips the ones on its outer edge, so the rules hold however many
+   cells a row wraps to. */
+.df-stat-strip {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--df-divider);
+}
+
+.df-stat-strip:first-child,
+.df-card-head + .df-stat-strip {
+  border-top: 0;
+}
+
+.df-stat-strip .df-analytics-figure {
+  padding: var(--df-space-4);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: 1px 1px 0 0 var(--df-divider);
+}
+
+.df-stat-strip[data-size="stat"] .df-analytics-figure-value {
+  font-size: var(--df-text-6);
+}
+
 .df-backoffice-section {
   display: flex;
   flex-direction: column;
@@ -7005,13 +7034,6 @@ button.df-activity-row {
 .df-chart-table td:not(:first-child),
 .df-chart-table th:not(:first-child) {
   text-align: right;
-}
-
-.df-mrr-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--df-space-3);
-  padding: var(--df-space-4);
 }
 
 .df-mrr-hero {

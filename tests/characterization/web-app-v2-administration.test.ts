@@ -1560,7 +1560,8 @@ describe("Administration controls (#212)", () => {
     expect(analyticsSource).toContain('<SkeletonSection title="Analytics"');
     expect(analyticsSource).toContain('<SkeletonSection title="Warnings"');
     // The wait reuses the real bands and rows, so nothing moves on arrival.
-    expect(skeletonSource).toContain('className="df-figure-band"');
+    // The band, or the console's strip variant of it (#318).
+    expect(skeletonSource).toMatch(/"df-figure-band( df-stat-strip)?"/);
     expect(skeletonSource).toContain('className="df-register-row"');
     expect(skeletonSource).toContain('aria-busy="true"');
     expect(skeletonSource).toContain('role="status"');
