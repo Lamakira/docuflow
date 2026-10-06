@@ -1091,14 +1091,6 @@ button.df-activity-row {
   transition: none;
 }
 
-.df-admin-billing-figure {
-  font-family: var(--df-font-mono);
-  font-size: var(--df-text-3);
-  letter-spacing: 0.01em;
-  animation: none;
-  transition: none;
-}
-
 .df-admin-secret {
   display: block;
   font-family: var(--df-font-mono);
@@ -1536,20 +1528,210 @@ button.df-activity-row {
    band and shares its left edge, instead of floating centred between the
    figures and the buttons, belonging to neither. */
 .df-admin-seat-form {
-  padding: 0 var(--df-space-5) var(--df-space-4);
+  padding: 0 var(--df-space-4) var(--df-space-4);
   max-width: 320px;
 }
 
-/* The entitlement sentence is a status about the Workspace, so it sits with the
-   band. Inside the button row it was laid out as helper text for buttons it
-   does not describe (#245, F1). */
-.df-admin-billing-note {
-  margin: 0;
-  padding: 0 var(--df-space-5) var(--df-space-4);
+/* Workspace and Billing read their facts as rows inside the card, not as grey
+   figure boxes. Each cell rules its own right and bottom edge, so stacked and
+   side-by-side layouts both get a correct divider. */
+.df-admin-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-3);
+  padding: var(--df-space-4);
+}
+
+.df-admin-identity-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--df-radius-3);
+  background: var(--df-case-ink);
+  color: var(--df-on-ink);
+  font-family: var(--df-font-mono);
+  font-size: var(--df-text-3);
+  font-weight: 500;
+}
+
+.df-admin-identity-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.df-admin-identity-name {
+  font-family: var(--df-font-display);
+  font-size: var(--df-text-5);
+  color: var(--df-case-ink);
+}
+
+.df-admin-identity-sub {
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+}
+
+.df-admin-identity-role {
+  margin-left: auto;
+}
+
+.df-admin-facts,
+.df-billing-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  overflow: hidden;
+  border-top: 1px solid var(--df-divider);
+}
+
+.df-admin-fact,
+.df-billing-fact {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-3);
+  padding: var(--df-space-3) var(--df-space-4);
+  /* A rule on the right and bottom edge; the grid clips the outer ones. */
+  box-shadow: 1px 1px 0 0 var(--df-divider);
+}
+
+.df-admin-fact-avatar {
+  width: 28px;
+  height: 28px;
+}
+
+.df-admin-fact-avatar-fallback {
+  background: var(--df-cold-stock);
+  color: var(--df-archive-slate);
+  font-size: var(--df-text-1);
+}
+
+.df-admin-fact-icon {
+  flex: none;
+  color: var(--df-archive-slate);
+}
+
+.df-admin-fact-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.df-admin-fact-label {
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+}
+
+.df-admin-fact-value {
+  font-size: var(--df-text-3);
+  font-weight: 500;
+  color: var(--df-case-ink);
+}
+
+.df-admin-fact-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--df-space-1);
+  margin-left: auto;
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+  text-decoration: none;
+}
+
+.df-admin-fact-link:hover {
+  color: var(--df-case-ink);
+}
+
+.df-billing-plan {
+  padding: var(--df-space-4);
+}
+
+.df-billing-label {
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+}
+
+.df-billing-plan-line {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-2);
+}
+
+.df-billing-plan-name {
+  font-family: var(--df-font-display);
+  font-size: var(--df-text-5);
+  color: var(--df-case-ink);
+}
+
+.df-billing-lead {
+  margin: var(--df-space-1) 0 0;
   font-size: var(--df-text-2);
   line-height: 1.45;
   color: var(--df-archive-slate);
   max-width: 64ch;
+}
+
+.df-billing-seats {
+  padding: var(--df-space-4);
+  border-top: 1px solid var(--df-divider);
+}
+
+.df-billing-seats-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--df-space-2);
+}
+
+.df-billing-seats-count,
+.df-billing-term-value {
+  font-family: var(--df-font-mono);
+  font-size: var(--df-text-2);
+  color: var(--df-case-ink);
+}
+
+/* Radix renders the indicator as the track's only child. */
+/* Scoped under .df-v2 to outrank the shadcn Progress track's `h-4 bg-secondary`. */
+.df-v2 .df-billing-meter {
+  height: 6px;
+  border-radius: 99px;
+  background: var(--df-divider-light);
+}
+
+.df-v2 .df-billing-meter > div {
+  background: var(--df-amber);
+}
+
+.df-v2 .df-billing-meter[data-tone="over"] > div {
+  background: var(--df-destructive);
+}
+
+/* The Plan picker's lines under the summary. */
+.df-admin-billing-note {
+  margin: 0;
+  padding: var(--df-space-4) var(--df-space-4) var(--df-space-3);
+  font-size: var(--df-text-2);
+  line-height: 1.45;
+  color: var(--df-archive-slate);
+}
+
+.df-billing-fact-text {
+  font-size: var(--df-text-2);
+  color: var(--df-case-ink);
+}
+
+.df-billing-fact-icon {
+  flex: none;
+  color: var(--df-archive-slate);
+}
+
+.df-billing-fact-icon[data-tone="allowed"] {
+  color: var(--df-positive-ink);
+}
+
+.df-billing-fact-icon[data-tone="blocked"] {
+  color: var(--df-alert-ink);
 }
 
 .df-v2[data-chrome="mobile"] .df-billing-actions {
@@ -1597,7 +1779,7 @@ button.df-activity-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--df-space-3);
-  padding: 0 var(--df-space-5) var(--df-space-4);
+  padding: 0 var(--df-space-4) var(--df-space-4);
 }
 
 .df-plan-card {
