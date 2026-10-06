@@ -210,6 +210,7 @@ const PLATFORM_ROUTES: Array<[method: "get" | "post" | "patch", path: string]> =
   ["post", "/api/platform/support-requests/anything/answers"],
   ["post", "/api/platform/support-requests/anything/notes"],
   ["get", "/api/platform/stats"],
+  ["get", "/api/platform/stats/series"],
   ["get", "/api/platform/staff"],
   ["get", "/api/platform/support-access"],
   ["get", "/api/platform/audit-events"],
@@ -1067,6 +1068,88 @@ describe("platform statistics", () => {
     expect(res.body.growth.newWorkspaces).toBeGreaterThanOrEqual(1);
 
     expect((await staff.agent.get("/api/platform/stats").query({ days: 45 })).status).toBe(400);
+  });
+});
+
+describe("platform stats series", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it("returns one zero-filled point per UTC day, oldest first, whatever the process time zone", async () => {
+    const { app, owner } = await seededOwner();
+    const staff = await registerPlatformStaff(app);
+    const parallel = await plantParallelWorkspace("Harbour View");
+    const project = await createCrmProject(owner.agent);
+    const task = await createTask(owner.agent, project.crmProject.id);
+    const { db } = await import("../../server/db");
+    const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
+    const { billingPayments, timeEntries, users, workspaces } = await import("@shared/schema");
+
+    const now = new Date();
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    // 23:30 UTC: a bucketing done in a zone ahead of UTC would push these to the next day.
+    const at = (daysAgo: number, hour = 23, minute = 30) =>
+      new Date(today - daysAgo * DAY_MS + hour * 3600_000 + minute * 60_000);
+    const day = (daysAgo: number) => new Date(today - daysAgo * DAY_MS).toISOString().slice(0, 10);
+
+    const previousTz = process.env.TZ;
+    process.env.TZ = "Pacific/Auckland";
+    try {
+      await db.update(users).set({ createdAt: at(100) });
+      await db.update(users).set({ createdAt: at(2) }).where(eq(users.id, owner.id));
+      await db.update(workspaces).set({ createdAt: at(5) });
+      await runWithWorkspaceContext({ workspaceId: parallel }, async () => {
+        await db.insert(billingPayments).values([
+          { workspaceId: parallel, providerEventId: "evt_s1", providerInvoiceId: "in_s1", outcome: "paid", occurredAt: at(1) },
+          { workspaceId: parallel, providerEventId: "evt_s2", providerInvoiceId: "in_s2", outcome: "paid", occurredAt: at(1, 0, 10) },
+          { workspaceId: parallel, providerEventId: "evt_s3", providerInvoiceId: "in_s3", outcome: "failed", occurredAt: at(3) },
+          // Outside the 7-day window.
+          { workspaceId: parallel, providerEventId: "evt_s4", providerInvoiceId: "in_s4", outcome: "failed", occurredAt: at(20) },
+        ]);
+      });
+      await inSeededWorkspace(async () => {
+        const entry = (startTime: Date) => ({
+          workspaceId: "seeded",
+          userId: owner.id,
+          crmProjectId: project.crmProject.id,
+          taskId: task.id,
+          startTime,
+          status: "completed",
+        });
+        await db.insert(timeEntries).values([
+          entry(at(1)),
+          entry(at(1, 8, 0)),
+          entry(at(3)),
+          entry(at(20)),
+        ]);
+      });
+
+      const res = await staff.agent.get("/api/platform/stats/series").query({ days: 7 });
+      expect(res.status).toBe(200);
+      expect(res.body.days).toBe(7);
+      expect(res.body.from).toBe(new Date(today - 6 * DAY_MS).toISOString());
+      expect(res.body.points).toHaveLength(7);
+      const expected = [6, 5, 4, 3, 2, 1, 0].map((daysAgo) => ({
+        date: day(daysAgo),
+        newUsers: daysAgo === 2 ? 1 : 0,
+        newWorkspaces: daysAgo === 5 ? 2 : 0,
+        activeWorkspaces: daysAgo === 1 || daysAgo === 3 ? 1 : 0,
+        paidPayments: daysAgo === 1 ? 2 : 0,
+        failedPayments: daysAgo === 3 ? 1 : 0,
+      }));
+      expect(res.body.points).toEqual(expected);
+
+      const month = await staff.agent.get("/api/platform/stats/series");
+      expect(month.body.days).toBe(30);
+      expect(month.body.points).toHaveLength(30);
+      expect(month.body.points[9].date).toBe(day(20));
+      expect(month.body.points[9]).toMatchObject({ activeWorkspaces: 1, failedPayments: 1 });
+    } finally {
+      process.env.TZ = previousTz;
+    }
+
+    expect((await staff.agent.get("/api/platform/stats/series").query({ days: 14 })).status).toBe(400);
   });
 });
 

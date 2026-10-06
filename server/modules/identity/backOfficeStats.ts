@@ -239,3 +239,98 @@ export async function platformStats(days: number, now = new Date()): Promise<Pla
     },
   };
 }
+
+export type PlatformStatsSeries = {
+  days: number;
+  from: string;
+  to: string;
+  points: Array<{
+    date: string;
+    newUsers: number;
+    newWorkspaces: number;
+    activeWorkspaces: number;
+    paidPayments: number;
+    failedPayments: number;
+  }>;
+};
+
+/**
+ * The UTC calendar day of an instant. Buckets are cut in JS on the instant, not in
+ * SQL: these are `timestamp without time zone` columns that node-postgres writes
+ * and reads in the process time zone, so `AT TIME ZONE 'UTC'` in SQL would shift
+ * days whenever the process is not on UTC. The Date round-trips; its UTC day is exact.
+ */
+function utcDay(at: Date): string {
+  return at.toISOString().slice(0, 10);
+}
+
+type WorkspaceDay = { startedDays: Set<string>; payments: Array<{ day: string; outcome: string }> };
+
+async function seriesInContext(from: Date, to: Date): Promise<WorkspaceDay> {
+  const entries = await db
+    .select({ startTime: timeEntries.startTime })
+    .from(timeEntries)
+    .where(and(inWorkspace(timeEntries), gte(timeEntries.startTime, from), lte(timeEntries.startTime, to)));
+  const payments = await db
+    .select({ outcome: billingPayments.outcome, occurredAt: billingPayments.occurredAt })
+    .from(billingPayments)
+    .where(and(inWorkspace(billingPayments), gte(billingPayments.occurredAt, from), lte(billingPayments.occurredAt, to)));
+  return {
+    startedDays: new Set(entries.map((entry) => utcDay(entry.startTime))),
+    payments: payments.map((payment) => ({ day: utcDay(payment.occurredAt), outcome: payment.outcome })),
+  };
+}
+
+/** One point per UTC day, oldest first, today (partial) last. Zero-filled. */
+export async function platformStatsSeries(days: number, now = new Date()): Promise<PlatformStatsSeries> {
+  const to = now;
+  const todayStart = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate());
+  const from = new Date(todayStart - (days - 1) * DAY_MS);
+
+  const points = Array.from({ length: days }, (_, index) => ({
+    date: utcDay(new Date(from.getTime() + index * DAY_MS)),
+    newUsers: 0,
+    newWorkspaces: 0,
+    activeWorkspaces: 0,
+    paidPayments: 0,
+    failedPayments: 0,
+  }));
+  const byDate = new Map(points.map((point) => [point.date, point]));
+
+  const workspaceRows = await db.select({ id: workspaces.id, createdAt: workspaces.createdAt }).from(workspaces);
+  const perWorkspace = await forWorkspaces(workspaceRows, () => seriesInContext(from, to));
+  const userRows = await db
+    .select({ createdAt: users.createdAt })
+    .from(users)
+    .where(and(gte(users.createdAt, from), lte(users.createdAt, to)));
+
+  for (const row of userRows) {
+    if (row.createdAt) {
+      const point = byDate.get(utcDay(row.createdAt));
+      if (point) point.newUsers += 1;
+    }
+  }
+  for (const row of workspaceRows) {
+    if (row.createdAt && row.createdAt >= from && row.createdAt <= to) {
+      const point = byDate.get(utcDay(row.createdAt));
+      if (point) point.newWorkspaces += 1;
+    }
+  }
+  for (const figure of perWorkspace) {
+    // Active here means a Time Entry started that day. Sign-ins are not stored per
+    // day (only `users.lastLoginAt`), so this series differs on purpose from the
+    // 7/30-day active figure in `platformStats`, which also counts sign-ins.
+    for (const day of figure.startedDays) {
+      const point = byDate.get(day);
+      if (point) point.activeWorkspaces += 1;
+    }
+    for (const payment of figure.payments) {
+      const point = byDate.get(payment.day);
+      if (!point) continue;
+      if (payment.outcome === "paid") point.paidPayments += 1;
+      else if (payment.outcome === "failed") point.failedPayments += 1;
+    }
+  }
+
+  return { days, from: from.toISOString(), to: to.toISOString(), points };
+}

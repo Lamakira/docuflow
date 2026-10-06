@@ -43,7 +43,7 @@ import {
   supportRequestDetail,
   updateSupportRequest,
 } from "./backOfficeSupport";
-import { platformStats, STATS_PERIODS } from "./backOfficeStats";
+import { platformStats, platformStatsSeries, STATS_PERIODS } from "./backOfficeStats";
 import { listPlatformStaff, PlatformStaffNotFoundError, WorkspaceNotFoundError } from "./operatorAccess";
 import { requirePlatformStaff } from "./operatorHttp";
 
@@ -197,6 +197,11 @@ export function registerBackOfficeRoutes(app: Express): void {
   app.get("/api/platform/stats", requirePlatformStaff, route(async (req, res) => {
     const { days } = statsQuery.parse({ days: queryText(req.query.days) });
     res.json(await platformStats(Number(days)));
+  }));
+
+  app.get("/api/platform/stats/series", requirePlatformStaff, route(async (req, res) => {
+    const { days } = statsQuery.parse({ days: queryText(req.query.days) });
+    res.json(await platformStatsSeries(Number(days)));
   }));
 
   app.get("/api/platform/staff", requirePlatformStaff, route(async (_req, res) => {
