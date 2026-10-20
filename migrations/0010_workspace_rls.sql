@@ -8,11 +8,26 @@
 -- IF NOT EXISTS / DROP POLICY IF EXISTS: a database that already has these
 -- objects, or that was built by drizzle-kit push then baselined, is a no-op.
 
+-- The role is cluster-wide: it survives a schema reset, and a non-superuser
+-- migration user may not be allowed to ALTER it. If so, keep it only when its
+-- attributes are safe, so RLS stays fail-closed.
 DO $$ BEGIN
 	CREATE ROLE docuflow_app NOINHERIT NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE LOGIN;
 EXCEPTION
 	WHEN duplicate_object THEN
-		ALTER ROLE docuflow_app NOINHERIT NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE LOGIN;
+		BEGIN
+			ALTER ROLE docuflow_app NOINHERIT NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE LOGIN;
+		EXCEPTION
+			WHEN insufficient_privilege THEN
+				IF EXISTS (
+					SELECT 1 FROM pg_roles
+					WHERE rolname = 'docuflow_app'
+						AND (rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb)
+				) THEN
+					RAISE EXCEPTION 'role docuflow_app exists with unsafe attributes and cannot be altered by %', current_user;
+				END IF;
+				RAISE NOTICE 'role docuflow_app exists with safe attributes and cannot be altered by %; keeping it as is', current_user;
+		END;
 END $$;
 --> statement-breakpoint
 GRANT USAGE ON SCHEMA public TO docuflow_app;
