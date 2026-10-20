@@ -50,6 +50,7 @@ import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect } from "./V2Select";
 import { V2RegisterPager } from "./V2RegisterPager";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SkeletonBoard, SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
@@ -856,22 +857,23 @@ export function V2ProjectsPage() {
             />
           </>
         )}
-        <div className="df-segment" role="group" aria-label="Project view">
-          <button
-            type="button"
-            data-active={boardView ? "false" : "true"}
-            onClick={() => setLocation(`/projects${withView(search, null)}`)}
-          >
-            REGISTER
-          </button>
-          <button
-            type="button"
-            data-active={boardView ? "true" : "false"}
-            onClick={() => setLocation(`/projects${withView(search, "board")}`)}
-          >
+        <ToggleGroup
+          type="single"
+          className="df-segment"
+          aria-label="Project view"
+          value={boardView ? "board" : "list"}
+          onValueChange={(view) => {
+            if (!view) return;
+            setLocation(`/projects${withView(search, view === "board" ? "board" : null)}`);
+          }}
+        >
+          <ToggleGroupItem value="list" aria-label="List view" className="df-segment-item">
+            LIST
+          </ToggleGroupItem>
+          <ToggleGroupItem value="board" aria-label="Board view" className="df-segment-item">
             BOARD
-          </button>
-        </div>
+          </ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
       {boardView ? (

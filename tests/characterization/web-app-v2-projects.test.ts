@@ -457,3 +457,30 @@ describe("A Project's start and due dates, set in v2 (#307)", () => {
     expect(newProjectPayload("Pier", none, { startDate: "2026-12-01", dueDate: "2026-10-01" })).toBeNull();
   });
 });
+
+describe("Projects view switcher", () => {
+  const source = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Projects.tsx"),
+    "utf8",
+  );
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/tokens.css"),
+    "utf8",
+  );
+
+  it("is a single-select ToggleGroup of LIST and BOARD driven by the view param", () => {
+    expect(source).toMatch(/<ToggleGroup\s+type="single"\s+className="df-segment"\s+aria-label="Project view"/);
+    expect(source).toContain('value={boardView ? "board" : "list"}');
+    expect(source).toMatch(/<ToggleGroupItem value="list" aria-label="List view"[^>]*>\s*LIST\s*</);
+    expect(source).toMatch(/<ToggleGroupItem value="board" aria-label="Board view"[^>]*>\s*BOARD\s*</);
+    expect(source).not.toContain("REGISTER\n");
+    // Re-clicking the active item emits "" and must keep the selection.
+    expect(source).toContain("if (!view) return;");
+    expect(source).toContain('withView(search, view === "board" ? "board" : null)');
+  });
+
+  it("keeps the global button rule from overriding the segment items", () => {
+    expect(css).toContain(':not(.df-segment-item)');
+    expect(css).toMatch(/\.df-segment-item\[data-state="on"\]/);
+  });
+});
