@@ -4,7 +4,7 @@ import { describeSchema } from "../../scripts/lib/schemaSnapshot";
 import { loadMigrations, migrate } from "../../scripts/migrate";
 import { urlForDatabase, withClient } from "../helpers/db";
 import { resolveTestDatabaseUrl } from "../test-db-url";
-import { requireMigrateDatabaseUrl } from "../../shared/databaseUrl";
+import { requireMigrateDatabaseUrl, resolveDatabaseUrl } from "../../shared/databaseUrl";
 
 /**
  * The journal is the only way a database gets its schema (#24), which puts two
@@ -46,6 +46,36 @@ describe("migrate credential", () => {
         name === "DATABASE_URL" ? "postgresql://app@localhost/docuflow" : undefined
       )
     ).toBe("postgresql://app@localhost/docuflow");
+  });
+
+  it("ignores DATABASE_APP_URL: the application role cannot change schema", () => {
+    const env: Record<string, string> = {
+      DATABASE_APP_URL: "postgresql://docuflow_app@localhost/docuflow",
+      DATABASE_URL: "postgresql://owner@localhost/docuflow",
+    };
+    expect(requireMigrateDatabaseUrl((name) => env[name])).toBe("postgresql://owner@localhost/docuflow");
+    expect(
+      requireMigrateDatabaseUrl((name) =>
+        name === "DATABASE_MIGRATE_URL" ? "postgresql://migrate@localhost/docuflow" : env[name]
+      )
+    ).toBe("postgresql://migrate@localhost/docuflow");
+  });
+});
+
+describe("runtime credential", () => {
+  it("prefers DATABASE_APP_URL over DATABASE_URL, and leaves DATABASE_URL alone when it is unset", () => {
+    const env: Record<string, string> = {
+      DATABASE_APP_URL: "postgresql://docuflow_app@localhost/docuflow",
+      DATABASE_URL: "postgresql://owner@localhost/docuflow",
+    };
+    expect(resolveDatabaseUrl((name) => env[name])).toEqual({
+      url: "postgresql://docuflow_app@localhost/docuflow",
+      source: "DATABASE_APP_URL",
+      missing: [],
+    });
+    expect(resolveDatabaseUrl((name) => (name === "DATABASE_URL" ? env[name] : undefined)).source).toBe(
+      "DATABASE_URL"
+    );
   });
 });
 
