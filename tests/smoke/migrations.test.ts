@@ -103,10 +103,12 @@ describe("migration journal", () => {
     );
 
     // The harness sets DATABASE_APP_URL (the server runs as docuflow_app, #323),
-    // and it outranks DATABASE_URL: push needs the owner, so it is dropped here.
-    const { DATABASE_APP_URL: _app, ...pushEnv } = process.env;
+    // and it outranks DATABASE_URL: push needs the owner, so it is blanked here.
+    // Empty rather than deleted: drizzle-kit loads `.env` itself, and dotenv
+    // fills a variable that is absent but never one that is set, so a
+    // developer's DATABASE_APP_URL would otherwise come back.
     execFileSync("npx", ["drizzle-kit", "push", "--force"], {
-      env: { ...pushEnv, DATABASE_URL: urlForDatabase(SCRATCH_DB) },
+      env: { ...process.env, DATABASE_APP_URL: "", DATABASE_URL: urlForDatabase(SCRATCH_DB) },
       stdio: "pipe",
     });
   }, 120_000);
