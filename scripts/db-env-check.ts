@@ -26,8 +26,8 @@ console.log("\n=== DocuFlow — DB Environment Check ===\n");
 
 const { url, source, missing } = resolveDatabaseUrl();
 
-if (source === "DATABASE_URL") {
-  console.log("✅  Mode: DATABASE_URL (priority)");
+if (source !== "PG_VARS") {
+  console.log(`✅  Mode: ${source} (priority)`);
   console.log(`    Value: ${maskDatabaseUrl(url!)}`);
 } else {
   console.log("⚠️   DATABASE_URL: not set — checking PG* fallback...\n");

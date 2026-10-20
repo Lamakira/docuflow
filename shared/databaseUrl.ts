@@ -1,7 +1,12 @@
 /**
  * databaseUrl.ts — how every process in this repository finds its database.
  *
- * `DATABASE_URL` wins; otherwise the `PG*` variables are assembled into one.
+ * `DATABASE_APP_URL` wins, then `DATABASE_URL`; otherwise the `PG*` variables
+ * are assembled into one. `DATABASE_APP_URL` is the application role's
+ * connection, for hosts (Replit) that inject `DATABASE_URL` themselves and do
+ * not let it be overridden. Migrations never read it: the application role
+ * cannot change schema.
+ *
  * That rule was written out separately in the server config, the drizzle config,
  * and four scripts, which is five chances for them to disagree about a default
  * port or a URL-encoded password. It lives here once instead.
@@ -24,10 +29,10 @@ export type EnvRead = (name: string) => string | undefined;
 
 const fromProcessEnv: EnvRead = (name) => process.env[name];
 
-export type DatabaseUrlSource = "DATABASE_URL" | "PG_VARS";
+export type DatabaseUrlSource = "DATABASE_APP_URL" | "DATABASE_URL" | "PG_VARS";
 
 export interface ResolvedDatabaseUrl {
-  /** Null when `DATABASE_URL` is unset and the `PG*` set is incomplete. */
+  /** Null when `DATABASE_APP_URL` and `DATABASE_URL` are unset and the `PG*` set is incomplete. */
   url: string | null;
   source: DatabaseUrlSource;
   /** The required `PG*` variables found absent. Empty whenever `url` is set. */
@@ -35,10 +40,13 @@ export interface ResolvedDatabaseUrl {
 }
 
 /**
- * Resolve without throwing, so a caller collecting several configuration faults
+ * Order: `DATABASE_APP_URL`, `DATABASE_URL`, `PG*`. Resolve without throwing, so a caller collecting several configuration faults
  * can add this one to its pile rather than aborting on it.
  */
 export function resolveDatabaseUrl(read: EnvRead = fromProcessEnv): ResolvedDatabaseUrl {
+  const app = read("DATABASE_APP_URL");
+  if (app) return { url: app, source: "DATABASE_APP_URL", missing: [] };
+
   const direct = read("DATABASE_URL");
   if (direct) return { url: direct, source: "DATABASE_URL", missing: [] };
 
@@ -64,18 +72,22 @@ export function requireDatabaseUrl(read: EnvRead = fromProcessEnv): string {
 
   throw new Error(
     `Database not configured.\n` +
-      `Set DATABASE_URL, or all PG* variables.\n` +
+      `Set DATABASE_APP_URL, DATABASE_URL, or all PG* variables.\n` +
       `Missing: ${missing.join(", ")}`
   );
 }
 
 /**
  * The credential that is allowed to change schema. Distinct from the
- * application role, which cannot bypass RLS (#97). Unset means migrate uses
- * the same URL the application uses — today's owner connection.
+ * application role, which cannot bypass RLS (#97). Order:
+ * `DATABASE_MIGRATE_URL`, `DATABASE_URL`, `PG*`. `DATABASE_APP_URL` is hidden:
+ * it names the application role, which cannot change schema.
  */
 export function requireMigrateDatabaseUrl(read: EnvRead = fromProcessEnv): string {
-  return read("DATABASE_MIGRATE_URL") ?? requireDatabaseUrl(read);
+  return (
+    read("DATABASE_MIGRATE_URL") ??
+    requireDatabaseUrl((name) => (name === "DATABASE_APP_URL" ? undefined : read(name)))
+  );
 }
 
 /** A connection string with the password replaced — the only form safe to log. */

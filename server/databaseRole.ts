@@ -30,7 +30,7 @@ export class RlsBypassRoleError extends Error {
     ].filter(Boolean);
     super(
       `Database role "${role.name}" bypasses row-level security (${reasons.join(", ")}). ` +
-        `Point DATABASE_URL at docuflow_app and keep the owner in DATABASE_MIGRATE_URL.`
+        `Point DATABASE_APP_URL (or DATABASE_URL) at docuflow_app and keep the owner in DATABASE_MIGRATE_URL.`
     );
     this.name = "RlsBypassRoleError";
   }
