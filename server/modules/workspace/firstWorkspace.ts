@@ -205,29 +205,33 @@ export async function createWorkspace(
 }
 
 async function roleIdIn(workspaceId: string, slug: string): Promise<string> {
-  const [role] = await db
-    .select({ id: workspaceRoles.id })
-    .from(workspaceRoles)
-    .where(and(eq(workspaceRoles.workspaceId, workspaceId), eq(workspaceRoles.slug, slug)))
-    .limit(1);
+  const [role] = await runWithWorkspaceContext({ workspaceId }, async () =>
+    db
+      .select({ id: workspaceRoles.id })
+      .from(workspaceRoles)
+      .where(and(eq(workspaceRoles.workspaceId, workspaceId), eq(workspaceRoles.slug, slug)))
+      .limit(1),
+  );
   if (!role) throw new Error(`Workspace ${workspaceId} has no ${slug} Role`);
   return role.id;
 }
 
 /** True when this User holds an active Owner Membership in that Workspace. */
 export async function isWorkspaceOwner(userId: string, workspaceId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ slug: workspaceRoles.slug })
-    .from(memberships)
-    .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
-    .where(
-      and(
-        eq(memberships.userId, userId),
-        eq(memberships.workspaceId, workspaceId),
-        isNull(memberships.archivedAt),
-      ),
-    )
-    .limit(1);
+  const [row] = await runWithWorkspaceContext({ workspaceId }, async () =>
+    db
+      .select({ slug: workspaceRoles.slug })
+      .from(memberships)
+      .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
+      .where(
+        and(
+          eq(memberships.userId, userId),
+          eq(memberships.workspaceId, workspaceId),
+          isNull(memberships.archivedAt),
+        ),
+      )
+      .limit(1),
+  );
   return row?.slug === "owner";
 }
 
@@ -237,6 +241,16 @@ export async function isWorkspaceOwner(userId: string, workspaceId: string): Pro
  * the Membership, and their recorded work stays theirs.
  */
 export async function transferWorkspaceOwnership(
+  userId: string,
+  workspaceId: string,
+  successorUserId: string,
+): Promise<{ workspaceId: string; ownerUserId: string }> {
+  return runWithWorkspaceContext({ workspaceId }, () =>
+    transferInContext(userId, workspaceId, successorUserId),
+  );
+}
+
+async function transferInContext(
   userId: string,
   workspaceId: string,
   successorUserId: string,
@@ -297,6 +311,14 @@ export async function transferWorkspaceOwnership(
  * control, which ADR-0015 forbids. Every workspace-scoped row cascades.
  */
 export async function deleteWorkspace(
+  userId: string,
+  workspaceId: string,
+  input: { confirmName: unknown },
+): Promise<{ workspaceId: string; deleted: true }> {
+  return runWithWorkspaceContext({ workspaceId }, () => deleteInContext(userId, workspaceId, input));
+}
+
+async function deleteInContext(
   userId: string,
   workspaceId: string,
   input: { confirmName: unknown },

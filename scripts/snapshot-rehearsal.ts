@@ -36,7 +36,7 @@
 
 import type { Client } from "pg";
 import pg from "pg";
-import { maskDatabaseUrl, requireDatabaseUrl } from "../shared/databaseUrl";
+import { maskDatabaseUrl, requireMigrateDatabaseUrl } from "../shared/databaseUrl";
 import { flagValue } from "./lib/args";
 import { isEntryPoint } from "./lib/entrypoint";
 import { LEDGER_TABLE } from "./lib/schemaSnapshot";
@@ -362,7 +362,7 @@ interface Options {
 
 function parseArgs(argv: string[]): Options {
   return {
-    against: flagValue(argv, "--against", "a database URL") ?? requireDatabaseUrl(),
+    against: flagValue(argv, "--against", "a database URL") ?? requireMigrateDatabaseUrl(),
     scrub: argv.includes("--scrub"),
     keys: flagValue(argv, "--keys", "a path to a copy manifest"),
   };

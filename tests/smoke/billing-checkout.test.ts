@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { FakeBillingProvider } from "../fakes/billingProvider";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { inSeededWorkspace } from "../helpers/workspace";
 
 /**
@@ -23,12 +23,11 @@ const PERIOD_END = new Date("2026-10-01T00:00:00.000Z");
 const SYSTEM = { kind: "system" as const };
 
 async function plantTrialWorkspace(id = TRIAL_WORKSPACE_ID) {
-  const { db } = await import("../../server/db");
   const { workspaces, workspaceRoles } = await import("../../shared/schema");
   const { startTrial } = await import("../../server/modules/billing");
   const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
-  await db.insert(workspaces).values({ id, name: "Trial" });
-  await db.insert(workspaceRoles).values({
+  await ownerDb.insert(workspaces).values({ id, name: "Trial" });
+  await ownerDb.insert(workspaceRoles).values({
     id: `${id}-owner`,
     workspaceId: id,
     slug: "owner",
@@ -176,16 +175,15 @@ const PAID_WORKSPACE_ID = "paid";
 const SUBSCRIPTION_ID = "sub_fake_1";
 
 async function plantPaidWorkspace(purchasedSeatCapacity = 3) {
-  const { db } = await import("../../server/db");
   const { workspaces, workspaceRoles, workspaceBilling } = await import("../../shared/schema");
-  await db.insert(workspaces).values({ id: PAID_WORKSPACE_ID, name: "Paid" });
-  await db.insert(workspaceRoles).values({
+  await ownerDb.insert(workspaces).values({ id: PAID_WORKSPACE_ID, name: "Paid" });
+  await ownerDb.insert(workspaceRoles).values({
     id: `${PAID_WORKSPACE_ID}-owner`,
     workspaceId: PAID_WORKSPACE_ID,
     slug: "owner",
     name: "Owner",
   });
-  await db.insert(workspaceBilling).values({
+  await ownerDb.insert(workspaceBilling).values({
     workspaceId: PAID_WORKSPACE_ID,
     planKey: "pro",
     registryVersion: 1,
@@ -199,17 +197,16 @@ async function plantPaidWorkspace(purchasedSeatCapacity = 3) {
 }
 
 async function plantPaidMembers(count: number) {
-  const { db } = await import("../../server/db");
   const { memberships, users } = await import("../../shared/schema");
   for (let i = 0; i < count; i += 1) {
-    const [user] = await db
+    const [user] = await ownerDb
       .insert(users)
       .values({
         email: `paid-${i}@test.invalid`,
         firstName: `P${i}`,
       })
       .returning();
-    await db.insert(memberships).values({
+    await ownerDb.insert(memberships).values({
       userId: user.id,
       workspaceId: PAID_WORKSPACE_ID,
       workspaceRoleId: `${PAID_WORKSPACE_ID}-owner`,
@@ -455,8 +452,8 @@ describe("Plan change (#299)", () => {
     expect(entitlements).toMatchObject({ seatCapacity: 3, screenshotProjectCapacity: 1 });
     expect(entitlements.features.crm).toBe(false);
 
-    const audit = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
-      db.select().from(auditEvents)
+    const audit = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, async () =>
+      await db.select().from(auditEvents)
     );
     expect(audit).toEqual([
       expect.objectContaining({
@@ -464,8 +461,8 @@ describe("Plan change (#299)", () => {
         payload: expect.objectContaining({ from: "pro", to: "starter", toRegistryVersion: 2 }),
       }),
     ]);
-    const outbox = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
-      db.select().from(outboxEvents)
+    const outbox = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, async () =>
+      await db.select().from(outboxEvents)
     );
     expect(outbox).toEqual([expect.objectContaining({ type: "billing.entitlements_changed" })]);
 
@@ -512,12 +509,11 @@ describe("Plan change (#299)", () => {
     } = await import("../../server/modules/billing");
     const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
     const { createJobRunner } = await import("../../server/worker");
-    const { db } = await import("../../server/db");
     const { workspaceBilling } = await import("../../shared/schema");
     const provider = new FakeBillingProvider();
     await plantPaidWorkspace(3);
     const { eq } = await import("drizzle-orm");
-    await db
+    await ownerDb
       .update(workspaceBilling)
       .set({ planKey: "enterprise", registryVersion: 2 })
       .where(eq(workspaceBilling.workspaceId, PAID_WORKSPACE_ID));

@@ -11,10 +11,9 @@ import {
   workspaceRoles,
   workspaces,
 } from "../../shared/schema";
-import { db } from "../../server/db";
 import { makeApp } from "../helpers/app";
 import { newAgent, promoteToAdmin, registerPlatformStaff, registerUser, setWorkspaceRole } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { addWorkspaceMembership, plantParallelWorkspace, removeAllMemberships } from "../helpers/workspace";
 
 /**
@@ -25,7 +24,7 @@ import { addWorkspaceMembership, plantParallelWorkspace, removeAllMemberships } 
  */
 
 async function ownedWorkspaceCount(userId: string): Promise<number> {
-  const rows = await db
+  const rows = await ownerDb
     .select({ id: memberships.id })
     .from(memberships)
     .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
@@ -63,7 +62,7 @@ describe("first Workspace creation (#217, Flow 1)", () => {
     expect(typeof created.body.workspaceId).toBe("string");
     expect(created.body.trialEndsAt).toBeTruthy();
 
-    const [billing] = await db
+    const [billing] = await ownerDb
       .select()
       .from(workspaceBilling)
       .where(eq(workspaceBilling.workspaceId, created.body.workspaceId));
@@ -85,7 +84,7 @@ describe("first Workspace creation (#217, Flow 1)", () => {
     ]);
 
     // The Workspace is usable at once: the three built-in Roles exist.
-    const roles = await db
+    const roles = await ownerDb
       .select({ slug: workspaceRoles.slug })
       .from(workspaceRoles)
       .where(eq(workspaceRoles.workspaceId, created.body.workspaceId));
@@ -114,7 +113,7 @@ describe("first Workspace creation (#217, Flow 1)", () => {
   it("says whether the User belongs nowhere or has been archived out of everywhere", async () => {
     const app = await makeApp();
     const archived = await registerUser(app);
-    await db
+    await ownerDb
       .update(memberships)
       .set({ archivedAt: new Date() })
       .where(eq(memberships.userId, archived.id));
@@ -223,7 +222,7 @@ describe("account deletion is guided and reversible (#217, Flow 10)", () => {
     expect(shared.status).toBe(409);
     expect(shared.body.message).toMatch(/Member/);
 
-    await db.delete(memberships).where(eq(memberships.userId, colleague.id));
+    await ownerDb.delete(memberships).where(eq(memberships.userId, colleague.id));
 
     const mistyped = await owner.agent
       .delete(`/api/workspaces/${workspaceId}`)
@@ -236,7 +235,7 @@ describe("account deletion is guided and reversible (#217, Flow 10)", () => {
       .send({ confirmName: "DocuFlow" });
     expect(deleted.status).toBe(200);
 
-    const remaining = await db.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, workspaceId));
+    const remaining = await ownerDb.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, workspaceId));
     expect(remaining).toEqual([]);
   });
 
@@ -310,7 +309,7 @@ describe("the precondition holds for the whole window (#217, Flow 10)", () => {
 
     // Ownership comes back by a route that does not consult the window — a
     // direct write stands in for any such path.
-    await db
+    await ownerDb
       .update(memberships)
       .set({ workspaceRoleId: "seeded-owner" })
       .where(and(eq(memberships.userId, leaving.id), eq(memberships.workspaceId, workspaceId)));
@@ -321,7 +320,7 @@ describe("the precondition holds for the whole window (#217, Flow 10)", () => {
     const due = new Date(new Date(started.body.completesAt).getTime() + 1000);
     expect(await completeDueAccountDeletions(due)).toBe(0);
 
-    const [row] = await db.select().from(users).where(eq(users.id, leaving.id));
+    const [row] = await ownerDb.select().from(users).where(eq(users.id, leaving.id));
     expect(row.email).toBe(leaving.email);
 
     const state = await leaving.agent.get("/api/account/deletion");
@@ -358,7 +357,7 @@ describe("erasure completes without purging another controller's records (#217, 
     // Idempotent: a second pass over the same window completes nothing.
     expect(await completeDueAccountDeletions(due)).toBe(0);
 
-    const [row] = await db.select().from(users).where(eq(users.id, leaving.id));
+    const [row] = await ownerDb.select().from(users).where(eq(users.id, leaving.id));
     expect(row.email).not.toBe(leaving.email);
     expect(row.email).toContain(leaving.id);
     expect(row.firstName).toBeNull();
@@ -367,20 +366,20 @@ describe("erasure completes without purging another controller's records (#217, 
     expect(row.isArchived).toBe(true);
 
     // Memberships stay so operational and audit records keep their references.
-    const kept = await db
+    const kept = await ownerDb
       .select({ workspaceId: memberships.workspaceId, archivedAt: memberships.archivedAt })
       .from(memberships)
       .where(eq(memberships.userId, leaving.id));
     expect(kept).toHaveLength(2);
     expect(kept.every((membership) => membership.archivedAt !== null)).toBe(true);
 
-    const [deletion] = await db
+    const [deletion] = await ownerDb
       .select()
       .from(accountDeletions)
       .where(eq(accountDeletions.userId, leaving.id));
     expect(deletion.status).toBe("completed");
 
-    const told = await db
+    const told = await ownerDb
       .select({ userId: notifications.userId, message: notifications.message })
       .from(notifications)
       .where(eq(notifications.userId, owner.id));
@@ -399,7 +398,7 @@ describe("erasure completes without purging another controller's records (#217, 
     await addWorkspaceMembership(parallelOwner.id, parallelId, "owner");
 
     // A Workspace they left long ago is not told, and collects no evidence.
-    await db
+    await ownerDb
       .update(memberships)
       .set({ archivedAt: new Date() })
       .where(and(eq(memberships.userId, leaving.id), eq(memberships.workspaceId, parallelId)));
@@ -413,12 +412,12 @@ describe("erasure completes without purging another controller's records (#217, 
     const due = new Date(new Date(started.body.completesAt).getTime() + 1000);
     expect(await completeDueAccountDeletions(due)).toBe(1);
 
-    const told = await db
+    const told = await ownerDb
       .select({ userId: notifications.userId, workspaceId: notifications.workspaceId })
       .from(notifications);
     expect(told.map((row) => row.workspaceId)).toEqual([SEEDED_WORKSPACE_ID]);
 
-    const evidence = await db
+    const evidence = await ownerDb
       .select({ workspaceId: auditEvents.workspaceId })
       .from(auditEvents)
       .where(eq(auditEvents.resourceId, leaving.id));

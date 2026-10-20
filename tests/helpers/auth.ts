@@ -1,5 +1,6 @@
 import request from "supertest";
 import type { Express } from "express";
+import { getOwnerPool, ownerDb } from "./db";
 
 export type Agent = ReturnType<typeof request.agent>;
 
@@ -131,16 +132,14 @@ export async function setWorkspaceRole(
   userId: string,
   slug: keyof typeof SEEDED_ROLE_IDS
 ): Promise<void> {
-  const { pool } = await import("../../server/db");
-  await pool.query(`UPDATE memberships SET workspace_role_id = $1 WHERE user_id = $2`, [
+  await getOwnerPool().query(`UPDATE memberships SET workspace_role_id = $1 WHERE user_id = $2`, [
     SEEDED_ROLE_IDS[slug],
     userId,
   ]);
 }
 
 async function updateUserRow(userId: string, assignment: string): Promise<void> {
-  const { pool } = await import("../../server/db");
-  await pool.query(`UPDATE users SET ${assignment} WHERE id = $1`, [userId]);
+  await getOwnerPool().query(`UPDATE users SET ${assignment} WHERE id = $1`, [userId]);
 }
 
 /**
@@ -192,11 +191,10 @@ export async function registerPlatformStaff(
   overrides: { email?: string; firstName?: string; lastName?: string; secondFactor?: boolean } = {},
 ): Promise<TestUser & { staffId: string }> {
   const user = await registerUser(app, overrides);
-  const { db } = await import("../../server/db");
   const { platformStaff } = await import("@shared/schema");
   const { issuePlatformStaffSession } = await import("../fakes/clerk");
   const subjectId = `staff_${user.id}`;
-  const [row] = await db
+  const [row] = await ownerDb
     .insert(platformStaff)
     .values({ subjectId, email: user.email, linkedUserId: user.id })
     .returning({ id: platformStaff.id });

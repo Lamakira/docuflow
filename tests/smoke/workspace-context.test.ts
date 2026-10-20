@@ -5,7 +5,7 @@ import {
   workspaceRoles,
   workspaces,
 } from "../../shared/schema";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { makeApp } from "../helpers/app";
 import { registerUser } from "../helpers/auth";
 import { createSeededMember } from "../helpers/workspace";
@@ -23,9 +23,8 @@ import { createSeededMember } from "../helpers/workspace";
 const OTHER_WORKSPACE_ID = "other";
 
 async function plantOtherWorkspace() {
-  const { db } = await import("../../server/db");
-  await db.insert(workspaces).values({ id: OTHER_WORKSPACE_ID, name: "Other" });
-  await db.insert(workspaceRoles).values({
+  await ownerDb.insert(workspaces).values({ id: OTHER_WORKSPACE_ID, name: "Other" });
+  await ownerDb.insert(workspaceRoles).values({
     id: "other-member",
     workspaceId: OTHER_WORKSPACE_ID,
     slug: "member",
@@ -75,7 +74,6 @@ describe("WorkspaceContext", () => {
 
   it("does not let a Membership in Workspace A read Workspace B's rows through storage", async () => {
     const { storage } = await import("../../server/storage");
-    const { db } = await import("../../server/db");
     const { contextFromUser, runWithWorkspaceContext } = await import(
       "../../server/workspaceContext"
     );
@@ -91,8 +89,8 @@ describe("WorkspaceContext", () => {
       email: "other@test.invalid",
       firstName: "Other",
     });
-    await db.delete(memberships).where(eq(memberships.userId, other.id));
-    await db.insert(memberships).values({
+    await ownerDb.delete(memberships).where(eq(memberships.userId, other.id));
+    await ownerDb.insert(memberships).values({
       workspaceId: OTHER_WORKSPACE_ID,
       userId: other.id,
       workspaceRoleId: "other-member",
@@ -123,7 +121,6 @@ describe("WorkspaceContext", () => {
 
   it("does not let Workspace A read, edit or delete Workspace B's Workspace Documents", async () => {
     const { storage } = await import("../../server/storage");
-    const { db } = await import("../../server/db");
     const { contextFromUser, runWithWorkspaceContext } = await import(
       "../../server/workspaceContext"
     );
@@ -133,8 +130,8 @@ describe("WorkspaceContext", () => {
 
     const ada = await createSeededMember({ email: "ada@test.invalid", firstName: "Ada" });
     const other = await createSeededMember({ email: "other@test.invalid", firstName: "Other" });
-    await db.delete(memberships).where(eq(memberships.userId, other.id));
-    await db.insert(memberships).values({
+    await ownerDb.delete(memberships).where(eq(memberships.userId, other.id));
+    await ownerDb.insert(memberships).values({
       workspaceId: OTHER_WORKSPACE_ID,
       userId: other.id,
       workspaceRoleId: "other-member",
@@ -209,8 +206,8 @@ describe("WorkspaceContext", () => {
 
     const ada = await createSeededMember({ email: "ada@test.invalid", firstName: "Ada" });
     const other = await createSeededMember({ email: "other@test.invalid", firstName: "Other" });
-    await db.delete(memberships).where(eq(memberships.userId, other.id));
-    await db.insert(memberships).values({
+    await ownerDb.delete(memberships).where(eq(memberships.userId, other.id));
+    await ownerDb.insert(memberships).values({
       workspaceId: OTHER_WORKSPACE_ID,
       userId: other.id,
       workspaceRoleId: "other-member",
@@ -244,7 +241,6 @@ describe("WorkspaceContext", () => {
     const app = await makeApp();
     const member = await registerUser(app);
     const { storage } = await import("../../server/storage");
-    const { db } = await import("../../server/db");
     const { eq } = await import("drizzle-orm");
 
     const created = await member.agent.post("/api/crm/projects").send({
@@ -263,7 +259,7 @@ describe("WorkspaceContext", () => {
     const afterArchive = await member.agent.get("/api/projects");
     expect(afterArchive.status).toBe(401);
 
-    const [membership] = await db
+    const [membership] = await ownerDb
       .select()
       .from(memberships)
       .where(eq(memberships.userId, member.id));
@@ -291,12 +287,11 @@ describe("WorkspaceContext", () => {
 
   it("falls back to the oldest active Membership, not to the seeded Workspace (#297)", async () => {
     const { storage } = await import("../../server/storage");
-    const { db } = await import("../../server/db");
     const { contextFromUser } = await import("../../server/workspaceContext");
 
     await plantOtherWorkspace();
     const ada = await storage.createUser({ email: "ada@test.invalid", firstName: "Ada" });
-    await db.insert(memberships).values([
+    await ownerDb.insert(memberships).values([
       { workspaceId: SEEDED_WORKSPACE_ID, userId: ada.id, workspaceRoleId: "seeded-member", createdAt: new Date("2026-02-01") },
       { workspaceId: OTHER_WORKSPACE_ID, userId: ada.id, workspaceRoleId: "other-member", createdAt: new Date("2026-01-01") },
     ]);

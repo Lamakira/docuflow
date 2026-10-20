@@ -5,7 +5,7 @@ import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { makeApp } from "../helpers/app";
 import { registerUser, setWorkspaceRole, type Agent, type TestUser } from "../helpers/auth";
 import { loginDevice, type AgentDevice } from "../helpers/agent";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { createCrmProject, createTask } from "../helpers/fixtures";
 import { inSeededWorkspace } from "../helpers/workspace";
 
@@ -21,10 +21,9 @@ const UPGRADE = "plan_upgrade_required";
 type PlanPin = { planKey: string; registryVersion: number };
 
 async function setPlan(pin: PlanPin): Promise<void> {
-  const { db } = await import("../../server/db");
   const { workspaceBilling } = await import("../../shared/schema");
   const { eq } = await import("drizzle-orm");
-  await db
+  await ownerDb
     .update(workspaceBilling)
     .set({ planKey: pin.planKey, registryVersion: pin.registryVersion, billingState: "Active" })
     .where(eq(workspaceBilling.workspaceId, SEEDED_WORKSPACE_ID));
@@ -379,9 +378,8 @@ describe("Starter screenshot capacity", () => {
       clientVersion: "0.1.0",
     });
     expect(allowed.status).toBe(200);
-    const { db } = await import("../../server/db");
     const { timeEntryScreenshots } = await import("../../shared/schema");
-    const [stored] = await db.select().from(timeEntryScreenshots);
+    const [stored] = await ownerDb.select().from(timeEntryScreenshots);
     expect(stored.keyboardActivityPercent).toBeNull();
     await h.device.request.post(`/api/agent/timer/${onChosen.body.id}/stop`);
 

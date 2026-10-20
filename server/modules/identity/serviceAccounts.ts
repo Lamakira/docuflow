@@ -12,6 +12,7 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { capabilities, serviceAccountCapabilities, serviceAccounts } from "@shared/schema";
 import { db } from "../../db";
 import { inWorkspace, runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
+import { workspaceForApiKey } from "../../workspaceLocators";
 
 const KEY_PREFIX = "dfsa_";
 const KEY_BYTES = 32;
@@ -198,11 +199,7 @@ export async function rotateServiceAccountSecret(
 export async function principalContextFromApiKey(
   plaintextKey: string
 ): Promise<PrincipalContext | null> {
-  const [row] = await db
-    .select()
-    .from(serviceAccounts)
-    .where(eq(serviceAccounts.keyHash, hashKey(plaintextKey)))
-    .limit(1);
+  const row = await workspaceForApiKey(hashKey(plaintextKey));
   if (!row || row.revokedAt) return null;
 
   return runWithWorkspaceContext({ workspaceId: row.workspaceId }, async () => {

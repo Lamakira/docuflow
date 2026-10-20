@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { PARALLEL_WORKSPACE_ID, SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { makeApp } from "../helpers/app";
 import { registerUser } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { createClient, createCrmProject, createDocument, createTask, startTimer } from "../helpers/fixtures";
 import { addWorkspaceMembership, plantParallelWorkspace } from "../helpers/workspace";
 
@@ -36,18 +36,17 @@ describe("Active Workspace HTTP (#183)", () => {
   it("lists only active Memberships with Workspace name, Workspace Role, and condition, last Active first", async () => {
     const app = await makeApp();
     const user = await memberInTwoWorkspaces(app);
-    const { db } = await import("../../server/db");
     const { memberships, workspaceBilling, workspaceRoles, workspaces } = await import(
       "../../shared/schema"
     );
-    await db.insert(workspaces).values({ id: "gone", name: "Gone" });
-    await db.insert(workspaceRoles).values({
+    await ownerDb.insert(workspaces).values({ id: "gone", name: "Gone" });
+    await ownerDb.insert(workspaceRoles).values({
       id: "gone-member",
       workspaceId: "gone",
       slug: "member",
       name: "Member",
     });
-    await db.insert(workspaceBilling).values({
+    await ownerDb.insert(workspaceBilling).values({
       workspaceId: "gone",
       planKey: "legacy",
       registryVersion: 1,
@@ -55,7 +54,7 @@ describe("Active Workspace HTTP (#183)", () => {
       purchasedSeatCapacity: 500,
       authorizationVersion: 1,
     });
-    await db.insert(memberships).values({
+    await ownerDb.insert(memberships).values({
       workspaceId: "gone",
       userId: user.id,
       workspaceRoleId: "gone-member",
@@ -167,23 +166,22 @@ describe("Active Workspace HTTP (#183)", () => {
   it("names Trial, Read-only, and Past due on the Membership they belong to", async () => {
     const app = await makeApp();
     const user = await memberInTwoWorkspaces(app);
-    const { db } = await import("../../server/db");
     const { eq } = await import("drizzle-orm");
     const { workspaceBilling } = await import("../../shared/schema");
 
-    await db
+    await ownerDb
       .update(workspaceBilling)
       .set({ billingState: "Trialing" })
       .where(eq(workspaceBilling.workspaceId, PARALLEL_WORKSPACE_ID));
     expect(await conditionOf(user, PARALLEL_WORKSPACE_ID)).toBe("Trial");
 
-    await db
+    await ownerDb
       .update(workspaceBilling)
       .set({ billingState: "PastDue" })
       .where(eq(workspaceBilling.workspaceId, PARALLEL_WORKSPACE_ID));
     expect(await conditionOf(user, PARALLEL_WORKSPACE_ID)).toBe("Past due");
 
-    await db
+    await ownerDb
       .update(workspaceBilling)
       .set({ billingState: "ReadOnly" })
       .where(eq(workspaceBilling.workspaceId, PARALLEL_WORKSPACE_ID));

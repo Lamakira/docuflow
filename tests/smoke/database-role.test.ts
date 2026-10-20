@@ -1,60 +1,80 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import pg from "pg";
-import { resolveTestDatabaseUrl } from "../test-db-url";
-import { withClient } from "../helpers/db";
+import { TEST_APP_ROLE, resolveTestAppDatabaseUrl, resolveTestDatabaseUrl } from "../test-db-url";
 
 /**
  * #297: row-level security only backs up query scoping when the runtime role is
- * subject to it. The role `DATABASE_URL` connects as is checked; production
- * refuses a role that bypasses RLS, development and test warn. The test
- * database is reached as its owner, which is exactly the bypass case.
+ * subject to it. The role the server connects as is checked; production and
+ * test refuse a role that bypasses RLS, and so does development unless
+ * DOCUFLOW_ALLOW_OWNER_DB=1 (#323), which only warns. The harness runs the
+ * server as docuflow_app (`global-setup.ts` sets its password), so the bypass
+ * case is the test database reached as its owner.
  */
 
-const APP_ROLE = "docuflow_app";
-const APP_PASSWORD = "rls-harness";
+const APP_ROLE = TEST_APP_ROLE;
 
 function urlAsAppRole(): string {
-  const url = new URL(resolveTestDatabaseUrl());
-  url.username = APP_ROLE;
-  url.password = APP_PASSWORD;
-  return url.toString();
+  return resolveTestAppDatabaseUrl();
+}
+
+function ownerPool(): pg.Pool {
+  return new pg.Pool({ connectionString: resolveTestDatabaseUrl() });
 }
 
 describe("runtime database role check", () => {
-  beforeAll(async () => {
-    await withClient(resolveTestDatabaseUrl(), (client) =>
-      client.query(`ALTER ROLE ${APP_ROLE} WITH PASSWORD '${APP_PASSWORD}'`)
-    );
-  });
-
-  it("refuses to boot in production on a role that bypasses RLS", async () => {
-    const { pool } = await import("../../server/db");
+  it("refuses to boot on a role that bypasses RLS", async () => {
+    const pool = ownerPool();
     const { RlsBypassRoleError, assertRuntimeRoleEnforcesRls } = await import(
       "../../server/databaseRole"
     );
-
-    const refused = assertRuntimeRoleEnforcesRls({ pool, production: true });
-    await expect(refused).rejects.toBeInstanceOf(RlsBypassRoleError);
-    await expect(refused).rejects.toThrow(/SUPERUSER/);
+    try {
+      const refused = assertRuntimeRoleEnforcesRls({ pool, refuse: true });
+      await expect(refused).rejects.toBeInstanceOf(RlsBypassRoleError);
+      await expect(refused).rejects.toThrow(/SUPERUSER/);
+    } finally {
+      await pool.end();
+    }
   });
 
-  it("only warns outside production, so development and test still start", async () => {
-    const { pool } = await import("../../server/db");
+  it("tells a developer what to do locally, and production what to point at", async () => {
+    const { RlsBypassRoleError } = await import("../../server/databaseRole");
+    const role = { name: "postgres", superuser: true, bypassRls: true, rowSecurityActive: false };
+
+    const local = new RlsBypassRoleError(role, { development: true }).message;
+    expect(local).toContain("DATABASE_APP_URL=postgresql://docuflow_app:docuflow_app_dev@localhost:5434/docuflow_dev");
+    expect(local).toContain("npm run db:app-role");
+    expect(local).toContain("DOCUFLOW_ALLOW_OWNER_DB=1");
+
+    const production = new RlsBypassRoleError(role).message;
+    expect(production).toContain("Point DATABASE_APP_URL (or DATABASE_URL) at docuflow_app");
+    expect(production).not.toContain("db:app-role");
+  });
+
+  it("only warns when refusing is off (development with DOCUFLOW_ALLOW_OWNER_DB=1)", async () => {
+    const pool = ownerPool();
     const { assertRuntimeRoleEnforcesRls } = await import("../../server/databaseRole");
     const warn = vi.fn();
+    try {
+      const role = await assertRuntimeRoleEnforcesRls({ pool, refuse: false, warn });
 
-    const role = await assertRuntimeRoleEnforcesRls({ pool, production: false, warn });
-
-    expect(role.superuser).toBe(true);
-    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/bypasses row-level security/));
+      expect(role.superuser).toBe(true);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/bypasses row-level security/));
+    } finally {
+      await pool.end();
+    }
   });
 
-  it("boots in production as docuflow_app, which RLS applies to", async () => {
+  it("runs the server under test as docuflow_app", async () => {
+    const { verifyRuntimeRole } = await import("../../server/db");
+    await expect(verifyRuntimeRole()).resolves.toMatchObject({ name: APP_ROLE, rowSecurityActive: true });
+  });
+
+  it("boots where it refuses as docuflow_app, which RLS applies to", async () => {
     const { assertRuntimeRoleEnforcesRls } = await import("../../server/databaseRole");
     const pool = new pg.Pool({ connectionString: urlAsAppRole() });
     const warn = vi.fn();
     try {
-      await expect(assertRuntimeRoleEnforcesRls({ pool, production: true, warn })).resolves.toEqual({
+      await expect(assertRuntimeRoleEnforcesRls({ pool, refuse: true, warn })).resolves.toEqual({
         name: APP_ROLE,
         superuser: false,
         bypassRls: false,
@@ -77,7 +97,7 @@ describe("runtime database role check", () => {
       }),
     };
 
-    const refused = assertRuntimeRoleEnforcesRls({ pool: owner, production: true });
+    const refused = assertRuntimeRoleEnforcesRls({ pool: owner, refuse: true });
     await expect(refused).rejects.toBeInstanceOf(RlsBypassRoleError);
     await expect(refused).rejects.toThrow(/owns the Workspace-owned tables/);
   });
@@ -89,17 +109,11 @@ describe("runtime database role check", () => {
  * first query, and nothing reaches the database until the check passes.
  */
 describe("runtime role gate on first use", () => {
-  beforeAll(async () => {
-    await withClient(resolveTestDatabaseUrl(), (client) =>
-      client.query(`ALTER ROLE ${APP_ROLE} WITH PASSWORD '${APP_PASSWORD}'`)
-    );
-  });
-
-  it("fails every query and checkout in production on a role that bypasses RLS", async () => {
+  it("fails every query and checkout where it refuses on a role that bypasses RLS", async () => {
     const { RlsBypassRoleError, gateOnRuntimeRole } = await import("../../server/databaseRole");
     const pool = new pg.Pool({ connectionString: resolveTestDatabaseUrl() });
     try {
-      gateOnRuntimeRole(pool, { production: true });
+      gateOnRuntimeRole(pool, { refuse: true });
       await expect(pool.query("SELECT 1")).rejects.toBeInstanceOf(RlsBypassRoleError);
       await expect(pool.connect()).rejects.toBeInstanceOf(RlsBypassRoleError);
     } finally {
@@ -107,11 +121,11 @@ describe("runtime role gate on first use", () => {
     }
   });
 
-  it("lets queries and checkouts through in production as docuflow_app", async () => {
+  it("lets queries and checkouts through where it refuses as docuflow_app", async () => {
     const { gateOnRuntimeRole } = await import("../../server/databaseRole");
     const pool = new pg.Pool({ connectionString: urlAsAppRole() });
     try {
-      gateOnRuntimeRole(pool, { production: true });
+      gateOnRuntimeRole(pool, { refuse: true });
       await expect(pool.query("SELECT 1 AS one")).resolves.toMatchObject({ rows: [{ one: 1 }] });
       const client = await pool.connect();
       client.release();
@@ -141,7 +155,7 @@ describe("runtime role gate on first use", () => {
     };
     const warn = vi.fn();
 
-    const verify = gateOnRuntimeRole(pool, { production: true });
+    const verify = gateOnRuntimeRole(pool, { refuse: true });
     await expect(checkRuntimeRoleAtBoot(verify, warn)).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/not checked at boot.*ECONNREFUSED/));
     await expect(pool.query("SELECT 1")).rejects.toThrow(/ECONNREFUSED/);
@@ -159,7 +173,7 @@ describe("runtime role gate on first use", () => {
     );
     const pool = new pg.Pool({ connectionString: resolveTestDatabaseUrl() });
     try {
-      const verify = gateOnRuntimeRole(pool, { production: true });
+      const verify = gateOnRuntimeRole(pool, { refuse: true });
       await expect(checkRuntimeRoleAtBoot(verify, vi.fn())).rejects.toBeInstanceOf(RlsBypassRoleError);
     } finally {
       await pool.end();

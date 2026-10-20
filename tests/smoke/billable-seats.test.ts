@@ -170,7 +170,7 @@ describe("purchased seat capacity floor", () => {
 
     const { db } = await import("../../server/db");
     const { auditEvents, jobs } = await import("../../shared/schema");
-    const events = await inSeededWorkspace(() => db.select().from(auditEvents));
+    const events = await inSeededWorkspace(async () => await db.select().from(auditEvents));
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

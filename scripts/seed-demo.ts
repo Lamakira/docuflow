@@ -412,14 +412,15 @@ function argValue(flag: string): string | undefined {
 if (isEntryPoint(import.meta.url)) {
   const workspace = argValue("--workspace") ?? "User's Workspace";
   const undo = process.argv.includes("--undo");
-  const url = process.env.DATABASE_URL ?? "";
+  // The connection openDb() will make: the owner's.
+  const url = process.env.DATABASE_MIGRATE_URL ?? process.env.DATABASE_URL ?? "";
 
   if (!isLocalDatabase(url)) {
     console.error("seed-demo refuses a database that is not local.");
     console.error("It writes Clients and Projects that never happened; that belongs on a demo machine only.");
     process.exitCode = 1;
   } else {
-    const { db, close } = openDb();
+    const { db, close } = openDb(url);
     seedDemo(db, { workspace, undo }, (message) => console.log(message))
       .catch((error: unknown) => {
         console.error(error instanceof Error ? error.message : error);

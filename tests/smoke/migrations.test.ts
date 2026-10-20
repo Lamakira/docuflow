@@ -102,8 +102,11 @@ describe("migration journal", () => {
       client.query("CREATE EXTENSION IF NOT EXISTS vector")
     );
 
+    // The harness sets DATABASE_APP_URL (the server runs as docuflow_app, #323),
+    // and it outranks DATABASE_URL: push needs the owner, so it is dropped here.
+    const { DATABASE_APP_URL: _app, ...pushEnv } = process.env;
     execFileSync("npx", ["drizzle-kit", "push", "--force"], {
-      env: { ...process.env, DATABASE_URL: urlForDatabase(SCRATCH_DB) },
+      env: { ...pushEnv, DATABASE_URL: urlForDatabase(SCRATCH_DB) },
       stdio: "pipe",
     });
   }, 120_000);
@@ -239,6 +242,7 @@ describe("migration journal", () => {
       "0038_boring_gamma_corps",
       "0039_platform_staff_access",
       "0040_back_office",
+      "0041_workspace_locators",
     ]);
     const ledger = await withClient(scratch, (client) =>
       client.query<{ version: string; baselined: boolean }>(
@@ -287,6 +291,7 @@ describe("migration journal", () => {
       { version: "0038_boring_gamma_corps", baselined: false },
       { version: "0039_platform_staff_access", baselined: false },
       { version: "0040_back_office", baselined: false },
+      { version: "0041_workspace_locators", baselined: false },
     ]);
   });
 

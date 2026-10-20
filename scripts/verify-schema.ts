@@ -27,7 +27,7 @@
  */
 
 import pg from "pg";
-import { maskDatabaseUrl, requireDatabaseUrl } from "../shared/databaseUrl";
+import { maskDatabaseUrl, requireMigrateDatabaseUrl } from "../shared/databaseUrl";
 import { flagValue } from "./lib/args";
 import { isEntryPoint } from "./lib/entrypoint";
 import { describeSchema, diffSchemas, formatDifferences, type SchemaDifference } from "./lib/schemaSnapshot";
@@ -70,8 +70,8 @@ function parseArgs(argv: string[]): Options {
   // Both default to the configured database: bare `db:verify` audits your own,
   // building the reference alongside it.
   return {
-    against: valueOf("--against") ?? requireDatabaseUrl(),
-    reference: valueOf("--reference") ?? requireDatabaseUrl(),
+    against: valueOf("--against") ?? requireMigrateDatabaseUrl(),
+    reference: valueOf("--reference") ?? requireMigrateDatabaseUrl(),
   };
 }
 

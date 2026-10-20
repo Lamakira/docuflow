@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { resetDb } from "../helpers/db";
+import { resetDb, getOwnerPool } from "../helpers/db";
 import { FakeIdentityProvider } from "../fakes/identityProvider";
 import type {
   ImportableUser,
@@ -227,7 +227,7 @@ describe("User import against the database", () => {
     const { createUnlinkedUser, signIn } = await import("../helpers/auth");
     const { loginDevice } = await import("../helpers/agent");
     const { storage } = await import("../../server/storage");
-    const { pool } = await import("../../server/db");
+    const pool = getOwnerPool();
     const { importUsersIntoIdentityProvider } = await import(
       "../../server/modules/identity/userImport"
     );

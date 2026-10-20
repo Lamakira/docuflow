@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
-import { resetDb } from "../helpers/db";
+import { getOwnerPool, resetDb } from "../helpers/db";
 import { registerAdmin, registerUser } from "../helpers/auth";
 import { createClient } from "../helpers/fixtures";
 
@@ -41,9 +41,9 @@ function send(options: Option[]): string[] {
   return options.map((option) => JSON.stringify(option));
 }
 
+/** The owner pool: these reads are about database state, and the DDL needs the owner (#323). */
 async function db() {
-  const { pool } = await import("../../server/db");
-  return pool;
+  return getOwnerPool();
 }
 
 async function projectWithStatus(agent: any, status: string): Promise<string> {

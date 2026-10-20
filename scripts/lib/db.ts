@@ -14,7 +14,7 @@
 
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { requireDatabaseUrl } from "../../shared/databaseUrl";
+import { requireMigrateDatabaseUrl } from "../../shared/databaseUrl";
 import * as schema from "../../shared/schema";
 
 export type ScriptDb = ReturnType<typeof drizzle<typeof schema>>;
@@ -25,8 +25,14 @@ export type ScriptDb = ReturnType<typeof drizzle<typeof schema>>;
  */
 export type Report = (message: string) => void;
 
-/** Opens a pool for one script run. The caller closes it. */
-export function openDb(url: string = requireDatabaseUrl()): {
+/**
+ * Opens a pool for one script run. The caller closes it.
+ *
+ * Operator scripts connect as the owner (`DATABASE_MIGRATE_URL`, else
+ * `DATABASE_URL`), never as `docuflow_app`: they read and write across
+ * Workspaces with no `app.workspace_id`, which row-level security would hide.
+ */
+export function openDb(url: string = requireMigrateDatabaseUrl()): {
   db: ScriptDb;
   close: () => Promise<void>;
 } {

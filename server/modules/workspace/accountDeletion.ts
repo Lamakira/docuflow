@@ -20,7 +20,8 @@ import {
   workspaces,
 } from "@shared/schema";
 import { db } from "../../db";
-import { runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
+import { forWorkspaces, runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
+import { membershipsForUser } from "../../workspaceLocators";
 
 /** `[Grace duration is a product decision — 30 days is the value in use.]` */
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
@@ -81,54 +82,51 @@ function displayName(row: { firstName: string | null; lastName: string | null; e
 }
 
 async function ownedWorkspaces(userId: string): Promise<OwnedWorkspaceView[]> {
-  const owned = await db
-    .select({ workspaceId: memberships.workspaceId, workspaceName: workspaces.name })
-    .from(memberships)
-    .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
-    .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
-    .where(
-      and(
-        eq(memberships.userId, userId),
-        isNull(memberships.archivedAt),
-        eq(workspaceRoles.slug, "owner"),
-      ),
-    )
-    .orderBy(asc(workspaces.name));
-  if (owned.length === 0) return [];
+  const active = (await membershipsForUser(userId)).filter((row) => row.archivedAt === null);
 
-  const colleagues = await db
-    .select({
-      workspaceId: memberships.workspaceId,
-      userId: users.id,
-      firstName: users.firstName,
-      lastName: users.lastName,
-      email: users.email,
-    })
-    .from(memberships)
-    .innerJoin(users, eq(users.id, memberships.userId))
-    .where(
-      and(
-        inArray(
-          memberships.workspaceId,
-          owned.map((row) => row.workspaceId),
-        ),
-        ne(memberships.userId, userId),
-        isNull(memberships.archivedAt),
-      ),
-    )
-    .orderBy(asc(users.firstName), asc(users.lastName), asc(users.email));
+  // Role, name and colleagues are read Workspace by Workspace: RLS hides the
+  // rest (#323).
+  const perWorkspace = await forWorkspaces(
+    active.map((row) => ({ id: row.workspaceId, workspaceRoleId: row.workspaceRoleId })),
+    async (ref): Promise<OwnedWorkspaceView | null> => {
+      const [owned] = await db
+        .select({ workspaceName: workspaces.name })
+        .from(workspaces)
+        .innerJoin(workspaceRoles, eq(workspaceRoles.id, ref.workspaceRoleId))
+        .where(and(eq(workspaces.id, ref.id), eq(workspaceRoles.slug, "owner")))
+        .limit(1);
+      if (!owned) return null;
 
-  return owned.map((workspace) => {
-    const members = colleagues
-      .filter((row) => row.workspaceId === workspace.workspaceId)
-      .map((row) => ({ userId: row.userId, name: displayName(row) }));
-    return {
-      workspaceId: workspace.workspaceId,
-      workspaceName: workspace.workspaceName,
-      otherActiveMembers: members.length,
-      members,
-    };
-  });
+      const colleagues = await db
+        .select({
+          userId: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+        })
+        .from(memberships)
+        .innerJoin(users, eq(users.id, memberships.userId))
+        .where(
+          and(
+            eq(memberships.workspaceId, ref.id),
+            ne(memberships.userId, userId),
+            isNull(memberships.archivedAt),
+          ),
+        )
+        .orderBy(asc(users.firstName), asc(users.lastName), asc(users.email));
+      const members = colleagues.map((row) => ({ userId: row.userId, name: displayName(row) }));
+      return {
+        workspaceId: ref.id,
+        workspaceName: owned.workspaceName,
+        otherActiveMembers: members.length,
+        members,
+      };
+    },
+  );
+
+  return perWorkspace
+    .filter((view): view is OwnedWorkspaceView => view !== null)
+    .sort((a, b) => a.workspaceName.localeCompare(b.workspaceName));
 }
 
 async function pendingDeletion(userId: string) {
@@ -212,8 +210,8 @@ async function recordAcrossWorkspaces(
   // RLS-scoped, and a write with no `app.workspace_id` fails closed once the
   // application role is in use (migration 0010).
   for (const workspaceId of workspaceIds) {
-    await runWithWorkspaceContext({ workspaceId }, () =>
-      db.insert(auditEvents).values(
+    await runWithWorkspaceContext({ workspaceId }, async () => {
+      await db.insert(auditEvents).values(
         stampWorkspace({
           actorKind: "user" as const,
           actorId: userId,
@@ -222,8 +220,8 @@ async function recordAcrossWorkspaces(
           resourceId: userId,
           payload,
         }),
-      ),
-    );
+      );
+    });
   }
 }
 
@@ -233,10 +231,7 @@ async function recordAcrossWorkspaces(
  * collects no evidence of it.
  */
 async function activeWorkspaceIds(userId: string): Promise<string[]> {
-  const rows = await db
-    .select({ workspaceId: memberships.workspaceId })
-    .from(memberships)
-    .where(and(eq(memberships.userId, userId), isNull(memberships.archivedAt)));
+  const rows = (await membershipsForUser(userId)).filter((row) => row.archivedAt === null);
   return [...new Set(rows.map((row) => row.workspaceId))];
 }
 
@@ -334,32 +329,29 @@ async function eraseAccount(userId: string, requestId: string, now: Date): Promi
 async function notifyAffectedWorkspaces(userId: string, workspaceIds: string[]): Promise<void> {
   if (workspaceIds.length === 0) return;
 
-  const responsible = await db
-    .select({ userId: memberships.userId, workspaceId: memberships.workspaceId })
-    .from(memberships)
-    .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
-    .where(
-      and(
-        inArray(memberships.workspaceId, workspaceIds),
-        isNull(memberships.archivedAt),
-        ne(memberships.userId, userId),
-        inArray(workspaceRoles.slug, ["owner", "administrator"]),
-      ),
-    );
-  if (responsible.length === 0) return;
-
   for (const workspaceId of workspaceIds) {
-    const recipients = responsible.filter((row) => row.workspaceId === workspaceId);
-    if (recipients.length === 0) continue;
-    await runWithWorkspaceContext({ workspaceId }, () =>
-      db.insert(notifications).values(
+    await runWithWorkspaceContext({ workspaceId }, async () => {
+      const recipients = await db
+        .select({ userId: memberships.userId })
+        .from(memberships)
+        .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
+        .where(
+          and(
+            eq(memberships.workspaceId, workspaceId),
+            isNull(memberships.archivedAt),
+            ne(memberships.userId, userId),
+            inArray(workspaceRoles.slug, ["owner", "administrator"]),
+          ),
+        );
+      if (recipients.length === 0) return;
+      await db.insert(notifications).values(
         recipients.map((row) => ({
           ...stampWorkspace({ type: "account_deleted" }),
           userId: row.userId,
           message:
             "A Member deleted their DocuFlow account. Their recorded time, Activity Evidence, and Daily Updates stay in this Workspace under a pseudonym.",
         })),
-      ),
-    );
+      );
+    });
   }
 }

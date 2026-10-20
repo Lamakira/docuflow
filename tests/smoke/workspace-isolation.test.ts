@@ -10,7 +10,7 @@ import {
 import { db } from "../../server/db";
 import { runWithWorkspaceContext, stampWorkspace } from "../../server/workspaceContext";
 import { makeApp } from "../helpers/app";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { newAgent, promoteToAdmin, registerPlatformStaff, registerUser, type TestUser } from "../helpers/auth";
 import { loginDevice, PNG_1X1 } from "../helpers/agent";
 import { createCrmProject, createDocument, createTask, startTimer, tiptap } from "../helpers/fixtures";
@@ -189,8 +189,8 @@ describe("Workspace isolation (#297)", () => {
     const b = await memberOfB(app);
     const theirs = legacyPrivateObject(b.id);
     const ours = legacyPrivateObject(a.id);
-    await runWithWorkspaceContext({ workspaceId: PARALLEL_WORKSPACE_ID }, () =>
-      db.insert(companyDocuments).values(
+    await runWithWorkspaceContext({ workspaceId: PARALLEL_WORKSPACE_ID }, async () =>
+      await db.insert(companyDocuments).values(
         stampWorkspace({ name: "Zebra legacy", uploadedById: b.id, storagePath: theirs })
       )
     );
@@ -282,7 +282,7 @@ describe("platform archive and restore (#297)", () => {
   });
 
   async function membershipsOf(userId: string) {
-    const rows = await db
+    const rows = await ownerDb
       .select({ workspaceId: memberships.workspaceId, archivedAt: memberships.archivedAt })
       .from(memberships)
       .where(eq(memberships.userId, userId));
@@ -333,7 +333,7 @@ describe("the people a Workspace lists (#297)", () => {
     expect(created.status).toBe(201);
     const workspaceId: string = created.body.workspaceId;
 
-    const held = await db
+    const held = await ownerDb
       .select({ userId: memberships.userId })
       .from(memberships)
       .where(eq(memberships.workspaceId, workspaceId));
@@ -363,7 +363,7 @@ describe("the people a Workspace lists (#297)", () => {
     const admin = await registerUser(app, { firstName: "Ann" });
     await promoteToAdmin(admin.id);
     const leaver = await registerUser(app, { firstName: "Lee" });
-    await db
+    await ownerDb
       .update(memberships)
       .set({ archivedAt: new Date() })
       .where(and(eq(memberships.userId, leaver.id), eq(memberships.workspaceId, SEEDED_WORKSPACE_ID)));

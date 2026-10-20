@@ -288,6 +288,13 @@
       "when": 1791203932856,
       "tag": "0040_back_office",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792508803000,
+      "tag": "0041_workspace_locators",
+      "breakpoints": true
     }
   ]
 }

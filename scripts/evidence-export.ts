@@ -35,7 +35,7 @@ import { spawnSync } from "node:child_process";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { requireDatabaseUrl } from "../shared/databaseUrl";
+import { requireMigrateDatabaseUrl } from "../shared/databaseUrl";
 import { flagValue } from "./lib/args";
 import { isEntryPoint } from "./lib/entrypoint";
 
@@ -338,7 +338,7 @@ async function main(argv: string[]): Promise<number> {
     const lockUntil = retainUntil(at, retainDays);
     const exportKey = readExportKey(process.env.EVIDENCE_EXPORT_KEY);
 
-    const plaintext = await runPgDump(requireDatabaseUrl());
+    const plaintext = await runPgDump(requireMigrateDatabaseUrl());
     const ciphertext = encrypt(plaintext, exportKey);
     const manifest = buildExportManifest({ takenAt: at, plaintext, ciphertext, retainDays });
 

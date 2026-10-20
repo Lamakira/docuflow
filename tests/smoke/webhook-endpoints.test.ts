@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { webhookEndpoints } from "../../shared/schema";
 import { inSeededWorkspace } from "../helpers/workspace";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 
 /**
  * Phase 7 ticket #129: Workspace owns Webhook Endpoint. Delivery (#130) is
@@ -20,7 +20,6 @@ describe("Webhook Endpoints (Workspace)", () => {
     const { createWebhookEndpoint, listWebhookEndpoints } = await import(
       "../../server/modules/workspace"
     );
-    const { db } = await import("../../server/db");
 
     const created = await inSeededWorkspace(() =>
       createWebhookEndpoint({
@@ -50,7 +49,7 @@ describe("Webhook Endpoints (Workspace)", () => {
     expect(listed[0]).not.toHaveProperty("plaintextSecret");
     expect(listed[0]).not.toHaveProperty("hmacSecret");
 
-    const [stored] = await db.select().from(webhookEndpoints);
+    const [stored] = await ownerDb.select().from(webhookEndpoints);
     expect(stored.id).toBe(created.id);
     expect(stored.hmacSecret).toBe(created.plaintextSecret);
   });
@@ -120,10 +119,9 @@ describe("Webhook Endpoints (Workspace)", () => {
       "../../server/modules/workspace"
     );
     const { workspaces } = await import("../../shared/schema");
-    const { db } = await import("../../server/db");
     const { WebhookEndpointNotFoundError } = await import("../../server/modules/workspace");
 
-    await db.insert(workspaces).values({ id: "other", name: "Other" });
+    await ownerDb.insert(workspaces).values({ id: "other", name: "Other" });
 
     const theirs = await runWithWorkspaceContext({ workspaceId: "other" }, () =>
       createWebhookEndpoint({

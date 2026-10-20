@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { invitations, PARALLEL_WORKSPACE_ID } from "../../shared/schema";
-import { db } from "../../server/db";
 import { issueClerkSession } from "../fakes/clerk";
 import { emailsTo } from "../fakes/resend";
 import { makeApp } from "../helpers/app";
 import { newAgent, registerUser, setWorkspaceRole, uniqueEmail } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { addWorkspaceMembership, plantParallelWorkspace } from "../helpers/workspace";
 
 /**
@@ -190,7 +189,7 @@ describe("Workspace Invitations HTTP (#211)", () => {
       workspaceRole: "MEMBER",
     });
     const expiredToken = emailsTo(expiredInvite.body.email)[0]?.html.match(/\/invitations\/([a-f0-9]+)/i)?.[1];
-    await db
+    await ownerDb
       .update(invitations)
       .set({ expiresAt: new Date(Date.now() - 1000) })
       .where(eq(invitations.id, expiredInvite.body.id));

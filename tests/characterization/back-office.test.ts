@@ -15,7 +15,7 @@ import {
   setWorkspaceRole,
 } from "../helpers/auth";
 import { createCrmProject, createDocument, createTask, startTimer } from "../helpers/fixtures";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { inSeededWorkspace, plantParallelWorkspace } from "../helpers/workspace";
 import { FakeBillingProvider } from "../fakes/billingProvider";
 import { subscriptionUpdateCalls } from "../fakes/stripe";
@@ -47,16 +47,16 @@ type PinValues = Partial<typeof workspaceBilling.$inferInsert>;
 async function patchPin(values: PinValues, workspaceId = SEEDED): Promise<void> {
   const { db } = await import("../../server/db");
   const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
-  await runWithWorkspaceContext({ workspaceId }, () =>
-    db.update(workspaceBilling).set(values).where(eq(workspaceBilling.workspaceId, workspaceId)),
+  await runWithWorkspaceContext({ workspaceId }, async () =>
+    await db.update(workspaceBilling).set(values).where(eq(workspaceBilling.workspaceId, workspaceId)),
   );
 }
 
 async function pinOf(workspaceId = SEEDED) {
   const { db } = await import("../../server/db");
   const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
-  const [row] = await runWithWorkspaceContext({ workspaceId }, () =>
-    db.select().from(workspaceBilling).where(eq(workspaceBilling.workspaceId, workspaceId)),
+  const [row] = await runWithWorkspaceContext({ workspaceId }, async () =>
+    await db.select().from(workspaceBilling).where(eq(workspaceBilling.workspaceId, workspaceId)),
   );
   return row;
 }
@@ -64,15 +64,15 @@ async function pinOf(workspaceId = SEEDED) {
 async function auditCount(workspaceId = SEEDED): Promise<number> {
   const { db } = await import("../../server/db");
   const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
-  const [row] = await runWithWorkspaceContext({ workspaceId }, () => db.select({ n: count() }).from(auditEvents));
+  const [row] = await runWithWorkspaceContext({ workspaceId }, async () => await db.select({ n: count() }).from(auditEvents));
   return Number(row.n);
 }
 
 async function auditActions(workspaceId = SEEDED) {
   const { db } = await import("../../server/db");
   const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
-  return runWithWorkspaceContext({ workspaceId }, () =>
-    db
+  return runWithWorkspaceContext({ workspaceId }, async () =>
+    await db
       .select({
         action: auditEvents.action,
         actorKind: auditEvents.actorKind,
@@ -87,8 +87,8 @@ async function auditActions(workspaceId = SEEDED) {
 async function entitlementsChangedEvents(workspaceId = SEEDED) {
   const { db } = await import("../../server/db");
   const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
-  return runWithWorkspaceContext({ workspaceId }, () =>
-    db.select().from(outboxEvents).where(eq(outboxEvents.type, "billing.entitlements_changed")),
+  return runWithWorkspaceContext({ workspaceId }, async () =>
+    await db.select().from(outboxEvents).where(eq(outboxEvents.type, "billing.entitlements_changed")),
   );
 }
 
@@ -877,8 +877,8 @@ describe("Support Requests", () => {
     expect(changed?.payload).toEqual({ from: "open", to: "in_progress" });
 
     const { db } = await import("../../server/db");
-    const notices = await inSeededWorkspace(() =>
-      db
+    const notices = await inSeededWorkspace(async () =>
+      await db
         .select({ userId: notifications.userId, message: notifications.message })
         .from(notifications)
         .where(eq(notifications.type, "support_request_status")),
@@ -917,11 +917,11 @@ describe("Support Requests", () => {
       ).status,
     ).toBe(404);
 
-    const stored = await inSeededWorkspace(() =>
-      db.select({ status: supportRequests.status }).from(supportRequests).where(eq(supportRequests.id, sent.body.id)),
+    const stored = await inSeededWorkspace(async () =>
+      await db.select({ status: supportRequests.status }).from(supportRequests).where(eq(supportRequests.id, sent.body.id)),
     );
     expect(stored).toEqual([{ status: "in_progress" }]);
-    const entries = await inSeededWorkspace(() => db.select().from(supportRequestEntries));
+    const entries = await inSeededWorkspace(async () => await db.select().from(supportRequestEntries));
     expect(entries).toEqual([]);
   });
 });
@@ -965,14 +965,13 @@ describe("platform statistics", () => {
   it("counts a sign-in toward a Workspace only through an active Membership", async () => {
     const { app } = await seededOwner();
     const staff = await registerPlatformStaff(app);
-    const { db } = await import("../../server/db");
     const { memberships, users } = await import("@shared/schema");
-    await db.update(users).set({ lastLoginAt: new Date() });
+    await ownerDb.update(users).set({ lastLoginAt: new Date() });
 
     const active = await staff.agent.get("/api/platform/stats");
     expect(active.body.growth).toMatchObject({ activeWorkspaces7d: 1, activeWorkspaces30d: 1 });
 
-    await db.update(memberships).set({ archivedAt: new Date() });
+    await ownerDb.update(memberships).set({ archivedAt: new Date() });
     const archived = await staff.agent.get("/api/platform/stats");
     expect(archived.body.growth).toMatchObject({ activeWorkspaces7d: 0, activeWorkspaces30d: 0 });
   });

@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
  */
 
 import { makeApp } from "../helpers/app";
-import { resetDb } from "../helpers/db";
+import { resetDb, getOwnerPool } from "../helpers/db";
 import { registerUser } from "../helpers/auth";
 import { createCrmProject, createTask, startTimer } from "../helpers/fixtures";
 
@@ -21,7 +21,7 @@ beforeEach(async () => {
 
 describe("cookie sessions are unmounted (#162)", () => {
   it("has no sessions table in a database migrated through the journal", async () => {
-    const { pool } = await import("../../server/db");
+    const pool = getOwnerPool();
     const { rows } = await pool.query<{ tablename: string }>(
       `SELECT tablename
          FROM pg_tables
@@ -40,7 +40,7 @@ describe("cookie sessions are unmounted (#162)", () => {
 
     await startTimer(user.agent, crmProject.id, task.id);
 
-    const { pool } = await import("../../server/db");
+    const pool = getOwnerPool();
     const { rows } = await pool.query<{ origin: string }>(
       `SELECT origin FROM timer_commands WHERE user_id = $1 AND kind = 'start'`,
       [user.id]
