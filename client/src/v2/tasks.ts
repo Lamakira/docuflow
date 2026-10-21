@@ -72,8 +72,12 @@ export type ProjectTasksModel = {
   projectsEmpty: boolean;
   /** `none`: no Project yet; `filtered`: the search hides every Project (#325). */
   projectsEmptyState: EmptyModel | null;
+  /** The Workspace has no Project and no search is on: one full-width designed state, not two panes (#325). */
+  noProjects: boolean;
   selectedProjectName: string | null;
   chooseCopy: string;
+  /** Whether the right pane asks for a Project: not while the list shows none. */
+  showChoose: boolean;
   canWrite: boolean;
   refusal: string | null;
   active: { rows: TaskManagerRow[]; empty: boolean; emptyState: EmptyModel | null };
@@ -120,8 +124,10 @@ export function composeProjectTasks(input: ProjectTasksInput): ProjectTasksModel
         ? "Tasks hang from Projects."
         : "Tasks hang from Projects. Create a Project, then add its Tasks here.",
     }),
+    noProjects: input.projects.length === 0 && !needle,
     selectedProjectName: selected ? fullProjectName(selected) : null,
     chooseCopy: "Choose a Project to read and manage its Tasks.",
+    showChoose: projects.length > 0,
     canWrite: !input.readOnly,
     refusal: input.readOnly
       ? chromeRefusal({

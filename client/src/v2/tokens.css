@@ -709,6 +709,11 @@
   flex: none;
 }
 
+/* An inline link inside running copy keeps the copy's size. */
+.df-empty .df-cta {
+  font-size: inherit;
+}
+
 button.df-cta {
   background: transparent;
   border: 0;

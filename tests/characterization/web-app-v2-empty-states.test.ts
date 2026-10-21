@@ -228,10 +228,10 @@ describe("Time Tracking", () => {
     const allowed = composeTimeTracking({ ...base, canCreateProject: true });
     expect(allowed.emptyState?.copy).toContain("a Project has to exist first");
     expect(allowed.emptyAction).toEqual({ label: "New Project", href: "/projects?new=1" });
-    expect(allowed.timerHint).toEqual({ copy: "Create a Project to start tracking.", href: "/projects?new=1" });
+    expect(allowed.timerHint).toEqual({ copy: "Create a Project to start tracking.", linkLabel: "Create a Project", href: "/projects?new=1" });
     const readOnly = composeTimeTracking({ ...base, canCreateProject: false });
     expect(readOnly.emptyAction).toBeNull();
-    expect(readOnly.timerHint).toEqual({ copy: "Create a Project to start tracking.", href: null });
+    expect(readOnly.timerHint).toEqual({ copy: "Create a Project to start tracking.", linkLabel: "Create a Project", href: null });
     expect(composeTimeTracking({ ...input, hasProjects: true }).timerHint).toBeNull();
     expect(composeTimeTracking(input).timerHint).toBeNull();
   });
@@ -241,6 +241,52 @@ describe("Time Tracking", () => {
     expect(stats.byProject.empty).toBe(true);
     expect(stats.byProject.emptyCopy).toMatch(/^No Time Entry on a Project/);
     expect(v2("V2Time.tsx")).toContain('<V2CompactEmpty>{isLoading ? "Loading…" : page.byProject.emptyCopy}</V2CompactEmpty>');
+  });
+
+  it("shows the timer hint in the card body with a visible link only when the reader may create", () => {
+    const source = v2("V2Time.tsx");
+    expect(source).toMatch(/<p className="df-empty" data-testid="v2-time-timer-hint">[\s\S]*?className="df-cta"/);
+  });
+
+  it("replaces the zero figures of Time stats with the designed state only when nothing was ever recorded", () => {
+    const base = { period: "week" as const, workspaceName: "Harbor Co", canSeeEveryone: true, stats: null };
+    const never = composeTimeStats({ ...base, everRecorded: false });
+    expect(never.neverRecorded).toMatchObject({ kind: "none", title: "Track your first Time Entry" });
+    expect(never.neverRecorded?.copy).toContain("press Start");
+    expect(never.neverRecordedAction).toBeNull();
+    const noProject = { ...base, everRecorded: false, hasProjects: false };
+    expect(composeTimeStats(noProject).neverRecorded?.copy).toContain("a Project has to exist first");
+    expect(composeTimeStats({ ...noProject, canCreateProject: true }).neverRecordedAction).toEqual({
+      label: "New Project",
+      href: "/projects?new=1",
+    });
+    expect(composeTimeStats({ ...noProject, canCreateProject: false }).neverRecordedAction).toBeNull();
+    expect(composeTimeStats({ ...base, everRecorded: true }).neverRecorded).toBeNull();
+    expect(composeTimeStats({ ...base, everRecorded: null }).neverRecorded).toBeNull();
+    expect(composeTimeStats({ ...base, everRecorded: true }).figures).toHaveLength(5);
+  });
+
+  it("renders one full-width state when the Workspace has no Project, and the panes when a search hides them", () => {
+    const base = { workspaceName: "Harbor Co", readOnly: false, selectedProjectId: null, projects: [], tasks: [] };
+    const none = composeProjectTasks({ ...base, search: "" });
+    expect(none.noProjects).toBe(true);
+    expect(none.projectsEmptyState?.kind).toBe("none");
+    const hidden = composeProjectTasks({
+      ...base,
+      search: "zzz",
+      projects: [{ id: "prj-1", project: { name: "Harbour rebuild" } }],
+    } as Parameters<typeof composeProjectTasks>[0]);
+    expect(hidden.noProjects).toBe(false);
+    expect(hidden.projectsEmptyState?.kind).toBe("filtered");
+    expect(hidden.showChoose).toBe(false);
+    const listed = composeProjectTasks({
+      ...base,
+      search: "",
+      projects: [{ id: "prj-1", project: { name: "Harbour rebuild" } }],
+    } as Parameters<typeof composeProjectTasks>[0]);
+    expect(listed.noProjects).toBe(false);
+    expect(listed.showChoose).toBe(true);
+    expect(v2("V2Time.tsx")).toContain("page.noProjects && page.projectsEmptyState");
   });
 
   it("invites the first Project and the first Task in Projects & Tasks", () => {

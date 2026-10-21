@@ -77,7 +77,7 @@ export type TimeTrackingModel = {
   /** The designed state's one action, only for a reader who may take it. */
   emptyAction: { label: string; href: string } | null;
   /** Under the Timer when the Workspace has no Project to track against. */
-  timerHint: { copy: string; href: string | null } | null;
+  timerHint: { copy: string; linkLabel: string; href: string | null } | null;
   rows: TimeTrackingRow[];
   pagePrimary: "case-ink";
 };
@@ -190,7 +190,11 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
     emptyAction: !hasProjects && input.canCreateProject ? newProject : null,
     timerHint: hasProjects
       ? null
-      : { copy: "Create a Project to start tracking.", href: input.canCreateProject ? newProject.href : null },
+      : {
+          copy: "Create a Project to start tracking.",
+          linkLabel: "Create a Project",
+          href: input.canCreateProject ? newProject.href : null,
+        },
     rows,
     pagePrimary: "case-ink",
   };
@@ -282,6 +286,12 @@ export type TimeStatsInput = {
   /** Owner and Administrator stats span the Workspace; a Member sees their own. */
   canSeeEveryone: boolean;
   stats: TimeStatsResponse | null;
+  /** Whether the reader has any Time Entry in any period; `null` while unknown. */
+  everRecorded?: boolean | null;
+  /** Whether the Workspace has any Project; omitted reads as yes. */
+  hasProjects?: boolean;
+  /** Whether the reader may create a Project (not read-only). */
+  canCreateProject?: boolean;
 };
 
 export type TimeStatFigure = { label: string; value: string; meta: string };
@@ -307,6 +317,9 @@ export type TimeStatsModel = {
   showMembers: boolean;
   byProject: TimeStatsBreakdown;
   byMember: TimeStatsBreakdown;
+  /** Nothing was ever recorded (#325): the designed state replaces the zero figures and compact lines. */
+  neverRecorded: EmptyModel | null;
+  neverRecordedAction: { label: string; href: string } | null;
 };
 
 export function composeTimeStats(input: TimeStatsInput): TimeStatsModel {
@@ -347,8 +360,22 @@ export function composeTimeStats(input: TimeStatsInput): TimeStatsModel {
         .sort((a, b) => a.name.localeCompare(b.name))
     : [];
 
+  const hasProjects = input.hasProjects !== false;
   return {
     periodLabel,
+    neverRecorded:
+      input.everRecorded === false
+        ? emptyModelOf("none", "Time Entries", {
+            title: "Track your first Time Entry",
+            copy: hasProjects
+              ? "Time Entries are the intervals worked on a Project. Choose a Project and Task in the Timer, then press Start; the totals appear here."
+              : "A Time Entry is logged against a Task in a Project, so a Project has to exist first. Create one, then start the Timer.",
+          })
+        : null,
+    neverRecordedAction:
+      input.everRecorded === false && !hasProjects && input.canCreateProject
+        ? { label: "New Project", href: "/projects?new=1" }
+        : null,
     subhead: input.canSeeEveryone
       ? `Workday totals across ${input.workspaceName}, ${lower}.`
       : `Your Workday totals in ${input.workspaceName}, ${lower}.`,

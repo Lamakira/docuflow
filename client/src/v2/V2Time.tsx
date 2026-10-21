@@ -36,7 +36,7 @@ import {
   type TimeStatsResponse,
 } from "./time";
 import { Button } from "@/components/ui/button";
-import { V2CompactEmpty, V2RecordEmpty } from "./V2EmptyState";
+import { V2CompactEmpty, V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
@@ -377,8 +377,17 @@ function TimeEntriesPane() {
           ) : null}
         </div>
         {page.timerHint ? (
-          <p className="df-meta" data-testid="v2-time-timer-hint">
-            {page.timerHint.href ? <Link href={page.timerHint.href}>{page.timerHint.copy}</Link> : page.timerHint.copy}
+          <p className="df-empty" data-testid="v2-time-timer-hint">
+            {page.timerHint.href ? (
+              <>
+                <Link href={page.timerHint.href} className="df-cta">
+                  {page.timerHint.linkLabel}
+                </Link>
+                {page.timerHint.copy.slice(page.timerHint.linkLabel.length)}
+              </>
+            ) : (
+              page.timerHint.copy
+            )}
           </p>
         ) : null}
       </section>
@@ -535,7 +544,7 @@ function TimeEntriesPane() {
  */
 function TimeStatsPane() {
   const now = useMemo(() => new Date(), []);
-  const { workspaceName, workspaceRole, ready } = useWorkspaceCondition();
+  const { workspaceName, workspaceRole, readOnly, ready } = useWorkspaceCondition();
   const [period, setPeriod] = useState<TimePeriod>("week");
 
   const canSeeEveryone = canManageAdministration(workspaceRole);
@@ -554,11 +563,31 @@ function TimeStatsPane() {
     },
   });
 
+  // Same probe as Time Entries (shared cache key): asked only when the period
+  // shows no Time Entry, to tell a never-used Workspace from an empty period.
+  const probeEver = !isLoading && !isError && (data?.entriesCount ?? 0) === 0;
+  const { data: everResponse } = useQuery<TimeEntriesResponse>({
+    queryKey: ["/api/time-tracking/entries", "ever"],
+    enabled: probeEver,
+    queryFn: async () => {
+      const res = await fetch(timeEntriesPath({ limit: 1 }), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Time Entries");
+      return res.json();
+    },
+  });
+  const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
+    queryKey: ["/api/crm/projects", { pageSize: 500 }],
+    queryFn: () => fetch("/api/crm/projects?pageSize=500").then((res) => res.json()),
+  });
+
   const page = composeTimeStats({
     period,
     workspaceName,
     canSeeEveryone,
     stats: data ?? null,
+    everRecorded: everResponse ? everResponse.data.length > 0 : null,
+    hasProjects: projectsResponse ? projectsResponse.data.length > 0 : true,
+    canCreateProject: !readOnly,
   });
 
   if (!ready) {
@@ -593,6 +622,20 @@ function TimeStatsPane() {
 
       {isError ? (
         <p className="df-empty">Time stats for this Workspace could not be loaded.</p>
+      ) : page.neverRecorded ? (
+        <V2EmptyState
+          icon="time"
+          title={page.neverRecorded.title}
+          copy={page.neverRecorded.copy}
+          action={
+            page.neverRecordedAction ? (
+              <Button asChild variant="default" className="df-btn">
+                <Link href={page.neverRecordedAction.href}>{page.neverRecordedAction.label}</Link>
+              </Button>
+            ) : undefined
+          }
+          testId="v2-time-stats-empty"
+        />
       ) : (
         <div
           key={period}
@@ -790,14 +833,40 @@ function ProjectTasksPane() {
     deleteTask.mutate(id);
   }
 
+  const header = (
+    <header className="df-today-head">
+      <div style={{ minWidth: 0 }}>
+        <h1 className="df-title">Projects &amp; Tasks</h1>
+        <p className="df-subhead">{page.subhead}</p>
+      </div>
+    </header>
+  );
+
+  // No Project at all: one full-width state instead of two panes (#325).
+  if (!projectsLoading && page.noProjects && page.projectsEmptyState) {
+    return (
+      <>
+        {header}
+        <V2EmptyState
+          icon="projects"
+          title={page.projectsEmptyState.title}
+          copy={page.projectsEmptyState.copy}
+          action={
+            page.canWrite ? (
+              <Button asChild variant="default" className="df-btn">
+                <Link href="/projects?new=1">New Project</Link>
+              </Button>
+            ) : undefined
+          }
+          testId="v2-time-projects-empty"
+        />
+      </>
+    );
+  }
+
   return (
     <>
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Projects &amp; Tasks</h1>
-          <p className="df-subhead">{page.subhead}</p>
-        </div>
-      </header>
+      {header}
 
       {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
 
@@ -855,6 +924,7 @@ function ProjectTasksPane() {
           )}
         </section>
 
+        {page.selectedProjectName === null && !page.showChoose ? null : (
         <section className="df-card" data-testid="v2-time-tasks">
           {page.selectedProjectName === null ? (
             <p className="df-empty">{page.chooseCopy}</p>
@@ -904,6 +974,7 @@ function ProjectTasksPane() {
             </>
           )}
         </section>
+        )}
       </div>
     </>
   );
