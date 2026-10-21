@@ -222,6 +222,30 @@ describe("time tracking (characterization)", () => {
     expect(byProjectAsAdmin.body.data).toHaveLength(2);
   });
 
+  it("cuts the entries list to the newest N when asked, still hiding other people's from a Member", async () => {
+    const app = await makeApp();
+    const admin = await registerAdmin(app);
+    const member = await registerUser(app);
+    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [admin.id, member.id] });
+    const task = await createTask(admin.agent, crmProject.id);
+
+    const empty = await member.agent.get("/api/time-tracking/entries").query({ limit: 1 });
+    expect(empty.body.data).toEqual([]);
+
+    const first = await startTimer(admin.agent, crmProject.id, task.id);
+    await admin.agent.post(`/api/time-tracking/${first.id}/stop`);
+    const second = await startTimer(admin.agent, crmProject.id, task.id);
+    await admin.agent.post(`/api/time-tracking/${second.id}/stop`);
+
+    const one = await admin.agent.get("/api/time-tracking/entries").query({ limit: 1 });
+    expect(one.body.data.map((e: { id: string }) => e.id)).toEqual([second.id]);
+    const all = await admin.agent.get("/api/time-tracking/entries");
+    expect(all.body.data).toHaveLength(2);
+    // The admin's entries stay out of a Member's probe.
+    const asMember = await member.agent.get("/api/time-tracking/entries").query({ limit: 1 });
+    expect(asMember.body.data).toEqual([]);
+  });
+
   it("summarises stopped entries into stats, grouped by project and user", async () => {
     const app = await makeApp();
     const user = await registerUser(app, { firstName: "Sam", lastName: "Stats" });

@@ -30,6 +30,14 @@ const v2 = (name: string) =>
 const NOW = new Date(2026, 8, 10, 15, 0, 0);
 
 describe("the shared empty-state kinds", () => {
+  it("turns a narrow Range into none only once nothing was ever recorded", () => {
+    expect(emptyKindOf(true, false, true, false)).toBe("none");
+    expect(emptyKindOf(true, false, true, true)).toBe("range");
+    expect(emptyKindOf(true, false, true, null)).toBe("range");
+    expect(emptyKindOf(true, true, true, false)).toBe("filtered");
+    expect(emptyKindOf(false, false, true, false)).toBeNull();
+  });
+
   it("is neither when rows exist, filtered when filters hide them, none otherwise", () => {
     expect(emptyKindOf(false, false)).toBeNull();
     expect(emptyKindOf(true, true)).toBe("filtered");
@@ -202,6 +210,32 @@ describe("Time Tracking", () => {
     }
   });
 
+  it("invites the first Time Entry on Today when nothing was ever recorded, and keeps the range line when something exists elsewhere", () => {
+    const never = composeTimeTracking({ ...input, range: "today", everRecorded: false });
+    expect(never.emptyState).toMatchObject({ kind: "none", title: "Track your first Time Entry" });
+    expect(never.emptyState?.copy).toContain("press Start");
+    expect(never.emptyAction).toBeNull();
+    expect(composeTimeTracking({ ...input, range: "week", everRecorded: false }).emptyState?.kind).toBe("none");
+    expect(composeTimeTracking({ ...input, range: "today", everRecorded: true }).emptyState?.kind).toBe("range");
+    expect(composeTimeTracking({ ...input, range: "today", everRecorded: null }).emptyState?.kind).toBe("range");
+    expect(composeTimeTracking({ ...input, range: "today", everRecorded: false, facetsActive: true }).emptyState?.kind).toBe(
+      "filtered",
+    );
+  });
+
+  it("explains the missing Project, offers New Project only to a reader who may create one", () => {
+    const base = { ...input, range: "today" as const, everRecorded: false, hasProjects: false };
+    const allowed = composeTimeTracking({ ...base, canCreateProject: true });
+    expect(allowed.emptyState?.copy).toContain("a Project has to exist first");
+    expect(allowed.emptyAction).toEqual({ label: "New Project", href: "/projects?new=1" });
+    expect(allowed.timerHint).toEqual({ copy: "Create a Project to start tracking.", href: "/projects?new=1" });
+    const readOnly = composeTimeTracking({ ...base, canCreateProject: false });
+    expect(readOnly.emptyAction).toBeNull();
+    expect(readOnly.timerHint).toEqual({ copy: "Create a Project to start tracking.", href: null });
+    expect(composeTimeTracking({ ...input, hasProjects: true }).timerHint).toBeNull();
+    expect(composeTimeTracking(input).timerHint).toBeNull();
+  });
+
   it("keeps Time stats sections as compact lines, never the designed state", () => {
     const stats = composeTimeStats({ period: "week", workspaceName: "Harbor Co", canSeeEveryone: true, stats: null });
     expect(stats.byProject.empty).toBe(true);
@@ -270,6 +304,19 @@ describe("Activity", () => {
     const range = { kind: "range", copy: "No Activity Evidence for this date range." };
     expect(composeActivity(activity).emptyState).toMatchObject(range);
     expect(composeActivityGallery(gallery).emptyState).toMatchObject(range);
+  });
+
+  it("invites the desktop agent when no Evidence was ever recorded, and keeps the range line when some exists", () => {
+    for (const model of [
+      composeActivity({ ...activity, everRecorded: false }).emptyState,
+      composeActivityGallery({ ...gallery, everRecorded: false }).emptyState,
+    ]) {
+      expect(model).toMatchObject({ kind: "none", title: "No Activity Evidence yet" });
+      expect(model?.copy).toContain("desktop agent");
+    }
+    expect(composeActivity({ ...activity, everRecorded: true }).emptyState?.kind).toBe("range");
+    expect(composeActivityGallery({ ...gallery, everRecorded: true }).emptyState?.kind).toBe("range");
+    expect(composeActivity({ ...activity, everRecorded: false, facetsActive: true }).emptyState?.kind).toBe("filtered");
   });
 
   it("offers Clear filters when a Project, Member or gallery filter hides the Evidence", () => {

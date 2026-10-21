@@ -78,6 +78,15 @@ export function V2ActivityPage() {
   return <ActivityDestination tab={tab} />;
 }
 
+/** The designed empty state's one action: Activity Evidence comes from the desktop agent. */
+function SetUpAgentAction() {
+  return (
+    <Button asChild variant="outline" className="df-btn">
+      <Link href="/devices">Set up the desktop agent</Link>
+    </Button>
+  );
+}
+
 function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
@@ -166,6 +175,21 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     },
   });
 
+  // Cheap "ever recorded" probe, asked only when the stream is empty: one piece
+  // of Evidence the reader may see, in any period (#325).
+  const probeEver = !isLoading && !isError && (evidenceResponse?.data ?? []).length === 0;
+  const everUrl = activityEvidencePath({ limit: 1 });
+  const { data: everResponse } = useQuery<ScreenshotsResponse>({
+    queryKey: ["/api/time-tracking/screenshots", everUrl],
+    enabled: probeEver,
+    queryFn: async () => {
+      const res = await fetch(everUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Activity Evidence");
+      return res.json();
+    },
+  });
+  const everRecorded = everResponse ? everResponse.data.length > 0 : null;
+
   const page = composeActivity({
     now,
     workspaceName,
@@ -180,6 +204,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     users,
     evidence: evidenceResponse?.data ?? [],
     facetsActive: projectFilter !== "all" || userFilter !== "all",
+    everRecorded,
   });
 
   const gallery = composeActivityGallery({
@@ -198,6 +223,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     users,
     evidence: evidenceResponse?.data ?? [],
     facetsActive: projectFilter !== "all" || userFilter !== "all",
+    everRecorded,
   });
 
   const refusal = page.refusal;
@@ -461,7 +487,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           </div>
         )}
         {page.emptyState ? (
-          <V2RecordEmpty model={page.emptyState} icon="activity" onClear={onClearFilters} />
+          <V2RecordEmpty model={page.emptyState} icon="activity" action={<SetUpAgentAction />} onClear={onClearFilters} />
         ) : (
           page.rows.map((row) => (
             <div key={row.id}>
@@ -580,7 +606,7 @@ function ActivityGallery({
         </span>
       </div>
       {gallery.emptyState ? (
-        <V2RecordEmpty model={gallery.emptyState} icon="activity" onClear={onClearFilters} />
+        <V2RecordEmpty model={gallery.emptyState} icon="activity" action={<SetUpAgentAction />} onClear={onClearFilters} />
       ) : (
         gallery.groups.map((group) => (
           <div key={group.key} className="df-gallery-group">

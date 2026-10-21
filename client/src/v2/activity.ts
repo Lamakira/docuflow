@@ -68,6 +68,8 @@ export type ActivityInput = {
   evidence: ActivityEvidenceInput[];
   /** Whether the Project or Member filter narrows the stream (the date range is not one). */
   facetsActive?: boolean;
+  /** Whether the reader may see any Activity Evidence in any period; `null` while unknown. */
+  everRecorded?: boolean | null;
 };
 
 export type ActivityPolicyLine = {
@@ -232,9 +234,20 @@ function allowedEvidence<T extends ActivityEvidenceInput>(
   });
 }
 
-/** Activity Evidence is a dashboard-like stream over a date range: no first-use invitation. */
-function evidenceEmptyState(empty: boolean, filtered: boolean): EmptyModel | null {
-  return emptyModelOf(emptyKindOf(empty, filtered, true), "Activity Evidence", null, "No Activity Evidence for this date range.");
+/**
+ * Activity Evidence is a stream over a date range: it invites first use only
+ * once the reader is known to see none in any period.
+ */
+function evidenceEmptyState(empty: boolean, filtered: boolean, everRecorded: boolean | null = null): EmptyModel | null {
+  return emptyModelOf(
+    emptyKindOf(empty, filtered, true, everRecorded),
+    "Activity Evidence",
+    {
+      title: "No Activity Evidence yet",
+      copy: "Activity Evidence is captured by the desktop agent while a Member's Timer runs, following the Tracking Policy above.",
+    },
+    "No Activity Evidence for this date range.",
+  );
 }
 
 export function composeActivity(input: ActivityInput): ActivityModel {
@@ -260,7 +273,7 @@ export function composeActivity(input: ActivityInput): ActivityModel {
   return {
     subhead: `Activity Evidence in ${input.workspaceName}.`,
     empty,
-    emptyState: evidenceEmptyState(empty, Boolean(input.facetsActive)),
+    emptyState: evidenceEmptyState(empty, Boolean(input.facetsActive), input.everRecorded ?? null),
     refusal,
     policyLines: composeTrackingPolicy(input.policy),
     policyFootnote: input.canReview
@@ -362,6 +375,8 @@ export type ActivityGalleryInput = {
   evidence: GalleryEvidenceInput[];
   /** Whether the Project or Member filter narrows the gallery (the date range is not one). */
   facetsActive?: boolean;
+  /** Whether the reader may see any Activity Evidence in any period; `null` while unknown. */
+  everRecorded?: boolean | null;
 };
 
 export type GalleryTile = EvidenceProvenance & {
@@ -511,6 +526,6 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
       hasNext: page < pageCount,
     },
     empty: count === 0,
-    emptyState: evidenceEmptyState(count === 0, filtered),
+    emptyState: evidenceEmptyState(count === 0, filtered, input.everRecorded ?? null),
   };
 }

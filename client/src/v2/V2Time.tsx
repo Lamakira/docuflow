@@ -184,6 +184,24 @@ function TimeEntriesPane() {
     },
   });
 
+  // Cheap "ever recorded" probe, asked only when the register is empty: the
+  // newest one Time Entry the reader may see, in any period (#325).
+  const probeEver = !isLoading && !isError && (entriesResponse?.data ?? []).length === 0;
+  const { data: everResponse } = useQuery<TimeEntriesResponse>({
+    queryKey: ["/api/time-tracking/entries", "ever"],
+    enabled: probeEver,
+    queryFn: async () => {
+      const res = await fetch(timeEntriesPath({ limit: 1 }), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Time Entries");
+      return res.json();
+    },
+  });
+  // The Timer's Project list, shared with the Time tracker's own query.
+  const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
+    queryKey: ["/api/crm/projects", { pageSize: 500 }],
+    queryFn: () => fetch("/api/crm/projects?pageSize=500").then((res) => res.json()),
+  });
+
   const page = composeTimeTracking({
     now,
     workspaceName,
@@ -195,6 +213,9 @@ function TimeEntriesPane() {
     entries: (entriesResponse?.data ?? []).map(toRow),
     workdaySeconds: stats?.totalDuration ?? 0,
     range,
+    everRecorded: everResponse ? everResponse.data.length > 0 : null,
+    hasProjects: projectsResponse ? projectsResponse.data.length > 0 : true,
+    canCreateProject: !readOnly,
     facetsActive: projectFilter !== "all" || statusFilter !== "all" || (canManage && userFilter !== "all"),
   });
 
@@ -355,6 +376,11 @@ function TimeEntriesPane() {
             </Button>
           ) : null}
         </div>
+        {page.timerHint ? (
+          <p className="df-meta" data-testid="v2-time-timer-hint">
+            {page.timerHint.href ? <Link href={page.timerHint.href}>{page.timerHint.copy}</Link> : page.timerHint.copy}
+          </p>
+        ) : null}
       </section>
 
       <div className="df-filter-bar">
@@ -427,6 +453,13 @@ function TimeEntriesPane() {
           <V2RecordEmpty
             model={page.emptyState}
             icon="time"
+            action={
+              page.emptyAction ? (
+                <Button asChild variant="default" className="df-btn">
+                  <Link href={page.emptyAction.href}>{page.emptyAction.label}</Link>
+                </Button>
+              ) : undefined
+            }
             onClear={() => {
               setProjectFilter("all");
               setStatusFilter("all");

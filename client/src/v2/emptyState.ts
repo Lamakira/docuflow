@@ -16,12 +16,21 @@ export type EmptyModel = { kind: EmptyKind; title: string; copy: string };
 
 /**
  * `narrowRange`: the Range filter is shorter than the widest one on offer, so
- * an unfiltered empty list cannot claim the Workspace holds nothing.
+ * an unfiltered empty list cannot claim the Workspace holds nothing, unless
+ * `everRecorded` is `false`: the reader has none in any period.
  */
-export function emptyKindOf(empty: boolean, filtered: boolean, narrowRange = false): EmptyKind | null {
+export function emptyKindOf(
+  empty: boolean,
+  filtered: boolean,
+  narrowRange = false,
+  everRecorded: boolean | null = null,
+): EmptyKind | null {
   if (!empty) return null;
   if (filtered) return "filtered";
-  return narrowRange ? "range" : "none";
+  // A narrow Range is `none` only once a wider probe has shown nothing was ever
+  // recorded; while that is unknown (`null`) the line stays the Range hint.
+  if (narrowRange && everRecorded !== false) return "range";
+  return "none";
 }
 
 /** The one line that says filters hid every row. */

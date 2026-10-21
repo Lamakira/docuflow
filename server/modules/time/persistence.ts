@@ -10,6 +10,8 @@ export interface TimePersistence {
     endDate?: Date;
     endDateGte?: Date;
     status?: string;
+    /** Newest first, cut to this many; omitted returns every match. */
+    limit?: number;
   }): Promise<TimeEntryWithDetails[]>;
   getTimeEntry(id: string): Promise<TimeEntryWithDetails | undefined>;
   getTimeEntryByClientCommandId(clientCommandId: string): Promise<TimeEntry | undefined>;

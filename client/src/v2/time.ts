@@ -47,6 +47,12 @@ export type TimeTrackingInput = {
   range?: "today" | "week" | "all";
   /** Whether the Project, Status or Member filter narrows the register. */
   facetsActive?: boolean;
+  /** Whether the reader has any Time Entry in any period; `null` while unknown. */
+  everRecorded?: boolean | null;
+  /** Whether the Workspace has any Project; omitted reads as yes. */
+  hasProjects?: boolean;
+  /** Whether the reader may create a Project (not read-only). */
+  canCreateProject?: boolean;
 };
 
 export type TimeTrackingRow = {
@@ -68,6 +74,10 @@ export type TimeTrackingModel = {
   empty: boolean;
   /** Why the register shows nothing (#325); null while it has rows. */
   emptyState: EmptyModel | null;
+  /** The designed state's one action, only for a reader who may take it. */
+  emptyAction: { label: string; href: string } | null;
+  /** Under the Timer when the Workspace has no Project to track against. */
+  timerHint: { copy: string; href: string | null } | null;
   rows: TimeTrackingRow[];
   pagePrimary: "case-ink";
 };
@@ -78,6 +88,8 @@ export type TimeEntriesFilter = {
   crmProjectId?: string | null;
   status?: string | null;
   userId?: string | null;
+  /** Newest first, cut to this many; `1` answers "is there any" without loading the list. */
+  limit?: number | null;
 };
 
 function parseDate(value: Date | string | null | undefined): Date | null {
@@ -120,6 +132,7 @@ export function timeEntriesPath(filters: TimeEntriesFilter = {}): string {
   if (filters.crmProjectId) params.set("crmProjectId", filters.crmProjectId);
   if (filters.status) params.set("status", filters.status);
   if (filters.userId) params.set("userId", filters.userId);
+  if (filters.limit) params.set("limit", String(filters.limit));
   const query = params.toString();
   return query ? `/api/time-tracking/entries?${query}` : "/api/time-tracking/entries";
 }
@@ -156,20 +169,28 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
   });
   const empty = rows.length === 0;
   // A short Range cannot claim the Workspace has none: rows may sit outside it, so the compact line names the window.
+  const hasProjects = input.hasProjects !== false;
+  const newProject = { label: "New Project", href: "/projects?new=1" };
   const window = input.range === "today" ? "today" : input.range === "week" ? "this week" : null;
   return {
     subhead: `Time Entries in ${input.workspaceName}.`,
     workdayHours: formatHours(input.workdaySeconds),
     empty,
     emptyState: emptyModelOf(
-      emptyKindOf(empty, Boolean(input.facetsActive), window !== null),
+      emptyKindOf(empty, Boolean(input.facetsActive), window !== null, input.everRecorded ?? null),
       "Time Entries",
       {
         title: "Track your first Time Entry",
-        copy: "Time Entries are the intervals worked on a Project. Choose a Project and Task in the Timer above, then press Start.",
+        copy: hasProjects
+          ? "Time Entries are the intervals worked on a Project. Choose a Project and Task in the Timer above, then press Start."
+          : "A Time Entry is logged against a Task in a Project, so a Project has to exist first. Create one, then start the Timer.",
       },
       `No Time Entries ${window}. Widen the Range to look further back.`,
     ),
+    emptyAction: !hasProjects && input.canCreateProject ? newProject : null,
+    timerHint: hasProjects
+      ? null
+      : { copy: "Create a Project to start tracking.", href: input.canCreateProject ? newProject.href : null },
     rows,
     pagePrimary: "case-ink",
   };
