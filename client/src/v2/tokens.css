@@ -630,6 +630,11 @@
   border-bottom: 1px solid var(--df-divider);
 }
 
+/* A card that is only its head (its action sits in the head) has no body to divide off. */
+.df-card-head:last-child {
+  border-bottom: 0;
+}
+
 .df-card-title {
   font-family: var(--df-font-display);
   font-weight: 700;

@@ -155,27 +155,25 @@ export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
             <h2 className="df-card-title">Second factor</h2>
             <p className="df-card-sub">{setting.note}</p>
           </div>
+          {setting.canChange ? (
+            <Button
+              type="button"
+              variant={setting.required ? "outline" : "default"}
+              className="df-btn"
+              disabled={requireFactor.isPending || setting.blocked !== null}
+              onClick={() => requireFactor.mutate()}
+              data-testid="v2-two-factor-toggle"
+            >
+              {setting.action}
+            </Button>
+          ) : null}
         </div>
         {setting.canChange ? (
-          <>
-            {setting.blocked ? (
-              <p className="df-support-note" data-testid="v2-two-factor-blocked">
-                {setting.blocked}
-              </p>
-            ) : null}
-            <div className="df-form-actions">
-              <Button
-                type="button"
-                variant={setting.required ? "outline" : "default"}
-                className="df-btn"
-                disabled={requireFactor.isPending || setting.blocked !== null}
-                onClick={() => requireFactor.mutate()}
-                data-testid="v2-two-factor-toggle"
-              >
-                {setting.action}
-              </Button>
-            </div>
-          </>
+          setting.blocked ? (
+            <p className="df-support-note" data-testid="v2-two-factor-blocked">
+              {setting.blocked}
+            </p>
+          ) : null
         ) : (
           <p className="df-support-note">Only the Owner can change this.</p>
         )}
