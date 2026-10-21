@@ -7,6 +7,7 @@
  */
 
 import { chromeRefusal } from "./chrome";
+import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 
 export type DeviceInput = {
   id: string;
@@ -51,7 +52,8 @@ export type PairingModel = {
 export type DevicesModel = {
   subhead: string;
   empty: boolean;
-  emptyCopy: string;
+  /** The designed empty state when the reader has no Device (#325); null while there are rows. */
+  emptyState: EmptyModel | null;
   rows: DeviceRow[];
   pairing: PairingModel;
   pairAllowed: boolean;
@@ -132,7 +134,10 @@ export function composeDevices(input: DevicesInput): DevicesModel {
   return {
     subhead: `Enrolled Devices for you in ${input.workspaceName}.`,
     empty,
-    emptyCopy: empty ? "No enrolled Devices. Pair the desktop agent with a code from this page." : "",
+    emptyState: emptyModelOf(emptyKindOf(empty, false), "Devices", {
+      title: "Pair your first Device",
+      copy: "A Device is a computer running the desktop agent that records your time. Pair one with a code from this page.",
+    }),
     rows,
     pairing: {
       pending: input.pairing.pending,

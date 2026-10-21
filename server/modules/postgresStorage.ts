@@ -2614,6 +2614,8 @@ export class DatabaseStorage implements IStorage {
     /** Filter: endTime >= value. Use for overlap queries (e.g. cross-midnight entries). */
     endDateGte?: Date;
     status?: string;
+    /** Newest first, cut to this many; omitted returns every match. */
+    limit?: number;
   }): Promise<TimeEntryWithDetails[]> {
     const conditions = [inWorkspace(timeEntries)];
 
@@ -2636,11 +2638,12 @@ export class DatabaseStorage implements IStorage {
       conditions.push(sql`${timeEntries.endTime} >= ${options.endDateGte}`);
     }
     
-    const entries = await db
+    const ordered = db
       .select()
       .from(timeEntries)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(timeEntries.startTime));
+    const entries = options.limit ? await ordered.limit(options.limit) : await ordered;
     
     // Fetch user and project details
     const enrichedEntries: TimeEntryWithDetails[] = [];

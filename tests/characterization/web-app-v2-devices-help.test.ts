@@ -66,8 +66,8 @@ describe("Devices and Help Center routing (#194)", () => {
     expect(match.kind).toBe("devices");
     expect(navIdForPath("/devices")).toBe("devices");
     expect(breadcrumbFor("/devices", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "DEVICES",
+      "Harbor Co",
+      "Devices",
     ]);
     expect(appSource).toContain("V2DevicesPage");
     expect(appSource).toMatch(/path="\/devices"/);
@@ -85,8 +85,8 @@ describe("Devices and Help Center routing (#194)", () => {
     expect(match.kind).toBe("help");
     expect(navIdForPath("/help")).toBe("help");
     expect(breadcrumbFor("/help", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "HELP CENTER",
+      "Harbor Co",
+      "Help Center",
     ]);
     expect(appSource).toContain("V2HelpPage");
     expect(appSource).toMatch(/path="\/help"/);
@@ -106,9 +106,9 @@ describe("Devices and Help Center routing (#194)", () => {
     });
     expect(navIdForPath("/help-center/desktop-app")).toBe("help");
     expect(breadcrumbFor("/help/getting-started", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "HELP CENTER",
-      "GETTING STARTED",
+      "Harbor Co",
+      "Help Center",
+      "Getting started",
     ]);
     expect(appSource).toMatch(/path="\/help-center\/:slug"/);
     expect(appSource).toMatch(/path="\/help\/:slug"/);
@@ -122,7 +122,7 @@ describe("Devices from existing agent routes (#194)", () => {
 
     expect(page.empty).toBe(true);
     expect(page.rows).toEqual([]);
-    expect(page.emptyCopy.toLowerCase()).toContain("device");
+    expect(page.emptyState?.copy.toLowerCase()).toContain("device");
     expect(page.pagePrimary).toBe("case-ink");
     expect(page.pairing.appear).toBe(false);
     expect(page.pairing.pending).toBe(false);

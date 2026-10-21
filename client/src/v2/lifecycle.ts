@@ -57,7 +57,7 @@ export function suggestedWorkspaceName(
 export type FirstWorkspaceStatus = "ready" | "creating" | "created" | "error";
 
 export type FirstWorkspaceModel = {
-  kicker: "WORKSPACE" | "NO WORKSPACE";
+  kicker: "Workspace" | "No workspace";
   title: string;
   copy: string;
   fieldLabel: string;
@@ -97,7 +97,7 @@ export function composeFirstWorkspace(input: {
   const belongedBefore = input.belongedBefore === true;
 
   return {
-    kicker: belongedBefore ? "NO WORKSPACE" : "WORKSPACE",
+    kicker: belongedBefore ? "No workspace" : "Workspace",
     title: belongedBefore ? "You belong to no Workspace" : "Name your Workspace",
     copy: belongedBefore
       ? "Your account is fine. Every Membership you held has been archived, so there is nothing to open. Name a Workspace of your own to carry on."
@@ -134,7 +134,7 @@ export type OwnedWorkspaceRow = OwnedWorkspace & {
 };
 
 export type AccountDeletionModel = {
-  kicker: "ACCOUNT";
+  kicker: "Account";
   title: string;
   lead: string;
   precondition: { met: boolean; copy: string; rows: OwnedWorkspaceRow[] };
@@ -193,7 +193,7 @@ export function composeAccountDeletion(input: {
   const action: AccountDeletionModel["action"] = scheduled ? "cancel" : met ? "start" : "blocked";
 
   return {
-    kicker: "ACCOUNT",
+    kicker: "Account",
     title: "Delete your account",
     lead: "Your account is yours. The Workspaces you belong to are not.",
     precondition: {

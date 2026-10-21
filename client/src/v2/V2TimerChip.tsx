@@ -114,7 +114,7 @@ export function V2TimerChip({
           {model.appearance === "running" && model.subtitle ? (
             <span
               className="df-mono"
-              style={{ fontSize: 9.5, color: "var(--df-archive-slate)", textTransform: "uppercase" }}
+              style={{ fontSize: 9.5, color: "var(--df-archive-slate)" }}
             >
               {model.subtitle}
             </span>

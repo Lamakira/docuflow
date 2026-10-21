@@ -13,6 +13,7 @@ import {
 } from "./dailyUpdate";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { V2RecordEmpty } from "./V2EmptyState";
 import { V2FilterSelect } from "./V2Select";
 import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
@@ -95,6 +96,7 @@ export function V2TeamDailyUpdatesPage() {
     filterQuery,
     statusFilter,
     memberFilter,
+    rangeDays,
   });
 
   if (updatesLoading || kpisLoading || todayLoading) {
@@ -149,7 +151,7 @@ export function V2TeamDailyUpdatesPage() {
         <div className="df-card-head">
           <h2 className="df-card-title">Today</h2>
           <span className="df-count-chip">
-            {page.submitted.length} OF {page.submitted.length + page.missing.length} SUBMITTED
+            {page.submitted.length} of {page.submitted.length + page.missing.length} submitted
           </span>
         </div>
         <div className="df-rollcall">
@@ -200,7 +202,7 @@ export function V2TeamDailyUpdatesPage() {
           />
         </label>
         <V2FilterSelect
-          label="RANGE"
+          label="Range"
           ariaLabel="Range"
           value={rangeDays}
           active={rangeDays === "1"}
@@ -213,7 +215,7 @@ export function V2TeamDailyUpdatesPage() {
           onChange={setRangeDays}
         />
         <V2FilterSelect
-          label="STATUS"
+          label="Status"
           ariaLabel="Filter by status"
           value={statusFilter}
           active={statusFilter !== "all"}
@@ -224,7 +226,7 @@ export function V2TeamDailyUpdatesPage() {
           onChange={setStatusFilter}
         />
         <V2FilterSelect
-          label="MEMBER"
+          label="Member"
           ariaLabel="Filter by Member"
           value={memberFilter}
           active={memberFilter !== "all"}
@@ -236,8 +238,17 @@ export function V2TeamDailyUpdatesPage() {
         />
       </div>
 
-      {page.empty ? (
-        <p className="df-empty">{page.emptyCopy}</p>
+      {page.emptyState ? (
+        <V2RecordEmpty
+          model={page.emptyState}
+          icon="updates"
+          onClear={() => {
+            setFilterQuery("");
+            setStatusFilter("all");
+            setMemberFilter("all");
+          }}
+          testIds={{ none: "v2-daily-updates-empty" }}
+        />
       ) : (
         page.groups.map((group) => (
           <section key={group.userId} className="df-card" data-testid={`v2-daily-updates-group-${group.userId}`}>
@@ -254,7 +265,7 @@ export function V2TeamDailyUpdatesPage() {
                 {row.nextPlans ? <p className="df-prose">{row.nextPlans}</p> : null}
                 {row.blocker ? (
                   <div className="df-blocker">
-                    <div className="df-mono df-meta">BLOCKER</div>
+                    <div className="df-mono df-meta">Blocker</div>
                     <p className="df-prose df-prose-follow">
                       {row.blocker}
                     </p>

@@ -49,7 +49,7 @@ function analyticsInput(overrides: Partial<AnalyticsInput> = {}): AnalyticsInput
   return {
     now: NOW,
     workspaceName: "Harbor Co",
-    workspaceRole: "OWNER",
+    workspaceRole: "Owner",
     ownerName: "Sam Lee",
     range: RANGE,
     overview: null,
@@ -77,7 +77,7 @@ function adminInput(overrides: Partial<AdministrationInput> = {}): Administratio
   return {
     workspaceName: "Harbor Co",
     ownerName: "Sam Lee",
-    workspaceRole: "OWNER",
+    workspaceRole: "Owner",
     condition: null,
     serviceAccounts: [],
     webhookEndpoints: [],
@@ -92,8 +92,8 @@ describe("Analytics is its own destination on the rail (#281)", () => {
     expect(matchV2Route("/analytics")).toEqual({ kind: "analytics", title: "Analytics", href: "/analytics" });
     expect(navIdForPath("/analytics")).toBe("analytics");
     expect(breadcrumbFor("/analytics", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "ANALYTICS",
+      "Harbor Co",
+      "Analytics",
     ]);
     expect(appSource).toMatch(/<Route path="\/analytics" component=\{V2AnalyticsPage\} \/>/);
     expect(railIcons).toMatch(/analytics:\s*\w+/);
@@ -145,7 +145,7 @@ describe("Recorded time can be read by someone seeing it for the first time (#28
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
     expect(page.recordedTime.measures).toBe(
-      "Time Entries that started between 7 SEP and 14 SEP, for every Member of Harbor Co. " +
+      "Time Entries that started between 7 Sep and 14 Sep, for every Member of Harbor Co. " +
         "A running Timer counts once it stops.",
     );
   });
@@ -158,10 +158,10 @@ describe("Recorded time can be read by someone seeing it for the first time (#28
       "2 Members recorded 12.0 h on 5 Time Entries across 1 Project. 1.0 h of it was idle.",
     );
     expect(page.recordedTime.summary).toEqual([
-      { label: "RECORDED", value: "12.0 h" },
-      { label: "OF WHICH IDLE", value: "1.0 h" },
-      { label: "TIME ENTRIES", value: "5" },
-      { label: "MEMBERS", value: "2" },
+      { label: "Recorded", value: "12.0 h" },
+      { label: "Of which idle", value: "1.0 h" },
+      { label: "Time entries", value: "5" },
+      { label: "Members", value: "2" },
     ]);
   });
 
@@ -189,19 +189,19 @@ describe("Recorded time can be read by someone seeing it for the first time (#28
     if (page.kind !== "ready") return;
     const { sections } = page.recordedTime;
     expect([sections.members, sections.projects, sections.tasks, sections.days].map((section) => section.label)).toEqual([
-      "PER MEMBER",
-      "PER PROJECT",
-      "PER TASK",
-      "PER DAY",
+      "Per member",
+      "Per project",
+      "Per task",
+      "Per day",
     ]);
-    expect(sections.members.head).toEqual(["MEMBER", "RECORDED", "OF WHICH IDLE", "TIME ENTRIES"]);
+    expect(sections.members.head).toEqual(["Member", "Recorded", "Of which idle", "Time entries"]);
     expect(sections.tasks.caption).toBe(
       "Time Entries linked to a Task. Time without a Task is left out of this list.",
     );
     for (const section of Object.values(sections)) {
       expect(section.caption.endsWith(".")).toBe(true);
     }
-    expect(page.recordedTime.days.map((row) => row.day)).toEqual(["THU 10 SEP", "FRI 11 SEP"]);
+    expect(page.recordedTime.days.map((row) => row.day)).toEqual(["Thu 10 Sep", "Fri 11 Sep"]);
     expect(analyticsSource).toContain("df-analytics-group-caption");
     expect(analyticsSource).toContain('data-testid="v2-analytics-recorded-time-sentence"');
   });
@@ -253,9 +253,9 @@ describe("Administration shows one configuration section at a time (#281)", () =
     expect(matchV2Route("/admin")).toMatchObject({ kind: "administration", tab: "workspace" });
     expect(navIdForPath("/administration/billing")).toBe("administration");
     expect(breadcrumbFor("/administration/tracking-policy", "Harbor Co")).toEqual([
-      { label: "HARBOR CO", href: "/" },
-      { label: "ADMINISTRATION", href: "/administration" },
-      { label: "TRACKING POLICY" },
+      { label: "Harbor Co", href: "/" },
+      { label: "Administration", href: "/administration" },
+      { label: "Tracking Policy" },
     ]);
     // Danger zone folded back into Billing; its old address opens Billing.
     expect(matchV2Route("/administration/danger-zone")).toMatchObject({
@@ -286,7 +286,7 @@ describe("Administration shows one configuration section at a time (#281)", () =
   });
 
   it("offers every tab to the Owner and Administrators, and none to a Member", () => {
-    const owner = administrationTabs("billing", "OWNER");
+    const owner = administrationTabs("billing", "Owner");
     expect(owner.map((tab) => tab.label)).toEqual([
       "Workspace",
       "Billing",
@@ -370,7 +370,7 @@ describe("The Workspace, Members & Roles and Billing tabs (#281)", () => {
       adminInput({
         workspaceRole: "ADMINISTRATOR",
         members: [
-          { firstName: "Sam", lastName: "Lee", email: "sam@harbor.test", workspaceRole: "OWNER" },
+          { firstName: "Sam", lastName: "Lee", email: "sam@harbor.test", workspaceRole: "Owner" },
           { firstName: "Ada", lastName: "Byron", email: "ada@harbor.test", workspaceRole: "ADMINISTRATOR" },
         ],
       }),
@@ -395,7 +395,7 @@ describe("The Workspace, Members & Roles and Billing tabs (#281)", () => {
 
     const one = composeAdministration(
       adminInput({
-        members: [{ firstName: "Sam", lastName: "Lee", email: "sam@harbor.test", workspaceRole: "OWNER" }],
+        members: [{ firstName: "Sam", lastName: "Lee", email: "sam@harbor.test", workspaceRole: "Owner" }],
       }),
     );
     expect(one.kind).toBe("ready");
@@ -520,7 +520,7 @@ describe("Analytics: This month and a custom range (#307)", () => {
       analyticsInput({ range: analyticsRange("custom", MID_MONTH, { from: "2026-09-03", to: "2026-09-10" }) }),
     );
     if (custom.kind !== "ready") throw new Error("Analytics should be ready for an Owner");
-    expect(custom.rangeLabel).toBe("3 SEP – 10 SEP");
+    expect(custom.rangeLabel).toBe("3 Sep – 10 Sep");
   });
 
   it("picks the custom range on one shadcn range calendar, beside the RANGE select", () => {

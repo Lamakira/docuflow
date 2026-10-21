@@ -218,10 +218,6 @@ jobs:
         working-directory: desktop-agent
         run: npm install
 
-      - name: Generate icons (.icns via iconutil)
-        working-directory: desktop-agent
-        run: node scripts/gen-icons.js
-
       - name: Build macOS DMG (arm64) — unsigned
         working-directory: desktop-agent
         # Apple signing and notarization are deliberately absent (#60, ADR-0018).

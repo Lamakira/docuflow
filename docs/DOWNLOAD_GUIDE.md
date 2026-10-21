@@ -36,12 +36,10 @@ npm run dist:win
 ### macOS
 
 ```bash
-# Step 1 — generate .icns icon (first time only, on macOS)
-node scripts/gen-icons.js
-
-# Step 2 — build DMG
 npm run dist:mac
 ```
+
+The app icons (`assets/icon.icns`, `icon.ico`, `icon.png`, tray icons) are committed. They are generated from `brand/` at the repo root with `npm run brand:assets` (run from the repo root, on any OS).
 
 - Must run on **macOS** (maker-dmg uses `hdiutil`, macOS-only tool)
 - Output: `desktop-agent/release/DocuFlow-Agent-0.1.3-macos.dmg`

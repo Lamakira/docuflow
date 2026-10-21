@@ -20,7 +20,7 @@ export function V2RegisterPager({
       {paging.showControls ? (
         <span className="df-register-pager-controls">
           <V2FilterSelect
-            label="PER PAGE"
+            label="Per page"
             ariaLabel="Rows per page"
             value={String(paging.pageSize)}
             options={REGISTER_PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))}

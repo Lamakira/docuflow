@@ -11,6 +11,7 @@ import {
   type ProjectDatesDraft,
 } from "./projects";
 import { taskStatusLabel } from "./tasks";
+import { MONTHS } from "./dates";
 
 export type DossierPerson = {
   id?: string;
@@ -415,8 +416,6 @@ export type DossierModel = {
   filed: Array<{ label: string; value: string }>;
 };
 
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-
 const PROJECT_STATUS_LABEL: Record<string, string> = {
   planned: "PLANNED",
   active: "ACTIVE",
@@ -482,7 +481,7 @@ export function formatWhen(updatedAt: Date | string | null | undefined, now: Dat
   if (!value) return "";
   if (sameDay(value, now)) return formatClock(value);
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (sameDay(value, yesterday)) return "YDA";
+  if (sameDay(value, yesterday)) return "Yesterday";
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
 }
 
@@ -806,7 +805,7 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
   const project = input.project;
   const documentationEnabled = Boolean(project?.documentationEnabled);
   const documentation = {
-    row: { label: "DOCUMENTATION", value: documentationEnabled ? "ON" : "OFF", chip: true },
+    row: { label: "Documentation", value: documentationEnabled ? "ON" : "OFF", chip: true },
     copy: documentationEnabled
       ? "This Project's Documents are written on its Documents tab and listed under Project Documentation."
       : "Turn Documentation on to write Project Documents for this Project.",
@@ -845,19 +844,19 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
   // holds them but no route exposes it, so there is nothing honest to render.
   // Composing one needs a BFF route, which #213 does not carry.
   const identity: DossierSettingRow[] = [
-    { label: "CLIENT", value: project.client?.name || "No Client" },
-    { label: "KIND", value: kindLabel(project), chip: true },
+    { label: "Client", value: project.client?.name || "No Client" },
+    { label: "Kind", value: kindLabel(project), chip: true },
   ];
   const lifecycle: DossierSettingRow[] = [
     {
-      label: "STATUS",
+      label: "Status",
       value: statusLabel(project.projectStatus),
       chip: true,
       swatch: projectStatusColor(project.projectStatus),
     },
-    { label: "START", value: start ? formatDayStamp(start) : "—", date: "startDate" },
-    { label: "DUE", value: due ? formatDayStamp(due) : "—", date: "dueDate" },
-    { label: "LAST CHANGE", value: lastChange ? `${lastChange.when} · ${lastChange.who}` : "—" },
+    { label: "Start", value: start ? formatDayStamp(start) : "—", date: "startDate" },
+    { label: "Due", value: due ? formatDayStamp(due) : "—", date: "dueDate" },
+    { label: "Last change", value: lastChange ? `${lastChange.when} · ${lastChange.who}` : "—" },
   ];
   const budgeted = budgetedHoursTotal(project);
   const percent = projectBudgetPercent(project);
@@ -1036,7 +1035,7 @@ export function composeDossier(input: DossierInput): DossierModel {
         ? { ...personChip(project.assignee), self: project.assignee.id === input.currentUserId }
         : null,
       team,
-      updatedLabel: updatedAt ? `UPDATED ${formatWhen(updatedAt, input.now)}` : null,
+      updatedLabel: updatedAt ? `Updated ${formatWhen(updatedAt, input.now)}` : null,
       tags: input.tags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
     };
   }
@@ -1053,8 +1052,8 @@ export function composeDossier(input: DossierInput): DossierModel {
           .join("") || project.client.name.slice(0, 2).toUpperCase(),
         meta:
           input.clientActiveProjectCount === 1
-            ? "1 ACTIVE PROJECT"
-            : `${input.clientActiveProjectCount} ACTIVE PROJECTS`,
+            ? "1 active project"
+            : `${input.clientActiveProjectCount} active projects`,
         contacts: (project.client.contacts ?? []).map((contact) => ({
           name: contact.name,
           role: contact.role ? contact.role.replace(/_/g, " ").toUpperCase() : null,
@@ -1065,10 +1064,10 @@ export function composeDossier(input: DossierInput): DossierModel {
 
   const filed: Array<{ label: string; value: string }> = [];
   if (project) {
-    filed.push({ label: "TASKS", value: String(nextActions.rows.length) });
-    filed.push({ label: "TIME", value: trackedMtd });
-    filed.push({ label: "EVIDENCE", value: String(screenshots.length) });
-    filed.push({ label: "DOCS", value: String(documents.length) });
+    filed.push({ label: "Tasks", value: String(nextActions.rows.length) });
+    filed.push({ label: "Time", value: trackedMtd });
+    filed.push({ label: "Evidence", value: String(screenshots.length) });
+    filed.push({ label: "Docs", value: String(documents.length) });
   }
 
   return {

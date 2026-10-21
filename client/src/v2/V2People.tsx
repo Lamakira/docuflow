@@ -17,6 +17,7 @@ import {
 } from "./people";
 import { workspaceOwnerName } from "./workspace";
 import { useV2Chrome } from "./V2Shell";
+import { V2RecordEmpty } from "./V2EmptyState";
 import { V2FilterSelect } from "./V2Select";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { V2FormDialog } from "./V2FormDialog";
@@ -89,6 +90,7 @@ export function V2PeoplePage() {
     memberships: data?.memberships ?? [],
     invitations,
     filterQuery,
+    canInvite: !readOnly && canManage,
   });
 
   function refuse(id: string, errorMessage: string) {
@@ -242,7 +244,7 @@ export function V2PeoplePage() {
       <V2PageSkeleton title="People" testId="v2-people" status="Loading People for this Workspace.">
         <SkeletonRegister
           className="df-people-register"
-          heads={["MEMBER", "WORKSPACE ROLE", "CAPABILITIES", "STATUS"]}
+          heads={["Member", "Workspace role", "Capabilities", "Status"]}
         />
       </V2PageSkeleton>
     );
@@ -343,7 +345,7 @@ export function V2PeoplePage() {
         testId="v2-people-invite-dialog"
       >
         <label className="df-daily-field">
-          EMAIL
+          Email
           <input
             type="email"
             value={inviteEmail}
@@ -354,7 +356,7 @@ export function V2PeoplePage() {
           />
         </label>
         <label className="df-daily-field">
-          WORKSPACE ROLE
+          Workspace role
           <V2FilterSelect
             label=""
             ariaLabel="Workspace Role"
@@ -383,7 +385,7 @@ export function V2PeoplePage() {
       >
         {settingsFor?.hoursPerDay != null ? (
           <label className="df-daily-field">
-            HOURS PER DAY
+            Hours per day
             <input
               type="number"
               min={1}
@@ -409,8 +411,8 @@ export function V2PeoplePage() {
       </V2FormDialog>
 
       <section className="df-card df-people-register" data-testid="v2-people-register">
-        {page.empty ? (
-          <p className="df-empty">{page.emptyCopy}</p>
+        {page.emptyState ? (
+          <V2RecordEmpty model={page.emptyState} icon="people" onClear={() => setFilterQuery("")} testIds={{ none: "v2-people-empty" }} />
         ) : layout.stackedRegister ? (
           page.rows.map((row) => (
             <div
@@ -440,10 +442,10 @@ export function V2PeoplePage() {
           <Table className="df-table" data-testid="v2-people-table">
             <TableHeader>
               <TableRow className="df-table-head-row">
-                <TableHead className="df-table-head" data-column="member">MEMBER</TableHead>
-                <TableHead className="df-table-head" data-column="role">WORKSPACE ROLE</TableHead>
-                <TableHead className="df-table-head" data-column="capabilities">CAPABILITIES</TableHead>
-                <TableHead className="df-table-head" data-column="status">STATUS</TableHead>
+                <TableHead className="df-table-head" data-column="member">Member</TableHead>
+                <TableHead className="df-table-head" data-column="role">Workspace role</TableHead>
+                <TableHead className="df-table-head" data-column="capabilities">Capabilities</TableHead>
+                <TableHead className="df-table-head" data-column="status">Status</TableHead>
                 <TableHead className="df-table-head" data-column="actions">
                   <span className="df-sr-only">Actions</span>
                 </TableHead>
@@ -465,7 +467,7 @@ export function V2PeoplePage() {
                       </span>
                       <span style={{ minWidth: 0 }}>
                         <div className="df-row-title">{row.name}</div>
-                        <div className="df-mono df-meta" data-case="preserve">
+                        <div className="df-mono df-meta">
                           {row.email}
                         </div>
                       </span>

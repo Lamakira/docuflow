@@ -39,7 +39,7 @@ export function V2ContextPanel({
   const title =
     panel === "ask" ? ask.title : panel === "approvals" ? EMPTY_TIMESHEET_APPROVALS.title : "Notifications";
   const kicker =
-    panel === "ask" ? ask.kicker : panel === "approvals" ? EMPTY_TIMESHEET_APPROVALS.kicker : "INBOX";
+    panel === "ask" ? ask.kicker : panel === "approvals" ? EMPTY_TIMESHEET_APPROVALS.kicker : "Inbox";
 
   return (
     <aside
@@ -49,7 +49,7 @@ export function V2ContextPanel({
     >
       <header className="df-panel-head">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.08em" }}>
+          <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)" }}>
             {kicker}
           </div>
           <div
@@ -270,7 +270,7 @@ function NotificationsBody({ onClose }: { onClose: () => void }) {
                 onClose();
               }}
             >
-              <span className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.06em" }}>
+              <span className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)" }}>
                 {row.kind}
               </span>
               <span style={{ fontWeight: 500, fontSize: 13 }}>{row.title}</span>
@@ -282,7 +282,7 @@ function NotificationsBody({ onClose }: { onClose: () => void }) {
           ))
         )}
         <section className="df-delivery" data-testid="v2-delivery-preference">
-          <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.08em" }}>
+          <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)" }}>
             {delivery.kicker}
           </div>
           <div style={{ fontWeight: 600, fontSize: 13 }}>{delivery.title}</div>

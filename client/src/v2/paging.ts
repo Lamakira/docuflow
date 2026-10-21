@@ -53,7 +53,7 @@ export function composePaging(input: {
     page,
     pageCount,
     pageSize,
-    label: pageCount > 1 ? `${first}–${last} OF ${total} ${noun}` : `${total} ${noun}`,
+    label: pageCount > 1 ? `${first}–${last} of ${total} ${noun}` : `${total} ${noun}`,
     hasPrevious: page > 1,
     hasNext: page < pageCount,
     showControls: total > REGISTER_PAGE_SIZES[0],

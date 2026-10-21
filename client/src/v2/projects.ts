@@ -4,6 +4,7 @@ import { projectStatusColor } from "./palette";
 import { budgetedHoursTotal, projectHref } from "./today";
 import { readPage, readPageSize, writePaging } from "./paging";
 import { formatFullDate, utcDay } from "./dates";
+import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 
 /**
  * Projects register (#185).
@@ -63,7 +64,8 @@ export type ProjectRegisterRow = {
 export type ProjectRegisterModel = {
   subhead: string;
   empty: boolean;
-  emptyCopy: string;
+  /** Why the register shows nothing (#325); null while it has rows. */
+  emptyState: EmptyModel | null;
   /** Empty because of a filter, so the register offers to clear it. */
   filtered: boolean;
   rows: ProjectRegisterRow[];
@@ -80,10 +82,10 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function kindLabel(project: ProjectRegisterRowInput): string {
-  if (project.projectType === "internal" || !project.clientName) return "INTERNAL";
-  if (project.projectType === "monthly") return "MONTHLY";
-  if (project.projectType === "hourly_budget") return "HOURLY";
-  return "CLIENT PROJECT";
+  if (project.projectType === "internal" || !project.clientName) return "Internal";
+  if (project.projectType === "monthly") return "Monthly";
+  if (project.projectType === "hourly_budget") return "Hourly";
+  return "Client project";
 }
 
 function statusLabel(status: string): string {
@@ -113,18 +115,18 @@ export const PROJECT_STATUS_OPTIONS = [
 ];
 
 export const PROJECT_TYPE_OPTIONS = [
-  { value: "one_time", label: "ONE-TIME" },
-  { value: "monthly", label: "MONTHLY" },
-  { value: "hourly_budget", label: "HOURLY" },
-  { value: "internal", label: "INTERNAL" },
+  { value: "one_time", label: "One-time" },
+  { value: "monthly", label: "Monthly" },
+  { value: "hourly_budget", label: "Hourly" },
+  { value: "internal", label: "Internal" },
 ];
 
 export const PROJECT_DUE_OPTIONS = [
-  { value: "overdue", label: "OVERDUE" },
-  { value: "next_7", label: "NEXT 7 DAYS" },
-  { value: "this_month", label: "THIS MONTH" },
-  { value: "next_month", label: "NEXT MONTH" },
-  { value: "none", label: "NO DUE DATE" },
+  { value: "overdue", label: "Overdue" },
+  { value: "next_7", label: "Next 7 days" },
+  { value: "this_month", label: "This month" },
+  { value: "next_month", label: "Next month" },
+  { value: "none", label: "No due date" },
 ];
 
 /**
@@ -271,14 +273,19 @@ export function projectFilterLabels(
     options.find((option) => option.value === value)?.label ?? value.toUpperCase();
   const labels: string[] = [];
   if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
-  if (filters.status !== "all") labels.push(`STATUS ${optionLabel(PROJECT_STATUS_OPTIONS, filters.status)}`);
-  if (filters.client !== "all") labels.push(`CLIENT ${names.clients.get(filters.client) ?? "—"}`);
-  if (filters.lead !== "all") labels.push(`PROJECT MANAGER ${names.leads.get(filters.lead) ?? "—"}`);
-  if (filters.tag !== "all") labels.push(`TAG ${(names.tags.get(filters.tag) ?? "—").toUpperCase()}`);
-  if (filters.type !== "all") labels.push(`TYPE ${optionLabel(PROJECT_TYPE_OPTIONS, filters.type)}`);
-  if (filters.due !== "all") labels.push(`DUE ${optionLabel(PROJECT_DUE_OPTIONS, filters.due)}`);
+  if (filters.status !== "all") labels.push(`Status ${optionLabel(PROJECT_STATUS_OPTIONS, filters.status)}`);
+  if (filters.client !== "all") labels.push(`Client ${names.clients.get(filters.client) ?? "—"}`);
+  if (filters.lead !== "all") labels.push(`Project manager ${names.leads.get(filters.lead) ?? "—"}`);
+  if (filters.tag !== "all") labels.push(`Tag ${names.tags.get(filters.tag) ?? "—"}`);
+  if (filters.type !== "all") labels.push(`Type ${optionLabel(PROJECT_TYPE_OPTIONS, filters.type)}`);
+  if (filters.due !== "all") labels.push(`Due ${optionLabel(PROJECT_DUE_OPTIONS, filters.due)}`);
   return labels;
 }
+
+const PROJECTS_NONE = {
+  title: "Add your first Project",
+  copy: "A Project is the delivery work Tasks and Time Entries hang from. Create one to start planning and tracking work.",
+};
 
 export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegisterModel {
   const subhead = `Projects in ${input.workspaceName}.`;
@@ -305,17 +312,13 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
 
   const empty = rows.length === 0;
   const activeFilters = input.activeFilters ?? [];
+  const filtered =
+    empty && (activeFilters.length > 0 || Boolean(needle) || input.statusFilter !== "all" || input.tagFilter !== "all");
   return {
     subhead,
     empty,
-    emptyCopy: empty
-      ? activeFilters.length > 0
-        ? `No Projects match ${activeFilters.join(" · ")}.`
-        : needle || input.statusFilter !== "all" || input.tagFilter !== "all"
-          ? "No Projects match this filter."
-          : "No Projects in this Workspace yet."
-      : "",
-    filtered: empty && (activeFilters.length > 0 || Boolean(needle) || input.statusFilter !== "all" || input.tagFilter !== "all"),
+    emptyState: emptyModelOf(emptyKindOf(empty, filtered), "Projects", PROJECTS_NONE),
+    filtered,
     rows,
     count: rows.length,
   };
@@ -424,7 +427,7 @@ function boardColumn(id: string, label: string): ProjectBoardColumn {
 export type ProjectBoardModel = {
   subhead: string;
   empty: boolean;
-  emptyCopy: string;
+  emptyState: EmptyModel | null;
   columns: ProjectBoardColumn[];
   count: number;
 };
@@ -465,11 +468,7 @@ export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel
   return {
     subhead: `Projects in ${input.workspaceName}.`,
     empty,
-    emptyCopy: empty
-      ? needle
-        ? "No Projects match this filter."
-        : "No Projects in this Workspace yet."
-      : "",
+    emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle)), "Projects", PROJECTS_NONE),
     columns,
     count,
   };

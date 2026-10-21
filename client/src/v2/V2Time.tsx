@@ -36,6 +36,7 @@ import {
   type TimeStatsResponse,
 } from "./time";
 import { Button } from "@/components/ui/button";
+import { V2CompactEmpty, V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
@@ -183,6 +184,24 @@ function TimeEntriesPane() {
     },
   });
 
+  // Cheap "ever recorded" probe, asked only when the register is empty: the
+  // newest one Time Entry the reader may see, in any period (#325).
+  const probeEver = !isLoading && !isError && (entriesResponse?.data ?? []).length === 0;
+  const { data: everResponse } = useQuery<TimeEntriesResponse>({
+    queryKey: ["/api/time-tracking/entries", "ever"],
+    enabled: probeEver,
+    queryFn: async () => {
+      const res = await fetch(timeEntriesPath({ limit: 1 }), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Time Entries");
+      return res.json();
+    },
+  });
+  // The Timer's Project list, shared with the Time tracker's own query.
+  const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
+    queryKey: ["/api/crm/projects", { pageSize: 500 }],
+    queryFn: () => fetch("/api/crm/projects?pageSize=500").then((res) => res.json()),
+  });
+
   const page = composeTimeTracking({
     now,
     workspaceName,
@@ -193,6 +212,11 @@ function TimeEntriesPane() {
     activeEntryId: activeEntry?.id ?? null,
     entries: (entriesResponse?.data ?? []).map(toRow),
     workdaySeconds: stats?.totalDuration ?? 0,
+    range,
+    everRecorded: everResponse ? everResponse.data.length > 0 : null,
+    hasProjects: projectsResponse ? projectsResponse.data.length > 0 : true,
+    canCreateProject: !readOnly,
+    facetsActive: projectFilter !== "all" || statusFilter !== "all" || (canManage && userFilter !== "all"),
   });
 
   if (!isLoading && !isError && knownIds.current === null) {
@@ -278,7 +302,7 @@ function TimeEntriesPane() {
         <SkeletonSection title="Timer" lines={2} />
         <SkeletonRegister
           className="df-time-register"
-          heads={["WHEN", "PROJECT", "TASK", "WHO", "STATUS", "DURATION"]}
+          heads={["When", "Project", "Task", "Who", "Status", "Duration"]}
         />
       </V2PageSkeleton>
     );
@@ -315,7 +339,7 @@ function TimeEntriesPane() {
         </div>
         <div className="df-toolbar" data-align="start">
           <V2FilterSelect
-            label="PROJECT"
+            label="Project"
             ariaLabel="Project"
             value={selectedProjectId || V2_SELECT_NONE}
             disabled={readOnly || busy}
@@ -331,7 +355,7 @@ function TimeEntriesPane() {
             ]}
           />
           <V2FilterSelect
-            label="TASK"
+            label="Task"
             ariaLabel="Task"
             value={selectedTaskId || V2_SELECT_NONE}
             disabled={readOnly || busy || !selectedProjectId}
@@ -352,11 +376,25 @@ function TimeEntriesPane() {
             </Button>
           ) : null}
         </div>
+        {page.timerHint ? (
+          <p className="df-empty" data-testid="v2-time-timer-hint">
+            {page.timerHint.href ? (
+              <>
+                <Link href={page.timerHint.href} className="df-cta">
+                  {page.timerHint.linkLabel}
+                </Link>
+                {page.timerHint.copy.slice(page.timerHint.linkLabel.length)}
+              </>
+            ) : (
+              page.timerHint.copy
+            )}
+          </p>
+        ) : null}
       </section>
 
       <div className="df-filter-bar">
         <V2FilterSelect
-          label="RANGE"
+          label="Range"
           ariaLabel="Range"
           value={range}
           active={range === "today"}
@@ -368,7 +406,7 @@ function TimeEntriesPane() {
           ]}
         />
         <V2FilterSelect
-          label="PROJECT"
+          label="Project"
           ariaLabel="Filter by Project"
           value={projectFilter}
           onChange={setProjectFilter}
@@ -381,7 +419,7 @@ function TimeEntriesPane() {
           ]}
         />
         <V2FilterSelect
-          label="STATUS"
+          label="Status"
           ariaLabel="Filter by status"
           value={statusFilter}
           onChange={setStatusFilter}
@@ -394,7 +432,7 @@ function TimeEntriesPane() {
         />
         {canManage ? (
           <V2FilterSelect
-            label="MEMBER"
+            label="Member"
             ariaLabel="Filter by Member"
             value={userFilter}
             onChange={setUserFilter}
@@ -411,17 +449,33 @@ function TimeEntriesPane() {
       <section className="df-card df-time-register" data-testid="v2-time-register">
         {layout.stackedRegister ? null : (
           <div className="df-register-head df-desktop-only">
-            <span>WHEN</span>
-            <span>PROJECT</span>
-            <span>TASK</span>
-            <span>WHO</span>
-            <span>STATUS</span>
-            <span style={{ textAlign: "right" }}>DURATION</span>
+            <span>When</span>
+            <span>Project</span>
+            <span>Task</span>
+            <span>Who</span>
+            <span>Status</span>
+            <span style={{ textAlign: "right" }}>Duration</span>
             <span />
           </div>
         )}
-        {page.empty ? (
-          <p className="df-empty">{page.emptyCopy}</p>
+        {page.emptyState ? (
+          <V2RecordEmpty
+            model={page.emptyState}
+            icon="time"
+            action={
+              page.emptyAction ? (
+                <Button asChild variant="default" className="df-btn">
+                  <Link href={page.emptyAction.href}>{page.emptyAction.label}</Link>
+                </Button>
+              ) : undefined
+            }
+            onClear={() => {
+              setProjectFilter("all");
+              setStatusFilter("all");
+              setUserFilter("all");
+            }}
+            testIds={{ none: "v2-time-register-empty", filtered: "v2-time-register-filtered", range: "v2-time-register-range" }}
+          />
         ) : (
           page.rows.map((row) => (
             <div
@@ -490,7 +544,7 @@ function TimeEntriesPane() {
  */
 function TimeStatsPane() {
   const now = useMemo(() => new Date(), []);
-  const { workspaceName, workspaceRole, ready } = useWorkspaceCondition();
+  const { workspaceName, workspaceRole, readOnly, ready } = useWorkspaceCondition();
   const [period, setPeriod] = useState<TimePeriod>("week");
 
   const canSeeEveryone = canManageAdministration(workspaceRole);
@@ -509,11 +563,31 @@ function TimeStatsPane() {
     },
   });
 
+  // Same probe as Time Entries (shared cache key): asked only when the period
+  // shows no Time Entry, to tell a never-used Workspace from an empty period.
+  const probeEver = !isLoading && !isError && (data?.entriesCount ?? 0) === 0;
+  const { data: everResponse } = useQuery<TimeEntriesResponse>({
+    queryKey: ["/api/time-tracking/entries", "ever"],
+    enabled: probeEver,
+    queryFn: async () => {
+      const res = await fetch(timeEntriesPath({ limit: 1 }), { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Time Entries");
+      return res.json();
+    },
+  });
+  const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
+    queryKey: ["/api/crm/projects", { pageSize: 500 }],
+    queryFn: () => fetch("/api/crm/projects?pageSize=500").then((res) => res.json()),
+  });
+
   const page = composeTimeStats({
     period,
     workspaceName,
     canSeeEveryone,
     stats: data ?? null,
+    everRecorded: everResponse ? everResponse.data.length > 0 : null,
+    hasProjects: projectsResponse ? projectsResponse.data.length > 0 : true,
+    canCreateProject: !readOnly,
   });
 
   if (!ready) {
@@ -534,7 +608,7 @@ function TimeStatsPane() {
           <p className="df-subhead">{page.subhead}</p>
         </div>
         <V2FilterSelect
-          label="PERIOD"
+          label="Period"
           ariaLabel="Period"
           value={period}
           onChange={(next) => setPeriod(next as TimePeriod)}
@@ -548,6 +622,20 @@ function TimeStatsPane() {
 
       {isError ? (
         <p className="df-empty">Time stats for this Workspace could not be loaded.</p>
+      ) : page.neverRecorded ? (
+        <V2EmptyState
+          icon="time"
+          title={page.neverRecorded.title}
+          copy={page.neverRecorded.copy}
+          action={
+            page.neverRecordedAction ? (
+              <Button asChild variant="default" className="df-btn">
+                <Link href={page.neverRecordedAction.href}>{page.neverRecordedAction.label}</Link>
+              </Button>
+            ) : undefined
+          }
+          testId="v2-time-stats-empty"
+        />
       ) : (
         <div
           key={period}
@@ -575,7 +663,7 @@ function TimeStatsPane() {
               <h2 className="df-card-title">By Project</h2>
             </div>
             {page.byProject.empty ? (
-              <p className="df-empty">{isLoading ? "Loading…" : page.byProject.emptyCopy}</p>
+              <V2CompactEmpty>{isLoading ? "Loading…" : page.byProject.emptyCopy}</V2CompactEmpty>
             ) : (
               <div className="df-stat-bars">
                 {page.byProject.rows.map((row) => (
@@ -605,7 +693,7 @@ function TimeStatsPane() {
                 <h2 className="df-card-title">By Member</h2>
               </div>
               {page.byMember.empty ? (
-                <p className="df-empty">{isLoading ? "Loading…" : page.byMember.emptyCopy}</p>
+                <V2CompactEmpty>{isLoading ? "Loading…" : page.byMember.emptyCopy}</V2CompactEmpty>
               ) : (
                 <div className="df-stat-bars">
                   {page.byMember.rows.map((row) => (
@@ -745,14 +833,40 @@ function ProjectTasksPane() {
     deleteTask.mutate(id);
   }
 
+  const header = (
+    <header className="df-today-head">
+      <div style={{ minWidth: 0 }}>
+        <h1 className="df-title">Projects &amp; Tasks</h1>
+        <p className="df-subhead">{page.subhead}</p>
+      </div>
+    </header>
+  );
+
+  // No Project at all: one full-width state instead of two panes (#325).
+  if (!projectsLoading && page.noProjects && page.projectsEmptyState) {
+    return (
+      <>
+        {header}
+        <V2EmptyState
+          icon="projects"
+          title={page.projectsEmptyState.title}
+          copy={page.projectsEmptyState.copy}
+          action={
+            page.canWrite ? (
+              <Button asChild variant="default" className="df-btn">
+                <Link href="/projects?new=1">New Project</Link>
+              </Button>
+            ) : undefined
+          }
+          testId="v2-time-projects-empty"
+        />
+      </>
+    );
+  }
+
   return (
     <>
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Projects &amp; Tasks</h1>
-          <p className="df-subhead">{page.subhead}</p>
-        </div>
-      </header>
+      {header}
 
       {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
 
@@ -772,8 +886,22 @@ function ProjectTasksPane() {
               />
             </label>
           </div>
-          {page.projectsEmpty ? (
-            <p className="df-empty">{projectsLoading ? "Loading…" : page.projectsEmptyCopy}</p>
+          {projectsLoading && page.projectsEmpty ? (
+            <p className="df-empty">Loading…</p>
+          ) : page.projectsEmptyState ? (
+            <V2RecordEmpty
+              model={page.projectsEmptyState}
+              icon="projects"
+              action={
+                page.canWrite ? (
+                  <Button asChild variant="default" className="df-btn">
+                    <Link href="/projects?new=1">New Project</Link>
+                  </Button>
+                ) : undefined
+              }
+              onClear={() => setSearch("")}
+              testIds={{ none: "v2-time-projects-empty" }}
+            />
           ) : (
             <div className="df-task-projects">
               {page.projects.map((project) => (
@@ -796,6 +924,7 @@ function ProjectTasksPane() {
           )}
         </section>
 
+        {page.selectedProjectName === null && !page.showChoose ? null : (
         <section className="df-card" data-testid="v2-time-tasks">
           {page.selectedProjectName === null ? (
             <p className="df-empty">{page.chooseCopy}</p>
@@ -803,7 +932,7 @@ function ProjectTasksPane() {
             <>
               <div className="df-card-head">
                 <h2 className="df-card-title">{page.selectedProjectName}</h2>
-                <span className="df-mono df-meta">{page.active.rows.length} OPEN</span>
+                <span className="df-mono df-meta">{page.active.rows.length} open</span>
               </div>
               <div className="df-toolbar" data-align="start">
                 <label className="df-filter-input">
@@ -826,7 +955,8 @@ function ProjectTasksPane() {
               <V2TaskTable
                 rows={page.rows}
                 canWrite={page.canWrite}
-                emptyCopy={tasksLoading ? "Loading…" : page.active.emptyCopy}
+                emptyCopy={tasksLoading ? "Loading…" : (page.active.emptyState?.copy ?? "")}
+                emptyTitle={tasksLoading ? undefined : page.active.emptyState?.title}
                 editingId={editingId}
                 editingName={editingName}
                 confirmDeleteId={confirmDeleteId}
@@ -844,6 +974,7 @@ function ProjectTasksPane() {
             </>
           )}
         </section>
+        )}
       </div>
     </>
   );

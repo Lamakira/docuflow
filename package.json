@@ -15,6 +15,7 @@
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node --env-file-if-exists=.env dist/index.cjs",
     "check": "tsc",
+    "brand:assets": "tsx scripts/brand-assets.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:up": "docker compose up -d --wait",

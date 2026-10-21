@@ -121,7 +121,7 @@ describe("Status history says how long each Project Status held (#260, C)", () =
         fromColor: "#6366f1",
         to: "WON IN PROGRESS",
         toColor: "#14b8a6",
-        when: "20 SEP",
+        when: "20 Sep",
         who: "Pat Ng",
         held: "3 d so far",
       },
@@ -131,7 +131,7 @@ describe("Status history says how long each Project Status held (#260, C)", () =
         fromColor: null,
         to: "WON NOT STARTED",
         toColor: "#6366f1",
-        when: "13 SEP",
+        when: "13 Sep",
         who: "—",
         held: "7 d",
       },
@@ -274,7 +274,7 @@ describe("Register reads and filters by Tag (#260, C)", () => {
 
     const none = composeProjectRegister(registerInput({ tagFilter: "t-9" }));
     expect(none.empty).toBe(true);
-    expect(none.emptyCopy).toBe("No Projects match this filter.");
+    expect(none.emptyState?.copy).toBe("No Projects match these filters.");
   });
 });
 

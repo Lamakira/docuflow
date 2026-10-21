@@ -210,8 +210,8 @@ describe("v1 File routes still land in v2 (#216)", () => {
     expect(matchV2Route("/files")).toMatchObject({ kind: "file-viewer", href: "/files" });
     expect(matchV2Route("/files?src=%2Fobjects%2Fx")).toMatchObject({ kind: "file-viewer" });
     expect(breadcrumbFor("/files", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "FILE",
+      "Harbor Co",
+      "File",
     ]);
     expect(appSource).toMatch(/path="\/files"/);
     expect(appSource).toContain("V2FilePage");
@@ -416,7 +416,7 @@ describe("Document Access still hides restricted Knowledge (#216)", () => {
       accessFact: { filteredByAccess: true, restrictedHidden: 1 },
     });
     expect(JSON.stringify(search.rows)).not.toContain("Payroll");
-    expect(search.footer).toContain("RESTRICTED");
+    expect(search.footer).toContain("restricted");
 
     const ask = composeAsk({
       messages: [

@@ -11,7 +11,7 @@ import {
 } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileText } from "lucide-react";
+import { BrandLockup } from "@/v2/BrandMark";
 import { useAuth } from "@/hooks/useAuth";
 import { useWebAuthConfig } from "@/lib/webAuthConfig";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -234,11 +234,8 @@ function AuthShell({
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="p-2 rounded-lg bg-primary">
-              <FileText className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <span className="text-2xl font-bold">DocuFlow</span>
+          <div className="mb-2">
+            <BrandLockup fontSize="1.75rem" />
           </div>
           <p className="text-muted-foreground text-center">
             {surface === "sign-up" ? "Start your Workspace" : "Welcome back"}

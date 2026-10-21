@@ -112,7 +112,7 @@ function emptyAdmin(overrides: Partial<AdministrationInput> = {}): Administratio
   return {
     workspaceName: "Harbor Co",
     ownerName: "Sam Lee",
-    workspaceRole: "OWNER",
+    workspaceRole: "Owner",
     condition: null,
     serviceAccounts: [],
     webhookEndpoints: [],
@@ -128,8 +128,8 @@ describe("Administration routing (#193)", () => {
     expect(match.kind).toBe("administration");
     expect(navIdForPath("/administration")).toBe("administration");
     expect(breadcrumbFor("/administration", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "ADMINISTRATION",
+      "Harbor Co",
+      "Administration",
     ]);
     expect(appSource).toContain("V2AdministrationPage");
     expect(appSource).toMatch(/path="\/administration\/:tab\?"/);
@@ -520,7 +520,7 @@ describe("Administration from operator routes (#193)", () => {
 
   it("never sends the Owner to ask the Owner (#238)", () => {
     const page = composeAdministration(
-      emptyAdmin({ workspaceRole: "OWNER", ownerName: "User Test" }),
+      emptyAdmin({ workspaceRole: "Owner", ownerName: "User Test" }),
     );
     // The Owner is not refused at all — that was the whole of D5.
     expect(page.kind).toBe("ready");
@@ -528,7 +528,7 @@ describe("Administration from operator routes (#193)", () => {
     // And where an Owner is refused for some other reason, the copy does not
     // offer them a grant only they could make.
     const refused = composeAnalytics(
-      emptyAnalytics({ workspaceRole: "OWNER", ownerName: "User Test", refused: true }),
+      emptyAnalytics({ workspaceRole: "Owner", ownerName: "User Test", refused: true }),
     );
     expect(refused.kind).toBe("refusal");
     if (refused.kind !== "refusal") return;
@@ -879,7 +879,7 @@ const RANGE = analyticsRange("7d", NOW);
 function emptyAnalytics(overrides: Partial<AnalyticsInput> = {}): AnalyticsInput {
   return {
     now: NOW,
-    workspaceRole: "OWNER",
+    workspaceRole: "Owner",
     ownerName: "Sam Lee",
     range: RANGE,
     overview: null,
@@ -897,7 +897,7 @@ function policyDraft(overrides: Partial<ScreenshotPolicy> = {}): ScreenshotPolic
 function editorInput(overrides: Partial<TrackingPolicyInput> = {}): TrackingPolicyInput {
   return {
     workspaceName: "Harbor Co",
-    workspaceRole: "OWNER",
+    workspaceRole: "Owner",
     ownerName: "Sam Lee",
     condition: null,
     saved: policyDraft(),
@@ -1042,16 +1042,16 @@ describe("Administration analytics (#212)", () => {
 
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
-    expect(page.rangeLabel).toBe("7 SEP – 14 SEP");
+    expect(page.rangeLabel).toBe("7 Sep – 14 Sep");
     expect(page.overview).toEqual([
-      { label: "TRACKED", value: "12.5 h" },
-      { label: "IDLE", value: "1.5 h" },
-      { label: "TIME ENTRIES", value: "12" },
-      { label: "RUNNING NOW", value: "1" },
-      { label: "ACTIVE TODAY", value: "3" },
-      { label: "EVIDENCE", value: "40" },
-      { label: "LOW ACTIVITY", value: "2" },
-      { label: "REVOKED DEVICES", value: "1" },
+      { label: "Tracked", value: "12.5 h" },
+      { label: "Idle", value: "1.5 h" },
+      { label: "Time entries", value: "12" },
+      { label: "Running now", value: "1" },
+      { label: "Active today", value: "3" },
+      { label: "Evidence", value: "40" },
+      { label: "Low activity", value: "2" },
+      { label: "Revoked devices", value: "1" },
     ]);
     expect(page.activity.rows).toEqual([
       {
@@ -1066,10 +1066,10 @@ describe("Administration analytics (#212)", () => {
       "Recorded totals with provenance. DocuFlow does not score or rank Members.",
     );
     expect(page.coverage.summary).toEqual([
-      { label: "COVERAGE", value: "80%" },
-      { label: "EVIDENCE", value: "40 of 50" },
-      { label: "ENTRIES WITHOUT EVIDENCE", value: "2" },
-      { label: "TOMBSTONED", value: "1" },
+      { label: "Coverage", value: "80%" },
+      { label: "Evidence", value: "40 of 50" },
+      { label: "Entries without evidence", value: "2" },
+      { label: "Tombstoned", value: "1" },
     ]);
     expect(page.coverage.rows).toEqual([
       {
@@ -1200,14 +1200,14 @@ describe("Administration analytics (#212)", () => {
     ]);
     expect(page.recordedTime.tasks).toEqual([{ id: "task-1", name: "Survey", tracked: "2.0 h" }]);
     // The day bucket reads as the calendar day it names (#281).
-    expect(page.recordedTime.days).toEqual([{ id: "2026-09-10", day: "THU 10 SEP", tracked: "10.0 h" }]);
+    expect(page.recordedTime.days).toEqual([{ id: "2026-09-10", day: "Thu 10 Sep", tracked: "10.0 h" }]);
     expect(page.recordedTime.measures.toLowerCase()).not.toContain("rank");
     expect(JSON.stringify(page.recordedTime)).not.toContain("score");
 
     expect(page.screenshots.summary).toEqual([
-      { label: "EVIDENCE", value: "12" },
-      { label: "TOMBSTONED", value: "1" },
-      { label: "DUPLICATE GROUPS", value: "1" },
+      { label: "Evidence", value: "12" },
+      { label: "Tombstoned", value: "1" },
+      { label: "Duplicate groups", value: "1" },
     ]);
     expect(page.screenshots.byMember).toEqual([{ id: "u-1", who: "Ada Byron", evidence: "12" }]);
     expect(page.screenshots.hours).toEqual([{ id: "9", hour: "09:00", evidence: "3" }]);
@@ -1277,7 +1277,7 @@ describe("Administration analytics (#212)", () => {
 
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
-    expect(page.coverage.summary[0]).toEqual({ label: "COVERAGE", value: "—" });
+    expect(page.coverage.summary[0]).toEqual({ label: "Coverage", value: "—" });
     expect(page.coverage.rows[0].coverage).toBe("—");
   });
 
@@ -1669,7 +1669,7 @@ describe("The Billing card reads as one card (#245, F1)", () => {
 
     // And it says what it ends, and when, before it runs.
     expect(cancel.consequence).toBe(
-      "Pro entitlements stay until 1 OCT 2026. On that day writes stop and " +
+      "Pro entitlements stay until 1 Oct 2026. On that day writes stop and " +
         "the Workspace becomes read-only. Viewing, export, and recovery stay available.",
     );
     expect(paymentMethod.consequence).toBeNull();
@@ -1725,7 +1725,7 @@ describe("The Billing card reads as one card (#245, F1)", () => {
       lead: "Billed for each Billable Seat.",
       seats: { label: "3 of 8", percent: 38, over: false },
       writes: { allowed: true, label: "Writes allowed" },
-      term: { label: "Renews", value: "1 OCT 2026" },
+      term: { label: "Renews", value: "1 Oct 2026" },
     });
   });
 
@@ -1765,7 +1765,7 @@ describe("The Billing card reads as one card (#245, F1)", () => {
       "The last payment failed. Update the payment method to keep this Plan.",
     );
     expect(lead({ cancelAtPeriodEnd: true, periodEndsAt: "2026-10-01T00:00:00.000Z" })).toBe(
-      "Cancelled. Pro stays until 1 OCT 2026.",
+      "Cancelled. Pro stays until 1 Oct 2026.",
     );
     expect(lead({ planKey: "trial", billingState: "Trialing" })).toBe(
       "Every Business feature, free, until the Trial ends.",
@@ -1827,7 +1827,7 @@ describe("Administration billing remainder (#212)", () => {
       lead: "Every Business feature, free, until the Trial ends.",
       seats: { label: "1 of 1", percent: 100, over: false },
       writes: { allowed: true, label: "Writes allowed" },
-      term: { label: "Trial ends", value: "20 SEP 2026" },
+      term: { label: "Trial ends", value: "20 Sep 2026" },
     });
 
     const cancelling = composeAdministration(
@@ -1846,7 +1846,7 @@ describe("Administration billing remainder (#212)", () => {
     );
     expect(cancelling.kind).toBe("ready");
     if (cancelling.kind !== "ready") return;
-    expect(cancelling.billing.summary?.term).toEqual({ label: "Access ends", value: "1 OCT 2026" });
+    expect(cancelling.billing.summary?.term).toEqual({ label: "Access ends", value: "1 Oct 2026" });
 
     const renewing = composeAdministration(
       emptyAdmin({
@@ -1864,7 +1864,7 @@ describe("Administration billing remainder (#212)", () => {
     );
     expect(renewing.kind).toBe("ready");
     if (renewing.kind !== "ready") return;
-    expect(renewing.billing.summary?.term).toEqual({ label: "Renews", value: "1 OCT 2026" });
+    expect(renewing.billing.summary?.term).toEqual({ label: "Renews", value: "1 Oct 2026" });
 
     const none = composeAdministration(emptyAdmin());
     expect(none.kind).toBe("ready");

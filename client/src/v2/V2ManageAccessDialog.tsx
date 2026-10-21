@@ -108,7 +108,7 @@ export function V2ManageAccessDialog({
             {model.inheritedCopy}
           </p>
           <label className="df-daily-field">
-            ACCESS
+            Access
             <V2FilterSelect
               label=""
               ariaLabel="Access level"
@@ -119,7 +119,7 @@ export function V2ManageAccessDialog({
           </label>
           {model.showMembers ? (
             <fieldset className="df-access-members" aria-label="Named Members">
-              <legend className="df-mono df-meta">NAMED MEMBERS</legend>
+              <legend className="df-mono df-meta">Named members</legend>
               {model.memberChoices.length === 0 ? (
                 <p className="df-empty">{model.membersEmptyCopy}</p>
               ) : (
@@ -133,7 +133,7 @@ export function V2ManageAccessDialog({
                     />
                     <label htmlFor={`df-access-member-${choice.userId}`}>
                       {choice.label}
-                      {choice.owner ? <span className="df-mono df-meta"> · ADDED IT</span> : null}
+                      {choice.owner ? <span className="df-mono df-meta"> · Added it</span> : null}
                     </label>
                   </div>
                 ))

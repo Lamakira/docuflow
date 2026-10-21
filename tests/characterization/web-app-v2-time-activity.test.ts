@@ -123,18 +123,18 @@ describe("Time Tracking tabs and v1 rewrites (#214)", () => {
 
   it("names the open tab in the breadcrumb without renaming the destination", () => {
     expect(breadcrumbFor("/time", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "TIME TRACKING",
+      "Harbor Co",
+      "Time Tracking",
     ]);
     expect(breadcrumbFor("/time/stats", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "TIME TRACKING",
-      "TIME STATS",
+      "Harbor Co",
+      "Time Tracking",
+      "Time Stats",
     ]);
     expect(breadcrumbFor("/time/projects", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "TIME TRACKING",
-      "PROJECTS & TASKS",
+      "Harbor Co",
+      "Time Tracking",
+      "Projects & Tasks",
     ]);
     expect(breadcrumbFor("/time/stats", "Harbor Co")[1].href).toBe("/time");
     const labels = timeTabs("stats").map((tab) => tab.label);
@@ -185,11 +185,11 @@ describe("Time stats from /api/time-tracking/stats (#214)", () => {
     expect(page.periodLabel).toBe("This week");
     // A 45-minute average reads as 45m, not as "0.8 h" — the v1 dashboard's resolution.
     expect(page.figures).toEqual([
-      { label: "TRACKED", value: "3h 0m", meta: "Active time, idle excluded" },
-      { label: "TIME ENTRIES", value: "4", meta: "Recorded intervals" },
-      { label: "AVERAGE ENTRY", value: "45m", meta: "Per Time Entry" },
-      { label: "IDLE", value: "1h 0m", meta: "Detected idle time" },
-      { label: "ACTIVITY EVIDENCE", value: "12", meta: "Captures in this period" },
+      { label: "Tracked", value: "3h 0m", meta: "Active time, idle excluded" },
+      { label: "Time entries", value: "4", meta: "Recorded intervals" },
+      { label: "Average entry", value: "45m", meta: "Per Time Entry" },
+      { label: "Idle", value: "1h 0m", meta: "Detected idle time" },
+      { label: "Activity evidence", value: "12", meta: "Captures in this period" },
     ]);
 
     // Projects carry a share of the period; the leader sorts first.
@@ -333,9 +333,9 @@ describe("Activity Evidence gallery (#214)", () => {
     });
     expect(navIdForPath("/activity/gallery")).toBe("activity");
     expect(breadcrumbFor("/activity/gallery", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "ACTIVITY",
-      "GALLERY",
+      "Harbor Co",
+      "Activity",
+      "Gallery",
     ]);
     expect(activityTabs("gallery").map((tab) => tab.label)).toEqual(["Evidence", "Gallery"]);
     expect(activityTabs("gallery").map((tab) => tab.href)).toEqual(["/activity", "/activity/gallery"]);
@@ -667,7 +667,7 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     // Markup is the shadcn Table, wearing the register texture.
     expect(tableSource).toContain('from "@/components/ui/table"');
     expect(rule(".df-v2 .df-table-cell")).toMatch(/padding:\s*var\(--df-space-4\)/);
-    expect(rule(".df-v2 .df-table-head")).toMatch(/var\(--df-font-mono\)/);
+    expect(rule(".df-v2 .df-table-head")).toMatch(/var\(--df-font-data\)/);
 
     // Sorting is keyboard-frequency: it re-renders, it does not animate.
     expect(rule(".df-v2 .df-table-sort")).toMatch(/transition:\s*none/);
@@ -722,7 +722,7 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
     for (const source of [tableSource, dossierSource]) {
       expect(source).toContain("options={TASK_STATUS_OPTIONS}");
       expect(source).toMatch(/label=""\s+ariaLabel=\{`Task status for /);
-      expect(source).not.toContain('label="STATUS"');
+      expect(source).not.toContain('label="Status"');
     }
     expect(dossierSource).not.toMatch(/const TASK_STATUS_OPTIONS/);
     // The PATCH goes through `onSetStatus`, which refuses in a Read-only Workspace.

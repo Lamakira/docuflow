@@ -16,6 +16,8 @@ import { documentHref, projectDocumentHref } from "./library";
 import { administrationTabHref, type V2CommandPanel } from "./presentation";
 import { projectHref } from "./today";
 import { notificationOrigin, workspaceRoleInCopy } from "./workspace";
+import { MONTHS } from "./dates";
+import { capitalize } from "./text";
 
 export type SearchHit = {
   type: string;
@@ -79,7 +81,7 @@ export function composeSearch(input: {
     }
     rows.push({
       id: `${hit.type}-${hit.id}`,
-      kind: hit.type.toUpperCase(),
+      kind: capitalize(hit.type),
       title: hit.title,
       meta: hit.projectName ?? null,
       href:
@@ -94,7 +96,7 @@ export function composeSearch(input: {
   for (const folder of input.folders) {
     rows.push({
       id: `folder-${folder.id}`,
-      kind: "FOLDER",
+      kind: "Folder",
       title: folder.name,
       meta: null,
       href: "/documents",
@@ -105,7 +107,7 @@ export function composeSearch(input: {
     if (!isReadableDocument(document)) continue;
     rows.push({
       id: `document-${document.id}`,
-      kind: "DOCUMENT",
+      kind: "Document",
       title: document.name,
       meta: document.folderName ?? null,
       href: documentHref(document.id),
@@ -118,9 +120,9 @@ export function composeSearch(input: {
 function searchFooter(fact: SearchAccessFact | undefined): string | null {
   if (!fact?.filteredByAccess) return null;
   if (typeof fact.restrictedHidden === "number") {
-    return `RESULTS FILTERED BY YOUR ACCESS · ${fact.restrictedHidden} RESTRICTED ITEMS HIDDEN`;
+    return `Results filtered by your access · ${fact.restrictedHidden} restricted items hidden`;
   }
-  return "RESULTS FILTERED BY YOUR ACCESS";
+  return "Results filtered by your access";
 }
 
 export type TimerChipCommand = "start" | "pause" | "resume" | "stop";
@@ -192,11 +194,12 @@ function isBillingNotice(type: string): boolean {
 }
 
 function notificationKind(type: string): string {
-  if (type === "daily_update_reminder") return "UPDATE";
-  if (type === "mention") return "MENTION";
-  if (type === "reminder") return "REMINDER";
-  if (isBillingNotice(type)) return "BILLING";
-  return type.replace(/_/g, " ").toUpperCase();
+  if (type === "daily_update_reminder") return "Update";
+  if (type === "mention") return "Mention";
+  if (type === "reminder") return "Reminder";
+  if (isBillingNotice(type)) return "Billing";
+  const words = type.replace(/_/g, " ");
+  return capitalize(words);
 }
 
 function notificationHref(notification: ChromeNotification): string {
@@ -248,7 +251,7 @@ export type AskModel = {
 
 export function composeAsk(input: { messages: AskMessageInput[] }): AskModel {
   return {
-    kicker: "ASK DOCUFLOW",
+    kicker: "Ask DocuFlow",
     title: "Answers from your records",
     mode: "workspace-records",
     emptyCopy:
@@ -279,7 +282,7 @@ function citeAskSources(citations: AskCitationInput[]): AskSource[] {
     sources.push({
       id: citation.id,
       title: citation.title,
-      kind: citation.kind === "project-document" ? "PROJECT DOCUMENT" : "DOCUMENT",
+      kind: citation.kind === "project-document" ? "Project document" : "Document",
       href:
         citation.kind === "project-document" ? projectDocumentHref(citation.id) : documentHref(citation.id),
     });
@@ -314,7 +317,7 @@ export function composeDeliveryPreference(input: {
   emailByCategory: Partial<Record<DeliveryCategoryId, boolean>>;
 }): DeliveryPreferenceModel {
   return {
-    kicker: "CHANNELS",
+    kicker: "Channels",
     title: "Delivery Preference",
     copy: `The in-app inbox cannot be disabled. Delivery Preference is for ${input.workspaceName}. Security, billing, and membership notices always arrive.`,
     rows: DELIVERY_CATEGORIES.map((category) => {
@@ -439,8 +442,6 @@ export function composeRefusalPlacement(input: {
   };
 }
 
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-
 function parseDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
   const parsed = value instanceof Date ? value : new Date(value);
@@ -460,6 +461,6 @@ function formatWhen(updatedAt: Date | string | null, now: Date): string {
   if (!value) return "";
   if (sameDay(value, now)) return formatClock(value);
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (sameDay(value, yesterday)) return "YDA";
+  if (sameDay(value, yesterday)) return "Yesterday";
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
 }

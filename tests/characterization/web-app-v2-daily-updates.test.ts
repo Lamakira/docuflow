@@ -74,8 +74,8 @@ describe("Team Daily Update routing (#209)", () => {
       href: "/daily-updates",
     });
     expect(breadcrumbFor("/daily-updates", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "DAILY UPDATES",
+      "Harbor Co",
+      "Daily Updates",
     ]);
     expect(matchV2Route("/daily-update").kind).toBe("daily-update");
     expect(matchV2Route("/admin").kind).toBe("administration");
@@ -106,7 +106,7 @@ describe("Team Daily Update review (#209)", () => {
     if (page.kind !== "ready") return;
     expect(page.empty).toBe(true);
     expect(page.groups).toEqual([]);
-    expect(page.emptyCopy.toLowerCase()).toContain("daily update");
+    expect(page.emptyState?.copy.toLowerCase()).toContain("daily update");
     expect(page.submitted).toEqual([]);
     expect(page.missing).toEqual([]);
     expect(page.submittedEmptyCopy.toLowerCase()).toContain("member");
@@ -185,7 +185,7 @@ describe("Team Daily Update review (#209)", () => {
     expect(filtered.kind).toBe("ready");
     if (filtered.kind !== "ready") return;
     expect(filtered.empty).toBe(true);
-    expect(filtered.emptyCopy.toLowerCase()).toContain("filter");
+    expect(filtered.emptyState?.copy.toLowerCase()).toContain("filter");
   });
 
   it("asks existing admin Daily Update routes, including Remind", () => {
@@ -206,7 +206,7 @@ describe("Team Daily Update review (#209)", () => {
   });
 
   it("gates team review on the Workspace Role or the View Daily Updates grant", () => {
-    expect(canViewTeamDailyUpdates({ workspaceRole: "OWNER", canViewDailyUpdates: 0 })).toBe(true);
+    expect(canViewTeamDailyUpdates({ workspaceRole: "Owner", canViewDailyUpdates: 0 })).toBe(true);
     expect(canViewTeamDailyUpdates({ workspaceRole: "ADMINISTRATOR", canViewDailyUpdates: 0 })).toBe(true);
     expect(canViewTeamDailyUpdates({ workspaceRole: "MEMBER", canViewDailyUpdates: 1 })).toBe(true);
     expect(canViewTeamDailyUpdates({ workspaceRole: "MEMBER", canViewDailyUpdates: 0 })).toBe(false);

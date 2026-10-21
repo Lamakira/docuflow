@@ -64,8 +64,8 @@ describe("Opportunities routing (#187)", () => {
     expect(match.kind).toBe("opportunities");
     expect(navIdForPath("/opportunities")).toBe("opportunities");
     expect(breadcrumbFor("/opportunities", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "OPPORTUNITIES",
+      "Harbor Co",
+      "Opportunities",
     ]);
     expect(appSource).toContain("V2OpportunitiesPage");
     expect(appSource).toMatch(/path="\/opportunities"/);
@@ -129,7 +129,7 @@ describe("Opportunities pipeline from live Opportunity rows (#187)", () => {
 
     expect(pipeline.empty).toBe(true);
     expect(pipeline.count).toBe(0);
-    expect(pipeline.emptyCopy.toLowerCase()).toContain("opportunit");
+    expect(pipeline.emptyState?.copy.toLowerCase()).toContain("opportunit");
     expect(pipeline.columns.some((column) => column.id === "won" && column.terminal)).toBe(true);
     expect(pipeline.columns.some((column) => column.id === "lost" && column.terminal)).toBe(true);
     for (const name of SAMPLE_NAMES) {
@@ -203,7 +203,7 @@ describe("Opportunities pipeline from live Opportunity rows (#187)", () => {
 
     expect(pipeline.columns.flatMap((column) => column.cards).map((card) => card.id)).toEqual(["opp-1"]);
     expect(pipeline.empty).toBe(false);
-    expect(pipeline.emptyCopy).toBe("");
+    expect(pipeline.emptyState).toBeNull();
   });
 
   it("uses workspace-configurable open stages and collapses delivery statuses into Won", () => {

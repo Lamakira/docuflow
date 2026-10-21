@@ -5,6 +5,7 @@
  * same `/api/tasks` records, with the same Task Status words.
  */
 
+import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { chromeRefusal } from "./chrome";
 
 const TASK_STATUS_LABEL: Record<string, string> = {
@@ -69,12 +70,17 @@ export type ProjectTasksModel = {
   subhead: string;
   projects: Array<{ id: string; name: string; selected: boolean }>;
   projectsEmpty: boolean;
-  projectsEmptyCopy: string;
+  /** `none`: no Project yet; `filtered`: the search hides every Project (#325). */
+  projectsEmptyState: EmptyModel | null;
+  /** The Workspace has no Project and no search is on: one full-width designed state, not two panes (#325). */
+  noProjects: boolean;
   selectedProjectName: string | null;
   chooseCopy: string;
+  /** Whether the right pane asks for a Project: not while the list shows none. */
+  showChoose: boolean;
   canWrite: boolean;
   refusal: string | null;
-  active: { rows: TaskManagerRow[]; empty: boolean; emptyCopy: string };
+  active: { rows: TaskManagerRow[]; empty: boolean; emptyState: EmptyModel | null };
   archived: { rows: TaskManagerRow[]; count: number };
   /** Every Task on the Project, open work first — what the table sorts over. */
   rows: TaskManagerRow[];
@@ -112,11 +118,16 @@ export function composeProjectTasks(input: ProjectTasksInput): ProjectTasksModel
     subhead: `Tasks on the Projects in ${input.workspaceName}.`,
     projects,
     projectsEmpty: projects.length === 0,
-    projectsEmptyCopy: needle
-      ? "No Project matches that search."
-      : "No Project in this Workspace yet.",
+    projectsEmptyState: emptyModelOf(emptyKindOf(projects.length === 0, Boolean(needle)), "Projects", {
+      title: "Add your first Project",
+      copy: input.readOnly
+        ? "Tasks hang from Projects."
+        : "Tasks hang from Projects. Create a Project, then add its Tasks here.",
+    }),
+    noProjects: input.projects.length === 0 && !needle,
     selectedProjectName: selected ? fullProjectName(selected) : null,
     chooseCopy: "Choose a Project to read and manage its Tasks.",
+    showChoose: projects.length > 0,
     canWrite: !input.readOnly,
     refusal: input.readOnly
       ? chromeRefusal({
@@ -128,7 +139,12 @@ export function composeProjectTasks(input: ProjectTasksInput): ProjectTasksModel
     active: {
       rows: active,
       empty: active.length === 0,
-      emptyCopy: "No Task on this Project yet.",
+      emptyState: emptyModelOf(emptyKindOf(active.length === 0, false), "Tasks", {
+        title: "Add your first Task",
+        copy: input.readOnly
+          ? "Tasks are the units of work Time Entries are logged against."
+          : "Tasks are the units of work Time Entries are logged against. Name the first one above.",
+      }),
     },
     archived: { rows: archived, count: archived.length },
     rows: [...active, ...archived],

@@ -38,15 +38,15 @@ describe("v2 waits with real geometry", () => {
 
   it.each([
     ["V2Today.tsx", ["Needs attention", "Active Projects", "Workday", "Recent knowledge changes"]],
-    ["V2Projects.tsx", ["PROJECT / CLIENT", "BUDGET USED"]],
-    ["V2Clients.tsx", ["CLIENT", "COMPANY", "SOURCE", "On this Client", "Client details"]],
+    ["V2Projects.tsx", ["Project / client", "Budget used"]],
+    ["V2Clients.tsx", ["CLIENT", "Company", "Source", "On this Client", "Client details"]],
     ["V2Opportunities.tsx", ["Opportunity record"]],
-    ["V2People.tsx", ["MEMBER", "WORKSPACE ROLE", "CAPABILITIES"]],
-    ["V2Time.tsx", ["Timer", "WHEN", "DURATION", "By Project", "By Member"]],
-    ["V2Activity.tsx", ["Tracking Policy", "WHEN", "SOURCE"]],
+    ["V2People.tsx", ["MEMBER", "Workspace role", "Capabilities"]],
+    ["V2Time.tsx", ["Timer", "When", "Duration", "By Project", "By Member"]],
+    ["V2Activity.tsx", ["Tracking Policy", "When", "Source"]],
     ["V2DailyUpdates.tsx", ["Today"]],
     ["V2DailyUpdate.tsx", ["Submitted today", "Submit today's update"]],
-    ["V2Devices.tsx", ["Your Devices", "LAST SEEN"]],
+    ["V2Devices.tsx", ["Your Devices", "Last seen"]],
     ["V2Dossier.tsx", ["Next actions", "Latest Daily Update", "Budget & time", "Project Documents"]],
   ])("%s waits with its own titles", (file, words) => {
     const text = source(file);

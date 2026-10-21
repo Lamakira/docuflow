@@ -60,8 +60,8 @@ describe("Project Documentation and Document editor routing (#189)", () => {
     expect(match.kind).toBe("project-documentation");
     expect(navIdForPath("/project-documentation")).toBe("project-documentation");
     expect(breadcrumbFor("/project-documentation", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "PROJECT DOCUMENTATION",
+      "Harbor Co",
+      "Project Documentation",
     ]);
     expect(appSource).toContain("V2ProjectDocumentationPage");
     expect(appSource).toMatch(/path="\/project-documentation"/);
@@ -103,9 +103,9 @@ describe("Project Documentation and Document editor routing (#189)", () => {
     expect(match.source).toBe("workspace");
     expect(navIdForPath("/documents/doc-live")).toBe("documents");
     expect(breadcrumbFor("/documents/doc-live", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "WORKSPACE DOCUMENTS",
-      "DOCUMENT",
+      "Harbor Co",
+      "Workspace Documents",
+      "Document",
     ]);
     expect(appSource).toContain("V2DocumentPage");
     expect(appSource).toMatch(/path="\/documents\/:id"/);
@@ -130,9 +130,9 @@ describe("Project Documentation and Document editor routing (#189)", () => {
     });
     expect(navIdForPath("/document/doc-project")).toBe("project-documentation");
     expect(breadcrumbFor("/document/doc-project", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "PROJECT DOCUMENTATION",
-      "DOCUMENT",
+      "Harbor Co",
+      "Project Documentation",
+      "Document",
     ]);
     expect(appSource).toMatch(/path="\/company-documents\/:id\/edit"/);
     expect(appSource).toMatch(/path="\/company-documents\/:id\/view"/);
@@ -206,14 +206,14 @@ describe("Project Documentation library from live Project Documents (#189)", () 
       // Project; GLOSSARY.md has no Folder at all (#245, F4).
       kind: "folder",
       name: "Ledger rebuild",
-      type: "PROJECT",
+      type: "Project",
       expanded: true,
     });
     const child = library.rows.find((row) => row.id === "d1");
     expect(child).toMatchObject({
       kind: "document",
       name: "Scope notes",
-      type: "DOCUMENT",
+      type: "Document",
       child: true,
       href: "/document/d1",
     });

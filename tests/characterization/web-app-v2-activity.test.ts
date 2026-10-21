@@ -59,8 +59,8 @@ describe("Activity routing (#191)", () => {
     expect(match.kind).toBe("activity");
     expect(navIdForPath("/activity")).toBe("activity");
     expect(breadcrumbFor("/activity", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "ACTIVITY",
+      "Harbor Co",
+      "Activity",
     ]);
     expect(appSource).toContain("V2ActivityPage");
     expect(appSource).toMatch(/path="\/activity\/:tab\?"/);
@@ -82,7 +82,7 @@ describe("Activity from Activity Evidence (#191)", () => {
 
     expect(page.empty).toBe(true);
     expect(page.rows).toEqual([]);
-    expect(page.emptyCopy.toLowerCase()).toContain("activity evidence");
+    expect(page.emptyState?.copy.toLowerCase()).toContain("activity evidence");
     expect(page.pagePrimary).toBe("case-ink");
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
@@ -139,7 +139,7 @@ describe("Activity from Activity Evidence (#191)", () => {
     });
     expect(page.rows[1]).toMatchObject({
       id: "ev-2",
-      when: "YDA",
+      when: "Yesterday",
       source: "Web session",
       expanded: false,
     });
@@ -149,9 +149,9 @@ describe("Activity from Activity Evidence (#191)", () => {
   it("shows Tracking Policy capture rules without scores", () => {
     const page = composeActivity(emptyActivity());
     expect(page.policyLines).toEqual([
-      { label: "CAPTURE", value: "Every 3–5 min" },
-      { label: "HOURS", value: "Any hours" },
-      { label: "IDLE", value: "Pause after 10 min, asked first" },
+      { label: "Capture", value: "Every 3–5 min" },
+      { label: "Hours", value: "Any hours" },
+      { label: "Idle", value: "Pause after 10 min, asked first" },
     ]);
     expect(page.policyFootnote.toLowerCase()).toContain("tracking policy");
     expect(JSON.stringify(page.policyLines).toLowerCase()).not.toContain("productivity");
@@ -170,9 +170,9 @@ describe("Activity from Activity Evidence (#191)", () => {
       }),
     );
     expect(page.policyLines).toEqual([
-      { label: "CAPTURE", value: "Every 3–5 min" },
-      { label: "HOURS", value: "22:00–06:00, computer clock" },
-      { label: "IDLE", value: "Pause after 10 min, without asking" },
+      { label: "Capture", value: "Every 3–5 min" },
+      { label: "Hours", value: "22:00–06:00, computer clock" },
+      { label: "Idle", value: "Pause after 10 min, without asking" },
     ]);
   });
 

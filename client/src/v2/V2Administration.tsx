@@ -95,6 +95,7 @@ import {
 import { workspaceOwnerName } from "./workspace";
 import { V2SupportAccess } from "./V2SupportAccess";
 import { useV2Chrome } from "./V2Shell";
+import { V2EmptyState } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { AnalyticsRegister, readBehindAdministration } from "./V2Analytics";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
@@ -729,7 +730,7 @@ export function V2AdministrationPage() {
             </div>
             <AnalyticsRegister
               stacked={layout.stackedRegister}
-              head={["MEMBER", "EMAIL", "WORKSPACE ROLE"]}
+              head={["Member", "Email", "Workspace role"]}
               rows={page.members.rows.map((row) => ({ id: row.id, cells: [row.name, row.email, row.workspaceRole] }))}
               empty={page.members.empty}
               emptyCopy={page.members.emptyCopy}
@@ -950,7 +951,7 @@ export function V2AdministrationPage() {
               testId="v2-administration-new-service-account"
             >
               <label className="df-daily-field">
-                NAME
+                Name
                 <input
                   type="text"
                   value={accountName}
@@ -960,7 +961,7 @@ export function V2AdministrationPage() {
                 />
               </label>
               <fieldset className="df-daily-field">
-                <legend>CAPABILITIES</legend>
+                <legend>Capabilities</legend>
                 {PUBLIC_API_CAPABILITIES.map((capability) => (
                   <CheckRow
                     key={capability.id}
@@ -980,14 +981,34 @@ export function V2AdministrationPage() {
             </V2FormDialog>
             {layout.stackedRegister ? null : (
               <div className="df-register-head df-desktop-only">
-                <span>NAME</span>
-                <span>CAPABILITIES</span>
-                <span>STATUS</span>
+                <span>Name</span>
+                <span>Capabilities</span>
+                <span>Status</span>
                 <span />
               </div>
             )}
             {page.serviceAccounts.empty ? (
-              <p className="df-empty">{page.serviceAccounts.emptyCopy}</p>
+              <V2EmptyState
+                icon="keys"
+                title={page.serviceAccounts.emptyTitle}
+                copy={page.serviceAccounts.emptyCopy}
+                action={
+                  page.serviceAccounts.createAllowed ? (
+                    <Button
+                      variant="default"
+                      type="button"
+                      onClick={() => {
+                        setActionRefusal(null);
+                        setCreatingAccount(true);
+                      }}
+                      className="df-btn"
+                    >
+                      New Service Account
+                    </Button>
+                  ) : undefined
+                }
+                testId="v2-administration-sa-empty"
+              />
             ) : (
               page.serviceAccounts.rows.map((row) => (
                 <div key={row.id} className="df-register-row" data-testid={`v2-administration-sa-${row.id}`}>
@@ -1061,7 +1082,7 @@ export function V2AdministrationPage() {
                 />
               </label>
               <fieldset className="df-daily-field">
-                <legend>EVENT TYPES</legend>
+                <legend>Event types</legend>
                 {WEBHOOK_EVENT_TYPES.map((type) => (
                   <CheckRow
                     key={type}
@@ -1082,13 +1103,33 @@ export function V2AdministrationPage() {
             {layout.stackedRegister ? null : (
               <div className="df-register-head df-desktop-only">
                 <span>URL</span>
-                <span>EVENTS</span>
-                <span>STATUS</span>
+                <span>Events</span>
+                <span>Status</span>
                 <span />
               </div>
             )}
             {page.webhookEndpoints.empty ? (
-              <p className="df-empty">{page.webhookEndpoints.emptyCopy}</p>
+              <V2EmptyState
+                icon="webhooks"
+                title={page.webhookEndpoints.emptyTitle}
+                copy={page.webhookEndpoints.emptyCopy}
+                action={
+                  page.webhookEndpoints.createAllowed ? (
+                    <Button
+                      variant="default"
+                      type="button"
+                      onClick={() => {
+                        setActionRefusal(null);
+                        setCreatingEndpoint(true);
+                      }}
+                      className="df-btn"
+                    >
+                      New Webhook Endpoint
+                    </Button>
+                  ) : undefined
+                }
+                testId="v2-administration-wh-empty"
+              />
             ) : (
               page.webhookEndpoints.rows.map((row) => (
                 <div key={row.id} className="df-register-row" data-testid={`v2-administration-wh-${row.id}`}>
@@ -1165,7 +1206,7 @@ export function V2AdministrationPage() {
                         Time on every other Project is still tracked, without screenshots.
                       </p>
                       <V2FilterSelect
-                        label="PROJECT"
+                        label="Project"
                         ariaLabel="Screenshot Project"
                         value={policyDraft.screenshotProjectIds?.[0] ?? V2_SELECT_NONE}
                         disabled={!trackingPolicy.editable}
@@ -1712,7 +1753,7 @@ function PlanPicker({
       </div>
       <div className="df-plan-controls">
         <V2FilterSelect
-          label="BILLING"
+          label="Billing"
           ariaLabel="Billing interval"
           value={interval}
           onChange={(next) => onInterval(next as BillingInterval)}

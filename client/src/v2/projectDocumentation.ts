@@ -11,6 +11,7 @@ import {
   type LibraryPerson,
   type LibraryRow,
 } from "./library";
+import { MONTHS } from "./dates";
 
 export type ProjectDocumentationProject = {
   id: string;
@@ -63,9 +64,7 @@ export type ProjectDocumentationInput = {
   filterWords?: string[];
 };
 
-const PROJECT_PARENTS = { singular: "PROJECT", plural: "PROJECTS" } as const;
-
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+const PROJECT_PARENTS = { singular: "project", plural: "projects" } as const;
 
 export function composeProjectDocumentation(input: ProjectDocumentationInput): LibraryModel {
   const subhead = `Project Documents in ${input.workspaceName} — visible to Members assigned to that Project.`;
@@ -81,7 +80,7 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
       }),
       rows: [],
       folderCount: 0,
-      parentNoun: { singular: "PROJECT", plural: "PROJECTS" },
+      parentNoun: { singular: "project", plural: "projects" },
       itemCount: 0,
       preview: null,
     };
@@ -160,7 +159,7 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
     refusal: null,
     rows,
     folderCount: visibleProjects.length,
-    parentNoun: { singular: "PROJECT", plural: "PROJECTS" },
+    parentNoun: { singular: "project", plural: "projects" },
     itemCount,
     preview: null,
   };
@@ -195,16 +194,16 @@ function projectRow(
 ): LibraryRow {
   const latest = [...children].sort((a, b) => timestamp(b) - timestamp(a))[0];
   const count = children.length;
-  const itemLabel = count === 1 ? "1 ITEM" : `${count} ITEMS`;
+  const itemLabel = count === 1 ? "1 item" : `${count} items`;
   return {
     id: project.id,
     // `kind` is the row's shape in the register — an expandable parent. `type`
     // is the word the reader gets, and this row is a Project (#245, F4).
     kind: "folder",
     name: project.name,
-    path: project.documentationEnabled ? `/ · ${itemLabel}` : `/ · ${itemLabel} · DOCUMENTATION OFF`,
-    type: "PROJECT",
-    access: "ASSIGNED",
+    path: project.documentationEnabled ? `/ · ${itemLabel}` : `/ · ${itemLabel} · Documentation off`,
+    type: "Project",
+    access: "Assigned",
     editor: latest?.createdBy ? memberName(latest.createdBy) : "—",
     updated: formatWhen(latest?.updatedAt ?? latest?.createdAt ?? project.updatedAt ?? null, now),
     child: false,
@@ -220,8 +219,8 @@ function documentRow(document: ProjectDocumentationDocument, projectName: string
     kind: "document",
     name: document.title,
     path: `${projectName} /`,
-    type: "DOCUMENT",
-    access: "ASSIGNED",
+    type: "Document",
+    access: "Assigned",
     editor: document.createdBy ? memberName(document.createdBy) : "—",
     updated: formatWhen(document.updatedAt ?? document.createdAt ?? null, now),
     child: true,
@@ -236,8 +235,8 @@ function fileRow(file: ProjectDocumentationFile, projectName: string, now: Date)
     kind: "file",
     name: file.name,
     path: `${projectName} /`,
-    type: "FILE",
-    access: "ASSIGNED",
+    type: "File",
+    access: "Assigned",
     editor: file.createdBy ? memberName(file.createdBy) : "—",
     updated: formatWhen(file.updatedAt ?? file.createdAt ?? null, now),
     child: true,
@@ -270,14 +269,14 @@ function formatWhen(updatedAt: Date | string | null, now: Date): string {
   if (!value) return "";
   if (sameDay(value, now)) return formatClock(value);
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (sameDay(value, yesterday)) return "YDA";
+  if (sameDay(value, yesterday)) return "Yesterday";
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
 }
 
 export const DOCUMENTATION_OPTIONS = [
-  { value: "enabled", label: "ENABLED" },
-  { value: "disabled", label: "DISABLED" },
-  { value: "all", label: "ALL" },
+  { value: "enabled", label: "Enabled" },
+  { value: "disabled", label: "Disabled" },
+  { value: "all", label: "All" },
 ];
 
 export type DocumentationSetting = "enabled" | "disabled" | "all";
@@ -365,11 +364,11 @@ export function documentationFilterLabels(
 ): string[] {
   const labels: string[] = [];
   if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
-  if (filters.project !== "all") labels.push(`PROJECT ${names.projects.get(filters.project) ?? "—"}`);
-  if (filters.client !== "all") labels.push(`CLIENT ${names.clients.get(filters.client) ?? "—"}`);
+  if (filters.project !== "all") labels.push(`Project ${names.projects.get(filters.project) ?? "—"}`);
+  if (filters.client !== "all") labels.push(`Client ${names.clients.get(filters.client) ?? "—"}`);
   if (filters.documentation !== "enabled") {
     const label = DOCUMENTATION_OPTIONS.find((option) => option.value === filters.documentation)?.label;
-    labels.push(`DOCUMENTATION ${label}`);
+    labels.push(`Documentation ${label}`);
   }
   return labels;
 }

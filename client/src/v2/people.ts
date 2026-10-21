@@ -6,6 +6,7 @@
  * seat digits counting, the people list on load, hover on every avatar.
  */
 
+import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { chromeRefusal } from "./chrome";
 import { memberInitials, memberName } from "./today";
 
@@ -41,6 +42,8 @@ export type PeopleInput = {
   invitations?: PeopleInvitationInput[];
   filterQuery?: string;
   justAcceptedMembershipId?: string | null;
+  /** Whether the reader may invite (an Owner or Administrator, Workspace not Read-only); omitted reads as yes. */
+  canInvite?: boolean;
 };
 
 export type PeopleRow = {
@@ -69,7 +72,8 @@ export type PeopleModel = {
   seatCopy: string;
   invitePreview: string;
   empty: boolean;
-  emptyCopy: string;
+  /** Why the register shows nothing (#325); null while it has rows. */
+  emptyState: EmptyModel | null;
   rows: PeopleRow[];
   pagePrimary: "case-ink";
 };
@@ -195,7 +199,17 @@ export function composePeople(input: PeopleInput): PeopleModel {
     seatCopy: seatCopy(activeCount, invitations.length, input.purchasedSeats),
     invitePreview: composeInvitePreview({ activeCount, purchasedSeats: input.purchasedSeats }),
     empty,
-    emptyCopy: empty ? "No active Memberships in this Workspace." : "",
+    // The invitation names Invite only to a reader who has it (#325).
+    emptyState: emptyModelOf(
+      emptyKindOf(empty, Boolean(query.trim())),
+      "Memberships",
+      input.canInvite === false
+        ? { title: "No Members yet", copy: "Memberships are the people who work in this Workspace." }
+        : {
+            title: "Invite your first Member",
+            copy: "Memberships are the people who work in this Workspace. Use Invite above to add the first Member.",
+          },
+    ),
     rows,
     pagePrimary: "case-ink",
   };

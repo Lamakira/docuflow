@@ -31,7 +31,7 @@ describe("Support access in the Workspace (#300)", () => {
   });
 
   it("names the expiry as a calendar day", () => {
-    expect(grantExpiryLabel(new Date(2026, 9, 2, 15, 0, 0))).toBe("2 OCT 2026");
+    expect(grantExpiryLabel(new Date(2026, 9, 2, 15, 0, 0))).toBe("2 Oct 2026");
     expect(grantExpiryLabel("not-a-date")).toBe("");
   });
 

@@ -4242,6 +4242,7 @@ Instructions:
         startDate?: Date;
         endDate?: Date;
         status?: string;
+        limit?: number;
       } = {};
       
       // Non-admins can only see their own entries
@@ -4263,6 +4264,9 @@ Instructions:
       if (req.query.status) {
         filters.status = req.query.status as string;
       }
+      // `limit=1` answers "has the reader any Time Entry at all" without loading them all.
+      const limit = parseInt(req.query.limit as string);
+      if (limit > 0) filters.limit = Math.min(limit, 1000);
       
       const entries = await storage.getTimeEntries(filters);
       res.json({ data: entries });

@@ -8,6 +8,8 @@ import {
   type AccessLevel,
 } from "@shared/documentAccess";
 import { memberName } from "./today";
+import { MONTHS } from "./dates";
+import { sentenceCase } from "./text";
 
 export type LibraryPerson = {
   firstName?: string | null;
@@ -68,20 +70,20 @@ export const LIBRARY_FILTERS_DEFAULT: LibraryFilters = {
 };
 
 export const LIBRARY_TYPE_OPTIONS = [
-  { value: "all", label: "ALL" },
-  { value: "document", label: "DOCUMENT" },
-  { value: "file", label: "FILE" },
+  { value: "all", label: "All" },
+  { value: "document", label: "Document" },
+  { value: "file", label: "File" },
 ];
 
 export const LIBRARY_ACCESS_OPTIONS = [
-  { value: "all", label: "ANY" },
-  { value: ACCESS_EVERYONE, label: "EVERYONE" },
-  { value: ACCESS_RESTRICTED, label: "RESTRICTED" },
-  { value: ACCESS_ADMINISTRATORS, label: "ADMINISTRATORS ONLY" },
+  { value: "all", label: "Any" },
+  { value: ACCESS_EVERYONE, label: "Everyone" },
+  { value: ACCESS_RESTRICTED, label: "Restricted" },
+  { value: ACCESS_ADMINISTRATORS, label: "Administrators only" },
 ];
 
 export const LIBRARY_UPDATED_OPTIONS = [
-  { value: "all", label: "ANY TIME" },
+  { value: "all", label: "Any time" },
   { value: "7", label: "7 d" },
   { value: "30", label: "30 d" },
   { value: "90", label: "90 d" },
@@ -113,7 +115,7 @@ export type LibraryRow = {
    * is a row in `projects` (#245, F4) — GLOSSARY.md has no Folder term, and
    * calling one a folder sent both an operator and an investigation astray.
    */
-  type: "FOLDER" | "PROJECT" | "DOCUMENT" | "FILE";
+  type: "Folder" | "Project" | "Document" | "File";
   access: string;
   editor: string;
   updated: string;
@@ -192,11 +194,9 @@ export function groupLibraryRows(rows: LibraryRow[]): LibraryGroup[] {
   return groups;
 }
 
-export const FOLDER_PARENTS = { singular: "FOLDER", plural: "FOLDERS" } as const;
+export const FOLDER_PARENTS = { singular: "folder", plural: "folders" } as const;
 
 const VIEW_WORKSPACE_DOCUMENTS_CAPABILITY = "View Workspace Documents";
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-
 export function documentHref(id: string): string {
   return `/documents/${id}`;
 }
@@ -379,17 +379,17 @@ function parentLabel(count: number, noun: { singular: string; plural: string }):
 }
 
 export function unfilteredFootLabel(itemCount: number, parentCount: number, noun: { singular: string; plural: string }): string {
-  return `${itemCount} ${itemCount === 1 ? "ITEM" : "ITEMS"} · ${parentLabel(parentCount, noun)}`;
+  return `${itemCount} ${itemCount === 1 ? "item" : "items"} · ${parentLabel(parentCount, noun)}`;
 }
 
-/** “0 OF 4 ITEMS · 0 FOLDERS SHOWN”: the rows a filter left, out of everything. */
+/** “0 of 4 items · 0 folders shown”: the rows a filter left, out of everything. */
 export function filteredFootLabel(
   rows: LibraryRow[],
   itemCount: number,
   noun: { singular: string; plural: string },
 ): string {
   const parents = rows.filter((row) => row.kind === "folder").length;
-  return `${rows.length} OF ${itemCount} ${itemCount === 1 ? "ITEM" : "ITEMS"} · ${parentLabel(parents, noun)} SHOWN`;
+  return `${rows.length} of ${itemCount} ${itemCount === 1 ? "item" : "items"} · ${parentLabel(parents, noun)} shown`;
 }
 
 function facetsActive(facets: Omit<LibraryFilters, "q">): boolean {
@@ -521,14 +521,14 @@ function folderRow(
     ? (latestChild.updatedAt ?? latestChild.createdAt ?? folder.updatedAt)
     : folder.updatedAt ?? folder.createdAt;
   const count = children.length + subfolderCount;
-  const itemLabel = count === 1 ? "1 ITEM" : `${count} ITEMS`;
+  const itemLabel = count === 1 ? "1 item" : `${count} items`;
   return {
     id: folder.id,
     kind: "folder",
     name: folder.name,
     path: trail.length > 0 ? `${trail.join(" / ")} / · ${itemLabel}` : `/ · ${itemLabel}`,
-    type: "FOLDER",
-    access: accessLevelLabel(itemAccess(folder)),
+    type: "Folder",
+    access: sentenceCase(accessLevelLabel(itemAccess(folder))),
     editor: editorPerson ? memberName(editorPerson) : "—",
     updated: formatWhen(updatedAt ?? null, now),
     child: depth > 0,
@@ -546,8 +546,8 @@ function itemRow(document: LibraryDocument, parentPath: string, depth: number, n
     kind,
     name: document.name,
     path: child ? `${parentPath} /` : parentPath,
-    type: kind === "file" ? "FILE" : "DOCUMENT",
-    access: accessLevelLabel(itemAccess(document)),
+    type: kind === "file" ? "File" : "Document",
+    access: sentenceCase(accessLevelLabel(itemAccess(document))),
     editor: document.uploadedBy ? memberName(document.uploadedBy) : "—",
     updated: formatWhen(document.updatedAt ?? document.createdAt ?? null, now),
     child,
@@ -558,7 +558,7 @@ function itemRow(document: LibraryDocument, parentPath: string, depth: number, n
 
 function folderPreview(folder: LibraryFolder, children: LibraryDocument[], subfolderCount: number): LibraryPreview {
   const count = children.length + subfolderCount;
-  const itemLabel = count === 1 ? "1 ITEM" : `${count} ITEMS`;
+  const itemLabel = count === 1 ? "1 item" : `${count} items`;
   return {
     folderId: folder.id,
     name: folder.name,
@@ -567,7 +567,7 @@ function folderPreview(folder: LibraryFolder, children: LibraryDocument[], subfo
     // confirmation cannot honestly give a count.
     deleteConsequence: `${folder.name} and everything filed in it, Folders inside it included, will be deleted, including items you may not be able to see. This cannot be undone.`,
     title: folder.name,
-    meta: `${itemLabel} · FOLDER`,
+    meta: `${itemLabel} · Folder`,
     accessCopy: FOLDER_ACCESS_COPY[itemAccess(folder)],
     canManageAccess: folder.canManageAccess === true,
   };
@@ -606,7 +606,7 @@ function formatWhen(updatedAt: Date | string | null, now: Date): string {
   if (!value) return "";
   if (sameDay(value, now)) return formatClock(value);
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (sameDay(value, yesterday)) return "YDA";
+  if (sameDay(value, yesterday)) return "Yesterday";
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
 }
 

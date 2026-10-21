@@ -1,6 +1,7 @@
 import { BACK_OFFICE_HOME, backOfficeTabs, parseBackOfficePath } from "./backOffice";
 import { canManageAdministration } from "./administration";
 import { workspaceRoleInCopy } from "./workspace";
+import { capitalize } from "./text";
 
 export type AuthenticatedPresentation = {
   chrome: "v1" | "v2";
@@ -147,9 +148,9 @@ export const ADMINISTRATION_TAB_LABEL: Record<AdministrationTabId, string> = {
 };
 
 const TIME_TAB_CRUMB: Record<TimeTabId, string> = {
-  entries: "TIME ENTRIES",
-  stats: "TIME STATS",
-  projects: "PROJECTS & TASKS",
+  entries: "Time Entries",
+  stats: "Time Stats",
+  projects: "Projects & Tasks",
 };
 
 /**
@@ -282,7 +283,7 @@ export type V2NavSection = {
 export const V2_NAV: V2NavSection[] = [
   { label: null, items: [{ id: "today", label: "Today", href: "/" }] },
   {
-    label: "WORK",
+    label: "Work",
     items: [
       { id: "opportunities", label: "Opportunities", href: "/opportunities" },
       { id: "clients", label: "Clients", href: "/clients" },
@@ -290,14 +291,14 @@ export const V2_NAV: V2NavSection[] = [
     ],
   },
   {
-    label: "KNOWLEDGE",
+    label: "Knowledge",
     items: [
       { id: "documents", label: "Workspace Documents", href: "/documents" },
       { id: "project-documentation", label: "Project Documentation", href: "/project-documentation" },
     ],
   },
   {
-    label: "TIME & ACTIVITY",
+    label: "Time & activity",
     items: [
       { id: "time", label: "Time Tracking", href: "/time" },
       { id: "activity", label: "Activity", href: "/activity" },
@@ -663,11 +664,11 @@ export function navIdForPath(path: string): V2NavId | null {
 
 export function breadcrumbFor(path: string, workspaceName: string): Array<{ label: string; href?: string }> {
   const match = matchV2Route(path);
-  const workspace = workspaceName.toUpperCase();
+  const workspace = workspaceName;
   if (match.kind === "today" || match.kind === "auth-redirect") {
     return [
       { label: workspace, href: "/" },
-      { label: "TODAY" },
+      { label: "Today" },
     ];
   }
   // Above every Workspace, so no Workspace crumb (#266).
@@ -685,65 +686,65 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
   if (match.kind === "dossier") {
     return [
       { label: workspace, href: "/" },
-      { label: "PROJECTS", href: "/projects" },
-      { label: DOSSIER_TAB_LABEL[match.tab].toUpperCase() },
+      { label: "Projects", href: "/projects" },
+      { label: DOSSIER_TAB_LABEL[match.tab] },
     ];
   }
   if (match.kind === "projects" || match.kind === "legacy-project") {
     return [
       { label: workspace, href: "/" },
-      { label: "PROJECTS" },
+      { label: "Projects" },
     ];
   }
   if (match.kind === "documents") {
     return [
       { label: workspace, href: "/" },
-      { label: "WORKSPACE DOCUMENTS" },
+      { label: "Workspace Documents" },
     ];
   }
   if (match.kind === "project-documentation") {
     return [
       { label: workspace, href: "/" },
-      { label: "PROJECT DOCUMENTATION" },
+      { label: "Project Documentation" },
     ];
   }
   if (match.kind === "document-editor") {
     if (match.source === "project") {
       return [
         { label: workspace, href: "/" },
-        { label: "PROJECT DOCUMENTATION", href: "/project-documentation" },
-        { label: "DOCUMENT" },
+        { label: "Project Documentation", href: "/project-documentation" },
+        { label: "Document" },
       ];
     }
     return [
       { label: workspace, href: "/" },
-      { label: "WORKSPACE DOCUMENTS", href: "/documents" },
-      { label: "DOCUMENT" },
+      { label: "Workspace Documents", href: "/documents" },
+      { label: "Document" },
     ];
   }
   if (match.kind === "opportunities") {
     return [
       { label: workspace, href: "/" },
-      { label: "OPPORTUNITIES" },
+      { label: "Opportunities" },
     ];
   }
   if (match.kind === "opportunity-record") {
     return [
       { label: workspace, href: "/" },
-      { label: "OPPORTUNITIES", href: "/opportunities" },
-      { label: "RECORD" },
+      { label: "Opportunities", href: "/opportunities" },
+      { label: "Record" },
     ];
   }
   if (match.kind === "time") {
     if (match.tab === "entries") {
       return [
         { label: workspace, href: "/" },
-        { label: "TIME TRACKING" },
+        { label: "Time Tracking" },
       ];
     }
     return [
       { label: workspace, href: "/" },
-      { label: "TIME TRACKING", href: "/time" },
+      { label: "Time Tracking", href: "/time" },
       { label: TIME_TAB_CRUMB[match.tab] },
     ];
   }
@@ -751,93 +752,93 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
     if (match.tab === "register") {
       return [
         { label: workspace, href: "/" },
-        { label: "ACTIVITY" },
+        { label: "Activity" },
       ];
     }
     return [
       { label: workspace, href: "/" },
-      { label: "ACTIVITY", href: "/activity" },
-      { label: "GALLERY" },
+      { label: "Activity", href: "/activity" },
+      { label: "Gallery" },
     ];
   }
   if (match.kind === "people") {
     return [
       { label: workspace, href: "/" },
-      { label: "PEOPLE" },
+      { label: "People" },
     ];
   }
   if (match.kind === "administration") {
     if (match.tab === "workspace") {
       return [
         { label: workspace, href: "/" },
-        { label: "ADMINISTRATION" },
+        { label: "Administration" },
       ];
     }
     return [
       { label: workspace, href: "/" },
-      { label: "ADMINISTRATION", href: "/administration" },
-      { label: ADMINISTRATION_TAB_LABEL[match.tab].toUpperCase() },
+      { label: "Administration", href: "/administration" },
+      { label: ADMINISTRATION_TAB_LABEL[match.tab] },
     ];
   }
   if (match.kind === "analytics") {
     return [
       { label: workspace, href: "/" },
-      { label: "ANALYTICS" },
+      { label: "Analytics" },
     ];
   }
   if (match.kind === "devices") {
     return [
       { label: workspace, href: "/" },
-      { label: "DEVICES" },
+      { label: "Devices" },
     ];
   }
   if (match.kind === "file-viewer") {
     return [
       { label: workspace, href: "/" },
-      { label: "FILE" },
+      { label: "File" },
     ];
   }
   if (match.kind === "help") {
     if (match.slug) {
       return [
         { label: workspace, href: "/" },
-        { label: "HELP CENTER", href: "/help" },
-        { label: match.slug.replace(/-/g, " ").toUpperCase() },
+        { label: "Help Center", href: "/help" },
+        { label: capitalize(match.slug.replace(/-/g, " ")) },
       ];
     }
     return [
       { label: workspace, href: "/" },
-      { label: "HELP CENTER" },
+      { label: "Help Center" },
     ];
   }
   if (match.kind === "daily-update") {
     return [
       { label: workspace, href: "/" },
-      { label: "DAILY UPDATE" },
+      { label: "Daily Update" },
     ];
   }
   if (match.kind === "daily-updates") {
     return [
       { label: workspace, href: "/" },
-      { label: "DAILY UPDATES" },
+      { label: "Daily Updates" },
     ];
   }
   if (match.kind === "clients") {
     return [
       { label: workspace, href: "/" },
-      { label: "CLIENTS" },
+      { label: "Clients" },
     ];
   }
   if (match.kind === "client-record") {
     return [
       { label: workspace, href: "/" },
-      { label: "CLIENTS", href: "/clients" },
-      { label: "RECORD" },
+      { label: "Clients", href: "/clients" },
+      { label: "Record" },
     ];
   }
   return [
     { label: workspace, href: "/" },
-    { label: match.title.toUpperCase() },
+    { label: match.title },
   ];
 }
 
@@ -928,6 +929,6 @@ export function writeRailCollapsed(storage: Pick<Storage, "setItem">, collapsed:
 }
 
 export function memberCountLabel(count: number): string {
-  const noun = count === 1 ? "MEMBER" : "MEMBERS";
-  return `WORKSPACE · ${count} ${noun}`;
+  const noun = count === 1 ? "member" : "members";
+  return `Workspace · ${count} ${noun}`;
 }
