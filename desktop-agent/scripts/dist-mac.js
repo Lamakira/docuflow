@@ -43,7 +43,7 @@ const pkg = require(path.join(ROOT, "package.json"));
 
 if (!fs.existsSync(path.join(ROOT, "assets", "icon.icns"))) {
   console.warn("[dist-mac] WARNING: assets/icon.icns not found — app will use default Electron icon.");
-  console.warn("           Run: node scripts/gen-icons.js  (on macOS)");
+  console.warn("           Run: npm run brand:assets  (from the repo root)");
 }
 
 // ── Step 0: Clean release/ ────────────────────────────────────────────────────

@@ -41,6 +41,7 @@ import { V2UserAvatar } from "./V2UserAvatar";
 import { backOfficeTabs, composePlatformFrame, type BackOfficeTabId } from "./backOffice";
 import { PLATFORM_CONSOLE_LABEL } from "./platform";
 import { readRailCollapsed, writeRailCollapsed } from "./presentation";
+import { BrandLockup, BrandMark } from "./BrandMark";
 import { useV2Fonts } from "./useV2Fonts";
 import type { MembershipsResponse } from "./workspace";
 import "./tokens.css";
@@ -109,7 +110,7 @@ export function V2PlatformFrame({ activeTab, children }: { activeTab: BackOffice
       <div className="df-platform-column">
         <header className="df-platform-topbar" data-testid="v2-platform-topbar">
           <SidebarTrigger className="df-platform-rail-trigger" data-testid="v2-platform-rail-open" />
-          <span className="df-brand">DocuFlow</span>
+          <BrandLockup />
         </header>
         <SidebarInset className="df-platform-body">{children}</SidebarInset>
       </div>
@@ -120,7 +121,7 @@ export function V2PlatformFrame({ activeTab, children }: { activeTab: BackOffice
 function PlatformRail({ activeTab }: { activeTab: BackOfficeTabId }) {
   const { user } = useAuth();
   const { theme } = useTheme();
-  const { state, isMobile } = useSidebar();
+  const { state, isMobile, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed" && !isMobile;
   // Read the way V2Shell does; an error or an empty list hides "Open DocuFlow".
   const { data: memberships } = useQuery<MembershipsResponse>({
@@ -139,16 +140,23 @@ function PlatformRail({ activeTab }: { activeTab: BackOfficeTabId }) {
     <Sidebar collapsible="icon" className="df-v2 df-platform-rail" data-testid="v2-platform-rail">
       <SidebarHeader className="df-platform-rail-head" data-collapsed={collapsed ? "true" : "false"}>
         {collapsed ? (
-          <span className="df-brand" aria-label={frame.brand}>
-            D
-          </span>
+          <button
+            type="button"
+            className="df-rail-expand"
+            aria-label="Expand navigation"
+            title="Expand navigation"
+            onClick={toggleSidebar}
+            data-testid="v2-platform-rail-collapse"
+          >
+            <BrandMark />
+          </button>
         ) : (
           <div className="df-platform-brand">
-            <span className="df-brand">{frame.brand}</span>
+            <BrandLockup />
             <span className="df-platform-title">{frame.title}</span>
           </div>
         )}
-        {isMobile ? null : <SidebarTrigger className="df-platform-rail-trigger" data-testid="v2-platform-rail-collapse" />}
+        {isMobile || collapsed ? null : <SidebarTrigger className="df-platform-rail-trigger" data-testid="v2-platform-rail-collapse" />}
       </SidebarHeader>
 
       <SidebarContent className="df-platform-rail-body">

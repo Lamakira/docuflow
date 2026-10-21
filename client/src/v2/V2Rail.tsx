@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { composeAccountMenu } from "./chrome";
+import { BrandLockup, BrandMark } from "./BrandMark";
 import { V2ThemeToggle } from "./V2ThemeToggle";
 import { V2UserAvatar } from "./V2UserAvatar";
 import { isPlatformAdmin } from "./platform";
@@ -100,16 +101,31 @@ export function V2Rail({
     >
       <div className="df-rail-head">
         <div className="df-rail-brand">
-          {!collapsed ? <span className="df-brand">DocuFlow</span> : null}
-          <button
-            type="button"
-            className="df-rail-collapse"
-            title={drawer ? "Close navigation" : collapsed ? "Expand navigation" : "Collapse navigation"}
-            onClick={onToggleCollapse}
-            data-testid="v2-rail-collapse"
-          >
-            {drawer ? <CloseIcon /> : <CollapseIcon />}
-          </button>
+          {collapsed && !drawer ? (
+            <button
+              type="button"
+              className="df-rail-expand"
+              aria-label="Expand navigation"
+              title="Expand navigation"
+              onClick={onToggleCollapse}
+              data-testid="v2-rail-collapse"
+            >
+              <BrandMark />
+            </button>
+          ) : (
+            <>
+              <BrandLockup />
+              <button
+                type="button"
+                className="df-rail-collapse"
+                title={drawer ? "Close navigation" : "Collapse navigation"}
+                onClick={onToggleCollapse}
+                data-testid="v2-rail-collapse"
+              >
+                {drawer ? <CloseIcon /> : <CollapseIcon />}
+              </button>
+            </>
+          )}
         </div>
 
         {collapsed ? (

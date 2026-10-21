@@ -280,6 +280,67 @@
   letter-spacing: -0.02em;
 }
 
+/*
+ * The mark and the lockup (#326). Not scoped to .df-v2: sign-in renders them
+ * outside it. The d is Case Ink on light and white on dark (brand/mark-light.svg,
+ * brand/mark-dark.svg), keyed on the `dark` class ThemeProvider puts on <html>.
+ * The hex values mirror --df-case-ink (light) and --df-amber-500 but are not
+ * those tokens: they must match brand/ and resolve outside .df-v2, where the
+ * tokens are undefined.
+ */
+.df-brand-mark {
+  height: 1.4em;
+  width: 1.4em;
+  flex-shrink: 0;
+}
+
+.df-brand-mark-d {
+  fill: #0f1524;
+}
+
+.df-brand-mark-stroke {
+  fill: none;
+  stroke: #0f1524;
+}
+
+.dark .df-brand-mark-d {
+  fill: #ffffff;
+}
+
+.dark .df-brand-mark-stroke {
+  fill: none;
+  stroke: #ffffff;
+}
+
+.df-brand-mark-dot {
+  fill: #e9a23b;
+}
+
+.df-lockup {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+  font-family: var(--df-font-display, "Cabinet Grotesk", sans-serif);
+  font-weight: 800;
+  font-size: var(--df-text-4, 1rem);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+/*
+ * Typographic alignment. Cabinet Grotesk 800: unitsPerEm 1000, capHeight 670
+ * (d ascender also 670) -> 0.67em. The d spans 36.25 of the 44-unit viewBox
+ * (0.824), so the box is 0.67 / 0.824 = 0.813em tall. A flex item's baseline is
+ * its bottom edge; the d baseline sits 0.085 of the box above its bottom, so
+ * shift the box down by 0.085 * 0.813 = 0.069em to meet the text baseline. A
+ * transform, because a negative bottom margin moves the baseline edge with it.
+ */
+.df-lockup .df-brand-mark {
+  height: 0.813em;
+  width: 0.813em;
+  transform: translateY(0.069em);
+}
+
 .df-nav {
   font-family: var(--df-font-ui);
   font-weight: 500;
@@ -6140,6 +6201,21 @@ button.df-activity-row {
   justify-content: center;
 }
 
+.df-rail-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--df-space-1);
+  border-radius: var(--df-radius-2);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.df-rail-expand:hover {
+  background: var(--df-hover);
+}
+
 .df-rail-collapse {
   display: flex;
   padding: var(--df-space-1);
@@ -6706,6 +6782,7 @@ button.df-activity-row {
 
 .df-v2 .df-platform-rail-head[data-collapsed="true"] {
   flex-direction: column;
+  align-items: center;
   padding: var(--df-space-4) var(--df-space-2) var(--df-space-3);
 }
 
