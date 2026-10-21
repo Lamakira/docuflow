@@ -117,6 +117,11 @@ export interface AppConfig {
    * starts those intervals.
    */
   httpBackgroundIntervals: boolean;
+  /**
+   * `DOCUFLOW_ALLOW_OWNER_DB=1`: development may connect as a role that
+   * bypasses row-level security (#323). Production and test never may.
+   */
+  allowOwnerDatabase: boolean;
   database: DatabaseConfig;
   sessionSecret: string;
   /** The keys desktop-agent access tokens are issued and verified with. */
@@ -622,6 +627,7 @@ function resolveConfig(): AppConfig {
     port: Number.parseInt(read("PORT") ?? String(DEFAULT_PORT), 10),
     role,
     httpBackgroundIntervals: resolveHttpBackgroundIntervals(),
+    allowOwnerDatabase: read("DOCUFLOW_ALLOW_OWNER_DB") === "1",
     database: database.value,
     sessionSecret: sessionSecret!,
     desktopTokens: desktopTokens.value,

@@ -1,5 +1,39 @@
-import { Client } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import pg, { Client } from "pg";
+import * as schema from "@shared/schema";
+import type { Db } from "../../server/db";
 import { resolveTestDatabaseUrl } from "../test-db-url";
+
+/**
+ * The harness's own connection, as the database owner (#323). The server under
+ * test runs as `docuflow_app`, which row-level security applies to; fixtures and
+ * cleanup need to write across Workspaces, so they go through this pool instead.
+ * It is not bound by `server/workspaceScope.ts`: no `app.workspace_id`, and RLS
+ * does not apply to the owner anyway.
+ */
+let ownerPool: pg.Pool | null = null;
+let ownerDrizzle: Db | null = null;
+
+export function getOwnerPool(): pg.Pool {
+  return (ownerPool ??= new pg.Pool({ connectionString: resolveTestDatabaseUrl() }));
+}
+
+/** Drizzle over the owner pool, same schema as the server's `db`. Opened on first use. */
+export const ownerDb: Db = new Proxy({} as Db, {
+  get(_target, property) {
+    ownerDrizzle ??= drizzle({ client: getOwnerPool(), schema }) as unknown as Db;
+    const value = Reflect.get(ownerDrizzle, property, ownerDrizzle);
+    return typeof value === "function" ? value.bind(ownerDrizzle) : value;
+  },
+});
+
+/** Closed where `tests/setup.ts` closes the server's pool. */
+export async function endOwnerPool(): Promise<void> {
+  const pool = ownerPool;
+  ownerPool = null;
+  ownerDrizzle = null;
+  await pool?.end().catch(() => {});
+}
 
 /**
  * Truncate every application table between tests. RESTART IDENTITY + CASCADE
@@ -10,7 +44,7 @@ import { resolveTestDatabaseUrl } from "../test-db-url";
  * replay the whole journal against a schema that already exists.
  */
 export async function resetDb(): Promise<void> {
-  const { pool } = await import("../../server/db");
+  const pool = getOwnerPool();
   const { rows } = await pool.query(
     `SELECT tablename FROM pg_tables
      WHERE schemaname = 'public'
@@ -30,7 +64,7 @@ export async function resetDb(): Promise<void> {
  * receive a Membership in the seeded Workspace without re-running migrate.
  */
 async function restoreSeededWorkspaceCatalog(): Promise<void> {
-  const { pool } = await import("../../server/db");
+  const pool = getOwnerPool();
   await pool.query(`
     INSERT INTO capabilities (id, name)
     VALUES

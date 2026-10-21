@@ -18,6 +18,7 @@ import {
 } from "@shared/schema";
 import { db, type Db } from "../../db";
 import { inWorkspace, requireWorkspaceContext, runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
+import { timeEntryWorkspaceForUser } from "../../workspaceLocators";
 
 export type TimeWriter = Pick<Db, "insert" | "select" | "update" | "delete">;
 
@@ -44,10 +45,21 @@ export function nextTimerSequence(idempotencyKey?: string): number {
   return Number(BigInt(`0x${createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 13)}`));
 }
 
-/** Time Entry by id, ignoring Active Workspace. Ownership is checked at the HTTP boundary. */
-export async function loadTimeEntryById(id: string): Promise<TimeEntry | undefined> {
+/**
+ * Time Entry by id, ignoring Active Workspace. Ownership is checked at the HTTP boundary.
+ * The Active Workspace is read first, so another User's entry there still answers 403. Past
+ * it, only the caller's own entries are located: another User's entry in another Workspace
+ * answers 404, so no existence signal crosses tenants.
+ */
+export async function loadTimeEntryById(id: string, userId: string): Promise<TimeEntry | undefined> {
   const [entry] = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
-  return entry;
+  if (entry) return entry;
+  const workspaceId = await timeEntryWorkspaceForUser(id, userId);
+  if (!workspaceId) return undefined;
+  return runWithWorkspaceContext({ workspaceId, userId }, async () => {
+    const [found] = await db.select().from(timeEntries).where(eq(timeEntries.id, id)).limit(1);
+    return found;
+  });
 }
 
 export function inTimeEntryWorkspace<T>(entry: TimeEntry, fn: () => T): T {

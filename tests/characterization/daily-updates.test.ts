@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { eq, and } from "drizzle-orm";
 import { SEEDED_WORKSPACE_ID, memberships, notifications, workspaceBilling } from "../../shared/schema";
 import { makeApp } from "../helpers/app";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { grantDailyUpdatesAccess, registerAdmin, registerUser } from "../helpers/auth";
 import { createCrmProject } from "../helpers/fixtures";
 import { resetEmails, sentEmails } from "../fakes/resend";
@@ -276,8 +276,7 @@ describe("project daily updates (characterization)", () => {
     const manager = await registerUser(app);
     await grantDailyUpdatesAccess(manager.id);
     const outsider = await registerUser(app, { firstName: "Out" });
-    const { db } = await import("../../server/db");
-    await db
+    await ownerDb
       .update(memberships)
       .set({ archivedAt: new Date() })
       .where(and(eq(memberships.userId, outsider.id), eq(memberships.workspaceId, SEEDED_WORKSPACE_ID)));
@@ -288,7 +287,7 @@ describe("project daily updates (characterization)", () => {
     const reminded = await manager.agent.post("/api/admin/daily-updates/remind");
     expect(reminded.status).toBe(200);
 
-    const inbox = await db
+    const inbox = await ownerDb
       .select({ type: notifications.type })
       .from(notifications)
       .where(eq(notifications.userId, outsider.id));
@@ -301,9 +300,8 @@ describe("project daily updates (characterization)", () => {
     const manager = await registerUser(app);
     await grantDailyUpdatesAccess(manager.id);
     const missing = await registerUser(app, { firstName: "Miss" });
-    const { db } = await import("../../server/db");
 
-    await db
+    await ownerDb
       .update(workspaceBilling)
       .set({ billingState: "ReadOnly" })
       .where(eq(workspaceBilling.workspaceId, SEEDED_WORKSPACE_ID));

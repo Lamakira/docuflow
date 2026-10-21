@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { workspaces, workspaceRoles } from "../../shared/schema";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 
 /**
  * Phase 8 ticket #140: billing state machine and Read-only Workspace.
@@ -14,9 +14,8 @@ const TRIAL_ENDS_AT = new Date("2026-01-15T00:00:00.000Z");
 const SYSTEM = { kind: "system" as const };
 
 async function plantUnpinnedWorkspace(id = TRIAL_WORKSPACE_ID) {
-  const { db } = await import("../../server/db");
-  await db.insert(workspaces).values({ id, name: "Trial" });
-  await db.insert(workspaceRoles).values({
+  await ownerDb.insert(workspaces).values({ id, name: "Trial" });
+  await ownerDb.insert(workspaceRoles).values({
     id: `${id}-owner`,
     workspaceId: id,
     slug: "owner",
@@ -117,8 +116,8 @@ describe("Trialing Workspace", () => {
     expect(pin.billingState).toBe("ReadOnly");
     expect(pin.authorizationVersion).toBe(2);
 
-    const events = await runWithWorkspaceContext({ workspaceId: TRIAL_WORKSPACE_ID }, () =>
-      db.select().from(auditEvents)
+    const events = await runWithWorkspaceContext({ workspaceId: TRIAL_WORKSPACE_ID }, async () =>
+      await db.select().from(auditEvents)
     );
     expect(events).toEqual(
       expect.arrayContaining([
@@ -185,7 +184,7 @@ describe("PastDue Workspace", () => {
       ReadOnlyWorkspaceError
     );
 
-    const events = await inSeededWorkspace(() => db.select().from(auditEvents));
+    const events = await inSeededWorkspace(async () => await db.select().from(auditEvents));
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

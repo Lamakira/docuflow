@@ -13,7 +13,7 @@
  */
 
 import { isEntryPoint } from "./lib/entrypoint";
-import { requireDatabaseUrl } from "../shared/databaseUrl";
+import { requireMigrateDatabaseUrl } from "../shared/databaseUrl";
 import pg from "pg";
 
 export interface TableNulls {
@@ -71,7 +71,7 @@ export function formatRemaining(rows: TableNulls[]): string {
 }
 
 if (isEntryPoint(import.meta.url)) {
-  const url = requireDatabaseUrl();
+  const url = requireMigrateDatabaseUrl();
   const client = new pg.Client({ connectionString: url });
   client
     .connect()

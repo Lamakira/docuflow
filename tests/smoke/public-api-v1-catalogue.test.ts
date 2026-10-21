@@ -12,7 +12,7 @@ import {
 import { makeApp } from "../helpers/app";
 import { createSeededMember } from "../helpers/workspace";
 import { newAgent, registerUser, setWorkspaceRole } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { createClient, createCrmProject, createTask, startTimer } from "../helpers/fixtures";
 
 /**
@@ -29,9 +29,8 @@ const OTHER_WORKSPACE_ID = "other";
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 async function plantOtherWorkspace() {
-  const { db } = await import("../../server/db");
-  await db.insert(workspaces).values({ id: OTHER_WORKSPACE_ID, name: "Other" });
-  await db.insert(workspaceRoles).values({
+  await ownerDb.insert(workspaces).values({ id: OTHER_WORKSPACE_ID, name: "Other" });
+  await ownerDb.insert(workspaceRoles).values({
     id: "other-member",
     workspaceId: OTHER_WORKSPACE_ID,
     slug: "member",
@@ -128,15 +127,14 @@ describe("public /api/v1 catalogue — Clients", () => {
     const app = await makeApp();
     const { storage } = await import("../../server/storage");
     const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
-    const { db } = await import("../../server/db");
 
     await plantOtherWorkspace();
     const other = await createSeededMember({
       email: "other@test.invalid",
       firstName: "Other",
     });
-    await db.delete(memberships).where(eq(memberships.userId, other.id));
-    await db.insert(memberships).values({
+    await ownerDb.delete(memberships).where(eq(memberships.userId, other.id));
+    await ownerDb.insert(memberships).values({
       workspaceId: OTHER_WORKSPACE_ID,
       userId: other.id,
       workspaceRoleId: "other-member",
@@ -259,15 +257,14 @@ describe("public /api/v1 catalogue — Projects", () => {
     const app = await makeApp();
     const { storage } = await import("../../server/storage");
     const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
-    const { db } = await import("../../server/db");
 
     await plantOtherWorkspace();
     const other = await createSeededMember({
       email: "other-proj@test.invalid",
       firstName: "Other",
     });
-    await db.delete(memberships).where(eq(memberships.userId, other.id));
-    await db.insert(memberships).values({
+    await ownerDb.delete(memberships).where(eq(memberships.userId, other.id));
+    await ownerDb.insert(memberships).values({
       workspaceId: OTHER_WORKSPACE_ID,
       userId: other.id,
       workspaceRoleId: "other-member",
@@ -337,15 +334,14 @@ describe("public /api/v1 catalogue — Time Entries", () => {
     const app = await makeApp();
     const { storage } = await import("../../server/storage");
     const { runWithWorkspaceContext } = await import("../../server/workspaceContext");
-    const { db } = await import("../../server/db");
 
     await plantOtherWorkspace();
     const other = await createSeededMember({
       email: "other-time@test.invalid",
       firstName: "Other",
     });
-    await db.delete(memberships).where(eq(memberships.userId, other.id));
-    await db.insert(memberships).values({
+    await ownerDb.delete(memberships).where(eq(memberships.userId, other.id));
+    await ownerDb.insert(memberships).values({
       workspaceId: OTHER_WORKSPACE_ID,
       userId: other.id,
       workspaceRoleId: "other-member",

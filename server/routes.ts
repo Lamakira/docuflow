@@ -4397,7 +4397,7 @@ Instructions:
   app.post("/api/time-tracking/:id/pause", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const entry = await loadTimeEntryById(req.params.id);
+      const entry = await loadTimeEntryById(req.params.id, userId);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });
@@ -4440,7 +4440,7 @@ Instructions:
     try {
       const userId = getUserId(req)!;
       const { discardIdleTime } = req.body;
-      const entry = await loadTimeEntryById(req.params.id);
+      const entry = await loadTimeEntryById(req.params.id, userId);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });
@@ -4482,7 +4482,7 @@ Instructions:
   app.post("/api/time-tracking/:id/stop", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const entry = await loadTimeEntryById(req.params.id);
+      const entry = await loadTimeEntryById(req.params.id, userId);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });
@@ -4524,7 +4524,7 @@ Instructions:
   app.post("/api/time-tracking/:id/activity", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const entry = await loadTimeEntryById(req.params.id);
+      const entry = await loadTimeEntryById(req.params.id, userId);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });
@@ -4638,7 +4638,7 @@ Instructions:
   app.patch("/api/time-tracking/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const entry = await loadTimeEntryById(req.params.id);
+      const entry = await loadTimeEntryById(req.params.id, userId);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });

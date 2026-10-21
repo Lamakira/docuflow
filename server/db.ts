@@ -50,15 +50,21 @@ const usePg = driver === "pg";
 neonConfig.webSocketConstructor = ws;
 
 function createDb(): { pool: DbPool; db: Db; verifyRuntimeRole: () => Promise<RuntimeRole> } {
-  const gate = { production: config.isProduction };
+  // Production and test never run as a role that bypasses RLS; development
+  // does only on request (#323).
+  const refuse = config.isProduction || config.nodeEnv === "test" || !config.allowOwnerDatabase;
+  const gate = { refuse, development: !config.isProduction && config.nodeEnv !== "test" };
+  // A query on an RLS table with no Workspace context: an error everywhere but
+  // production, where it is logged so one missed site does not take the app down.
+  const scope = { onUnscopedRlsQuery: config.isProduction ? ("warn" as const) : ("throw" as const) };
   if (usePg) {
     const pgPool = new pg.Pool({ connectionString });
-    bindWorkspaceScope(pgPool);
+    bindWorkspaceScope(pgPool, scope);
     const verifyRuntimeRole = gateOnRuntimeRole(pgPool, gate);
     return { pool: pgPool, db: drizzlePg({ client: pgPool, schema }), verifyRuntimeRole };
   }
   const neonPool = new NeonPool({ connectionString });
-  bindWorkspaceScope(neonPool);
+  bindWorkspaceScope(neonPool, scope);
   const verifyRuntimeRole = gateOnRuntimeRole(neonPool, gate);
   return { pool: neonPool, db: drizzleNeon({ client: neonPool, schema }), verifyRuntimeRole };
 }

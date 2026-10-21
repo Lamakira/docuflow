@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { workspaces, workspaceRoles } from "../../shared/schema";
 import { FakeBillingProvider } from "../fakes/billingProvider";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 
 /**
  * Phase 8 ticket #143: project Stripe into Entitlements through the outbox.
@@ -31,16 +31,15 @@ const PROVIDER_SUB = {
 };
 
 async function plantPaidWorkspace() {
-  const { db } = await import("../../server/db");
   const { workspaceBilling } = await import("../../shared/schema");
-  await db.insert(workspaces).values({ id: PAID_WORKSPACE_ID, name: "Paid" });
-  await db.insert(workspaceRoles).values({
+  await ownerDb.insert(workspaces).values({ id: PAID_WORKSPACE_ID, name: "Paid" });
+  await ownerDb.insert(workspaceRoles).values({
     id: `${PAID_WORKSPACE_ID}-owner`,
     workspaceId: PAID_WORKSPACE_ID,
     slug: "owner",
     name: "Owner",
   });
-  await db.insert(workspaceBilling).values({
+  await ownerDb.insert(workspaceBilling).values({
     workspaceId: PAID_WORKSPACE_ID,
     planKey: "trial",
     registryVersion: 1,
@@ -222,8 +221,8 @@ describe("projection Job", () => {
       screenshotProjectCapacity: null,
     });
 
-    const events = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
-      db.select().from(auditEvents)
+    const events = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, async () =>
+      await db.select().from(auditEvents)
     );
     expect(events).toEqual(
       expect.arrayContaining([
@@ -234,8 +233,8 @@ describe("projection Job", () => {
       ])
     );
 
-    const outbox = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
-      db.select().from(outboxEvents)
+    const outbox = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, async () =>
+      await db.select().from(outboxEvents)
     );
     expect(outbox).toEqual([
       expect.objectContaining({
@@ -298,8 +297,8 @@ describe("projection Job", () => {
       getBillingProjection()
     );
     expect(pin.authorizationVersion).toBe(2);
-    const outbox = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
-      db.select().from(outboxEvents)
+    const outbox = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, async () =>
+      await db.select().from(outboxEvents)
     );
     expect(outbox).toHaveLength(1);
     expect(provider.fetches).toEqual([SUBSCRIPTION_ID]);
@@ -365,8 +364,8 @@ describe("drift Job", () => {
       authorizationVersion: 1,
     });
 
-    const events = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, () =>
-      db.select().from(auditEvents)
+    const events = await runWithWorkspaceContext({ workspaceId: PAID_WORKSPACE_ID }, async () =>
+      await db.select().from(auditEvents)
     );
     expect(events).toEqual([
       expect.objectContaining({
@@ -458,7 +457,7 @@ describe("drift Job", () => {
       authorizationVersion: 1,
     });
     expect(provider.fetches).toEqual([]);
-    const events = await inSeededWorkspace(() => db.select().from(auditEvents));
+    const events = await inSeededWorkspace(async () => await db.select().from(auditEvents));
     expect(events).toEqual([]);
   });
 });

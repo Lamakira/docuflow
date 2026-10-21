@@ -17,7 +17,14 @@ import {
 } from "@shared/schema";
 import { config } from "../../config";
 import { db } from "../../db";
-import { inWorkspace, requireWorkspaceContext, runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
+import {
+  forWorkspaces,
+  inWorkspace,
+  requireWorkspaceContext,
+  runWithWorkspaceContext,
+  stampWorkspace,
+} from "../../workspaceContext";
+import { invitationForToken, invitationsForEmail } from "../../workspaceLocators";
 import { assertSeatAvailable } from "../billing/seats";
 import { sendInvitationEmail } from "../../email";
 import { identityProvider } from "../identity";
@@ -183,29 +190,38 @@ export async function listInvitationsForUser(userId: string): Promise<PendingInv
 }
 
 export async function listInvitationsForEmail(email: string): Promise<PendingInvitationView[]> {
-  const rows = await db
-    .select({
-      id: invitations.id,
-      workspaceId: invitations.workspaceId,
-      workspaceName: workspaces.name,
-      slug: workspaceRoles.slug,
-      expiresAt: invitations.expiresAt,
-      token: invitations.token,
-    })
-    .from(invitations)
-    .innerJoin(workspaces, eq(workspaces.id, invitations.workspaceId))
-    .innerJoin(workspaceRoles, eq(workspaceRoles.id, invitations.workspaceRoleId))
-    .where(and(eq(invitations.email, email), eq(invitations.status, "pending")));
   const now = Date.now();
-  return rows
-    .filter((row) => row.expiresAt.getTime() > now)
-    .map((row) => ({
-      id: row.id,
-      workspaceId: row.workspaceId,
-      workspaceName: row.workspaceName,
-      workspaceRole: membershipRoleLabel(row.slug),
-      token: row.token,
-    }));
+  const pending = (await invitationsForEmail(email)).filter(
+    (row) => row.status === "pending" && row.expiresAt.getTime() > now,
+  );
+  // Details are read inside each invitation's Workspace: RLS hides the others (#323).
+  const views = await forWorkspaces(
+    pending.map((row) => ({ id: row.workspaceId, invitationId: row.id })),
+    async (ref): Promise<PendingInvitationView | null> => {
+      const [row] = await db
+        .select({
+          id: invitations.id,
+          workspaceId: invitations.workspaceId,
+          workspaceName: workspaces.name,
+          slug: workspaceRoles.slug,
+          token: invitations.token,
+        })
+        .from(invitations)
+        .innerJoin(workspaces, eq(workspaces.id, invitations.workspaceId))
+        .innerJoin(workspaceRoles, eq(workspaceRoles.id, invitations.workspaceRoleId))
+        .where(eq(invitations.id, ref.invitationId))
+        .limit(1);
+      if (!row) return null;
+      return {
+        id: row.id,
+        workspaceId: row.workspaceId,
+        workspaceName: row.workspaceName,
+        workspaceRole: membershipRoleLabel(row.slug),
+        token: row.token,
+      };
+    },
+  );
+  return views.filter((view): view is PendingInvitationView => view !== null);
 }
 
 export async function sendInvitation(
@@ -332,28 +348,31 @@ export async function acceptInvitation(input: {
     throw new InvitationUnauthorizedError();
   }
 
-  const [invitation] = await db
-    .select({
-      id: invitations.id,
-      email: invitations.email,
-      status: invitations.status,
-      expiresAt: invitations.expiresAt,
-      workspaceId: invitations.workspaceId,
-      workspaceRoleId: invitations.workspaceRoleId,
-      slug: workspaceRoles.slug,
-    })
-    .from(invitations)
-    .innerJoin(workspaceRoles, eq(workspaceRoles.id, invitations.workspaceRoleId))
-    .where(eq(invitations.token, input.token))
-    .limit(1);
-  if (!invitation) throw new InvitationNotFoundError();
-  if (invitation.status === "revoked") throw new InvitationRevokedError();
-  if (invitation.status === "accepted") throw new InvitationAlreadyAcceptedError();
-  if (invitation.status === "expired" || invitation.expiresAt.getTime() <= Date.now()) {
-    throw new InvitationExpiredError();
-  }
+  const located = await invitationForToken(input.token);
+  if (!located) throw new InvitationNotFoundError();
 
-  return runWithWorkspaceContext({ workspaceId: invitation.workspaceId }, async () => {
+  return runWithWorkspaceContext({ workspaceId: located.workspaceId }, async () => {
+    const [invitation] = await db
+      .select({
+        id: invitations.id,
+        email: invitations.email,
+        status: invitations.status,
+        expiresAt: invitations.expiresAt,
+        workspaceId: invitations.workspaceId,
+        workspaceRoleId: invitations.workspaceRoleId,
+        slug: workspaceRoles.slug,
+      })
+      .from(invitations)
+      .innerJoin(workspaceRoles, eq(workspaceRoles.id, invitations.workspaceRoleId))
+      .where(eq(invitations.token, input.token))
+      .limit(1);
+    if (!invitation) throw new InvitationNotFoundError();
+    if (invitation.status === "revoked") throw new InvitationRevokedError();
+    if (invitation.status === "accepted") throw new InvitationAlreadyAcceptedError();
+    if (invitation.status === "expired" || invitation.expiresAt.getTime() <= Date.now()) {
+      throw new InvitationExpiredError();
+    }
+
     const user = await resolveInvitee(providerSubjectId, invitation.email);
     const membershipId = await createOrRestoreMembership(user.id, invitation.workspaceRoleId);
     await db

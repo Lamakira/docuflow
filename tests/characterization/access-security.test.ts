@@ -73,8 +73,8 @@ describe("operator access is Platform Staff, not users.role (#300)", () => {
     expect(read.status).toBe(200);
     expect(read.body).toMatchObject({ id: "seeded", access: "break_glass" });
 
-    const events = await inSeededWorkspace(() =>
-      db
+    const events = await inSeededWorkspace(async () =>
+      await db
         .select({ action: auditEvents.action })
         .from(auditEvents)
         .where(eq(auditEvents.actorId, staff.staffId))
@@ -85,8 +85,8 @@ describe("operator access is Platform Staff, not users.role (#300)", () => {
       "support_access.used",
     ]);
 
-    const notices = await inSeededWorkspace(() =>
-      db
+    const notices = await inSeededWorkspace(async () =>
+      await db
         .select({ type: notifications.type, userId: notifications.userId })
         .from(notifications)
         .where(eq(notifications.type, "break_glass")),
@@ -119,16 +119,16 @@ describe("operator access is Platform Staff, not users.role (#300)", () => {
     expect(write.status).toBe(403);
     expect(write.body).toEqual({ message: "Support access is read-only" });
 
-    const granted = await inSeededWorkspace(() =>
-      db.select({ action: auditEvents.action }).from(auditEvents).where(eq(auditEvents.action, "support_access.granted")),
+    const granted = await inSeededWorkspace(async () =>
+      await db.select({ action: auditEvents.action }).from(auditEvents).where(eq(auditEvents.action, "support_access.granted")),
     );
     expect(granted).toHaveLength(1);
-    const used = await inSeededWorkspace(() =>
-      db.select({ action: auditEvents.action }).from(auditEvents).where(eq(auditEvents.action, "support_access.used")),
+    const used = await inSeededWorkspace(async () =>
+      await db.select({ action: auditEvents.action }).from(auditEvents).where(eq(auditEvents.action, "support_access.used")),
     );
     expect(used).toHaveLength(1);
-    const told = await inSeededWorkspace(() =>
-      db.select({ userId: notifications.userId }).from(notifications).where(eq(notifications.type, "support_access_granted")),
+    const told = await inSeededWorkspace(async () =>
+      await db.select({ userId: notifications.userId }).from(notifications).where(eq(notifications.type, "support_access_granted")),
     );
     expect(told).toEqual([{ userId: owner.id }]);
   });
@@ -144,8 +144,8 @@ describe("operator access is Platform Staff, not users.role (#300)", () => {
       .send({ platformStaffId: staff.staffId, hours: 24 * 7 });
     expect(created.status).toBe(201);
 
-    await inSeededWorkspace(() =>
-      db
+    await inSeededWorkspace(async () =>
+      await db
         .update(supportAccessGrants)
         .set({ expiresAt: new Date(Date.now() - 1000) })
         .where(eq(supportAccessGrants.id, created.body.id)),
@@ -153,8 +153,8 @@ describe("operator access is Platform Staff, not users.role (#300)", () => {
 
     const expired = await staff.agent.get("/api/operator/workspaces/seeded");
     expect(expired.status).toBe(403);
-    const expiry = await inSeededWorkspace(() =>
-      db
+    const expiry = await inSeededWorkspace(async () =>
+      await db
         .select({ resourceId: auditEvents.resourceId })
         .from(auditEvents)
         .where(and(eq(auditEvents.action, "support_access.expired"), eq(auditEvents.resourceId, created.body.id))),
@@ -168,8 +168,8 @@ describe("operator access is Platform Staff, not users.role (#300)", () => {
 
     const after = await staff.agent.get("/api/operator/workspaces/seeded");
     expect(after.status).toBe(403);
-    const revocation = await inSeededWorkspace(() =>
-      db.select({ action: auditEvents.action }).from(auditEvents).where(eq(auditEvents.action, "support_access.revoked")),
+    const revocation = await inSeededWorkspace(async () =>
+      await db.select({ action: auditEvents.action }).from(auditEvents).where(eq(auditEvents.action, "support_access.revoked")),
     );
     expect(revocation).toHaveLength(1);
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assignPlan, migrateV1Plans } from "../../scripts/assign-plan";
 import { backfillCrmLinks } from "../../scripts/backfill-crm-links";
 import { openDb } from "../../scripts/lib/db";
@@ -275,5 +275,21 @@ describe("billing:assign-plan (#299)", () => {
     await expect(assignPlan(db, { workspaceId: SEEDED_WORKSPACE_ID, planKey: "platinum" })).rejects.toThrow(
       /not a Plan/
     );
+  });
+});
+
+describe("script database connection", () => {
+  it("opens as the owner, not docuflow_app, when DATABASE_APP_URL is set", () => {
+    vi.stubEnv("DATABASE_APP_URL", "postgresql://docuflow_app:app@localhost:1/app_db");
+    vi.stubEnv("DATABASE_MIGRATE_URL", undefined);
+    vi.stubEnv("DATABASE_URL", "postgresql://owner:owner@localhost:1/owner_db");
+    try {
+      const opened = openDb();
+      const url = (opened.db.$client as { options: { connectionString?: string } }).options.connectionString;
+      expect(url).toBe("postgresql://owner:owner@localhost:1/owner_db");
+      void opened.close();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

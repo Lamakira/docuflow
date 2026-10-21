@@ -5,7 +5,7 @@ import type {
   ProviderSubscription,
 } from "../../server/modules/billing/billingProvider";
 import { createUnlinkedUser } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { FakeBillingProvider } from "../fakes/billingProvider";
 import { emailsTo, failNextSend, resetEmails } from "../fakes/resend";
 
@@ -97,10 +97,9 @@ const CURRENT_SUBSCRIPTION: ProviderSubscription = {
 
 /** A Workspace that left its Trial through Checkout and pays for Growth. */
 async function paidWorkspace() {
-  const { db } = await import("../../server/db");
   const { workspaceBilling } = await import("../../shared/schema");
   const trial = await trialWorkspace();
-  await db
+  await ownerDb
     .update(workspaceBilling)
     .set({
       planKey: "growth",
@@ -121,13 +120,12 @@ async function joinWorkspace(
   workspaceId: string,
   slug: "administrator" | "member"
 ): Promise<void> {
-  const { db } = await import("../../server/db");
   const { memberships, workspaceRoles } = await import("../../shared/schema");
-  const [role] = await db
+  const [role] = await ownerDb
     .select({ id: workspaceRoles.id })
     .from(workspaceRoles)
     .where(and(eq(workspaceRoles.workspaceId, workspaceId), eq(workspaceRoles.slug, slug)));
-  await db.insert(memberships).values({ workspaceId, userId, workspaceRoleId: role.id });
+  await ownerDb.insert(memberships).values({ workspaceId, userId, workspaceRoleId: role.id });
 }
 
 async function deliverWebhook(

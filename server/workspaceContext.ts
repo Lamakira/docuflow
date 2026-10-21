@@ -8,9 +8,10 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { and, eq, isNull, type AnyColumn } from "drizzle-orm";
-import { deviceEnrollments, memberships, users, workspaces } from "@shared/schema";
+import { memberships, users, workspaces } from "@shared/schema";
 import { db } from "./db";
 import { setWorkspaceContextReader } from "./workspaceScope";
+import { enrollmentForDevice, membershipsForUser } from "./workspaceLocators";
 
 export interface WorkspaceContext {
   workspaceId: string;
@@ -65,10 +66,8 @@ export function stampWorkspace<T extends object>(values: T): T & { workspaceId: 
 }
 
 export async function contextFromUser(userId: string): Promise<WorkspaceContext> {
-  const active = await db
-    .select()
-    .from(memberships)
-    .where(and(eq(memberships.userId, userId), isNull(memberships.archivedAt)));
+  const all = await membershipsForUser(userId);
+  const active = all.filter((row) => row.archivedAt === null);
 
   const [user] = await db
     .select({ activeWorkspaceId: users.activeWorkspaceId })
@@ -86,12 +85,7 @@ export async function contextFromUser(userId: string): Promise<WorkspaceContext>
     };
   }
 
-  const [archived] = await db
-    .select({ id: memberships.id })
-    .from(memberships)
-    .where(eq(memberships.userId, userId))
-    .limit(1);
-  if (archived) throw new ArchivedMembershipError();
+  if (all.length > 0) throw new ArchivedMembershipError();
   throw new NoActiveMembershipError();
 }
 
@@ -116,25 +110,15 @@ export async function contextFromDevice(
   deviceId: string,
   userId: string
 ): Promise<WorkspaceContext> {
-  const [enrollment] = await db
-    .select()
-    .from(deviceEnrollments)
-    .where(eq(deviceEnrollments.deviceId, deviceId))
-    .limit(1);
+  const [enrollment] = await enrollmentForDevice(deviceId);
   if (!enrollment) throw new NoActiveMembershipError();
-
-  const [membership] = await db
-    .select()
-    .from(memberships)
-    .where(eq(memberships.id, enrollment.membershipId))
-    .limit(1);
-  if (!membership || membership.userId !== userId) throw new NoActiveMembershipError();
-  if (membership.archivedAt) throw new ArchivedMembershipError();
+  if (enrollment.userId !== userId) throw new NoActiveMembershipError();
+  if (enrollment.archivedAt) throw new ArchivedMembershipError();
 
   return {
     workspaceId: enrollment.workspaceId,
-    membershipId: membership.id,
-    userId: membership.userId,
+    membershipId: enrollment.membershipId,
+    userId: enrollment.userId,
   };
 }
 

@@ -12,7 +12,7 @@ import {
 } from "../../shared/schema";
 import { makeApp } from "../helpers/app";
 import { newAgent, registerAdmin, registerUser, setWorkspaceRole } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { createSeededMember, inSeededWorkspace } from "../helpers/workspace";
 
 /**
@@ -26,9 +26,8 @@ import { createSeededMember, inSeededWorkspace } from "../helpers/workspace";
 const OTHER_WORKSPACE_ID = "other";
 
 async function plantOtherWorkspace() {
-  const { db } = await import("../../server/db");
-  await db.insert(workspaces).values({ id: OTHER_WORKSPACE_ID, name: "Other" });
-  await db.insert(workspaceRoles).values({
+  await ownerDb.insert(workspaces).values({ id: OTHER_WORKSPACE_ID, name: "Other" });
+  await ownerDb.insert(workspaceRoles).values({
     id: "other-member",
     workspaceId: OTHER_WORKSPACE_ID,
     slug: "member",
@@ -49,7 +48,6 @@ describe("Service Accounts (Identity & Access)", () => {
     const { createServiceAccount, listServiceAccounts, principalContextFromApiKey } = await import(
       "../../server/modules/identity"
     );
-    const { db } = await import("../../server/db");
 
     const created = await inSeededWorkspace(() =>
       createServiceAccount({
@@ -79,7 +77,7 @@ describe("Service Accounts (Identity & Access)", () => {
     expect(listed[0]).not.toHaveProperty("plaintextKey");
     expect(listed[0]).not.toHaveProperty("keyHash");
 
-    const [row] = await db
+    const [row] = await ownerDb
       .select()
       .from(serviceAccounts)
       .where(eq(serviceAccounts.id, created.id));
@@ -117,9 +115,8 @@ describe("Service Accounts (Identity & Access)", () => {
   it("rotates the secret, retires the old hash, and never creates a Membership or Billable Seat", async () => {
     const { createServiceAccount, rotateServiceAccountSecret, principalContextFromApiKey } =
       await import("../../server/modules/identity");
-    const { db } = await import("../../server/db");
 
-    const seatsBefore = await db
+    const seatsBefore = await ownerDb
       .select({ id: memberships.id })
       .from(memberships)
       .where(isNull(memberships.archivedAt));
@@ -135,15 +132,15 @@ describe("Service Accounts (Identity & Access)", () => {
       principal: { kind: "service_account", serviceAccountId: created.id },
     });
 
-    const seatsAfter = await db
+    const seatsAfter = await ownerDb
       .select({ id: memberships.id })
       .from(memberships)
       .where(isNull(memberships.archivedAt));
     expect(seatsAfter).toEqual(seatsBefore);
 
-    const [asUser] = await db.select({ id: users.id }).from(users).where(eq(users.id, created.id));
+    const [asUser] = await ownerDb.select({ id: users.id }).from(users).where(eq(users.id, created.id));
     expect(asUser).toBeUndefined();
-    const [asMember] = await db
+    const [asMember] = await ownerDb
       .select({ id: memberships.id })
       .from(memberships)
       .where(eq(memberships.userId, created.id));
@@ -156,7 +153,6 @@ describe("Service Accounts (Identity & Access)", () => {
     const { createServiceAccount, listServiceAccounts, principalContextFromApiKey } = await import(
       "../../server/modules/identity"
     );
-    const { db } = await import("../../server/db");
 
     await plantOtherWorkspace();
 
@@ -164,8 +160,8 @@ describe("Service Accounts (Identity & Access)", () => {
       email: "other@test.invalid",
       firstName: "Other",
     });
-    await db.delete(memberships).where(eq(memberships.userId, other.id));
-    await db.insert(memberships).values({
+    await ownerDb.delete(memberships).where(eq(memberships.userId, other.id));
+    await ownerDb.insert(memberships).values({
       workspaceId: OTHER_WORKSPACE_ID,
       userId: other.id,
       workspaceRoleId: "other-member",

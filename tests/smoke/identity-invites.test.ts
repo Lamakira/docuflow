@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it } from "vitest";
  */
 
 import { makeApp } from "../helpers/app";
-import { resetDb } from "../helpers/db";
+import { resetDb, getOwnerPool } from "../helpers/db";
 import { newAgent, registerPlatformStaff, registerUser, uniqueEmail } from "../helpers/auth";
 import { clerkCreateInvitationCalls, createClerkClient, issueClerkSession } from "../fakes/clerk";
 
@@ -36,7 +36,7 @@ describe("admin create invites at the IdentityProvider (#160)", () => {
     expect(res.body.user).not.toHaveProperty("lastGeneratedPassword");
     expect(clerkCreateInvitationCalls().map((call) => call.emailAddress)).toContain(email);
 
-    const { pool } = await import("../../server/db");
+    const pool = getOwnerPool();
     const user = (
       await pool.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email])
     ).rows[0];

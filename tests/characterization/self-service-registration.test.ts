@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { memberships, SEEDED_WORKSPACE_ID, users } from "../../shared/schema";
-import { db } from "../../server/db";
 import { makeApp } from "../helpers/app";
 import {
   createUnlinkedUser,
@@ -12,7 +11,7 @@ import {
   signUpAtProvider,
   uniqueEmail,
 } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { addWorkspaceMembership, plantParallelWorkspace, removeAllMemberships } from "../helpers/workspace";
 
 /**
@@ -27,7 +26,7 @@ import { addWorkspaceMembership, plantParallelWorkspace, removeAllMemberships } 
  */
 
 async function membershipCount(userId: string): Promise<number> {
-  const rows = await db.select({ id: memberships.id }).from(memberships).where(eq(memberships.userId, userId));
+  const rows = await ownerDb.select({ id: memberships.id }).from(memberships).where(eq(memberships.userId, userId));
   return rows.length;
 }
 
@@ -103,7 +102,7 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
     expect(second.status).toBe(200);
     expect(second.body.id).toBe(first.body.id);
 
-    const rows = await db.select({ id: users.id }).from(users).where(eq(users.email, visitor.email));
+    const rows = await ownerDb.select({ id: users.id }).from(users).where(eq(users.email, visitor.email));
     expect(rows).toHaveLength(1);
   });
 
@@ -111,7 +110,7 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
     const app = await makeApp();
     const anonymous = newAgent(app);
     const forged = uniqueEmail("forged");
-    const before = await db.select({ id: users.id }).from(users);
+    const before = await ownerDb.select({ id: users.id }).from(users);
 
     const noSession = await anonymous.post("/api/auth/user").send({ email: forged });
     expect(noSession.status).toBe(401);
@@ -124,7 +123,7 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
     expect(badToken.status).toBe(401);
     expect(badToken.body).toEqual({ message: "Unauthorized" });
 
-    expect(await db.select({ id: users.id }).from(users)).toHaveLength(before.length);
+    expect(await ownerDb.select({ id: users.id }).from(users)).toHaveLength(before.length);
   });
 
   it("takes the address from the provider and never from the request body", async () => {
@@ -163,7 +162,7 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
       // Refused means refused: the session is still nobody, and the row it
       // collided with is untouched.
       expect((await visitor.agent.get("/api/auth/user")).body).toBeNull();
-      const rows = await db
+      const rows = await ownerDb
         .select({ id: users.id, subject: users.identityProviderSubjectId })
         .from(users)
         .where(eq(users.email, existing.email));
@@ -192,7 +191,7 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
 
     expect(res.status).toBe(403);
     expect(res.body.message).toMatch(/confirm your email address/i);
-    expect(await db.select({ id: users.id }).from(users).where(eq(users.email, victimAddress))).toEqual(
+    expect(await ownerDb.select({ id: users.id }).from(users).where(eq(users.email, victimAddress))).toEqual(
       [],
     );
     expect((await agent.get("/api/auth/user")).body).toBeNull();
@@ -212,7 +211,7 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
     const agent = newAgent(app).set("Authorization", `Bearer ${issueClerkSession(subject)}`);
 
     expect((await agent.post("/api/auth/user").send({})).status).toBe(403);
-    expect(await db.select({ id: users.id }).from(users)).not.toContainEqual(
+    expect(await ownerDb.select({ id: users.id }).from(users)).not.toContainEqual(
       expect.objectContaining({ email: claimed }),
     );
   });
@@ -237,7 +236,7 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
       true,
     );
     expect(first.body.id).toBe(second.body.id);
-    const rows = await db.select({ id: users.id }).from(users).where(eq(users.email, visitor.email));
+    const rows = await ownerDb.select({ id: users.id }).from(users).where(eq(users.email, visitor.email));
     expect(rows).toHaveLength(1);
   });
 
@@ -256,7 +255,7 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
     expect((await visitor.agent.get("/api/admin/users")).status).toBe(403);
 
     // And the seeded Workspace gained nobody.
-    const seeded = await db
+    const seeded = await ownerDb
       .select({ userId: memberships.userId })
       .from(memberships)
       .where(eq(memberships.workspaceId, SEEDED_WORKSPACE_ID));
@@ -332,7 +331,7 @@ describe("an Invitation still takes precedence over creation (#230, Flow 6 step 
     expect((await registrant.agent.post("/api/auth/user").send({})).status).toBe(201);
 
     const { invitations } = await import("../../shared/schema");
-    const [row] = await db
+    const [row] = await ownerDb
       .select({ token: invitations.token })
       .from(invitations)
       .where(eq(invitations.email, invitedAddress));
@@ -359,7 +358,7 @@ describe("an Invitation still takes precedence over creation (#230, Flow 6 step 
     const invitee = await signUpAtProvider(app, { email: inviteeEmail });
 
     const { invitations } = await import("../../shared/schema");
-    const [row] = await db
+    const [row] = await ownerDb
       .select({ token: invitations.token })
       .from(invitations)
       .where(eq(invitations.email, inviteeEmail));

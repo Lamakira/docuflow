@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { registerAdmin, registerUser } from "../helpers/auth";
 import { createCrmProject, createTask, startTimer } from "../helpers/fixtures";
 import { loginDevice, PNG_1X1, type AgentDevice } from "../helpers/agent";
@@ -92,10 +92,9 @@ describe("desktop agent screenshots (characterization)", () => {
     expect(second.body.screenshotId).toBe(first.body.screenshotId);
     expect(second.body.uploadURL).toBe(first.body.uploadURL);
 
-    const { db } = await import("../../server/db");
     const { timeEntryScreenshots } = await import("../../shared/schema");
     const { eq } = await import("drizzle-orm");
-    const rows = await db
+    const rows = await ownerDb
       .select()
       .from(timeEntryScreenshots)
       .where(eq(timeEntryScreenshots.timeEntryId, entry.id));

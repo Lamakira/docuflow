@@ -16,7 +16,8 @@ import {
   workspaces,
 } from "@shared/schema";
 import { db } from "../../db";
-import { inWorkspace, requireWorkspaceContext } from "../../workspaceContext";
+import { forWorkspaces, inWorkspace, requireWorkspaceContext } from "../../workspaceContext";
+import { membershipsForUser } from "../../workspaceLocators";
 
 export type WorkspaceCondition = "Trial" | "Read-only" | "Past due" | null;
 
@@ -73,27 +74,37 @@ async function loadMemberships(userId: string): Promise<{
     .where(eq(users.id, userId))
     .limit(1);
 
-  const rows = await db
-    .select({
-      workspaceId: memberships.workspaceId,
-      workspaceName: workspaces.name,
-      slug: workspaceRoles.slug,
-      billingState: workspaceBilling.billingState,
-    })
-    .from(memberships)
-    .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
-    .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
-    .leftJoin(workspaceBilling, eq(workspaceBilling.workspaceId, memberships.workspaceId))
-    .where(and(eq(memberships.userId, userId), isNull(memberships.archivedAt)));
+  const active = (await membershipsForUser(userId)).filter((row) => row.archivedAt === null);
+
+  // Names, role slugs and billing state are read Workspace by Workspace: RLS
+  // hides every Workspace but the one in context (#323).
+  const views = await forWorkspaces(
+    active.map((row) => ({ id: row.workspaceId, workspaceRoleId: row.workspaceRoleId })),
+    async (ref): Promise<MembershipView | null> => {
+      const [row] = await db
+        .select({
+          workspaceName: workspaces.name,
+          slug: workspaceRoles.slug,
+          billingState: workspaceBilling.billingState,
+        })
+        .from(workspaces)
+        .innerJoin(workspaceRoles, eq(workspaceRoles.id, ref.workspaceRoleId))
+        .leftJoin(workspaceBilling, eq(workspaceBilling.workspaceId, workspaces.id))
+        .where(eq(workspaces.id, ref.id))
+        .limit(1);
+      if (!row) return null;
+      return {
+        workspaceId: ref.id,
+        workspaceName: row.workspaceName,
+        workspaceRole: membershipRoleLabel(row.slug),
+        condition: workspaceCondition(row.billingState),
+      };
+    },
+  );
 
   return {
     preferredWorkspaceId: user?.activeWorkspaceId ?? null,
-    memberships: rows.map((row) => ({
-      workspaceId: row.workspaceId,
-      workspaceName: row.workspaceName,
-      workspaceRole: membershipRoleLabel(row.slug),
-      condition: workspaceCondition(row.billingState),
-    })),
+    memberships: views.filter((view): view is MembershipView => view !== null),
   };
 }
 
@@ -244,17 +255,9 @@ export async function setActiveWorkspace(
   userId: string,
   workspaceId: string,
 ): Promise<MembershipsResponse> {
-  const [membership] = await db
-    .select({ id: memberships.id })
-    .from(memberships)
-    .where(
-      and(
-        eq(memberships.userId, userId),
-        eq(memberships.workspaceId, workspaceId),
-        isNull(memberships.archivedAt),
-      ),
-    )
-    .limit(1);
+  const membership = (await membershipsForUser(userId)).find(
+    (row) => row.workspaceId === workspaceId && row.archivedAt === null,
+  );
   if (!membership) throw new InvalidActiveWorkspaceError();
 
   await db

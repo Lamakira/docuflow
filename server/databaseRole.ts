@@ -4,11 +4,13 @@
  * the Workspace-owned tables turns every policy off without an error, so the
  * role `DATABASE_URL` connects as is checked (#297).
  *
- * Production refuses to start when the database answers at boot. The pool
- * still connects on first use, so a database that is not up yet is checked by
- * the first query instead, and no query runs until it passes. Development and
- * test connect as the database owner on purpose, so there the same finding is
- * a warning.
+ * Production and test refuse a bypassing role outright; development refuses it
+ * too unless `DOCUFLOW_ALLOW_OWNER_DB=1`, in which case it is a warning (#323).
+ * A suite that runs as the owner passes without ever exercising a policy, so
+ * the harness connects as `docuflow_app`. Where it refuses, boot stops when the
+ * database answers; the pool still connects on first use, so a database that is
+ * not up yet is checked by the first query instead, and no query runs until it
+ * passes.
  */
 
 import type { DbPool } from "./db";
@@ -21,8 +23,16 @@ export interface RuntimeRole {
   rowSecurityActive: boolean;
 }
 
+const PRODUCTION_REMEDY = `Point DATABASE_APP_URL (or DATABASE_URL) at docuflow_app and keep the owner in DATABASE_MIGRATE_URL.`;
+
+/** Local database name and port are docker-compose.yml's (`docuflow_dev` on 5434). */
+const DEVELOPMENT_REMEDY =
+  `Locally: set DATABASE_APP_URL=postgresql://docuflow_app:docuflow_app_dev@localhost:5434/docuflow_dev in .env ` +
+  `and run \`npm run db:app-role\` (an existing volume's docuflow_app has no password: the init script only runs ` +
+  `on an empty volume). To bypass temporarily, set DOCUFLOW_ALLOW_OWNER_DB=1.`;
+
 export class RlsBypassRoleError extends Error {
-  constructor(readonly role: RuntimeRole) {
+  constructor(readonly role: RuntimeRole, options: { development?: boolean } = {}) {
     const reasons = [
       role.superuser && "SUPERUSER",
       role.bypassRls && "BYPASSRLS",
@@ -30,7 +40,7 @@ export class RlsBypassRoleError extends Error {
     ].filter(Boolean);
     super(
       `Database role "${role.name}" bypasses row-level security (${reasons.join(", ")}). ` +
-        `Point DATABASE_APP_URL (or DATABASE_URL) at docuflow_app and keep the owner in DATABASE_MIGRATE_URL.`
+        (options.development ? DEVELOPMENT_REMEDY : PRODUCTION_REMEDY)
     );
     this.name = "RlsBypassRoleError";
   }
@@ -56,13 +66,16 @@ export async function readRuntimeRole(pool: Pick<DbPool, "query">): Promise<Runt
 
 export async function assertRuntimeRoleEnforcesRls(options: {
   pool: Pick<DbPool, "query">;
-  production: boolean;
+  /** Throw on a bypassing role; false only warns. */
+  refuse: boolean;
+  /** Local development: the message says how to set the role up on this machine. */
+  development?: boolean;
   warn?: (message: string) => void;
 }): Promise<RuntimeRole> {
   const role = await readRuntimeRole(options.pool);
   if (!role.superuser && !role.bypassRls && role.rowSecurityActive) return role;
-  const bypass = new RlsBypassRoleError(role);
-  if (options.production) throw bypass;
+  const bypass = new RlsBypassRoleError(role, { development: options.development });
+  if (options.refuse) throw bypass;
   (options.warn ?? console.warn)(bypass.message);
   return role;
 }
@@ -77,13 +90,13 @@ export interface GateablePool {
 }
 
 /**
- * Check the role once, and in production hold every query and checkout until
+ * Check the role once, and where it refuses hold every query and checkout until
  * that check has passed. A bypass role fails every one of them; an unreachable
  * database is not remembered, so the next use checks again.
  */
 export function gateOnRuntimeRole(
   pool: GateablePool,
-  options: { production: boolean; warn?: (message: string) => void },
+  options: { refuse: boolean; development?: boolean; warn?: (message: string) => void },
 ): () => Promise<RuntimeRole> {
   const query = pool.query.bind(pool) as unknown as (...args: unknown[]) => Promise<unknown>;
   const connect = pool.connect.bind(pool) as unknown as () => Promise<PoolClient>;
@@ -104,7 +117,7 @@ export function gateOnRuntimeRole(
       if (!(error instanceof RlsBypassRoleError)) checked = null;
       throw error;
     }));
-  if (!options.production) return verify;
+  if (!options.refuse) return verify;
 
   const settle = <T>(run: Promise<T>, cb: Callback | undefined, deliver: (value: T) => unknown[]) => {
     if (!cb) return run;
@@ -136,7 +149,7 @@ export async function checkRuntimeRoleAtBoot(
     if (error instanceof RlsBypassRoleError) throw error;
     warn(
       `Database role not checked at boot (${error instanceof Error ? error.message : String(error)}); ` +
-        `in production the first query checks it before anything runs.`
+        `where a bypass role is refused, the first query checks it before anything runs.`
     );
   }
 }

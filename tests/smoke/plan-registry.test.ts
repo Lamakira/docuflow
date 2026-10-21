@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { makeApp } from "../helpers/app";
 import { newAgent, registerUser, setWorkspaceRole } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { inSeededWorkspace } from "../helpers/workspace";
 
 /**
@@ -299,13 +299,12 @@ describe("seeded Workspace pin", () => {
   });
 
   it("does not silently adopt a newer registry version when the pin is removed", async () => {
-    const { db } = await import("../../server/db");
     const { workspaceBilling } = await import("../../shared/schema");
     const { BillingPinMissingError, effectiveEntitlements } = await import(
       "../../server/modules/billing"
     );
 
-    await db.delete(workspaceBilling);
+    await ownerDb.delete(workspaceBilling);
 
     await expect(inSeededWorkspace(() => effectiveEntitlements())).rejects.toBeInstanceOf(
       BillingPinMissingError
@@ -343,7 +342,7 @@ describe("Entitlement overrides", () => {
       workspaceRequestsPerMinute: 120,
     });
 
-    const events = await inSeededWorkspace(() => db.select().from(auditEvents));
+    const events = await inSeededWorkspace(async () => await db.select().from(auditEvents));
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       workspaceId: SEEDED_WORKSPACE_ID,

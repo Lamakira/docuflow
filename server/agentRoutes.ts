@@ -276,7 +276,9 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(400).json({ message: "Invalid pairing code" });
       }
 
-      const claimed = await storage.markPairingCodeUsed(pairingRecord.id);
+      const claimed = await runWithWorkspaceContext({ workspaceId: pairingRecord.workspaceId }, () =>
+        storage.markPairingCodeUsed(pairingRecord.id)
+      );
       if (!claimed) {
         return res.status(400).json({ message: "Pairing code already used" });
       }

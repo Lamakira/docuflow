@@ -236,38 +236,42 @@ export async function ingestBillingWebhook(input: {
 
   const workspaceId = await workspaceIdForWebhook(event);
 
-  return db.transaction(async (tx) => {
-    const [inserted] = await tx
-      .insert(billingWebhookInbox)
-      .values({
-        providerEventId: event.providerEventId,
-        type: event.type,
-        objectId: event.objectId,
-      })
-      .onConflictDoNothing()
-      .returning({ providerEventId: billingWebhookInbox.providerEventId });
-
-    if (!inserted) {
-      return { accepted: true as const, duplicate: true, enqueued: false };
-    }
-    if (!workspaceId) {
-      return { accepted: true as const, duplicate: false, enqueued: false };
-    }
-
-    await input.jobs.enqueue(
-      {
-        type: BILLING_PROJECT_JOB,
-        payload: {
+  // The Job insert is RLS-scoped, so the transaction opens inside the Workspace
+  // it just resolved; with none, it is inbox-only (no RLS on the inbox) (#323).
+  const record = () =>
+    db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(billingWebhookInbox)
+        .values({
           providerEventId: event.providerEventId,
+          type: event.type,
           objectId: event.objectId,
+        })
+        .onConflictDoNothing()
+        .returning({ providerEventId: billingWebhookInbox.providerEventId });
+
+      if (!inserted) {
+        return { accepted: true as const, duplicate: true, enqueued: false };
+      }
+      if (!workspaceId) {
+        return { accepted: true as const, duplicate: false, enqueued: false };
+      }
+
+      await input.jobs.enqueue(
+        {
+          type: BILLING_PROJECT_JOB,
+          payload: {
+            providerEventId: event.providerEventId,
+            objectId: event.objectId,
+          },
+          workspaceId: workspaceOfCause(workspaceId),
+          occurrenceKey: projectWebhookOccurrenceKey(event.providerEventId),
         },
-        workspaceId: workspaceOfCause(workspaceId),
-        occurrenceKey: projectWebhookOccurrenceKey(event.providerEventId),
-      },
-      tx as JobsWriter
-    );
-    return { accepted: true as const, duplicate: false, enqueued: true };
-  });
+        tx as JobsWriter
+      );
+      return { accepted: true as const, duplicate: false, enqueued: true };
+    });
+  return workspaceId ? runWithWorkspaceContext({ workspaceId }, record) : record();
 }
 
 /**

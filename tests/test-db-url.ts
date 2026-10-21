@@ -20,3 +20,20 @@ export function resolveTestDatabaseUrl(): string {
   }
   return url;
 }
+
+/**
+ * The application role the harness runs the server as (#323). Row-level
+ * security applies to it, so a query that forgets its Workspace context fails
+ * in the suite instead of in production. `tests/global-setup.ts` gives the role
+ * this password; fixtures that must bypass RLS use the owner URL instead.
+ */
+export const TEST_APP_ROLE = "docuflow_app";
+export const TEST_APP_ROLE_PASSWORD = "rls-harness";
+
+/** The test database, reached as `docuflow_app`. */
+export function resolveTestAppDatabaseUrl(): string {
+  const url = new URL(resolveTestDatabaseUrl());
+  url.username = TEST_APP_ROLE;
+  url.password = TEST_APP_ROLE_PASSWORD;
+  return url.toString();
+}

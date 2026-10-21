@@ -116,11 +116,18 @@ import {
 import { db } from "../db";
 import {
   currentWorkspaceContext,
+  forWorkspaces,
   inWorkspace,
   requireWorkspaceContext,
   runWithWorkspaceContext,
   stampWorkspace,
 } from "../workspaceContext";
+import {
+  activeTimeEntryForUser,
+  membershipsForUser,
+  notificationWorkspaceForUser,
+  workspaceForPairingCode,
+} from "../workspaceLocators";
 import type { OptionRenameColumn } from "./clients-sales/persistence";
 
 import type { DocumentWriter, ProjectWriter } from "./writers";
@@ -1675,13 +1682,12 @@ export class DatabaseStorage implements IStorage {
    * follows it. Restoring takes a Billable Seat in each Workspace it returns to.
    */
   async archiveUser(userId: string, isArchived: boolean): Promise<SafeUser | undefined> {
+    // Memberships live in RLS-scoped rows of every Workspace the User belongs
+    // to: locate them, then touch each inside its own Workspace context (#323).
+    const held = await membershipsForUser(userId);
     if (!isArchived) {
       return db.transaction(async (tx) => {
-        const archived = await tx
-          .select({ workspaceId: memberships.workspaceId })
-          .from(memberships)
-          .where(and(eq(memberships.userId, userId), isNotNull(memberships.archivedAt)));
-        for (const { workspaceId } of archived) {
+        for (const { workspaceId } of held.filter((row) => row.archivedAt !== null)) {
           await runWithWorkspaceContext({ workspaceId }, () => assertSeatAvailable(tx));
         }
         const [updated] = await tx
@@ -1690,10 +1696,14 @@ export class DatabaseStorage implements IStorage {
           .where(eq(users.id, userId))
           .returning();
         if (updated) {
-          await tx
-            .update(memberships)
-            .set({ archivedAt: null, updatedAt: new Date() })
-            .where(eq(memberships.userId, userId));
+          for (const { workspaceId } of held) {
+            await runWithWorkspaceContext({ workspaceId }, async () => {
+              await tx
+                .update(memberships)
+                .set({ archivedAt: null, updatedAt: new Date() })
+                .where(and(eq(memberships.userId, userId), eq(memberships.workspaceId, workspaceId)));
+            });
+          }
         }
         return updated && toSafeUser(updated);
       });
@@ -1704,10 +1714,20 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning();
     if (updated) {
-      await db
-        .update(memberships)
-        .set({ archivedAt: new Date(), updatedAt: new Date() })
-        .where(and(eq(memberships.userId, userId), isNull(memberships.archivedAt)));
+      for (const { workspaceId } of held.filter((row) => row.archivedAt === null)) {
+        await runWithWorkspaceContext({ workspaceId }, async () => {
+          await db
+            .update(memberships)
+            .set({ archivedAt: new Date(), updatedAt: new Date() })
+            .where(
+              and(
+                eq(memberships.userId, userId),
+                eq(memberships.workspaceId, workspaceId),
+                isNull(memberships.archivedAt),
+              ),
+            );
+        });
+      }
     }
     return updated && toSafeUser(updated);
   }
@@ -2136,6 +2156,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserNotifications(userId: string): Promise<NotificationWithDetails[]> {
+    // A User's notifications span their Workspaces, so each is read inside its
+    // own context (#323); the newest 50 across all of them are kept.
+    const perWorkspace = await forWorkspaces(await this.activeWorkspaceIdsOf(userId), () =>
+      this.getUserNotificationsInWorkspace(userId),
+    );
+    return perWorkspace
+      .flat()
+      .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))
+      .slice(0, 50);
+  }
+
+  private async getUserNotificationsInWorkspace(userId: string): Promise<NotificationWithDetails[]> {
     const notifs = await db
       .select({
         notification: notifications,
@@ -2174,12 +2206,22 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  /** The User's active Memberships' Workspaces: the set the notification list spans. */
+  private async activeWorkspaceIdsOf(userId: string): Promise<{ id: string }[]> {
+    const active = (await membershipsForUser(userId)).filter((row) => row.archivedAt === null);
+    return [...new Set(active.map((row) => row.workspaceId))].map((id) => ({ id }));
+  }
+
   async getUnreadNotificationCount(userId: string): Promise<number> {
-    const [result] = await db
-      .select({ count: count() })
-      .from(notifications)
-      .where(and(eq(notifications.userId, userId), eq(notifications.isRead, 0)));
-    return result?.count || 0;
+    // The badge counts what the list lists: every Workspace the User belongs to.
+    const perWorkspace = await forWorkspaces(await this.activeWorkspaceIdsOf(userId), async () => {
+      const [result] = await db
+        .select({ count: count() })
+        .from(notifications)
+        .where(and(eq(notifications.userId, userId), eq(notifications.isRead, 0)));
+      return result?.count || 0;
+    });
+    return perWorkspace.reduce((sum, n) => sum + n, 0);
   }
 
   async createNotification(notification: InsertNotification): Promise<Notification> {
@@ -2205,11 +2247,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async markNotificationRead(id: string, userId: string): Promise<void> {
-    await db.update(notifications).set({ isRead: 1 }).where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+    // The notification may be in any of the User's Workspaces, as listed.
+    const workspaceId = await notificationWorkspaceForUser(id, userId);
+    if (!workspaceId) return;
+    // Awaited inside the callback: a Drizzle builder runs when awaited, not when built.
+    await runWithWorkspaceContext({ workspaceId }, async () => {
+      await db.update(notifications).set({ isRead: 1 }).where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+    });
   }
 
   async markAllNotificationsRead(userId: string): Promise<void> {
-    await db.update(notifications).set({ isRead: 1 }).where(eq(notifications.userId, userId));
+    await forWorkspaces(await this.activeWorkspaceIdsOf(userId), async () => {
+      await db.update(notifications).set({ isRead: 1 }).where(eq(notifications.userId, userId));
+    });
   }
 
   async getAudioRecording(id: string): Promise<AudioRecording | undefined> {
@@ -2670,19 +2720,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getActiveTimeEntry(userId: string): Promise<TimeEntry | undefined> {
-    const [entry] = await db
-      .select()
-      .from(timeEntries)
-      .where(and(
-        eq(timeEntries.userId, userId),
-        or(
-          eq(timeEntries.status, "running"),
-          eq(timeEntries.status, "paused")
-        )
-      ))
-      .orderBy(desc(timeEntries.startTime))
-      .limit(1);
-    return entry;
+    // A Timer follows the User across Workspaces, so it is located before RLS can see it.
+    const located = await activeTimeEntryForUser(userId);
+    if (!located) return undefined;
+    return runWithWorkspaceContext({ workspaceId: located.workspaceId, userId }, async () => {
+      const [entry] = await db.select().from(timeEntries).where(eq(timeEntries.id, located.id)).limit(1);
+      return entry;
+    });
   }
 
   async getStaleRunningEntries(staleThreshold: Date): Promise<TimeEntry[]> {
@@ -3117,11 +3161,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAgentPairingCode(code: string): Promise<AgentPairingCode | undefined> {
-    const [result] = await db
-      .select()
-      .from(agentPairingCodes)
-      .where(eq(agentPairingCodes.code, code));
-    return result;
+    const located = await workspaceForPairingCode(code);
+    if (!located) return undefined;
+    return runWithWorkspaceContext({ workspaceId: located.workspaceId }, async () => {
+      const [result] = await db
+        .select()
+        .from(agentPairingCodes)
+        .where(eq(agentPairingCodes.code, code));
+      return result;
+    });
   }
 
   async markPairingCodeUsed(id: string): Promise<boolean> {

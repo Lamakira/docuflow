@@ -9,7 +9,7 @@ import {
 import type { FakeSubscription } from "../fakes/stripe";
 import { makeApp } from "../helpers/app";
 import { registerUser, setWorkspaceRole, type TestUser } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { addWorkspaceMembership, plantParallelWorkspace } from "../helpers/workspace";
 
 /**
@@ -20,8 +20,7 @@ import { addWorkspaceMembership, plantParallelWorkspace } from "../helpers/works
  */
 
 async function pinBilling(workspaceId: string, values: Partial<typeof workspaceBilling.$inferInsert>) {
-  const { db } = await import("../../server/db");
-  await db.update(workspaceBilling).set(values).where(eq(workspaceBilling.workspaceId, workspaceId));
+  await ownerDb.update(workspaceBilling).set(values).where(eq(workspaceBilling.workspaceId, workspaceId));
 }
 
 function cadSubscription(): FakeSubscription {

@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
  */
 
 import { makeApp } from "../helpers/app";
-import { resetDb } from "../helpers/db";
+import { resetDb, getOwnerPool } from "../helpers/db";
 import { newAgent, registerPlatformStaff, registerUser, uniqueEmail } from "../helpers/auth";
 import { loginDevice } from "../helpers/agent";
 
@@ -21,7 +21,7 @@ beforeEach(async () => {
 
 describe("users.password and last_generated_password are gone (#161)", () => {
   it("has neither column in a database migrated through the journal", async () => {
-    const { pool } = await import("../../server/db");
+    const pool = getOwnerPool();
     const { rows } = await pool.query<{ column_name: string }>(
       `SELECT column_name
          FROM information_schema.columns
@@ -50,7 +50,7 @@ describe("users.password and last_generated_password are gone (#161)", () => {
     expect(res.body.user).not.toHaveProperty("password");
     expect(res.body.user).not.toHaveProperty("lastGeneratedPassword");
 
-    const { pool } = await import("../../server/db");
+    const pool = getOwnerPool();
     const user = (
       await pool.query<{ id: string }>(`SELECT id FROM users WHERE email = $1`, [email])
     ).rows[0];
@@ -66,7 +66,7 @@ describe("users.password and last_generated_password are gone (#161)", () => {
 
 describe("agent login cannot be revived (#161)", () => {
   it("rejects inserting a password hash because the column is gone", async () => {
-    const { pool } = await import("../../server/db");
+    const pool = getOwnerPool();
     await expect(
       pool.query(
         `INSERT INTO users (email, password) VALUES ($1, $2)`,

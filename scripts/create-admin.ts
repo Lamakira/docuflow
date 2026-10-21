@@ -18,7 +18,7 @@
  */
 
 import pg from "pg";
-import { maskDatabaseUrl, requireDatabaseUrl } from "../shared/databaseUrl";
+import { maskDatabaseUrl, requireMigrateDatabaseUrl } from "../shared/databaseUrl";
 
 async function main() {
   const [, , email, firstName, lastName] = process.argv;
@@ -28,7 +28,7 @@ async function main() {
     process.exit(1);
   }
 
-  const connStr = requireDatabaseUrl();
+  const connStr = requireMigrateDatabaseUrl();
   console.log(`[DB] Connecting to: ${maskDatabaseUrl(connStr)}`);
 
   const pool = new pg.Pool({ connectionString: connStr });

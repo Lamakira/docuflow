@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { makeApp } from "../helpers/app";
 import { newAgent, registerUser, setWorkspaceRole } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 
 /**
  * Characterization: freeze the public `/api/v1` kernel contract (#126,
@@ -276,9 +276,8 @@ describe("public /api/v1 webhook endpoints (characterization)", () => {
     expect(rejected.headers["content-type"]).toMatch(/application\/problem\+json/);
     expect(rejected.body).toMatchObject({ type: "urn:docuflow:problem:bad-request", status: 400 });
 
-    const { db } = await import("../../server/db");
-    await db.insert(workspaces).values({ id: "other", name: "Other" });
-    await db.insert(workspaceRoles).values({
+    await ownerDb.insert(workspaces).values({ id: "other", name: "Other" });
+    await ownerDb.insert(workspaceRoles).values({
       id: "other-member",
       workspaceId: "other",
       slug: "member",

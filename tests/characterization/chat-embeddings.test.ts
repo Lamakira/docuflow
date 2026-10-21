@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
-import { resetDb } from "../helpers/db";
+import { resetDb, getOwnerPool } from "../helpers/db";
 import { registerAdmin, registerUser } from "../helpers/auth";
 import { createCrmProject, createDocument, createFolder, tiptap } from "../helpers/fixtures";
 import { chatCalls, embeddingCalls, setChatReply } from "../fakes/openai";
@@ -232,7 +232,7 @@ describe("chat and embeddings (characterization)", () => {
       content: tiptap("secret compensation bands"),
     });
     expect(hidden.status).toBe(201);
-    const { pool } = await import("../../server/db");
+    const pool = getOwnerPool();
     await pool.query(`UPDATE company_documents SET access = 'restricted' WHERE id = $1`, [hidden.body.id]);
     await user.agent.post("/api/company-documents").send({
       name: "Leave policy",

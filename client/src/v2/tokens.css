@@ -200,8 +200,9 @@
   box-sizing: border-box;
 }
 
-/* Clerk's embedded components (`cl-*`) style their own controls (#316). */
-.df-v2 button:not(.df-btn):not([class*="cl-"]),
+/* Clerk's embedded components (`cl-*`) style their own controls (#316).
+   `.df-segment-item` sets its own font and ink; this rule would outrank it. */
+.df-v2 button:not(.df-btn):not(.df-segment-item):not([class*="cl-"]),
 .df-v2 input:not([class*="cl-"]) {
   font: inherit;
   color: inherit;
@@ -4444,35 +4445,41 @@ button.df-activity-row {
   border-radius: var(--df-radius-2);
   overflow: hidden;
   background: var(--df-card-white);
+  gap: 0;
+  justify-content: flex-start;
 }
 
-.df-segment span {
+.df-v2 .df-segment .df-segment-item {
+  height: auto;
+  min-width: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--df-archive-slate);
   font-family: var(--df-font-mono);
   font-weight: 500;
   font-size: var(--df-text-2);
   letter-spacing: 0.04em;
   padding: var(--df-space-2) var(--df-space-3);
-  color: var(--df-archive-slate);
   white-space: nowrap;
+  cursor: pointer;
 }
 
-.df-segment span[data-active="true"],
-.df-segment button[data-active="true"] {
+.df-v2 .df-segment .df-segment-item:hover {
+  background: var(--df-divider);
+  color: var(--df-case-ink);
+}
+
+.df-v2 .df-segment .df-segment-item[data-state="on"],
+.df-v2 .df-segment .df-segment-item[data-state="on"]:hover {
   background: var(--df-case-ink);
   color: var(--df-on-ink);
 }
 
-.df-segment button {
-  font-family: var(--df-font-mono);
-  font-weight: 500;
-  font-size: var(--df-text-2);
-  letter-spacing: 0.04em;
-  padding: var(--df-space-2) var(--df-space-3);
-  color: var(--df-archive-slate);
-  white-space: nowrap;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
+.df-v2 .df-segment .df-segment-item:focus-visible {
+  outline: 2px solid var(--df-amber);
+  outline-offset: -2px;
 }
 
 .df-library-head,

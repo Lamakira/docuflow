@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 import { remainingWorkspaceIdNulls } from "../../scripts/verify-workspace-backfill";
 import { migrate } from "../../scripts/migrate";
-import { urlForDatabase, withClient } from "../helpers/db";
+import { urlForDatabase, withClient, ownerDb } from "../helpers/db";
 
 /**
  * Phase 4 ticket #94: nullable `workspace_id` on Workspace-owned tables, a
@@ -249,7 +249,7 @@ describe("Project write stamps workspace_id", () => {
     ).rejects.toThrow();
 
     expect(
-      await db.select({ id: projects.id }).from(projects).where(eq(projects.id, rolledBackId))
+      await ownerDb.select({ id: projects.id }).from(projects).where(eq(projects.id, rolledBackId))
     ).toEqual([]);
     expect(
       await runWithWorkspaceContext({ workspaceId: SEEDED_WORKSPACE_ID }, () =>

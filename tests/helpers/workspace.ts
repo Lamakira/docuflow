@@ -9,20 +9,22 @@ import {
   type User,
 } from "../../shared/schema";
 import { runWithWorkspaceContext } from "../../server/workspaceContext";
+import { ownerDb } from "./db";
 
 /** Run repository work as the seeded Workspace — the only production Membership. */
 export function inSeededWorkspace<T>(fn: () => T): T {
   return runWithWorkspaceContext({ workspaceId: SEEDED_WORKSPACE_ID }, fn);
 }
 
+/** Fixtures below write as the database owner: they span Workspaces, outside any context (#323). */
+
 /**
  * A second Workspace so Active Workspace switching can be demonstrated (#183).
  * Catalog only — callers add Memberships explicitly.
  */
 export async function plantParallelWorkspace(name = "Harbour View"): Promise<string> {
-  const { db } = await import("../../server/db");
-  await db.insert(workspaces).values({ id: PARALLEL_WORKSPACE_ID, name }).onConflictDoNothing();
-  await db
+  await ownerDb.insert(workspaces).values({ id: PARALLEL_WORKSPACE_ID, name }).onConflictDoNothing();
+  await ownerDb
     .insert(workspaceRoles)
     .values([
       { id: `${PARALLEL_WORKSPACE_ID}-owner`, workspaceId: PARALLEL_WORKSPACE_ID, slug: "owner", name: "Owner" },
@@ -35,7 +37,7 @@ export async function plantParallelWorkspace(name = "Harbour View"): Promise<str
       { id: `${PARALLEL_WORKSPACE_ID}-member`, workspaceId: PARALLEL_WORKSPACE_ID, slug: "member", name: "Member" },
     ])
     .onConflictDoNothing();
-  await db
+  await ownerDb
     .insert(workspaceBilling)
     .values({
       workspaceId: PARALLEL_WORKSPACE_ID,
@@ -55,8 +57,7 @@ export async function addWorkspaceMembership(
   slug: "owner" | "administrator" | "member" = "member",
   archived = false,
 ): Promise<void> {
-  const { db } = await import("../../server/db");
-  await db.insert(memberships).values({
+  await ownerDb.insert(memberships).values({
     workspaceId,
     userId,
     workspaceRoleId: `${workspaceId}-${slug}`,
@@ -77,7 +78,6 @@ export async function createSeededMember(userData: InsertUser): Promise<User> {
 
 /** Strip every Membership from a User — the state Flow 1 starts from. */
 export async function removeAllMemberships(userId: string): Promise<void> {
-  const { db } = await import("../../server/db");
   const { eq } = await import("drizzle-orm");
-  await db.delete(memberships).where(eq(memberships.userId, userId));
+  await ownerDb.delete(memberships).where(eq(memberships.userId, userId));
 }

@@ -1,6 +1,7 @@
 import { afterAll, beforeEach } from "vitest";
 import { stopApp } from "./helpers/app";
-import { resolveTestDatabaseUrl } from "./test-db-url";
+import { endOwnerPool } from "./helpers/db";
+import { resolveTestAppDatabaseUrl, resolveTestDatabaseUrl } from "./test-db-url";
 import { resetGcs } from "./fakes/gcs";
 import { resetOpenAi } from "./fakes/openai";
 import { resetEmails } from "./fakes/resend";
@@ -14,7 +15,12 @@ import { installNetworkFake } from "./fakes/network";
 // via the helpers in tests/helpers/.
 process.env.NODE_ENV = "test";
 process.env.TZ = "UTC";
+// The server runs as docuflow_app (#323): DATABASE_APP_URL wins over DATABASE_URL
+// at runtime, while DATABASE_URL stays the owner that migrations and fixtures use.
 process.env.DATABASE_URL = resolveTestDatabaseUrl();
+process.env.DATABASE_APP_URL = resolveTestAppDatabaseUrl();
+delete process.env.DATABASE_MIGRATE_URL;
+delete process.env.DOCUFLOW_ALLOW_OWNER_DB;
 process.env.DB_DRIVER = "pg"; // local/CI Postgres — Neon serverless driver can't reach it
 // Assigned, not defaulted (ADR-0018): a developer's real exported secrets must
 // never reach the harness, and fixed values keep token assertions deterministic.
@@ -91,4 +97,5 @@ afterAll(async () => {
   // Close the server's pg pool so the worker exits cleanly.
   const { pool } = await import("../server/db");
   await pool.end().catch(() => {});
+  await endOwnerPool();
 });

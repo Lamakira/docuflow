@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { workspaceBilling } from "../../shared/schema";
 import { parsePlanIntent } from "../../shared/planIntent";
-import { db } from "../../server/db";
 import {
   PLAN_INTENT_KEY,
   capturePlanIntent,
@@ -15,7 +14,7 @@ import {
 import { intendedPricedPlan, planIntentNote, trialNotice, type Entitlements } from "../../client/src/v2/plan";
 import { makeApp } from "../helpers/app";
 import { registerUser } from "../helpers/auth";
-import { resetDb } from "../helpers/db";
+import { resetDb, ownerDb } from "../helpers/db";
 import { removeAllMemberships } from "../helpers/workspace";
 
 /**
@@ -119,7 +118,7 @@ describe("pinning the choice on the first Workspace", () => {
       .send({ name: "Keystone", intendedPlan: "growth", intendedInterval: "annual" });
     expect(created.status).toBe(201);
 
-    const [billing] = await db
+    const [billing] = await ownerDb
       .select()
       .from(workspaceBilling)
       .where(eq(workspaceBilling.workspaceId, created.body.workspaceId));
@@ -145,7 +144,7 @@ describe("pinning the choice on the first Workspace", () => {
       .post("/api/workspaces")
       .send({ name: "Sales-led", intendedPlan: "Enterprise" });
     expect(kept.status).toBe(201);
-    const [pin] = await db
+    const [pin] = await ownerDb
       .select()
       .from(workspaceBilling)
       .where(eq(workspaceBilling.workspaceId, kept.body.workspaceId));
@@ -158,7 +157,7 @@ describe("pinning the choice on the first Workspace", () => {
       .post("/api/workspaces")
       .send({ name: "Unknown", intendedPlan: "platinum", intendedInterval: "annual" });
     expect(ignored.status).toBe(201);
-    const [none] = await db
+    const [none] = await ownerDb
       .select()
       .from(workspaceBilling)
       .where(eq(workspaceBilling.workspaceId, ignored.body.workspaceId));

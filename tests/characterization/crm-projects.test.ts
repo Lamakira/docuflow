@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
-import { resetDb } from "../helpers/db";
+import { resetDb, getOwnerPool } from "../helpers/db";
 import { registerUser, setWorkspaceRole } from "../helpers/auth";
 import { createClient, createCrmProject } from "../helpers/fixtures";
 import { emailsTo } from "../fakes/resend";
@@ -357,7 +357,7 @@ describe("CRM projects (characterization)", () => {
     const assignedElsewhere = await createCrmProject(admin.agent, { name: "Assigned, admin a member" });
     // The assignee road only counts on a Project nobody is a Member of; the HTTP
     // assign adds a Member, so the rows are set directly.
-    const { pool } = await import("../../server/db");
+    const pool = getOwnerPool();
     await pool.query(`DELETE FROM project_members WHERE crm_project_id = $1`, [assigned.crmProject.id]);
     await pool.query(`UPDATE crm_projects SET assignee_id = $1 WHERE id = ANY($2)`, [
       member.id,
