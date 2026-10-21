@@ -4,6 +4,7 @@
  * Do not animate field focus.
  */
 
+import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { dailyUpdateBlockageTypeOptions, dailyUpdateStatusOptions } from "@shared/schema";
 import { canManageAdministration } from "./administration";
 import { chromeRefusal } from "./chrome";
@@ -94,9 +95,9 @@ function composeToday(
     submitted,
     copy: `${DAILY_UPDATE_DEFINITION}${next}`,
     rows: [
-      { label: "WORKDAY", value: formatDateChip(input.now) },
-      { label: "STATUS", value: submitted ? (clock ? `Submitted at ${clock}` : "Submitted") : "Not submitted yet" },
-      { label: "PROJECTS COVERED", value: covered.length > 0 ? covered.join(", ") : "None yet" },
+      { label: "Workday", value: formatDateChip(input.now) },
+      { label: "Status", value: submitted ? (clock ? `Submitted at ${clock}` : "Submitted") : "Not submitted yet" },
+      { label: "Projects covered", value: covered.length > 0 ? covered.join(", ") : "None yet" },
     ],
     action: !input.readOnly && !canSubmit ? { label: "Open Projects", href: "/projects" } : null,
   };
@@ -214,6 +215,8 @@ export type TeamDailyUpdatesInput = {
   filterQuery: string;
   statusFilter: string;
   memberFilter: string;
+  /** The Range filter in days (`1`, `7`, `14`, `30`); omitted reads as the widest. */
+  rangeDays?: string;
 };
 
 export type TeamDailyUpdateRow = {
@@ -245,7 +248,8 @@ export type TeamDailyUpdatesModel =
       submittedEmptyCopy: string;
       missingEmptyCopy: string;
       empty: boolean;
-      emptyCopy: string;
+      /** `none`: nothing in the widest Range; `range`: nothing in a shorter one; `filtered`: a search, status or Member hides it (#325). */
+      emptyState: EmptyModel | null;
       groups: TeamDailyUpdateGroup[];
       members: Array<{ id: string; name: string }>;
     };
@@ -393,7 +397,8 @@ export function composeTeamDailyUpdates(input: TeamDailyUpdatesInput): TeamDaily
 
   const kpis = input.kpis ?? { total: 0, waitingOnClient: 0, blocked: 0, activeUsers: 0 };
   const empty = groups.length === 0;
-  const filteredAway = empty && input.updates.length > 0;
+  const shortRange = Boolean(input.rangeDays) && input.rangeDays !== "30";
+  const facetsActive = Boolean(needle) || input.statusFilter !== "all" || input.memberFilter !== "all";
   const submitted = input.submittedToday.map(teamMemberChip);
   const missing = input.missingToday.map(teamMemberChip);
 
@@ -423,11 +428,16 @@ export function composeTeamDailyUpdates(input: TeamDailyUpdatesInput): TeamDaily
           ? "Everyone has submitted today's Daily Update."
           : "",
     empty,
-    emptyCopy: empty
-      ? filteredAway
-        ? "No Daily Updates match this filter."
-        : "No Daily Updates in this range yet."
-      : "",
+    // A short Range cannot claim nothing was ever submitted: rows may sit outside it.
+    emptyState: emptyModelOf(
+      emptyKindOf(empty, facetsActive, shortRange),
+      "Daily Updates",
+      {
+        title: "No Daily Updates yet",
+        copy: "A Daily Update is a Member's one submission for the workday. They appear here as your Members submit them.",
+      },
+      `No Daily Updates ${input.rangeDays === "1" ? "today" : `in the last ${input.rangeDays} days`}. Widen the Range to look further back.`,
+    ),
     groups,
     members: [...members.values()].sort((a, b) => a.name.localeCompare(b.name)),
   };

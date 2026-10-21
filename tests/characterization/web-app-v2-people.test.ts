@@ -58,8 +58,8 @@ describe("People routing (#192)", () => {
     expect(match.kind).toBe("people");
     expect(navIdForPath("/people")).toBe("people");
     expect(breadcrumbFor("/people", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "PEOPLE",
+      "Harbor Co",
+      "People",
     ]);
     expect(appSource).toContain("V2PeoplePage");
     expect(appSource).toMatch(/path="\/people"/);
@@ -74,7 +74,7 @@ describe("People from Memberships (#192)", () => {
 
     expect(page.empty).toBe(true);
     expect(page.rows).toEqual([]);
-    expect(page.emptyCopy.toLowerCase()).toContain("membership");
+    expect(page.emptyState?.copy.toLowerCase()).toContain("membership");
     expect(page.pagePrimary).toBe("case-ink");
     expect(page.seatCopy).toBe(
       "Only accepted active Memberships consume a Billable Seat. 0 Invitations pending consume none.",
@@ -95,7 +95,7 @@ describe("People from Memberships (#192)", () => {
             firstName: "Sam",
             lastName: "Lee",
             email: "sam@example.com",
-            workspaceRole: "OWNER",
+            workspaceRole: "Owner",
             capabilities: ["View daily updates", "Manage Webhook Endpoints"],
             archived: false,
           },
@@ -123,7 +123,7 @@ describe("People from Memberships (#192)", () => {
         name: "Sam Lee",
         initials: "SL",
         email: "sam@example.com",
-        workspaceRole: "OWNER",
+        workspaceRole: "Owner",
         capabilities: "View daily updates · Manage Webhook Endpoints",
         status: "ACTIVE",
         canSignIn: true,
@@ -317,7 +317,7 @@ describe("People from Memberships (#192)", () => {
             firstName: "Sam",
             lastName: "Lee",
             email: "sam@example.com",
-            workspaceRole: "OWNER",
+            workspaceRole: "Owner",
             capabilities: [],
             archived: false,
             hoursPerDay: 7,
@@ -354,7 +354,7 @@ describe("People from Memberships (#192)", () => {
             firstName: "Sam",
             lastName: "Lee",
             email: "sam@example.com",
-            workspaceRole: "OWNER",
+            workspaceRole: "Owner",
             capabilities: [],
             archived: false,
           },
@@ -485,7 +485,7 @@ describe("the Members table reads like the other registers (#280)", () => {
 
   it("edits a Member's hours and Daily Updates access in a dialog", () => {
     expect(source).toContain('testId="v2-people-settings-dialog"');
-    expect(source).toContain("HOURS PER DAY");
+    expect(source).toContain("Hours per day");
     expect(source).toContain("Can view Daily Updates");
     expect(source).toContain('refusal={refusal?.id === "member-settings" ? refusal.message : null}');
   });

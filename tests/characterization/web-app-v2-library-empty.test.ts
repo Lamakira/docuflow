@@ -85,12 +85,12 @@ describe("Workspace Documents empty states", () => {
   });
 
   it("says how many rows are shown of the whole while filtered, and keeps the count otherwise", () => {
-    expect(composeLibrary(input()).footLabel).toBe("4 ITEMS · 1 FOLDER");
+    expect(composeLibrary(input()).footLabel).toBe("4 items · 1 folder");
     expect(composeLibrary(input({ filters: { ...facets, access: "administrators" } })).footLabel).toBe(
-      "0 OF 4 ITEMS · 0 FOLDERS SHOWN",
+      "0 of 4 items · 0 folders shown",
     );
-    expect(composeLibrary(input({ filterQuery: "leave" })).footLabel).toBe("1 OF 4 ITEMS · 0 FOLDERS SHOWN");
-    expect(composeLibrary(input({ filterQuery: "benefits" })).footLabel).toBe("2 OF 4 ITEMS · 1 FOLDER SHOWN");
+    expect(composeLibrary(input({ filterQuery: "leave" })).footLabel).toBe("1 of 4 items · 0 folders shown");
+    expect(composeLibrary(input({ filterQuery: "benefits" })).footLabel).toBe("2 of 4 items · 1 folder shown");
   });
 });
 

@@ -79,9 +79,9 @@ describe("Project Dossier routing (#173)", () => {
     expect(match.tab).toBe("overview");
     expect(navIdForPath("/projects/prj-live")).toBe("projects");
     expect(breadcrumbFor("/projects/prj-live", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "PROJECTS",
-      "OVERVIEW",
+      "Harbor Co",
+      "Projects",
+      "Overview",
     ]);
   });
 
@@ -494,20 +494,20 @@ describe("Project Dossier remaining tabs from live records (#188)", () => {
   it("Settings expose BFF Project fields and Project Assignment, not custom Workspace Roles or Timesheets", () => {
     const dossier = composeDossier(emptyInput({ tab: "settings", project: liveProject() }));
     expect(dossier.settings.identity).toEqual([
-      { label: "CLIENT", value: "Harbor Co" },
-      { label: "KIND", value: "CLIENT PROJECT", chip: true },
+      { label: "Client", value: "Harbor Co" },
+      { label: "Kind", value: "CLIENT PROJECT", chip: true },
     ]);
     expect(dossier.settings.lifecycle.rows.map((row) => [row.label, row.value])).toEqual([
-      ["STATUS", "ACTIVE"],
-      ["START", "01 AUG"],
-      ["DUE", "30 OCT"],
-      ["LAST CHANGE", "—"],
+      ["Status", "ACTIVE"],
+      ["Start", "01 Aug"],
+      ["Due", "30 Oct"],
+      ["Last change", "—"],
     ]);
     // START and DUE are set right there, with the date picker (#307).
     expect(dossier.settings.lifecycle.rows.map((row) => row.date ?? null)).toEqual([null, "startDate", "dueDate", null]);
     expect(dossier.settings.dates).toEqual({ startDate: "2026-08-01", dueDate: "2026-10-30" });
     expect(dossier.settings.budget.draft).toEqual({ hours: "120", minutes: "" });
-    expect(dossier.settings.documentation.row).toMatchObject({ label: "DOCUMENTATION", value: "ON" });
+    expect(dossier.settings.documentation.row).toMatchObject({ label: "Documentation", value: "ON" });
     expect(dossier.settings.lead?.id).toBe("user-1");
     expect(dossier.settings.members.map((member) => member.id)).toEqual(["user-1", "user-2"]);
     expect(JSON.stringify(dossier.settings)).not.toContain("Timesheet");

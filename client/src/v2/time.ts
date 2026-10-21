@@ -11,8 +11,10 @@
  * shared with the Dossier, so it does not live in this destination's module.
  */
 
+import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { formatElapsedClock, timeTabHref, TIME_TAB_IDS, type TimeTabId } from "./presentation";
 import { formatHours, memberName } from "./today";
+import { MONTHS } from "./dates";
 
 export type TimeEntryRowInput = {
   id: string;
@@ -41,6 +43,10 @@ export type TimeTrackingInput = {
   activeEntryId: string | null;
   entries: TimeEntryRowInput[];
   workdaySeconds: number;
+  /** The Range filter; the register opens on `today`. Omitted reads as the whole Workspace. */
+  range?: "today" | "week" | "all";
+  /** Whether the Project, Status or Member filter narrows the register. */
+  facetsActive?: boolean;
 };
 
 export type TimeTrackingRow = {
@@ -60,7 +66,8 @@ export type TimeTrackingModel = {
   subhead: string;
   workdayHours: string;
   empty: boolean;
-  emptyCopy: string;
+  /** Why the register shows nothing (#325); null while it has rows. */
+  emptyState: EmptyModel | null;
   rows: TimeTrackingRow[];
   pagePrimary: "case-ink";
 };
@@ -72,8 +79,6 @@ export type TimeEntriesFilter = {
   status?: string | null;
   userId?: string | null;
 };
-
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 function parseDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
@@ -94,7 +99,7 @@ function formatWhen(startTime: Date | string, now: Date): string {
   if (!value) return "";
   if (sameDay(value, now)) return formatClock(value);
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (sameDay(value, yesterday)) return "YDA";
+  if (sameDay(value, yesterday)) return "Yesterday";
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
 }
 
@@ -150,11 +155,21 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
     };
   });
   const empty = rows.length === 0;
+  // A short Range cannot claim the Workspace has none: rows may sit outside it, so the compact line names the window.
+  const window = input.range === "today" ? "today" : input.range === "week" ? "this week" : null;
   return {
     subhead: `Time Entries in ${input.workspaceName}.`,
     workdayHours: formatHours(input.workdaySeconds),
     empty,
-    emptyCopy: empty ? "No Time Entry in this Workspace for these filters." : "",
+    emptyState: emptyModelOf(
+      emptyKindOf(empty, Boolean(input.facetsActive), window !== null),
+      "Time Entries",
+      {
+        title: "Track your first Time Entry",
+        copy: "Time Entries are the intervals worked on a Project. Choose a Project and Task in the Timer above, then press Start.",
+      },
+      `No Time Entries ${window}. Widen the Range to look further back.`,
+    ),
     rows,
     pagePrimary: "case-ink",
   };
@@ -284,11 +299,11 @@ export function composeTimeStats(input: TimeStatsInput): TimeStatsModel {
   const average = entries > 0 ? Math.round(tracked / entries) : 0;
 
   const figures: TimeStatFigure[] = [
-    { label: "TRACKED", value: formatSpan(tracked), meta: "Active time, idle excluded" },
-    { label: "TIME ENTRIES", value: String(entries), meta: "Recorded intervals" },
-    { label: "AVERAGE ENTRY", value: formatSpan(average), meta: "Per Time Entry" },
-    { label: "IDLE", value: formatSpan(idle), meta: "Detected idle time" },
-    { label: "ACTIVITY EVIDENCE", value: String(captures), meta: "Captures in this period" },
+    { label: "Tracked", value: formatSpan(tracked), meta: "Active time, idle excluded" },
+    { label: "Time entries", value: String(entries), meta: "Recorded intervals" },
+    { label: "Average entry", value: formatSpan(average), meta: "Per Time Entry" },
+    { label: "Idle", value: formatSpan(idle), meta: "Detected idle time" },
+    { label: "Activity evidence", value: String(captures), meta: "Captures in this period" },
   ];
 
   const projectRows = [...(stats?.byProject ?? [])]

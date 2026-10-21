@@ -39,17 +39,17 @@ const NOW = new Date(2026, 8, 25, 15, 0, 0);
 
 describe("register paging", () => {
   it("labels the rows on show, and the bare count when one page holds them", () => {
-    const noun = { one: "PROJECT", many: "PROJECTS" };
+    const noun = { one: "Project", many: "Projects" };
     expect(composePaging({ page: 2, pageSize: 50, total: 132, noun })).toMatchObject({
       page: 2,
       pageCount: 3,
-      label: "51–100 OF 132 PROJECTS",
+      label: "51–100 of 132 Projects",
       hasPrevious: true,
       hasNext: true,
       showControls: true,
     });
     expect(composePaging({ page: 1, pageSize: 50, total: 1, noun })).toMatchObject({
-      label: "1 PROJECT",
+      label: "1 Project",
       hasNext: false,
       showControls: false,
     });
@@ -58,7 +58,7 @@ describe("register paging", () => {
   it("clamps a page past the end to the last one", () => {
     const paging = composePaging({ page: 9, pageSize: 25, total: 30, noun: { one: "X", many: "XS" } });
     expect(paging.page).toBe(2);
-    expect(paging.label).toBe("26–30 OF 30 XS");
+    expect(paging.label).toBe("26–30 of 30 XS");
   });
 });
 
@@ -168,7 +168,8 @@ describe("an emptied register says why", () => {
       activeFilters,
       selectedId: null,
     });
-    expect(register.emptyCopy).toBe("No Projects match “pier” · STATUS ON HOLD · CLIENT Acme.");
+    expect(register.emptyState?.copy).toBe("No Projects match these filters.");
+    expect(register.emptyState?.kind).toBe("filtered");
     expect(register.filtered).toBe(true);
   });
 
@@ -182,7 +183,8 @@ describe("an emptied register says why", () => {
       activeFilters: [],
       selectedId: null,
     });
-    expect(register.emptyCopy).toBe("No Projects in this Workspace yet.");
+    expect(register.emptyState?.title).toBe("Add your first Project");
+    expect(register.emptyState?.kind).toBe("none");
     expect(register.filtered).toBe(false);
   });
 });
@@ -203,7 +205,7 @@ describe("the Projects screen", () => {
   });
 
   it("draws every filter as a V2FilterSelect chip", () => {
-    for (const label of ["STATUS", "CLIENT", "PROJECT MANAGER", "TAG", "TYPE", "DUE"]) {
+    for (const label of ["Status", "Client", "Project manager", "Tag", "Type", "Due"]) {
       expect(src).toContain(`label="${label}"`);
     }
   });
@@ -265,7 +267,8 @@ describe("Clients filters in the URL and on the route", () => {
       activeFilters: clientFilterLabels(filters),
       selectedId: null,
     });
-    expect(register.emptyCopy).toBe("No Clients match “pier” · STATUS CLIENT RECURRENT · SOURCE NONE · OPEN PROJECTS YES.");
+    expect(register.emptyState?.copy).toBe("No Clients match these filters.");
+    expect(register.emptyState?.kind).toBe("filtered");
     expect(register.filtered).toBe(true);
     expect(clearClientFilters(filters)).toMatchObject({ q: "", status: "all", source: "all", open: "all", page: 1, pageSize: 100 });
   });
@@ -318,7 +321,7 @@ describe("Project Documentation filters in the URL and on the route", () => {
       filterQuery: "",
       activeFilters,
     });
-    expect(library.emptyCopy).toBe("No Projects match “run” · PROJECT Acme site · CLIENT Acme · DOCUMENTATION DISABLED.");
+    expect(library.emptyCopy).toBe("No Projects match “run” · Project Acme site · Client Acme · Documentation Disabled.");
     expect(library.filtered).toBe(true);
     expect(clearDocumentationFilters(filters)).toMatchObject({
       q: "",
@@ -340,7 +343,7 @@ describe("Project Documentation filters in the URL and on the route", () => {
       selectedProjectId: null,
       filterQuery: "",
     });
-    expect(library.rows[0].path).toBe("/ · 0 ITEMS · DOCUMENTATION OFF");
+    expect(library.rows[0].path).toBe("/ · 0 items · Documentation off");
   });
 });
 
@@ -355,7 +358,7 @@ describe("the Project Documentation screen", () => {
   });
 
   it("draws every filter as a V2FilterSelect chip", () => {
-    for (const label of ["PROJECT", "CLIENT", "DOCUMENTATION"]) {
+    for (const label of ["Project", "Client", "Documentation"]) {
       expect(src).toContain(`label="${label}"`);
     }
   });
@@ -377,7 +380,7 @@ describe("the Clients screen", () => {
   });
 
   it("draws every filter as a V2FilterSelect chip", () => {
-    for (const label of ["STATUS", "SOURCE", "OPEN PROJECTS"]) {
+    for (const label of ["Status", "Source", "Open projects"]) {
       expect(src).toContain(`label="${label}"`);
     }
   });

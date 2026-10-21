@@ -32,7 +32,7 @@ function resolve(vars: Record<string, string>, name: string): string {
 describe("account profile (#316)", () => {
   it("syncs through the profile route", () => {
     expect(accountProfileSyncPath()).toBe("/api/account/profile/sync");
-    expect(ACCOUNT_PAGE.kicker).toBe("ACCOUNT");
+    expect(ACCOUNT_PAGE.kicker).toBe("Account");
   });
 
   it("signs a Clerk User so a change is visible", () => {

@@ -34,6 +34,7 @@ import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { V2RecordEmpty } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, type V2SelectOption } from "./V2Select";
 import { SourceMark } from "./icons";
@@ -141,7 +142,7 @@ function ClientRegisterTable({
     () =>
       clientColumn.columns([
         clientColumn.accessor("name", {
-          header: "CLIENT",
+          header: "Client",
           cell: ({ row }) => (
             <Link
               href={row.original.href}
@@ -153,17 +154,17 @@ function ClientRegisterTable({
           ),
         }),
         clientColumn.accessor("company", {
-          header: "COMPANY",
+          header: "Company",
           cell: ({ row }) => <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.original.company}</span>,
         }),
         clientColumn.accessor("status", {
-          header: "STATUS",
+          header: "Status",
           cell: ({ row }) => (
             <span className="df-status-word" data-swatch="" style={swatchStyle(row.original.statusColor)}>{row.original.status}</span>
           ),
         }),
         clientColumn.accessor("source", {
-          header: "SOURCE",
+          header: "Source",
           cell: ({ row }) => (
             <span className="df-source-cell">
               <SourceMark value={row.original.sourceValue} />
@@ -173,11 +174,11 @@ function ClientRegisterTable({
         }),
         clientColumn.accessor("projectCount", {
           id: "projects",
-          header: "PROJECTS",
+          header: "Projects",
           cell: ({ row }) => <span className="df-mono" style={{ fontSize: 12 }}>{row.original.projectCount}</span>,
         }),
         clientColumn.accessor("created", {
-          header: "CREATED",
+          header: "Created",
           cell: ({ row }) => (
             <span className="df-mono df-meta" style={{ whiteSpace: "nowrap" }}>
               {row.original.created}
@@ -275,16 +276,16 @@ export function V2ClientRecordRedirect() {
 
 /** The Client record's two forms share one field shape: a label above a typed input. */
 const CONTACT_FIELDS = [
-  { id: "name", label: "NAME", type: "text", placeholder: "Full name" },
-  { id: "role", label: "ROLE", type: "text", placeholder: "Project lead" },
-  { id: "email", label: "EMAIL", type: "email", placeholder: "name@company.com" },
-  { id: "phone", label: "PHONE", type: "tel", placeholder: "+33 6 12 34 56 78" },
+  { id: "name", label: "Name", type: "text", placeholder: "Full name" },
+  { id: "role", label: "Role", type: "text", placeholder: "Project lead" },
+  { id: "email", label: "Email", type: "email", placeholder: "name@company.com" },
+  { id: "phone", label: "Phone", type: "tel", placeholder: "+33 6 12 34 56 78" },
 ] as const;
 
 const DETAIL_FIELDS = [
-  { id: "company", label: "COMPANY", type: "text", placeholder: "Company name" },
-  { id: "email", label: "EMAIL", type: "email", placeholder: "name@company.com" },
-  { id: "phone", label: "PHONE", type: "tel", placeholder: "+33 6 12 34 56 78" },
+  { id: "company", label: "Company", type: "text", placeholder: "Company name" },
+  { id: "email", label: "Email", type: "email", placeholder: "name@company.com" },
+  { id: "phone", label: "Phone", type: "tel", placeholder: "+33 6 12 34 56 78" },
 ] as const;
 
 export function V2ClientsPage() {
@@ -329,7 +330,7 @@ export function V2ClientsPage() {
     page: filters.page,
     pageSize: filters.pageSize,
     total: clientPage?.total ?? 0,
-    noun: { one: "CLIENT", many: "CLIENTS" },
+    noun: { one: "client", many: "clients" },
   });
 
   // A shared link past the last page lands on the last one instead of nothing.
@@ -373,6 +374,11 @@ export function V2ClientsPage() {
     },
   });
 
+  function startCreate() {
+    setWriteRefusal(null);
+    setCreating(true);
+  }
+
   function onCreate() {
     const clientName = name.trim();
     if (!clientName) return;
@@ -388,7 +394,7 @@ export function V2ClientsPage() {
       <V2PageSkeleton title="Clients" testId="v2-clients" status="Loading Clients for this Workspace.">
         <SkeletonRegister
           className="df-clients-register"
-          heads={["CLIENT", "COMPANY", "STATUS", "SOURCE", "PROJECTS", "CREATED"]}
+          heads={["Client", "Company", "Status", "Source", "Projects", "Created"]}
         />
       </V2PageSkeleton>
     );
@@ -419,10 +425,7 @@ export function V2ClientsPage() {
           <Button
             variant="default"
             type="button"
-            onClick={() => {
-              setWriteRefusal(null);
-              setCreating(true);
-            }}
+            onClick={startCreate}
             className="df-btn"
           >
             New Client
@@ -443,7 +446,7 @@ export function V2ClientsPage() {
         testId="v2-clients-new"
       >
         <label className="df-daily-field">
-          NAME
+          Name
           <input
             type="text"
             value={name}
@@ -467,49 +470,49 @@ export function V2ClientsPage() {
           />
         </label>
         <V2FilterSelect
-          label="STATUS"
+          label="Status"
           ariaLabel="Filter by Client status"
           value={filters.status}
           active={filters.status !== "all"}
-          options={[{ value: "all", label: "ALL" }, ...CLIENT_STATUS_OPTIONS]}
+          options={[{ value: "all", label: "All" }, ...CLIENT_STATUS_OPTIONS]}
           onChange={(status) => setFilters({ ...filters, status, page: 1 })}
         />
         <V2FilterSelect
-          label="SOURCE"
+          label="Source"
           ariaLabel="Filter by source"
           value={filters.source}
           active={filters.source !== "all"}
-          options={withSourceMarks([{ value: "all", label: "ALL" }, ...sourceOptions])}
+          options={withSourceMarks([{ value: "all", label: "All" }, ...sourceOptions])}
           onChange={(source) => setFilters({ ...filters, source, page: 1 })}
         />
         <V2FilterSelect
-          label="OPEN PROJECTS"
+          label="Open projects"
           ariaLabel="Filter by open Projects"
           value={filters.open}
           active={filters.open !== "all"}
-          options={[{ value: "all", label: "ANY" }, ...CLIENT_OPEN_OPTIONS]}
+          options={[{ value: "all", label: "Any" }, ...CLIENT_OPEN_OPTIONS]}
           onChange={(open) => setFilters({ ...filters, open, page: 1 })}
         />
       </div>
 
       <section className="df-card df-clients-register" data-testid="v2-clients-register">
-        {register.empty ? (
-          <div className="df-empty-state">
-            <p className="df-empty">{register.emptyCopy}</p>
-            {register.filtered ? (
-              <Button
-                variant="outline"
-                type="button"
-                className="df-btn"
-                onClick={() => {
-                  setFilterQuery("");
-                  setFilters(clearClientFilters(filters));
-                }}
-              >
-                Clear filters
-              </Button>
-            ) : null}
-          </div>
+        {register.emptyState ? (
+          <V2RecordEmpty
+            model={register.emptyState}
+            icon="clients"
+            action={
+              readOnly ? undefined : (
+                <Button variant="default" type="button" className="df-btn" onClick={startCreate}>
+                  New Client
+                </Button>
+              )
+            }
+            onClear={() => {
+              setFilterQuery("");
+              setFilters(clearClientFilters(filters));
+            }}
+            testIds={{ none: "v2-clients-empty" }}
+          />
         ) : layout.stackedRegister ? (
           register.rows.map((row) => (
             <Link
@@ -730,7 +733,7 @@ export function V2ClientRecordPage() {
                     <span className="df-mono df-meta">{record.identity.source}</span>
                   </span>
                   {record.identity.phone ? <span className="df-mono df-meta">{record.identity.phone}</span> : null}
-                  {record.identity.fiverrUsername ? <span className="df-mono df-meta">FIVERR @{record.identity.fiverrUsername}</span> : null}
+                  {record.identity.fiverrUsername ? <span className="df-mono df-meta">Fiverr @{record.identity.fiverrUsername}</span> : null}
                 </div>
               </>
             ) : (
@@ -796,7 +799,7 @@ export function V2ClientRecordPage() {
                     </label>
                   ))}
                   <label className="df-daily-field">
-                    SOURCE
+                    Source
                     <V2FilterSelect
                       label=""
                       ariaLabel="Client source"
@@ -807,7 +810,7 @@ export function V2ClientRecordPage() {
                   </label>
                   {draft.source === "fiverr" ? (
                     <label className="df-daily-field">
-                      FIVERR USERNAME
+                      Fiverr username
                       <input
                         type="text"
                         value={draft.fiverrUsername}
@@ -818,7 +821,7 @@ export function V2ClientRecordPage() {
                     </label>
                   ) : null}
                   <label className="df-daily-field">
-                    NOTES
+                    Notes
                     <textarea
                       value={draft.notes}
                       placeholder="What to know about this Client"
@@ -836,7 +839,7 @@ export function V2ClientRecordPage() {
                     >
                       <span className="df-record-field-label">{row.label}</span>
                       <span className="df-record-field-value" data-empty={row.value === "—" ? "true" : "false"}>
-                        {row.label === "SOURCE" && sourceIcon(record.identity?.sourceValue) ? (
+                        {row.label === "Source" && sourceIcon(record.identity?.sourceValue) ? (
                           <span className="df-source-cell">
                             <SourceMark value={record.identity?.sourceValue} />
                             {row.value}
@@ -916,7 +919,7 @@ export function V2ClientRecordPage() {
                             {contact.name}
                             {contact.primary ? <span className="df-flag">PRIMARY</span> : null}
                           </div>
-                          <div className="df-mono df-meta" data-case="preserve">
+                          <div className="df-mono df-meta">
                             {[contact.role, contact.email, contact.phone].filter(Boolean).join(" · ") || "—"}
                           </div>
                         </span>
@@ -926,9 +929,9 @@ export function V2ClientRecordPage() {
                 ) : (
                   <>
                   <div className="df-register-head df-desktop-only">
-                    <span>CONTACT</span>
-                    <span>PHONE</span>
-                    <span>ROLE</span>
+                    <span>Contact</span>
+                    <span>Phone</span>
+                    <span>Role</span>
                     <span />
                   </div>
                   {record.contacts.map((contact) => (
@@ -940,7 +943,7 @@ export function V2ClientRecordPage() {
                         <span style={{ minWidth: 0 }}>
                           <div className="df-row-title">{contact.name}</div>
                           {contact.email ? (
-                            <div className="df-mono df-meta" data-case="preserve">
+                            <div className="df-mono df-meta">
                               {contact.email}
                             </div>
                           ) : null}

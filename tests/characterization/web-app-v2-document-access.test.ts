@@ -88,9 +88,9 @@ function input(overrides: Partial<LibraryInput> = {}): LibraryInput {
 describe("the register shows what the server checked (#278)", () => {
   it("shows a Restricted item the route stamped, labelled at the level that applies", () => {
     const rows = composeLibrary(input({ expandedFolderIds: ["f-hr", "f-pay"] })).rows;
-    expect(rows.find((row) => row.id === "d-ledger")?.access).toBe("RESTRICTED");
-    expect(rows.find((row) => row.id === "f-pay")?.access).toBe("RESTRICTED");
-    expect(rows.find((row) => row.id === "f-hr")?.access).toBe("EVERYONE");
+    expect(rows.find((row) => row.id === "d-ledger")?.access).toBe("Restricted");
+    expect(rows.find((row) => row.id === "f-pay")?.access).toBe("Restricted");
+    expect(rows.find((row) => row.id === "f-hr")?.access).toBe("Everyone");
   });
 
   it("still hides a Restricted row no route checked", () => {
@@ -164,7 +164,7 @@ describe("TYPE, OWNER, ACCESS, and UPDATED filter the register (#278)", () => {
 
   it("draws every filter as a V2FilterSelect chip with an action, and no decorative control", () => {
     const page = read("V2Documents.tsx");
-    for (const label of ["TYPE", "OWNER", "ACCESS", "UPDATED"]) {
+    for (const label of ["Type", "Owner", "Access", "Updated"]) {
       expect(page).toContain(`label="${label}"`);
     }
     expect(page).not.toMatch(/<span className="df-filter-chip"/);
@@ -306,16 +306,16 @@ describe("Project Files (#278)", () => {
       filterQuery: "",
     });
     expect(library.rows.map((row) => [row.id, row.type])).toEqual([
-      ["p-1", "PROJECT"],
-      ["doc-1", "DOCUMENT"],
-      ["file-1", "FILE"],
+      ["p-1", "Project"],
+      ["doc-1", "Document"],
+      ["file-1", "File"],
     ]);
     const file = library.rows.find((row) => row.id === "file-1")!;
     expect(file).toMatchObject({ kind: "file", editor: "Sam Lee", child: true });
     expect(file.href).toBe(
       "/files?src=%2Fapi%2Fprojects%2Fp-1%2Ffiles%2Ffile-1%2Fstream&name=Site+drawing&back=%2Fproject-documentation",
     );
-    expect(library.rows[0].path).toBe("/ · 2 ITEMS");
+    expect(library.rows[0].path).toBe("/ · 2 items");
     expect(library.itemCount).toBe(3);
   });
 

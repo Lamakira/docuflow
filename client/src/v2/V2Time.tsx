@@ -36,6 +36,7 @@ import {
   type TimeStatsResponse,
 } from "./time";
 import { Button } from "@/components/ui/button";
+import { V2CompactEmpty, V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
@@ -193,6 +194,8 @@ function TimeEntriesPane() {
     activeEntryId: activeEntry?.id ?? null,
     entries: (entriesResponse?.data ?? []).map(toRow),
     workdaySeconds: stats?.totalDuration ?? 0,
+    range,
+    facetsActive: projectFilter !== "all" || statusFilter !== "all" || (canManage && userFilter !== "all"),
   });
 
   if (!isLoading && !isError && knownIds.current === null) {
@@ -278,7 +281,7 @@ function TimeEntriesPane() {
         <SkeletonSection title="Timer" lines={2} />
         <SkeletonRegister
           className="df-time-register"
-          heads={["WHEN", "PROJECT", "TASK", "WHO", "STATUS", "DURATION"]}
+          heads={["When", "Project", "Task", "Who", "Status", "Duration"]}
         />
       </V2PageSkeleton>
     );
@@ -315,7 +318,7 @@ function TimeEntriesPane() {
         </div>
         <div className="df-toolbar" data-align="start">
           <V2FilterSelect
-            label="PROJECT"
+            label="Project"
             ariaLabel="Project"
             value={selectedProjectId || V2_SELECT_NONE}
             disabled={readOnly || busy}
@@ -331,7 +334,7 @@ function TimeEntriesPane() {
             ]}
           />
           <V2FilterSelect
-            label="TASK"
+            label="Task"
             ariaLabel="Task"
             value={selectedTaskId || V2_SELECT_NONE}
             disabled={readOnly || busy || !selectedProjectId}
@@ -356,7 +359,7 @@ function TimeEntriesPane() {
 
       <div className="df-filter-bar">
         <V2FilterSelect
-          label="RANGE"
+          label="Range"
           ariaLabel="Range"
           value={range}
           active={range === "today"}
@@ -368,7 +371,7 @@ function TimeEntriesPane() {
           ]}
         />
         <V2FilterSelect
-          label="PROJECT"
+          label="Project"
           ariaLabel="Filter by Project"
           value={projectFilter}
           onChange={setProjectFilter}
@@ -381,7 +384,7 @@ function TimeEntriesPane() {
           ]}
         />
         <V2FilterSelect
-          label="STATUS"
+          label="Status"
           ariaLabel="Filter by status"
           value={statusFilter}
           onChange={setStatusFilter}
@@ -394,7 +397,7 @@ function TimeEntriesPane() {
         />
         {canManage ? (
           <V2FilterSelect
-            label="MEMBER"
+            label="Member"
             ariaLabel="Filter by Member"
             value={userFilter}
             onChange={setUserFilter}
@@ -411,17 +414,26 @@ function TimeEntriesPane() {
       <section className="df-card df-time-register" data-testid="v2-time-register">
         {layout.stackedRegister ? null : (
           <div className="df-register-head df-desktop-only">
-            <span>WHEN</span>
-            <span>PROJECT</span>
-            <span>TASK</span>
-            <span>WHO</span>
-            <span>STATUS</span>
-            <span style={{ textAlign: "right" }}>DURATION</span>
+            <span>When</span>
+            <span>Project</span>
+            <span>Task</span>
+            <span>Who</span>
+            <span>Status</span>
+            <span style={{ textAlign: "right" }}>Duration</span>
             <span />
           </div>
         )}
-        {page.empty ? (
-          <p className="df-empty">{page.emptyCopy}</p>
+        {page.emptyState ? (
+          <V2RecordEmpty
+            model={page.emptyState}
+            icon="time"
+            onClear={() => {
+              setProjectFilter("all");
+              setStatusFilter("all");
+              setUserFilter("all");
+            }}
+            testIds={{ none: "v2-time-register-empty", filtered: "v2-time-register-filtered", range: "v2-time-register-range" }}
+          />
         ) : (
           page.rows.map((row) => (
             <div
@@ -534,7 +546,7 @@ function TimeStatsPane() {
           <p className="df-subhead">{page.subhead}</p>
         </div>
         <V2FilterSelect
-          label="PERIOD"
+          label="Period"
           ariaLabel="Period"
           value={period}
           onChange={(next) => setPeriod(next as TimePeriod)}
@@ -575,7 +587,7 @@ function TimeStatsPane() {
               <h2 className="df-card-title">By Project</h2>
             </div>
             {page.byProject.empty ? (
-              <p className="df-empty">{isLoading ? "Loading…" : page.byProject.emptyCopy}</p>
+              <V2CompactEmpty>{isLoading ? "Loading…" : page.byProject.emptyCopy}</V2CompactEmpty>
             ) : (
               <div className="df-stat-bars">
                 {page.byProject.rows.map((row) => (
@@ -605,7 +617,7 @@ function TimeStatsPane() {
                 <h2 className="df-card-title">By Member</h2>
               </div>
               {page.byMember.empty ? (
-                <p className="df-empty">{isLoading ? "Loading…" : page.byMember.emptyCopy}</p>
+                <V2CompactEmpty>{isLoading ? "Loading…" : page.byMember.emptyCopy}</V2CompactEmpty>
               ) : (
                 <div className="df-stat-bars">
                   {page.byMember.rows.map((row) => (
@@ -772,8 +784,22 @@ function ProjectTasksPane() {
               />
             </label>
           </div>
-          {page.projectsEmpty ? (
-            <p className="df-empty">{projectsLoading ? "Loading…" : page.projectsEmptyCopy}</p>
+          {projectsLoading && page.projectsEmpty ? (
+            <p className="df-empty">Loading…</p>
+          ) : page.projectsEmptyState ? (
+            <V2RecordEmpty
+              model={page.projectsEmptyState}
+              icon="projects"
+              action={
+                page.canWrite ? (
+                  <Button asChild variant="default" className="df-btn">
+                    <Link href="/projects?new=1">New Project</Link>
+                  </Button>
+                ) : undefined
+              }
+              onClear={() => setSearch("")}
+              testIds={{ none: "v2-time-projects-empty" }}
+            />
           ) : (
             <div className="df-task-projects">
               {page.projects.map((project) => (
@@ -803,7 +829,7 @@ function ProjectTasksPane() {
             <>
               <div className="df-card-head">
                 <h2 className="df-card-title">{page.selectedProjectName}</h2>
-                <span className="df-mono df-meta">{page.active.rows.length} OPEN</span>
+                <span className="df-mono df-meta">{page.active.rows.length} open</span>
               </div>
               <div className="df-toolbar" data-align="start">
                 <label className="df-filter-input">
@@ -826,7 +852,8 @@ function ProjectTasksPane() {
               <V2TaskTable
                 rows={page.rows}
                 canWrite={page.canWrite}
-                emptyCopy={tasksLoading ? "Loading…" : page.active.emptyCopy}
+                emptyCopy={tasksLoading ? "Loading…" : (page.active.emptyState?.copy ?? "")}
+                emptyTitle={tasksLoading ? undefined : page.active.emptyState?.title}
                 editingId={editingId}
                 editingName={editingName}
                 confirmDeleteId={confirmDeleteId}

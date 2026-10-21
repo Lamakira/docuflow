@@ -177,7 +177,7 @@ function ContactSupport() {
         }}
       >
         <div className="df-daily-field">
-          CATEGORY
+          Category
           <V2FilterSelect
             label=""
             ariaLabel="Support category"
@@ -188,7 +188,7 @@ function ContactSupport() {
           />
         </div>
         <label className="df-daily-field">
-          MESSAGE
+          Message
           <Textarea
             value={message}
             rows={5}

@@ -156,11 +156,11 @@ export function SkeletonLibrary({ rows = 6 }: { rows?: number }) {
   return (
     <section className="df-card">
       <div className="df-library-head">
-        <span>NAME / PATH</span>
-        <span>TYPE</span>
-        <span>ACCESS</span>
-        <span>LAST EDITOR</span>
-        <span style={{ textAlign: "right" }}>UPDATED</span>
+        <span>Name / path</span>
+        <span>Type</span>
+        <span>Access</span>
+        <span>Last editor</span>
+        <span style={{ textAlign: "right" }}>Updated</span>
       </div>
       {Array.from({ length: rows }, (_, row) => (
         <div key={row} className="df-library-row" data-skeleton="true">

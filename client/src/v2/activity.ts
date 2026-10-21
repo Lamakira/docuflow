@@ -7,6 +7,7 @@
  */
 
 import { chromeRefusal } from "./chrome";
+import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { activityTabHref, ACTIVITY_TAB_IDS, type ActivityTabId } from "./presentation";
 import {
   endOfDayLocal,
@@ -18,6 +19,7 @@ import {
 } from "./time";
 import { memberName } from "./today";
 import type { ScreenshotPolicy } from "@shared/schema";
+import { MONTHS, formatFullDate } from "./dates";
 
 export const REVIEW_ACTIVITY_EVIDENCE_CAPABILITY = "Review Activity Evidence";
 
@@ -64,6 +66,8 @@ export type ActivityInput = {
   entries: ActivityEntryInput[];
   users: ActivityPerson[];
   evidence: ActivityEvidenceInput[];
+  /** Whether the Project or Member filter narrows the stream (the date range is not one). */
+  facetsActive?: boolean;
 };
 
 export type ActivityPolicyLine = {
@@ -79,7 +83,8 @@ export type ActivityRow = EvidenceProvenance & {
 export type ActivityModel = {
   subhead: string;
   empty: boolean;
-  emptyCopy: string;
+  /** `filtered`: a Project or Member filter hides it; `range`: nothing for the date range (#325). */
+  emptyState: EmptyModel | null;
   refusal: string | null;
   policyLines: ActivityPolicyLine[];
   policyFootnote: string;
@@ -96,8 +101,6 @@ export type ActivityEvidenceFilter = {
   limit?: number | null;
   offset?: number | null;
 };
-
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 function parseDate(value: Date | string | null | undefined): Date | null {
   if (!value) return null;
@@ -118,7 +121,7 @@ function formatWhen(capturedAt: Date | string | null, now: Date): string {
   if (!value) return "";
   if (sameDay(value, now)) return formatClock(value);
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (sameDay(value, yesterday)) return "YDA";
+  if (sameDay(value, yesterday)) return "Yesterday";
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
 }
 
@@ -150,7 +153,7 @@ export function trackingPolicyPath(): string {
 
 export function composeTrackingPolicy(policy: ScreenshotPolicy | null): ActivityPolicyLine[] {
   if (!policy) {
-    return [{ label: "TRACKING POLICY", value: "Not loaded." }];
+    return [{ label: "Tracking policy", value: "Not loaded." }];
   }
   const capture = policy.screenshotsEnabled
     ? `Every ${policy.captureIntervalMinMin}–${policy.captureIntervalMaxMin} min`
@@ -162,9 +165,9 @@ export function composeTrackingPolicy(policy: ScreenshotPolicy | null): Activity
     ? `Pause after ${policy.idleTimeoutMinutes} min, asked first`
     : `Pause after ${policy.idleTimeoutMinutes} min, without asking`;
   return [
-    { label: "CAPTURE", value: capture },
-    { label: "HOURS", value: hours },
-    { label: "IDLE", value: idle },
+    { label: "Capture", value: capture },
+    { label: "Hours", value: hours },
+    { label: "Idle", value: idle },
   ];
 }
 
@@ -229,6 +232,11 @@ function allowedEvidence<T extends ActivityEvidenceInput>(
   });
 }
 
+/** Activity Evidence is a dashboard-like stream over a date range: no first-use invitation. */
+function evidenceEmptyState(empty: boolean, filtered: boolean): EmptyModel | null {
+  return emptyModelOf(emptyKindOf(empty, filtered, true), "Activity Evidence", null, "No Activity Evidence for this date range.");
+}
+
 export function composeActivity(input: ActivityInput): ActivityModel {
   const refusal =
     !input.canReview && input.requestedUserId && input.requestedUserId !== input.currentUserId
@@ -252,7 +260,7 @@ export function composeActivity(input: ActivityInput): ActivityModel {
   return {
     subhead: `Activity Evidence in ${input.workspaceName}.`,
     empty,
-    emptyCopy: empty ? "No Activity Evidence in this Workspace for these filters." : "",
+    emptyState: evidenceEmptyState(empty, Boolean(input.facetsActive)),
     refusal,
     policyLines: composeTrackingPolicy(input.policy),
     policyFootnote: input.canReview
@@ -352,6 +360,8 @@ export type ActivityGalleryInput = {
   entries: ActivityEntryInput[];
   users: ActivityPerson[];
   evidence: GalleryEvidenceInput[];
+  /** Whether the Project or Member filter narrows the gallery (the date range is not one). */
+  facetsActive?: boolean;
 };
 
 export type GalleryTile = EvidenceProvenance & {
@@ -392,7 +402,7 @@ export type ActivityGalleryModel = {
   batchLabel: string;
   paging: GalleryPaging;
   empty: boolean;
-  emptyCopy: string;
+  emptyState: EmptyModel | null;
 };
 
 /** Idle over half of the Time Entry's tracked span, as v1 counted it. */
@@ -415,14 +425,11 @@ export function evidenceFileName(capturedAt: Date | string | null): string {
   return `activity-evidence-${day}_${clock}.png`;
 }
 
-function dayStamp(value: Date): string {
-  return `${value.getDate()} ${MONTHS[value.getMonth()]} ${value.getFullYear()}`;
-}
-
 export function composeActivityGallery(input: ActivityGalleryInput): ActivityGalleryModel {
   const lookup = evidenceLookup(input);
   const selected = new Set(input.selectedIds);
   const visible = allowedEvidence(input.evidence, input);
+  const filtered = Boolean(input.facetsActive) || input.lowActivityOnly || input.identicalOnly;
 
   // Identical means the same content hash shows up more than once in what the
   // current filters returned — the same window captured twice over.
@@ -456,7 +463,7 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
       group = {
         key,
         hourLabel: `${pad(captured.getHours())}:00`,
-        dateLabel: dayStamp(captured),
+        dateLabel: formatFullDate(captured),
         tiles: [],
       };
       groups.set(key, group);
@@ -504,6 +511,6 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
       hasNext: page < pageCount,
     },
     empty: count === 0,
-    emptyCopy: "No Activity Evidence in this Workspace for these filters.",
+    emptyState: evidenceEmptyState(count === 0, filtered),
   };
 }

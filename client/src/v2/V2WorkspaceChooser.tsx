@@ -19,8 +19,8 @@ export function V2WorkspaceChooser({
   return (
     <div className="df-v2 df-chooser df-gate" data-testid="v2-workspace-chooser">
       <div className="df-gate-card">
-        <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)", letterSpacing: "0.08em" }}>
-          WORKSPACE
+        <div className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)" }}>
+          Workspace
         </div>
         <h1 className="df-title df-title-follow-card">
           Choose a Workspace

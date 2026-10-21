@@ -47,8 +47,8 @@ describe("Projects routing (#185)", () => {
     expect(match.kind).toBe("projects");
     expect(navIdForPath("/projects")).toBe("projects");
     expect(breadcrumbFor("/projects", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "PROJECTS",
+      "Harbor Co",
+      "Projects",
     ]);
   });
 
@@ -74,7 +74,7 @@ describe("Projects register from live Project rows (#185)", () => {
 
     expect(register.empty).toBe(true);
     expect(register.rows).toEqual([]);
-    expect(register.emptyCopy.toLowerCase()).toContain("project");
+    expect(register.emptyState?.copy.toLowerCase()).toContain("project");
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
     }
@@ -163,7 +163,7 @@ describe("Projects register from live Project rows (#185)", () => {
     );
 
     expect(register.rows.map((row) => row.id)).toEqual(["prj-1"]);
-    expect(register.rows[0].kindLabel).toBe("INTERNAL");
+    expect(register.rows[0].kindLabel).toBe("Internal");
     expect(register.empty).toBe(false);
   });
 
@@ -222,9 +222,9 @@ function emptyBoard(overrides: Partial<ProjectBoardInput> = {}): ProjectBoardInp
 
 describe("Project visibility reads the Workspace Role in any casing", () => {
   it("shows an Owner and an Administrator every Project, as the server spells the Role", () => {
-    // /api/memberships answers "OWNER"; two callers passed it through as-is and
+    // /api/memberships answers "Owner"; two callers passed it through as-is and
     // the Owner was treated as a Member.
-    for (const role of ["OWNER", "owner", "ADMINISTRATOR", "Administrator"]) {
+    for (const role of ["Owner", "owner", "ADMINISTRATOR", "Administrator"]) {
       expect(projectVisibleTo({ role, userId: "u-owner", memberIds: ["u-other"], assigneeId: "u-other" })).toBe(true);
     }
     expect(projectVisibleTo({ role: "MEMBER", userId: "u-me", memberIds: ["u-other"], assigneeId: "u-other" })).toBe(
@@ -380,7 +380,8 @@ describe("Projects board (#259)", () => {
     );
 
     expect(board.empty).toBe(true);
-    expect(board.emptyCopy).toBe("No Projects match this filter.");
+    expect(board.emptyState?.copy).toBe("No Projects match these filters.");
+    expect(board.emptyState?.kind).toBe("filtered");
     expect(board.count).toBe(0);
   });
 });
@@ -417,8 +418,8 @@ describe("Projects register: created and due dates (#307)", () => {
       ["—", "—"],
     ]);
     expect(PROJECT_SORTS).toEqual(expect.arrayContaining(["created", "due"]));
-    expect(projectsSource).toMatch(/projectColumn\.accessor\("created", \{\s*header: "CREATED"/);
-    expect(projectsSource).toMatch(/projectColumn\.accessor\("due", \{\s*header: "DUE"/);
+    expect(projectsSource).toMatch(/projectColumn\.accessor\("created", \{\s*header: "Created"/);
+    expect(projectsSource).toMatch(/projectColumn\.accessor\("due", \{\s*header: "Due"/);
   });
 });
 

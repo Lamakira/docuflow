@@ -220,8 +220,8 @@ describe("Dossier Settings reads as labelled groups (#277)", () => {
         ],
       }),
     );
-    expect(dossier.settings.lifecycle.rows.find((row) => row.label === "LAST CHANGE")?.value).toBe("07 SEP · Pat Ng");
-    expect(dossier.settings.lifecycle.rows[0]).toMatchObject({ label: "STATUS", value: "ACTIVE", chip: true });
+    expect(dossier.settings.lifecycle.rows.find((row) => row.label === "Last change")?.value).toBe("07 Sep · Pat Ng");
+    expect(dossier.settings.lifecycle.rows[0]).toMatchObject({ label: "Status", value: "ACTIVE", chip: true });
     expect(dossier.settings.lifecycle.note).toMatch(/Projects board/);
   });
 });
@@ -466,14 +466,14 @@ describe("the Project's person in charge is its Project Manager, never a Lead (#
   const projectsModel = read("client/src/v2/projects.ts");
 
   it("labels the Dossier header, the Settings Team card, the Projects register and Today alike", () => {
-    expect(dossierSource).toContain('<span className="df-mono df-meta">PROJECT MANAGER</span>');
-    expect(dossierSource).toContain('<span className="df-settings-label">PROJECT MANAGER</span>');
+    expect(dossierSource).toContain('<span className="df-mono df-meta">Project manager</span>');
+    expect(dossierSource).toContain('<span className="df-settings-label">Project manager</span>');
     expect(dossierSource).toContain('label: "No Project Manager"');
     expect(dossierSource).toContain('sub="The Project Manager accountable for this Project, and the Members assigned to it."');
-    expect(projectsSource).toContain('header: "PROJECT MANAGER"');
+    expect(projectsSource).toContain('header: "Project manager"');
     expect(projectsSource).toContain('ariaLabel="Filter by Project Manager"');
-    expect(projectsModel).toContain("`PROJECT MANAGER ${names.leads.get(filters.lead)");
-    expect(today).toContain("<span>PROJECT MANAGER</span>");
+    expect(projectsModel).toContain("`Project manager ${names.leads.get(filters.lead)");
+    expect(today).toContain("<span>Project manager</span>");
     for (const [name, source] of [["V2Dossier", dossierSource], ["V2Projects", projectsSource], ["V2Today", today]] as const) {
       expect(source, name).not.toMatch(/"LEAD"|>LEAD<|"Project lead"|"No lead"|Filter by Lead|leads this Project/);
     }

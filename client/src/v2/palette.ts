@@ -110,7 +110,7 @@ const TINT_SHARE = 0.14;
 const LINE_SHARE = 0.4;
 const DARK_TINT_SHARE = 0.2;
 const DARK_LINE_SHARE = 0.45;
-/** WCAG AA for the small mono type a badge uses. */
+/** WCAG AA for the small data-font (Geist) type a badge uses. */
 const TEXT_MIN_CONTRAST = 4.5;
 
 function channels(hex: string): [number, number, number] {

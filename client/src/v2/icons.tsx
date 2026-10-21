@@ -11,6 +11,7 @@ import {
   Folder,
   Grid2x2,
   HelpCircle,
+  KeyRound,
   ListChecks,
   Menu,
   Monitor,
@@ -28,7 +29,9 @@ import {
   Sparkles,
   StickyNote,
   Target,
+  UserRound,
   Users,
+  Webhook,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -53,8 +56,8 @@ export const NAV_ICONS: Record<V2NavId, LucideIcon> = {
   "project-documentation": FileText,
   time: Clock,
   activity: Activity,
-  people: Users,
   analytics: ChartColumn,
+  people: Users,
   administration: Settings,
   help: HelpCircle,
   devices: Monitor,
@@ -125,7 +128,14 @@ export type EmptyStateIconId =
   | "files"
   | "search"
   | "filters"
-  | "access";
+  | "access"
+  | "clients"
+  | "projects"
+  | "opportunities"
+  | "people"
+  | "devices"
+  | "keys"
+  | "webhooks";
 
 const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
   tasks: ListChecks,
@@ -139,6 +149,13 @@ const EMPTY_STATE_ICONS: Record<EmptyStateIconId, LucideIcon> = {
   search: SearchX,
   filters: FilterX,
   access: ShieldCheck,
+  clients: Users,
+  projects: Folder,
+  opportunities: Target,
+  people: UserRound,
+  devices: Monitor,
+  keys: KeyRound,
+  webhooks: Webhook,
 };
 
 export function EmptyStateIcon({ id }: { id: EmptyStateIconId }) {

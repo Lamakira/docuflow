@@ -12,6 +12,7 @@
  * sort across.
  */
 
+import { V2CompactEmpty, V2EmptyState } from "./V2EmptyState";
 import { useMemo } from "react";
 import {
   createColumnHelper,
@@ -47,6 +48,8 @@ export type V2TaskTableProps = {
   rows: TaskManagerRow[];
   canWrite: boolean;
   emptyCopy: string;
+  /** The designed empty state's headline; absent while loading, which keeps the plain line. */
+  emptyTitle?: string;
   editingId: string | null;
   editingName: string;
   confirmDeleteId: string | null;
@@ -64,6 +67,7 @@ export function V2TaskTable(props: V2TaskTableProps) {
     rows,
     canWrite,
     emptyCopy,
+    emptyTitle,
     editingId,
     editingName,
     confirmDeleteId,
@@ -80,7 +84,7 @@ export function V2TaskTable(props: V2TaskTableProps) {
     () =>
       helper.columns([
         helper.accessor("name", {
-          header: "TASK",
+          header: "Task",
           sortFn: "text",
           cell: ({ row }) =>
             editingId === row.original.id ? (
@@ -100,7 +104,7 @@ export function V2TaskTable(props: V2TaskTableProps) {
             ),
         }),
         helper.accessor("statusValue", {
-          header: "STATUS",
+          header: "Status",
           sortFn: "text",
           // A live Task's status is set here as on the Dossier (#279); an
           // archived one is restored from the row menu instead. A Read-only
@@ -157,7 +161,11 @@ export function V2TaskTable(props: V2TaskTableProps) {
   const table = useTable({ features, columns, data: rows });
 
   if (rows.length === 0) {
-    return <p className="df-empty">{emptyCopy}</p>;
+    return emptyTitle ? (
+      <V2EmptyState icon="tasks" title={emptyTitle} copy={emptyCopy} testId="v2-time-tasks-empty" />
+    ) : (
+      <V2CompactEmpty>{emptyCopy}</V2CompactEmpty>
+    );
   }
 
   return (

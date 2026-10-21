@@ -46,6 +46,7 @@ import { V2DateField } from "./V2DateField";
 import { composePaging } from "./paging";
 import { formatHours, memberName, mobileProjectMeta } from "./today";
 import { useV2Chrome } from "./V2Shell";
+import { V2RecordEmpty } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect } from "./V2Select";
 import { V2RegisterPager } from "./V2RegisterPager";
@@ -254,7 +255,7 @@ function ProjectRegisterTable({
     () =>
       projectColumn.columns([
         projectColumn.accessor("name", {
-          header: "PROJECT / CLIENT",
+          header: "Project / client",
           cell: ({ row }) => (
             <span style={{ minWidth: 0, display: "block" }}>
               <Link
@@ -266,25 +267,25 @@ function ProjectRegisterTable({
               </Link>
               <span className="df-mono df-meta" style={{ display: "block" }}>
                 {row.original.clientLabel} · {row.original.kindLabel}
-                {row.original.tags.length > 0 ? ` · ${row.original.tags.join(" · ").toUpperCase()}` : ""}
+                {row.original.tags.length > 0 ? ` · ${row.original.tags.join(" · ")}` : ""}
               </span>
             </span>
           ),
         }),
         projectColumn.accessor("status", {
-          header: "STATUS",
+          header: "Status",
           cell: ({ row }) => (
             <span className="df-status-word" data-swatch="" style={swatchStyle(row.original.statusColor)}>{row.original.status}</span>
           ),
         }),
         projectColumn.accessor("lead", {
-          header: "PROJECT MANAGER",
+          header: "Project manager",
           enableSorting: false,
           cell: ({ row }) => <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.original.lead}</span>,
         }),
         projectColumn.accessor("budgetPercent", {
           id: "budget",
-          header: "BUDGET USED",
+          header: "Budget used",
           cell: ({ row }) =>
             row.original.budgetPercent == null ? (
               <span className="df-mono df-meta">—</span>
@@ -306,12 +307,12 @@ function ProjectRegisterTable({
         }),
         projectColumn.accessor("trackedMtd", {
           id: "tracked",
-          header: "TRACKED MTD",
+          header: "Tracked MTD",
           enableSorting: false,
           cell: ({ row }) => <span className="df-mono" style={{ fontSize: 12 }}>{row.original.trackedMtd}</span>,
         }),
         projectColumn.accessor("created", {
-          header: "CREATED",
+          header: "Created",
           cell: ({ row }) => (
             <span className="df-mono df-meta" style={{ whiteSpace: "nowrap" }}>
               {row.original.created}
@@ -319,7 +320,7 @@ function ProjectRegisterTable({
           ),
         }),
         projectColumn.accessor("due", {
-          header: "DUE",
+          header: "Due",
           cell: ({ row }) => (
             <span className="df-mono df-meta" style={{ whiteSpace: "nowrap" }}>
               {row.original.due}
@@ -475,7 +476,7 @@ export function V2ProjectsPage() {
     page: filters.page,
     pageSize: filters.pageSize,
     total,
-    noun: { one: "PROJECT", many: "PROJECTS" },
+    noun: { one: "project", many: "projects" },
   });
 
   // A shared link past the last page lands on the last one instead of nothing.
@@ -642,6 +643,25 @@ export function V2ProjectsPage() {
 
   const formIssue = readProjectBudget(budgetDraft).issue ?? projectDatesIssue(datesDraft);
 
+  function startCreate() {
+    setName("");
+    setBudgetDraft(EMPTY_PROJECT_BUDGET_DRAFT);
+    setWriteRefusal(null);
+    setCreating(true);
+  }
+
+  function clearFilters() {
+    setFilterQuery("");
+    setFilters(clearProjectFilters(filters));
+  }
+
+  // The empty state's primary action: only a reader who may create sees it.
+  const newProjectAction = readOnly ? undefined : (
+    <Button variant="default" type="button" className="df-btn" onClick={startCreate}>
+      New Project
+    </Button>
+  );
+
   function onCreate() {
     const payload = newProjectPayload(name, budgetDraft, datesDraft);
     if (!payload) return;
@@ -666,7 +686,7 @@ export function V2ProjectsPage() {
         ) : (
           <SkeletonRegister
             className="df-projects-register"
-            heads={["PROJECT / CLIENT", "STATUS", "PROJECT MANAGER", "BUDGET USED", "TRACKED MTD", "CREATED", "DUE"]}
+            heads={["Project / client", "Status", "Project manager", "Budget used", "Tracked MTD", "Created", "Due"]}
           />
         )}
       </V2PageSkeleton>
@@ -698,12 +718,7 @@ export function V2ProjectsPage() {
           <Button
             variant="default"
             type="button"
-            onClick={() => {
-              setName("");
-              setBudgetDraft(EMPTY_PROJECT_BUDGET_DRAFT);
-              setWriteRefusal(null);
-              setCreating(true);
-            }}
+            onClick={startCreate}
             className="df-btn"
           >
             New Project
@@ -724,7 +739,7 @@ export function V2ProjectsPage() {
         testId="v2-projects-new"
       >
         <label className="df-daily-field">
-          NAME
+          Name
           <input
             type="text"
             value={name}
@@ -736,7 +751,7 @@ export function V2ProjectsPage() {
         </label>
         <div className="df-field-pair">
           <label className="df-daily-field">
-            BUDGET HOURS
+            Budget hours
             <input
               type="number"
               inputMode="numeric"
@@ -749,7 +764,7 @@ export function V2ProjectsPage() {
             />
           </label>
           <label className="df-daily-field">
-            MINUTES
+            Minutes
             <input
               type="number"
               inputMode="numeric"
@@ -765,7 +780,7 @@ export function V2ProjectsPage() {
         </div>
         <div className="df-field-pair">
           <div className="df-daily-field">
-            START DATE
+            Start date
             <V2DateField
               value={datesDraft.startDate}
               onChange={(startDate) => setDatesDraft((draft) => ({ ...draft, startDate }))}
@@ -774,7 +789,7 @@ export function V2ProjectsPage() {
             />
           </div>
           <div className="df-daily-field">
-            DUE DATE
+            Due date
             <V2DateField
               value={datesDraft.dueDate}
               onChange={(dueDate) => setDatesDraft((draft) => ({ ...draft, dueDate }))}
@@ -799,60 +814,60 @@ export function V2ProjectsPage() {
         {boardView ? null : (
           <>
             <V2FilterSelect
-              label="STATUS"
+              label="Status"
               ariaLabel="Filter by Project Status"
               value={filters.status}
               active={filters.status !== "all"}
-              options={[{ value: "all", label: "ALL" }, ...PROJECT_STATUS_OPTIONS]}
+              options={[{ value: "all", label: "All" }, ...PROJECT_STATUS_OPTIONS]}
               onChange={(status) => setFilters({ ...filters, status, page: 1 })}
             />
             {clientOptions.length === 0 ? null : (
               <V2FilterSelect
-                label="CLIENT"
+                label="Client"
                 ariaLabel="Filter by Client"
                 value={filters.client}
                 active={filters.client !== "all"}
-                options={[{ value: "all", label: "ALL" }, ...clientOptions]}
+                options={[{ value: "all", label: "All" }, ...clientOptions]}
                 onChange={(client) => setFilters({ ...filters, client, page: 1 })}
               />
             )}
             {leadOptions.length === 0 ? null : (
               <V2FilterSelect
-                label="PROJECT MANAGER"
+                label="Project manager"
                 ariaLabel="Filter by Project Manager"
                 value={filters.lead}
                 active={filters.lead !== "all"}
-                options={[{ value: "all", label: "ALL" }, ...leadOptions]}
+                options={[{ value: "all", label: "All" }, ...leadOptions]}
                 onChange={(lead) => setFilters({ ...filters, lead, page: 1 })}
               />
             )}
             {workspaceTags.length === 0 ? null : (
               <V2FilterSelect
-                label="TAG"
+                label="Tag"
                 ariaLabel="Filter by Tag"
                 value={filters.tag}
                 active={filters.tag !== "all"}
                 options={[
-                  { value: "all", label: "ALL" },
-                  ...workspaceTags.map((tag) => ({ value: tag.id, label: tag.name.toUpperCase() })),
+                  { value: "all", label: "All" },
+                  ...workspaceTags.map((tag) => ({ value: tag.id, label: tag.name })),
                 ]}
                 onChange={(tag) => setFilters({ ...filters, tag, page: 1 })}
               />
             )}
             <V2FilterSelect
-              label="TYPE"
+              label="Type"
               ariaLabel="Filter by Project type"
               value={filters.type}
               active={filters.type !== "all"}
-              options={[{ value: "all", label: "ALL" }, ...PROJECT_TYPE_OPTIONS]}
+              options={[{ value: "all", label: "All" }, ...PROJECT_TYPE_OPTIONS]}
               onChange={(type) => setFilters({ ...filters, type, page: 1 })}
             />
             <V2FilterSelect
-              label="DUE"
+              label="Due"
               ariaLabel="Filter by due date"
               value={filters.due}
               active={filters.due !== "all"}
-              options={[{ value: "all", label: "ANY" }, ...PROJECT_DUE_OPTIONS]}
+              options={[{ value: "all", label: "Any" }, ...PROJECT_DUE_OPTIONS]}
               onChange={(due) => setFilters({ ...filters, due, page: 1 })}
             />
           </>
@@ -878,7 +893,16 @@ export function V2ProjectsPage() {
 
       {boardView ? (
         <>
-          {board.empty ? <p className="df-empty">{board.emptyCopy}</p> : null}
+          {board.emptyState ? (
+            <V2RecordEmpty
+              model={board.emptyState}
+              icon="projects"
+              action={newProjectAction}
+              onClear={clearFilters}
+              testIds={{ none: "v2-projects-board-empty" }}
+            />
+          ) : null}
+          {board.emptyState?.kind === "none" ? null : (
           <DragDropContext
             onDragStart={() => boardRef.current?.setAttribute("data-dragging", "true")}
             onDragEnd={onDragEnd}
@@ -939,28 +963,20 @@ export function V2ProjectsPage() {
               ))}
             </div>
           </DragDropContext>
+          )}
         </>
       ) : null}
 
       {boardView ? null : (
       <section className="df-card df-projects-register" data-testid="v2-projects-register">
-        {register.empty ? (
-          <div className="df-empty-state">
-            <p className="df-empty">{register.emptyCopy}</p>
-            {register.filtered ? (
-              <Button
-                variant="outline"
-                type="button"
-                className="df-btn"
-                onClick={() => {
-                  setFilterQuery("");
-                  setFilters(clearProjectFilters(filters));
-                }}
-              >
-                Clear filters
-              </Button>
-            ) : null}
-          </div>
+        {register.emptyState ? (
+          <V2RecordEmpty
+            model={register.emptyState}
+            icon="projects"
+            action={newProjectAction}
+            onClear={clearFilters}
+            testIds={{ none: "v2-projects-empty" }}
+          />
         ) : layout.stackedRegister ? (
           register.rows.map((row) => (
             <Link

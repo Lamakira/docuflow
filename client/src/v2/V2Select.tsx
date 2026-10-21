@@ -43,7 +43,7 @@ function OptionText({ option }: { option: V2SelectOption | undefined }) {
 
 export type V2FilterSelectProps = {
   /**
-   * The mono prefix on the chip, e.g. PROJECT. Empty inside a form field whose
+   * The label prefix on the chip, e.g. Project, in the data font (Geist). Empty inside a form field whose
    * own label already names the choice; `ariaLabel` then carries the name.
    */
   label: string;

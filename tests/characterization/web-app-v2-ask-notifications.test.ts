@@ -150,9 +150,9 @@ describe("Notifications inbox (#210)", () => {
       ),
     });
     expect(inbox.rows.map((row) => [row.kind, row.href])).toEqual([
-      ["BILLING", "/administration/billing"],
-      ["BILLING", "/administration/billing"],
-      ["BILLING", "/administration/billing"],
+      ["Billing", "/administration/billing"],
+      ["Billing", "/administration/billing"],
+      ["Billing", "/administration/billing"],
     ]);
   });
 

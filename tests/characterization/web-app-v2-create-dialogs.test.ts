@@ -106,12 +106,12 @@ describe("Folders inside Folders", () => {
   it("lists each Folder under its parent, a level deeper, named by its path", () => {
     const rows = composeLibrary(library()).rows;
     expect(rows.map((row) => [row.id, row.depth, row.path])).toEqual([
-      ["f-hand", 0, "/ · 1 ITEM"],
-      ["f-people", 1, "Handbook / · 1 ITEM"],
-      ["f-leave", 2, "Handbook / People / · 1 ITEM"],
+      ["f-hand", 0, "/ · 1 item"],
+      ["f-people", 1, "Handbook / · 1 item"],
+      ["f-leave", 2, "Handbook / People / · 1 item"],
       ["d-leave", 3, "Handbook / People / Leave /"],
-      ["f-legal", 0, "/ · 0 ITEMS"],
-      ["f-orphan", 0, "/ · 0 ITEMS"],
+      ["f-legal", 0, "/ · 0 items"],
+      ["f-orphan", 0, "/ · 0 items"],
       ["d-root", 0, "/"],
     ]);
   });
@@ -145,7 +145,7 @@ describe("Folders inside Folders", () => {
 
   it("counts the Folders inside one in its preview, and says the delete takes them too", () => {
     const preview = composeLibrary(library({ selectedFolderId: "f-hand" })).preview;
-    expect(preview?.meta).toBe("1 ITEM · FOLDER");
+    expect(preview?.meta).toBe("1 item · Folder");
     expect(preview?.deleteConsequence).toContain("Folders inside it included");
   });
 

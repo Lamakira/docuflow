@@ -109,7 +109,7 @@ export function V2ProjectDocumentationPage() {
     page: filters.page,
     pageSize: filters.pageSize,
     total: page?.total ?? 0,
-    noun: { one: "PROJECT", many: "PROJECTS" },
+    noun: { one: "project", many: "projects" },
   });
 
   // A shared link past the last page lands on the last one instead of nothing.
@@ -353,7 +353,7 @@ export function V2ProjectDocumentationPage() {
           testId={createMode === "project" ? "v2-project-documentation-new-project" : "v2-project-documentation-new-document"}
         >
           <label className="df-daily-field">
-            NAME
+            Name
             <input
               type="text"
               value={name}
@@ -365,7 +365,7 @@ export function V2ProjectDocumentationPage() {
           </label>
           {createMode === "document" ? (
             <label className="df-daily-field">
-              PROJECT
+              Project
               <V2FilterSelect
                 label=""
                 ariaLabel="Project"
@@ -391,7 +391,7 @@ export function V2ProjectDocumentationPage() {
           testId="v2-project-documentation-upload"
         >
           <label className="df-daily-field">
-            PROJECT
+            Project
             <V2FilterSelect
               label=""
               ariaLabel="Project"
@@ -416,26 +416,26 @@ export function V2ProjectDocumentationPage() {
           </label>
           {projectChipOptions.length === 0 && filters.project === "all" ? null : (
             <V2FilterSelect
-              label="PROJECT"
+              label="Project"
               ariaLabel="Filter by Project"
               value={filters.project}
               active={filters.project !== "all"}
-              options={[{ value: "all", label: "ALL" }, ...projectChipOptions]}
+              options={[{ value: "all", label: "All" }, ...projectChipOptions]}
               onChange={(project) => setFilters({ ...filters, project, page: 1 })}
             />
           )}
           {clientOptions.length === 0 ? null : (
             <V2FilterSelect
-              label="CLIENT"
+              label="Client"
               ariaLabel="Filter by Client"
               value={filters.client}
               active={filters.client !== "all"}
-              options={[{ value: "all", label: "ALL" }, ...clientOptions]}
+              options={[{ value: "all", label: "All" }, ...clientOptions]}
               onChange={(client) => setFilters({ ...filters, client, page: 1 })}
             />
           )}
           <V2FilterSelect
-            label="DOCUMENTATION"
+            label="Documentation"
             ariaLabel="Filter by documentation"
             value={filters.documentation}
             active={filters.documentation !== "enabled"}

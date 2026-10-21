@@ -50,8 +50,8 @@ describe("the Client record's two forms match every other v2 form (#280)", () =>
     const ids = (current: string | null) => clientSourceChoices(current).map((option) => option.value);
     expect(ids(null)).toEqual(["fiverr", "zoho", "direct", "none"]);
     expect(ids("direct")).toEqual(["fiverr", "zoho", "direct", "none"]);
-    expect(clientSourceChoices("referral").at(-1)).toEqual({ value: "referral", label: "REFERRAL" });
-    expect(clientSourceChoices("word_of_mouth").at(-1)?.label).toBe("WORD OF MOUTH");
+    expect(clientSourceChoices("referral").at(-1)).toEqual({ value: "referral", label: "Referral" });
+    expect(clientSourceChoices("word_of_mouth").at(-1)?.label).toBe("Word of mouth");
   });
 
   it("offers the Workspace's saved Source list, falling back to the defaults", () => {
@@ -64,10 +64,10 @@ describe("the Client record's two forms match every other v2 form (#280)", () =>
     ];
     const options = clientSourceOptions(saved);
     expect(options).toEqual([
-      { value: "direct", label: "DIRECT" },
-      { value: "referral", label: "REFERRAL" },
-      { value: "fiverr", label: "FIVERR" },
-      { value: "none", label: "NONE" },
+      { value: "direct", label: "Direct" },
+      { value: "referral", label: "Referral" },
+      { value: "fiverr", label: "Fiverr" },
+      { value: "none", label: "None" },
     ]);
     expect(clientSourceOptions([{ slug: "source", options: [] }])).toEqual(CLIENT_SOURCE_OPTIONS);
     expect(clientSourceOptions(undefined)).toEqual(CLIENT_SOURCE_OPTIONS);
@@ -81,8 +81,8 @@ describe("the Client record's two forms match every other v2 form (#280)", () =>
     for (const fields of ["CONTACT_FIELDS", "DETAIL_FIELDS"]) {
       expect(source).toContain(`${fields}.map((field, index) => (`);
     }
-    expect(source).toMatch(/id: "email", label: "EMAIL", type: "email"/);
-    expect(source).toMatch(/id: "phone", label: "PHONE", type: "tel"/);
+    expect(source).toMatch(/id: "email", label: "Email", type: "email"/);
+    expect(source).toMatch(/id: "phone", label: "Phone", type: "tel"/);
   });
 });
 
@@ -122,7 +122,7 @@ describe("a Client Source wears one mark everywhere v2 shows it", () => {
       selectedId: null,
     } as ClientRegisterInput);
     expect(register.rows.map((row) => [row.source, row.sourceValue])).toEqual([
-      ["FIVERR", "fiverr"],
+      ["Fiverr", "fiverr"],
       ["—", null],
     ]);
   });
@@ -131,7 +131,7 @@ describe("a Client Source wears one mark everywhere v2 shows it", () => {
     expect(clientsSource).toContain("<SourceMark value={row.original.sourceValue} />");
     expect(clientsSource).toContain("<SourceMark value={record.identity.sourceValue} />");
     expect(clientsSource).toContain("<SourceMark value={record.identity?.sourceValue} />");
-    expect(clientsSource).toContain('options={withSourceMarks([{ value: "all", label: "ALL" }, ...sourceOptions])}');
+    expect(clientsSource).toContain('options={withSourceMarks([{ value: "all", label: "All" }, ...sourceOptions])}');
     expect(selectSource).toContain("icon?: ReactNode;");
     expect(selectSource).toContain("<OptionText option={option} />");
     // Pipeline & lists: a marked Source has no colour picker; any other keeps one.
@@ -212,13 +212,13 @@ describe("Client editor shows what it saved (#213)", () => {
     // show them; before this only `notes` came back and the rest was invisible
     // until the editor was reopened.
     expect(record.details).toEqual([
-      { label: "COMPANY", value: "TECHMA" },
-      { label: "EMAIL", value: "techma@techma.ca" },
-      { label: "PHONE", value: "0101010101" },
-      { label: "SOURCE", value: "DIRECT" },
+      { label: "Company", value: "TECHMA" },
+      { label: "Email", value: "techma@techma.ca" },
+      { label: "Phone", value: "0101010101" },
+      { label: "Source", value: "Direct" },
       // Notes join the same block: a separate paragraph below stacked two
       // gutters and left a band of empty card between them.
-      { label: "NOTES", value: "—", wide: true },
+      { label: "Notes", value: "—", wide: true },
     ]);
   });
 
@@ -252,9 +252,9 @@ describe("Client editor shows what it saved (#213)", () => {
     expect(clientSource).toContain("df-people-member");
     expect(clientSource).toContain("df-contact-badges");
     // Columns say nothing without a head; the desktop register names each one.
-    expect(clientSource).toMatch(/<span>CONTACT<\/span>/);
-    expect(clientSource).toMatch(/<span>PHONE<\/span>/);
-    expect(clientSource).toMatch(/<span>ROLE<\/span>/);
+    expect(clientSource).toMatch(/<span>Contact<\/span>/);
+    expect(clientSource).toMatch(/<span>Phone<\/span>/);
+    expect(clientSource).toMatch(/<span>Role<\/span>/);
     // A role is free text, so it is read as text — a status pill would claim it
     // came from a closed set.
     expect(clientSource).toContain("df-contact-role");
@@ -270,9 +270,8 @@ describe("Client editor shows what it saved (#213)", () => {
     expect(twoTrack).toBeGreaterThan(-1);
     expect(fourTrack).toBeGreaterThan(twoTrack);
     expect(clientSource).not.toMatch(/df-status">\{contact\.role\}/);
-    // An email is a literal identifier; uppercasing it changes what it looks like.
-    expect(clientSource).toContain('data-case="preserve"');
-    expect(rule('.df-meta[data-case="preserve"]')).toMatch(/text-transform:\s*none/);
+    // Labels are no longer uppercased, so an email needs no case opt-out.
+    expect(clientSource).not.toContain("data-case");
   });
 
   it("reads record attributes as stacked pairs, not as metric tiles", () => {
@@ -316,8 +315,8 @@ describe("Clients routing (#186)", () => {
     expect(match.kind).toBe("clients");
     expect(navIdForPath("/clients")).toBe("clients");
     expect(breadcrumbFor("/clients", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "CLIENTS",
+      "Harbor Co",
+      "Clients",
     ]);
     expect(appSource).toContain("V2ClientsPage");
     expect(appSource).toMatch(/path="\/clients"/);
@@ -338,9 +337,9 @@ describe("Clients routing (#186)", () => {
     });
     expect(navIdForPath("/clients/cli-1")).toBe("clients");
     expect(breadcrumbFor("/clients/cli-1", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "CLIENTS",
-      "RECORD",
+      "Harbor Co",
+      "Clients",
+      "Record",
     ]);
     expect(appSource).toContain("V2ClientRecordPage");
     expect(appSource).toMatch(/path="\/clients\/:id"/);
@@ -355,7 +354,7 @@ describe("Clients register from live Client rows (#186)", () => {
 
     expect(register.empty).toBe(true);
     expect(register.rows).toEqual([]);
-    expect(register.emptyCopy.toLowerCase()).toContain("client");
+    expect(register.emptyState?.copy.toLowerCase()).toContain("client");
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
     }
@@ -385,7 +384,7 @@ describe("Clients register from live Client rows (#186)", () => {
       name: "Harbour Shipping",
       company: "Harbour Shipping Ltd",
       status: "CLIENT",
-      source: "DIRECT",
+      source: "Direct",
       projectCount: 2,
       selected: true,
       href: "/clients/cli-live",
@@ -421,7 +420,7 @@ describe("Clients register from live Client rows (#186)", () => {
 
     expect(register.rows.map((row) => row.id)).toEqual(["cli-1"]);
     expect(register.empty).toBe(false);
-    expect(register.emptyCopy).toBe("");
+    expect(register.emptyState).toBeNull();
   });
 });
 
@@ -450,11 +449,11 @@ describe("Client record from live Client reads (#186)", () => {
     expect(record.missing).toBe(false);
     expect(record.identity).toMatchObject({
       title: "Harbour Shipping",
-      kindLabel: "CLIENT",
+      kindLabel: "Client",
       status: "CLIENT",
       company: "Harbour Shipping Ltd",
       email: "ops@harbour.test",
-      source: "DIRECT",
+      source: "Direct",
     });
     expect(record.contacts.map((row) => row.name)).toEqual(["Sam Lee", "Pat Ng"]);
     expect(record.projects).toEqual([
@@ -550,7 +549,7 @@ describe("Client record from live Client reads (#186)", () => {
     expect(pending.unavailable).toBe(false);
     expect(pending.identity).toMatchObject({
       title: "Harbour Shipping",
-      kindLabel: "CLIENT",
+      kindLabel: "Client",
       status: "CLIENT",
       company: "Harbour Shipping Ltd",
     });
@@ -677,7 +676,7 @@ describe("Clients register: when each Client was created (#307)", () => {
     });
     expect(register.rows.map((row) => row.created)).toEqual(["29 Sep 2026", "—"]);
     expect(CLIENT_SORTS).toContain("created");
-    expect(clientsSource).toMatch(/clientColumn\.accessor\("created", \{\s*header: "CREATED"/);
+    expect(clientsSource).toMatch(/clientColumn\.accessor\("created", \{\s*header: "Created"/);
   });
 });
 

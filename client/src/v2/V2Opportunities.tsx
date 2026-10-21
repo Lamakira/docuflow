@@ -34,7 +34,7 @@ import { matchV2Route } from "./presentation";
 import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
-import { V2EmptyState } from "./V2EmptyState";
+import { V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, V2_SELECT_NONE, type V2SelectOption } from "./V2Select";
 import {
@@ -303,7 +303,7 @@ function OpportunityFieldInputs({
   return (
     <>
       <label className="df-daily-field" data-wide="true">
-        NAME
+        Name
         <input
           type="text"
           value={draft.name}
@@ -314,7 +314,7 @@ function OpportunityFieldInputs({
         />
       </label>
       <label className="df-daily-field">
-        CLIENT
+        Client
         <V2FilterSelect
           label=""
           ariaLabel="Client"
@@ -327,7 +327,7 @@ function OpportunityFieldInputs({
         />
       </label>
       <label className="df-daily-field">
-        OWNER
+        Owner
         <V2FilterSelect
           label=""
           ariaLabel="Owner"
@@ -337,7 +337,7 @@ function OpportunityFieldInputs({
         />
       </label>
       <label className="df-daily-field">
-        EXPECTED CLOSE
+        Expected close
         <input
           type="date"
           value={draft.closeDate}
@@ -346,7 +346,7 @@ function OpportunityFieldInputs({
         />
       </label>
       <label className="df-daily-field">
-        SOURCE
+        Source
         <V2FilterSelect
           label=""
           ariaLabel="Source"
@@ -356,7 +356,7 @@ function OpportunityFieldInputs({
         />
       </label>
       <label className="df-daily-field">
-        ESTIMATED VALUE
+        Estimated value
         <input
           type="text"
           inputMode="decimal"
@@ -367,7 +367,7 @@ function OpportunityFieldInputs({
         />
       </label>
       <label className="df-daily-field">
-        CURRENCY
+        Currency
         <V2FilterSelect
           label=""
           ariaLabel="Currency"
@@ -449,7 +449,7 @@ function OpportunityOutcomeDialog({
       >
         {!row.clientId ? (
           <label className="df-daily-field">
-            CLIENT
+            Client
             <V2FilterSelect
               label=""
               ariaLabel="Client"
@@ -463,7 +463,7 @@ function OpportunityOutcomeDialog({
           </label>
         ) : null}
         <label className="df-daily-field">
-          PROJECT TYPE
+          Project type
           <V2FilterSelect
             label=""
             ariaLabel="Project type"
@@ -474,7 +474,7 @@ function OpportunityOutcomeDialog({
         </label>
         <div className="df-field-pair">
           <label className="df-daily-field">
-            BUDGET HOURS
+            Budget hours
             <input
               type="number"
               inputMode="numeric"
@@ -488,7 +488,7 @@ function OpportunityOutcomeDialog({
             />
           </label>
           <label className="df-daily-field">
-            MINUTES
+            Minutes
             <input
               type="number"
               inputMode="numeric"
@@ -503,7 +503,7 @@ function OpportunityOutcomeDialog({
           </label>
         </div>
         <label className="df-daily-field">
-          PROJECT MANAGER
+          Project manager
           <V2FilterSelect
             label=""
             ariaLabel="Project Manager"
@@ -534,7 +534,7 @@ function OpportunityOutcomeDialog({
       testId="v2-opportunity-lost"
     >
       <label className="df-daily-field">
-        LOST REASON
+        Lost reason
         <V2FilterSelect
           label=""
           ariaLabel="Lost reason"
@@ -547,7 +547,7 @@ function OpportunityOutcomeDialog({
         />
       </label>
       <label className="df-daily-field">
-        DETAIL
+        Detail
         <textarea
           value={lost.detail}
           onChange={(event) => setLost({ ...lost, detail: event.target.value })}
@@ -590,7 +590,7 @@ function StageHistoryCard({ opportunityId, stages }: { opportunityId: string; st
               <span className="df-status" data-swatch="" style={swatchStyle(row.toColor)}>{row.to}</span>
             </div>
             <div className="df-mono df-meta">
-              {row.when} · {row.who.toUpperCase()} · HELD {row.held.toUpperCase()}
+              {row.when} · {row.who} · held {row.held}
             </div>
           </div>
         ))
@@ -746,7 +746,7 @@ function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
         testId="v2-opportunity-note-dialog"
       >
         <label className="df-daily-field">
-          NOTE
+          Note
           <textarea
             value={content}
             autoFocus
@@ -881,7 +881,7 @@ function OpportunityEditForm({
     <form onSubmit={onSubmit}>
       <div className="df-opportunity-fields">
         <label className="df-daily-field">
-          STAGE
+          Stage
           <V2FilterSelect
             label=""
             ariaLabel="Stage"
@@ -1012,7 +1012,7 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
             </div>
             <div className="df-settings-grid">
               <div className="df-settings-row">
-                <span className="df-settings-label">STAGE</span>
+                <span className="df-settings-label">Stage</span>
                 <span className="df-settings-value">
                   <span className="df-status" data-swatch="" style={swatchStyle(record.stageColor)}>
                     {record.stage}
@@ -1021,7 +1021,7 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
               </div>
               {record.lostReason ? (
                 <div className="df-settings-row" data-testid="v2-opportunity-lost-reason">
-                  <span className="df-settings-label">LOST REASON</span>
+                  <span className="df-settings-label">Lost reason</span>
                   <span className="df-settings-value df-settings-inline">
                     <span>
                       {record.lostReason.label}
@@ -1035,7 +1035,7 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
               ) : null}
               {record.lostReasonMissing ? (
                 <div className="df-settings-row" data-testid="v2-opportunity-lost-reason">
-                  <span className="df-settings-label">LOST REASON</span>
+                  <span className="df-settings-label">Lost reason</span>
                   <span className="df-settings-value df-settings-inline">
                     <span className="df-settings-copy">Not recorded</span>
                     <Button variant="outline" type="button" className="df-btn" onClick={onLostReason}>
@@ -1193,6 +1193,12 @@ export function V2OpportunitiesPage() {
     },
   });
 
+  function startCreate() {
+    setDraft(newOpportunityDraft(user?.id ?? ""));
+    setWriteRefusal(null);
+    setCreating(true);
+  }
+
   function onCreate() {
     if (!created.body) return;
     if (readOnly) {
@@ -1267,11 +1273,7 @@ export function V2OpportunitiesPage() {
           <Button
             variant="default"
             type="button"
-            onClick={() => {
-              setDraft(newOpportunityDraft(user?.id ?? ""));
-              setWriteRefusal(null);
-              setCreating(true);
-            }}
+            onClick={startCreate}
             className="df-btn"
           >
             New Opportunity
@@ -1301,7 +1303,7 @@ export function V2OpportunitiesPage() {
             autoFocus
           />
           <label className="df-daily-field" data-wide="true">
-            STAGE
+            Stage
             <V2FilterSelect
               label=""
               ariaLabel="Stage"
@@ -1311,7 +1313,7 @@ export function V2OpportunitiesPage() {
             />
           </label>
           <label className="df-daily-field" data-wide="true">
-            FIRST NOTE
+            First note
             <textarea
               value={draft.note}
               onChange={(event) => setDraft({ ...draft, note: event.target.value })}
@@ -1335,8 +1337,24 @@ export function V2OpportunitiesPage() {
         </label>
       </div>
 
-      {pipeline.empty ? <p className="df-empty">{pipeline.emptyCopy}</p> : null}
+      {pipeline.emptyState ? (
+        <V2RecordEmpty
+          model={pipeline.emptyState}
+          icon="opportunities"
+          action={
+            readOnly ? undefined : (
+              <Button variant="default" type="button" className="df-btn" onClick={startCreate}>
+                New Opportunity
+              </Button>
+            )
+          }
+          onClear={() => setFilterQuery("")}
+          testIds={{ none: "v2-opportunities-empty" }}
+        />
+      ) : null}
 
+      {pipeline.emptyState?.kind === "none" ? null : (
+      <>
       <DragDropContext
         onDragStart={() => pipelineRef.current?.setAttribute("data-dragging", "true")}
         onDragEnd={handleDragEnd}
@@ -1417,6 +1435,8 @@ export function V2OpportunitiesPage() {
       <div className="df-library-foot">
         {pipeline.count} {pipeline.count === 1 ? "Opportunity" : "Opportunities"}
       </div>
+      </>
+      )}
 
       {outcome ? (
         <OpportunityOutcomeDialog

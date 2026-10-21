@@ -74,7 +74,7 @@
   --destructive-border: var(--df-carmine-500);
   --df-font-display: "Cabinet Grotesk", sans-serif;
   --df-font-ui: "Switzer", system-ui, sans-serif;
-  --df-font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --df-font-data: "Geist", system-ui, sans-serif;
   /* Space (#256). A 4px base, eight steps, named for the step rather than a
      screen that happened to need it. Cards take --df-space-4 on every side. */
   --df-space-1: 4px;
@@ -291,17 +291,17 @@
 }
 
 .df-group-label {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
   color: var(--df-muted-ink);
   padding: 0 var(--df-space-2) var(--df-space-1);
 }
 
+/* The data font: Geist with tabular figures, for what the system recorded (Amendment 6). The class name predates the change. */
 .df-mono {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
   font-variant-numeric: tabular-nums;
 }
 
@@ -309,11 +309,10 @@
   display: flex;
   align-items: center;
   gap: var(--df-space-2);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 400;
   font-size: var(--df-text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
   color: var(--df-archive-slate);
   white-space: nowrap;
 }
@@ -441,7 +440,8 @@
   flex: none;
   background: var(--df-case-ink);
   color: var(--df-on-ink);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
 
@@ -494,7 +494,8 @@
 }
 
 .df-keycap {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
   color: var(--df-archive-slate);
@@ -561,7 +562,8 @@
   border-radius: 50%;
   background: var(--df-case-ink);
   color: var(--df-on-ink);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
   display: flex;
@@ -601,11 +603,10 @@
 }
 
 .df-date-chip {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-2);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-2);
   padding: var(--df-space-1) var(--df-space-2);
@@ -637,10 +638,10 @@
 }
 
 .df-count-chip {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.04em;
   background: var(--df-cold-stock);
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-1);
@@ -698,7 +699,6 @@
 .df-meta {
   font-size: var(--df-text-2);
   color: var(--df-archive-slate);
-  text-transform: uppercase;
 }
 
 .df-cta {
@@ -857,14 +857,9 @@ button.df-activity-row {
   gap: var(--df-space-2);
 }
 
-/* An email is a literal identifier; uppercasing it changes what it looks like. */
-.df-meta[data-case="preserve"] {
-  text-transform: none;
-}
-
 /* Record attributes (#213). A boxed tile is for a metric, where the figure is
    the subject. On a record the subject is the label-to-value relation, so the
-   pair is stacked and uncarded, and the value is UI text rather than mono — an
+   pair is stacked and uncarded, and the value is UI text rather than the data font (Geist) — an
    email is prose, not a figure, and a fixed tile width truncated it.
    After Resend's contact metadata grid and Rox, whose property rows are
    explicitly not carded individually. */
@@ -890,11 +885,10 @@ button.df-activity-row {
 }
 
 .df-record-field-label {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   color: var(--df-archive-slate);
 }
 
@@ -930,7 +924,7 @@ button.df-activity-row {
 }
 
 .df-audio-clock {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
   font-size: var(--df-text-4);
   font-variant-numeric: tabular-nums;
   color: var(--df-case-ink);
@@ -1094,7 +1088,8 @@ button.df-activity-row {
 
 .df-admin-secret {
   display: block;
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
   word-break: break-all;
   background: var(--df-cold-stock);
@@ -1170,16 +1165,16 @@ button.df-activity-row {
 }
 
 .df-analytics-figure-label {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   color: var(--df-archive-slate);
 }
 
 .df-analytics-figure-value {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-5);
   line-height: 1;
   color: var(--df-case-ink);
@@ -1231,11 +1226,10 @@ button.df-activity-row {
 
 .df-admin-form > fieldset.df-daily-field > legend {
   padding: 0 var(--df-space-1);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   color: var(--df-archive-slate);
 }
 
@@ -1465,10 +1459,10 @@ button.df-activity-row {
 }
 
 .df-select-prefix {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-2);
-  letter-spacing: 0.02em;
   color: var(--df-archive-slate);
 }
 
@@ -1553,7 +1547,8 @@ button.df-activity-row {
   border-radius: var(--df-radius-3);
   background: var(--df-case-ink);
   color: var(--df-on-ink);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-3);
   font-weight: 500;
 }
@@ -1687,7 +1682,8 @@ button.df-activity-row {
 
 .df-billing-seats-count,
 .df-billing-term-value {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
   color: var(--df-case-ink);
 }
@@ -1823,10 +1819,10 @@ button.df-activity-row {
 .df-analytics-group-label {
   margin: 0;
   padding: var(--df-space-4) var(--df-space-5) 0;
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
   font-weight: 500;
-  letter-spacing: 0.07em;
   color: var(--df-archive-slate);
 }
 
@@ -1924,7 +1920,8 @@ button.df-activity-row {
   padding: var(--df-space-2) var(--df-space-3);
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-2);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
 }
 
@@ -1972,7 +1969,8 @@ button.df-activity-row {
   min-width: 0;
   min-height: var(--df-space-4);
   margin: 0;
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
   color: var(--df-archive-slate);
 }
@@ -2190,7 +2188,8 @@ button.df-activity-row {
 }
 
 .df-pairing-code {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
   font-size: var(--df-text-6);
   letter-spacing: 0.28em;
@@ -2380,7 +2379,7 @@ button.df-activity-row {
 /* One total per currency; amounts in different currencies are never added. */
 .df-opportunity-totals,
 .df-opportunity-card-value {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
   font-size: var(--df-text-1);
   color: var(--df-archive-slate);
   font-variant-numeric: tabular-nums;
@@ -2434,9 +2433,9 @@ button.df-activity-row {
    register puts it, but moved on Opportunities, not here (#259). */
 .df-project-card-opportunity {
   margin-top: var(--df-space-2);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
-  letter-spacing: 0.06em;
   color: var(--df-archive-slate);
 }
 
@@ -2526,16 +2525,16 @@ button.df-activity-row {
 .df-register-head {
   padding: var(--df-space-3) var(--df-space-5);
   background: var(--df-cold-stock);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   color: var(--df-archive-slate);
 }
 
 .df-status {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
   letter-spacing: 0.04em;
@@ -2618,10 +2617,10 @@ button.df-activity-row {
 }
 
 .df-ghost-link {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.06em;
   color: var(--df-archive-slate);
 }
 
@@ -2642,7 +2641,8 @@ button.df-activity-row {
   flex: none;
   background: var(--df-archive-slate);
   color: var(--df-on-ink);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: var(--df-text-1);
 }
@@ -2652,7 +2652,8 @@ button.df-activity-row {
 }
 
 .df-state {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
   letter-spacing: 0.04em;
@@ -2753,7 +2754,8 @@ button.df-activity-row {
 .df-search-foot {
   padding: var(--df-space-2) var(--df-space-4);
   background: var(--df-cold-stock);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
   color: var(--df-archive-slate);
 }
@@ -3017,10 +3019,10 @@ button.df-activity-row {
 .df-v2 .df-table-head {
   height: auto;
   padding: var(--df-space-3) var(--df-space-5);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.06em;
   color: var(--df-archive-slate);
   text-align: left;
   border-bottom: 1px solid var(--df-divider);
@@ -3274,9 +3276,9 @@ button.df-activity-row {
 
 .df-form-dialog-body > .df-field-pair > .df-daily-field,
 .df-form-dialog-body > .df-daily-field {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
-  letter-spacing: 0.07em;
   color: var(--df-archive-slate);
 }
 
@@ -3350,9 +3352,9 @@ button.df-activity-row {
 
 .df-opportunity-fields > .df-daily-field {
   min-width: 0;
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
-  letter-spacing: 0.07em;
   color: var(--df-archive-slate);
 }
 
@@ -3684,7 +3686,8 @@ button.df-activity-row {
 }
 
 .df-stat-value {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: var(--df-text-4);
 }
@@ -3963,7 +3966,8 @@ button.df-activity-row {
 }
 
 .df-flag {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
   border: 1px solid var(--df-divider);
@@ -4046,11 +4050,10 @@ button.df-activity-row {
 
 .df-kpi-label {
   margin-top: 4px;
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
-  letter-spacing: 0.06em;
   color: var(--df-archive-slate);
-  text-transform: uppercase;
 }
 
 .df-rollcall {
@@ -4114,7 +4117,8 @@ button.df-activity-row {
 }
 
 .df-ask-source {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
   color: var(--df-archive-slate);
 }
@@ -4280,9 +4284,9 @@ button.df-activity-row {
   display: flex;
   justify-content: space-between;
   gap: var(--df-space-3);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
-  text-transform: uppercase;
 }
 
 .df-kv span:first-child {
@@ -4313,7 +4317,8 @@ button.df-activity-row {
 }
 
 .df-filed-chip {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-2);
   border: 1px solid var(--df-divider);
@@ -4395,7 +4400,8 @@ button.df-activity-row {
 }
 
 .df-filter-chip {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-2);
   border: 1px solid var(--df-divider);
@@ -4457,10 +4463,10 @@ button.df-activity-row {
   border-radius: 0;
   background: transparent;
   color: var(--df-archive-slate);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-2);
-  letter-spacing: 0.04em;
   padding: var(--df-space-2) var(--df-space-3);
   white-space: nowrap;
   cursor: pointer;
@@ -4495,11 +4501,10 @@ button.df-activity-row {
 .df-library-head {
   padding: var(--df-space-3) var(--df-space-4);
   background: var(--df-cold-stock);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   color: var(--df-archive-slate);
 }
 
@@ -4589,10 +4594,9 @@ button.df-activity-row {
 }
 
 .df-save-state {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--df-archive-slate);
   transition: color var(--duration-ui) var(--ease-out), opacity var(--duration-ui) var(--ease-out);
 }
@@ -4698,12 +4702,11 @@ button.df-activity-row {
 .df-library-foot {
   padding: var(--df-space-3) var(--df-space-5);
   background: var(--df-cold-stock);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.04em;
   color: var(--df-archive-slate);
-  text-transform: uppercase;
 }
 
 .df-register-pager {
@@ -5493,10 +5496,9 @@ button.df-activity-row {
 
 .df-doc-callout-label {
   margin: 0;
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--df-muted-ink);
 }
 
@@ -5506,7 +5508,8 @@ button.df-activity-row {
 }
 
 .df-doc-code {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
   padding: var(--df-space-1) var(--df-space-1);
   border: 1px solid var(--df-divider-light);
@@ -5546,7 +5549,8 @@ button.df-activity-row {
 
 .df-doc-figure-slot {
   margin: 0;
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
   color: var(--df-muted-ink);
 }
@@ -5566,10 +5570,9 @@ button.df-activity-row {
 
 .df-doc-figure-empty-label {
   margin: 0;
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--df-muted-ink);
 }
 
@@ -5640,10 +5643,9 @@ button.df-activity-row {
 }
 
 .df-file-meta {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--df-muted-ink);
 }
 
@@ -5677,7 +5679,8 @@ button.df-activity-row {
 .df-file-zoom-level {
   min-width: 54px;
   text-align: center;
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
   color: var(--df-archive-slate);
 }
@@ -5774,7 +5777,8 @@ button.df-activity-row {
   border: 1px solid var(--df-divider-light);
   border-radius: var(--df-radius-3);
   background: var(--df-cold-stock);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
   line-height: 1.6;
   white-space: pre-wrap;
@@ -5812,7 +5816,6 @@ button.df-activity-row {
 
 .df-first-workspace-kicker {
   font-size: var(--df-text-1);
-  letter-spacing: 0.08em;
   color: var(--df-muted-ink);
 }
 
@@ -5824,7 +5827,6 @@ button.df-activity-row {
 
 .df-first-workspace-label {
   font-size: var(--df-text-2);
-  letter-spacing: 0.04em;
   color: var(--df-muted-ink);
 }
 
@@ -5853,7 +5855,6 @@ button.df-activity-row {
 
 .df-account-kicker {
   font-size: var(--df-text-1);
-  letter-spacing: 0.08em;
   color: var(--df-muted-ink);
 }
 
@@ -5954,8 +5955,8 @@ button.df-activity-row {
 }
 
 /* Flow 4's secondary action. Under the list, in ghost weight, so choosing an
-   existing Workspace stays the obvious thing to do. Authored prose, not mono:
-   Amendment 1 keeps mono for what the system recorded (AMENDMENTS.md §1). */
+   existing Workspace stays the obvious thing to do. Authored prose, not the data font:
+   Amendments 1 and 6 keep Geist with tabular figures for what the system recorded (AMENDMENTS.md). */
 .df-chooser-new {
   display: inline-block;
   margin-top: 14px;
@@ -6177,11 +6178,10 @@ button.df-activity-row {
   display: inline-flex;
   align-items: center;
   gap: var(--df-space-2);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-1);
   padding: var(--df-space-1) var(--df-space-2);
@@ -6303,11 +6303,10 @@ button.df-activity-row {
 }
 
 .df-settings-label {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-1);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   color: var(--df-archive-slate);
 }
 
@@ -6382,7 +6381,8 @@ button.df-activity-row {
 }
 
 .df-settings-unit {
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-2);
   color: var(--df-archive-slate);
   margin-right: var(--df-space-2);
@@ -6490,7 +6490,8 @@ button.df-activity-row {
   background: var(--df-stage);
   border-radius: var(--df-radius-1);
   padding: var(--df-space-1) var(--df-space-2);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
   font-size: var(--df-text-1);
   letter-spacing: 0.04em;
@@ -7020,11 +7021,10 @@ button.df-activity-row {
   top: 0;
   background: var(--df-card-white);
   color: var(--df-archive-slate);
-  font-family: var(--df-font-mono);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
   font-size: var(--df-text-1);
   font-weight: 500;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
 }
 
 .df-chart-table td:not(:first-child),
@@ -7136,4 +7136,23 @@ button.df-activity-row {
 
 .df-v2 .df-theme-toggle-item[data-state="checked"]:focus-visible {
   box-shadow: 0 0 0 2px var(--df-amber-500);
+}
+
+/* Typography amendment (Amendment 6): small labels are sentence case across
+   the Workspace app. The back office and platform console are internal and
+   keep their uppercase labels. */
+:is(.df-backoffice-section, .df-backoffice-lines, .df-backoffice-register, .df-platform-page)
+  :is(.df-meta, .df-register-head, .df-library-head, .df-library-foot, .df-analytics-figure-label, .df-kv, .df-settings-label, .df-chart-table th) {
+  text-transform: uppercase;
+}
+
+/* The letter-spacing those label rules carried before the amendment, so the
+   back office looks exactly as it did. .df-meta and .df-kv had none. */
+:is(.df-backoffice-section, .df-backoffice-lines, .df-backoffice-register, .df-platform-page)
+  :is(.df-register-head, .df-library-head, .df-analytics-figure-label, .df-settings-label, .df-chart-table th) {
+  letter-spacing: 0.07em;
+}
+
+:is(.df-backoffice-section, .df-backoffice-lines, .df-backoffice-register, .df-platform-page) .df-library-foot {
+  letter-spacing: 0.04em;
 }

@@ -13,6 +13,7 @@ import {
 } from "@shared/opportunityFields";
 import { builtInList, workspaceListOptions } from "@shared/pipelineLists";
 import { chromeRefusal } from "./chrome";
+import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { clientHref } from "./clients";
 import { formatDayStamp, formatSpan, formatWhen, noteName, parseDate } from "./dossier";
 import { readProjectBudget } from "./projects";
@@ -129,10 +130,10 @@ export function composeOpportunityRecord(input: OpportunityRecordInput): Opportu
     stageColor: stageColor(stage, input.stages?.find((option) => option.id === stage)?.color),
     terminal: isOpportunityTerminal(stage),
     fields: [
-      { label: "OWNER", value: input.owner ? memberName(input.owner) : "No Owner" },
-      { label: "EXPECTED CLOSE", value: close ? formatCloseDate(close) : "Not set" },
-      { label: "SOURCE", value: input.source ? optionLabel(input.sourceOptions, input.source) : "Not set" },
-      { label: "ESTIMATED VALUE", value: value ?? "Not set" },
+      { label: "Owner", value: input.owner ? memberName(input.owner) : "No Owner" },
+      { label: "Expected close", value: close ? formatCloseDate(close) : "Not set" },
+      { label: "Source", value: input.source ? optionLabel(input.sourceOptions, input.source) : "Not set" },
+      { label: "Estimated value", value: value ?? "Not set" },
     ],
     lostReason: lost
       ? { label: optionLabel(input.lostReasonOptions, input.lostReason!), detail: input.lostReasonDetail?.trim() || null }
@@ -165,7 +166,8 @@ export type OpportunityColumn = {
 export type OpportunityPipelineModel = {
   subhead: string;
   empty: boolean;
-  emptyCopy: string;
+  /** Why the pipeline shows no card (#325); null while it has cards. */
+  emptyState: EmptyModel | null;
   columns: OpportunityColumn[];
   count: number;
 };
@@ -343,11 +345,10 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
   return {
     subhead: `Opportunities in ${input.workspaceName}.`,
     empty,
-    emptyCopy: empty
-      ? needle
-        ? "No Opportunities match this filter."
-        : "No Opportunities in this Workspace yet."
-      : "",
+    emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle)), "Opportunities", {
+      title: "Add your first Opportunity",
+      copy: "An Opportunity is a sale in the pipeline. Add one to follow it from lead to won.",
+    }),
     columns,
     count,
   };

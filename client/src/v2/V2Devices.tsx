@@ -18,6 +18,7 @@ import { copyToClipboard, isStandingRefusal, notify } from "./notify";
 import { statusTone } from "./palette";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
+import { V2EmptyState } from "./V2EmptyState";
 import { SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
 
 type DevicesResponse = { data: DeviceInput[] };
@@ -130,7 +131,7 @@ export function V2DevicesPage() {
         <SkeletonRegister
           className="df-devices-register"
           title="Your Devices"
-          heads={["DEVICE", "OS", "STATUS", "LAST SEEN"]}
+          heads={["Device", "OS", "Status", "Last seen"]}
           rows={3}
         />
       </V2PageSkeleton>
@@ -200,15 +201,27 @@ export function V2DevicesPage() {
           </div>
           {layout.stackedRegister ? null : (
             <div className="df-register-head df-desktop-only">
-              <span>DEVICE</span>
+              <span>Device</span>
               <span>OS</span>
-              <span>STATUS</span>
-              <span>LAST SEEN</span>
+              <span>Status</span>
+              <span>Last seen</span>
               <span />
             </div>
           )}
-          {page.empty ? (
-            <p className="df-empty">{page.emptyCopy}</p>
+          {page.emptyState ? (
+            <V2EmptyState
+              icon="devices"
+              title={page.emptyState.title}
+              copy={page.emptyState.copy}
+              action={
+                page.pairAllowed ? (
+                  <Button variant="default" type="button" onClick={onPair} className="df-btn">
+                    Pair a device
+                  </Button>
+                ) : undefined
+              }
+              testId="v2-devices-empty"
+            />
           ) : (
             page.rows.map((row) => (
               <div key={row.key} className="df-register-row" data-testid={`v2-devices-row-${row.key}`}>

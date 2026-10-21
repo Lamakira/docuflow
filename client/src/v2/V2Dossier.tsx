@@ -335,7 +335,7 @@ export function V2DossierPage() {
     ? projectFileRecords.map((file) => ({
         id: file.id,
         title: file.name,
-        meta: ["FILE", formatFileSize(file.fileSize)].filter(Boolean).join(" · "),
+        meta: ["File", formatFileSize(file.fileSize)].filter(Boolean).join(" · "),
         href: projectFileHref({
           projectId: projectRecordId,
           id: file.id,
@@ -981,7 +981,7 @@ export function V2DossierPage() {
                 <div className="df-dossier-provenance">
                   {dossier.identity.lead ? (
                     <span className="df-prov">
-                      <span className="df-mono df-meta">PROJECT MANAGER</span>
+                      <span className="df-mono df-meta">Project manager</span>
                       <span className="df-avatar" data-self={dossier.identity.lead.self ? "true" : "false"}>
                         {dossier.identity.lead.initials}
                       </span>
@@ -990,7 +990,7 @@ export function V2DossierPage() {
                   ) : null}
                   {dossier.identity.team.length > 0 ? (
                     <span className="df-prov">
-                      <span className="df-mono df-meta">TEAM</span>
+                      <span className="df-mono df-meta">Team</span>
                       <span className="df-avatar-stack">
                         {dossier.identity.team.map((member) => (
                           <span key={member.name} className="df-avatar" title={member.name}>
@@ -1015,7 +1015,7 @@ export function V2DossierPage() {
           {dossier.identity ? (
             <div className="df-dossier-stats">
               <div className="df-stat">
-                <div className="df-mono df-meta">BUDGET</div>
+                <div className="df-mono df-meta">Budget</div>
                 <div className="df-stat-value">
                   {dossier.stats.budgetPercent == null ? "—" : `${dossier.stats.budgetPercent}%`}
                 </div>
@@ -1031,10 +1031,10 @@ export function V2DossierPage() {
                 ) : null}
               </div>
               <div className="df-stat">
-                <div className="df-mono df-meta">TRACKED MTD</div>
+                <div className="df-mono df-meta">Tracked MTD</div>
                 <div className="df-stat-value">{dossier.stats.trackedMtd}</div>
                 {dossier.stats.planHours ? (
-                  <div className="df-mono df-meta">OF {dossier.stats.planHours} PLAN</div>
+                  <div className="df-mono df-meta">of {dossier.stats.planHours} plan</div>
                 ) : null}
               </div>
               <div className="df-dossier-actions">
@@ -1081,7 +1081,7 @@ export function V2DossierPage() {
         testId="v2-dossier-new-task"
       >
         <label className="df-daily-field">
-          NAME
+          Name
           <input
             id={DOSSIER_FIELD.taskName}
             type="text"
@@ -1110,7 +1110,7 @@ export function V2DossierPage() {
         testId="v2-dossier-new-document"
       >
         <label className="df-daily-field">
-          NAME
+          Name
           <input
             type="text"
             value={documentName}
@@ -1158,7 +1158,7 @@ export function V2DossierPage() {
           <V2AudioRecorder onRecordingComplete={uploadAudioNote} onCancel={() => setRecordingNote(false)} isUploading={uploadingAudio} />
         ) : (
           <label className="df-daily-field">
-            NOTE
+            Note
             <textarea
               id={DOSSIER_FIELD.note}
               value={noteContent}
@@ -1229,7 +1229,7 @@ export function V2DossierPage() {
         testId="v2-dossier-new-reminder"
       >
         <label className="df-daily-field">
-          TITLE
+          Title
           <input
             id={DOSSIER_FIELD.reminderTitle}
             type="text"
@@ -1240,11 +1240,11 @@ export function V2DossierPage() {
           />
         </label>
         <label className="df-daily-field">
-          NOTE
+          Note
           <textarea value={reminderNote} onChange={(event) => setReminderNote(event.target.value)} aria-label="Reminder note" />
         </label>
         <label className="df-daily-field">
-          DUE
+          Due
           <input
             type="datetime-local"
             value={reminderDueAt}
@@ -1407,7 +1407,7 @@ function DossierOverview({
           <div className="df-card-head">
             <h2 className="df-card-title">Next actions</h2>
             <span className="df-mono df-meta">
-              {dossier.nextActions.openCount} TO DO · {dossier.nextActions.blockedCount} BLOCKED
+              {dossier.nextActions.openCount} to do · {dossier.nextActions.blockedCount} blocked
             </span>
           </div>
           {dossier.nextActions.empty ? (
@@ -1456,7 +1456,7 @@ function DossierOverview({
               {dossier.dailyUpdate.prose ? <p className="df-prose">{dossier.dailyUpdate.prose}</p> : null}
               {dossier.dailyUpdate.blocker ? (
                 <div className="df-blocker">
-                  <div className="df-mono df-meta">BLOCKER</div>
+                  <div className="df-mono df-meta">Blocker</div>
                   <p className="df-prose">
                     {dossier.dailyUpdate.blocker}
                   </p>
@@ -1491,7 +1491,7 @@ function DossierOverview({
             <h2 className="df-card-title">Budget & time</h2>
           </div>
           <div className="df-card-body-stack">
-            <div className="df-mono df-meta">CONSUMED {dossier.budgetTime.consumedLabel}</div>
+            <div className="df-mono df-meta">Consumed {dossier.budgetTime.consumedLabel}</div>
             <span className="df-meter df-meter-lg">
               {/* Per-instance: the fill width is this project's budget share. */}
               <span
@@ -1502,15 +1502,15 @@ function DossierOverview({
             </span>
             <div className="df-spread">
               <span className="df-mono df-meta">
-                {dossier.budgetTime.percent == null ? "—" : `${dossier.budgetTime.percent}% USED`}
+                {dossier.budgetTime.percent == null ? "—" : `${dossier.budgetTime.percent}% used`}
               </span>
             </div>
             <div className="df-kv">
-              <span>TRACKED THIS MONTH</span>
+              <span>Tracked this month</span>
               <span>{dossier.budgetTime.trackedThisMonth}</span>
             </div>
             <div className="df-kv">
-              <span>UNAPPROVED</span>
+              <span>Unapproved</span>
               <span>{dossier.budgetTime.unapproved ?? "—"}</span>
             </div>
           </div>
@@ -1519,7 +1519,7 @@ function DossierOverview({
         <section className="df-card">
           <div className="df-card-head">
             <h2 className="df-card-title">Project Documents</h2>
-            <span className="df-count-chip">{dossier.documents.count} DOCS</span>
+            <span className="df-count-chip">{dossier.documents.count} docs</span>
           </div>
           {dossier.documents.empty ? (
             <p className="df-empty">{dossier.documents.emptyCopy}</p>
@@ -1552,7 +1552,7 @@ function DossierOverview({
                   <span className="df-status" data-swatch="" style={swatchStyle(row.toColor)}>{row.to}</span>
                 </div>
                 <div className="df-mono df-meta">
-                  {row.when} · {row.who.toUpperCase()} · HELD {row.held.toUpperCase()}
+                  {row.when} · {row.who} · held {row.held}
                 </div>
               </div>
             ))
@@ -1813,7 +1813,7 @@ function DossierUpdates({ dossier }: { dossier: DossierModel }) {
             {row.prose ? <p className="df-prose">{row.prose}</p> : null}
             {row.blocker ? (
               <div className="df-blocker">
-                <div className="df-mono df-meta">BLOCKER</div>
+                <div className="df-mono df-meta">Blocker</div>
                 <p className="df-prose">
                   {row.blocker}
                 </p>
@@ -2379,7 +2379,7 @@ function DossierSettings({
         <div className="df-settings-grid">
           <form className="df-settings-row" onSubmit={onSaveName}>
             <label className="df-settings-label" htmlFor="df-dossier-project-name">
-              NAME
+              Name
             </label>
             <span className="df-settings-value df-settings-inline">
               <input
@@ -2398,7 +2398,7 @@ function DossierSettings({
             <SettingRow key={row.label} row={row} />
           ))}
           <div className="df-settings-row" data-testid="v2-dossier-tags">
-            <span className="df-settings-label">TAGS</span>
+            <span className="df-settings-label">Tags</span>
             <div className="df-settings-value df-settings-list">
               {dossier.tags.emptyCopy ? <p className="df-empty df-flush">{dossier.tags.emptyCopy}</p> : null}
               {dossier.tags.vocabulary.map((tag) => (
@@ -2458,7 +2458,7 @@ function DossierSettings({
         <form onSubmit={onSaveBudget}>
           <div className="df-settings-grid">
             <div className="df-settings-row">
-              <span className="df-settings-label">BUDGET</span>
+              <span className="df-settings-label">Budget</span>
               <span className="df-settings-value df-settings-inline">
                 <input
                   type="number"
@@ -2487,7 +2487,7 @@ function DossierSettings({
                 <span className="df-settings-unit">min</span>
               </span>
             </div>
-            <SettingRow row={{ label: "CONSUMED", value: settings.budget.consumed }} />
+            <SettingRow row={{ label: "Consumed", value: settings.budget.consumed }} />
           </div>
           <div className="df-form-actions">
             <p className={budgetForm.issue ? "df-form-note df-refusal-inline" : "df-form-note"} role="status">
@@ -2507,7 +2507,7 @@ function DossierSettings({
       >
         <div className="df-settings-grid">
           <div className="df-settings-row">
-            <span className="df-settings-label">PROJECT MANAGER</span>
+            <span className="df-settings-label">Project manager</span>
             <span className="df-settings-value">
               <V2FilterSelect
                 label=""
@@ -2522,7 +2522,7 @@ function DossierSettings({
             </span>
           </div>
           <div className="df-settings-row" data-testid="v2-dossier-members">
-            <span className="df-settings-label">MEMBERS</span>
+            <span className="df-settings-label">Members</span>
             <div className="df-settings-value df-settings-list">
         {settings.memberRows.length === 0 ? (
           <p className="df-empty df-flush">No Members assigned to this Project.</p>
@@ -2565,7 +2565,7 @@ function DossierSettings({
             </div>
           </div>
           <form className="df-settings-row" onSubmit={onAddMember}>
-            <span className="df-settings-label">ADD MEMBER</span>
+            <span className="df-settings-label">Add member</span>
             <span className="df-settings-value df-settings-inline">
               <V2FilterSelect
                 label=""
@@ -2613,7 +2613,7 @@ function DossierSettings({
         >
           <div className="df-settings-grid">
             <div className="df-settings-row">
-              <span className="df-settings-label">DELETE</span>
+              <span className="df-settings-label">Delete</span>
               <span className="df-settings-value df-settings-inline">
                 <span className="df-settings-copy">Delete this Project and everything filed under it.</span>
                 <AlertDialog>

@@ -229,7 +229,7 @@ function PdfPreview({ src }: { src: string }) {
     <>
       <div className="df-file-head" data-testid="v2-file-zoom">
         <span className="df-file-meta">
-          {pdf.numPages} {pdf.numPages === 1 ? "PAGE" : "PAGES"}
+          {pdf.numPages} {pdf.numPages === 1 ? "page" : "pages"}
         </span>
         <div className="df-file-zoom">
           <Button

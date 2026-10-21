@@ -18,7 +18,7 @@ import { chromeRefusal } from "./chrome";
 import { formatRelativeTime } from "./devices";
 import { formatHours, memberName } from "./today";
 import { workspaceRoleInCopy, type WorkspaceCondition, type WorkspaceMemberRow } from "./workspace";
-import { dayToDate, type DayRange } from "./dates";
+import { MONTHS, WEEKDAYS, dayToDate, formatFullDate, type DayRange } from "./dates";
 
 /**
  * Administration is a destination governed by the Workspace Role (#238), not a
@@ -55,14 +55,6 @@ export function administrationRefusal(input: {
     workspaceRole: input.workspaceRole,
     ownerName: input.ownerName,
   });
-}
-
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-
-function formatFullDay(value: string | Date): string {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
 const CAPABILITY_LABELS = new Map<string, string>([
@@ -192,12 +184,14 @@ export type AdministrationModel =
       serviceAccounts: {
         empty: boolean;
         emptyCopy: string;
+        emptyTitle: string;
         rows: ServiceAccountRow[];
         createAllowed: boolean;
       };
       webhookEndpoints: {
         empty: boolean;
         emptyCopy: string;
+        emptyTitle: string;
         rows: WebhookEndpointRow[];
         createAllowed: boolean;
       };
@@ -363,17 +357,17 @@ export function planPickerNote(mode: "checkout" | "change", currentPlanLabel: st
 /** Whichever date actually governs the subscription next. */
 function billingTerm(pin: BillingInput): { label: string; value: string } {
   if (pin.planKey === "trial" && pin.trialEndsAt) {
-    return { label: "Trial ends", value: formatFullDay(pin.trialEndsAt) };
+    return { label: "Trial ends", value: formatFullDate(pin.trialEndsAt) };
   }
   // A Subscription that has ended renews nothing; its last period end is history.
   if (pin.billingState === "ReadOnly") {
     return { label: "Subscription", value: "Ended" };
   }
   if (pin.cancelAtPeriodEnd && pin.periodEndsAt) {
-    return { label: "Access ends", value: formatFullDay(pin.periodEndsAt) };
+    return { label: "Access ends", value: formatFullDate(pin.periodEndsAt) };
   }
   if (pin.periodEndsAt) {
-    return { label: "Renews", value: formatFullDay(pin.periodEndsAt) };
+    return { label: "Renews", value: formatFullDate(pin.periodEndsAt) };
   }
   return { label: "Renews", value: "—" };
 }
@@ -385,7 +379,7 @@ function billingLead(pin: BillingInput, readOnly: boolean): string | null {
     return "The last payment failed. Update the payment method to keep this Plan.";
   }
   if (pin.cancelAtPeriodEnd && pin.periodEndsAt) {
-    return `Cancelled. ${planLabel(pin.planKey)} stays until ${formatFullDay(pin.periodEndsAt)}.`;
+    return `Cancelled. ${planLabel(pin.planKey)} stays until ${formatFullDate(pin.periodEndsAt)}.`;
   }
   if (pin.billingState === "Trialing") {
     return pin.planKey === "trial"
@@ -411,7 +405,7 @@ function cancellationConsequence(pin: BillingInput): string {
   const tail = "Viewing, export, and recovery stay available.";
   if (pin.periodEndsAt) {
     return (
-      `${planLabel(pin.planKey)} entitlements stay until ${formatFullDay(pin.periodEndsAt)}. ` +
+      `${planLabel(pin.planKey)} entitlements stay until ${formatFullDate(pin.periodEndsAt)}. ` +
       `On that day writes stop and the Workspace becomes read-only. ${tail}`
     );
   }
@@ -556,13 +550,15 @@ export function composeAdministration(input: AdministrationInput): Administratio
       : null,
     serviceAccounts: {
       empty: serviceRows.length === 0,
-      emptyCopy: "No Service Accounts in this Workspace.",
+      emptyCopy: "A Service Account lets an integration call the public API with its own key. Create one to get a key.",
+      emptyTitle: "Add your first Service Account",
       rows: serviceRows,
       createAllowed: !readOnly,
     },
     webhookEndpoints: {
       empty: webhookRows.length === 0,
-      emptyCopy: "No Webhook Endpoints in this Workspace.",
+      emptyCopy: "A Webhook Endpoint is a URL that receives the events you choose. Add one to start receiving them.",
+      emptyTitle: "Add your first Webhook Endpoint",
       rows: webhookRows,
       createAllowed: !readOnly,
     },
@@ -996,8 +992,6 @@ function formatDay(value: Date): string {
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
 }
 
-const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-
 /** A `YYYY-MM-DD` bucket read as the calendar day it names, not as UTC midnight. */
 function formatBucketDay(value: string): string {
   const [year, month, day] = value.split("-").map(Number);
@@ -1068,14 +1062,14 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
 
   const overview: AnalyticsFigure[] = input.overview
     ? [
-        { label: "TRACKED", value: formatHours(input.overview.totalTrackedSeconds) },
-        { label: "IDLE", value: formatHours(input.overview.totalIdleSeconds) },
-        { label: "TIME ENTRIES", value: String(input.overview.entriesCount) },
-        { label: "RUNNING NOW", value: String(input.overview.runningNow) },
-        { label: "ACTIVE TODAY", value: String(input.overview.activeUsersToday) },
-        { label: "EVIDENCE", value: String(input.overview.screenshotsInWindow) },
-        { label: "LOW ACTIVITY", value: String(input.overview.lowActivityEntries) },
-        { label: "REVOKED DEVICES", value: String(input.overview.revokedDevices) },
+        { label: "Tracked", value: formatHours(input.overview.totalTrackedSeconds) },
+        { label: "Idle", value: formatHours(input.overview.totalIdleSeconds) },
+        { label: "Time entries", value: String(input.overview.entriesCount) },
+        { label: "Running now", value: String(input.overview.runningNow) },
+        { label: "Active today", value: String(input.overview.activeUsersToday) },
+        { label: "Evidence", value: String(input.overview.screenshotsInWindow) },
+        { label: "Low activity", value: String(input.overview.lowActivityEntries) },
+        { label: "Revoked devices", value: String(input.overview.revokedDevices) },
       ]
     : [];
 
@@ -1089,16 +1083,16 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
 
   const coverageSummary: AnalyticsFigure[] = input.coverage
     ? [
-        { label: "COVERAGE", value: formatPercent(input.coverage.summary.coveragePercent) },
+        { label: "Coverage", value: formatPercent(input.coverage.summary.coveragePercent) },
         {
-          label: "EVIDENCE",
+          label: "Evidence",
           value: `${input.coverage.summary.totalScreenshots} of ${input.coverage.summary.expectedScreenshots}`,
         },
         {
-          label: "ENTRIES WITHOUT EVIDENCE",
+          label: "Entries without evidence",
           value: String(input.coverage.summary.entriesWithoutScreenshots),
         },
-        { label: "TOMBSTONED", value: String(input.coverage.summary.deletedScreenshots) },
+        { label: "Tombstoned", value: String(input.coverage.summary.deletedScreenshots) },
       ]
     : [];
 
@@ -1197,34 +1191,34 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
     summary: recordedEmpty
       ? []
       : [
-          { label: "RECORDED", value: formatHours(recordedSeconds) },
-          { label: "OF WHICH IDLE", value: formatHours(recordedIdleSeconds) },
-          { label: "TIME ENTRIES", value: String(recordedEntries) },
-          { label: "MEMBERS", value: String(productivityRows.length) },
+          { label: "Recorded", value: formatHours(recordedSeconds) },
+          { label: "Of which idle", value: formatHours(recordedIdleSeconds) },
+          { label: "Time entries", value: String(recordedEntries) },
+          { label: "Members", value: String(productivityRows.length) },
         ],
     sections: {
       members: {
-        label: "PER MEMBER",
+        label: "Per member",
         caption: "Who recorded the time, and how much of it was idle.",
-        head: ["MEMBER", "RECORDED", "OF WHICH IDLE", "TIME ENTRIES"],
+        head: ["Member", "Recorded", "Of which idle", "Time entries"],
         emptyCopy: "No tracked time by Member in this range.",
       },
       projects: {
-        label: "PER PROJECT",
+        label: "Per project",
         caption: "The Project each Time Entry was recorded against.",
-        head: ["PROJECT", "RECORDED", "TIME ENTRIES"],
+        head: ["Project", "Recorded", "Time entries"],
         emptyCopy: "No tracked time by Project in this range.",
       },
       tasks: {
-        label: "PER TASK",
+        label: "Per task",
         caption: "Time Entries linked to a Task. Time without a Task is left out of this list.",
-        head: ["TASK", "RECORDED"],
+        head: ["Task", "Recorded"],
         emptyCopy: "No tracked time by Task in this range.",
       },
       days: {
-        label: "PER DAY",
+        label: "Per day",
         caption: "The day each Time Entry started.",
-        head: ["DAY", "RECORDED"],
+        head: ["Day", "Recorded"],
         emptyCopy: "No tracked time by day in this range.",
       },
     },
@@ -1286,9 +1280,9 @@ export function composeAnalytics(input: AnalyticsInput): AnalyticsModel {
       emptyCopy: "No Activity Evidence in this range.",
       summary: shots
         ? [
-            { label: "EVIDENCE", value: String(shots.totalCount) },
-            { label: "TOMBSTONED", value: String(shots.deletedCount) },
-            { label: "DUPLICATE GROUPS", value: String(shots.duplicates.length) },
+            { label: "Evidence", value: String(shots.totalCount) },
+            { label: "Tombstoned", value: String(shots.deletedCount) },
+            { label: "Duplicate groups", value: String(shots.duplicates.length) },
           ]
         : [],
       byMember: (shots?.byUser ?? []).map((row) => ({

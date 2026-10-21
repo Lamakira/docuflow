@@ -26,6 +26,7 @@ import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } f
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { Button } from "@/components/ui/button";
 import { SkeletonRegister, SkeletonSection, SkeletonSubhead } from "./V2Skeleton";
+import { V2CompactEmpty } from "./V2EmptyState";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -210,7 +211,7 @@ export function V2TodayPage() {
           <SkeletonSection title="Needs attention" lines={3} />
           <SkeletonRegister
             title="Active Projects"
-            heads={["PROJECT / CLIENT", "STATUS", "PROJECT MANAGER", "BUDGET USED", "TRACKED MTD"]}
+            heads={["Project / client", "Status", "Project manager", "Budget used", "Tracked MTD"]}
             rows={4}
           />
           <div className="df-split">
@@ -245,17 +246,17 @@ export function V2TodayPage() {
         <div className="df-card-head">
           <div className="df-cluster">
             <h2 className="df-card-title">Needs attention</h2>
-            <span className="df-count-chip">{today.attention.length} ITEMS</span>
+            <span className="df-count-chip">{today.attention.length} items</span>
           </div>
-          <span className="df-mono df-attention-sort" style={{ fontSize: 10, color: "var(--df-muted-ink)", letterSpacing: "0.06em" }}>
-            SORTED BY IMPACT
+          <span className="df-mono df-attention-sort" style={{ fontSize: 10, color: "var(--df-muted-ink)" }}>
+            Sorted by impact
           </span>
         </div>
         {today.attention.length === 0 ? (
-          <p className="df-empty">
+          <V2CompactEmpty>
             Nothing needs attention. This queue is composed from Notifications and Daily Updates in this
             Workspace.
-          </p>
+          </V2CompactEmpty>
         ) : (
           today.attention.map((row) =>
             row.action === "remind" ? (
@@ -306,18 +307,18 @@ export function V2TodayPage() {
         <div className="df-card-head">
           <h2 className="df-card-title">Active Projects</h2>
           <Link href="/projects" className="df-ghost-link">
-            VIEW ALL {projectTotal}
+            View all {projectTotal}
           </Link>
         </div>
         <div className="df-register-head df-desktop-only">
-          <span>PROJECT / CLIENT</span>
-          <span>STATUS</span>
-          <span>PROJECT MANAGER</span>
-          <span>BUDGET USED</span>
-          <span style={{ textAlign: "right" }}>TRACKED MTD</span>
+          <span>Project / client</span>
+          <span>Status</span>
+          <span>Project manager</span>
+          <span>Budget used</span>
+          <span style={{ textAlign: "right" }}>Tracked MTD</span>
         </div>
         {today.projects.length === 0 ? (
-          <p className="df-empty">No active Projects in this Workspace yet.</p>
+          <V2CompactEmpty>No active Projects in this Workspace yet.</V2CompactEmpty>
         ) : (
           today.projects.map((row) => (
             <Link
@@ -386,12 +387,12 @@ export function V2TodayPage() {
           <div className="df-card-head">
             <h2 className="df-card-title">Workday</h2>
             <span className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)" }}>
-              {today.workday.memberCount} {today.workday.memberCount === 1 ? "MEMBER" : "MEMBERS"} ·{" "}
+              {today.workday.memberCount} {today.workday.memberCount === 1 ? "member" : "members"} ·{" "}
               {today.workday.hoursTodayLabel}
             </span>
           </div>
           {today.workday.members.length === 0 ? (
-            <p className="df-empty">No members to show for this workday.</p>
+            <V2CompactEmpty>No members to show for this workday.</V2CompactEmpty>
           ) : (
             today.workday.members.map((member) => (
               <div key={member.id} className="df-workday-row">
@@ -416,11 +417,11 @@ export function V2TodayPage() {
           <div className="df-card-head">
             <h2 className="df-card-title">Recent knowledge changes</h2>
             <span className="df-mono" style={{ fontSize: 10, color: "var(--df-muted-ink)" }}>
-              ACCESS-FILTERED
+              Access-filtered
             </span>
           </div>
           {today.knowledge.length === 0 ? (
-            <p className="df-empty">No recent knowledge changes you can access.</p>
+            <V2CompactEmpty>No recent knowledge changes you can access.</V2CompactEmpty>
           ) : (
             today.knowledge.map((row) => (
               <Link key={row.id} href={row.href} className="df-knowledge-row">

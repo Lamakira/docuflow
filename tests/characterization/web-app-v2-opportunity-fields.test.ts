@@ -178,10 +178,10 @@ describe("New Opportunity and the Opportunity record", () => {
     });
     expect(record.clientHref).toBe("/clients/client-1");
     expect(record.fields.map((field) => [field.label, spaced(field.value)])).toEqual([
-      ["OWNER", "Amina Diallo"],
-      ["EXPECTED CLOSE", "15 Oct 2026"],
-      ["SOURCE", "Zoho"],
-      ["ESTIMATED VALUE", "4 500 €"],
+      ["Owner", "Amina Diallo"],
+      ["Expected close", "15 Oct 2026"],
+      ["Source", "Zoho"],
+      ["Estimated value", "4 500 €"],
     ]);
     expect(record.lostReason).toBeNull();
     expect(JSON.stringify(record)).not.toContain("/projects/");

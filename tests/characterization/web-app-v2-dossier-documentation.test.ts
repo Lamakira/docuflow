@@ -76,9 +76,9 @@ describe("Project Dossier Documentation (#307)", () => {
       documentId: "page-9",
     });
     expect(breadcrumbFor(href, "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "PROJECTS",
-      "DOCUMENTATION",
+      "Harbor Co",
+      "Projects",
+      "Documentation",
     ]);
   });
 

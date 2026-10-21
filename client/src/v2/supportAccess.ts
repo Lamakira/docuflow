@@ -7,6 +7,8 @@
  * up before the Workspace opens.
  */
 
+import { formatFullDate } from "./dates";
+
 export const SUPPORT_GRANTS_PATH = "/api/workspace/support-access-grants";
 export const TWO_FACTOR_PATH = "/api/workspace/two-factor";
 export const PLATFORM_STAFF_PATH = "/api/admin/platform-staff";
@@ -34,12 +36,10 @@ export type WorkspaceAssurance = {
   secondFactorVerified: boolean;
 };
 
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-
 export function grantExpiryLabel(expiresAt: string | Date): string {
   const value = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
   if (Number.isNaN(value.getTime())) return "";
-  return `${value.getDate()} ${MONTHS[value.getMonth()]} ${value.getFullYear()}`;
+  return formatFullDate(value);
 }
 
 /** What the Workspace is told while a grant is active. Empty when none is. */

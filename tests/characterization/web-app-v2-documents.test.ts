@@ -39,8 +39,8 @@ describe("Workspace Documents routing (#174)", () => {
     expect(match.kind).toBe("documents");
     expect(navIdForPath("/documents")).toBe("documents");
     expect(breadcrumbFor("/documents", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "WORKSPACE DOCUMENTS",
+      "Harbor Co",
+      "Workspace Documents",
     ]);
   });
 
@@ -120,18 +120,18 @@ describe("Workspace Documents register from live Workspace records (#174)", () =
     expect(policies).toMatchObject({
       kind: "folder",
       name: "Policies",
-      type: "FOLDER",
-      access: "EVERYONE",
+      type: "Folder",
+      access: "Everyone",
       expanded: true,
       selected: true,
     });
-    expect(policies?.path).toMatch(/1 ITEM/);
+    expect(policies?.path).toMatch(/1 item/);
     const child = library.rows.find((row) => row.id === "doc-1");
     expect(child).toMatchObject({
       kind: "document",
       name: "Remote work policy",
-      type: "DOCUMENT",
-      access: "EVERYONE",
+      type: "Document",
+      access: "Everyone",
       editor: "Sam Lee",
       child: true,
       href: "/documents/doc-1",
@@ -142,8 +142,8 @@ describe("Workspace Documents register from live Workspace records (#174)", () =
     expect(root).toMatchObject({
       kind: "document",
       name: "Onboarding checklist",
-      type: "DOCUMENT",
-      access: "EVERYONE",
+      type: "Document",
+      access: "Everyone",
       child: false,
       href: "/documents/doc-root",
     });
@@ -151,12 +151,12 @@ describe("Workspace Documents register from live Workspace records (#174)", () =
     expect(file).toMatchObject({
       kind: "file",
       name: "brand-kit.zip",
-      type: "FILE",
+      type: "File",
       child: true,
       href: "/documents/file-1",
     });
     const templates = library.rows.find((row) => row.id === "fld-4");
-    expect(templates?.type).toBe("FOLDER");
+    expect(templates?.type).toBe("Folder");
     expect(templates?.expanded).toBe(false);
     expect(library.preview).toMatchObject({
       title: "Policies",
@@ -189,7 +189,7 @@ describe("Workspace Documents register from live Workspace records (#174)", () =
     );
 
     expect(library.rows.map((row) => row.id)).toEqual(["fld-1", "visible"]);
-    expect(library.rows.find((row) => row.id === "visible")?.access).toBe("EVERYONE");
+    expect(library.rows.find((row) => row.id === "visible")?.access).toBe("Everyone");
     const blob = JSON.stringify(library);
     expect(blob).not.toContain("Payroll");
     expect(blob).not.toContain("Keystone");

@@ -1,9 +1,11 @@
 import { builtInList, defaultFieldOptions, parseFieldOptions } from "@shared/pipelineLists";
 import { chromeRefusal } from "./chrome";
+import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { formatFullDate } from "./dates";
 import { clientStatusColor, projectStatusColor } from "./palette";
 import { readPage, readPageSize, writePaging } from "./paging";
 import { projectHref } from "./today";
+import { capitalize } from "./text";
 
 /**
  * Clients register and Client record (#186).
@@ -53,7 +55,8 @@ export type ClientRegisterRow = {
 export type ClientRegisterModel = {
   subhead: string;
   empty: boolean;
-  emptyCopy: string;
+  /** Why the register shows nothing (#325); null while it has rows. */
+  emptyState: EmptyModel | null;
   /** Empty because of a filter, so the register offers to clear it. */
   filtered: boolean;
   rows: ClientRegisterRow[];
@@ -72,9 +75,9 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const SOURCE_LABEL: Record<string, string> = {
-  fiverr: "FIVERR",
-  zoho: "ZOHO",
-  direct: "DIRECT",
+  fiverr: "Fiverr",
+  zoho: "Zoho",
+  direct: "Direct",
 };
 
 function statusLabel(status: string | null): string {
@@ -84,7 +87,7 @@ function statusLabel(status: string | null): string {
 
 function sourceLabel(source: string | null): string {
   if (!source) return "—";
-  return SOURCE_LABEL[source] ?? source.replace(/_/g, " ").toUpperCase();
+  return SOURCE_LABEL[source] ?? capitalize(source.replace(/_/g, " "));
 }
 
 export function composeClientRegister(input: ClientRegisterInput): ClientRegisterModel {
@@ -110,17 +113,15 @@ export function composeClientRegister(input: ClientRegisterInput): ClientRegiste
     }));
   const empty = rows.length === 0;
   const activeFilters = input.activeFilters ?? [];
+  const filtered = empty && (activeFilters.length > 0 || Boolean(needle));
   return {
     subhead: `Clients in ${input.workspaceName}.`,
     empty,
-    emptyCopy: empty
-      ? activeFilters.length > 0
-        ? `No Clients match ${activeFilters.join(" · ")}.`
-        : needle
-          ? "No Clients match this filter."
-          : "No Clients in this Workspace yet."
-      : "",
-    filtered: empty && (activeFilters.length > 0 || Boolean(needle)),
+    emptyState: emptyModelOf(emptyKindOf(empty, filtered), "Clients", {
+      title: "Add your first Client",
+      copy: "A Client is who the Projects are delivered for. Add one to start filing Projects and Opportunities under it.",
+    }),
+    filtered,
     rows,
     count: rows.length,
   };
@@ -143,7 +144,7 @@ export function clientSourceOptions(fields: ReadonlyArray<{ slug: string; option
   const saved = fields?.find((field) => field.slug === "source")?.options;
   const list = builtInList("contacts", "source");
   const entries = parseFieldOptions(saved?.length ? saved : list ? defaultFieldOptions(list) : []);
-  return [...entries.map((entry) => ({ value: entry.value, label: entry.label.toUpperCase() })), { value: "none", label: "NONE" }];
+  return [...entries.map((entry) => ({ value: entry.value, label: entry.label })), { value: "none", label: "None" }];
 }
 
 export const CLIENT_SOURCE_OPTIONS = clientSourceOptions(null);
@@ -163,8 +164,8 @@ export function clientSourceChoices(
 }
 
 export const CLIENT_OPEN_OPTIONS = [
-  { value: "yes", label: "YES" },
-  { value: "no", label: "NO" },
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
 ];
 
 /** What narrows the Clients register (#275). `all` is no filter; every field lives in the URL. */
@@ -244,9 +245,9 @@ export function clientFilterLabels(filters: ClientRegisterFilters): string[] {
     options.find((option) => option.value === value)?.label ?? value.toUpperCase();
   const labels: string[] = [];
   if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
-  if (filters.status !== "all") labels.push(`STATUS ${optionLabel(CLIENT_STATUS_OPTIONS, filters.status)}`);
-  if (filters.source !== "all") labels.push(`SOURCE ${optionLabel(CLIENT_SOURCE_OPTIONS, filters.source)}`);
-  if (filters.open !== "all") labels.push(`OPEN PROJECTS ${optionLabel(CLIENT_OPEN_OPTIONS, filters.open)}`);
+  if (filters.status !== "all") labels.push(`Status ${optionLabel(CLIENT_STATUS_OPTIONS, filters.status)}`);
+  if (filters.source !== "all") labels.push(`Source ${optionLabel(CLIENT_SOURCE_OPTIONS, filters.source)}`);
+  if (filters.open !== "all") labels.push(`Open projects ${optionLabel(CLIENT_OPEN_OPTIONS, filters.open)}`);
   return labels;
 }
 
@@ -352,7 +353,7 @@ function projectStatusLabel(status: string): string {
 function identityFrom(client: ClientIdentitySeed): ClientRecordIdentity {
   return {
     title: client.name || "Untitled Client",
-    kindLabel: "CLIENT",
+    kindLabel: "Client",
     status: statusLabel(client.status),
     statusColor: clientStatusColor(client.status),
     company: client.company || "—",
@@ -458,17 +459,17 @@ function clientDetails(
   notes: string | null,
 ): Array<{ label: string; value: string; wide?: true }> {
   const rows: Array<{ label: string; value: string; wide?: true }> = [
-    { label: "COMPANY", value: identity.company },
-    { label: "EMAIL", value: identity.email ?? "—" },
-    { label: "PHONE", value: identity.phone ?? "—" },
-    { label: "SOURCE", value: identity.source },
+    { label: "Company", value: identity.company },
+    { label: "Email", value: identity.email ?? "—" },
+    { label: "Phone", value: identity.phone ?? "—" },
+    { label: "Source", value: identity.source },
   ];
   if (identity.fiverrUsername) {
-    rows.push({ label: "FIVERR", value: `@${identity.fiverrUsername}` });
+    rows.push({ label: "Fiverr", value: `@${identity.fiverrUsername}` });
   }
   // Notes belong in the same block: a separate paragraph below stacked two
   // gutters and left a band of empty card between them.
-  rows.push({ label: "NOTES", value: notes?.trim() || "—", wide: true });
+  rows.push({ label: "Notes", value: notes?.trim() || "—", wide: true });
   return rows;
 }
 

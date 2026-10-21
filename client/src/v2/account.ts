@@ -7,7 +7,7 @@ export function accountProfileSyncPath(): string {
 }
 
 export const ACCOUNT_PAGE = {
-  kicker: "ACCOUNT",
+  kicker: "Account",
   title: "Your account",
   lead: "Your profile, email, password, second factor and sessions are held by our sign-in provider. Changes to your name, photo or email follow you across DocuFlow.",
 };

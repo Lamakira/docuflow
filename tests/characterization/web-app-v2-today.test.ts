@@ -154,7 +154,7 @@ describe("Today desktop from live Workspace records (#172)", () => {
         action: "remind",
         state: "resolved",
         cta: "Reminded",
-        meta: "REMINDED",
+        meta: "Reminded",
       }),
     ]);
     expect(today.approvals.empty).toBe(true);
@@ -192,7 +192,7 @@ describe("Today desktop from live Workspace records (#172)", () => {
       }),
     );
 
-    expect(today.workday.hoursTodayLabel).toBe("5.0 h TODAY");
+    expect(today.workday.hoursTodayLabel).toBe("5.0 h today");
     expect(today.workday.members).toHaveLength(2);
     expect(today.workday.members[0]).toMatchObject({
       id: "user-1",
@@ -211,7 +211,7 @@ describe("Today desktop from live Workspace records (#172)", () => {
       {
         id: "doc-9",
         title: "Scope notes",
-        meta: "PROJECT DOC · Ledger rebuild",
+        meta: "Project doc · Ledger rebuild",
         when: "12:41",
         href: "/document/doc-9",
       },

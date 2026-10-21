@@ -366,7 +366,7 @@ function WorkspaceRow({
       </span>
       {row.timer ? (
         <span className="df-mono" style={{ fontSize: 9, color: "var(--df-amber-800)" }}>
-          TIMER
+          Timer
         </span>
       ) : null}
     </DropdownMenuItem>

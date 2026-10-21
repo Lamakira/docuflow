@@ -157,11 +157,11 @@ export function V2LibraryRegister({
     <section className="df-card" data-testid={testId}>
       {library.empty && !library.refusal && library.emptyState ? null : (
         <div className="df-library-head">
-          <span>NAME / PATH</span>
-          <span>TYPE</span>
-          <span>ACCESS</span>
-          <span>LAST EDITOR</span>
-          <span style={{ textAlign: "right" }}>UPDATED</span>
+          <span>Name / path</span>
+          <span>Type</span>
+          <span>Access</span>
+          <span>Last editor</span>
+          <span style={{ textAlign: "right" }}>Updated</span>
         </div>
       )}
       {library.refusal ? (

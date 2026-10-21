@@ -34,6 +34,7 @@ import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
 import { V2DateRangeField } from "./V2DateField";
 import { dateToDay, type DayRange } from "./dates";
+import { V2CompactEmpty } from "./V2EmptyState";
 
 type WorkspaceMembershipsResponse = {
   memberships: Array<{
@@ -289,7 +290,7 @@ function AnalyticsSections({
         </div>
         <div className="df-toolbar">
           <V2FilterSelect
-            label="RANGE"
+            label="Range"
             ariaLabel="Analytics range"
             value={rangePreset}
             options={ANALYTICS_RANGE_PRESETS.map((preset) => ({ value: preset.id, label: preset.label }))}
@@ -334,15 +335,15 @@ function AnalyticsSections({
               </div>
             </div>
             {analytics.alerts.empty ? (
-              <p className="df-empty">{analytics.alerts.emptyCopy}</p>
+              <V2CompactEmpty>{analytics.alerts.emptyCopy}</V2CompactEmpty>
             ) : (
               <>
                 {analytics.alerts.stalledDevices.length > 0 ? (
                   <>
-                    <p className="df-analytics-group-label">STALLED DEVICES</p>
+                    <p className="df-analytics-group-label">Stalled devices</p>
                     <AnalyticsRegister
                       stacked={stacked}
-                      head={["DEVICE", "MEMBER", "LAST SEEN"]}
+                      head={["Device", "Member", "Last seen"]}
                       rows={analytics.alerts.stalledDevices.map((row) => ({
                         id: row.id,
                         cells: [row.name, row.who, row.lastSeen],
@@ -355,10 +356,10 @@ function AnalyticsSections({
                 ) : null}
                 {analytics.alerts.highIdle.length > 0 ? (
                   <>
-                    <p className="df-analytics-group-label">HIGH IDLE</p>
+                    <p className="df-analytics-group-label">High idle</p>
                     <AnalyticsRegister
                       stacked={stacked}
-                      head={["MEMBER", "TRACKED", "IDLE"]}
+                      head={["Member", "Tracked", "Idle"]}
                       rows={analytics.alerts.highIdle.map((row) => ({
                         id: row.id,
                         cells: [row.who, row.tracked, row.idle],
@@ -371,10 +372,10 @@ function AnalyticsSections({
                 ) : null}
                 {analytics.alerts.runningWithoutEvidence.length > 0 ? (
                   <>
-                    <p className="df-analytics-group-label">RUNNING WITHOUT EVIDENCE</p>
+                    <p className="df-analytics-group-label">Running without evidence</p>
                     <AnalyticsRegister
                       stacked={stacked}
-                      head={["MEMBER", "STARTED"]}
+                      head={["Member", "Started"]}
                       rows={analytics.alerts.runningWithoutEvidence.map((row) => ({
                         id: row.id,
                         cells: [row.who, row.started],
@@ -402,7 +403,7 @@ function AnalyticsSections({
             </div>
             <AnalyticsRegister
               stacked={stacked}
-              head={["MEMBER", "TRACKED", "IDLE", "IDLE EVENTS"]}
+              head={["Member", "Tracked", "Idle", "Idle events"]}
               rows={analytics.activity.rows.map((row) => ({
                 id: row.userId,
                 cells: [row.who, row.tracked, row.idle, row.idleEvents],
@@ -425,7 +426,7 @@ function AnalyticsSections({
             <FigureBand figures={analytics.coverage.summary} testId="v2-analytics-coverage" />
             <AnalyticsRegister
               stacked={stacked}
-              head={["MEMBER", "TRACKED", "ENTRIES", "EVIDENCE", "COVERAGE"]}
+              head={["Member", "Tracked", "Entries", "Evidence", "Coverage"]}
               rows={analytics.coverage.rows.map((row) => ({
                 id: row.userId,
                 cells: [row.who, row.tracked, row.entries, row.evidence, row.coverage],
@@ -453,7 +454,7 @@ function AnalyticsSections({
               ) : (
                 <AnalyticsRegister
                   stacked={stacked}
-                  head={["MEMBER", "GRADE", "EVIDENCE", "EVENTS"]}
+                  head={["Member", "Grade", "Evidence", "Events"]}
                   rows={analytics.evidenceQuality.rows.map((row) => ({
                     id: row.id,
                     cells: [row.who, row.grade, row.evidence, row.events],
@@ -482,13 +483,13 @@ function AnalyticsSections({
                 <>
                   <FigureBand figures={analytics.screenshots.summary} testId="v2-analytics-screenshots" />
                   {analytics.screenshots.empty ? (
-                    <p className="df-empty">{analytics.screenshots.emptyCopy}</p>
+                    <V2CompactEmpty>{analytics.screenshots.emptyCopy}</V2CompactEmpty>
                   ) : (
                     <>
-                      <p className="df-analytics-group-label">BY MEMBER</p>
+                      <p className="df-analytics-group-label">By member</p>
                       <AnalyticsRegister
                         stacked={stacked}
-                        head={["MEMBER", "EVIDENCE"]}
+                        head={["Member", "Evidence"]}
                         rows={analytics.screenshots.byMember.map((row) => ({
                           id: row.id,
                           cells: [row.who, row.evidence],
@@ -497,10 +498,10 @@ function AnalyticsSections({
                         emptyCopy="No Activity Evidence by Member in this range."
                         testId="v2-analytics-screenshot-member"
                       />
-                      <p className="df-analytics-group-label">BY HOUR</p>
+                      <p className="df-analytics-group-label">By hour</p>
                       <AnalyticsRegister
                         stacked={stacked}
-                        head={["HOUR", "EVIDENCE"]}
+                        head={["Hour", "Evidence"]}
                         rows={analytics.screenshots.hours.map((row) => ({
                           id: row.id,
                           cells: [row.hour, row.evidence],
@@ -525,7 +526,7 @@ function AnalyticsSections({
             </div>
             <AnalyticsRegister
               stacked={stacked}
-              head={["DEVICE", "MEMBER", "PLATFORM", "LAST SEEN", "STATUS"]}
+              head={["Device", "Member", "Platform", "Last seen", "Status"]}
               rows={analytics.devices.rows.map((row) => ({
                 id: row.id,
                 cells: [row.name, row.who, row.platform, row.lastSeen, row.status],
@@ -569,7 +570,7 @@ function RecordedTimeCard({
           Recorded time could not be read for this range. Nothing here is a count of zero.
         </p>
       ) : recordedTime.empty ? (
-        <p className="df-empty">{recordedTime.emptyCopy}</p>
+        <V2CompactEmpty>{recordedTime.emptyCopy}</V2CompactEmpty>
       ) : (
         <>
           <p className="df-recorded-sentence" data-testid="v2-analytics-recorded-time-sentence">
@@ -662,7 +663,7 @@ export function AnalyticsRegister({
   emptyCopy: string;
   testId: string;
 }) {
-  if (empty) return <p className="df-empty">{emptyCopy}</p>;
+  if (empty) return <V2CompactEmpty>{emptyCopy}</V2CompactEmpty>;
   return (
     <>
       {stacked ? null : (

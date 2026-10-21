@@ -82,7 +82,7 @@ describe("v2 chrome actions (#184)", () => {
       folders: [],
       accessFact: { filteredByAccess: true },
     });
-    expect(withFact.footer).toBe("RESULTS FILTERED BY YOUR ACCESS");
+    expect(withFact.footer).toBe("Results filtered by your access");
     expect(withFact.footer).not.toMatch(/\d/);
 
     const withCount = composeSearch({
@@ -92,7 +92,7 @@ describe("v2 chrome actions (#184)", () => {
       folders: [],
       accessFact: { filteredByAccess: true, restrictedHidden: 3 },
     });
-    expect(withCount.footer).toContain("RESULTS FILTERED BY YOUR ACCESS");
+    expect(withCount.footer).toContain("Results filtered by your access");
     expect(withCount.footer).toContain("3");
   });
 
@@ -151,7 +151,7 @@ describe("v2 chrome actions (#184)", () => {
     });
     expect(live.rows).toHaveLength(1);
     expect(live.rows[0]).toMatchObject({
-      kind: "MENTION",
+      kind: "Mention",
       title: "Sam mentioned you on Harbour Rebuild",
       origin: "Harbour View",
       href: "/projects/prj-live",

@@ -27,6 +27,7 @@ import {
   type GalleryTile,
 } from "./activity";
 import { Button } from "@/components/ui/button";
+import { V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type ScreenshotsResponse = { data: GalleryEvidenceInput[]; total?: number };
@@ -178,6 +179,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     entries: (entriesResponse?.data ?? []).map(toEntry),
     users,
     evidence: evidenceResponse?.data ?? [],
+    facetsActive: projectFilter !== "all" || userFilter !== "all",
   });
 
   const gallery = composeActivityGallery({
@@ -195,6 +197,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     entries: (entriesResponse?.data ?? []).map(toEntry),
     users,
     evidence: evidenceResponse?.data ?? [],
+    facetsActive: projectFilter !== "all" || userFilter !== "all",
   });
 
   const refusal = page.refusal;
@@ -256,7 +259,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
         <SkeletonSection title="Tracking Policy" lines={3} />
         <SkeletonRegister
           className="df-activity-register df-activity-stream"
-          heads={["WHEN", "PROJECT", "TASK", "WHO", "SOURCE"]}
+          heads={["When", "Project", "Task", "Who", "Source"]}
         />
       </V2PageSkeleton>
     );
@@ -321,7 +324,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
 
       <div className="df-filter-bar">
         <V2FilterSelect
-          label="DATE"
+          label="Date"
           ariaLabel="Date"
           value={range}
           active={range === "today"}
@@ -335,7 +338,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           }))}
         />
         <V2FilterSelect
-          label="PROJECT"
+          label="Project"
           ariaLabel="Filter by Project"
           value={projectFilter}
           onChange={setProjectFilter}
@@ -349,7 +352,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
         />
         {canReview ? (
           <V2FilterSelect
-            label="MEMBER"
+            label="Member"
             ariaLabel="Filter by Member"
             value={userFilter}
             onChange={setUserFilter}
@@ -361,7 +364,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
         ) : null}
         {range === "day" ? (
           <label className="df-filter-chip">
-            DAY
+            Day
             <input
               type="date"
               value={typedDay}
@@ -376,7 +379,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
         {range === "custom" ? (
           <>
             <label className="df-filter-chip">
-              FROM
+              From
               <input
                 type="date"
                 value={typedFrom}
@@ -412,7 +415,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
                   setGalleryPage(1);
                 }}
               />
-              LOW ACTIVITY
+              Low activity
             </label>
             <label className="df-filter-chip df-gallery-filter" data-active={identicalOnly ? "true" : "false"}>
               <input
@@ -424,7 +427,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
                   setGalleryPage(1);
                 }}
               />
-              IDENTICAL{gallery.identicalCount > 0 ? ` (${gallery.identicalCount})` : ""}
+              Identical{gallery.identicalCount > 0 ? ` (${gallery.identicalCount})` : ""}
             </label>
             {canReview ? (
               <label className="df-filter-chip df-gallery-filter" data-active={includeArchivedUsers ? "true" : "false"}>
@@ -433,7 +436,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
                   checked={includeArchivedUsers}
                   onChange={(event) => setIncludeArchivedUsers(event.target.checked)}
                 />
-                INCLUDE ARCHIVED MEMBERS
+                Include archived members
               </label>
             ) : null}
             <Button variant="outline" type="button" onClick={onClearFilters} className="df-btn">
@@ -449,16 +452,16 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
       <section className="df-card df-activity-register df-activity-stream" data-testid="v2-activity-register">
         {layout.stackedRegister ? null : (
           <div className="df-register-head df-desktop-only">
-            <span>WHEN</span>
-            <span>PROJECT</span>
-            <span>TASK</span>
-            <span>WHO</span>
-            <span>SOURCE</span>
+            <span>When</span>
+            <span>Project</span>
+            <span>Task</span>
+            <span>Who</span>
+            <span>Source</span>
             <span />
           </div>
         )}
-        {page.empty ? (
-          <p className="df-empty">{page.emptyCopy}</p>
+        {page.emptyState ? (
+          <V2RecordEmpty model={page.emptyState} icon="activity" onClear={onClearFilters} />
         ) : (
           page.rows.map((row) => (
             <div key={row.id}>
@@ -500,15 +503,15 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
                   <div className="df-activity-detail">
                     <img src={row.imageSrc} alt="" />
                     <div className="df-kv">
-                      <span>PROJECT</span>
+                      <span>Project</span>
                       <span>{row.project}</span>
                     </div>
                     <div className="df-kv">
-                      <span>TASK</span>
+                      <span>Task</span>
                       <span>{row.task}</span>
                     </div>
                     <div className="df-kv">
-                      <span>SOURCE</span>
+                      <span>Source</span>
                       <span>{row.source}</span>
                     </div>
                   </div>
@@ -528,6 +531,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           onExpand={(id) => setExpandedCaptureId((current) => (current === id ? null : id))}
           onSave={saveCapture}
           onPage={(step) => setGalleryPage((current) => Math.max(1, current + step))}
+          onClearFilters={onClearFilters}
         />
       )}
     </div>
@@ -543,6 +547,7 @@ type ActivityGalleryProps = {
   onExpand: (id: string) => void;
   onSave: (tile: GalleryTile) => void;
   onPage: (step: number) => void;
+  onClearFilters: () => void;
 };
 
 /**
@@ -558,6 +563,7 @@ function ActivityGallery({
   onExpand,
   onSave,
   onPage,
+  onClearFilters,
 }: ActivityGalleryProps) {
   const expanded = gallery.groups.flatMap((group) => group.tiles).find((tile) => tile.expanded) ?? null;
   return (
@@ -573,8 +579,8 @@ function ActivityGallery({
           </Button>
         </span>
       </div>
-      {gallery.empty ? (
-        <p className="df-empty">{gallery.emptyCopy}</p>
+      {gallery.emptyState ? (
+        <V2RecordEmpty model={gallery.emptyState} icon="activity" onClear={onClearFilters} />
       ) : (
         gallery.groups.map((group) => (
           <div key={group.key} className="df-gallery-group">
@@ -631,19 +637,19 @@ function ActivityGallery({
         <div className="df-gallery-full" data-testid="v2-activity-capture-full">
           <img src={expanded.imageSrc} alt="" />
           <div className="df-kv">
-            <span>WHEN</span>
+            <span>When</span>
             <span>{expanded.when}</span>
           </div>
           <div className="df-kv">
-            <span>PROJECT</span>
+            <span>Project</span>
             <span>{expanded.project}</span>
           </div>
           <div className="df-kv">
-            <span>TASK</span>
+            <span>Task</span>
             <span>{expanded.task}</span>
           </div>
           <div className="df-kv">
-            <span>SOURCE</span>
+            <span>Source</span>
             <span>{expanded.source}</span>
           </div>
         </div>

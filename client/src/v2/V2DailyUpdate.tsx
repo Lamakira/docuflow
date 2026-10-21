@@ -157,7 +157,7 @@ export function V2DailyUpdatePage() {
             <div key={row.label} className="df-settings-row">
               <span className="df-settings-label">{row.label}</span>
               <span className="df-settings-value">
-                {row.label === "STATUS" ? (
+                {row.label === "Status" ? (
                   <span className="df-status" data-submitted={page.today.submitted ? "true" : "false"}>
                     {row.value}
                   </span>
@@ -192,7 +192,7 @@ export function V2DailyUpdatePage() {
               {row.nextPlans ? <p className="df-prose">{row.nextPlans}</p> : null}
               {row.blocker ? (
                 <div className="df-blocker">
-                  <div className="df-mono df-meta">BLOCKER</div>
+                  <div className="df-mono df-meta">Blocker</div>
                   <p className="df-prose df-prose-follow">
                     {row.blocker}
                   </p>

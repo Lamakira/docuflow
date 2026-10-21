@@ -381,7 +381,7 @@ export function V2DocumentsPage() {
   const creating = createMode === "document" || createMode === "folder";
   const destinationField = (
     <label className="df-daily-field">
-      FOLDER
+      Folder
       <V2FilterSelect
         label=""
         ariaLabel={createMode === "folder" ? "Parent Folder" : "Folder"}
@@ -445,7 +445,7 @@ export function V2DocumentsPage() {
           testId={createMode === "folder" ? "v2-documents-new-folder" : "v2-documents-new-document"}
         >
           <label className="df-daily-field">
-            NAME
+            Name
             <input
               type="text"
               value={name}
@@ -486,7 +486,7 @@ export function V2DocumentsPage() {
             />
           </label>
           <V2FilterSelect
-            label="TYPE"
+            label="Type"
             ariaLabel="Filter by type"
             value={filters.type}
             active={filters.type !== "all"}
@@ -495,16 +495,16 @@ export function V2DocumentsPage() {
           />
           {ownerOptions.length === 0 && filters.owner === "all" ? null : (
             <V2FilterSelect
-              label="OWNER"
+              label="Owner"
               ariaLabel="Filter by owner"
               value={filters.owner}
               active={filters.owner !== "all"}
-              options={[{ value: "all", label: "ANY" }, ...ownerOptions]}
+              options={[{ value: "all", label: "Any" }, ...ownerOptions]}
               onChange={(owner) => setFilters({ ...filters, owner })}
             />
           )}
           <V2FilterSelect
-            label="ACCESS"
+            label="Access"
             ariaLabel="Filter by access"
             value={filters.access}
             active={filters.access !== "all"}
@@ -512,7 +512,7 @@ export function V2DocumentsPage() {
             onChange={(access) => setFilters({ ...filters, access: access as LibraryFilters["access"] })}
           />
           <V2FilterSelect
-            label="UPDATED"
+            label="Updated"
             ariaLabel="Filter by last update"
             value={filters.updated}
             active={filters.updated !== "all"}
@@ -560,19 +560,19 @@ export function V2DocumentsPage() {
       {library.preview ? (
         <aside className="df-panel df-folder-preview" data-testid="v2-folder-preview">
           <V2PreviewHead
-            kicker="FOLDER PREVIEW"
+            kicker="Folder preview"
             title={library.preview.title}
             meta={library.preview.meta}
             onClose={closePreview}
           />
           <div className="df-panel-scroll">
-            <div className="df-mono df-meta">ACCESS</div>
+            <div className="df-mono df-meta">Access</div>
             <p className="df-prose df-prose-follow" style={{ color: "var(--df-archive-slate)" }}>
               {library.preview.accessCopy}
             </p>
             <form className="df-daily-form df-folder-rename" onSubmit={onRenameFolder}>
               <label className="df-daily-field">
-                NAME
+                Name
                 <input
                   type="text"
                   value={folderName}

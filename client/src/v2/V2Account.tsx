@@ -292,7 +292,7 @@ function OwnedWorkspaceCard({
       {row.choice === "transfer" ? (
         <div className="df-account-workspace-action">
           <V2FilterSelect
-            label="NEW OWNER"
+            label="New owner"
             ariaLabel={`New Owner for ${row.workspaceName}`}
             value={successorId}
             onChange={setSuccessorId}

@@ -1,4 +1,5 @@
 import { projectStatusColor } from "./palette";
+import { MONTHS, WEEKDAYS } from "./dates";
 
 export type TodayProject = {
   id: string;
@@ -113,9 +114,6 @@ export type TodayModel = {
   };
 };
 
-const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-
 const LIVE_PROJECT_STATUSES = new Set(["active", "on_hold", "in_review", "completed"]);
 
 const PROJECT_STATUS_LABEL: Record<string, string> = {
@@ -172,15 +170,15 @@ export function formatWhen(updatedAt: Date | string | null, now: Date): string {
   const value = updatedAt instanceof Date ? updatedAt : new Date(updatedAt);
   if (Number.isNaN(value.getTime())) return "";
   if (sameDay(value, now)) return formatClock(value);
-  if (sameDay(value, yesterdayOf(now))) return "YDA";
+  if (sameDay(value, yesterdayOf(now))) return "Yesterday";
   return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
 }
 
 function kindLabel(project: TodayProject): string {
-  if (project.projectType === "internal" || !project.client) return "INTERNAL";
-  if (project.projectType === "monthly") return "MONTHLY";
-  if (project.projectType === "hourly_budget") return "HOURLY";
-  return "CLIENT PROJECT";
+  if (project.projectType === "internal" || !project.client) return "Internal";
+  if (project.projectType === "monthly") return "Monthly";
+  if (project.projectType === "hourly_budget") return "Hourly";
+  return "Client project";
 }
 
 function attentionSubhead(count: number): string {
@@ -218,7 +216,7 @@ function composeAttention(input: TodayInput): AttentionRow[] {
       id: "daily-updates-missing",
       kind: "UPDATE",
       title,
-      meta: reminded ? "REMINDED" : "TODAY",
+      meta: reminded ? "Reminded" : "Today",
       href: "/daily-updates",
       cta: reminded ? "Reminded" : "Remind",
       action: "remind",
@@ -295,7 +293,7 @@ function composeWorkday(input: TodayInput): TodayModel["workday"] {
   const totalSeconds = [...hoursByUser.values()].reduce((sum, value) => sum + value, 0);
   return {
     memberCount: members.length,
-    hoursTodayLabel: `${formatHours(totalSeconds)} TODAY`,
+    hoursTodayLabel: `${formatHours(totalSeconds)} today`,
     members,
   };
 }
@@ -309,7 +307,7 @@ function composeKnowledge(input: TodayInput): KnowledgeRow[] {
   return input.recentDocuments.map((document) => ({
     id: document.id,
     title: document.title,
-    meta: `PROJECT DOC · ${projectNameByDocProject.get(document.projectId) ?? "Project"}`,
+    meta: `Project doc · ${projectNameByDocProject.get(document.projectId) ?? "Project"}`,
     when: formatWhen(document.updatedAt, input.now),
     href: `/document/${document.id}`,
   }));
@@ -323,7 +321,7 @@ export function mobileProjectMeta(
 
 export const EMPTY_TIMESHEET_APPROVALS = {
   empty: true as const,
-  kicker: "APPROVAL QUEUE",
+  kicker: "Approval queue",
   title: "Timesheets",
   copy: "Timesheets are not a product record yet. Approvals will appear here when this Workspace has them.",
 };

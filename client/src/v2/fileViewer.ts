@@ -341,10 +341,10 @@ function fileMeta(input: FileViewerInput, kind: FilePreviewKind): string {
 
 function typeLabel(kind: FilePreviewKind): string {
   if (kind === "pdf") return "PDF";
-  if (kind === "image") return "IMAGE";
-  if (kind === "word") return "WORD";
-  if (kind === "text") return "TEXT";
-  return "FILE";
+  if (kind === "image") return "Image";
+  if (kind === "word") return "Word";
+  if (kind === "text") return "Text";
+  return "File";
 }
 
 function backLabelFor(href: string): string {

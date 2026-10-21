@@ -65,8 +65,8 @@ describe("Time Tracking and Daily Update routing (#190)", () => {
     expect(match.kind).toBe("time");
     expect(navIdForPath("/time")).toBe("time");
     expect(breadcrumbFor("/time", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "TIME TRACKING",
+      "Harbor Co",
+      "Time Tracking",
     ]);
     expect(appSource).toContain("V2TimePage");
     expect(appSource).toMatch(/path="\/time\/:tab\?"/);
@@ -88,8 +88,8 @@ describe("Time Tracking and Daily Update routing (#190)", () => {
     const match = matchV2Route("/daily-update");
     expect(match.kind).toBe("daily-update");
     expect(breadcrumbFor("/daily-update", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "HARBOR CO",
-      "DAILY UPDATE",
+      "Harbor Co",
+      "Daily Update",
     ]);
     expect(appSource).toContain("V2DailyUpdatePage");
     expect(appSource).toMatch(/path="\/daily-update"/);
@@ -103,7 +103,8 @@ describe("Time Tracking from live Time Entries (#190)", () => {
 
     expect(page.empty).toBe(true);
     expect(page.rows).toEqual([]);
-    expect(page.emptyCopy.toLowerCase()).toContain("time entry");
+    expect(page.emptyState?.copy.toLowerCase()).toContain("time entries");
+    expect(page.emptyState?.kind).toBe("none");
     expect(page.workdayHours).toBe("0.0 h");
     expect(page.pagePrimary).toBe("case-ink");
     for (const name of SAMPLE_NAMES) {
@@ -160,7 +161,7 @@ describe("Time Tracking from live Time Entries (#190)", () => {
     });
     expect(page.rows[1]).toMatchObject({
       id: "te-stop",
-      when: "YDA",
+      when: "Yesterday",
       status: "STOPPED",
       duration: "00:30:00",
       holdsAmber: false,
@@ -219,9 +220,9 @@ describe("Daily Update from live writes (#190)", () => {
     const empty = composeDailyUpdatePage(emptyDaily());
     expect(empty.today.submitted).toBe(false);
     expect(empty.today.rows).toEqual([
-      { label: "WORKDAY", value: "THU 10 SEP" },
-      { label: "STATUS", value: "Not submitted yet" },
-      { label: "PROJECTS COVERED", value: "None yet" },
+      { label: "Workday", value: "Thu 10 Sep" },
+      { label: "Status", value: "Not submitted yet" },
+      { label: "Projects covered", value: "None yet" },
     ]);
     expect(empty.today.copy).toMatch(/^A Daily Update is your one submission for this workday: progress grouped by Project, blockers and next plans\./);
     expect(empty.today.copy).toContain("Fill it in below");
@@ -237,8 +238,8 @@ describe("Daily Update from live writes (#190)", () => {
       }),
     );
     expect(submitted.today.submitted).toBe(true);
-    expect(submitted.today.rows[1]).toEqual({ label: "STATUS", value: "Submitted at 11:05" });
-    expect(submitted.today.rows[2]).toEqual({ label: "PROJECTS COVERED", value: "Harbour rebuild, Pier survey" });
+    expect(submitted.today.rows[1]).toEqual({ label: "Status", value: "Submitted at 11:05" });
+    expect(submitted.today.rows[2]).toEqual({ label: "Projects covered", value: "Harbour rebuild, Pier survey" });
     expect(submitted.today.copy).toContain("Add it below");
 
     const noProjects = composeDailyUpdatePage(emptyDaily({ projects: [] }));
