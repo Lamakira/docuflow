@@ -47,8 +47,8 @@ Two files outside this folder were edited:
 Both interfaces are in every build. From DevTools:
 
 ```js
-localStorage.setItem('docuflow-ui', 'v2'); location.reload();  // rail layout
-localStorage.removeItem('docuflow-ui');    location.reload();  // current build
+localStorage.setItem('docuflow-ui', 'v1'); location.reload();  // v1 screens
+localStorage.removeItem('docuflow-ui');    location.reload();  // the build's default: v2 since 0.2.1
 ```
 
 Rolling back a bad v2 build is a key, not a revert.

@@ -35,13 +35,15 @@ const railSource = readFileSync(
  * Do not assert hex values or the prototype DOM.
  */
 describe("v2 chrome behind the client flag (#171)", () => {
-  it("gates v2 on the existing VITE_FLAG port, on in development and off in production", () => {
+  it("gates v2 on the existing VITE_FLAG port, on in development and in production", () => {
     expect(FLAG_DEFS.webAppV2.dev).toBe(true);
-    expect(FLAG_DEFS.webAppV2.prod).toBe(false);
+    // Production defaults to v2 (2026-10-22): a build without the variable must
+    // not fall back to v1. `false` still opts a build out.
+    expect(FLAG_DEFS.webAppV2.prod).toBe(true);
     expect(flagEnvKey("webAppV2")).toBe("VITE_FLAG_WEB_APP_V2");
     expect(resolveFlagValue(FLAG_DEFS.webAppV2, "dev", undefined)).toBe(true);
-    expect(resolveFlagValue(FLAG_DEFS.webAppV2, "prod", undefined)).toBe(false);
-    expect(resolveFlagValue(FLAG_DEFS.webAppV2, "prod", "true")).toBe(true);
+    expect(resolveFlagValue(FLAG_DEFS.webAppV2, "prod", undefined)).toBe(true);
+    expect(resolveFlagValue(FLAG_DEFS.webAppV2, "prod", "false")).toBe(false);
     expect(resolveFlagValue(FLAG_DEFS.webAppV2, "dev", "false")).toBe(false);
   });
 

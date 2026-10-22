@@ -293,45 +293,22 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     };
   }, [activeEntry?.id, activeEntry?.status, isTabLeader]);
 
-  // ─── Visibility change handling (sleep/idle detection) ───
-  const hiddenAtRef = useRef<number | null>(null);
-  const IDLE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes
-
+  // ─── Visibility change: resync only ───
+  // A tab coming back resyncs with the server, and nothing more. It used to
+  // pause a running Timer when the tab had been hidden for 3 minutes, which
+  // paused the desktop agent's Timer while the Member worked in another window
+  // (2026-10-22). A hidden tab says nothing about whether someone is working:
+  // idle detection is the desktop agent's, from real keyboard and mouse input.
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Tab/PC going to sleep or background — record the time
-        hiddenAtRef.current = Date.now();
-      } else {
-        // Tab/PC becoming visible — resync with server
-        invalidateAll();
-
-        if (hiddenAtRef.current !== null) {
-          const hiddenDuration = Date.now() - hiddenAtRef.current;
-          const entry = activeEntryRef.current;
-          if (hiddenDuration >= IDLE_THRESHOLD_MS && entry?.status === "running") {
-            // Auto-pause: PC was asleep or inactive for too long
-            apiRequest("POST", `/api/time-tracking/${entry.id}/pause`).then(() => {
-              invalidateAll();
-              const minutes = Math.floor(hiddenDuration / 60000);
-              toast({
-                title: "Timer paused — idle detected",
-                description: `The tab was hidden for ${minutes} min. Timer paused automatically.`,
-              });
-            }).catch(() => {
-              // Best-effort — if pause fails, at least the server is resynced
-            });
-          }
-          hiddenAtRef.current = null;
-        }
-      }
+      if (!document.hidden) invalidateAll();
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [invalidateAll, toast]);
+  }, [invalidateAll]);
 
   // ─── Screen Capture via service (LEADER ONLY for scheduling) ───
   const isRunning = activeEntry?.status === "running";
