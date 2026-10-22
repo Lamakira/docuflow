@@ -1,6 +1,6 @@
 {
   "name": "docuflow-desktop-agent",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DocuFlow Desktop Agent — time tracking, activity monitoring, and screenshot capture",
   "main": ".webpack/main",
   "private": true,

@@ -23,7 +23,7 @@ const useV2 = (() => {
   } catch {
     /* localStorage unavailable — fall through to the build-time default */
   }
-  return process.env.DOCUFLOW_UI === 'v2';
+  return process.env.DOCUFLOW_UI !== 'v1';
 })();
 
 async function boot() {

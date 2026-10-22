@@ -38,9 +38,8 @@ module.exports = {
   },
   plugins: [
     new MiniCssExtractPlugin({ filename: '[name].css' }),
-    // Lets `DOCUFLOW_UI=v2 npm run dev` pick the UI at build time, so showing
-    // the redesign doesn't require editing source or opening DevTools. The
-    // localStorage key still wins at runtime.
+    // v2 is the default; `DOCUFLOW_UI=v1 npm run dev` picks v1 at build time.
+    // The localStorage key still wins at runtime.
     new webpack.DefinePlugin({
       'process.env.DOCUFLOW_UI': JSON.stringify(process.env.DOCUFLOW_UI ?? ''),
     }),
