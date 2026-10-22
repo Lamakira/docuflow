@@ -36,6 +36,15 @@ if (process.platform !== "darwin") {
   process.exit(1);
 }
 
+// Same guard as dist-win / dist-linux: a packaged agent follows the host baked
+// in at build time, and without one it would point at localhost.
+if (!process.env.DOCUFLOW_DEFAULT_API_URL) {
+  console.error("[dist-mac] ERROR: DOCUFLOW_DEFAULT_API_URL is not set.");
+  console.error("           DOCUFLOW_DEFAULT_API_URL=https://your-host npm run dist:mac");
+  process.exit(1);
+}
+console.log(`[dist-mac] target host: ${process.env.DOCUFLOW_DEFAULT_API_URL}`);
+
 const ROOT = path.resolve(__dirname, "..");
 const pkg = require(path.join(ROOT, "package.json"));
 

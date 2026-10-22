@@ -63,6 +63,8 @@ DOCUFLOW_API_URL=<déploiement> DESKTOP_RELEASE_CI_TOKEN=<token> \
   node scripts/release-desktop.mjs [--run-id <id> | --skip-build]
 ```
 
+Le build déclenché par le script reçoit `DOCUFLOW_API_URL` comme input `api_url` du workflow : c'est l'hôte que chaque installeur embarque (`DOCUFLOW_DEFAULT_API_URL`). Le workflow tourne sur `Lamakira/docuflow` par défaut (`GH_REPO` pour un autre dépôt). Lancé à la main depuis GitHub Actions, il demande cet hôte.
+
 Pour chaque installeur (`.exe`, `.dmg`, `.deb` du run GitHub Actions) : calcule SHA256 et taille, appelle `upload-url`, envoie le fichier en PUT vers l'URL signée, puis enregistre la release.
 
 ## Endpoints internes (auth `Authorization: Bearer $DESKTOP_RELEASE_CI_TOKEN`)
