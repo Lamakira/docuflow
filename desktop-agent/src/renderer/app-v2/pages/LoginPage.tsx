@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { useAgent } from '../../app/stores/AgentContext';
 import { WindowControls } from '../components/WindowControls';
+import { BrandMark } from '../components/BrandMark';
 
 const PAIRING_CODE_LENGTH = 6;
 
@@ -41,7 +42,7 @@ export function LoginPage() {
       <div className="v2-login__chrome"><WindowControls /></div>
 
       <header className="v2-login__brand">
-        <span className="v2-login__mark">DF</span>
+        <span className="v2-login__mark"><BrandMark variant="tile" size={38} /></span>
         <span className="v2-login__name">DocuFlow Agent</span>
         {/* DEV only — see the note in App.tsx. The server host is printed at
             the foot of this screen either way. */}

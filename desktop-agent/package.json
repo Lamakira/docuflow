@@ -1,10 +1,9 @@
 {
   "name": "docuflow-desktop-agent",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "DocuFlow Desktop Agent — time tracking, activity monitoring, and screenshot capture",
   "main": ".webpack/main",
   "private": true,
-  "homepage": "https://docs.appvibed.com",
   "scripts": {
     "predev": "node scripts/kill-port.js 9000",
     "dev": "DOCUFLOW_DEBUG_IDLE=true node scripts/start-dev.js",

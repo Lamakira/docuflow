@@ -41,3 +41,23 @@ describe("desktop agent first window", () => {
     expect(main).not.toContain("process.env.DOCUFLOW_UI === 'v2' || store.getUiMode() === 'v2'");
   });
 });
+
+/** #332 item 2: the v2 agent wore the old "DF" monogram after #326 rebranded everything else. */
+describe("desktop agent v2 brand mark", () => {
+  for (const [file, variant] of [
+    ["pages/LoginPage.tsx", "tile"],
+    ["components/Rail.tsx", "onDark"],
+  ] as const) {
+    it(`${file} shows the d-and-dot mark, not "DF"`, () => {
+      const source = readFileSync(`desktop-agent/src/renderer/app-v2/${file}`, "utf8");
+      expect(source).toContain(`<BrandMark variant="${variant}"`);
+      expect(source).not.toMatch(/>DF</);
+    });
+  }
+
+  it("draws the mark from the brand geometry", () => {
+    const mark = readFileSync("desktop-agent/src/renderer/app-v2/components/BrandMark.tsx", "utf8");
+    expect(mark).toContain('<rect width="64" height="64" rx="14" fill="#0F1524" />');
+    expect(mark).toContain('<circle cx="47" cy="46.25" r="4" fill="#E9A23B" />');
+  });
+});

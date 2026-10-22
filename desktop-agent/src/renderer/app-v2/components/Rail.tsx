@@ -12,6 +12,7 @@ import { useAgent } from '../../app/stores/AgentContext';
 import type { AppPage } from '../../app/types';
 import { ClockIcon, ActivityIcon, CameraIcon, CogIcon } from '../icons';
 import { AvatarMenu } from './AvatarMenu';
+import { BrandMark } from './BrandMark';
 
 const ITEMS: { page: AppPage; label: string; Icon: typeof ClockIcon }[] = [
   { page: 'timer', label: 'TIMER', Icon: ClockIcon },
@@ -25,7 +26,7 @@ export function Rail() {
 
   return (
     <nav className="v2-rail" aria-label="Screens">
-      <span className="v2-rail__logo" aria-hidden="true">DF</span>
+      <span className="v2-rail__logo" aria-hidden="true"><BrandMark variant="onDark" size={30} /></span>
 
       <div className="v2-rail__nav">
         {ITEMS.map(({ page, label, Icon }) => {
