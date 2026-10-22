@@ -87,6 +87,7 @@ import {
 } from "../lib/trackingPolicyFile";
 import {
   type ChromeMode,
+  expectsV2Ui,
   TRAFFIC_LIGHT_POSITION,
   chromeModeFor,
   drawsWindowControls,
@@ -247,8 +248,7 @@ let pausedForScreenshotPortal = false;
  * gets is a per-platform decision — see lib/windowChrome.ts.
  */
 function chromeModeForNextWindow(): ChromeMode {
-  const usesV2 = process.env.DOCUFLOW_UI === 'v2' || store.getUiMode() === 'v2';
-  return chromeModeFor(process.platform, usesV2);
+  return chromeModeFor(process.platform, expectsV2Ui(store.getUiMode(), process.env.DOCUFLOW_UI));
 }
 
 /**

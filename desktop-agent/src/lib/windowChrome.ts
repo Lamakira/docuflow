@@ -47,3 +47,15 @@ export function chromeModeFor(platform: NodeJS.Platform, usesV2Ui: boolean): Chr
 export function drawsWindowControls(mode: ChromeMode): boolean {
   return mode === 'app' || mode === 'app-opaque';
 }
+
+/**
+ * Whether the next window should be built for the v2 UI, before its renderer
+ * has said which UI it picked. The UI the renderer last reported wins; with
+ * none yet (a fresh install), the build's DOCUFLOW_UI decides, and v2 is the
+ * default exactly as in the renderer entries. Defaulting to v1 here gave every
+ * fresh 0.2.1 install a square, framed first window around the v2 UI.
+ */
+export function expectsV2Ui(reported: 'v1' | 'v2' | null, buildUi: string | undefined): boolean {
+  if (reported) return reported === 'v2';
+  return buildUi !== 'v1';
+}
