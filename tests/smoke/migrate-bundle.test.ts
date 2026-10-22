@@ -155,8 +155,13 @@ describe("dist/migrate.mjs", () => {
     // The SQL really ran, out of the copied journal rather than a checkout.
     expect(await tableExists(probe, "users")).toBe(true);
 
+    // Every real run then re-asserts that the queue tables sit outside RLS (#328);
+    // straight after 0041 there is nothing to change.
+    const invariants = "[invariants] jobs, dead_letters: already outside RLS, nothing changed";
+    expect(first.trim().split("\n").at(-1)).toBe(invariants);
+
     const second = runMigrate(probe);
-    expect(second.trim()).toBe("no pending migrations");
+    expect(second.trim()).toBe(`no pending migrations\n${invariants}`);
   }, 120_000);
 
   it("changes nothing under --dry-run, including the ledger", async () => {
