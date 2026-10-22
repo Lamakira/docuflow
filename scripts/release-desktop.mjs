@@ -6,16 +6,17 @@
  *   1. Déclenche le workflow GitHub Actions (build-only)
  *   2. Attend la fin du run (poll)
  *   3. Télécharge les 3 artifacts (Windows, macOS, Linux)
- *   4. Uploade chaque fichier vers Google Cloud Storage
- *   5. Enregistre chaque plateforme en DB via l'endpoint metadata-only
+ *   4. Demande une URL PUT signée (POST /api/internal/desktop-releases/upload-url)
+ *      et y envoie le fichier directement, sans passer par le serveur
+ *   5. Enregistre chaque plateforme en DB via l'endpoint metadata
+ *      (le serveur vérifie d'abord que l'objet existe dans son bucket)
  *
  * Prérequis :
  *   - `gh` CLI authentifié (gh auth login)
  *   - DESKTOP_RELEASE_CI_TOKEN défini dans l'environnement
  *   - DOCUFLOW_API_URL — le déploiement où la release est enregistrée. Aucune
  *     valeur par défaut : une release doit nommer sa cible (ADR-0018)
- *   - INSTALLER_GCS_BUCKET, et GCS_SERVICE_ACCOUNT_KEY sauf si les
- *     Application Default Credentials sont déjà disponibles (voir .env.example)
+ *   Aucune clé Google : le serveur signe l'URL d'upload (voir docs/DESKTOP_RELEASE.md)
  *
  * Usage :
  *   node scripts/release-desktop.mjs
@@ -29,12 +30,10 @@
 
 import { execSync, spawnSync } from "child_process";
 import { createHash } from "crypto";
-import { readFileSync, readdirSync, existsSync, rmSync, mkdirSync } from "fs";
+import { createReadStream, readdirSync, existsSync, rmSync, mkdirSync, statSync } from "fs";
+import { Readable } from "stream";
 import { join, basename } from "path";
 import { tmpdir } from "os";
-import { gcsClient, installerBucketName } from "./gcs-client.mjs";
-
-const PREFIX        = "public/installers";
 
 const API_URL       = (process.env.DOCUFLOW_API_URL || "").trim().replace(/\/$/, "");
 const TOKEN         = process.env.DESKTOP_RELEASE_CI_TOKEN;
@@ -43,13 +42,6 @@ const GH_WORKFLOW   = process.env.GH_WORKFLOW || "desktop-release.yml";
 
 const POLL_INTERVAL = 30_000;  // 30 s entre chaque vérification du run
 const POLL_TIMEOUT  = 60 * 60 * 1000; // 1h max d'attente
-
-const PLATFORM_MAP = {
-  "DocuFlow-Agent": null,
-  "windows-setup.exe": "windows",
-  "macos.dmg":         "macos",
-  "linux-amd64.deb":   "linux",
-};
 
 function detectPlatform(filename) {
   if (filename.endsWith("-windows-setup.exe")) return "windows";
@@ -180,36 +172,58 @@ function downloadArtifacts(id) {
   return files;
 }
 
-// ── Étape 4 : Upload vers Google Cloud Storage ───────────────────────────────
+// ── Étape 4 : Upload direct vers le stockage (URL PUT signée) ────────────────
 
-async function uploadToObjectStorage(filePath) {
-  const bucket     = installerBucketName();
-  const filename   = basename(filePath);
-  const objectName = `${PREFIX}/${filename}`;
-  const gcsHttps   = `https://storage.googleapis.com/${bucket}/${objectName}`;
+async function sha256Of(filePath) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk);
+  return hash.digest("hex");
+}
 
-  const fileBuffer = readFileSync(filePath);
-  const sha256     = createHash("sha256").update(fileBuffer).digest("hex");
-  const fileSize   = fileBuffer.length;
+async function uploadToObjectStorage({ filePath, platform, version }) {
+  const filename = basename(filePath);
+  const fileSize = statSync(filePath).size;
+  const sha256   = await sha256Of(filePath);
 
   console.log(`\n[4/5] Upload : ${filename}`);
   console.log(`      Taille  : ${(fileSize / 1048576).toFixed(1)} MB`);
   console.log(`      SHA256  : ${sha256}`);
-  console.log(`      Cible   : ${gcsHttps}`);
 
-  console.log("      Upload vers GCS...");
-  await gcsClient().bucket(bucket).upload(filePath, {
-    destination: objectName,
-    contentType: "application/octet-stream",
+  const urlResp = await fetch(`${API_URL}/api/internal/desktop-releases/upload-url`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ platform, version, filename, fileSize, sha256 }),
   });
+  const urlBody = await urlResp.json().catch(() => ({}));
+  if (!urlResp.ok) {
+    throw new Error(`upload-url error ${urlResp.status}: ${JSON.stringify(urlBody)}`);
+  }
+  const { uploadUrl, storageUrl } = urlBody;
+  console.log(`      Cible   : ${storageUrl}`);
+
+  // Le fichier part en flux, directement vers le stockage. Pas de Content-Type :
+  // l'URL signée ne le contraint pas (le serveur ne le signe pas).
+  console.log("      Envoi vers le stockage...");
+  const putResp = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Length": String(fileSize) },
+    body: Readable.toWeb(createReadStream(filePath)),
+    duplex: "half",
+  });
+  if (!putResp.ok) {
+    throw new Error(`PUT vers le stockage error ${putResp.status}: ${await putResp.text()}`);
+  }
   console.log("      Upload OK.");
 
-  return { filename, sha256, fileSize, gcsHttps };
+  return { filename, sha256, fileSize, storageUrl };
 }
 
 // ── Étape 5 : Enregistrer en DB ───────────────────────────────────────────────
 
-async function registerInDb({ platform, version, filename, sha256, fileSize, gcsHttps }) {
+async function registerInDb({ platform, version, filename, sha256, fileSize, storageUrl }) {
   console.log(`\n[5/5] Enregistrement en DB : ${platform} v${version}...`);
 
   const resp = await fetch(`${API_URL}/api/internal/desktop-releases`, {
@@ -218,7 +232,7 @@ async function registerInDb({ platform, version, filename, sha256, fileSize, gcs
       "Authorization": `Bearer ${TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ platform, version, filename, storageUrl: gcsHttps, sha256, fileSize }),
+    body: JSON.stringify({ platform, version, filename, storageUrl, sha256, fileSize }),
   });
   const body = await resp.json();
   if (!resp.ok) {
@@ -284,8 +298,8 @@ async function main() {
         continue;
       }
       const version = extractVersion(filename);
-      const { sha256, fileSize, gcsHttps } = await uploadToObjectStorage(filePath);
-      const release = await registerInDb({ platform, version, filename, sha256, fileSize, gcsHttps });
+      const { sha256, fileSize, storageUrl } = await uploadToObjectStorage({ filePath, platform, version });
+      const release = await registerInDb({ platform, version, filename, sha256, fileSize, storageUrl });
       results.push(release);
     }
 

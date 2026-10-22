@@ -2,11 +2,9 @@
 
 ## Emplacement des installeurs
 
-Stockés dans Google Cloud Storage (GCS), bucket nommé par `INSTALLER_GCS_BUCKET`, dossier `public/installers/`.
+Stockés dans le bucket Object Storage de l'environnement, sous `<dossier public>/installers/<version>/<fichier>` (le premier de `PUBLIC_OBJECT_SEARCH_PATHS`). Le `storageUrl` garde la forme `https://storage.googleapis.com/<bucket>/<dossier public>/installers/<version>/<fichier>`.
 
-> ⚠️ **Important** : l'accès au bucket passe par un **service account Google** — clé dans `GCS_SERVICE_ACCOUNT_KEY`, ou Application Default Credentials (voir [CONFIGURATION.md](CONFIGURATION.md)). Les scripts de release, le serveur et GitHub Actions utilisent tous ce même mécanisme ; il n'y a plus de sidecar Replit ni de dépendance à l'environnement Replit.
-
-> Les commandes de ce guide lisent `$INSTALLER_GCS_BUCKET` (le bucket) et `$DOCUFLOW_API_URL` (le déploiement où la release est enregistrée). Aucun des deux n'a de valeur par défaut et aucun n'est écrit en dur ici : ce dépôt ne contient pas d'identifiant de production (ADR-0018).
+> Publier ne demande **aucune clé Google** : le serveur signe l'URL d'upload, le script n'a besoin que de `DOCUFLOW_API_URL` (le déploiement cible, sans valeur par défaut, ADR-0018) et `DESKTOP_RELEASE_CI_TOKEN`. Le fournisseur de stockage du serveur doit savoir signer (sidecar Replit, ou service account Google) ; sinon `upload-url` répond 503.
 
 ## Versions publiées
 
@@ -41,16 +39,11 @@ Changements inclus dans v0.1.10 :
 
 ## Architecture de distribution
 
-- Les installeurs sont trop volumineux (~65-94 MB) pour le proxy inverse de Replit (~50 MB max)
-- Solution : `server/downloadRoutes.ts` génère des **URL signées** (valides 15 min) via une redirection 302, le téléchargement se fait directement depuis l'Object Storage
-- Endpoint de disponibilité : `GET /downloads/availability` → `{ windows: bool, macos: bool, linux: bool }`
-- Endpoint de téléchargement : `GET /downloads/:platform` → 302 vers URL signée (si `storageUrl` est une URL `https://storage.googleapis.com/...`) OU stream local depuis `installers/` (si `storageUrl` est `/downloads/:platform`)
+- Les installeurs (~65-94 MB) dépassent le plafond de 32 MiB par requête/réponse d'Autoscale : aucun octet ne transite par le serveur, ni au téléchargement ni à la publication
+- Endpoint de disponibilité : `GET /downloads/availability` → `{ windows: bool, macos: bool, linux: bool }`. Une plateforme est disponible si sa ligne `is_latest` est dans le bucket de l'environnement **et** que l'objet existe
+- Endpoint de téléchargement : `GET /downloads/:platform` → 302 vers une URL signée (GET, 15 min). Une ligne qui pointe vers un autre bucket répond comme « pas de release » (404), jamais 500 (ADR-0018 : on ne suit pas l'URL de production d'un autre environnement). Plus de repli sur le dossier `installers/` local
+- `GET /api/downloads/desktop/latest?platform=…` → 302 vers `/downloads/:platform` (l'objet brut est privé) ; `?format=json` renvoie les métadonnées
 - La DB (`desktop_releases`) stocke le `storageUrl`, `sha256`, `fileSize` et `isLatest` par plateforme
-
-## Deux modes de stockage supportés
-
-1. **Google Cloud Storage** (mode actuel) — `storageUrl = https://storage.googleapis.com/<bucket>/public/installers/<fichier>`, signé au téléchargement par le service account du serveur. Persiste à travers les redéploiements.
-2. **Fichier local** — `storageUrl = /downloads/:platform`, le fichier vit dans le dossier `installers/` du serveur. Plus simple mais **ne persiste pas** sur le filesystem éphémère d'un déploiement Replit (raison de la migration vers l'Object Storage).
 
 ## Scripts de build (`desktop-agent/scripts/`)
 
@@ -61,73 +54,38 @@ Changements inclus dans v0.1.10 :
   2. **Patch postinst Step 3** : extrait le `.deb`, injecte `chmod 755 '/opt/DocuFlow Desktop Agent'` dans le script `postinst`, et repackage le `.deb` — permet que les permissions soient corrigées même lors d'une **mise à jour** (dpkg ne remet pas à jour les permissions d'un dossier existant)
 - `fix-permissions.js` — correctif de permissions (utilisé lors du build, non invoqué directement)
 
-## Scripts de release (`scripts/`, à la racine — exécutables depuis n'importe quel shell disposant des credentials)
+## Script de release (`scripts/release-desktop.mjs`)
 
-- `upload-to-gcs.mjs` — upload un installeur vers le bucket `INSTALLER_GCS_BUCKET` avec le service account. N'enregistre **pas** en DB ; affiche le `gs://...` à convertir en URL HTTPS pour l'enregistrement.
-- `upload-installer.mjs` — upload **chunké** (tranches de 20 MB) vers `/api/internal/desktop-releases/upload-chunk` ; écrit le fichier dans `installers/` **et** enregistre la DB en une seule passe (mode fichier local).
-- `publish-windows.js` / `publish-release.sh` / `publish-release.ps1` — variantes d'upload chunké (mode fichier local).
-
-## Endpoints internes d'upload (auth `Authorization: Bearer $DESKTOP_RELEASE_CI_TOKEN`)
-
-- `POST /api/internal/desktop-releases/upload-chunk` — upload chunké (≤ 25 MB/chunk), réassemble, vérifie le SHA256, écrit dans `installers/` et enregistre la DB (`storageUrl = /downloads/:platform`).
-- `POST /api/internal/desktop-releases/upload` — upload binaire en un seul POST (limité par le proxy ~50 MB).
-- `POST /api/internal/desktop-releases` — enregistrement **metadata-only** (pour le mode Object Storage). `storageUrl` doit être une URL `https://storage.googleapis.com/...` ou `/downloads/:platform`.
-
-## Enregistrement metadata-only en DB (mode Object Storage)
+Seul script de publication conservé. Les anciens `upload-to-gcs.mjs`, `gcs-client.mjs`, `upload-installer.mjs`, `publish-windows.js`, `publish-release.sh` et `publish-release.ps1` sont retirés (clé Google ou stockage sur disque local, tous deux inutilisables sur Autoscale).
 
 ```bash
-curl -X POST "$DOCUFLOW_API_URL/api/internal/desktop-releases" \
-  -H "Authorization: Bearer $DESKTOP_RELEASE_CI_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "platform": "linux",
-    "version": "0.1.8",
-    "filename": "DocuFlow-Agent-0.1.8-linux-amd64.deb",
-    "storageUrl": "https://storage.googleapis.com/$INSTALLER_GCS_BUCKET/public/installers/DocuFlow-Agent-0.1.8-linux-amd64.deb",
-    "sha256": "...",
-    "fileSize": 0
-  }'
+DOCUFLOW_API_URL=<déploiement> DESKTOP_RELEASE_CI_TOKEN=<token> \
+  node scripts/release-desktop.mjs [--run-id <id> | --skip-build]
 ```
 
----
+Pour chaque installeur (`.exe`, `.dmg`, `.deb` du run GitHub Actions) : calcule SHA256 et taille, appelle `upload-url`, envoie le fichier en PUT vers l'URL signée, puis enregistre la release.
 
-## Procédure de release manuelle — RECOMMANDÉE
+## Endpoints internes (auth `Authorization: Bearer $DESKTOP_RELEASE_CI_TOKEN`)
 
-C'est la méthode qui a réellement servi pour v0.1.7. Elle demande le service account GCS décrit plus haut.
+- `POST /api/internal/desktop-releases/upload-url` — corps `{ platform, version, filename, fileSize, sha256 }` → `{ uploadUrl, storageUrl, expiresAt }`. `uploadUrl` est un PUT signé (15 min) ; 503 si le fournisseur ne sait pas signer.
+- `POST /api/internal/desktop-releases` — enregistre la release et la marque `is_latest`. Exige que `storageUrl` soit dans le bucket de l'environnement (422 sinon) et que l'objet existe déjà (409 sinon).
+- Les anciens `upload` et `upload-chunk` (stockage disque) n'existent plus.
 
-1. **Compiler** les installeurs via GitHub Actions :
-   - Soit déclencher manuellement le workflow (Actions → `Desktop Agent — Release` → Run workflow) → build-only, produit 3 artifacts (rétention 7 jours).
-   - Soit `npm run dist:win` / `dist:mac` / `dist:linux` localement sur la bonne plateforme.
-2. **Récupérer les 3 artifacts** (téléchargement depuis l'UI GitHub Actions, ou `gh run download <run-id>` si `gh` est authentifié).
-3. **Uploader vers l'Object Storage** (mode actuel), pour chaque plateforme :
-   ```bash
-   node scripts/upload-to-gcs.mjs windows <chemin>/DocuFlow-Agent-0.1.8-windows-setup.exe
-   node scripts/upload-to-gcs.mjs macos   <chemin>/DocuFlow-Agent-0.1.8-macos.dmg
-   node scripts/upload-to-gcs.mjs linux   <chemin>/DocuFlow-Agent-0.1.8-linux-amd64.deb
-   ```
-4. **Enregistrer en DB** chaque plateforme via le `curl` metadata-only ci-dessus (avec l'URL HTTPS `storage.googleapis.com/...` et le SHA256 affiché par le script).
+## Procédure de release
 
-> Alternative tout-en-un (mode fichier local) : `node scripts/upload-installer.mjs <platform> <fichier> "$DOCUFLOW_API_URL"` fait l'upload chunké **et** l'enregistrement DB en une commande — mais le fichier ne survit pas à un redéploiement (préférer l'Object Storage pour une release durable).
+1. **Compiler** les installeurs : déclencher le workflow (Actions → `Desktop Agent — Release` → Run workflow, build-only, artifacts 7 jours) ou `npm run dist:win` / `dist:mac` / `dist:linux` sur la bonne plateforme.
+2. **Publier** : `node scripts/release-desktop.mjs --run-id <id>` (voir ci-dessus). Le script fait l'upload direct et l'enregistrement.
+3. **Vérifier** : `GET $DOCUFLOW_API_URL/downloads/windows` répond 302 vers le stockage.
 
-> Dev et prod partagent la même DB Neon, donc l'enregistrement est visible des deux côtés. En mode Object Storage, le fichier est durable et téléchargeable depuis prod immédiatement.
+Pour les installeurs déjà publiés dans un autre bucket (v1), les republier avec cette procédure : une ligne vers un autre bucket n'est pas suivie.
 
 ---
 
 ## Workflow GitHub Actions (build uniquement, ou release auto par tag — NON utilisé)
 
-**Repo** : `billos-e/TECHMA-DOCUMENTATION-PLATFORM`
 **Fichier** : `.github/workflows/desktop-release.yml`
 
-**Comportement selon le déclencheur** :
-
-| Déclencheur | Build | Upload bucket GCS | Enregistrement DB |
-|-------------|-------|------------|-------------------|
-| `git push` sur un tag `desktop-agent-v*` | ✅ | ✅ (nécessite les secrets GCS_RELEASE_SA_KEY + INSTALLER_GCS_BUCKET) | ✅ |
-| Déclenchement manuel (Actions → Run workflow) | ✅ | ❌ skippé | ❌ skippé |
-
-> Le paramètre `dry_run` visible dans l'UI de déclenchement manuel est **non fonctionnel** — il est défini dans le YAML mais jamais lu dans les conditions. Le seul vrai interrupteur est le type d'événement (`push` sur tag vs `workflow_dispatch`). Un déclenchement manuel produit toujours un build-only.
-
-> ⚠️ La voie auto par tag exige les secrets GitHub `GCS_RELEASE_SA_KEY` et `INSTALLER_GCS_BUCKET` (voir l'en-tête du workflow). Tant qu'ils ne sont pas renseignés, **utiliser le déclenchement manuel pour le build uniquement**, puis suivre la procédure de release ci-dessus.
+Le workflow reste **désarmé** (ADR-0018) : un déclenchement manuel produit uniquement les artifacts de build. Ses étapes de publication par tag (upload GCS) datent de l'ancien chemin et ne suivent pas ce guide ; la voie réelle est `scripts/release-desktop.mjs`.
 
 ## Notes Linux spécifiques
 

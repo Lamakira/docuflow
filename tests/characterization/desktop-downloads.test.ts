@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { newAgent } from "../helpers/auth";
-import { FAKE_STORAGE_ORIGIN, fakeSignedUrl } from "../fakes/gcs";
+import { FAKE_STORAGE_ORIGIN, fakeSignedUrl, putObject, signedUrlPattern } from "../fakes/gcs";
 
 const CI_TOKEN = "test-ci-token";
 
@@ -15,8 +15,12 @@ const CI_TOKEN = "test-ci-token";
  *  - Registration is guarded by a bearer token read from the environment at
  *    request time; with the variable unset every call is 401, whatever is sent.
  *  - Publishing a version demotes the previous one for that platform only.
- *  - `/downloads/:platform` redirects to a freshly signed GCS URL; the metadata
- *    route redirects to the raw stored URL instead.
+ *  - `/downloads/:platform` redirects to a freshly signed URL; the "latest" route
+ *    redirects through it, since the raw object is private.
+ *  - A release registers only once its object exists in this environment's bucket;
+ *    a row naming another bucket answers as unavailable (ADR-0018).
+ *  - Installers are published by PUTting to a URL from the upload-url route; the
+ *    old upload and upload-chunk routes are gone.
  *  - These routes report errors as `{ error }`, not `{ message }`.
  */
 describe("desktop downloads (characterization)", () => {
@@ -29,9 +33,11 @@ describe("desktop downloads (characterization)", () => {
     delete process.env.DESKTOP_RELEASE_CI_TOKEN;
   });
 
-  const releaseObject = (file: string) => `test-bucket/releases/${file}`;
+  const releaseObject = (file: string) => `test-bucket/public/installers/9.9.9/${file}`;
   /** The stored URL a release carries — unsigned, unlike what `/downloads/:platform` mints. */
   const gcsUrl = (file: string) => `${FAKE_STORAGE_ORIGIN}/${releaseObject(file)}`;
+  /** Puts the installer in the fake bucket, as a publisher's PUT would. */
+  const seed = (...files: string[]) => files.forEach((f) => putObject(releaseObject(f), "bytes"));
 
   async function publish(
     app: Awaited<ReturnType<typeof makeApp>>,
@@ -74,6 +80,7 @@ describe("desktop downloads (characterization)", () => {
 
   it("refuses registration without the CI bearer token", async () => {
     const app = await makeApp();
+    seed("a.exe");
 
     const noAuth = await newAgent(app)
       .post("/api/internal/desktop-releases")
@@ -99,6 +106,7 @@ describe("desktop downloads (characterization)", () => {
 
   it("validates the registration payload", async () => {
     const app = await makeApp();
+    seed("a.exe");
 
     const missing = await publish(app, { version: "1.0.0", platform: "windows" });
     expect(missing.status).toBe(400);
@@ -141,15 +149,25 @@ describe("desktop downloads (characterization)", () => {
     });
     expect(badUrl.status).toBe(400);
     expect(badUrl.body).toEqual({
-      error: "storageUrl must be a GCS HTTPS URL or a local /downloads/:platform path",
+      error: "storageUrl must be a https://storage.googleapis.com/<bucket>/<object> URL",
     });
 
-    // A pre-release version and a local storage path are both accepted.
+    // The local disk path is retired with the disk fallback.
+    const localPath = await publish(app, {
+      version: "1.0.0",
+      platform: "linux",
+      filename: "a.AppImage",
+      storageUrl: "/downloads/linux",
+    });
+    expect(localPath.status).toBe(400);
+
+    // A pre-release version is accepted.
+    seed("DocuFlow-2.0.0-rc.3.AppImage");
     const prerelease = await publish(app, {
       version: "2.0.0-rc.3",
       platform: "linux",
       filename: "DocuFlow-2.0.0-rc.3.AppImage",
-      storageUrl: "/downloads/linux",
+      storageUrl: gcsUrl("DocuFlow-2.0.0-rc.3.AppImage"),
     });
     expect(prerelease.status).toBe(201);
   });
@@ -157,6 +175,7 @@ describe("desktop downloads (characterization)", () => {
   it("publishes a version, demotes the previous one, and serves it to anonymous callers", async () => {
     const app = await makeApp();
     const anonymous = newAgent(app);
+    seed("DocuFlow-0.1.0-setup.exe", "DocuFlow-0.2.0-setup.exe", "DocuFlow-0.2.0.dmg");
 
     const first = await publish(app, {
       version: "0.1.0",
@@ -186,20 +205,20 @@ describe("desktop downloads (characterization)", () => {
     expect(metadata.body).toMatchObject({
       version: "0.1.0",
       platform: "windows",
-      url: gcsUrl("DocuFlow-0.1.0-setup.exe"),
+      url: "/downloads/windows",
       fileSize: 1234,
       sha256: "abc123",
     });
 
-    // Without ?format=json the same route redirects to the stored URL as-is.
+    // Without ?format=json the same route redirects through the signed route.
     const redirect = await anonymous
       .get("/api/downloads/desktop/latest")
       .query({ platform: "windows" })
       .redirects(0);
     expect(redirect.status).toBe(302);
-    expect(redirect.headers.location).toBe(gcsUrl("DocuFlow-0.1.0-setup.exe"));
+    expect(redirect.headers.location).toBe("/downloads/windows");
 
-    // `/downloads/:platform` signs a fresh short-lived URL instead.
+    // `/downloads/:platform` signs a fresh short-lived URL.
     const signed = await anonymous.get("/downloads/windows").redirects(0);
     expect(signed.status).toBe(302);
     expect(signed.headers.location).toBe(
@@ -238,25 +257,129 @@ describe("desktop downloads (characterization)", () => {
     });
   });
 
-  it("reports a locally-stored installer whose file is missing from disk", async () => {
+  it("refuses to register an object that is not in the bucket yet, then accepts it once it is", async () => {
+    const app = await makeApp();
+    const body = {
+      version: "0.4.0",
+      platform: "windows",
+      filename: "DocuFlow-0.4.0-setup.exe",
+      storageUrl: gcsUrl("DocuFlow-0.4.0-setup.exe"),
+    };
+
+    const early = await publish(app, body);
+    expect(early.status).toBe(409);
+    expect((await newAgent(app).get("/api/downloads/desktop/versions")).body).toEqual([]);
+
+    seed("DocuFlow-0.4.0-setup.exe");
+    expect((await publish(app, body)).status).toBe(201);
+  });
+
+  it("refuses to register a bucket that is not this environment's own", async () => {
+    const app = await makeApp();
+    const res = await publish(app, {
+      version: "0.4.0",
+      platform: "windows",
+      filename: "a.exe",
+      storageUrl: `${FAKE_STORAGE_ORIGIN}/other-env-bucket/public/installers/a.exe`,
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("answers a foreign-bucket row as unavailable, not as an error", async () => {
     const app = await makeApp();
     const anonymous = newAgent(app);
-
-    await publish(app, {
-      version: "0.3.0",
-      platform: "linux",
-      filename: "DocuFlow-0.3.0.AppImage",
-      storageUrl: "/downloads/linux",
+    // A row left by another environment, inserted past the route's own check.
+    const { db } = await import("../../server/db");
+    const { desktopReleases } = await import("@shared/schema");
+    await db.insert(desktopReleases).values({
+      version: "0.5.0",
+      platform: "windows",
+      filename: "a.exe",
+      storageUrl: `${FAKE_STORAGE_ORIGIN}/other-env-bucket/public/installers/a.exe`,
+      isLatest: true,
     });
+    putObject("other-env-bucket/public/installers/a.exe", "bytes");
 
-    // Availability checks the disk for non-GCS releases, and nothing was written.
-    expect((await anonymous.get("/downloads/availability")).body.linux).toBe(false);
-
-    const res = await anonymous.get("/downloads/linux");
+    expect((await anonymous.get("/downloads/availability")).body.windows).toBe(false);
+    const res = await anonymous.get("/downloads/windows").redirects(0);
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({
-      error: "Installer file is registered but missing from disk",
-      filename: "DocuFlow-0.3.0.AppImage",
+    expect(res.body).toEqual({ error: "No release published yet for platform: windows" });
+  });
+
+  it("reports availability only while the object exists", async () => {
+    const app = await makeApp();
+    const { db } = await import("../../server/db");
+    const { desktopReleases } = await import("@shared/schema");
+    await db.insert(desktopReleases).values({
+      version: "0.6.0",
+      platform: "linux",
+      filename: "a.deb",
+      storageUrl: gcsUrl("a.deb"),
+      isLatest: true,
     });
+    expect((await newAgent(app).get("/downloads/availability")).body.linux).toBe(false);
+    seed("a.deb");
+    expect((await newAgent(app).get("/downloads/availability")).body.linux).toBe(true);
+  });
+
+  describe("upload-url", () => {
+    const valid = {
+      platform: "windows",
+      version: "1.2.3",
+      filename: "DocuFlow-Agent-1.2.3-windows-setup.exe",
+      fileSize: 1234,
+      sha256: "a".repeat(64),
+    };
+    const post = (app: Awaited<ReturnType<typeof makeApp>>, body: unknown, token: string | null = CI_TOKEN) => {
+      const req = newAgent(app).post("/api/internal/desktop-releases/upload-url");
+      return (token ? req.set("Authorization", `Bearer ${token}`) : req).send(body as object);
+    };
+
+    it("refuses a missing or wrong CI token", async () => {
+      const app = await makeApp();
+      expect((await post(app, valid, null)).status).toBe(401);
+      expect((await post(app, valid, "nope")).status).toBe(401);
+    });
+
+    it("validates the body", async () => {
+      const app = await makeApp();
+      expect((await post(app, { platform: "windows" })).status).toBe(400);
+      expect((await post(app, { ...valid, platform: "solaris" })).body).toEqual({ error: "Invalid platform" });
+      expect((await post(app, { ...valid, version: "v1" })).status).toBe(400);
+      expect((await post(app, { ...valid, filename: "../x.exe" })).status).toBe(400);
+      expect((await post(app, { ...valid, fileSize: -1 })).status).toBe(400);
+      expect((await post(app, { ...valid, sha256: "xyz" })).status).toBe(400);
+    });
+
+    it("returns a signed PUT and the storageUrl to register", async () => {
+      const app = await makeApp();
+      const res = await post(app, valid);
+      expect(res.status).toBe(200);
+      const object = `test-bucket/public/installers/1.2.3/${valid.filename}`;
+      expect(res.body.uploadUrl).toMatch(signedUrlPattern(object.replace(/[.]/g, "\\."), "write"));
+      expect(res.body.storageUrl).toBe(`${FAKE_STORAGE_ORIGIN}/${object}`);
+      expect(new Date(res.body.expiresAt).getTime()).toBeGreaterThan(Date.now());
+
+      // The full publish path: registration is refused until the PUT has landed.
+      const register = { ...valid, storageUrl: res.body.storageUrl };
+      expect((await publish(app, register)).status).toBe(409);
+      putObject(object, "bytes");
+      expect((await publish(app, register)).status).toBe(201);
+      expect((await newAgent(app).get("/downloads/windows").redirects(0)).headers.location).toBe(
+        fakeSignedUrl(object, "read")
+      );
+    });
+  });
+
+  it("no longer serves the disk upload routes", async () => {
+    const app = await makeApp();
+    for (const route of ["upload", "upload-chunk"]) {
+      const res = await newAgent(app)
+        .post(`/api/internal/desktop-releases/${route}`)
+        .set("Authorization", `Bearer ${CI_TOKEN}`)
+        .set("Content-Type", "application/octet-stream")
+        .send(Buffer.from("x"));
+      expect(res.status).toBe(404);
+    }
   });
 });

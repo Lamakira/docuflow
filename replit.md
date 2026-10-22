@@ -269,8 +269,8 @@ Toute la procédure de release, les scripts de build, les endpoints d'upload et 
 **→ [`docs/DESKTOP_RELEASE.md`](docs/DESKTOP_RELEASE.md)**
 
 **En résumé** :
-- Les installeurs sont stockés dans **Google Cloud Storage**, bucket nommé par `INSTALLER_GCS_BUCKET` (jamais écrit en dur ici — ADR-0018).
-- Accessible depuis n'importe quel shell disposant du service account (`GCS_SERVICE_ACCOUNT_KEY` ou Application Default Credentials), y compris les runners GitHub Actions. Voir `docs/CONFIGURATION.md`.
+- Les installeurs sont stockés dans le bucket App Storage de cet environnement (`public/installers/<version>/`), publiés par `scripts/release-desktop.mjs` via une URL PUT signée par le sidecar Replit, et téléchargés par redirection vers une URL GET signée (#328).
+- La publication n'a besoin que de `DOCUFLOW_API_URL` et `DESKTOP_RELEASE_CI_TOKEN` : c'est le déploiement qui signe l'upload. Voir `docs/CONFIGURATION.md`.
 - v0.1.8 est publiée (les 3 plateformes, 2026-06-19). Voir le guide pour les prochaines releases.
 
 **Notes Linux spécifiques** :
