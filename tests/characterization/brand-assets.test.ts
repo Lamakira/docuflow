@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { LoadingScreen } from "../../client/src/components/LoadingScreen";
 import { BrandLockup, BrandMark } from "../../client/src/v2/BrandMark";
 import { createRefCounted } from "../../client/src/v2/useV2Fonts";
 
@@ -89,9 +90,34 @@ describe("brand mark: the d and the dot (#326)", () => {
   it("uses the brand colours in the sources", () => {
     expect(read("brand/mark-light.svg")).toContain("#0F1524");
     expect(read("brand/mark-dark.svg")).toContain("#FFFFFF");
-    for (const f of ["mark-tile", "mark-light", "mark-dark", "tray-running"]) {
+    for (const f of ["mark-tile", "mark-light", "mark-dark"]) {
       expect(read(`brand/${f}.svg`)).toContain("#E9A23B");
     }
+  });
+
+  it("colours the tray icons as tiles: ink idle, amber running, slate paused, no dot", () => {
+    const states = [
+      ["idle", "#0F1524", "#FFFFFF"],
+      ["running", "#E9A23B", "#0F1524"],
+      ["paused", "#6B778C", "#FFFFFF"],
+    ] as const;
+    for (const [state, tile, d] of states) {
+      const svg = read(`brand/tray-${state}.svg`);
+      expect(svg).toContain(`<rect width="64" height="64" rx="14" fill="${tile}"/>`);
+      expect(svg).toContain(`fill="none" stroke="${d}" stroke-width="7.5"/>`);
+      expect(svg).toContain(`height="38.5" rx="3.75" fill="${d}"/>`);
+      expect(svg.match(/<circle /g)).toHaveLength(1);
+    }
+  });
+
+  it("shows the mark on its tile on the loading screen", () => {
+    const html = renderToStaticMarkup(createElement(LoadingScreen));
+    expect(html).toContain('width="48"');
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('fill="#0F1524"');
+    expect(html).toContain('fill="#E9A23B"');
+    expect(html).toContain("motion-safe:animate-pulse");
+    expect(html).toContain("Loading…");
   });
 
   it("labels the lockup once, and the lone mark by name", () => {

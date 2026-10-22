@@ -458,12 +458,13 @@ function showMainWindow(): void {
 
 /**
  * Tray icon for a timer status. The tray is often the only visible part of the
- * app, so the icon answers "am I tracking?" on its own: the DocuFlow mark with
- * no dot when idle, the amber dot when running, a grey dot when paused.
+ * app, so the icon answers "am I tracking?" on its own: the white d on a Case
+ * Ink tile when idle, an ink d on an amber tile when running, a white d on a
+ * slate tile when paused.
  * Generated from brand/ by `npm run brand:assets` at the repo root.
  * One 32x32 PNG per state: macOS resizes it to 16 at runtime (loadTrayImage),
- * there is no @2x, and it is not a macOS template image because the status dot
- * carries colour.
+ * there is no @2x, and it is not a macOS template image because the tile colour
+ * carries the state.
  */
 function getTrayIconPath(status?: string): string {
   const suffix = status === "running" ? "-running" : status === "paused" ? "-paused" : "";
