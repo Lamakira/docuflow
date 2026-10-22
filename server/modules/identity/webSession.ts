@@ -80,6 +80,17 @@ export function parseCookieHeader(header: string | undefined): Record<string, st
 export type WebSessionCredential = { token: string; source: "header" | "cookie" };
 
 /**
+ * A request this app's own pages started, or one the person started themselves
+ * (address bar, bookmark). Clerk's cookie is SameSite=Lax, so a link on another
+ * site still carries it on a top-level GET; refusing `cross-site` and
+ * `same-site` keeps another site from driving a GET with the session. A browser
+ * too old to send the header is let through, as it was before the header existed.
+ */
+function fromThisSite(secFetchSite: string | undefined): boolean {
+  return secFetchSite === undefined || secFetchSite === "same-origin" || secFetchSite === "none";
+}
+
+/**
  * Where a web session token may come from (#329).
  *
  * An `Authorization` header, whatever it holds, is the credential: when one is
@@ -89,11 +100,15 @@ export type WebSessionCredential = { token: string; source: "header" | "cookie" 
  * `<a href download>`) cannot add a header, and safe methods change nothing, so
  * a cross-site form, image or link can never write anything with the cookie
  * (CSRF). Writes need the header the SPA adds; Clerk's cookie is SameSite=Lax
- * anyway. A cookie token is additionally refused unless it was minted for this
- * app's origin (see `resolveIdentitySession`'s `authorizedParties`).
+ * anyway, and a request another site started is refused outright
+ * (`Sec-Fetch-Site`). A cookie token is also refused unless it was minted for
+ * one of this app's origins (see `resolveIdentitySession`'s `authorizedParties`).
  */
 export function webSessionCredential(
-  request: { method: string; headers: { authorization?: string; cookie?: string } },
+  request: {
+    method: string;
+    headers: { authorization?: string; cookie?: string; "sec-fetch-site"?: string };
+  },
   provider: IdentityProvider,
 ): WebSessionCredential | undefined {
   const { authorization, cookie } = request.headers;
@@ -102,6 +117,7 @@ export function webSessionCredential(
     return token ? { token, source: "header" } : undefined;
   }
   if (request.method !== "GET" && request.method !== "HEAD") return undefined;
+  if (!fromThisSite(request.headers["sec-fetch-site"])) return undefined;
   const token = provider.sessionTokenFromCookies(parseCookieHeader(cookie));
   return token ? { token, source: "cookie" } : undefined;
 }

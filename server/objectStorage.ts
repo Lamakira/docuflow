@@ -15,6 +15,41 @@ import { db } from "./db";
 import { currentWorkspaceContext, inWorkspace, requireWorkspaceContext } from "./workspaceContext";
 
 /**
+ * Types a browser may render inline on this origin: none of them can run a
+ * script. `image/svg+xml` and anything HTML-like are left out on purpose.
+ */
+const INLINE_SAFE_TYPE =
+  /^(image\/(png|jpeg|gif|webp|avif|bmp)|application\/pdf|text\/plain|audio\/[\w.+-]+|video\/[\w.+-]+)$/;
+
+/**
+ * What keeps a stored object from running as a page of this app (#329). The
+ * content type is the uploader's word, and since a browser-loaded GET carries
+ * the session cookie, an HTML or SVG upload opened by link would otherwise run
+ * with the viewer's session on the app's own origin. Anything outside the
+ * inline-safe list is forced to download and sandboxed should a browser render
+ * it anyway; the safe types are sandboxed too, except PDF, whose built-in
+ * viewers refuse to load in a sandboxed document.
+ */
+export function storedContentGuards(
+  contentType: string,
+  disposition: string | number | string[] | undefined,
+): Record<string, string> {
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  if (INLINE_SAFE_TYPE.test(type)) {
+    return type === "application/pdf"
+      ? {}
+      : { "Content-Security-Policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox" };
+  }
+  const current = typeof disposition === "string" ? disposition : "";
+  return {
+    "Content-Disposition": current.startsWith("attachment")
+      ? current
+      : current.replace(/^inline/, "attachment") || "attachment",
+    "Content-Security-Policy": "default-src 'none'; sandbox",
+  };
+}
+
+/**
  * The storage this deployment talks to, chosen once by what the environment
  * named. `server/config.ts` selects the provider by whether a credential was
  * supplied rather than by a switch — an environment that names a Google key
@@ -74,10 +109,12 @@ export class ObjectStorageService {
       // `Content-Length` is only set when the provider reports a size: App
       // Storage does not, and a header asserting the wrong length is worse than
       // an absent one.
+      const contentType = metadata.contentType || "application/octet-stream";
       res.set({
-        "Content-Type": metadata.contentType || "application/octet-stream",
+        "Content-Type": contentType,
         ...(metadata.size === undefined ? {} : { "Content-Length": String(metadata.size) }),
         "Cache-Control": `${isPublic ? "public" : "private"}, max-age=${cacheTtlSec}`,
+        ...storedContentGuards(contentType, res.getHeader("Content-Disposition")),
       });
 
       const stream = storagePort.createReadStream(ref);

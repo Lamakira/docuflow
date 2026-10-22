@@ -112,6 +112,44 @@ describe("web session cookie on safe methods (#329)", () => {
     expect(res.status).toBe(200);
   });
 
+  it("refuses the cookie on a request another site started", async () => {
+    const { app, image, token } = await scene();
+    const cookie = `${suffixedCookie}=${token}`;
+    for (const site of ["cross-site", "same-site"]) {
+      const res = await cookieAgent(app, cookie).set("Sec-Fetch-Site", site).get(image);
+      expect(res.status, site).toBe(401);
+    }
+    for (const site of ["same-origin", "none"]) {
+      const res = await cookieAgent(app, cookie).set("Sec-Fetch-Site", site).get(image).buffer(true);
+      expect(res.status, site).toBe(200);
+    }
+  });
+
+  it("serves an image sandboxed, and an HTML upload only as a sandboxed download", async () => {
+    const { app, user, image, token } = await scene();
+    const cookie = `${suffixedCookie}=${token}`;
+
+    const shot = await cookieAgent(app, cookie).get(image).buffer(true);
+    expect(shot.headers["content-disposition"]).toBeUndefined();
+    expect(shot.headers["content-security-policy"]).toContain("sandbox");
+    expect(shot.headers["x-content-type-options"]).toBe("nosniff");
+
+    const issued = await user.agent.post("/api/company-documents/upload-url");
+    const storagePath = completeUpload(issued.body.uploadURL, "<script>steal()</script>", "text/html");
+    const page = await user.agent.post("/api/company-documents").send({
+      name: "Page",
+      fileName: "page.html",
+      mimeType: "text/html",
+      storagePath,
+    });
+    const streamed = await cookieAgent(app, cookie)
+      .get(`/api/company-documents/${page.body.id}/stream`)
+      .buffer(true);
+    expect(streamed.status).toBe(200);
+    expect(streamed.headers["content-disposition"]).toBe('attachment; filename="page.html"');
+    expect(streamed.headers["content-security-policy"]).toBe("default-src 'none'; sandbox");
+  });
+
   it("answers 401 for an unknown cookie token", async () => {
     const { app, image } = await scene();
     const res = await cookieAgent(app, `${suffixedCookie}=nonsense`).get(image);
@@ -213,6 +251,9 @@ describe("webSessionCredential", () => {
       expect(webSessionCredential({ method, headers: { cookie } }, provider)).toBeUndefined();
     }
     expect(webSessionCredential({ method: "GET", headers: {} }, provider)).toBeUndefined();
+    expect(
+      webSessionCredential({ method: "GET", headers: { cookie, "sec-fetch-site": "cross-site" } }, provider),
+    ).toBeUndefined();
   });
 });
 
@@ -240,5 +281,29 @@ describe("resolveIdentitySession authorizedParties", () => {
     expect(
       (await resolveIdentitySession({ provider, persistence, token: none }))?.userId,
     ).toBe("u1");
+  });
+});
+
+describe("storedContentGuards", () => {
+  it("lets script-free types render inline and forces everything else to a sandboxed download", async () => {
+    const { storedContentGuards } = await import("../../server/objectStorage");
+
+    expect(storedContentGuards("application/pdf", undefined)).toEqual({});
+    expect(storedContentGuards("image/png", undefined)).not.toHaveProperty("Content-Disposition");
+    expect(storedContentGuards("Text/Plain; charset=utf-8", undefined)["Content-Security-Policy"]).toContain(
+      "sandbox",
+    );
+    for (const type of ["text/html", "image/svg+xml", "application/xhtml+xml", "application/octet-stream"]) {
+      expect(storedContentGuards(type, undefined), type).toEqual({
+        "Content-Disposition": "attachment",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+      });
+    }
+    expect(storedContentGuards("text/html", 'inline; filename="a.html"')["Content-Disposition"]).toBe(
+      'attachment; filename="a.html"',
+    );
+    expect(storedContentGuards("text/html", 'attachment; filename="a.html"')["Content-Disposition"]).toBe(
+      'attachment; filename="a.html"',
+    );
   });
 });
