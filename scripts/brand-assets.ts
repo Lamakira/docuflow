@@ -109,7 +109,8 @@ async function main() {
   );
   // Tray: one 32x32 PNG per state. macOS resizes it to 16 at runtime
   // (loadTrayImage in desktop-agent/src/main/index.ts), there is no @2x, and it
-  // is not a macOS template image because the status dot carries colour.
+  // is not a macOS template image because the tile colour carries the state
+  // (ink idle, amber running, slate paused).
   const tray = (file: string): Source => ({ file, grid: 64 });
   writeFileSync(join(AGENT, "tray-icon.png"), await png(tray("tray-idle.svg"), 32));
   writeFileSync(join(AGENT, "tray-icon-running.png"), await png(tray("tray-running.svg"), 32));

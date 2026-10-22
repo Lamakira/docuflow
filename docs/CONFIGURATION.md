@@ -72,6 +72,7 @@ is. Most gate one feature, which reports its own failure while it is missing:
 | `JWT_PREVIOUS_SECRET` | Only the current signing key is accepted, which is the steady state. Set it during a rotation — see below |
 | `DESKTOP_RELEASE_CI_TOKEN` | Release registration is refused |
 | `APP_URL` | Links in outbound email fall back to the Replit domain variables, then `http://localhost:5000` |
+| `REPL_ID`, `REPLIT_DEPLOYMENT` | Set by the Replit runtime (workspace, deployment), never by hand. Either one means the Replit sidecar is reachable, so the App Storage provider signs URLs through it; with neither, transfers relay through the server |
 | `REPLIT_DOMAINS`, `REPLIT_DEV_DOMAIN` | Set by the Replit runtime, never by hand. The first entry stands in for `APP_URL` while that is unset |
 | `PORT` | 5000 |
 | `NODE_ENV` | `development`. The production build replaces the read with a literal (`script/bundles.ts`), so a deployment sets it rather than a person |
@@ -337,16 +338,15 @@ next reader sees the gap rather than reading the ADRs as already satisfied.
 
 ## The release scripts
 
-`scripts/upload-to-gcs.mjs` and `scripts/release-desktop.mjs` are plain `.mjs`
-entry points, so they cannot import `server/config.ts` — a TypeScript module —
-and read their own environment through `scripts/gcs-client.mjs` instead. It
-applies the same rules and the same validation: one of `GCS_SERVICE_ACCOUNT_KEY`
-or `GOOGLE_APPLICATION_CREDENTIALS`, the installer bucket from
-`INSTALLER_GCS_BUCKET`, and no identifier hard-coded in the repository.
+`scripts/release-desktop.mjs` publishes desktop installers straight into this
+environment's own bucket (#328). It asks the deployment for a signed PUT URL
+(`POST /api/internal/desktop-releases/upload-url`), uploads the file to storage
+with it — so no installer crosses the server or its 32 MiB response cap — and
+then registers the release, which the server refuses until the object exists.
+It holds no storage credential of its own: the deployment signs.
 
 | Variable | Purpose |
 | --- | --- |
-| `INSTALLER_GCS_BUCKET` | Bucket the desktop installers are published to. Required by both scripts; no default |
 | `DOCUFLOW_API_URL` | The deployment `release-desktop.mjs` registers the release against. No default: a release must name where it is publishing to (ADR-0018) |
 | `DESKTOP_RELEASE_CI_TOKEN` | Bearer token those registrations present. No default |
 | `GH_REPO` | Repository the installer workflow runs on. Defaults to this project's |

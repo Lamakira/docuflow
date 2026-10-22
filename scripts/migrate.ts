@@ -41,6 +41,7 @@ import pg from "pg";
 import { requireMigrateDatabaseUrl } from "../shared/databaseUrl";
 import type { Report } from "./lib/db";
 import { isEntryPoint } from "./lib/entrypoint";
+import { assertRlsInvariants } from "./lib/rlsInvariants";
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 
@@ -314,7 +315,23 @@ export async function migrate(
 
 if (isEntryPoint(import.meta.url)) {
   const options = parseArgs(process.argv.slice(2));
-  migrate(requireMigrateDatabaseUrl(), options, (message) => console.log(message)).catch((error) => {
+  const url = requireMigrateDatabaseUrl();
+  const report = (message: string) => console.log(message);
+  migrate(url, options, report)
+    .then(async () => {
+      // #328: re-assert after every real run, so each publish (Build command
+      // `node dist/migrate.mjs`) puts jobs/dead_letters back outside RLS even
+      // when 0041 is recorded as applied. Read-only modes change nothing.
+      if (options.status || options.dryRun) return;
+      const client = new pg.Client({ connectionString: url });
+      await client.connect();
+      try {
+        await assertRlsInvariants(client, report);
+      } finally {
+        await client.end();
+      }
+    })
+    .catch((error) => {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);
   });

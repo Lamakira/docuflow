@@ -1,57 +1,48 @@
 /**
  * Desktop installer distribution endpoints.
  *
+ * Installers live in this environment's own bucket under
+ * `<public dir>/installers/<version>/<filename>`. Bytes never cross the server:
+ * downloads redirect to a signed GET, publishing PUTs to a signed URL. This is
+ * what keeps 65-95 MB installers clear of Autoscale's 32 MiB request/response cap.
+ *
  * Public endpoints (no auth required):
  *   GET /downloads/availability
- *     → { windows: bool, macos: bool, linux: bool } — DB-backed, per-platform
+ *     → { windows: bool, macos: bool, linux: bool } — a platform is available
+ *       when its latest row is in our own bucket AND the object exists there
  *
  *   GET /downloads/:platform
- *     → if storageUrl is gs:// → generates a 15-min signed GCS GET URL → 302 redirect
- *       (download goes directly from GCS, bypasses Replit's 50 MB proxy limit)
- *     → otherwise streams installer file from installers/ directory
- *     → 404 JSON if not yet published for that platform
+ *     → 302 to a 15-min signed GET URL for the latest installer
+ *     → 404 JSON when nothing is published for that platform (or the row points
+ *       outside this environment's bucket)
  *
  *   GET /api/downloads/desktop/latest?platform=windows|macos|linux
- *     → 302 redirect to storageUrl (GCS or /downloads/:platform)
+ *     → 302 to /downloads/:platform (the raw object is private)
  *     → with ?format=json → returns metadata object (no redirect)
  *
  *   GET /api/downloads/desktop/versions
  *     → JSON array of all published releases, newest first
  *
  * Internal endpoints (guarded by DESKTOP_RELEASE_CI_TOKEN):
- *   POST /api/internal/desktop-releases/upload
- *     → binary upload (manual/local workflow, no GCS):
- *       writes file to installers/ + atomically registers as latest for its platform
- *       NOTE: blocked by Replit's reverse proxy for files > ~50 MB; prefer upload-chunk.
- *
- *   POST /api/internal/desktop-releases/upload-chunk
- *     → chunked binary upload — bypasses Replit's proxy body-size limit.
- *       Send the file in ≤ 20 MB slices; server reassembles, verifies SHA256,
- *       writes installers/<filename>, and registers the DB row on the final chunk.
- *       Required headers on every chunk:
- *         Authorization, X-Upload-Id, X-Chunk-Index, X-Total-Chunks,
- *         X-Version, X-Platform, X-Filename, X-File-Size, X-SHA256
- *       Returns 200 for intermediate chunks, 201 + release JSON for the last.
+ *   POST /api/internal/desktop-releases/upload-url
+ *     → { platform, version, filename, fileSize, sha256 } → { uploadUrl, storageUrl, expiresAt }
+ *       uploadUrl is a signed PUT (15 min); the client PUTs the file straight to storage.
  *
  *   POST /api/internal/desktop-releases
- *     → metadata-only registration (CI/GCS workflow):
- *       no file upload; storageUrl must be a GCS HTTPS URL or /downloads/:platform
+ *     → registers the release and marks it latest for its platform, once the
+ *       storageUrl is in our own bucket and the object exists.
  *
  * Per-platform independence:
  *   Each platform (windows / macos / linux) has exactly one is_latest=true row
  *   at any time. Publishing Windows does not affect macOS or Linux rows.
- *   Platforms with no row (or missing file) are returned as unavailable.
  */
 
-import express, { type Express, type Request, type Response } from "express";
-import path from "path";
-import fs from "fs";
-import { createHash } from "crypto";
+import { type Express, type Request, type Response } from "express";
 import { db } from "./db";
 import { desktopReleases } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { desktopReleaseCiToken } from "./config";
-import { signObjectURL, parseObjectPath } from "./objectStorage";
+import { config, desktopReleaseCiToken } from "./config";
+import { signObjectURL, parseObjectPath, storagePort, type StoredObjectRef } from "./objectStorage";
 
 const VALID_PLATFORMS = ["windows", "macos", "linux"] as const;
 type Platform = (typeof VALID_PLATFORMS)[number];
@@ -60,9 +51,10 @@ type Platform = (typeof VALID_PLATFORMS)[number];
 const VERSION_RE = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
 // Reasonable filename: printable ASCII, no path traversal
 const FILENAME_RE = /^[a-zA-Z0-9._-]+$/;
+const SHA256_RE = /^[a-f0-9]{64}$/;
 
-// Files live in <cwd>/installers/ — not committed, in .gitignore.
-const installersDir = path.resolve(process.cwd(), "installers");
+const STORAGE_URL_PREFIX = "https://storage.googleapis.com/";
+const SIGNED_URL_TTL_SEC = 900; // 15 minutes
 
 function isCiAuthorized(req: Request): boolean {
   const token = desktopReleaseCiToken();
@@ -71,19 +63,68 @@ function isCiAuthorized(req: Request): boolean {
   return typeof auth === "string" && auth === `Bearer ${token}`;
 }
 
+/** Buckets this environment owns: the private dir's and every public search path's. */
+function ownBucketNames(): Set<string> {
+  const names = new Set<string>();
+  for (const dir of [config.objectStorage.privateDir, ...config.objectStorage.publicSearchPaths]) {
+    if (!dir) continue;
+    try {
+      names.add(parseObjectPath(dir).bucketName);
+    } catch {
+      // A malformed entry owns nothing.
+    }
+  }
+  return names;
+}
+
+/**
+ * The storage ref behind a stored `https://storage.googleapis.com/<bucket>/<object>`
+ * URL, or null when the URL is not that form or names a bucket this environment
+ * does not own. ADR-0018: no production URL of another environment is followed,
+ * so a foreign bucket is treated exactly like a missing release.
+ */
+function ownBucketRef(storageUrl: string | null | undefined): StoredObjectRef | null {
+  if (!storageUrl?.startsWith(STORAGE_URL_PREFIX)) return null;
+  let parts: string[];
+  try {
+    parts = new URL(storageUrl).pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return null;
+  }
+  if (parts.length < 2) return null;
+  const [bucketName, ...rest] = parts;
+  if (!ownBucketNames().has(bucketName)) return null;
+  return { bucketName, objectName: rest.join("/") };
+}
+
+/** The installers directory inside the first public search path, as a bucket + prefix. */
+function installersPrefix(): { bucketName: string; prefix: string } | null {
+  const [first] = config.objectStorage.publicSearchPaths;
+  if (!first) return null;
+  const { bucketName, objectName } = parseObjectPath(first);
+  const base = objectName.replace(/\/+$/, "");
+  return { bucketName, prefix: base ? `${base}/installers` : "installers" };
+}
+
+/** Shared validation of the fields every release route takes; returns an error message or null. */
+function releaseFieldError(version: string, platform: string, filename: string): string | null {
+  if (!VALID_PLATFORMS.includes(platform as Platform)) return "Invalid platform";
+  if (!VERSION_RE.test(version)) return "Invalid version format (expected semver)";
+  if (!FILENAME_RE.test(filename)) return "Invalid filename";
+  return null;
+}
+
 export function registerDownloadRoutes(app: Express): void {
 
   // ── Public: per-platform availability ────────────────────────────────────
   // Returns { windows: bool, macos: bool, linux: bool }.
-  // A platform is "available" when the DB has an is_latest row AND either:
-  //   a) storageUrl is a GCS HTTPS URL (file lives in Object Storage — always reachable), or
-  //   b) storageUrl is a local /downloads/:platform path AND the file exists on disk.
+  // A platform is "available" when its is_latest row is in our own bucket AND
+  // the object is actually there.
   app.get("/downloads/availability", async (_req: Request, res: Response) => {
     try {
       const rows = await db
         .select({
           platform: desktopReleases.platform,
-          filename: desktopReleases.filename,
           storageUrl: desktopReleases.storageUrl,
         })
         .from(desktopReleases)
@@ -92,12 +133,8 @@ export function registerDownloadRoutes(app: Express): void {
       const result: Record<string, boolean> = { windows: false, macos: false, linux: false };
       for (const row of rows) {
         if (!(row.platform in result)) continue;
-        if (row.storageUrl?.startsWith("https://storage.googleapis.com/")) {
-          // File is in GCS — always reachable (no disk check needed).
-          result[row.platform] = true;
-        } else {
-          result[row.platform] = fs.existsSync(path.join(installersDir, row.filename));
-        }
+        const ref = ownBucketRef(row.storageUrl);
+        result[row.platform] = ref !== null && (await storagePort.exists(ref));
       }
       return res.json(result);
     } catch (err) {
@@ -107,10 +144,8 @@ export function registerDownloadRoutes(app: Express): void {
   });
 
   // ── Public: serve installer file ──────────────────────────────────────────
-  // Looks up the current latest filename from DB, then streams the file.
-  // The filename in the Content-Disposition header is the original artifact
-  // name (e.g. DocuFlow-Agent-0.1.6-windows-setup.exe) — not a stable name —
-  // so the user always knows which version they downloaded.
+  // Looks up the current latest row, signs a 15-min GET for its object and
+  // redirects there, so the download goes straight from storage.
   for (const platform of VALID_PLATFORMS) {
     app.get(`/downloads/${platform}`, async (_req: Request, res: Response) => {
       try {
@@ -128,45 +163,27 @@ export function registerDownloadRoutes(app: Express): void {
           )
           .limit(1);
 
-        if (!release) {
+        // ADR-0018: no production URL of another environment is followed. A row
+        // outside our own bucket answers exactly like no release at all.
+        const ref = release ? ownBucketRef(release.storageUrl) : null;
+        if (!release || !ref) {
           return res.status(404).json({
             error: `No release published yet for platform: ${platform}`,
           });
         }
 
-        // GCS object (storageUrl = https://storage.googleapis.com/BUCKET/OBJECT)
-        // → generate a short-lived signed GET URL and redirect the browser there.
-        // Download goes directly from GCS, bypassing Replit's ~50 MB proxy limit.
-        if (release.storageUrl?.startsWith("https://storage.googleapis.com/")) {
-          try {
-            const url = new URL(release.storageUrl);
-            const pathParts = url.pathname.split("/").filter(Boolean);
-            const bucketName = pathParts[0];
-            const objectName = pathParts.slice(1).join("/");
-            const signedUrl = await signObjectURL({
-              bucketName,
-              objectName,
-              method: "GET",
-              ttlSec: 900, // 15 minutes — enough for any download
-            });
-            return res.redirect(302, signedUrl);
-          } catch (signErr) {
-            console.error(`[downloadRoutes] Failed to sign GCS URL for ${platform}:`, signErr);
-            return res.status(500).json({ error: "Failed to generate download URL" });
-          }
-        }
-
-        // Fallback: stream from local installers/ directory.
-        // Only works for files ≤ ~50 MB through Replit's reverse proxy.
-        const filePath = path.join(installersDir, release.filename);
-        if (!fs.existsSync(filePath)) {
-          return res.status(404).json({
-            error: "Installer file is registered but missing from disk",
-            filename: release.filename,
+        try {
+          const signedUrl = await signObjectURL({
+            bucketName: ref.bucketName,
+            objectName: ref.objectName,
+            method: "GET",
+            ttlSec: SIGNED_URL_TTL_SEC,
           });
+          return res.redirect(302, signedUrl);
+        } catch (signErr) {
+          console.error(`[downloadRoutes] Failed to sign download URL for ${platform}:`, signErr);
+          return res.status(500).json({ error: "Failed to generate download URL" });
         }
-
-        return res.download(filePath, release.filename);
       } catch (err) {
         console.error(`[downloadRoutes] Error serving ${platform}:`, err);
         return res.status(500).json({ error: "Internal server error" });
@@ -174,7 +191,7 @@ export function registerDownloadRoutes(app: Express): void {
     });
   }
 
-  // ── Public: latest installer metadata / redirect (GCS workflow) ───────────
+  // ── Public: latest installer metadata / redirect ──────────────────────────
   app.get("/api/downloads/desktop/latest", async (req: Request, res: Response) => {
     const platform = req.query.platform as string;
     if (!VALID_PLATFORMS.includes(platform as Platform)) {
@@ -206,14 +223,16 @@ export function registerDownloadRoutes(app: Express): void {
           version: release.version,
           platform: release.platform,
           filename: release.filename,
-          url: release.storageUrl,
+          // The stored object is private; the signed route is the only way to it.
+          url: `/downloads/${platform}`,
           fileSize: release.fileSize,
           sha256: release.sha256,
           publishedAt: release.publishedAt,
         });
       }
 
-      return res.redirect(302, release.storageUrl);
+      // The raw object is private: go through the signed route.
+      return res.redirect(302, `/downloads/${platform}`);
     } catch (err) {
       console.error("[downloadRoutes] Error fetching latest release:", err);
       return res.status(500).json({ error: "Internal server error" });
@@ -244,315 +263,69 @@ export function registerDownloadRoutes(app: Express): void {
     }
   });
 
-  // ── Internal: manual upload (local workflow, no GCS) ─────────────────────
-  // Accepts the raw binary in the request body.
-  // Required headers:
-  //   Authorization: Bearer <DESKTOP_RELEASE_CI_TOKEN>
-  //   Content-Type: application/octet-stream
-  //   X-Version:  0.1.6
-  //   X-Platform: windows
-  //   X-Filename: DocuFlow-Agent-0.1.6-windows-setup.exe
-  //   X-SHA256:   <hex> (optional — server verifies if provided)
-  //
-  // The server writes the file to installers/<X-Filename>, then atomically
-  // registers it as is_latest for its platform in desktop_releases.
-  // The old latest file is deleted from disk (non-fatal if it fails).
-  app.post(
-    "/api/internal/desktop-releases/upload",
-    express.raw({ type: "application/octet-stream", limit: "200mb" }),
-    async (req: Request, res: Response) => {
-      if (!isCiAuthorized(req)) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      const version  = (req.headers["x-version"]  as string | undefined)?.trim();
-      const platform = (req.headers["x-platform"] as string | undefined)?.trim();
-      const filename = (req.headers["x-filename"] as string | undefined)?.trim();
-      const clientSha256 = (req.headers["x-sha256"] as string | undefined)?.trim().toLowerCase();
-
-      if (!version || !platform || !filename) {
-        return res.status(400).json({
-          error: "Missing required headers: X-Version, X-Platform, X-Filename",
-        });
-      }
-      if (!VALID_PLATFORMS.includes(platform as Platform)) {
-        return res.status(400).json({ error: "Invalid platform" });
-      }
-      if (!VERSION_RE.test(version)) {
-        return res.status(400).json({ error: "Invalid version format (semver expected, e.g. 0.1.6)" });
-      }
-      if (!FILENAME_RE.test(filename)) {
-        return res.status(400).json({ error: "Invalid filename — use only letters, digits, dots, dashes, underscores" });
-      }
-
-      const fileBuffer = req.body as Buffer;
-      if (!Buffer.isBuffer(fileBuffer) || fileBuffer.length === 0) {
-        return res.status(400).json({ error: "Empty or missing file body" });
-      }
-
-      // SHA256 — computed server-side; optionally verified against client value
-      const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
-      if (clientSha256 && clientSha256 !== sha256) {
-        return res.status(400).json({
-          error: "SHA256 mismatch — file may be corrupted in transit",
-          serverComputed: sha256,
-          clientProvided: clientSha256,
-        });
-      }
-      const fileSize = fileBuffer.length;
-
-      try {
-        // Find old latest (to clean up old file after commit)
-        const [oldRelease] = await db
-          .select({ filename: desktopReleases.filename })
-          .from(desktopReleases)
-          .where(
-            and(
-              eq(desktopReleases.platform, platform),
-              eq(desktopReleases.isLatest, true)
-            )
-          )
-          .limit(1);
-
-        // Write new file to disk
-        fs.mkdirSync(installersDir, { recursive: true });
-        const destPath = path.join(installersDir, filename);
-        fs.writeFileSync(destPath, fileBuffer);
-
-        // DB: atomically demote old → insert new
-        const release = await db.transaction(async (tx) => {
-          await tx
-            .update(desktopReleases)
-            .set({ isLatest: false })
-            .where(
-              and(
-                eq(desktopReleases.platform, platform),
-                eq(desktopReleases.isLatest, true)
-              )
-            );
-
-          const [inserted] = await tx
-            .insert(desktopReleases)
-            .values({
-              version,
-              platform,
-              filename,
-              storageUrl: `/downloads/${platform}`, // stable app-domain URL
-              fileSize,
-              sha256,
-              isLatest: true,
-            })
-            .returning();
-
-          return inserted;
-        });
-
-        // Delete old file — non-fatal; just orphaned if it fails
-        if (oldRelease && oldRelease.filename !== filename) {
-          const oldPath = path.join(installersDir, oldRelease.filename);
-          try {
-            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-          } catch (cleanupErr) {
-            console.warn("[downloadRoutes] Could not delete old installer:", cleanupErr);
-          }
-        }
-
-        console.log(
-          `[downloadRoutes] Uploaded ${platform} v${version}: ${filename}` +
-          ` (${(fileSize / 1024 / 1024).toFixed(1)} MB, sha256=${sha256.slice(0, 12)}...)`
-        );
-
-        return res.status(201).json({
-          version: release.version,
-          platform: release.platform,
-          filename: release.filename,
-          fileSize: release.fileSize,
-          sha256: release.sha256,
-          storageUrl: release.storageUrl,
-          publishedAt: release.publishedAt,
-        });
-      } catch (err) {
-        console.error("[downloadRoutes] Error uploading release:", err);
-        return res.status(500).json({ error: "Internal server error" });
-      }
+  // ── Internal: signed upload URL ───────────────────────────────────────────
+  // The publisher PUTs the installer straight to storage with the returned
+  // URL, then registers it through the metadata route below.
+  app.post("/api/internal/desktop-releases/upload-url", async (req: Request, res: Response) => {
+    if (!isCiAuthorized(req)) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
-  );
 
-  // ── Internal: chunked upload (local Windows workflow) ────────────────────
-  // Splits the installer into ≤ 20 MB slices to stay under Replit's proxy
-  // body-size limit. Each chunk is stored in installers/.tmp/<uploadId>/.
-  // When the final chunk arrives the server reassembles the file, verifies
-  // the SHA256, writes it to installers/<filename>, and atomically registers
-  // the release in the DB — exactly like the single-shot upload endpoint.
-  //
-  // Required headers on every request:
-  //   Authorization: Bearer <DESKTOP_RELEASE_CI_TOKEN>
-  //   Content-Type:  application/octet-stream
-  //   X-Upload-Id:   <uuid>            — shared across all chunks
-  //   X-Chunk-Index: <0-based integer> — this chunk's position
-  //   X-Total-Chunks:<integer>         — total number of chunks
-  //   X-Version:     <semver>
-  //   X-Platform:    windows|macos|linux
-  //   X-Filename:    <artifact filename>
-  //   X-File-Size:   <total bytes>
-  //   X-SHA256:      <hex>             — SHA256 of the complete file
-  app.post(
-    "/api/internal/desktop-releases/upload-chunk",
-    express.raw({ type: "application/octet-stream", limit: "25mb" }),
-    async (req: Request, res: Response) => {
-      if (!isCiAuthorized(req)) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
+    const { version, platform, filename, fileSize, sha256 } = (req.body ?? {}) as {
+      version?: string;
+      platform?: string;
+      filename?: string;
+      fileSize?: number;
+      sha256?: string;
+    };
 
-      const uploadId    = (req.headers["x-upload-id"]    as string | undefined)?.trim();
-      const chunkIndex  = parseInt((req.headers["x-chunk-index"]   as string) ?? "", 10);
-      const totalChunks = parseInt((req.headers["x-total-chunks"]  as string) ?? "", 10);
-      const version     = (req.headers["x-version"]   as string | undefined)?.trim();
-      const platform    = (req.headers["x-platform"]  as string | undefined)?.trim();
-      const filename    = (req.headers["x-filename"]  as string | undefined)?.trim();
-      const fileSize    = parseInt((req.headers["x-file-size"]    as string) ?? "0", 10);
-      const sha256      = (req.headers["x-sha256"]    as string | undefined)?.trim().toLowerCase();
-
-      if (!uploadId || isNaN(chunkIndex) || isNaN(totalChunks) || !version || !platform || !filename || !sha256) {
-        return res.status(400).json({
-          error: "Missing required headers: X-Upload-Id, X-Chunk-Index, X-Total-Chunks, X-Version, X-Platform, X-Filename, X-File-Size, X-SHA256",
-        });
-      }
-      if (!VALID_PLATFORMS.includes(platform as Platform)) {
-        return res.status(400).json({ error: "Invalid platform" });
-      }
-      if (!VERSION_RE.test(version)) {
-        return res.status(400).json({ error: "Invalid version format (semver expected)" });
-      }
-      if (!FILENAME_RE.test(filename)) {
-        return res.status(400).json({ error: "Invalid filename" });
-      }
-      if (!/^[a-f0-9]{64}$/.test(sha256)) {
-        return res.status(400).json({ error: "Invalid X-SHA256 — must be 64-char hex" });
-      }
-      if (chunkIndex < 0 || chunkIndex >= totalChunks) {
-        return res.status(400).json({ error: "X-Chunk-Index out of range" });
-      }
-
-      const chunk = req.body as Buffer;
-      if (!Buffer.isBuffer(chunk) || chunk.length === 0) {
-        return res.status(400).json({ error: "Empty chunk body" });
-      }
-
-      // Sanitize uploadId to prevent path traversal
-      if (!/^[a-zA-Z0-9_-]{8,64}$/.test(uploadId)) {
-        return res.status(400).json({ error: "Invalid X-Upload-Id format" });
-      }
-
-      const tmpDir = path.join(installersDir, ".tmp", uploadId);
-
-      try {
-        fs.mkdirSync(tmpDir, { recursive: true });
-        fs.writeFileSync(path.join(tmpDir, `chunk-${chunkIndex}`), chunk);
-      } catch (err) {
-        console.error("[downloadRoutes] Failed to write chunk:", err);
-        return res.status(500).json({ error: "Failed to store chunk" });
-      }
-
-      // Not the last chunk — acknowledge and wait for the rest
-      if (chunkIndex < totalChunks - 1) {
-        return res.json({ received: chunkIndex + 1, total: totalChunks, status: "partial" });
-      }
-
-      // ── Last chunk received — reassemble ─────────────────────────────────
-      try {
-        fs.mkdirSync(installersDir, { recursive: true });
-        const destPath = path.join(installersDir, filename);
-
-        // Concatenate chunks in order
-        const parts: Buffer[] = [];
-        for (let i = 0; i < totalChunks; i++) {
-          const chunkPath = path.join(tmpDir, `chunk-${i}`);
-          if (!fs.existsSync(chunkPath)) {
-            fs.rmSync(tmpDir, { recursive: true, force: true });
-            return res.status(400).json({ error: `Missing chunk ${i} during reassembly` });
-          }
-          parts.push(fs.readFileSync(chunkPath));
-        }
-        const assembled = Buffer.concat(parts);
-
-        // Verify integrity
-        const actualSha256 = createHash("sha256").update(assembled).digest("hex");
-        if (actualSha256 !== sha256) {
-          fs.rmSync(tmpDir, { recursive: true, force: true });
-          return res.status(400).json({
-            error: "SHA256 mismatch after reassembly — upload may be corrupted",
-            expected: sha256,
-            actual: actualSha256,
-          });
-        }
-
-        fs.writeFileSync(destPath, assembled);
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-
-        // Find old latest for cleanup
-        const [oldRelease] = await db
-          .select({ filename: desktopReleases.filename })
-          .from(desktopReleases)
-          .where(and(eq(desktopReleases.platform, platform), eq(desktopReleases.isLatest, true)))
-          .limit(1);
-
-        // Atomically demote old → insert new
-        const release = await db.transaction(async (tx) => {
-          await tx
-            .update(desktopReleases)
-            .set({ isLatest: false })
-            .where(and(eq(desktopReleases.platform, platform), eq(desktopReleases.isLatest, true)));
-
-          const [inserted] = await tx
-            .insert(desktopReleases)
-            .values({
-              version,
-              platform,
-              filename,
-              storageUrl: `/downloads/${platform}`,
-              fileSize: fileSize || assembled.length,
-              sha256: actualSha256,
-              isLatest: true,
-            })
-            .returning();
-
-          return inserted;
-        });
-
-        // Delete old installer from disk — non-fatal
-        if (oldRelease && oldRelease.filename !== filename) {
-          const oldPath = path.join(installersDir, oldRelease.filename);
-          try {
-            if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-          } catch (cleanupErr) {
-            console.warn("[downloadRoutes] Could not delete old installer:", cleanupErr);
-          }
-        }
-
-        console.log(
-          `[downloadRoutes] Chunked upload complete: ${platform} v${version} — ${filename}` +
-          ` (${(assembled.length / 1024 / 1024).toFixed(1)} MB in ${totalChunks} chunks, sha256=${actualSha256.slice(0, 12)}...)`
-        );
-
-        return res.status(201).json({
-          version: release.version,
-          platform: release.platform,
-          filename: release.filename,
-          fileSize: release.fileSize,
-          sha256: release.sha256,
-          storageUrl: release.storageUrl,
-          publishedAt: release.publishedAt,
-        });
-      } catch (err) {
-        console.error("[downloadRoutes] Error during chunk reassembly:", err);
-        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-        return res.status(500).json({ error: "Internal server error during reassembly" });
-      }
+    if (!version || !platform || !filename || fileSize === undefined || !sha256) {
+      return res.status(400).json({
+        error: "Missing required fields: version, platform, filename, fileSize, sha256",
+      });
     }
-  );
+    const fieldError = releaseFieldError(version, platform, filename);
+    if (fieldError) {
+      return res.status(400).json({ error: fieldError });
+    }
+    if (!Number.isInteger(fileSize) || fileSize <= 0) {
+      return res.status(400).json({ error: "Invalid fileSize — must be a positive integer" });
+    }
+    if (!SHA256_RE.test(sha256)) {
+      return res.status(400).json({ error: "Invalid sha256 — must be 64-char lowercase hex" });
+    }
 
-  // ── Internal: metadata-only registration (CI/GCS workflow) ───────────────
+    if (!storagePort.supportsSignedUrls) {
+      return res.status(503).json({
+        error: "This environment's storage provider cannot sign upload URLs, so installers cannot be published to it",
+      });
+    }
+    const target = installersPrefix();
+    if (!target) {
+      return res.status(503).json({ error: "No public object path is configured for installers" });
+    }
+
+    try {
+      const objectName = `${target.prefix}/${version}/${filename}`;
+      const uploadUrl = await signObjectURL({
+        bucketName: target.bucketName,
+        objectName,
+        method: "PUT",
+        ttlSec: SIGNED_URL_TTL_SEC,
+      });
+      return res.json({
+        uploadUrl,
+        storageUrl: `${STORAGE_URL_PREFIX}${target.bucketName}/${objectName}`,
+        expiresAt: new Date(Date.now() + SIGNED_URL_TTL_SEC * 1000).toISOString(),
+      });
+    } catch (err) {
+      console.error("[downloadRoutes] Error minting upload URL:", err);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── Internal: metadata registration ───────────────────────────────────────
+  // Marks the release latest only once its object is in our bucket.
   app.post("/api/internal/desktop-releases", async (req: Request, res: Response) => {
     if (!isCiAuthorized(req)) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -572,24 +345,29 @@ export function registerDownloadRoutes(app: Express): void {
         error: "Missing required fields: version, platform, filename, storageUrl",
       });
     }
-    if (!VALID_PLATFORMS.includes(platform as Platform)) {
-      return res.status(400).json({ error: "Invalid platform" });
+    const fieldError = releaseFieldError(version, platform, filename);
+    if (fieldError) {
+      return res.status(400).json({ error: fieldError });
     }
-    if (!VERSION_RE.test(version)) {
-      return res.status(400).json({ error: "Invalid version format (expected semver)" });
-    }
-    if (!FILENAME_RE.test(filename)) {
-      return res.status(400).json({ error: "Invalid filename" });
-    }
-    const isGcsUrl = /^https:\/\/storage\.googleapis\.com\//.test(storageUrl);
-    const isLocalUrl = /^\/downloads\/(windows|macos|linux)$/.test(storageUrl);
-    if (!isGcsUrl && !isLocalUrl) {
+    if (!storageUrl.startsWith(STORAGE_URL_PREFIX)) {
       return res.status(400).json({
-        error: "storageUrl must be a GCS HTTPS URL or a local /downloads/:platform path",
+        error: `storageUrl must be a ${STORAGE_URL_PREFIX}<bucket>/<object> URL`,
+      });
+    }
+    const ref = ownBucketRef(storageUrl);
+    if (!ref) {
+      return res.status(422).json({
+        error: "storageUrl names a bucket that is not this environment's own",
       });
     }
 
     try {
+      if (!(await storagePort.exists(ref))) {
+        return res.status(409).json({
+          error: "The installer object does not exist in storage yet — PUT it to the upload-url first",
+        });
+      }
+
       const release = await db.transaction(async (tx) => {
         await tx
           .update(desktopReleases)

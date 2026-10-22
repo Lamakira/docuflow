@@ -5,7 +5,8 @@ import "./telemetry";
 import { createApp, log } from "./app";
 import { config, logConfigSummary } from "./config";
 import { checkRuntimeRoleAtBoot } from "./databaseRole";
-import { verifyRuntimeRole } from "./db";
+import { pool, verifyRuntimeRole } from "./db";
+import { checkRlsInvariantsAtBoot } from "./rlsInvariantsCheck";
 import { serveStatic } from "./static";
 
 /**
@@ -24,6 +25,10 @@ import { serveStatic } from "./static";
   logConfigSummary();
 
   await checkRuntimeRoleAtBoot(verifyRuntimeRole);
+
+  // #328: report (never block on) RLS coming back on jobs/dead_letters. Both
+  // roles enqueue or claim Jobs, so it runs before the role branch, unawaited.
+  void checkRlsInvariantsAtBoot(pool);
 
   if (config.role === "worker") {
     const { startWorkerLoop } = await import("./worker");

@@ -30,10 +30,10 @@ name: Desktop Agent — Release
 # That is the useful half and it needs no credential at all.
 #
 # HOW DESKTOP RELEASES ACTUALLY HAPPEN TODAY: an operator runs
-# `scripts/publish-release.sh` (or `publish-release.ps1`) from a machine holding
-# its own credentials, which uploads to the installer bucket and registers the
-# release against a backend named by DOCUFLOW_API_URL in that operator's
-# environment. That path never involved this workflow and is untouched here.
+# `scripts/release-desktop.mjs` with DOCUFLOW_API_URL and DESKTOP_RELEASE_CI_TOKEN
+# in that operator's environment. It asks the backend for a signed upload URL,
+# PUTs the installer straight into the backend's own bucket, and registers the
+# release (no Google key involved). That path never involved this workflow.
 #
 # WHAT RE-ARMING WOULD REQUIRE, whenever the migration reaches that point:
 # a decision recorded as an ADR or an amendment to ADR-0018 naming the credential

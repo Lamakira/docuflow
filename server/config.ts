@@ -46,6 +46,14 @@ export interface ServiceAccountKey {
  */
 export type ObjectStorageProvider = "replit" | "gcs";
 
+/**
+ * How signed URLs come about. `provider`: the Google client signs them itself
+ * with its key. `sidecar`: the Replit sidecar signs them (only reachable when
+ * running on Replit). `relay`: nothing can sign, so every byte moves through
+ * the server.
+ */
+export type ObjectStorageSigning = "provider" | "sidecar" | "relay";
+
 export interface ObjectStorageConfig {
   /** `/bucket/prefix` root under which private objects live. */
   privateDir: string;
@@ -53,6 +61,8 @@ export interface ObjectStorageConfig {
   publicSearchPaths: string[];
   /** Which provider the roots above are held in. */
   provider: ObjectStorageProvider;
+  /** How signed URLs are minted for this provider in this environment. */
+  signing: ObjectStorageSigning;
   /** Inline service-account key; absent means `GOOGLE_APPLICATION_CREDENTIALS` names one. */
   serviceAccount?: ServiceAccountKey;
   projectId?: string;
@@ -293,11 +303,20 @@ function resolveObjectStorage(): Resolved<ObjectStorageConfig> {
   const provider: ObjectStorageProvider =
     serviceAccount || read("GOOGLE_APPLICATION_CREDENTIALS") ? "gcs" : "replit";
 
+  // The sidecar exists only inside Replit. `REPL_ID` is set in the workspace;
+  // `REPLIT_DEPLOYMENT` (=1) is set in deployments, where v1 relied on the
+  // sidecar being present. Either one means it is reachable (#328). Elsewhere —
+  // local dev, CI, Docker — there is nothing to sign with, so transfers relay.
+  const onReplit = Boolean(read("REPL_ID") || read("REPLIT_DEPLOYMENT"));
+  const signing: ObjectStorageSigning =
+    provider === "gcs" ? "provider" : onReplit ? "sidecar" : "relay";
+
   return {
     value: {
       privateDir: privateDir ?? "",
       publicSearchPaths,
       provider,
+      signing,
       serviceAccount,
       projectId: read("GCS_PROJECT_ID") ?? serviceAccount?.projectId,
     },
@@ -701,11 +720,22 @@ function webSignInState(): string {
   return "LOCKED — no CLERK_PUBLISHABLE_KEY";
 }
 
-/** One of the two, always: boot refuses an environment that supplies neither. */
-function storageCredentialMode(): string {
-  return config.objectStorage.serviceAccount
-    ? "service-account key"
-    : "GOOGLE_APPLICATION_CREDENTIALS";
+/**
+ * Provider, bucket and signing mode, so the line says where objects really go
+ * and whether browsers transfer directly or through the server.
+ */
+function storageDescription(): string {
+  const { provider, signing, privateDir, serviceAccount } = config.objectStorage;
+  const bucket = privateDir.split("/").filter(Boolean)[0] ?? "(none)";
+  const how =
+    signing === "provider"
+      ? serviceAccount
+        ? "service-account key"
+        : "GOOGLE_APPLICATION_CREDENTIALS"
+      : signing === "sidecar"
+        ? "via sidecar"
+        : "relay";
+  return `${provider} bucket ${bucket} signing ${how}`;
 }
 
 /**
@@ -742,7 +772,7 @@ export function logConfigSummary(): void {
       `build ${build.commit} (${build.source}), ` +
       `database ${config.database.source} over ${config.database.driver} ` +
       `(${config.database.connectionString.replace(/:([^@/]+)@/, ":<hidden>@")}), ` +
-      `object storage via ${storageCredentialMode()}, ` +
+      `object storage ${storageDescription()}, ` +
       `desktop tokens on key ${desktopTokenKeys()}, ` +
       `email ${config.email.apiKey ? "enabled" : "unconfigured"}, ` +
       `Stripe ${config.billing.secretKey ? "enabled" : "unconfigured"}, ` +

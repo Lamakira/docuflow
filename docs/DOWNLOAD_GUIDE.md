@@ -129,43 +129,21 @@ Delete the file to revert to the production URL baked into the build.
 
 ---
 
-## Publishing to GitHub Releases
+## Publishing and downloading (v2)
 
-All three artifacts are published under the same tag:
+Installers live in the environment's own bucket, under `<public dir>/installers/<version>/<filename>`. Nothing needs a Google key.
 
-```bash
-gh release create desktop-agent-v0.1.3 \
-  "desktop-agent/release/DocuFlow-Agent-0.1.3-windows-setup.exe" \
-  "desktop-agent/release/DocuFlow-Agent-0.1.3-macos.dmg" \
-  "desktop-agent/release/DocuFlow-Agent-0.1.3-linux-amd64.deb" \
-  --title "Desktop Agent v0.1.3" \
-  --notes "See docs/DESKTOP_RELEASE_LOG.md for full release notes."
-```
-
-After publishing, update the download URL constants in:
-`client/src/pages/TimeTrackingDownloadPage.tsx`
-
----
-
-## Updating the Download URLs
-
-When a new version is released, update these three constants in `TimeTrackingDownloadPage.tsx`:
-
-```typescript
-const DOWNLOAD_URL_WINDOWS = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v{VERSION}/DocuFlow-Agent-{VERSION}-windows-setup.exe";
-const DOWNLOAD_URL_MACOS   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v{VERSION}/DocuFlow-Agent-{VERSION}-macos.dmg";
-const DOWNLOAD_URL_LINUX   = "https://github.com/CarineEpitech/docuflow/releases/download/desktop-agent-v{VERSION}/DocuFlow-Agent-{VERSION}-linux-amd64.deb";
-const AGENT_VERSION = "v{VERSION}";
-```
+- **Publish:** `DOCUFLOW_API_URL=<deployment> DESKTOP_RELEASE_CI_TOKEN=<token> node scripts/release-desktop.mjs`. For each installer the script asks the server for a signed PUT URL, uploads the file straight to storage, then registers the release. Registration is refused until the object exists. See [DESKTOP_RELEASE.md](DESKTOP_RELEASE.md).
+- **Download:** `GET /downloads/<platform>` answers a 302 to a 15-minute signed URL, so the bytes never cross the server. `GET /api/downloads/desktop/latest?platform=<platform>` redirects to that route. A platform with no release in this environment's bucket answers 404 and shows as unavailable in `GET /downloads/availability`.
 
 ---
 
 ## Version Bumping
 
 1. Update `version` in `desktop-agent/package.json`
-2. Update `AGENT_VERSION` + all three `DOWNLOAD_URL_*` constants in `TimeTrackingDownloadPage.tsx`
+2. The v2 download links need no change: `/downloads/<platform>` always serves the latest registered release (the v1 download page still hard-codes its version label)
 3. Rebuild all platform artifacts
-4. Publish GitHub Release
+4. Publish with `scripts/release-desktop.mjs` (see above)
 5. Add entry to `docs/DESKTOP_RELEASE_LOG.md`
 
 ---

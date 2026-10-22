@@ -771,7 +771,7 @@ export function V2DossierPage() {
     setUploadingAudio(true);
     try {
       const uploadSlot = await apiRequest("POST", "/api/objects/upload");
-      const uploaded = await fetch(uploadSlot.uploadURL, { method: "PUT", body: audioBlob, headers: { "Content-Type": "audio/webm" }, credentials: "include" });
+      const uploaded = await fetch(uploadSlot.uploadURL, { method: "PUT", body: audioBlob, headers: { "Content-Type": "audio/webm" } });
       if (!uploaded.ok) throw new Error("Failed to upload audio");
       const audio = await apiRequest("POST", "/api/audio/upload", { audioUrl: uploadSlot.objectPath });
       createNote.mutate({ content: "Voice note", audioUrl: audio.audioUrl, audioRecordingId: audio.id, transcriptStatus: audio.transcriptStatus });
