@@ -21,27 +21,47 @@ import { currentWorkspaceContext, inWorkspace, requireWorkspaceContext } from ".
 const INLINE_SAFE_TYPE =
   /^(image\/(png|jpeg|gif|webp|avif|bmp)|application\/pdf|text\/plain|audio\/[\w.+-]+|video\/[\w.+-]+)$/;
 
+/** One `type/subtype`, nothing else: no list, no second value a browser could pick instead. */
+const MIME_ESSENCE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
+
 /**
- * What keeps a stored object from running as a page of this app (#329). The
- * content type is the uploader's word, and since a browser-loaded GET carries
- * the session cookie, an HTML or SVG upload opened by link would otherwise run
- * with the viewer's session on the app's own origin. Anything outside the
- * inline-safe list is forced to download and sandboxed should a browser render
- * it anyway; the safe types are sandboxed too, except PDF, whose built-in
- * viewers refuse to load in a sandboxed document.
+ * The headers a stored object is served with, kept from running as a page of
+ * this app (#329). The content type is the uploader's word, and since a
+ * browser-loaded GET carries the session cookie, an HTML or SVG upload opened
+ * by link would otherwise run with the viewer's session on the app's own
+ * origin.
+ *
+ * Only the parsed essence is sent, never the stored value: a browser reading
+ * `application/pdf,text/html` takes the last type, so judging the first one and
+ * echoing the rest would let the page through. A value that is not exactly one
+ * type becomes `application/octet-stream`. Anything outside the inline-safe list
+ * is forced to download and sandboxed should a browser render it anyway; the
+ * safe types are sandboxed too, except PDF, whose built-in viewers refuse to
+ * load in a sandboxed document, so it is only kept from being framed elsewhere.
  */
-export function storedContentGuards(
-  contentType: string,
+export function storedContentHeaders(
+  storedType: string | undefined,
   disposition: string | number | string[] | undefined,
 ): Record<string, string> {
-  const type = contentType.split(";")[0].trim().toLowerCase();
+  const [rawEssence, ...params] = (storedType ?? "").split(";");
+  const essence = rawEssence.trim().toLowerCase();
+  const type = MIME_ESSENCE.test(essence) ? essence : "application/octet-stream";
+  // The one parameter worth keeping, and only in a shape that cannot carry another type.
+  const charset = params
+    .map((param) => /^\s*charset=([a-z0-9._:-]+)\s*$/i.exec(param)?.[1])
+    .find(Boolean);
   if (INLINE_SAFE_TYPE.test(type)) {
-    return type === "application/pdf"
-      ? {}
-      : { "Content-Security-Policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox" };
+    return {
+      "Content-Type": charset && type === "text/plain" ? `${type}; charset=${charset}` : type,
+      "Content-Security-Policy":
+        type === "application/pdf"
+          ? "frame-ancestors 'self'"
+          : "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+    };
   }
   const current = typeof disposition === "string" ? disposition : "";
   return {
+    "Content-Type": type,
     "Content-Disposition": current.startsWith("attachment")
       ? current
       : current.replace(/^inline/, "attachment") || "attachment",
@@ -109,12 +129,10 @@ export class ObjectStorageService {
       // `Content-Length` is only set when the provider reports a size: App
       // Storage does not, and a header asserting the wrong length is worse than
       // an absent one.
-      const contentType = metadata.contentType || "application/octet-stream";
       res.set({
-        "Content-Type": contentType,
+        ...storedContentHeaders(metadata.contentType, res.getHeader("Content-Disposition")),
         ...(metadata.size === undefined ? {} : { "Content-Length": String(metadata.size) }),
         "Cache-Control": `${isPublic ? "public" : "private"}, max-age=${cacheTtlSec}`,
-        ...storedContentGuards(contentType, res.getHeader("Content-Disposition")),
       });
 
       const stream = storagePort.createReadStream(ref);

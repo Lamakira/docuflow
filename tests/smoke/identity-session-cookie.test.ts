@@ -284,26 +284,48 @@ describe("resolveIdentitySession authorizedParties", () => {
   });
 });
 
-describe("storedContentGuards", () => {
+describe("storedContentHeaders", () => {
   it("lets script-free types render inline and forces everything else to a sandboxed download", async () => {
-    const { storedContentGuards } = await import("../../server/objectStorage");
+    const { storedContentHeaders } = await import("../../server/objectStorage");
 
-    expect(storedContentGuards("application/pdf", undefined)).toEqual({});
-    expect(storedContentGuards("image/png", undefined)).not.toHaveProperty("Content-Disposition");
-    expect(storedContentGuards("Text/Plain; charset=utf-8", undefined)["Content-Security-Policy"]).toContain(
-      "sandbox",
+    expect(storedContentHeaders("application/pdf", undefined)).toEqual({
+      "Content-Type": "application/pdf",
+      "Content-Security-Policy": "frame-ancestors 'self'",
+    });
+    const png = storedContentHeaders("image/png", undefined);
+    expect(png["Content-Type"]).toBe("image/png");
+    expect(png).not.toHaveProperty("Content-Disposition");
+    expect(png["Content-Security-Policy"]).toContain("sandbox");
+    expect(storedContentHeaders("Text/Plain; charset=utf-8", undefined)["Content-Type"]).toBe(
+      "text/plain; charset=utf-8",
     );
     for (const type of ["text/html", "image/svg+xml", "application/xhtml+xml", "application/octet-stream"]) {
-      expect(storedContentGuards(type, undefined), type).toEqual({
+      expect(storedContentHeaders(type, undefined), type).toEqual({
+        "Content-Type": type,
         "Content-Disposition": "attachment",
         "Content-Security-Policy": "default-src 'none'; sandbox",
       });
     }
-    expect(storedContentGuards("text/html", 'inline; filename="a.html"')["Content-Disposition"]).toBe(
+    expect(storedContentHeaders("text/html", 'inline; filename="a.html"')["Content-Disposition"]).toBe(
       'attachment; filename="a.html"',
     );
-    expect(storedContentGuards("text/html", 'attachment; filename="a.html"')["Content-Disposition"]).toBe(
+    expect(storedContentHeaders("text/html", 'attachment; filename="a.html"')["Content-Disposition"]).toBe(
       'attachment; filename="a.html"',
+    );
+  });
+
+  it("sends only the parsed type, so a list or a smuggled parameter cannot pick another", async () => {
+    const { storedContentHeaders } = await import("../../server/objectStorage");
+
+    for (const stored of ["application/pdf,text/html", "image/png, text/html", "text/html image/png", "", undefined]) {
+      expect(storedContentHeaders(stored, undefined), String(stored)).toEqual({
+        "Content-Type": "application/octet-stream",
+        "Content-Disposition": "attachment",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+      });
+    }
+    expect(storedContentHeaders("text/plain; charset=utf-8,text/html", undefined)["Content-Type"]).toBe(
+      "text/plain",
     );
   });
 });
