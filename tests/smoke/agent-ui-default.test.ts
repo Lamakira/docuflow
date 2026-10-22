@@ -61,3 +61,16 @@ describe("desktop agent v2 brand mark", () => {
     expect(mark).toContain('<circle cx="47" cy="46.25" r="4" fill="#E9A23B" />');
   });
 });
+
+/**
+ * electron-builder refuses to build the .deb without a homepage ("Please
+ * specify project homepage"); removing the v1 production host broke the 0.2.2
+ * Linux build. It must stay set, and never to a production host (ADR-0018).
+ */
+describe("desktop agent package metadata", () => {
+  it("keeps a homepage the deb build needs, and not a production host", () => {
+    const pkg = JSON.parse(readFileSync("desktop-agent/package.json", "utf8")) as { homepage?: string };
+    expect(pkg.homepage).toBe("https://github.com/Lamakira/docuflow");
+    expect(readFileSync("desktop-agent/forge.config.ts", "utf8")).not.toContain("appvibed");
+  });
+});
