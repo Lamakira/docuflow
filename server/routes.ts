@@ -125,7 +125,7 @@ import {
   todayDailyUpdateStatus,
   tzDayKeyAndHour,
 } from "./dailyUpdateNudge";
-import { STALE_CHECK_WINDOW_MS, flagStaleRunningEntries } from "./staleTimer";
+import { STALE_CHECK_WINDOW_MS, flagStaleRunningEntries, stopExpiredPausedEntries } from "./staleTimer";
 import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
 import { createKnowledgeObjectStorage } from "./modules/knowledge/objectStorage";
 import { rebuildIndexArtifacts } from "./modules/intelligence/indexArtifacts";
@@ -4592,6 +4592,17 @@ Instructions:
       await flagStaleRunningEntries(new Date());
     } catch (error) {
       console.error("[StaleSession] Error checking stale entries:", error);
+    }
+  }, STALE_CHECK_WINDOW_MS);
+
+  // ─── Paused-expiry stop (#330) ───
+  // Unlike the stale flag, this stops: a Time Entry paused over 12 hours ends
+  // at its pause time. HTTP interval only; no Worker Job yet.
+  startBackgroundJob(async () => {
+    try {
+      await stopExpiredPausedEntries(new Date());
+    } catch (error) {
+      console.error("[PausedExpiry] Error stopping expired paused entries:", error);
     }
   }, STALE_CHECK_WINDOW_MS);
 

@@ -381,10 +381,14 @@ async function stopEntry(writer: TimeWriter, entry: TimeEntry, at: Date): Promis
   if (entry.status === "running" && entry.lastActivityAt) {
     duration += Math.floor((at.getTime() - entry.lastActivityAt.getTime()) / 1000);
   }
-  const endTime = at.getTime() < entry.startTime.getTime() ? entry.startTime : at;
+  // A paused entry ends when it was paused, so a pause left overnight is not a worked span (#330).
+  const endAt = entry.status === "paused" ? (entry.lastActivityAt ?? at) : at;
+  const endTime = endAt.getTime() < entry.startTime.getTime() ? entry.startTime : endAt;
+  // The row changed when the stop happened, even when the entry ends earlier.
+  const updatedAt = at.getTime() < endTime.getTime() ? endTime : at;
   await writer
     .update(timeEntries)
-    .set({ status: "stopped", endTime, duration: Math.max(0, duration), updatedAt: endTime })
+    .set({ status: "stopped", endTime, duration: Math.max(0, duration), updatedAt })
     .where(timeEntryWhere(entry.id));
 }
 
@@ -492,6 +496,8 @@ function replayCommands(commands: TimerCommand[]): {
   const closeActive = (at: Date, status: "stopped" | "paused") => {
     if (!active) return;
     let duration = active.duration;
+    // A paused entry ends at its pause time (#330); lastActivityAt stays the pause time.
+    const wasPaused = active.status === "paused";
     if (active.status === "running") {
       duration += Math.floor((at.getTime() - active.lastActivityAt.getTime()) / 1000);
     }
@@ -504,8 +510,9 @@ function replayCommands(commands: TimerCommand[]): {
     }
     active.status = "stopped";
     active.duration = duration;
-    active.endTime = at;
-    active.lastActivityAt = at;
+    const endAt = wasPaused ? active.lastActivityAt : at;
+    active.endTime = endAt;
+    active.lastActivityAt = endAt;
     completed.push(active);
     active = undefined;
   };

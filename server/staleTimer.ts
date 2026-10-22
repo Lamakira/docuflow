@@ -2,13 +2,18 @@
  * Stale-timer detection (#84). Flag-only: a running Time Entry with no
  * heartbeat past the threshold is logged and left running. The HTTP interval
  * and the Worker Job both call this.
+ *
+ * Paused-expiry (#330) is the exception that does stop: a Time Entry paused
+ * past PAUSED_EXPIRY_MS is stopped through a Timer Command, ending at its
+ * pause time.
  */
 
 import type { Job, JobTypeDeclaration, JobsPort } from "./jobs";
 import { workspaceOfCause } from "./jobs";
-import { logStaleSession } from "./logger";
+import { logError, logInfo, logStaleSession } from "./logger";
+import { applyTimerCommand, nextTimerSequence } from "./modules/time/commands";
 import { storage } from "./storage";
-import { forEachWorkspace } from "./workspaceContext";
+import { forEachWorkspace, runWithWorkspaceContext } from "./workspaceContext";
 
 export const STALE_TIMER_JOB = "stale-timer.flag";
 
@@ -21,6 +26,8 @@ export const STALE_TIMER_JOB_TYPE: JobTypeDeclaration = {
 
 export const STALE_THRESHOLD_MS = 10 * 60 * 1000;
 export const STALE_CHECK_WINDOW_MS = 2 * 60 * 1000;
+
+export const PAUSED_EXPIRY_MS = 12 * 60 * 60 * 1000;
 
 export function staleTimerOccurrenceKey(entryId: string, at: Date): string {
   const window = Math.floor(at.getTime() / STALE_CHECK_WINDOW_MS);
@@ -47,6 +54,46 @@ export async function flagStaleRunningEntries(at: Date): Promise<number> {
       if (await flagStaleTimeEntry(entry.id, at)) flagged += 1;
     }
     return flagged;
+  });
+  return counts.reduce((sum, n) => sum + n, 0);
+}
+
+/**
+ * Stop Time Entries paused longer than PAUSED_EXPIRY_MS (#330). The stop goes
+ * through the Timer Command ingest so a later rematerialization keeps it
+ * stopped (ADR-0009); the per-pause sequence makes a repeat run a no-op.
+ */
+export async function stopExpiredPausedEntries(at: Date): Promise<number> {
+  const counts = await forEachWorkspace(async () => {
+    const expired = await storage.getExpiredPausedEntries(new Date(at.getTime() - PAUSED_EXPIRY_MS));
+    let stopped = 0;
+    for (const entry of expired) {
+      try {
+        const result = await runWithWorkspaceContext(
+          { workspaceId: entry.workspaceId, userId: entry.userId },
+          async () =>
+            applyTimerCommand({
+              userId: entry.userId,
+              origin: "server:paused-expiry",
+              // Keyed on the pause, not the entry: a later pause of the same entry is a new stop.
+              sequence: nextTimerSequence(`paused-expiry:${entry.id}:${entry.lastActivityAt?.toISOString()}`),
+              kind: "stop",
+              claimedEffectiveAt: at,
+              payload: { timeEntryId: entry.id },
+            })
+        );
+        if (result.duplicate) continue;
+        logInfo("time-tracking.paused-expired", {
+          entryId: entry.id,
+          userId: entry.userId,
+          pausedAt: entry.lastActivityAt?.toISOString() ?? null,
+        });
+        stopped += 1;
+      } catch (error) {
+        logError("time-tracking.paused-expired.failed", error, { entryId: entry.id, userId: entry.userId });
+      }
+    }
+    return stopped;
   });
   return counts.reduce((sum, n) => sum + n, 0);
 }

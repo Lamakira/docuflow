@@ -17,6 +17,7 @@ export interface TimePersistence {
   getTimeEntryByClientCommandId(clientCommandId: string): Promise<TimeEntry | undefined>;
   getActiveTimeEntry(userId: string): Promise<TimeEntry | undefined>;
   getStaleRunningEntries(staleThreshold: Date): Promise<TimeEntry[]>;
+  getExpiredPausedEntries(pausedBefore: Date): Promise<TimeEntry[]>;
   createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry>;
   updateTimeEntry(id: string, data: Partial<InsertTimeEntry>): Promise<TimeEntry | undefined>;
   deleteTimeEntry(id: string): Promise<void>;

@@ -7,6 +7,7 @@ declare global {
       getState: () => Promise<any>;
       timerPause: () => Promise<any>;
       timerResume: () => Promise<any>;
+      timerStop: () => Promise<any>;
       dismiss: () => Promise<void>;
       openMain: () => Promise<void>;
       moveWindow: (x: number, y: number) => void;
@@ -181,6 +182,18 @@ function Widget() {
     }
   }
 
+  async function handleStop(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (pending) return;
+    setPending(true);
+    try {
+      const result = await window.widgetBridge.timerStop();
+      if (result && !result.ok && result.error) showError(result.error);
+    } finally {
+      setPending(false);
+    }
+  }
+
   async function handleDismiss(e: React.MouseEvent) {
     e.stopPropagation();
     await window.widgetBridge.dismiss();
@@ -309,6 +322,28 @@ function Widget() {
           }}
         >
           {isRunning ? "⏸" : "▶"}
+        </button>
+
+        {/* Stop */}
+        <button
+          type="button"
+          onMouseDown={stopDragStart}
+          onClick={handleStop}
+          disabled={pending}
+          aria-label="Stop timer"
+          title="Stop"
+          style={{
+            flexShrink: 0, width: 22, height: 22, display: "flex",
+            alignItems: "center", justifyContent: "center",
+            background: "rgba(148,163,184,0.12)",
+            border: "1px solid rgba(148,163,184,0.28)",
+            borderRadius: 6, cursor: pending ? "wait" : "pointer",
+            color: "#cbd5e1",
+            fontSize: 9, transition: "background 0.2s, border-color 0.2s",
+            opacity: pending ? 0.6 : 1, padding: 0, marginLeft: 6,
+          }}
+        >
+          ■
         </button>
 
         {/* Dismiss */}

@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { PlayIcon, PauseIcon, XMarkIcon } from './icons';
+import { PlayIcon, PauseIcon, StopIcon, XMarkIcon } from './icons';
 import './styles/widget.css';
 
 interface WidgetTimer {
@@ -27,6 +27,7 @@ declare global {
       getState: () => Promise<any>;
       timerPause: () => Promise<any>;
       timerResume: () => Promise<any>;
+      timerStop: () => Promise<any>;
       dismiss: () => Promise<void>;
       openMain: () => Promise<void>;
       moveWindow: (x: number, y: number) => void;
@@ -158,6 +159,18 @@ export function Widget() {
     }
   }
 
+  async function handleStop(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (pending) return;
+    setPending(true);
+    try {
+      const result = await window.widgetBridge.timerStop();
+      if (result && !result.ok && result.error) showError(result.error);
+    } finally {
+      setPending(false);
+    }
+  }
+
   const openMain = () => void window.widgetBridge.openMain();
 
   return (
@@ -186,6 +199,18 @@ export function Widget() {
           title={isRunning ? 'Pause' : 'Resume'}
         >
           {isRunning ? <PauseIcon size={11} /> : <PlayIcon size={11} />}
+        </button>
+
+        <button
+          type="button"
+          className="w2__stop"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={handleStop}
+          disabled={pending}
+          title="Stop"
+          aria-label="Stop timer"
+        >
+          <StopIcon size={10} />
         </button>
 
         <button
