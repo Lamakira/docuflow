@@ -12,6 +12,22 @@ import { isReadableDocument } from "@shared/documentAccess";
 
 export type FilePreviewKind = "image" | "pdf" | "word" | "text" | "none";
 
+/** What a File is, whatever this viewer can preview of it: it picks the icon and the words. */
+export type FileFamily =
+  | "slides"
+  | "sheet"
+  | "document"
+  | "pdf"
+  | "image"
+  | "text"
+  | "archive"
+  | "video"
+  | "audio"
+  | "file";
+
+/** The designed state for a File this viewer cannot show (#335 follow-up). */
+export type FileFallback = { title: string; copy: string };
+
 /** `workspace` is a Workspace Document row; `object` is an attachment's object path. */
 export type FileViewerSource = "workspace" | "object";
 
@@ -39,6 +55,10 @@ export type FileViewerModel = {
   downloadHref: string | null;
   wordHtmlHref: string | null;
   emptyCopy: string;
+  /** What the File is, for the icon; `file` when nothing says. */
+  family: FileFamily;
+  /** Set when the File exists but has no preview here. */
+  fallback: FileFallback | null;
   backHref: string;
   backLabel: string;
   zoomable: boolean;
@@ -72,6 +92,67 @@ const EXTENSION_KINDS: Record<string, FilePreviewKind> = {
   json: "text",
   log: "text",
 };
+
+const FAMILY_BY_EXTENSION: Record<string, FileFamily> = {
+  ppt: "slides", pptx: "slides", pps: "slides", ppsx: "slides", key: "slides", odp: "slides",
+  xls: "sheet", xlsx: "sheet", ods: "sheet", numbers: "sheet",
+  doc: "document", docx: "document", odt: "document", rtf: "document", pages: "document",
+  pdf: "pdf",
+  png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image", svg: "image", bmp: "image", heic: "image",
+  txt: "text", md: "text", csv: "text", json: "text", log: "text", xml: "text",
+  zip: "archive", rar: "archive", "7z": "archive", tar: "archive", gz: "archive", tgz: "archive",
+  mp4: "video", mov: "video", webm: "video", avi: "video", mkv: "video",
+  mp3: "audio", wav: "audio", m4a: "audio", ogg: "audio", flac: "audio",
+};
+
+const FAMILY_LABELS: Record<FileFamily, string> = {
+  slides: "Presentation",
+  sheet: "Spreadsheet",
+  document: "Document",
+  pdf: "PDF",
+  image: "Image",
+  text: "Text",
+  archive: "Archive",
+  video: "Video",
+  audio: "Audio",
+  file: "File",
+};
+
+/** Where a person opens what this viewer cannot show. */
+const FALLBACK_COPY: Record<FileFamily, string> = {
+  slides: "Download it to open it in PowerPoint, Keynote or Google Slides.",
+  sheet: "Download it to open it in Excel, Numbers or Google Sheets.",
+  document: "Download it to open it in Word, Pages or Google Docs.",
+  pdf: "Download it to open it in a PDF reader.",
+  image: "Download it to open it in an image viewer.",
+  text: "Download it to open it in a text editor.",
+  archive: "Download it and extract it to see the files it holds.",
+  video: "Download it to play it.",
+  audio: "Download it to play it.",
+  file: "Download it to open it in an application that reads it.",
+};
+
+/** The mime type when it says, else the file name's extension. */
+export function fileFamilyFor(input: { mimeType?: string | null; fileName?: string | null }): FileFamily {
+  const mimeType = (input.mimeType ?? "").toLowerCase();
+  if (mimeType.includes("presentation") || mimeType.includes("powerpoint")) return "slides";
+  if (mimeType.includes("spreadsheet") || mimeType.includes("excel")) return "sheet";
+  if (WORD_MIME_TYPES.has(mimeType) || mimeType.includes("wordprocessing") || mimeType.includes("opendocument.text")) {
+    return "document";
+  }
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  if (/zip|compressed|x-tar|gzip|x-7z|rar/.test(mimeType)) return "archive";
+  if (mimeType.startsWith("text/") || TEXT_MIME_TYPES.has(mimeType)) return "text";
+  return FAMILY_BY_EXTENSION[extensionOf(input.fileName)] ?? "file";
+}
+
+export function fileFallbackFor(family: FileFamily): FileFallback {
+  const what = family === "pdf" ? "PDF" : FAMILY_LABELS[family].toLowerCase();
+  return { title: `No preview for this ${what}`, copy: FALLBACK_COPY[family] };
+}
 
 const NO_PREVIEW_COPY =
   "Preview is not available for this File. Download it to open it in an application that reads it.";
@@ -127,6 +208,8 @@ export function composeFileViewer(input: FileViewerInput): FileViewerModel {
       downloadHref: null,
       wordHtmlHref: null,
       emptyCopy: MISSING_COPY,
+      family: fileFamilyFor(input),
+      fallback: null,
       backHref,
       backLabel,
       zoomable: false,
@@ -134,6 +217,7 @@ export function composeFileViewer(input: FileViewerInput): FileViewerModel {
   }
 
   const kind = previewKindFor(input);
+  const family = fileFamilyFor(input);
   // Only a Workspace Document has a conversion route; converting nothing would
   // render an empty page where the File was.
   const wordHtmlHref =
@@ -152,12 +236,14 @@ export function composeFileViewer(input: FileViewerInput): FileViewerModel {
     missing: false,
     title: input.name,
     fileName: input.fileName ?? null,
-    meta: fileMeta(input, kind),
+    meta: fileMeta(input, family),
     preview,
     streamHref: origin,
     downloadHref,
     wordHtmlHref,
     emptyCopy: preview === "none" ? NO_PREVIEW_COPY : "",
+    family,
+    fallback: preview === "none" ? fileFallbackFor(family) : null,
     backHref,
     backLabel,
     zoomable: preview === "pdf",
@@ -333,18 +419,10 @@ export function safeLinkHref(href: string | null | undefined): string | null {
 }
 
 /** The label says what the File is, not whether this viewer can preview it. */
-function fileMeta(input: FileViewerInput, kind: FilePreviewKind): string {
-  return [input.fileName ?? "", formatFileSize(input.fileSize), typeLabel(kind)]
+function fileMeta(input: FileViewerInput, family: FileFamily): string {
+  return [input.fileName ?? "", formatFileSize(input.fileSize), FAMILY_LABELS[family]]
     .filter(Boolean)
     .join(" · ");
-}
-
-function typeLabel(kind: FilePreviewKind): string {
-  if (kind === "pdf") return "PDF";
-  if (kind === "image") return "Image";
-  if (kind === "word") return "Word";
-  if (kind === "text") return "Text";
-  return "File";
 }
 
 function backLabelFor(href: string): string {

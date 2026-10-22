@@ -7,6 +7,8 @@ import {
   FILE_ZOOM_MAX,
   FILE_ZOOM_MIN,
   composeFileViewer,
+  fileFallbackFor,
+  fileFamilyFor,
   dossierFileDestination,
   fileViewerHref,
   formatFileSize,
@@ -149,6 +151,34 @@ describe("A File opens with a preview, not a dead end (#216)", () => {
     expect(attachment.wordHtmlHref).toBeNull();
     expect(attachment.downloadHref).toBe("/public-objects/uploads/policy.docx");
     expect(attachment.emptyCopy).toMatch(/download/i);
+  });
+
+  it("names what a File is, and designs the state for one it cannot preview", () => {
+    const pptx = composeFileViewer(
+      workspaceFile({
+        mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        fileName: "simplification-administrative-presentation",
+      }),
+    );
+    expect(pptx.preview).toBe("none");
+    expect(pptx.family).toBe("slides");
+    expect(pptx.meta).toContain("Presentation");
+    expect(pptx.fallback).toEqual({
+      title: "No preview for this presentation",
+      copy: "Download it to open it in PowerPoint, Keynote or Google Slides.",
+    });
+
+    expect(fileFamilyFor({ mimeType: null, fileName: "budget.xlsx" })).toBe("sheet");
+    expect(fileFamilyFor({ mimeType: "application/zip", fileName: null })).toBe("archive");
+    expect(fileFamilyFor({ mimeType: "video/mp4" })).toBe("video");
+    expect(fileFamilyFor({ mimeType: "application/msword" })).toBe("document");
+    expect(fileFamilyFor({ mimeType: null, fileName: "no-extension" })).toBe("file");
+    expect(fileFallbackFor("file").title).toBe("No preview for this file");
+    expect(fileFallbackFor("pdf").title).toBe("No preview for this PDF");
+
+    // A File that previews has no fallback; a missing one keeps its own copy.
+    expect(composeFileViewer(workspaceFile()).fallback).toBeNull();
+    expect(composeFileViewer({ source: "object", name: "Orphan.pdf", objectPath: null }).fallback).toBeNull();
   });
 
   it("previews a Project File from the object path the attachment carries", () => {
