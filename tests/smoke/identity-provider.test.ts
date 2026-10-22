@@ -69,6 +69,7 @@ describe("IdentityProvider fake", () => {
       providerSubjectId: "user_fake_1",
       secondFactorVerified: false,
       platformStaff: false,
+      authorizedParty: null,
     });
   });
 
@@ -222,6 +223,7 @@ describe("Clerk adapter", () => {
       providerSubjectId: "user_test_1",
       secondFactorVerified: false,
       platformStaff: false,
+      authorizedParty: null,
     });
   });
 

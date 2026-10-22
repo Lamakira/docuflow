@@ -4,6 +4,7 @@
  * DocuFlow never stores Clerk types as authorization truth.
  */
 
+import { createHash } from "node:crypto";
 import { createClerkClient, verifyToken } from "@clerk/backend";
 import {
   IdentityProviderClosedError,
@@ -85,6 +86,7 @@ type SessionClaims = {
   fva?: unknown;
   twoFactorEnabled?: unknown;
   pla?: unknown;
+  azp?: unknown;
 };
 
 /** @clerk/backend `verifyToken` returns `{ data }` or `{ errors }`, not a bare payload. */
@@ -103,12 +105,26 @@ function sessionPayloadFromVerifyResult(result: unknown): SessionClaims {
 export class ClerkIdentityProvider implements IdentityProvider {
   private readonly clerk: ReturnType<typeof createClerkClient>;
   private readonly secretKey: string;
+  /** Suffix of this instance's `__session_<suffix>` cookie; undefined without a publishable key. */
+  private readonly cookieSuffix: string | undefined;
 
   constructor(identity: IdentityProviderConfig) {
     if (!identity.secretKey) {
       throw new IdentityProviderClosedError();
     }
     this.secretKey = identity.secretKey;
+    // Mirrors `getCookieSuffix` from `@clerk/shared/keys`, so we don't depend on
+    // `@clerk/shared` directly. Clerk's own `authenticateRequest` would find the
+    // cookie too, but it answers with handshake redirects and wants the whole
+    // request; the port verifies a token, and the caller owns when a cookie counts.
+    this.cookieSuffix = identity.publishableKey
+      ? createHash("sha1")
+          .update(identity.publishableKey)
+          .digest("base64")
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_")
+          .substring(0, 8)
+      : undefined;
     this.clerk = createClerkClient({
       secretKey: identity.secretKey,
       publishableKey: identity.publishableKey,
@@ -164,6 +180,8 @@ export class ClerkIdentityProvider implements IdentityProvider {
         providerSubjectId: subject,
         secondFactorVerified: secondFactorVerified(payload),
         platformStaff: isPlatformStaffToken(payload),
+        authorizedParty:
+          typeof payload.azp === "string" && payload.azp.length > 0 ? payload.azp : null,
       };
     } catch (error) {
       if (error instanceof IdentityProviderError) throw error;
@@ -175,6 +193,19 @@ export class ClerkIdentityProvider implements IdentityProvider {
       }
       throw new IdentitySessionError();
     }
+  }
+
+  /**
+   * Clerk keeps the session JWT in `__session_<suffix>` (this instance) and in
+   * the legacy `__session`; the suffixed one is preferred because it cannot be
+   * confused with another Clerk instance on the same host.
+   */
+  sessionTokenFromCookies(cookies: Readonly<Record<string, string>>): string | undefined {
+    if (this.cookieSuffix) {
+      const suffixed = cookies[`__session_${this.cookieSuffix}`];
+      if (suffixed) return suffixed;
+    }
+    return cookies.__session || undefined;
   }
 
   /**

@@ -52,7 +52,7 @@ const users: StoredUser[] = [];
 const createUserCalls: CreateUserParams[] = [];
 const invitations: StoredInvitation[] = [];
 const createInvitationCalls: CreateInvitationParams[] = [];
-const sessions = new Map<string, { sub: string; fva?: [number, number]; pla?: string; twoFactorEnabled?: boolean }>();
+const sessions = new Map<string, { sub: string; fva?: [number, number]; pla?: string; twoFactorEnabled?: boolean; azp?: string }>();
 
 export function createClerkClient(_options: { secretKey?: string; publishableKey?: string }) {
   return {
@@ -138,16 +138,24 @@ export async function verifyToken(token: string, _options: { secretKey?: string 
 /** Test helper — not on the port. */
 export function issueClerkSession(
   providerSubjectId: string,
-  options?: { secondFactor?: boolean },
+  options?: { secondFactor?: boolean; azp?: string },
 ): string {
-  const token = `sess_test_${providerSubjectId}`;
-  const payload: { sub: string; fva?: [number, number]; twoFactorEnabled?: boolean } = {
+  // A token with an `azp` is a distinct token, so minting one for another
+  // origin does not rewrite the plain session of the same subject.
+  const token = `sess_test_${providerSubjectId}${options?.azp ? `_azp_${options.azp}` : ""}`;
+  const payload: {
+    sub: string;
+    fva?: [number, number];
+    twoFactorEnabled?: boolean;
+    azp?: string;
+  } = {
     sub: providerSubjectId,
   };
   if (options?.secondFactor === true) {
     payload.fva = [0, 0];
     payload.twoFactorEnabled = true;
   }
+  if (options?.azp) payload.azp = options.azp;
   sessions.set(token, payload);
   return token;
 }

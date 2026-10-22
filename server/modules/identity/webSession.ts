@@ -53,6 +53,75 @@ export function bearerToken(header: string | undefined): string | undefined {
   return token.length > 0 ? token : undefined;
 }
 
+/**
+ * A Cookie header as a name -> value map. First occurrence of a name wins;
+ * values are percent-decoded when they can be, kept raw when they cannot.
+ */
+export function parseCookieHeader(header: string | undefined): Record<string, string> {
+  const cookies: Record<string, string> = {};
+  if (!header) return cookies;
+  for (const part of header.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0) continue;
+    const name = part.slice(0, separator).trim();
+    if (!name || Object.prototype.hasOwnProperty.call(cookies, name)) continue;
+    const raw = part.slice(separator + 1).trim();
+    let value = raw;
+    try {
+      value = decodeURIComponent(raw);
+    } catch {
+      // keep the raw value
+    }
+    cookies[name] = value;
+  }
+  return cookies;
+}
+
+export type WebSessionCredential = { token: string; source: "header" | "cookie" };
+
+/**
+ * A request this app's own pages started, or one the person started themselves
+ * (address bar, bookmark). Clerk's cookie is SameSite=Lax, so a link on another
+ * site still carries it on a top-level GET; refusing `cross-site` and
+ * `same-site` keeps another site from driving a GET with the session. A browser
+ * too old to send the header is let through, as it was before the header existed.
+ */
+function fromThisSite(secFetchSite: string | undefined): boolean {
+  return secFetchSite === undefined || secFetchSite === "same-origin" || secFetchSite === "none";
+}
+
+/**
+ * Where a web session token may come from (#329).
+ *
+ * An `Authorization` header, whatever it holds, is the credential: when one is
+ * present the cookie is never consulted, even if the header is malformed.
+ * Only with no header at all, and only for GET and HEAD, is the provider's
+ * first-party session cookie read. Browser-loaded requests (`<img src>`,
+ * `<a href download>`) cannot add a header, and safe methods change nothing, so
+ * a cross-site form, image or link can never write anything with the cookie
+ * (CSRF). Writes need the header the SPA adds; Clerk's cookie is SameSite=Lax
+ * anyway, and a request another site started is refused outright
+ * (`Sec-Fetch-Site`). A cookie token is also refused unless it was minted for
+ * one of this app's origins (see `resolveIdentitySession`'s `authorizedParties`).
+ */
+export function webSessionCredential(
+  request: {
+    method: string;
+    headers: { authorization?: string; cookie?: string; "sec-fetch-site"?: string };
+  },
+  provider: IdentityProvider,
+): WebSessionCredential | undefined {
+  const { authorization, cookie } = request.headers;
+  if (authorization !== undefined) {
+    const token = bearerToken(authorization);
+    return token ? { token, source: "header" } : undefined;
+  }
+  if (request.method !== "GET" && request.method !== "HEAD") return undefined;
+  if (!fromThisSite(request.headers["sec-fetch-site"])) return undefined;
+  const token = provider.sessionTokenFromCookies(parseCookieHeader(cookie));
+  return token ? { token, source: "cookie" } : undefined;
+}
+
 export interface WebSessionPersistence {
   /** The User the import linked to this subject id, if any. */
   getUserByIdentityProviderSubjectId(subjectId: string): Promise<{ id: string } | undefined>;
@@ -75,6 +144,12 @@ export async function resolveIdentitySession(deps: {
   provider: IdentityProvider;
   persistence: WebSessionPersistence;
   token: string;
+  /**
+   * When given, the token's `azp` must be one of these origins, else the session
+   * is refused (a token naming no party is refused too). Used for cookie-borne
+   * tokens, which the browser attaches on its own.
+   */
+  authorizedParties?: readonly string[];
 }): Promise<ResolvedIdentitySession | undefined> {
   const { provider, persistence, token } = deps;
   let session;
@@ -86,6 +161,13 @@ export async function resolveIdentitySession(deps: {
     // identity.
     if (error instanceof IdentityProviderError) return undefined;
     throw error;
+  }
+
+  if (
+    deps.authorizedParties !== undefined &&
+    (session.authorizedParty === null || !deps.authorizedParties.includes(session.authorizedParty))
+  ) {
+    return undefined;
   }
 
   const user = await persistence.getUserByIdentityProviderSubjectId(session.providerSubjectId);

@@ -132,6 +132,12 @@ export interface AppConfig {
   identity: IdentityConfig;
   /** Absolute base URL this deployment is reached at, used in outbound email links. */
   appUrl: string;
+  /**
+   * Every origin a browser may reach this deployment at: `appUrl`'s, plus each
+   * Replit domain the deployment answers on (#329). A Clerk session cookie is
+   * accepted only when its token was minted for one of them (`azp`).
+   */
+  appOrigins: string[];
   openaiApiKey?: string;
   fathomApiKey?: string;
   /**
@@ -370,6 +376,19 @@ function resolveAppUrl(): string {
   if (replitDomain) return `https://${replitDomain}`;
 
   return `http://localhost:${DEFAULT_PORT}`;
+}
+
+/**
+ * `APP_URL` alone would miss a deployment reached on several domains — Replit
+ * lists every one in `REPLIT_DOMAINS`, and the page's own origin is the one its
+ * session token names.
+ */
+function resolveAppOrigins(): string[] {
+  const origins = [new URL(resolveAppUrl()).origin];
+  for (const domain of readList("REPLIT_DOMAINS")) {
+    origins.push(new URL(`https://${domain}`).origin);
+  }
+  return Array.from(new Set(origins));
 }
 
 /** A number inside its range, or the reason it is unusable on the pile. */
@@ -639,6 +658,7 @@ function resolveConfig(): AppConfig {
     billing,
     identity,
     appUrl: resolveAppUrl(),
+    appOrigins: resolveAppOrigins(),
     openaiApiKey: read("OPENAI_API_KEY"),
     fathomApiKey: read("FATHOM_API_KEY"),
     chromiumPath: read("PLAYWRIGHT_CHROMIUM_PATH"),
