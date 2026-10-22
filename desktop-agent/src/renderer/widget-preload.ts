@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("widgetBridge", {
   getState: () => ipcRenderer.invoke("agent:get-state"),
   timerPause: () => ipcRenderer.invoke("agent:timer-pause"),
   timerResume: () => ipcRenderer.invoke("agent:timer-resume"),
+  timerStop: () => ipcRenderer.invoke("agent:timer-stop"),
   /** Hide the widget for the rest of this timer session. Does not stop tracking. */
   dismiss: () => ipcRenderer.invoke("widget:dismiss"),
   /** Bring the main DocuFlow window to the foreground. */

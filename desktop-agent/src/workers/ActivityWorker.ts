@@ -443,8 +443,9 @@ export class ActivityWorker {
   /**
    * System idle seconds. On Linux/Wayland, Electron's powerMonitor always returns 0;
    * prefer Mutter D-Bus, then uiohook last-input, then powerMonitor.
+   * Public: main uses it for the paused-while-active reminder.
    */
-  private getEffectiveIdleSeconds(): number {
+  public getEffectiveIdleSeconds(): number {
     if (process.platform === "linux" && isWaylandSession()) {
       const linuxIdle = getLinuxIdleSeconds();
       if (linuxIdle !== null) return linuxIdle;

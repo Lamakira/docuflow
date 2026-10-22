@@ -2743,6 +2743,17 @@ export class DatabaseStorage implements IStorage {
       ));
   }
 
+  async getExpiredPausedEntries(pausedBefore: Date): Promise<TimeEntry[]> {
+    return db
+      .select()
+      .from(timeEntries)
+      .where(and(
+        eq(timeEntries.status, "paused"),
+        lt(timeEntries.lastActivityAt, pausedBefore),
+        inWorkspace(timeEntries)
+      ));
+  }
+
   async createTimeEntry(entry: InsertTimeEntry): Promise<TimeEntry> {
     // Safety net: if task_id column doesn't exist yet (migration 002 pending),
     // strip it and retry rather than crashing a timer start.

@@ -14,6 +14,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { getLocalDayKey, getLocalDayWindowMs } from "./dayBoundary";
+import { pausedSince } from "./pausedTimer";
 
 /** One continuous run of the timer for a given time entry. */
 export interface TrackingSession {
@@ -198,6 +199,8 @@ export class AgentStore {
 
   getActiveEntryId(): string | null { return this.data.activeEntryId; }
   getTimerStatus(): string { return this.data.timerStatus; }
+  /** When the active entry has been paused since; null when not paused (see lib/pausedTimer.ts). */
+  getPausedSince(): Date | null { return pausedSince(this.data); }
   getActiveProjectName(): string | null { return this.data.activeProjectName; }
   getActiveTaskName(): string | null { return this.data.activeTaskName; }
   getActiveTaskId(): string | null { return this.data.activeTaskId; }

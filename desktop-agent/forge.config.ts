@@ -19,6 +19,32 @@ const config: ForgeConfig = {
     postPackage: async () => {
       setImmediate(() => process.exit(0));
     },
+    // The webpack plugin packages only .webpack/, so externals are missing at
+    // runtime. Copy uiohook-napi (+ node-gyp-build) into the app's node_modules,
+    // keeping only the prebuild for the target platform/arch. Without it the
+    // agent silently falls back to powerMonitor (no global input auto-resume).
+    packageAfterCopy: async (_config, buildPath, _electronVersion, platform, arch) => {
+      const srcModules = path.join(__dirname, "node_modules");
+      const destModules = path.join(buildPath, "node_modules");
+      const prebuild = `${platform}-${arch}`;
+
+      const uiohookSrc = path.join(srcModules, "uiohook-napi");
+      if (!fs.existsSync(path.join(uiohookSrc, "prebuilds", prebuild))) {
+        throw new Error(`uiohook-napi has no prebuild for ${prebuild}`);
+      }
+      fs.cpSync(uiohookSrc, path.join(destModules, "uiohook-napi"), {
+        recursive: true,
+        filter: (src) => {
+          const rel = path.relative(uiohookSrc, src).split(path.sep);
+          if (rel[0] === "libuiohook" || rel[0] === "src" || rel[0] === "build") return false;
+          if (rel[0] === "prebuilds" && rel[1] && rel[1] !== prebuild) return false;
+          return true;
+        },
+      });
+      fs.cpSync(path.join(srcModules, "node-gyp-build"), path.join(destModules, "node-gyp-build"), {
+        recursive: true,
+      });
+    },
   },
   // uiohook-napi ships prebuilt binaries via node-gyp-build and does not need
   // to be recompiled against Electron headers. Skipping the rebuild step lets
@@ -30,15 +56,14 @@ const config: ForgeConfig = {
   packagerConfig: {
     name: "DocuFlow Agent",
     executableName: "docuflow-agent",
-    asar: true,
+    // .node binaries cannot be dlopen'd from inside the asar archive; Electron's
+    // require() transparently redirects them to app.asar.unpacked/.
+    asar: { unpack: "**/*.node" },
     appBundleId: "com.docuflow.agent",
     // App icon — Forge appends the right extension per OS (.ico win32, .icns darwin, .png linux)
     icon: "./assets/icon",
     // Copy assets alongside app.asar so they're accessible at process.resourcesPath/assets/
     extraResource: ["./assets"],
-    // uiohook-napi ships platform-specific .node binaries that cannot live inside the asar archive.
-    // Electron's require() transparently redirects lookups to app.asar.unpacked/ for these paths.
-    asarUnpack: ["**/uiohook-napi/**", "**/uiohook-napi-*/**"],
     // Remove large Electron binary files that are unnecessary for users.
     // NOTE: we use afterComplete (not ignore) to avoid overriding the webpack plugin's
     // default ignore function (which excludes everything except .webpack/).

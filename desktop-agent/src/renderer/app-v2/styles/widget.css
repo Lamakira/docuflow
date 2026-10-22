@@ -112,6 +112,26 @@ html, body, #widget-root { height: 100%; background: transparent; }
 .w2--paused .w2__toggle:hover { background: var(--accent-hover); }
 .w2__toggle:disabled { opacity: .55; cursor: wait; }
 
+/* Stop ends the entry; it sits beside pause/resume, quieter than either (#330). */
+.w2__stop {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  margin-left: 4px;
+  display: grid; place-items: center;
+  border-radius: var(--r-8);
+  background: var(--control-neutral);
+  color: var(--text-secondary);
+  transition: background .15s ease;
+}
+.w2__stop:hover { background: var(--control-neutral-hover); }
+.w2__stop:disabled { opacity: .55; cursor: wait; }
+.w2__toggle:focus-visible,
+.w2__stop:focus-visible,
+.w2__dismiss:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .w2__dismiss {
   flex-shrink: 0;
   width: 16px; height: 16px;

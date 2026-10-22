@@ -4,7 +4,7 @@
  * Phase 3 MVP — Pairing + Timer control + Workers.
  */
 
-import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen, clipboard, nativeImage, powerMonitor } from "electron";
+import { app, BrowserWindow, Tray, Menu, ipcMain, shell, screen, clipboard, nativeImage, powerMonitor, Notification } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -66,6 +66,11 @@ import { SyncWorker } from "../workers/SyncWorker";
 import { ScreenCaptureWorker } from "../workers/ScreenCaptureWorker";
 import { LinuxScreenLockWatcher } from "../lib/LinuxScreenLockWatcher";
 import { getLocalDayKey, getTestDayRolloverSeconds } from "../lib/dayBoundary";
+import {
+  PAUSED_REMINDER_CHECK_MS,
+  pausedFromPreviousDay,
+  pausedReminderDue,
+} from "../lib/pausedTimer";
 import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
 import { IdleFlow } from "../lib/idleFlow";
 import {
@@ -218,6 +223,8 @@ let syncWorker: SyncWorker | null = null;
 let screenshotWorker: ScreenCaptureWorker | null = null;
 let resyncInterval: ReturnType<typeof setInterval> | null = null;
 let workedTodayInterval: ReturnType<typeof setInterval> | null = null;
+let pausedReminderInterval: ReturnType<typeof setInterval> | null = null;
+let lastPausedReminderAt = 0;
 
 // ─── Suspend / Resume handlers (registered in startWorkers, removed in stopWorkers) ───
 let suspendMainHandler: (() => void) | null = null;
@@ -518,6 +525,7 @@ function rebuildTrayMenu(): void {
       timerItems.push({
         label: "Resume timer",
         click: async () => {
+          if (stopPausedEntryFromPreviousDay("tray-resume")) return;
           const entryId = store.getActiveEntryId();
           if (!entryId) return;
           store.setTimerRunning(
@@ -718,6 +726,7 @@ function startWorkers(): void {
         pushStateToRenderer();
         _lastWorkedTodayDate = today;
       }
+      stopPausedEntryFromPreviousDay("day-check");
       await refreshWorkedTodayServerBase();
       pushStateToRenderer();
       scheduleWorkedTodayTick();
@@ -725,6 +734,8 @@ function startWorkers(): void {
   }
 
   scheduleWorkedTodayTick();
+
+  pausedReminderInterval = setInterval(checkPausedReminder, PAUSED_REMINDER_CHECK_MS);
 
   // System suspend / screen lock — pause timer locally (no server command), manual resume required.
   const onSystemAway = (reason: string) => pauseTimerForSystemAway(reason);
@@ -782,6 +793,10 @@ function stopWorkers(): void {
   if (workedTodayInterval) {
     clearTimeout(workedTodayInterval);
     workedTodayInterval = null;
+  }
+  if (pausedReminderInterval) {
+    clearInterval(pausedReminderInterval);
+    pausedReminderInterval = null;
   }
   heartbeatWorker = null;
   activityWorker = null;
@@ -1169,7 +1184,14 @@ ipcMain.handle("agent:timer-pause", async () => {
   return { ok: true };
 });
 
-ipcMain.handle("agent:timer-resume", async () => {
+/** Resume the active timer (IPC handler + paused-reminder notification click). */
+function resumeActiveTimer(): { ok: boolean; error?: string } {
+  if (stopPausedEntryFromPreviousDay("resume")) {
+    return {
+      ok: false,
+      error: "This timer was paused since a previous day and has been stopped. Start the task again.",
+    };
+  }
   const entryId = store.getActiveEntryId();
   if (!entryId) return { ok: false, error: "No active timer" };
 
@@ -1185,20 +1207,84 @@ ipcMain.handle("agent:timer-resume", async () => {
   pushStateToRenderer();
   syncWorker?.triggerSync();
   return { ok: true };
-});
+}
+
+ipcMain.handle("agent:timer-resume", async () => resumeActiveTimer());
+
+/** Stop the active timer locally and queue the stop command. Shared by agent:timer-stop and the previous-day stop. */
+function stopActiveTimer(entryId: string): void {
+  store.clearTimer();
+  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
+  if (idleFlow.active) {
+    idleFlow.cancel();
+    clearIdleActivityCheck();
+    releaseIdleOnTop();
+    mainWindow?.webContents.send("agent:idle-dismiss");
+  }
+  pushStateToRenderer();
+  syncWorker?.triggerSync();
+}
 
 ipcMain.handle("agent:timer-stop", async () => {
   const entryId = store.getActiveEntryId();
   if (!entryId) return { ok: false, error: "No active timer" };
 
-  const clientCommandId = randomUUID();
-  store.clearTimer();
-  queue.enqueueTimerCommand({ clientCommandId, type: "stop", entryId });
   console.log(`[Main] timer.stop (local) — entry=${entryId}`);
-  pushStateToRenderer();
-  syncWorker?.triggerSync();
+  stopActiveTimer(entryId);
   return { ok: true };
 });
+
+/**
+ * A paused entry must not survive into a new local day: stop it (same as agent:timer-stop).
+ * The server records endTime = pause time for paused entries.
+ * Returns true when an entry was stopped.
+ */
+function stopPausedEntryFromPreviousDay(reason: string): boolean {
+  if (store.getTimerStatus() !== "paused") return false;
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return false;
+
+  const pausedSince = store.getPausedSince();
+  if (!pausedSince) return false;
+  if (!pausedFromPreviousDay(pausedSince.getTime(), Date.now())) return false;
+
+  stopActiveTimer(entryId);
+  console.log(`[Main] ${reason} — paused entry from a previous day stopped (entry=${entryId})`);
+  return true;
+}
+
+/** Notify the Member when they are active while the timer sits paused. */
+function checkPausedReminder(): void {
+  if (store.getTimerStatus() !== "paused") return;
+  const entryId = store.getActiveEntryId();
+  if (!entryId) return;
+  if (pausedForScreenshotPortal || !Notification.isSupported() || !activityWorker) return;
+
+  if (stopPausedEntryFromPreviousDay("reminder")) return;
+
+  const pausedSince = store.getPausedSince();
+  const now = Date.now();
+  if (!pausedReminderDue({
+    pausedSinceMs: pausedSince ? pausedSince.getTime() : null,
+    nowMs: now,
+    lastReminderAtMs: lastPausedReminderAt,
+    idleSeconds: activityWorker.getEffectiveIdleSeconds(),
+    idlePromptOpen: idleFlow.active,
+  })) return;
+
+  lastPausedReminderAt = now;
+  const name = store.getActiveTaskName() || store.getActiveProjectName() || "your task";
+  const notification = new Notification({
+    title: "Timer is paused",
+    body: `You seem to be working but "${name}" is paused. Click to resume tracking.`,
+  });
+  notification.on("click", () => {
+    resumeActiveTimer();
+    showMainWindow();
+  });
+  notification.show();
+  console.log(`[Main] paused-reminder shown (entry=${entryId})`);
+}
 
 ipcMain.handle("agent:timer-state", () => {
   return store.getTimerState();
@@ -1734,6 +1820,7 @@ app.whenReady().then(() => {
   // Restore timer running/paused state from any pending offline commands.
   // Must run before startWorkers() so the renderer gets the correct status on first push.
   autoResumeFromQueue();
+  stopPausedEntryFromPreviousDay("startup");
 
   createTray();
   mainWindow = createMainWindow();
