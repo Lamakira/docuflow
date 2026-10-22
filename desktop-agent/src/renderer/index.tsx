@@ -2,18 +2,17 @@ console.log('[renderer] index.tsx loaded');
 import { createRoot } from 'react-dom/client';
 
 /**
- * UI switch — the only edit the v2 redesign makes to existing code.
+ * UI switch. One build carries both interfaces, and v2 is the default: this
+ * repository's agent ships with the v2 web app (0.2.0 went out with v1's screens
+ * because the default was still v1). v1 stays reachable:
  *
- * One build carries both interfaces. Two ways to choose:
- *
- *   DOCUFLOW_UI=v2 npm run dev            — build time, for a demo or review
- *   localStorage.setItem('docuflow-ui', 'v2'); location.reload();   — runtime
- *   localStorage.removeItem('docuflow-ui');    location.reload();   — back to v1
+ *   DOCUFLOW_UI=v1 npm run dev            — build time
+ *   localStorage.setItem('docuflow-ui', 'v1'); location.reload();   — runtime
+ *   localStorage.removeItem('docuflow-ui');    location.reload();   — back to the default
  *
  * localStorage wins over the env var, so a machine pinned to one UI stays there
- * regardless of how the app was launched. Rolling back a bad v2 build is
- * therefore a key, not a revert. When v2 ships, delete this switch, delete
- * src/renderer/app/, and rename app-v2 -> app.
+ * regardless of how the app was launched. When v1 retires, delete this switch,
+ * delete src/renderer/app/, and rename app-v2 -> app.
  */
 const useV2 = (() => {
   try {
@@ -23,7 +22,7 @@ const useV2 = (() => {
   } catch {
     /* localStorage unavailable — fall through to the build-time default */
   }
-  return process.env.DOCUFLOW_UI === 'v2';
+  return process.env.DOCUFLOW_UI !== 'v1';
 })();
 
 async function boot() {
