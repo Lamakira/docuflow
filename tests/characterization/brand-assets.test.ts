@@ -110,14 +110,18 @@ describe("brand mark: the d and the dot (#326)", () => {
     }
   });
 
-  it("shows the mark on its tile on the loading screen", () => {
+  it("draws the mark's d on the loading screen, and holds it still under reduced motion", () => {
     const html = renderToStaticMarkup(createElement(LoadingScreen));
-    expect(html).toContain('width="48"');
+    expect(html).toContain('role="status"');
     expect(html).toContain('aria-hidden="true"');
     expect(html).toContain('fill="#0F1524"');
     expect(html).toContain('fill="#E9A23B"');
-    expect(html).toContain("motion-safe:animate-pulse");
-    expect(html).toContain("Loading…");
+    // The bowl and the stem are the two drawn strokes.
+    expect(html.match(/class="df-loading-stroke[^"]*"/g)).toHaveLength(2);
+    expect(html.match(/pathLength="1"/g)).toHaveLength(2);
+    // The loop runs only when motion is welcome; the words are for screen readers.
+    expect(html).toMatch(/@media \(prefers-reduced-motion: no-preference\) \{\s*\.df-loading-stroke \{ animation: df-loading-draw/);
+    expect(html).toContain('<span class="sr-only">Loading…</span>');
   });
 
   it("labels the lockup once, and the lone mark by name", () => {
