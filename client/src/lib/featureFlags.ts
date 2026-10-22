@@ -47,8 +47,11 @@ export const FLAG_DEFS = {
     description: "Server-side WebP compression + 1920px resize on screenshot upload via sharp",
   },
   webAppV2: {
+    // On in production too since 2026-10-22: production already ran v2 through
+    // VITE_FLAG_WEB_APP_V2, and a build missing that variable would have served
+    // every signed-in User the v1 screens without a word. v1 is opt-in now.
     dev: true,
-    prod: false,
+    prod: true,
     description: "Parallel v2 authenticated chrome — Today, rail, command bar",
   },
 } satisfies Record<string, FlagDef>;

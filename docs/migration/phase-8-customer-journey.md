@@ -54,6 +54,10 @@ ever have.
 | Web chrome | **v2** | `webAppV2` is `dev: true` in `client/src/lib/featureFlags.ts`, so `npm run dev` already serves it. Nothing is overridden, and `prod` stays `false` |
 | Desktop agent UI | **v2** | `npm run dev:v2` in `desktop-agent/` (`DOCUFLOW_UI=v2`). The packaged default is still v1; a packaged build needs `DOCUFLOW_UI=v2 npm run dist:linux`, or the `docuflow-ui` key at runtime |
 
+*Update 2026-10-22: both now default to v2. The web flag's `prod` is `true`
+(a production build no longer needs `VITE_FLAG_WEB_APP_V2`), and the packaged
+agent opens v2 since 0.2.1; `false` / `DOCUFLOW_UI=v1` opt back into v1.*
+
 Neither flag is retired by this run. Both are temporary by ADR-0017's
 discipline, and each has its own retirement step — the web flag's default, and
 the agent's switch plus `src/renderer/app/`. Those belong to their own ticket.
