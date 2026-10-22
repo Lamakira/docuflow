@@ -42,7 +42,8 @@ module.exports = {
   ],
 
   // uiohook-napi is a native addon — webpack must not bundle it.
-  // The runtime require() resolves to the unpacked node_modules (see asarUnpack in forge.config.ts).
+  // The runtime require() resolves to the node_modules that forge.config.ts's
+  // packageAfterCopy copies in, its .node binary unpacked from the asar.
   externals: {
     'uiohook-napi': 'commonjs uiohook-napi',
   },
