@@ -31,6 +31,8 @@ const CONFIG_VARS = [
   "GCS_SERVICE_ACCOUNT_KEY",
   "GCS_PROJECT_ID",
   "GOOGLE_APPLICATION_CREDENTIALS",
+  "REPL_ID",
+  "REPLIT_DEPLOYMENT",
   "RESEND_API_KEY",
   "RESEND_FROM_EMAIL",
   "APP_URL",
@@ -150,6 +152,67 @@ describe("config — required variables", () => {
     const { config } = await load(BOOTABLE);
 
     expect(config.objectStorage.provider).toBe("gcs");
+  });
+
+  describe("signing mode", () => {
+    const REPLIT = { ...BOOTABLE, GOOGLE_APPLICATION_CREDENTIALS: undefined };
+
+    it("signs through the sidecar on Replit, in a workspace", async () => {
+      const { config } = await load({ ...REPLIT, REPL_ID: "abc" });
+      expect(config.objectStorage.provider).toBe("replit");
+      expect(config.objectStorage.signing).toBe("sidecar");
+    });
+
+    it("signs through the sidecar on Replit, in a deployment", async () => {
+      const { config } = await load({ ...REPLIT, REPLIT_DEPLOYMENT: "1" });
+      expect(config.objectStorage.signing).toBe("sidecar");
+    });
+
+    it("relays off Replit", async () => {
+      const { config } = await load(REPLIT);
+      expect(config.objectStorage.provider).toBe("replit");
+      expect(config.objectStorage.signing).toBe("relay");
+    });
+
+    it("leaves signing to Google on the gcs provider, even on Replit", async () => {
+      const { config } = await load({ ...BOOTABLE, REPL_ID: "abc" });
+      expect(config.objectStorage.signing).toBe("provider");
+    });
+  });
+
+  describe("boot line", () => {
+    async function bootLine(env: Record<string, string | undefined>) {
+      const { logConfigSummary } = await load(env);
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        logConfigSummary();
+        return spy.mock.calls.flat().join("\n");
+      } finally {
+        spy.mockRestore();
+      }
+    }
+    const REPLIT = { ...BOOTABLE, GOOGLE_APPLICATION_CREDENTIALS: undefined };
+
+    it("names replit, the bucket and the sidecar", async () => {
+      const line = await bootLine({ ...REPLIT, REPL_ID: "abc" });
+      expect(line).toContain("object storage replit bucket test-bucket signing via sidecar,");
+    });
+
+    it("names replit, the bucket and the relay", async () => {
+      const line = await bootLine(REPLIT);
+      expect(line).toContain("object storage replit bucket test-bucket signing relay,");
+    });
+
+    it("names gcs and its credential", async () => {
+      expect(await bootLine(BOOTABLE)).toContain(
+        "object storage gcs bucket test-bucket signing GOOGLE_APPLICATION_CREDENTIALS,"
+      );
+      const inline = await bootLine({
+        ...REPLIT,
+        GCS_SERVICE_ACCOUNT_KEY: JSON.stringify(SERVICE_ACCOUNT_KEY),
+      });
+      expect(inline).toContain("object storage gcs bucket test-bucket signing service-account key,");
+    });
   });
 
   // BOOTABLE covers the other credential: it names a key file and nothing else.

@@ -74,6 +74,10 @@ in-memory bucket `tests/fakes/gcs.ts` serves from) and makes every **other** `fe
 throw, so a suite cannot quietly reach a real service. Postgres and supertest do
 not use `fetch`, so nothing legitimate is blocked.
 
+The Replit sidecar, which signs App Storage URLs (#328), is the other raw
+`fetch`. It is not aliased: `tests/fakes/replitSidecar.ts` is an in-memory `fetch`
+that `ReplitStoragePort` takes as an option, so its suite never opens the guard.
+
 All six vendor fakes are module-level singletons; `tests/setup.ts` resets them in a
 global `beforeEach` alongside the database.
 

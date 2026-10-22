@@ -79,7 +79,7 @@ export function storedContentHeaders(
 export const storagePort: StoragePort =
   config.objectStorage.provider === "gcs"
     ? new GcsStoragePort()
-    : new ReplitStoragePort();
+    : new ReplitStoragePort({ signing: config.objectStorage.signing === "sidecar" });
 
 export class ObjectNotFoundError extends Error {
   constructor() {

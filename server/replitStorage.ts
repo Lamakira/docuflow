@@ -8,11 +8,15 @@
  * bucket at all ("Could not load the default credentials"), so this is not an
  * alternative path to the same bucket, it is the only one.
  *
- * Two properties of the SDK shape everything here. It has **no signed URLs**, so
- * `supportsSignedUrls` is false and ADR-0016's direct client-to-bucket transfers
- * do not hold on this provider — every byte moves through the server. And it has
- * **no object metadata API**, so the ACL policy `objectAcl.ts` used to keep in
- * GCS custom metadata is kept beside the object instead, as a sibling
+ * Two properties of the SDK shape everything here. It has **no signed URLs**, but
+ * the Replit sidecar it talks to does: when running on Replit, `signUrl` asks
+ * the sidecar (`POST /object-storage/signed-object-url`) and ADR-0016's direct
+ * client-to-bucket transfers hold again (issue #328; ADR-0016 planned leaving
+ * Replit, ADR-0021/0023 kept it and adopted App Storage, which uses the same
+ * sidecar). Off Replit there is no sidecar, `supportsSignedUrls` is false and
+ * every byte moves through the server. And it has **no object metadata API**,
+ * so the ACL policy `objectAcl.ts` used to keep in GCS custom metadata is kept
+ * beside the object instead, as a sibling
  * `.acl.json`. That is a deliberate stopgap: ADR-0012 makes the database row the
  * authority over object identity, so the policy's eventual home is a table, and
  * a sibling object costs a second round trip per access check and has no
@@ -52,11 +56,36 @@ function unwrap<T>(
   return result.value;
 }
 
+/** Where the Replit sidecar listens, inside every Replit workspace and deployment. */
+const SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+
+export interface ReplitStoragePortOptions {
+  /** Whether the Replit sidecar is reachable (decided in `server/config.ts`). */
+  signing: boolean;
+  fetch?: typeof fetch;
+}
+
+/** The sidecar refused, or answered with something unusable. */
+export class ReplitSidecarSigningError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReplitSidecarSigningError";
+    Object.setPrototypeOf(this, ReplitSidecarSigningError.prototype);
+  }
+}
+
 export class ReplitStoragePort implements StoragePort {
   readonly providerName = "Replit App Storage";
 
-  /** The SDK cannot sign. Callers must proxy transfers through the server. */
-  readonly supportsSignedUrls = false;
+  /** True only when the sidecar can sign; otherwise callers proxy transfers. */
+  readonly supportsSignedUrls: boolean;
+
+  private readonly fetchImpl?: typeof fetch;
+
+  constructor(options: ReplitStoragePortOptions = { signing: false }) {
+    this.supportsSignedUrls = options.signing;
+    this.fetchImpl = options.fetch;
+  }
 
   private readonly clients = new Map<string, Client>();
 
@@ -170,7 +199,32 @@ export class ReplitStoragePort implements StoragePort {
     unwrap(result, `setAclPolicy(${ref.objectName})`);
   }
 
-  async signUrl(_request: SignUrlRequest): Promise<string> {
-    throw new SignedUrlsUnsupportedError(this.providerName);
+  async signUrl({ ref, method, ttlSec }: SignUrlRequest): Promise<string> {
+    if (!this.supportsSignedUrls) throw new SignedUrlsUnsupportedError(this.providerName);
+
+    // Tests inject the sidecar fake; otherwise the global fetch, read per call.
+    const doFetch = this.fetchImpl ?? globalThis.fetch;
+    const response = await doFetch(`${SIDECAR_ENDPOINT}/object-storage/signed-object-url`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bucket_name: ref.bucketName,
+        object_name: ref.objectName,
+        method,
+        expires_at: new Date(Date.now() + ttlSec * 1000).toISOString(),
+      }),
+    });
+    if (response.status !== 200) {
+      const body = await response.text().catch(() => "");
+      throw new ReplitSidecarSigningError(
+        `Failed to sign object URL, errorcode: ${response.status}, body: ${body}, ` +
+          `make sure you're running on Replit`
+      );
+    }
+    const { signed_url: signedUrl } = (await response.json()) as { signed_url?: string };
+    if (!signedUrl) {
+      throw new ReplitSidecarSigningError("Replit sidecar answered 200 without a signed_url");
+    }
+    return signedUrl;
   }
 }
