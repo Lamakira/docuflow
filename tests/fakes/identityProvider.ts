@@ -75,7 +75,10 @@ export class FakeIdentityProvider implements IdentityProvider {
   }
 
   /** Test helper — not on the port. Maps a linked subject to a session token. */
-  issueSessionToken(providerSubjectId: string): string {
+  issueSessionToken(
+    providerSubjectId: string,
+    options?: { authorizedParty?: string },
+  ): string {
     const stored = [...this.byEmail.values()].find(
       (identity) => identity.providerSubjectId === providerSubjectId
     );
@@ -85,6 +88,7 @@ export class FakeIdentityProvider implements IdentityProvider {
       providerSubjectId: stored.providerSubjectId,
       secondFactorVerified: false,
       platformStaff: false,
+      authorizedParty: options?.authorizedParty ?? null,
     });
     return token;
   }
@@ -93,6 +97,10 @@ export class FakeIdentityProvider implements IdentityProvider {
     const session = this.sessions.get(token);
     if (!session) throw new IdentitySessionError();
     return session;
+  }
+
+  sessionTokenFromCookies(cookies: Readonly<Record<string, string>>): string | undefined {
+    return cookies.__session || undefined;
   }
 
   async sendPasswordSetInvite(request: PasswordSetInviteRequest): Promise<PasswordSetInvite> {

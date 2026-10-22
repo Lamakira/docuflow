@@ -156,6 +156,18 @@ export async function signIn(
   userId: string,
   options?: { secondFactor?: boolean },
 ): Promise<Agent> {
+  const token = await sessionTokenFor(userId, options);
+  return newAgent(app).set("Authorization", `Bearer ${token}`);
+}
+
+/**
+ * A provider session token for an existing User, linking them at the provider
+ * first if the suite has not. `azp` mints it for another origin.
+ */
+export async function sessionTokenFor(
+  userId: string,
+  options?: { secondFactor?: boolean; azp?: string },
+): Promise<string> {
   const { storage } = await import("../../server/storage");
   const { identityProvider } = await import("../../server/modules/identity");
   const { issueClerkSession } = await import("../fakes/clerk");
@@ -175,10 +187,7 @@ export async function signIn(
     await storage.linkUserToIdentityProvider(user.id, subjectId);
   }
 
-  return newAgent(app).set(
-    "Authorization",
-    `Bearer ${issueClerkSession(subjectId, { secondFactor: options?.secondFactor })}`,
-  );
+  return issueClerkSession(subjectId, { secondFactor: options?.secondFactor, azp: options?.azp });
 }
 
 /**

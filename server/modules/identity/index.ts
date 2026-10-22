@@ -58,13 +58,15 @@ export {
   importUsersIntoIdentityProvider,
   planUserImport,
 } from "./userImport";
-export type { ResolvedIdentitySession, WebSessionPersistence } from "./webSession";
+export type { ResolvedIdentitySession, WebSessionCredential, WebSessionPersistence } from "./webSession";
 export {
   bearerToken,
   isWebSessionPath,
+  parseCookieHeader,
   resolveIdentitySession,
   userIdFromIdentitySession,
   WEB_SESSION_AGENT_PATHS,
+  webSessionCredential,
 } from "./webSession";
 export type {
   PasswordSetInviteOutcome,

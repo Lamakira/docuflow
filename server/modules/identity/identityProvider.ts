@@ -70,6 +70,11 @@ export type IdentitySession = {
   secondFactorVerified: boolean;
   /** Token issued for the Platform Staff pool (`pla: "staff"`), not a customer User. */
   platformStaff: boolean;
+  /**
+   * The token's `azp` claim: the origin the session was minted for. `null` when
+   * the token names none.
+   */
+  authorizedParty: string | null;
 };
 
 export type PasswordSetInviteRequest = {
@@ -87,6 +92,12 @@ export interface IdentityProvider {
   importPasswordUser(request: PasswordImportRequest): Promise<ProviderIdentity>;
   authenticate(email: string, password: string): Promise<ProviderIdentity>;
   verifySessionToken(token: string): Promise<IdentitySession>;
+  /**
+   * The session token this provider keeps in a first-party cookie, from the
+   * request's parsed cookies, or `undefined` when there is none. The provider
+   * owns the cookie's name; the caller decides when a cookie may be read.
+   */
+  sessionTokenFromCookies(cookies: Readonly<Record<string, string>>): string | undefined;
   /**
    * Invite an address to set a password at the provider (#109). This is what an
    * OIDC-only User gets in place of an import — it is not a Workspace
@@ -127,6 +138,11 @@ export class UnconfiguredIdentityProvider implements IdentityProvider {
 
   async verifySessionToken(): Promise<IdentitySession> {
     this.closed();
+  }
+
+  /** A closed provider reads no cookie, and says so rather than throwing. */
+  sessionTokenFromCookies(): string | undefined {
+    return undefined;
   }
 
   async sendPasswordSetInvite(): Promise<PasswordSetInvite> {

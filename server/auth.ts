@@ -2,11 +2,12 @@ import type { Express, RequestHandler } from "express";
 import { storage } from "./storage";
 import { gateSessionWrite } from "./modules/billing/sessionWriteGate";
 import {
-  bearerToken,
   identityProvider,
   isWebSessionPath,
   resolveIdentitySession,
+  webSessionCredential,
 } from "./modules/identity";
+import { config } from "./config";
 import { workspaceRequiresTwoFactor } from "./modules/identity/operatorAccess";
 import {
   ArchivedMembershipError,
@@ -24,25 +25,31 @@ export async function setupAuth(app: Express) {
   app.use(identitySession);
 }
 
+
 /**
  * The IdentityProvider session (#111, ADR-0007, ADR-0017). An
  * `Authorization: Bearer` provider session token is resolved to the `users.id`
- * it is linked to and left on the request. That is the only web way in: Clerk
- * owns the credential, and DocuFlow builds `WorkspaceContext` from the
- * Membership.
+ * it is linked to and left on the request. Clerk owns the credential, and
+ * DocuFlow builds `WorkspaceContext` from the Membership.
+ *
+ * With no `Authorization` header at all, a GET or HEAD may instead carry the
+ * provider's first-party session cookie (#329), for what the browser loads on
+ * its own (`<img>`, download links). Writes still need the header, and a cookie
+ * token must have been minted for one of this app's origins.
  *
  * The Device and Service Account bearer paths are skipped: their header already
  * carries a token of their own, and this phase does not touch them.
  */
 export const identitySession: RequestHandler = async (req, res, next) => {
   if (!isWebSessionPath(req.path)) return next();
-  const token = bearerToken(req.headers.authorization);
-  if (!token) return next();
+  const credential = webSessionCredential(req, identityProvider);
+  if (!credential) return next();
   try {
     const resolved = await resolveIdentitySession({
       provider: identityProvider,
       persistence: storage,
-      token,
+      token: credential.token,
+      authorizedParties: credential.source === "cookie" ? config.appOrigins : undefined,
     });
     if (resolved) {
       (req as any).secondFactorVerified = resolved.secondFactorVerified;

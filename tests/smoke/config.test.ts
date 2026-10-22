@@ -409,6 +409,21 @@ describe("config — desktop token signing keys", () => {
 });
 
 describe("config — app URL", () => {
+  it("lists every origin a browser may reach the deployment at (#329)", async () => {
+    const both = await load({
+      ...BOOTABLE,
+      APP_URL: "https://app.docuflow.example/",
+      REPLIT_DOMAINS: "docuflow.replit.app,app.docuflow.example",
+    });
+    expect(both.config.appOrigins).toEqual([
+      "https://app.docuflow.example",
+      "https://docuflow.replit.app",
+    ]);
+
+    const neither = await load(BOOTABLE);
+    expect(neither.config.appOrigins).toEqual(["http://localhost:5000"]);
+  });
+
   it("uses APP_URL, without its trailing slashes", async () => {
     const { config } = await load({ ...BOOTABLE, APP_URL: "https://docuflow.example.com//" });
 
