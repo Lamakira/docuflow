@@ -4830,6 +4830,26 @@ button.df-activity-row {
   background: var(--df-cold-stock);
 }
 
+/* A File with no preview (#335 follow-up): the icon says what it is, larger than a list's. */
+.df-file-fallback {
+  margin: var(--df-space-6) auto;
+  max-width: 520px;
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-3);
+  background: var(--df-card-white);
+}
+
+.df-file-fallback .df-file-fallback-icon {
+  width: 64px;
+  height: 64px;
+  color: var(--df-case-ink);
+}
+
+.df-file-fallback .df-file-fallback-icon svg {
+  width: 32px;
+  height: 32px;
+}
+
 .df-empty-panel-title {
   margin: 0;
   font-family: var(--df-font-display);

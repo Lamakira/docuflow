@@ -9,7 +9,19 @@
 import { Fragment, createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ZoomIn, ZoomOut } from "lucide-react";
+import {
+  File as FileIcon,
+  FileArchive,
+  FileAudio,
+  FileImage,
+  FileSpreadsheet,
+  FileText,
+  FileVideo,
+  Presentation,
+  ZoomIn,
+  ZoomOut,
+  type LucideIcon,
+} from "lucide-react";
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Button } from "@/components/ui/button";
@@ -24,6 +36,8 @@ import {
   zoomFile,
   FILE_ZOOM_MAX,
   FILE_ZOOM_MIN,
+  type FileFallback,
+  type FileFamily,
   type FileViewerModel,
 } from "./fileViewer";
 
@@ -84,7 +98,43 @@ function FileStatus({ copy }: { copy: string }) {
   );
 }
 
+const FAMILY_ICONS: Record<FileFamily, LucideIcon> = {
+  slides: Presentation,
+  sheet: FileSpreadsheet,
+  document: FileText,
+  pdf: FileText,
+  image: FileImage,
+  text: FileText,
+  archive: FileArchive,
+  video: FileVideo,
+  audio: FileAudio,
+  file: FileIcon,
+};
+
+/**
+ * A File this viewer cannot show still gets a designed state: what it is, by
+ * its icon, and where to open it. The Download button is the header's.
+ */
+function FileFallbackPanel({ family, fallback }: { family: FileFamily; fallback: FileFallback }) {
+  const Icon = FAMILY_ICONS[family];
+  return (
+    <div className="df-file-body">
+      <div className="df-empty-panel df-file-fallback" data-testid="v2-file-fallback" data-family={family}>
+        <span className="df-empty-panel-icon df-file-fallback-icon">
+          <Icon aria-hidden="true" strokeWidth={1.5} />
+        </span>
+        <p className="df-empty-panel-title">{fallback.title}</p>
+        <p className="df-empty-panel-copy">{fallback.copy}</p>
+      </div>
+    </div>
+  );
+}
+
 function FileBody({ viewer }: { viewer: FileViewerModel }) {
+  if (!viewer.missing && viewer.fallback) {
+    return <FileFallbackPanel family={viewer.family} fallback={viewer.fallback} />;
+  }
+
   if (viewer.missing || viewer.preview === "none" || !viewer.streamHref) {
     return <FileStatus copy={viewer.emptyCopy} />;
   }
