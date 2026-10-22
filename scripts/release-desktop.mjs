@@ -24,7 +24,8 @@
  *   node scripts/release-desktop.mjs --skip-build           # build déjà fait, demande le run-id
  *
  * Variables d'environnement optionnelles :
- *   GH_REPO           — défaut : billos-e/TECHMA-DOCUMENTATION-PLATFORM
+ *   GH_REPO           — défaut : Lamakira/docuflow (le dépôt v2 ; le build embarque
+ *                       DOCUFLOW_API_URL comme hôte des installeurs)
  *   GH_WORKFLOW        — défaut : desktop-release.yml
  */
 
@@ -37,7 +38,7 @@ import { tmpdir } from "os";
 
 const API_URL       = (process.env.DOCUFLOW_API_URL || "").trim().replace(/\/$/, "");
 const TOKEN         = process.env.DESKTOP_RELEASE_CI_TOKEN;
-const GH_REPO       = process.env.GH_REPO || "billos-e/TECHMA-DOCUMENTATION-PLATFORM";
+const GH_REPO       = process.env.GH_REPO || "Lamakira/docuflow";
 const GH_WORKFLOW   = process.env.GH_WORKFLOW || "desktop-release.yml";
 
 const POLL_INTERVAL = 30_000;  // 30 s entre chaque vérification du run
@@ -98,7 +99,8 @@ async function triggerWorkflow() {
   const beforeId = JSON.parse(beforeJson)[0]?.databaseId ?? 0;
 
   // Déclencher
-  ghCmd(["workflow", "run", GH_WORKFLOW, "--repo", GH_REPO, "--ref", "main"]);
+  // Les installeurs suivent l'hôte où la release est enregistrée.
+  ghCmd(["workflow", "run", GH_WORKFLOW, "--repo", GH_REPO, "--ref", "main", "-f", `api_url=${API_URL}`]);
   console.log("      Workflow déclenché. En attente d'apparition du run...");
 
   // Attendre que le nouveau run apparaisse (jusqu'à 90 s)

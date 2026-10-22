@@ -72,6 +72,14 @@ on:
   # without the recorded decision that header describes.
   workflow_dispatch:
     inputs:
+      # The host every installer of this run follows (DOCUFLOW_DEFAULT_API_URL,
+      # baked in at build time; the dist scripts refuse to build without one).
+      # An input, not a secret or a committed URL: the operator names the
+      # target on each run (ADR-0018). scripts/release-desktop.mjs passes it.
+      api_url:
+        description: 'The DocuFlow host the installers connect to, e.g. https://your-host'
+        required: true
+        type: string
       dry_run:
         description: 'Vestigial — this workflow can no longer publish (#60). Builds either way.'
         required: false
@@ -115,6 +123,8 @@ jobs:
 
       - name: Build Windows installer
         working-directory: desktop-agent
+        env:
+          DOCUFLOW_DEFAULT_API_URL: ${{ inputs.api_url }}
         run: npm run dist:win
 
       - name: Upload artifact (always — for inspection)
@@ -232,6 +242,8 @@ jobs:
         #
         # Restoring them needs the recorded decision the header describes, and
         # a gate — this step has none.
+        env:
+          DOCUFLOW_DEFAULT_API_URL: ${{ inputs.api_url }}
         run: npm run dist:mac
 
       - name: Upload artifact (always — for inspection)
@@ -327,6 +339,8 @@ jobs:
 
       - name: Build Linux .deb
         working-directory: desktop-agent
+        env:
+          DOCUFLOW_DEFAULT_API_URL: ${{ inputs.api_url }}
         run: npm run dist:ubuntu
 
       - name: Upload artifact (always — for inspection)
