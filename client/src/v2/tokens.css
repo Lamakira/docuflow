@@ -3623,17 +3623,40 @@ button.df-activity-row {
 
 .df-gallery-meta {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--df-space-2);
-  padding: 0 var(--df-space-3) var(--df-space-3);
+  padding: 0 var(--df-space-3) var(--df-space-1);
   min-width: 0;
+}
+
+.df-gallery-when {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.df-gallery-download {
+  flex: none;
+}
+
+/* shadcn Tooltip content in v2 type. */
+.df-v2.df-tooltip {
+  padding: var(--df-space-1) var(--df-space-2);
+  font-size: var(--df-text-2);
+  color: var(--df-case-ink);
 }
 
 .df-gallery-provenance {
   display: block;
+  min-width: 0;
+  padding: 0 var(--df-space-3) var(--df-space-2);
   font-size: var(--df-text-2);
   color: var(--df-archive-slate);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* The capture viewer (#332): the capture as large as the viewport allows, its provenance under it. */
