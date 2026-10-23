@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { dailyUpdateStatusOptions, type ProjectDailyUpdateWithDetails } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
@@ -8,6 +9,7 @@ import {
   adminDailyUpdateTodayStatusPath,
   canViewTeamDailyUpdates,
   composeTeamDailyUpdates,
+  teamDailyUpdatesLinkFilters,
   type TeamDailyUpdateMember,
   type TeamDailyUpdatesKpis,
 } from "./dailyUpdate";
@@ -41,10 +43,19 @@ export function V2TeamDailyUpdatesPage() {
     canViewDailyUpdates: user?.canViewDailyUpdates,
   });
 
-  const [rangeDays, setRangeDays] = useState("7");
+  // A bell notification links here with ?member=<id>&day=YYYY-MM-DD (#341).
+  const search = useSearch();
+  const linked = useMemo(() => teamDailyUpdatesLinkFilters(search, now), [search, now]);
+  const [rangeDays, setRangeDays] = useState(linked.rangeDays);
   const [filterQuery, setFilterQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [memberFilter, setMemberFilter] = useState("all");
+  const [memberFilter, setMemberFilter] = useState(linked.memberFilter);
+  // The bell link can be followed while this screen is already open.
+  useEffect(() => {
+    if (!search) return;
+    setRangeDays(linked.rangeDays);
+    setMemberFilter(linked.memberFilter);
+  }, [search, linked]);
 
   const startDate = useMemo(() => daysAgo(Number(rangeDays), now), [rangeDays, now]);
   const endDate = useMemo(() => endOfDay(now), [now]);

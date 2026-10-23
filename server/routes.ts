@@ -122,13 +122,11 @@ import {
 import { sendProjectAssignmentEmail } from "./email";
 import { deliverPendingDueReminders } from "./dueReminders";
 import {
-  DAILY_UPDATE_NUDGE_HOUR,
-  DAILY_UPDATE_NUDGE_TIMEZONE,
   nudgeMembersMissingDailyUpdate,
   remindMissingDailyUpdates,
   todayDailyUpdateStatus,
-  tzDayKeyAndHour,
 } from "./dailyUpdateNudge";
+import { notifyDailyUpdateReaders } from "./dailyUpdateReaders";
 import { STALE_CHECK_WINDOW_MS, flagStaleRunningEntries, stopExpiredPausedEntries } from "./staleTimer";
 import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
 import { createKnowledgeObjectStorage } from "./modules/knowledge/objectStorage";
@@ -4637,10 +4635,11 @@ Instructions:
   }, REMINDER_CHECK_INTERVAL_MS);
 
   // ─── Daily-update 6 PM nudge ───
-  // Once a day, at 6:00 PM (America/Toronto), nudge every active member who
-  // hasn't submitted a Daily Update that Workday. The Worker Job (#84) uses
-  // the same function; this in-memory Workday is the HTTP fast-path.
-  let lastNudgedWorkday: string | null = null;
+  // Once a day, at 6:00 PM in each Workspace's own time zone, nudge every
+  // active member who hasn't submitted a Daily Update that Workday. The Worker
+  // Job (#84) uses the same function; this in-memory set of
+  // `${workspaceId}:${workday}` is the HTTP fast-path, per Workspace.
+  const nudgedWorkdays = new Set<string>();
   let dailyUpdateNudgeRunning = false;
 
   startBackgroundJob(async () => {
@@ -4648,12 +4647,8 @@ Instructions:
     dailyUpdateNudgeRunning = true;
     try {
       const now = new Date();
-      const { dayKey: workday, hour } = tzDayKeyAndHour(now, DAILY_UPDATE_NUDGE_TIMEZONE);
-      if (hour < DAILY_UPDATE_NUDGE_HOUR) return;
-      if (lastNudgedWorkday === workday) return;
-      const sent = await nudgeMembersMissingDailyUpdate(now);
-      lastNudgedWorkday = workday;
-      console.log(`[DailyUpdateNudge] Sent ${sent} nudge(s) for ${workday}`);
+      const sent = await nudgeMembersMissingDailyUpdate(now, nudgedWorkdays);
+      if (sent > 0) console.log(`[DailyUpdateNudge] Sent ${sent} nudge(s)`);
     } catch (error) {
       console.error("[DailyUpdateNudge] Error dispatching Daily Update nudges:", error);
     } finally {
@@ -4962,6 +4957,13 @@ Instructions:
         ...data,
         userId: getUserId(req)!,
       });
+      // A notification never fails the submission, and runs inside this
+      // request's Workspace context.
+      try {
+        await notifyDailyUpdateReaders(update);
+      } catch (notifyError) {
+        console.error("Error notifying Daily Update readers:", notifyError);
+      }
       res.status(201).json(update);
     } catch (error) {
       if (error instanceof z.ZodError) {

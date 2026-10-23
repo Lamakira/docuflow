@@ -18,6 +18,15 @@ import { Button } from "@/components/ui/button";
 
 const CREATED_MOTION = motionForSurface("first-workspace-created").enterExit;
 
+/** The creator's browser zone becomes the Workspace time zone (#341); absent when the browser hides it. */
+function browserTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Flow 1, steps 3–4. One field, one action, a default the User can keep.
  * The Trial starts with the Workspace (Flow 5) — there is no card step to show
@@ -47,6 +56,7 @@ export function V2FirstWorkspace({ belongedBefore = false }: { belongedBefore?: 
       const intent = readPlanIntent();
       await apiRequest("POST", workspacesPath(), {
         name: name.trim(),
+        ...(browserTimeZone() ? { timeZone: browserTimeZone() } : {}),
         ...(intent ? { intendedPlan: intent.planKey, intendedInterval: intent.interval } : {}),
       });
       clearPlanIntent();

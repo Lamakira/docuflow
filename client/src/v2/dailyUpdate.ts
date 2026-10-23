@@ -339,6 +339,30 @@ function teamUpdateRow(update: TeamDailyUpdateInput, now: Date): TeamDailyUpdate
   };
 }
 
+/** The Range options of Team Daily Updates, in days. */
+const TEAM_RANGE_DAYS = [1, 7, 14, 30] as const;
+
+/**
+ * The filters a notification link carries (`?member=<id>&day=YYYY-MM-DD`): the
+ * Member, and the narrowest Range that still reaches back to that day.
+ */
+export function teamDailyUpdatesLinkFilters(
+  search: string,
+  now: Date,
+): { memberFilter: string; rangeDays: string } {
+  const params = new URLSearchParams(search);
+  const member = params.get("member");
+  const day = params.get("day")?.split("-").map(Number);
+  let rangeDays = "7";
+  if (day && day.length === 3 && day.every((part) => Number.isFinite(part))) {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const target = new Date(day[0], day[1] - 1, day[2]);
+    const ago = Math.round((startOfToday.getTime() - target.getTime()) / 86_400_000);
+    rangeDays = String(TEAM_RANGE_DAYS.find((days) => days >= ago) ?? 30);
+  }
+  return { memberFilter: member || "all", rangeDays };
+}
+
 export function composeTeamDailyUpdates(input: TeamDailyUpdatesInput): TeamDailyUpdatesModel {
   if (!input.canView) {
     return {

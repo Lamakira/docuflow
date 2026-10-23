@@ -130,6 +130,26 @@ describe("Today desktop from live Workspace records (#172)", () => {
     expect(today.subhead).toMatch(/need you/i);
     expect(today.approvals.empty).toBe(true);
 
+    const submitted = composeToday(
+      emptyInput({
+        notifications: [
+          {
+            id: "n3",
+            type: "daily_update_submitted",
+            message: "Ada submitted a Daily Update for Atlas",
+            isRead: 0,
+            createdAt: new Date(2026, 8, 8, 17, 41, 0),
+            crmProjectId: "prj-live",
+            fromUserId: "user-ada",
+          },
+        ],
+      }),
+    ).attention.find((row) => row.id === "n3");
+    expect(submitted).toMatchObject({
+      kind: "UPDATE",
+      href: "/daily-updates?member=user-ada&day=2026-09-08",
+    });
+
     const remind = today.attention.find((row) => row.id === "daily-updates-missing");
     expect(remind).toMatchObject({
       kind: "UPDATE",

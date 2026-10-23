@@ -1,8 +1,10 @@
 /**
- * Daily Update nudge (#84). After 6pm America/Toronto, a member who has not
- * submitted today's Daily Update is nudged in-app and by email. The occurrence
- * key is the Workday, so a retry the same day does not double-nudge. The HTTP
- * interval and the Worker Job both call this.
+ * Daily Update nudge (#84). After 6pm in the Workspace time zone (#341), a
+ * member who has not submitted today's Daily Update is nudged in-app and by
+ * email. The Workday is the calendar day in that zone, so two Workspaces can be
+ * on different Workdays at the same instant. The occurrence key is the Workday,
+ * so a retry the same day does not double-nudge. The HTTP interval and the
+ * Worker Job both call this, always inside a Workspace context.
  */
 
 import { config } from "./config";
@@ -10,6 +12,7 @@ import { sendDailyUpdateReminderEmail } from "./email";
 import type { Job, JobTypeDeclaration, JobsPort } from "./jobs";
 import { workspaceOfCause } from "./jobs";
 import { emailEnabledForUser } from "./modules/notifications/deliveryPreference";
+import { getWorkspaceTimeZone } from "./modules/time";
 import { storage } from "./storage";
 import { activeMemberUserIds, forEachWorkspace, requireWorkspaceContext } from "./workspaceContext";
 
@@ -22,7 +25,6 @@ export const DAILY_UPDATE_NUDGE_JOB_TYPE: JobTypeDeclaration = {
   concurrencyClass: "external-delivery",
 };
 
-export const DAILY_UPDATE_NUDGE_TIMEZONE = "America/Toronto";
 export const DAILY_UPDATE_NUDGE_HOUR = 18;
 
 export function dailyUpdateNudgeOccurrenceKey(userId: string, workday: string): string {
@@ -45,20 +47,20 @@ export function tzDayKeyAndHour(d: Date, timeZone: string): { dayKey: string; ho
   return { dayKey: `${get("year")}-${get("month")}-${get("day")}`, hour };
 }
 
-function workdayAt(at: Date): { workday: string; hour: number } {
-  const { dayKey, hour } = tzDayKeyAndHour(at, DAILY_UPDATE_NUDGE_TIMEZONE);
+export function workdayAt(at: Date, timeZone: string): { workday: string; hour: number } {
+  const { dayKey, hour } = tzDayKeyAndHour(at, timeZone);
   return { workday: dayKey, hour };
 }
 
-function startOfWorkday(workday: string): Date {
+export function startOfWorkday(workday: string, timeZone: string): Date {
   const [year, month, day] = workday.split("-").map(Number);
   const noonUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  const { hour } = tzDayKeyAndHour(noonUtc, DAILY_UPDATE_NUDGE_TIMEZONE);
+  const { hour } = tzDayKeyAndHour(noonUtc, timeZone);
   return new Date(noonUtc.getTime() - hour * 60 * 60 * 1000);
 }
 
-function isOnWorkday(when: Date, workday: string): boolean {
-  return workdayAt(when).workday === workday;
+function isOnWorkday(when: Date, workday: string, timeZone: string): boolean {
+  return workdayAt(when, timeZone).workday === workday;
 }
 
 export type DailyUpdateRollCallMember = {
@@ -74,13 +76,14 @@ export async function todayDailyUpdateStatus(at: Date): Promise<{
   submitted: DailyUpdateRollCallMember[];
   missing: DailyUpdateRollCallMember[];
 }> {
-  const { workday } = workdayAt(at);
+  const timeZone = await getWorkspaceTimeZone();
+  const { workday } = workdayAt(at, timeZone);
   const inWorkspace = await activeMemberUserIds();
   const since = new Date(at.getTime() - 36 * 60 * 60 * 1000);
   const recent = await storage.getProjectDailyUpdatesForAdmin({ startDate: since });
   const submittedIds = new Set(
     recent
-      .filter((u) => tzDayKeyAndHour(new Date(u.updateDate), DAILY_UPDATE_NUDGE_TIMEZONE).dayKey === workday)
+      .filter((u) => tzDayKeyAndHour(new Date(u.updateDate), timeZone).dayKey === workday)
       .map((u) => u.userId),
   );
   const members = (await storage.getAllUsers()).filter(
@@ -114,14 +117,15 @@ export async function remindMissingDailyUpdates(at: Date): Promise<{
 }
 
 export async function membersMissingDailyUpdate(at: Date): Promise<{ id: string }[]> {
-  const { workday, hour } = workdayAt(at);
+  const timeZone = await getWorkspaceTimeZone();
+  const { workday, hour } = workdayAt(at, timeZone);
   if (hour < DAILY_UPDATE_NUDGE_HOUR) return [];
 
   const recent = await storage.getProjectDailyUpdatesForAdmin({
-    startDate: startOfWorkday(workday),
+    startDate: startOfWorkday(workday, timeZone),
   });
   const submittedToday = new Set(
-    recent.filter((u) => isOnWorkday(new Date(u.updateDate), workday)).map((u) => u.userId),
+    recent.filter((u) => isOnWorkday(new Date(u.updateDate), workday, timeZone)).map((u) => u.userId),
   );
 
   const members = await activeMemberUserIds();
@@ -138,12 +142,13 @@ export async function nudgeMemberForWorkday(userId: string, workday: string): Pr
   const user = await storage.getUser(userId);
   if (!user || user.role !== "user" || user.isArchived) return false;
 
-  const since = startOfWorkday(workday);
+  const timeZone = await getWorkspaceTimeZone();
+  const since = startOfWorkday(workday, timeZone);
   const submitted = await storage.getProjectDailyUpdatesForAdmin({
     userId,
     startDate: since,
   });
-  if (submitted.some((u) => isOnWorkday(new Date(u.updateDate), workday))) {
+  if (submitted.some((u) => isOnWorkday(new Date(u.updateDate), workday, timeZone))) {
     return false;
   }
 
@@ -162,11 +167,21 @@ export async function nudgeMemberForWorkday(userId: string, workday: string): Pr
   return true;
 }
 
-export async function nudgeMembersMissingDailyUpdate(at: Date): Promise<number> {
-  const { workday, hour } = workdayAt(at);
-  if (hour < DAILY_UPDATE_NUDGE_HOUR) return 0;
-
+/**
+ * Nudge every Workspace whose own 6pm has passed. `done` holds the
+ * `${workspaceId}:${workday}` pairs an earlier tick already handled, so the
+ * HTTP interval skips them per Workspace rather than per instant.
+ */
+export async function nudgeMembersMissingDailyUpdate(
+  at: Date,
+  done: Set<string> = new Set(),
+): Promise<number> {
   const counts = await forEachWorkspace(async () => {
+    const { workday, hour } = workdayAt(at, await getWorkspaceTimeZone());
+    if (hour < DAILY_UPDATE_NUDGE_HOUR) return 0;
+    const key = `${requireWorkspaceContext().workspaceId}:${workday}`;
+    if (done.has(key)) return 0;
+
     const members = await membersMissingDailyUpdate(at);
     let sent = 0;
     for (const member of members) {
@@ -176,6 +191,7 @@ export async function nudgeMembersMissingDailyUpdate(at: Date): Promise<number> 
         console.error("[DailyUpdateNudge] Failed for member", member.id, innerErr);
       }
     }
+    done.add(key);
     return sent;
   });
   return counts.reduce((sum, n) => sum + n, 0);
@@ -183,7 +199,7 @@ export async function nudgeMembersMissingDailyUpdate(at: Date): Promise<number> 
 
 export async function enqueueDailyUpdateNudgeJobs(jobs: JobsPort, at: Date): Promise<number> {
   const members = await membersMissingDailyUpdate(at);
-  const { workday } = workdayAt(at);
+  const { workday } = workdayAt(at, await getWorkspaceTimeZone());
   let created = 0;
   for (const member of members) {
     const enqueued = await jobs.enqueue({

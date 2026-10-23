@@ -11,6 +11,7 @@ import {
   dailyUpdateRemindRefusal,
   remindDailyUpdatesPath,
   type TeamDailyUpdatesInput,
+  teamDailyUpdatesLinkFilters,
 } from "../../client/src/v2/dailyUpdate";
 
 /**
@@ -280,3 +281,15 @@ function reducedMotionCss(): string {
     .map((match) => match[1])
     .join("\n");
 }
+
+describe("Team Daily Updates link from a notification (#341)", () => {
+  const now = new Date(2026, 8, 10, 12, 0, 0);
+
+  it("reads the Member and the narrowest Range that reaches the day", () => {
+    expect(teamDailyUpdatesLinkFilters("?member=u1&day=2026-09-10", now)).toEqual({ memberFilter: "u1", rangeDays: "1" });
+    expect(teamDailyUpdatesLinkFilters("?member=u1&day=2026-09-05", now)).toEqual({ memberFilter: "u1", rangeDays: "7" });
+    expect(teamDailyUpdatesLinkFilters("?member=u1&day=2026-08-30", now)).toEqual({ memberFilter: "u1", rangeDays: "14" });
+    expect(teamDailyUpdatesLinkFilters("?day=2026-01-01", now)).toEqual({ memberFilter: "all", rangeDays: "30" });
+    expect(teamDailyUpdatesLinkFilters("", now)).toEqual({ memberFilter: "all", rangeDays: "7" });
+  });
+});

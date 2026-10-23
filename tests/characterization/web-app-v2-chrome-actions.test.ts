@@ -159,6 +159,28 @@ describe("v2 chrome actions (#184)", () => {
     expect(live.rows[0].when).toBe("12:41");
   });
 
+  it("names a submitted Daily Update and opens Team Daily Updates on that Member and day (#341)", () => {
+    const live = composeNotifications({
+      now: new Date(2026, 8, 8, 18, 30, 0),
+      notifications: [
+        {
+          id: "n1",
+          type: "daily_update_submitted",
+          message: "Ada submitted a Daily Update for Atlas",
+          isRead: 0,
+          createdAt: new Date(2026, 8, 8, 17, 41, 0),
+          crmProjectId: "prj-atlas",
+          fromUserId: "user-ada",
+        },
+      ],
+    });
+    expect(live.rows[0]).toMatchObject({
+      kind: "Daily Update",
+      title: "Ada submitted a Daily Update for Atlas",
+      href: "/daily-updates?member=user-ada&day=2026-09-08",
+    });
+  });
+
   it("loads Ask as live answers with a source line, or an honest empty that honors Document Access", () => {
     const empty = composeAsk({ messages: [] });
     expect(empty.messages).toEqual([]);

@@ -14,7 +14,7 @@ import {
 } from "@shared/deliveryPreference";
 import { documentHref, projectDocumentHref } from "./library";
 import { administrationTabHref, type V2CommandPanel } from "./presentation";
-import { projectHref } from "./today";
+import { projectHref, teamDailyUpdatesHref } from "./today";
 import { notificationOrigin, workspaceRoleInCopy } from "./workspace";
 import { MONTHS } from "./dates";
 import { capitalize } from "./text";
@@ -149,6 +149,7 @@ export type ChromeNotification = {
   isRead: number;
   createdAt: Date | string | null;
   crmProjectId?: string | null;
+  fromUserId?: string | null;
   workspace?: { id: string; name: string } | null;
 };
 
@@ -195,6 +196,7 @@ function isBillingNotice(type: string): boolean {
 
 function notificationKind(type: string): string {
   if (type === "daily_update_reminder") return "Update";
+  if (type === "daily_update_submitted") return "Daily Update";
   if (type === "mention") return "Mention";
   if (type === "reminder") return "Reminder";
   if (isBillingNotice(type)) return "Billing";
@@ -204,6 +206,9 @@ function notificationKind(type: string): string {
 
 function notificationHref(notification: ChromeNotification): string {
   if (notification.type === "daily_update_reminder") return "/daily-update";
+  if (notification.type === "daily_update_submitted") {
+    return teamDailyUpdatesHref(notification.fromUserId, notification.createdAt);
+  }
   if (isBillingNotice(notification.type)) return administrationTabHref("billing");
   if (notification.crmProjectId) return projectHref(notification.crmProjectId);
   return "/";
