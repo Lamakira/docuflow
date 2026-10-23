@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Link, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -25,8 +25,17 @@ import {
   type ActivityProjectInput,
   type GalleryEvidenceInput,
   type GalleryTile,
+  type GalleryViewer,
 } from "./activity";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
@@ -554,7 +563,8 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           onSelect={onSelect}
           onSelectShown={onSelectShown}
           onBatchDownload={onBatchDownload}
-          onExpand={(id) => setExpandedCaptureId((current) => (current === id ? null : id))}
+          onOpen={(id) => setExpandedCaptureId(id)}
+          onClose={() => setExpandedCaptureId(null)}
           onSave={saveCapture}
           onPage={(step) => setGalleryPage((current) => Math.max(1, current + step))}
           onClearFilters={onClearFilters}
@@ -570,7 +580,8 @@ type ActivityGalleryProps = {
   onSelect: (id: string) => void;
   onSelectShown: () => void;
   onBatchDownload: () => void;
-  onExpand: (id: string) => void;
+  onOpen: (id: string) => void;
+  onClose: () => void;
   onSave: (tile: GalleryTile) => void;
   onPage: (step: number) => void;
   onClearFilters: () => void;
@@ -586,12 +597,14 @@ function ActivityGallery({
   onSelect,
   onSelectShown,
   onBatchDownload,
-  onExpand,
+  onOpen,
+  onClose,
   onSave,
   onPage,
   onClearFilters,
 }: ActivityGalleryProps) {
-  const expanded = gallery.groups.flatMap((group) => group.tiles).find((tile) => tile.expanded) ?? null;
+  // The thumbnail that opened the viewer, so closing returns focus to it.
+  const openerId = useRef<string | null>(null);
   return (
     <section className="df-card df-gallery" data-testid="v2-activity-gallery">
       <div className="df-card-head">
@@ -627,9 +640,14 @@ function ActivityGallery({
                   <button
                     type="button"
                     className="df-gallery-open"
+                    aria-haspopup="dialog"
                     aria-expanded={tile.expanded}
+                    data-capture-open={tile.id}
                     aria-label={`Open the capture from ${tile.when} at full size`}
-                    onClick={() => onExpand(tile.id)}
+                    onClick={() => {
+                      openerId.current = tile.id;
+                      onOpen(tile.id);
+                    }}
                   >
                     <img src={tile.imageSrc} alt="" loading="lazy" />
                   </button>
@@ -659,27 +677,7 @@ function ActivityGallery({
           </div>
         ))
       )}
-      {expanded ? (
-        <div className="df-gallery-full" data-testid="v2-activity-capture-full">
-          <img src={expanded.imageSrc} alt="" />
-          <div className="df-kv">
-            <span>When</span>
-            <span>{expanded.when}</span>
-          </div>
-          <div className="df-kv">
-            <span>Project</span>
-            <span>{expanded.project}</span>
-          </div>
-          <div className="df-kv">
-            <span>Task</span>
-            <span>{expanded.task}</span>
-          </div>
-          <div className="df-kv">
-            <span>Source</span>
-            <span>{expanded.source}</span>
-          </div>
-        </div>
-      ) : null}
+      <CaptureViewer viewer={gallery.viewer} onOpen={onOpen} onClose={onClose} onSave={onSave} openerId={openerId} />
       {gallery.paging.pageCount > 1 ? (
         <div className="df-gallery-paging">
           <span className="df-mono df-meta">{gallery.paging.label}</span>
@@ -694,5 +692,111 @@ function ActivityGallery({
         </div>
       ) : null}
     </section>
+  );
+}
+
+type CaptureViewerProps = {
+  viewer: GalleryViewer | null;
+  onOpen: (id: string) => void;
+  onClose: () => void;
+  onSave: (tile: GalleryTile) => void;
+  openerId: MutableRefObject<string | null>;
+};
+
+/**
+ * One capture as large as the viewport allows (#332), on the shadcn Dialog.
+ * Radix portals outside `.df-v2`, so the panel carries the class itself.
+ */
+function CaptureViewer({ viewer, onOpen, onClose, onSave, openerId }: CaptureViewerProps) {
+  // On the window, not the panel: stepping onto the last capture disables Next,
+  // and the focus it held falls to the body, out of the panel's key events.
+  useEffect(() => {
+    if (!viewer) return;
+    const { previousId, nextId } = viewer;
+    function onKey(event: KeyboardEvent) {
+      const target = event.key === "ArrowLeft" ? previousId : event.key === "ArrowRight" ? nextId : null;
+      if (!target) return;
+      event.preventDefault();
+      onOpen(target);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [viewer, onOpen]);
+
+  return (
+    <Dialog
+      open={viewer !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      {viewer ? (
+        <DialogContent
+          className="df-v2 df-alert df-capture-viewer"
+          data-testid="v2-activity-capture-viewer"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (!openerId.current) return;
+            const opener = document.querySelector<HTMLElement>(
+              `[data-capture-open="${CSS.escape(openerId.current)}"]`,
+            );
+            opener?.focus();
+          }}
+        >
+          <DialogHeader className="df-capture-viewer-head">
+            <DialogTitle>Capture from {viewer.tile.when}</DialogTitle>
+            <DialogDescription className="df-mono df-meta">{viewer.position}</DialogDescription>
+          </DialogHeader>
+          <div className="df-capture-viewer-frame">
+            <img src={viewer.tile.imageSrc} alt={`Capture from ${viewer.tile.when}`} />
+          </div>
+          <div className="df-capture-viewer-meta">
+            <div className="df-kv">
+              <span>When</span>
+              <span>{viewer.tile.when}</span>
+            </div>
+            <div className="df-kv">
+              <span>Who</span>
+              <span>{viewer.tile.who}</span>
+            </div>
+            <div className="df-kv">
+              <span>Project</span>
+              <span>{viewer.tile.project}</span>
+            </div>
+            <div className="df-kv">
+              <span>Task</span>
+              <span>{viewer.tile.task}</span>
+            </div>
+            <div className="df-kv">
+              <span>Source</span>
+              <span>{viewer.tile.source}</span>
+            </div>
+          </div>
+          <DialogFooter className="df-capture-viewer-actions">
+            <Button
+              variant="outline"
+              type="button"
+              className="df-btn"
+              disabled={viewer.previousId === null}
+              onClick={() => viewer.previousId && onOpen(viewer.previousId)}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              type="button"
+              className="df-btn"
+              disabled={viewer.nextId === null}
+              onClick={() => viewer.nextId && onOpen(viewer.nextId)}
+            >
+              Next
+            </Button>
+            <Button variant="default" type="button" className="df-btn" onClick={() => onSave(viewer.tile)}>
+              Download
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      ) : null}
+    </Dialog>
   );
 }

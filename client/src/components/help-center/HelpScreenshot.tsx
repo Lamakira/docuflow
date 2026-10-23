@@ -8,7 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import type { HelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
 import { Loader2, ImagePlus } from "lucide-react";
 import { docBlockClass } from "@/v2/helpArticle";
-import { useHelpSurface } from "./helpSurface";
+import { notify } from "@/v2/notify";
+import { useHelpScreenshotManagement, useHelpSurface } from "./helpSurface";
 
 type ScreenshotMap = Record<string, string | null>;
 
@@ -27,8 +28,29 @@ interface HelpScreenshotProps {
 export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreenshotProps) {
   const surface = useHelpSurface();
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const managed = useHelpScreenshotManagement();
+  const isAdmin = managed ?? user?.role === "admin";
   const { toast } = useToast();
+  // v2's toaster on the v2 surface; v1 keeps its own toast.
+  const report = surface === "v2"
+    ? {
+        saved: () => notify.success("Screenshot saved"),
+        saveFailed: (e: unknown) => notify.error(e, { fallback: "Could not save the screenshot." }),
+        invalidFile: () => notify.refused("Invalid file", "Choose an image file (PNG, JPEG, or WebP)."),
+        uploadFailed: (e: unknown) => notify.error(e, { fallback: "Upload failed." }),
+      }
+    : {
+        saved: () => toast({ title: "Screenshot saved", description: "Help Center image updated for this slot." }),
+        saveFailed: (e: unknown) => {
+          const msg = e instanceof Error ? e.message : "Upload failed";
+          toast({ title: "Could not save screenshot", description: msg, variant: "destructive" });
+        },
+        invalidFile: () => toast({ title: "Invalid file", description: "Choose an image file (PNG, JPEG, or WebP).", variant: "destructive" }),
+        uploadFailed: (e: unknown) => {
+          const msg = e instanceof Error ? e.message : "Upload failed";
+          toast({ title: "Upload failed", description: msg, variant: "destructive" });
+        },
+      };
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -50,19 +72,16 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/help-center/screenshot-map"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/org-settings"] });
-      toast({ title: "Screenshot saved", description: "Help Center image updated for this slot." });
+      report.saved();
     },
-    onError: (e: unknown) => {
-      const msg = e instanceof Error ? e.message : "Upload failed";
-      toast({ title: "Could not save screenshot", description: msg, variant: "destructive" });
-    },
+    onError: (e: unknown) => report.saveFailed(e),
   });
 
   async function onFileChange(files: FileList | null) {
     const file = files?.[0];
     if (!file || !isAdmin) return;
     if (!file.type.startsWith("image/")) {
-      toast({ title: "Invalid file", description: "Choose an image file (PNG, JPEG, or WebP).", variant: "destructive" });
+      report.invalidFile();
       return;
     }
     setUploading(true);
@@ -70,8 +89,7 @@ export function HelpScreenshot({ slotId, caption, expectedLabel }: HelpScreensho
       const publicUrl = await uploadHelpCenterPublicImage(file);
       await saveMutation.mutateAsync(publicUrl);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Upload failed";
-      toast({ title: "Upload failed", description: msg, variant: "destructive" });
+      report.uploadFailed(e);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

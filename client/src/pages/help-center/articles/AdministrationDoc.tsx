@@ -22,8 +22,8 @@ export function AdministrationDoc() {
       {!isAdmin ? (
         <DocLeadSummary title="Admin access" variant="neutral">
           <DocP>
-            The <DocStrong>Administration</DocStrong> sidebar entry is only shown for accounts with
-            the <DocCode>admin</DocCode> role. The sections below describe what
+            The <DocStrong>Administration</DocStrong> rail entry is only shown to Workspace Owners and
+            Administrators. The sections below describe what
             administrators configure so you know why desktop behaviour or screenshots change organisation-wide.
           </DocP>
         </DocLeadSummary>

@@ -27,15 +27,15 @@ export function TimeTrackingDoc() {
         <DocH3>Entry points (web)</DocH3>
         <DocList>
           <DocLi>
-            <DocStrong>Sidebar</DocStrong> — clock control opens the timer popover (wide layout).
+            <DocStrong>Top bar</DocStrong> — the timer chip opens the timer popover (wide layout).
           </DocLi>
           <DocLi>
-            <DocStrong>Mobile header</DocStrong> — same popover from the header clock control.
+            <DocStrong>Timer strip</DocStrong> — on narrow screens, the same popover from the strip above the page.
           </DocLi>
           <DocLi>
-            <DocStrong>Time Tracking → Entries</DocStrong> (
-            <DocCode>/time-tracking</DocCode>) uses the same underlying timer
-            state as the sidebar; it is the place to review and filter historical entries and screenshots, not a second
+            <DocStrong>Time Tracking → Time Entries</DocStrong> (
+            <DocCode>/time</DocCode>) uses the same underlying timer
+            state as the timer chip; it is the place to review and filter historical entries (captures are under <DocStrong>Activity</DocStrong>), not a second
             independent clock.
           </DocLi>
         </DocList>

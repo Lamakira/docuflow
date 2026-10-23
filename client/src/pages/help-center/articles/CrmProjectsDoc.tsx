@@ -14,7 +14,7 @@ export function CrmProjectsDoc() {
       <DocSection title="Projects in Project Management">
         <DocP>
           Projects represent billable or trackable units of work — often a client engagement, internal initiative, or
-          deliverable. Open <DocStrong>Project Management</DocStrong> from the sidebar, then use the pipeline or list views
+          deliverable. Open <DocStrong>Projects</DocStrong> from the rail, then use the pipeline or list views
           your team adopted.
         </DocP>
         <DocList>

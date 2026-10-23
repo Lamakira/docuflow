@@ -48,7 +48,7 @@ export function GettingStartedDoc() {
       </DocSection>
 
       <DocSection title="Navigate the web app" sectionId="section-navigate">
-        <DocP>The primary navigation is the left sidebar (on narrow screens, open it from the header menu).</DocP>
+        <DocP>The primary navigation is the rail on the left (on narrow screens, open it as a drawer from the menu button in the top app bar).</DocP>
         <DocList>
           <DocLi>
             <DocStrong>Company Documents</DocStrong> — organisation-level files and viewers.
@@ -73,19 +73,19 @@ export function GettingStartedDoc() {
           </DocLi>
         </DocList>
         <DocP>
-          Routes such as <DocCode>/time-tracking</DocCode>,{" "}
-          <DocCode>/crm</DocCode>, and{" "}
-          <DocCode>/admin</DocCode> are protected: unauthenticated visitors are
+          Routes such as <DocCode>/time</DocCode>,{" "}
+          <DocCode>/projects</DocCode>, and{" "}
+          <DocCode>/administration</DocCode> are protected: unauthenticated visitors are
           redirected to sign-in.
         </DocP>
       </DocSection>
 
       <DocSection title="Where the timer is" sectionId="section-where-timer">
         <DocP>
-          The time tracker control lives in the <DocStrong>sidebar</DocStrong> as a clock button
-          next to your user block (desktop layout). On smaller viewports it also appears in the{" "}
-          <DocStrong>top header</DocStrong> so you can open the same popover without the sidebar
-          expanded.
+          The time tracker control lives in the <DocStrong>timer chip</DocStrong> in the top bar
+          (wide layout). On narrow screens it appears as a{" "}
+          <DocStrong>timer strip</DocStrong> above the page, so you can open the same popover without the rail
+          open.
         </DocP>
         <DocP>
           Click the control to open the popover: depending on your organisation&apos;s configuration you may start a
@@ -103,7 +103,7 @@ export function GettingStartedDoc() {
         <DocH3>I need to track my time</DocH3>
         <DocP>
           Read <DocStrong>Time Tracking</DocStrong>, install the agent from{" "}
-          <DocStrong>Time Tracking → Download</DocStrong> if your workflow uses the desktop app,
+          <DocStrong>Devices</DocStrong> if your workflow uses the desktop app,
           and create tasks under <DocStrong>Time Tracking → Projects &amp; Tasks</DocStrong> when
           your workspace requires a task to start.
         </DocP>

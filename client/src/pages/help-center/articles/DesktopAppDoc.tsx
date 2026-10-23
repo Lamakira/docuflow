@@ -14,8 +14,8 @@ export function DesktopAppDoc() {
     <DocArticle>
       <DocSection title="Download and install" sectionId="section-download">
         <DocP>
-          In the web app, go to <DocStrong>Time Tracking → Download</DocStrong> (
-          <DocCode>/time-tracking/download</DocCode>) and use the installer for
+          In the web app, go to <DocStrong>Devices</DocStrong> (
+          <DocCode>/devices</DocCode>) and use the installer for
           your platform. The agent needs permission to run in the background if you expect continuous sync and idle
           detection while you work in other apps.
         </DocP>
@@ -24,7 +24,7 @@ export function DesktopAppDoc() {
       <DocSection title="Pair this device" sectionId="section-sign-in-agent">
         <DocP>
           The agent enrolls with a pairing code from a signed-in DocuFlow web session
-          (Time Tracking → Devices) and registers this device. A long-lived device token is stored locally on the machine (under the application&apos;s user data
+          (Devices) and registers this device. A long-lived device token is stored locally on the machine (under the application&apos;s user data
           path). This session is separate from an open browser tab: signing out in the browser does not automatically
           sign out the agent until you disconnect or unpair from the agent itself.
         </DocP>

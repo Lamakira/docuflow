@@ -1,5 +1,5 @@
 import { Redirect, Route, Switch } from "wouter";
-import { TimeTrackerProvider } from "@/contexts/TimeTrackerContext";
+import { TimeTrackerProvider, type TimeTrackerReport } from "@/contexts/TimeTrackerContext";
 import {
   V2PlaceholderPage,
   V2TodayPage,
@@ -25,7 +25,11 @@ import { V2InvitationAcceptPage } from "./V2InvitationAccept";
 import { V2OpportunitiesPage, V2OpportunityRecordPage } from "./V2Opportunities";
 import { V2ProjectRecordRedirect, V2LegacyProjectPage, V2ProjectsPage } from "./V2Projects";
 import { V2Shell } from "./V2Shell";
+import { notify } from "./notify";
 import { V2Toaster } from "./V2Toast";
+
+/** Module-level so the provider's callbacks stay stable. */
+const TIMER_REPORT: TimeTrackerReport = { failure: (title, description) => notify.refused(title, description) };
 
 /**
  * The platform console is its own space (ADR-0015): it renders outside the
@@ -46,7 +50,7 @@ export function V2AuthenticatedApp() {
 
 function V2WorkspaceApp() {
   return (
-    <TimeTrackerProvider>
+    <TimeTrackerProvider report={TIMER_REPORT}>
       <V2Shell>
         <Switch>
           <Route path="/auth">

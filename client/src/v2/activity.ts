@@ -407,6 +407,14 @@ export type GalleryPaging = {
   hasNext: boolean;
 };
 
+/** The capture open in the full-screen viewer, with its neighbours in display order. */
+export type GalleryViewer = {
+  tile: GalleryTile;
+  position: string;
+  previousId: string | null;
+  nextId: string | null;
+};
+
 export type ActivityGalleryModel = {
   groups: GalleryGroup[];
   count: number;
@@ -416,6 +424,7 @@ export type ActivityGalleryModel = {
   canBatch: boolean;
   batchLabel: string;
   paging: GalleryPaging;
+  viewer: GalleryViewer | null;
   empty: boolean;
   emptyState: EmptyModel | null;
 };
@@ -496,6 +505,20 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
   // Newest hour first.
   const ordered = [...groups.values()].sort((a, b) => b.key.localeCompare(a.key));
 
+  const displayOrder = ordered.flatMap((group) => group.tiles);
+  const viewerIndex = input.expandedId
+    ? displayOrder.findIndex((tile) => tile.id === input.expandedId)
+    : -1;
+  const viewer: GalleryViewer | null =
+    viewerIndex < 0
+      ? null
+      : {
+          tile: displayOrder[viewerIndex],
+          position: `${viewerIndex + 1} of ${displayOrder.length}`,
+          previousId: displayOrder[viewerIndex - 1]?.id ?? null,
+          nextId: displayOrder[viewerIndex + 1]?.id ?? null,
+        };
+
   const count = shown.length;
   const selectedCount = shown.filter((shot) => selected.has(shot.id)).length;
 
@@ -525,6 +548,7 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
       hasPrevious: page > 1,
       hasNext: page < pageCount,
     },
+    viewer,
     empty: count === 0,
     emptyState: evidenceEmptyState(count === 0, filtered, input.everRecorded ?? null),
   };

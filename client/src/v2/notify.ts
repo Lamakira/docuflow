@@ -60,6 +60,10 @@ export const notify = {
   error(error: unknown, { fallback, ...options }: NotifyOptions & { fallback?: string } = {}) {
     toast.error(errorMessage(error, fallback), options);
   },
+  /** A refusal with its reason under it, e.g. why the timer cannot start yet. */
+  refused(title: string, reason: string, options: NotifyOptions = {}) {
+    toast.error(title, { ...options, description: reason });
+  },
 };
 
 export function copyToClipboard(text: string, copied: string): void {
