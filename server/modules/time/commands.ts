@@ -30,6 +30,13 @@ export interface ApplyTimerCommandInput {
   claimedEffectiveAt: Date;
   receivedAt?: Date;
   payload: TimerCommandPayload;
+  /**
+   * Floor the claim at the target entry's start and at this User's latest
+   * Timer Command (#333, ADR-0030). A device dates a pause or stop when the
+   * Member left; the floor keeps that claim from reaching back across a start
+   * or resume the server already applied, and keeps it an incremental apply.
+   */
+  floorAtLastCommand?: boolean;
 }
 
 export interface ApplyTimerCommandResult {
@@ -120,6 +127,14 @@ async function applyTimerCommandOnce(
   }
 
   return db.transaction(async (tx) => {
+    if (input.floorAtLastCommand) {
+      const floor = await claimFloor(tx, input);
+      if (floor && claimedEffectiveAt.getTime() < floor.getTime()) {
+        claimedEffectiveAt = floor;
+        clamped = true;
+      }
+    }
+
     const [inserted] = await tx
       .insert(timerCommands)
       .values(
@@ -157,6 +172,20 @@ async function applyTimerCommandOnce(
     const timeEntry = await loadTimeEntry(tx, command.timeEntryId);
     return { duplicate: false, command, timeEntry };
   });
+}
+
+/** The earliest a floored claim may take effect: the entry's start, or this User's latest Timer Command. */
+async function claimFloor(writer: TimeWriter, input: ApplyTimerCommandInput): Promise<Date | undefined> {
+  const [latest] = await writer
+    .select({ at: timerCommands.claimedEffectiveAt })
+    .from(timerCommands)
+    .where(and(eq(timerCommands.userId, input.userId), inWorkspace(timerCommands)))
+    .orderBy(desc(timerCommands.claimedEffectiveAt))
+    .limit(1);
+  const entry = await loadTimeEntry(writer, input.payload.timeEntryId ?? null);
+  const candidates = [latest?.at, entry?.startTime].filter((d): d is Date => !!d);
+  if (candidates.length === 0) return undefined;
+  return new Date(Math.max(...candidates.map((d) => d.getTime())));
 }
 
 async function loadCommand(
@@ -255,12 +284,13 @@ async function pauseFromCommand(writer: TimeWriter, command: TimerCommand): Prom
   if (!entry || entry.status !== "running") return;
   const at = command.claimedEffectiveAt;
   const lastActivity = entry.lastActivityAt || entry.startTime;
+  // Negative when heartbeats accrued past a pause dated earlier (#333): that time is taken back.
   const elapsed = Math.floor((at.getTime() - lastActivity.getTime()) / 1000);
   await writer
     .update(timeEntries)
     .set({
       status: "paused",
-      duration: (entry.duration || 0) + elapsed,
+      duration: Math.max(0, (entry.duration || 0) + elapsed),
       lastActivityAt: at,
       updatedAt: at,
     })

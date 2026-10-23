@@ -11,6 +11,7 @@
 
 import { AgentStore } from "./AgentStore";
 import { API_BASE } from "./config";
+import { NETWORK_UNAVAILABLE } from "./timerCommandFailure";
 
 /** The server's refusal code for an area the Workspace's Plan leaves out. */
 export const PLAN_UPGRADE_REQUIRED = "plan_upgrade_required";
@@ -264,13 +265,14 @@ export class ApiClient {
     });
   }
 
-  async pauseTimer(entryId: string): Promise<TimeEntry> {
+  async pauseTimer(entryId: string, effectiveAt?: string | null): Promise<TimeEntry> {
     return this.authenticatedRequest(`/api/agent/timer/${entryId}/pause`, {
       method: "POST",
       body: JSON.stringify({
         deviceId: this.store.getDeviceId(),
         clientType: "desktop",
         clientVersion: this.store.getClientVersion(),
+        ...(effectiveAt ? { effectiveAt } : {}),
       }),
     });
   }
@@ -286,13 +288,14 @@ export class ApiClient {
     });
   }
 
-  async stopTimer(entryId: string): Promise<TimeEntry> {
+  async stopTimer(entryId: string, effectiveAt?: string | null): Promise<TimeEntry> {
     return this.authenticatedRequest(`/api/agent/timer/${entryId}/stop`, {
       method: "POST",
       body: JSON.stringify({
         deviceId: this.store.getDeviceId(),
         clientType: "desktop",
         clientVersion: this.store.getClientVersion(),
+        ...(effectiveAt ? { effectiveAt } : {}),
       }),
     });
   }
@@ -440,7 +443,7 @@ export class ApiClient {
 
       if (!retry.ok) {
         const data = await retry.json().catch(() => ({ message: retry.statusText }));
-        throw new Error(data.message || `Request failed: ${retry.status}`);
+        throw Object.assign(new Error(data.message || `Request failed: ${retry.status}`), { status: retry.status });
       }
       return retry.json().catch(() => null);
     }
@@ -473,10 +476,10 @@ export class ApiClient {
     if (!res.ok) {
       const ct = res.headers.get("content-type") ?? "";
       if (!ct.includes("application/json")) {
-        throw new Error(`Server error (HTTP ${res.status}). Please try again.`);
+        throw Object.assign(new Error(`Server error (HTTP ${res.status}). Please try again.`), { status: res.status });
       }
       const data = await res.json().catch(() => ({ message: res.statusText }));
-      throw new Error(data.message || `Request failed: ${res.status}`);
+      throw Object.assign(new Error(data.message || `Request failed: ${res.status}`), { status: res.status });
     }
 
     return res.json().catch(() => null);
@@ -526,7 +529,9 @@ export class ApiClient {
           },
         });
       } catch (error) {
-        if (attempt === retries) throw error;
+        if (attempt === retries) {
+          throw Object.assign(error instanceof Error ? error : new Error(String(error)), { code: NETWORK_UNAVAILABLE });
+        }
         const delay = Math.pow(2, attempt) * 1000;
         await new Promise(resolve => setTimeout(resolve, delay));
       }

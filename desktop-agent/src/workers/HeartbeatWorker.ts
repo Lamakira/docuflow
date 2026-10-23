@@ -10,6 +10,7 @@
 import { app } from "electron";
 import { ApiClient } from "../lib/ApiClient";
 import { AgentStore } from "../lib/AgentStore";
+import { heartbeatTimeEntryId } from "../lib/systemAway";
 const HEARTBEAT_INTERVAL_MS = 60_000;
 
 type TimerSyncCallback = (
@@ -76,7 +77,8 @@ export class HeartbeatWorker {
 
       const result = await this.apiClient.sendHeartbeat({
         deviceId,
-        timeEntryId: this.store.getActiveEntryId(),
+        // #333: no accrual on the server while the Timer is paused here, whatever order commands and heartbeats arrive in.
+        timeEntryId: heartbeatTimeEntryId(this.store.getTimerStatus(), this.store.getActiveEntryId()),
         timestamp: new Date().toISOString(),
         clientType: "electron",
         clientVersion: this.store.getClientVersion(),

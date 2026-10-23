@@ -45,6 +45,8 @@ export interface PendingTimerCommand {
   /** Local placeholder "local-{uuid}" for starts; real server entry ID for pause/resume/stop.
    *  Updated to the real server ID by markTimerCommandSynced() once start syncs. */
   entryId: string | null;
+  /** When the command took effect (ISO). Pauses and stops are dated when the Member left (#333); absent means at receipt. */
+  effectiveAt?: string | null;
   crmProjectId?: string;
   taskId?: string | null;
   description?: string | null;
