@@ -553,7 +553,33 @@ describe("Activity Evidence gallery (#214)", () => {
 
     const open = composeActivityGallery(emptyGallery({ evidence, expandedId: "s-1" }));
     expect(open.groups[0].tiles[0].expanded).toBe(true);
+    expect(open.viewer?.tile.id).toBe("s-1");
+    expect(closed.viewer).toBeNull();
     expect(activitySource).toContain("setExpandedCaptureId");
+    // The viewer is the shadcn Dialog, not an inline block at the foot of the card.
+    expect(activitySource).toContain("DialogContent");
+    expect(activitySource).toContain("df-capture-viewer");
+    expect(activitySource).not.toContain("df-gallery-full");
+    expect(css).not.toContain(".df-gallery-full");
+  });
+
+  it("stops Previous and Next at the first and last capture of the page", () => {
+    const shot = (id: string, hour: number, minute: number) => ({
+      id,
+      capturedAt: new Date(2026, 8, 10, hour, minute, 0),
+      userId: "me",
+      crmProjectId: "prj-1",
+      timeEntryId: "te-1",
+      storageKey: `agent-screenshots/${id}.png`,
+    });
+    const evidence = [shot("a", 9, 0), shot("b", 9, 30), shot("c", 10, 0)];
+    // Newest hour first, forward in time inside an hour: c, a, b.
+    const view = (expandedId: string) => composeActivityGallery(emptyGallery({ evidence, expandedId })).viewer;
+
+    expect(view("c")).toMatchObject({ position: "1 of 3", previousId: null, nextId: "a" });
+    expect(view("a")).toMatchObject({ position: "2 of 3", previousId: "c", nextId: "b" });
+    expect(view("b")).toMatchObject({ position: "3 of 3", previousId: "a", nextId: null });
+    expect(view("missing")).toBeNull();
   });
 
   it("never labels one capture as low activity — the filter is a lens, not a verdict", () => {

@@ -18,13 +18,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { motionForSurface } from "./motion";
 import { matchV2Route } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
+import { canManageAdministration } from "./administration";
 import { Button } from "@/components/ui/button";
 
 const ARTICLE_MOTION = motionForSurface("help-article").enterExit;
 
 export function V2HelpPage() {
   const [location] = useLocation();
-  const { layout } = useV2Chrome();
+  const { layout, memberships } = useV2Chrome();
+  const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const [query, setQuery] = useState("");
   const match = matchV2Route(location);
   const path = match.kind === "help" && match.slug ? `/help/${match.slug}` : "/help";
@@ -82,7 +84,7 @@ export function V2HelpPage() {
           data-testid="v2-help-article"
         >
           {/* The body renders on v2 tokens, not the discarded v1 system (ADR-0003). */}
-          <HelpSurfaceProvider surface="v2">
+          <HelpSurfaceProvider surface="v2" canManageScreenshots={canManageAdministration(current?.workspaceRole ?? "")}>
             <Article />
           </HelpSurfaceProvider>
         </article>

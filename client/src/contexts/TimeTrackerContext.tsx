@@ -59,8 +59,15 @@ export function useTimeTracker() {
 
 const HEARTBEAT_INTERVAL_SECONDS = 60;
 
-export function TimeTrackerProvider({ children }: { children: ReactNode }) {
+/** How the timer reports a refused start: v1's toast unless the host passes its own. */
+export type TimeTrackerReport = { failure: (title: string, description: string) => void };
+
+export function TimeTrackerProvider({ children, report }: { children: ReactNode; report?: TimeTrackerReport }) {
   const { toast } = useToast();
+  const notify = useMemo<TimeTrackerReport>(
+    () => report ?? { failure: (title, description) => toast({ title, description, variant: "destructive" }) },
+    [report, toast],
+  );
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [selectedTaskId, setSelectedTaskId] = useState<string>("");
   const [description, setDescription] = useState("");
@@ -135,7 +142,7 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     },
     onError: (err: unknown) => {
       const message = err instanceof Error ? err.message : "Failed to start timer";
-      toast({ title: "Could not start timer", description: message, variant: "destructive" });
+      notify.failure("Could not start timer", message);
     },
   });
 
@@ -329,25 +336,20 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     const pid = projectId || selectedProjectId;
     const tid = taskId || selectedTaskId;
     if (!pid) {
-      toast({ title: "Select a project", description: "Choose a project before starting the timer.", variant: "destructive" });
+      notify.failure("Select a project", "Choose a project before starting the timer.");
       return;
     }
     if (requiresTaskForStart) {
       if (taskStartBlockedReason === "loading") return;
       if (taskStartBlockedReason === "no_tasks") {
-        toast({
-          title: "Create a task first",
-          description: "This project has no tasks yet. Add a task in Time Tracking → Projects & Tasks before starting the timer.",
-          variant: "destructive",
-        });
+        notify.failure(
+          "Create a task first",
+          "This project has no tasks yet. Add a task in Time Tracking → Projects & Tasks before starting the timer.",
+        );
         return;
       }
       if (taskStartBlockedReason === "no_task_selected" || !tid) {
-        toast({
-          title: "Select a task to start tracking",
-          description: "Pick a task for this project, then start the timer.",
-          variant: "destructive",
-        });
+        notify.failure("Select a task to start tracking", "Pick a task for this project, then start the timer.");
         return;
       }
     }
@@ -363,7 +365,7 @@ export function TimeTrackerProvider({ children }: { children: ReactNode }) {
     startMutation,
     requiresTaskForStart,
     taskStartBlockedReason,
-    toast,
+    notify,
   ]);
 
   const handlePause = useCallback(() => {

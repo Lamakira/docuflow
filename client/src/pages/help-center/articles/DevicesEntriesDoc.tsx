@@ -11,7 +11,7 @@ import {
 export function DevicesEntriesDoc() {
   return (
     <DocArticle>
-      <DocSection title="Entries (Time Tracking → Entries)">
+      <DocSection title="Entries (Time Tracking → Time Entries)">
         <DocP>
           Entries are the chronological log of time sessions — start time, end time, project, task, and optional notes.
           Use filters to isolate a user, project, or date range. Export or copy values when reconciling with invoices.

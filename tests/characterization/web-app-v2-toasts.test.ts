@@ -103,7 +103,7 @@ describe("the v2 Toaster", () => {
   it("mounts once at the v2 root, top center, with rich colours", () => {
     expect(appSource.match(/<V2Toaster \/>/g)).toHaveLength(1);
     // Above the Switch, so the console and the Workspace app share it (#314).
-    expect(appSource.indexOf("<V2Toaster />")).toBeLessThan(appSource.indexOf("<TimeTrackerProvider>"));
+    expect(appSource.indexOf("<V2Toaster />")).toBeLessThan(appSource.indexOf("<TimeTrackerProvider"));
     expect(toasterSource).toContain('import { Toaster } from "@/components/ui/sonner"');
     expect(toasterSource).toMatch(/<Toaster[\s\S]*position="top-center"[\s\S]*richColors/);
 

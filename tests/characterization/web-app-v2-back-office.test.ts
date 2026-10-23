@@ -514,7 +514,7 @@ describe("the console is its own space (#314)", () => {
     const app = read("client/src/v2/V2AuthenticatedApp.tsx");
     const shell = app.indexOf("<V2Shell>");
     expect(app.indexOf('<Route path="/platform"')).toBeGreaterThan(-1);
-    expect(app.indexOf('<Route path="/platform"')).toBeLessThan(app.indexOf("<TimeTrackerProvider>"));
+    expect(app.indexOf('<Route path="/platform"')).toBeLessThan(app.indexOf("<TimeTrackerProvider"));
     expect(app.indexOf('<Route path="/platform/:rest*"')).toBeLessThan(shell);
     expect(app.slice(shell)).not.toContain('path="/platform');
     expect(read("client/src/v2/V2Platform.tsx")).toContain("<V2PlatformFrame activeTab");

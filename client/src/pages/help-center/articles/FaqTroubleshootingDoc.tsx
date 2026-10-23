@@ -134,7 +134,7 @@ export function FaqTroubleshootingDoc() {
           Remember that <DocStrong>This session</DocStrong> in the agent is anchored to this run of
           the desktop application, not to &quot;since my timer started&quot;. Worked Today merges server totals with
           local attribution and can move after idle handling. If values remain wrong after a full refresh cycle, collect
-          timestamps and entry ids from <DocStrong>Time Tracking → Entries</DocStrong> for support.
+          timestamps and entry ids from <DocStrong>Time Tracking → Time Entries</DocStrong> for support.
         </DocP>
       </DocSection>
 

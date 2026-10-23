@@ -3636,21 +3636,62 @@ button.df-activity-row {
   overflow-wrap: anywhere;
 }
 
-.df-gallery-full {
-  display: flex;
-  flex-direction: column;
-  gap: var(--df-space-2);
-  padding: 0 var(--df-space-5) var(--df-space-5);
+/* The capture viewer (#332): the capture as large as the viewport allows, its provenance under it. */
+.df-v2.df-capture-viewer {
+  width: calc(100vw - 2 * var(--df-space-6));
+  max-width: none;
+  height: calc(100dvh - 2 * var(--df-space-6));
+  padding: var(--df-space-5);
+  gap: var(--df-space-4);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  color: var(--df-case-ink);
 }
 
-.df-gallery-full img {
+.df-capture-viewer-head {
+  padding-right: var(--df-space-6);
+}
+
+.df-capture-viewer-frame {
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.df-capture-viewer-frame img {
   display: block;
-  width: 100%;
   max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-2);
+  background: var(--df-divider-light);
   transition: none;
   animation: none;
+}
+
+.df-capture-viewer-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--df-space-2) var(--df-space-4);
+}
+
+.df-capture-viewer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--df-space-2);
+}
+
+.df-capture-viewer-actions .df-btn:last-child {
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .df-v2.df-capture-viewer {
+    width: calc(100vw - 2 * var(--df-space-3));
+    height: calc(100dvh - 2 * var(--df-space-3));
+    padding: var(--df-space-3);
+  }
 }
 
 .df-gallery-paging {
@@ -5232,7 +5273,6 @@ button.df-activity-row {
   padding: var(--df-space-3) var(--df-space-3) var(--df-space-4);
 }
 
-.df-v2[data-chrome="mobile"] .df-gallery-full,
 .df-v2[data-chrome="mobile"] .df-gallery-paging {
   padding-left: var(--df-space-3);
   padding-right: var(--df-space-3);

@@ -42,11 +42,11 @@ export async function sendProjectAssignmentEmail(
           <p>Hello ${assigneeName},</p>
           <p><strong>${assignerName}</strong> has assigned you to the project:</p>
           <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h2 style="margin: 0; color: #0070f3;">${projectName}</h2>
+            <h2 style="margin: 0; color: #0F1524;">${projectName}</h2>
           </div>
           <p>Click the button below to view the project details:</p>
           <p>
-            <a href="${appUrl}/crm/project/${projectId}" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+            <a href="${appUrl}/crm/project/${projectId}" style="display: inline-block; background-color: #E9A23B; color: #0F1524; font-weight: 600; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
               View Project
             </a>
           </p>
@@ -91,12 +91,12 @@ export async function sendReminderDueEmail(
           <p>Hello ${recipientName},</p>
           <p>You have a reminder that is now due:</p>
           <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h2 style="margin: 0 0 8px; color: #0070f3;">${reminderTitle}</h2>
+            <h2 style="margin: 0 0 8px; color: #0F1524;">${reminderTitle}</h2>
             ${reminderNote ? `<p style="margin: 0 0 8px; color: #444;">${reminderNote}</p>` : ''}
             <p style="margin: 0; color: #666; font-size: 14px;">Project: ${projectName}</p>
           </div>
           <p>
-            <a href="${appUrl}/crm/project/${projectId}" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+            <a href="${appUrl}/crm/project/${projectId}" style="display: inline-block; background-color: #E9A23B; color: #0F1524; font-weight: 600; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
               View Project
             </a>
           </p>
@@ -137,7 +137,7 @@ export async function sendDailyUpdateReminderEmail(
           <p>Hello ${recipientName},</p>
           <p>Before you finish your day, please take a moment to submit your daily update so your team knows what you worked on.</p>
           <p>
-            <a href="${appUrl}/daily-update" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+            <a href="${appUrl}/daily-update" style="display: inline-block; background-color: #E9A23B; color: #0F1524; font-weight: 600; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
               Submit daily update
             </a>
           </p>
@@ -177,7 +177,7 @@ export async function sendInvitationEmail(input: {
           <p>You have been invited to join <strong>${input.workspaceName}</strong> as ${input.workspaceRole}.</p>
           <p>This Invitation does not consume a Billable Seat until you accept.</p>
           <p>
-            <a href="${input.acceptUrl}" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+            <a href="${input.acceptUrl}" style="display: inline-block; background-color: #E9A23B; color: #0F1524; font-weight: 600; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
               Accept Invitation
             </a>
           </p>
@@ -214,7 +214,7 @@ export function dateInWords(at: Date): string {
 }
 
 function emailButton(href: string, label: string): string {
-  return `<a href="${href}" style="display: inline-block; background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">${label}</a>`;
+  return `<a href="${href}" style="display: inline-block; background-color: #E9A23B; color: #0F1524; font-weight: 600; padding: 12px 24px; text-decoration: none; border-radius: 6px;">${label}</a>`;
 }
 
 async function sendBillingEmail(input: {
