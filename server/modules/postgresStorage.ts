@@ -2648,6 +2648,13 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(timeEntries.startTime));
     const entries = options.limit ? await ordered.limit(options.limit) : await ordered;
     
+    // Tasks in one query for the whole page
+    const taskIds = Array.from(new Set(entries.map((e) => e.taskId).filter((id): id is string => !!id)));
+    const taskRows = taskIds.length > 0
+      ? await db.select().from(tasks).where(and(inArray(tasks.id, taskIds), inWorkspace(tasks)))
+      : [];
+    const taskById = new Map(taskRows.map((t) => [t.id, t]));
+
     // Fetch user and project details
     const enrichedEntries: TimeEntryWithDetails[] = [];
     for (const entry of entries) {
@@ -2677,6 +2684,7 @@ export class DatabaseStorage implements IStorage {
           project: projectDetails,
           client: clientDetails,
         } : undefined,
+        task: entry.taskId ? taskById.get(entry.taskId) : undefined,
       });
     }
     
@@ -2703,6 +2711,10 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
+    const [task] = entry.taskId
+      ? await db.select().from(tasks).where(and(eq(tasks.id, entry.taskId), inWorkspace(tasks)))
+      : [];
+
     const safeUser = toSafeUser(user || {});
     
     return {
@@ -2713,6 +2725,7 @@ export class DatabaseStorage implements IStorage {
         project: projectDetails,
         client: clientDetails,
       } : undefined,
+      task,
     };
   }
 
