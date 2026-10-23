@@ -12,7 +12,7 @@
  */
 
 import { ApiClient, PLAN_UPGRADE_REQUIRED } from "../lib/ApiClient";
-import { SqliteQueue } from "../lib/SqliteQueue";
+import { SqliteQueue, type PendingTimerCommand } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
 import { timerCommandFailure } from "../lib/timerCommandFailure";
 import fs from "fs";
@@ -34,11 +34,22 @@ export class SyncWorker {
   private eventFailures = 0;
   private totalEventsSynced = 0;
   private totalScreenshotsSynced = 0;
+  private onTimerCommandSynced: ((type: PendingTimerCommand["type"]) => void) | null = null;
 
   constructor(apiClient: ApiClient, queue: SqliteQueue, store: AgentStore) {
     this.apiClient = apiClient;
     this.queue = queue;
     this.store = store;
+  }
+
+  /** Called after each timer command reaches the server (conflicts count as synced). */
+  setOnTimerCommandSynced(cb: (type: PendingTimerCommand["type"]) => void): void {
+    this.onTimerCommandSynced = cb;
+  }
+
+  private markSynced(cmd: PendingTimerCommand, resolvedEntryId?: string): void {
+    this.queue.markTimerCommandSynced(cmd.clientCommandId, resolvedEntryId);
+    this.onTimerCommandSynced?.(cmd.type);
   }
 
   start(): void {
@@ -127,22 +138,22 @@ export class SyncWorker {
           if (entry.taskAccumulatedToday) {
             this.store.applyTaskAccumulatedToday(entry.taskAccumulatedToday);
           }
-          this.queue.markTimerCommandSynced(cmd.clientCommandId, entry.id);
+          this.markSynced(cmd, entry.id);
           console.log(`[SyncWorker] timer.start synced → serverEntryId=${entry.id} taskAccumulatedToday=${entry.taskAccumulatedToday ?? 0}s`);
 
         } else if (cmd.type === "pause") {
           await this.apiClient.pauseTimer(cmd.entryId!, cmd.effectiveAt);
-          this.queue.markTimerCommandSynced(cmd.clientCommandId);
+          this.markSynced(cmd);
           console.log(`[SyncWorker] timer.pause synced — entry=${cmd.entryId}`);
 
         } else if (cmd.type === "resume") {
           await this.apiClient.resumeTimer(cmd.entryId!);
-          this.queue.markTimerCommandSynced(cmd.clientCommandId);
+          this.markSynced(cmd);
           console.log(`[SyncWorker] timer.resume synced — entry=${cmd.entryId}`);
 
         } else if (cmd.type === "stop") {
           await this.apiClient.stopTimer(cmd.entryId!, cmd.effectiveAt);
-          this.queue.markTimerCommandSynced(cmd.clientCommandId);
+          this.markSynced(cmd);
           console.log(`[SyncWorker] timer.stop synced — entry=${cmd.entryId}`);
         }
       } catch (error: any) {
@@ -150,7 +161,7 @@ export class SyncWorker {
         const failure = timerCommandFailure(error);
         // Semantic conflicts (entry already in desired state) → treat as success
         if (failure === "conflict") {
-          this.queue.markTimerCommandSynced(cmd.clientCommandId);
+          this.markSynced(cmd);
           console.log(`[SyncWorker] timer.${cmd.type} conflict treated as success: ${msg}`);
           continue;
         }

@@ -74,6 +74,7 @@ import {
 import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
 import { IdleFlow } from "../lib/idleFlow";
 import { droppedIdleCommands, pauseCommandAt, pauseForSystemAway, stopCommandAt, type TimerCommandDraft } from "../lib/systemAway";
+import { timerSyncApplies } from "../lib/timerResync";
 import {
   DEFAULT_TRACKING_POLICY,
   normalizeTrackingPolicy,
@@ -654,6 +655,11 @@ function startWorkers(): void {
   activityWorker.start();
 
   syncWorker = new SyncWorker(apiClient, queue, store);
+  syncWorker.setOnTimerCommandSynced((type) => {
+    // A stop adds the entry to the server total; a start auto-stops the previous entry.
+    if (type !== "stop" && type !== "start") return;
+    refreshWorkedTodayServerBase().then(() => pushStateToRenderer()).catch(() => { /* non-fatal */ });
+  });
   syncWorker.start();
 
   screenshotWorker = new ScreenCaptureWorker(queue, store, trackingPolicy.screenshotsEnabled);
@@ -861,11 +867,17 @@ function applyServerTimerSync(
     projectName?: string | null;
     taskName?: string | null;
     startTime?: string | null;
-  } | null
+  } | null,
+  requestedAtMono: number,
 ): void {
-  // Don't override locally-applied state while commands are waiting to sync.
-  // The queue is the source of truth until all commands reach the server.
-  if (queue.pendingTimerCommandCount() > 0) return;
+  // Don't override locally-applied state while commands are waiting to sync, nor
+  // with a snapshot requested before the last command synced (it predates the
+  // command and would briefly undo it). The queue is the source of truth until then.
+  if (!timerSyncApplies({
+    requestedAtMono,
+    pendingCommands: queue.pendingTimerCommandCount(),
+    lastCommandSyncedMono: queue.lastTimerCommandSyncedMono(),
+  })) return;
 
   const localStatus = store.getTimerStatus();
   const localEntryId = store.getActiveEntryId();
@@ -877,6 +889,7 @@ function applyServerTimerSync(
   console.log(
     `[Main] Timer resync: local=${localStatus}/${localEntryId ?? "none"} → server=${serverStatus}/${serverEntryId ?? "none"}`
   );
+  const wasStopped = localStatus === "stopped";
   store.syncFromServer(
     timerSync
       ? {
@@ -892,13 +905,28 @@ function applyServerTimerSync(
       : null
   );
   pushStateToRenderer();
+  // Stopped elsewhere (or a stale local timer): the server total now includes that entry.
+  if (serverStatus === "stopped" && !wasStopped) {
+    refreshWorkedTodayServerBase().then(() => pushStateToRenderer()).catch(() => { /* non-fatal */ });
+  }
 }
 
 /** Fetch server's stopped-entries total for today and cache in store. Non-fatal on error. */
 async function refreshWorkedTodayServerBase(): Promise<void> {
   if (!store.isPaired()) return;
+  // Until a stop reaches the server its total lacks the stopped entry and would
+  // knock the figure back down.
+  if (queue.pendingTimerCommandCount() > 0) return;
   try {
+    // A GET sent before a local stop can land after the stop folded into the base;
+    // its lower total would overwrite it. Same rule as a timer snapshot.
+    const requestedAtMono = performance.now();
     const total = await apiClient.getWorkedToday();
+    if (!timerSyncApplies({
+      requestedAtMono,
+      pendingCommands: queue.pendingTimerCommandCount(),
+      lastCommandSyncedMono: queue.lastTimerCommandSyncedMono(),
+    })) return;
     store.setWorkedTodayServerBase(total);
   } catch (err: any) {
     console.warn(`[Main] worked-today refresh failed: ${err.message}`);
@@ -909,6 +937,7 @@ async function refreshWorkedTodayServerBase(): Promise<void> {
 async function syncTimerFromServer(): Promise<void> {
   if (!store.isPaired()) return;
   try {
+    const requestedAtMono = performance.now();
     const active = await apiClient.getActiveEntry();
     const timerSync =
       active && active.status !== "stopped"
@@ -923,7 +952,7 @@ async function syncTimerFromServer(): Promise<void> {
             startTime: active.startTime ?? null,
           }
         : null;
-    applyServerTimerSync(timerSync);
+    applyServerTimerSync(timerSync, requestedAtMono);
   } catch (err: any) {
     console.warn(`[Main] Timer resync failed: ${err.message}`);
   }
@@ -1007,6 +1036,7 @@ ipcMain.handle("agent:login", async (event, { pairingCode }) => {
     // Clear any timer state from a previous user session so workedTodayServerBase
     // and active entry context cannot leak to the new user.
     store.clearTimer();
+    store.setWorkedTodayServerBase(0);
 
     console.log(`[Main] auth.pair.success — user=${result.user.email} device=${result.deviceId}`);
     startWorkers();

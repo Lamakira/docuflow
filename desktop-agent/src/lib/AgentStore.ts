@@ -39,6 +39,9 @@ interface PersistedData {
   // Non-zero only when the entry was started on another device/client and we have no
   // local sessions yet. Once local sessions exist, they are authoritative.
   entryServerBase: number;
+  // The part of entryServerBase that is the task's STOPPED history today (already inside
+  // the server's worked-today total). Excluded from the entry's own Worked Today share.
+  entryTaskHistoryToday: number;
   // Source of truth for elapsed / worked-today calculations
   sessions: TrackingSession[];
   // Updated on each heartbeat/state change — used to close orphan sessions after crash
@@ -67,7 +70,7 @@ interface RuntimeState {
   activeDescription: string | null;
   clientVersion: string;
   /** Server's totalDuration for all STOPPED entries today (all devices). Runtime-only.
-   *  getWorkedTodaySeconds() = workedTodayServerBase + getElapsedTodaySeconds() */
+   *  getWorkedTodaySeconds() = workedTodayServerBase + getActiveEntryWorkedTodaySeconds() */
   workedTodayServerBase: number;
   /** Unix ms timestamp of when the Electron process started. Set once by main via
    *  setSessionStartedAt(). Used to compute "This session" elapsed. */
@@ -107,6 +110,7 @@ export class AgentStore {
       activeTaskName: null,
       activeTaskId: null,
       entryServerBase: 0,
+      entryTaskHistoryToday: 0,
       sessions: [],
       lastActivityAt: null,
       timerStatus: "stopped",
@@ -183,6 +187,7 @@ export class AgentStore {
     this.data.userEmail = null;
     this.saveToDisk();
     this.clearTimer();
+    this.runtime.workedTodayServerBase = 0;
   }
 
   /** @deprecated Use setSession / clearSession */
@@ -225,13 +230,19 @@ export class AgentStore {
      */
     taskAccumulatedToday = 0,
   ): void {
+    const isNewEntry = entryId !== this.data.activeEntryId;
+    // The server auto-stops the previous entry on start: fold its time into the base
+    // (before its state is replaced) so Worked Today doesn't drop until the next refresh.
+    if (isNewEntry && this.data.activeEntryId) {
+      this.runtime.workedTodayServerBase += this.getActiveEntryWorkedTodaySeconds();
+    }
     this.closeActiveSessions();
     // On a new entry: initialise server base from the task's stopped history today
     // (restores the "accumulated time, not 0" UX from the pre-session-based model).
     // On resume of the same entry: preserve whatever base is already set.
-    const isNewEntry = entryId !== this.data.activeEntryId;
     if (isNewEntry) {
       this.data.entryServerBase = taskAccumulatedToday;
+      this.data.entryTaskHistoryToday = taskAccumulatedToday;
     }
     this.data.sessions.push({
       id: crypto.randomUUID(),
@@ -275,17 +286,19 @@ export class AgentStore {
 
   /** Stop the timer and clear all active context. */
   clearTimer(): void {
+    // Fold the stopped entry's today-time into the server base so "Worked Today"
+    // doesn't drop to 0 until the next refresh. Callers that need a clean base
+    // (sign-out, pairing, day change) reset it explicitly.
+    this.runtime.workedTodayServerBase += this.getActiveEntryWorkedTodaySeconds();
     this.closeActiveSessions();
     this.data.timerStatus = "stopped";
     this.runtime.activeDescription = null;
-    // Reset the server base so stale yesterday-data doesn't inflate the new day's
-    // "Worked Today" display. The heartbeat will repopulate this within 30 s.
-    this.runtime.workedTodayServerBase = 0;
     this.data.activeEntryId = null;
     this.data.activeProjectName = null;
     this.data.activeTaskName = null;
     this.data.activeTaskId = null;
     this.data.entryServerBase = 0;
+    this.data.entryTaskHistoryToday = 0;
     this.data.activeEntryStartTime = null;
     this.data.lastActivityAt = new Date().toISOString();
     this.saveToDisk();
@@ -366,6 +379,7 @@ export class AgentStore {
    */
   applyTaskAccumulatedToday(seconds: number): void {
     this.data.entryServerBase = seconds;
+    this.data.entryTaskHistoryToday = seconds;
     this.saveToDisk();
   }
 
@@ -402,9 +416,14 @@ export class AgentStore {
     if (entryChanged) {
       // New entry from server: close sessions for the old entry, reset server base,
       // and clear stale names so the hydration block below can apply server values.
+      // The server switched entries elsewhere (and stopped the old one): fold its time first.
+      if (this.data.activeEntryId) {
+        this.runtime.workedTodayServerBase += this.getActiveEntryWorkedTodaySeconds();
+      }
       this.closeActiveSessions();
       this.data.activeEntryId = entry.id;
       this.data.entryServerBase = 0;
+      this.data.entryTaskHistoryToday = 0;
       this.data.activeProjectName = null;
       this.data.activeTaskName = null;
       this.data.activeTaskId = null;
@@ -565,14 +584,30 @@ export class AgentStore {
   }
 
   /**
+   * The active entry's own time today: getElapsedTodaySeconds minus the task's stopped
+   * history seeded into entryServerBase (already inside the server total). When the entry
+   * started before today, that history belonged to the start day and nothing is removed.
+   */
+  getActiveEntryWorkedTodaySeconds(now = Date.now()): number {
+    const elapsed = this.getElapsedTodaySeconds(now);
+    const entryId = this.data.activeEntryId;
+    if (!entryId) return 0;
+    const firstSession = this.data.sessions.find((s) => s.entryId === entryId);
+    const started = this.data.activeEntryStartTime ?? firstSession?.startTime ?? null;
+    const startedToday = started !== null && new Date(started).getTime() >= getLocalDayWindowMs(now).startMs;
+    if (!startedToday) return elapsed;
+    return Math.max(0, elapsed - (this.data.entryTaskHistoryToday ?? 0));
+  }
+
+  /**
    * Total seconds worked today (all tasks, all devices).
    * = server's stopped-entries total (set via setWorkedTodayServerBase)
-   * + active entry's today-elapsed (getElapsedTodaySeconds, 0 when stopped).
+   * + active entry's own time today (getActiveEntryWorkedTodaySeconds, 0 when stopped).
    *
    * The server base is refreshed on startup, after timer start/stop, and every 60s.
    */
   getWorkedTodaySeconds(): number {
-    return this.runtime.workedTodayServerBase + this.getElapsedTodaySeconds();
+    return this.runtime.workedTodayServerBase + this.getActiveEntryWorkedTodaySeconds();
   }
 
   /** Called by main process after fetching /api/agent/worked-today from server. */

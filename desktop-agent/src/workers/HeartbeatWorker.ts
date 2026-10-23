@@ -23,7 +23,9 @@ type TimerSyncCallback = (
     projectName?: string | null;
     taskName?: string | null;
     startTime?: string | null;
-  } | null
+  } | null,
+  /** When the heartbeat that carried this snapshot was sent (performance.now()). */
+  requestedAtMono: number,
 ) => void;
 
 /** The raw Tracking Policy from the heartbeat answer; main validates it. */
@@ -75,6 +77,7 @@ export class HeartbeatWorker {
       const deviceId = this.store.getDeviceId();
       if (!deviceId) return;
 
+      const requestedAtMono = performance.now();
       const result = await this.apiClient.sendHeartbeat({
         deviceId,
         // #333: no accrual on the server while the Timer is paused here, whatever order commands and heartbeats arrive in.
@@ -91,7 +94,7 @@ export class HeartbeatWorker {
 
       // Propagate server's authoritative timer state for immediate resync
       if (this.onTimerSync && "timerSync" in result) {
-        this.onTimerSync(result.timerSync ?? null);
+        this.onTimerSync(result.timerSync ?? null, requestedAtMono);
       }
 
       // Propagate full policy (screenshot + idle) so workers update without restart
