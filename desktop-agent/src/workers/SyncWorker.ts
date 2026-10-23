@@ -14,6 +14,7 @@
 import { ApiClient, PLAN_UPGRADE_REQUIRED } from "../lib/ApiClient";
 import { SqliteQueue } from "../lib/SqliteQueue";
 import { AgentStore } from "../lib/AgentStore";
+import { timerCommandFailure } from "../lib/timerCommandFailure";
 import fs from "fs";
 
 const SYNC_INTERVAL_MS = 30_000;
@@ -27,6 +28,9 @@ export class SyncWorker {
   private queue: SqliteQueue;
   private store: AgentStore;
   private timeout: ReturnType<typeof setTimeout> | null = null;
+  /** One drain at a time: a second one would send the same pending command twice (#333). */
+  private syncing = false;
+  private syncAgain = false;
   private eventFailures = 0;
   private totalEventsSynced = 0;
   private totalScreenshotsSynced = 0;
@@ -58,6 +62,10 @@ export class SyncWorker {
 
   /** Trigger an immediate sync cycle (e.g. right after a timer command is enqueued). */
   triggerSync(): void {
+    if (this.syncing) {
+      this.syncAgain = true;
+      return;
+    }
     if (this.timeout) {
       clearTimeout(this.timeout);
       this.timeout = null;
@@ -66,18 +74,28 @@ export class SyncWorker {
   }
 
   private async syncOnce(): Promise<void> {
-    await this.drainTimerCommands();
-    await this.drainEvents();
-    await this.drainScreenshots();
-    this.scheduleNext(SYNC_INTERVAL_MS);
+    this.syncing = true;
+    try {
+      await this.drainTimerCommands();
+      await this.drainEvents();
+      await this.drainScreenshots();
+    } finally {
+      this.syncing = false;
+    }
+    // A command enqueued during this cycle goes out now, not in 30 s.
+    const again = this.syncAgain;
+    this.syncAgain = false;
+    this.scheduleNext(again ? 50 : SYNC_INTERVAL_MS);
   }
 
   // ─── Timer commands ───
 
   /**
    * FIFO drain of pending timer commands.
-   * Breaks on network failure (FIFO invariant — pause/stop cannot reach server before start).
+   * Breaks on any failure (FIFO invariant — pause/stop cannot reach server before start).
    * Treats semantic conflicts (already paused, etc.) as success.
+   * A command that never reached the server (network down, 502-504) stays queued
+   * for the next cycle; a refusal is marked failed (#333).
    */
   private async drainTimerCommands(): Promise<void> {
     // eslint-disable-next-line no-constant-condition
@@ -113,7 +131,7 @@ export class SyncWorker {
           console.log(`[SyncWorker] timer.start synced → serverEntryId=${entry.id} taskAccumulatedToday=${entry.taskAccumulatedToday ?? 0}s`);
 
         } else if (cmd.type === "pause") {
-          await this.apiClient.pauseTimer(cmd.entryId!);
+          await this.apiClient.pauseTimer(cmd.entryId!, cmd.effectiveAt);
           this.queue.markTimerCommandSynced(cmd.clientCommandId);
           console.log(`[SyncWorker] timer.pause synced — entry=${cmd.entryId}`);
 
@@ -123,24 +141,25 @@ export class SyncWorker {
           console.log(`[SyncWorker] timer.resume synced — entry=${cmd.entryId}`);
 
         } else if (cmd.type === "stop") {
-          await this.apiClient.stopTimer(cmd.entryId!);
+          await this.apiClient.stopTimer(cmd.entryId!, cmd.effectiveAt);
           this.queue.markTimerCommandSynced(cmd.clientCommandId);
           console.log(`[SyncWorker] timer.stop synced — entry=${cmd.entryId}`);
         }
       } catch (error: any) {
         const msg: string = error.message ?? "";
+        const failure = timerCommandFailure(error);
         // Semantic conflicts (entry already in desired state) → treat as success
-        const isConflict =
-          msg.includes("not running") ||
-          msg.includes("not paused") ||
-          msg.includes("already stopped") ||
-          msg.includes("not found");
-        if (isConflict) {
+        if (failure === "conflict") {
           this.queue.markTimerCommandSynced(cmd.clientCommandId);
           console.log(`[SyncWorker] timer.${cmd.type} conflict treated as success: ${msg}`);
           continue;
         }
-        // Real failure (network, auth) — mark failed and stop draining (FIFO invariant)
+        // Never reached the server — keep it queued and stop draining (FIFO invariant)
+        if (failure === "retry") {
+          console.log(`[SyncWorker] timer.${cmd.type} not sent, kept for retry: ${msg}`);
+          break;
+        }
+        // Refused — mark failed and stop draining (FIFO invariant)
         this.queue.failTimerCommand(cmd.clientCommandId, msg);
         console.error(`[SyncWorker] timer.${cmd.type} sync failed: ${msg}`);
         break;

@@ -73,6 +73,7 @@ import {
 } from "../lib/pausedTimer";
 import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
 import { IdleFlow } from "../lib/idleFlow";
+import { droppedIdleCommands, pauseCommandAt, pauseForSystemAway, stopCommandAt, type TimerCommandDraft } from "../lib/systemAway";
 import {
   DEFAULT_TRACKING_POLICY,
   normalizeTrackingPolicy,
@@ -738,10 +739,12 @@ function startWorkers(): void {
 
   pausedReminderInterval = setInterval(checkPausedReminder, PAUSED_REMINDER_CHECK_MS);
 
-  // System suspend / screen lock — pause timer locally (no server command), manual resume required.
+  // System suspend / screen lock — pause the timer here and on the server (dated when the machine slept or locked), manual resume required.
   const onSystemAway = (reason: string) => pauseTimerForSystemAway(reason);
   const onSystemBack = (reason: string) => {
-    console.log(`[Main] ${reason} — timer stays paused, refreshing renderer`);
+    console.log(`[Main] ${reason} — timer stays paused, syncing queued commands`);
+    // Send the pause made at sleep before anything else (#333).
+    syncWorker?.triggerSync();
     pushStateToRenderer();
   };
 
@@ -1550,6 +1553,12 @@ function clearIdleActivityCheck(): void {
   }
 }
 
+function enqueueTimerCommands(...drafts: TimerCommandDraft[]): void {
+  for (const draft of drafts) {
+    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), ...draft });
+  }
+}
+
 function resumeTimerLocally(entryId: string): void {
   store.setTimerRunning(
     entryId,
@@ -1571,16 +1580,19 @@ const idleFlow = new IdleFlow({
     if (!entryId) return;
     // Closing the session at `at` keeps the idle time out of Worked Today.
     store.setTimerPaused(at);
-    queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "pause", entryId });
+    enqueueTimerCommands(pauseCommandAt(entryId, at));
     syncWorker?.triggerSync();
     pushStateToRenderer();
   },
   dropIdleSince: (at) => {
     const entryId = store.getActiveEntryId();
     if (!entryId) return;
-    // Local only: the server Timer never stopped running.
+    // The server is told too: a pause where the idle time began and a resume
+    // now, so both totals agree (#333).
     store.setTimerPaused(at);
     resumeTimerLocally(entryId);
+    enqueueTimerCommands(...droppedIdleCommands(entryId, at));
+    syncWorker?.triggerSync();
     pushStateToRenderer();
   },
   resume: () => resumeTimerAfterIdle(),
@@ -1608,7 +1620,7 @@ function stopTimerAfterIdle(at: Date): void {
   if (!entryId) return;
   if (store.getTimerStatus() === "running") store.setTimerPaused(at);
   store.clearTimer();
-  queue.enqueueTimerCommand({ clientCommandId: randomUUID(), type: "stop", entryId });
+  enqueueTimerCommands(stopCommandAt(entryId, at));
   pushStateToRenderer();
   syncWorker?.triggerSync();
 }
@@ -1621,21 +1633,31 @@ function dismissIdlePrompt(): void {
 
 /**
  * Pause the timer when the system sleeps or the screen is locked.
- * Local pause only — no server command (matches TD2 / plan P2).
- * A countdown already running pauses where the idle time began.
+ * The pause goes to the server too, effective when the machine slept or locked
+ * (or where an idle countdown began); see
+ * docs/adr/0030-date-away-and-idle-pauses-when-the-member-left.md.
+ * Wake still leaves the Timer paused until the Member resumes.
  */
 function pauseTimerForSystemAway(reason: string): void {
-  if (store.getTimerStatus() !== "running") return;
   const entryId = store.getActiveEntryId();
-  if (!entryId) return;
-
-  const idleSince = idleFlow.cancel();
-  clearIdleActivityCheck();
-  releaseIdleOnTop();
-  mainWindow?.webContents.send("agent:idle-dismiss");
-  store.setTimerPaused(idleSince ?? new Date());
+  const at = pauseForSystemAway({
+    now: () => new Date(),
+    timerStatus: () => store.getTimerStatus(),
+    activeEntryId: () => store.getActiveEntryId(),
+    cancelIdle: () => {
+      const idleSince = idleFlow.cancel();
+      clearIdleActivityCheck();
+      releaseIdleOnTop();
+      mainWindow?.webContents.send("agent:idle-dismiss");
+      return idleSince;
+    },
+    pauseLocally: (pausedAt) => store.setTimerPaused(pausedAt),
+    enqueue: (draft) => enqueueTimerCommands(draft),
+  });
+  if (!at) return;
+  syncWorker?.triggerSync();
   pushStateToRenderer();
-  console.log(`[Main] ${reason} — timer paused locally (entry=${entryId})`);
+  console.log(`[Main] ${reason} — timer paused at ${at.toISOString()} (entry=${entryId})`);
 }
 
 /** Bring mainWindow above all other windows for the duration of the idle prompt. */

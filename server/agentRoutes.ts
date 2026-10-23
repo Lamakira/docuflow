@@ -187,6 +187,25 @@ const heartbeatSchema = z.object({
   clientVersion: z.string(),
 });
 
+/**
+ * When a device says its pause or stop took effect (#333, ADR-0030): the moment
+ * the Member left, which can be well before receipt after a sleep. Older agents
+ * send none, and the command then takes effect at receipt as before.
+ */
+const claimedTimeSchema = z.object({
+  effectiveAt: z.string().datetime({ offset: true }).optional(),
+});
+
+/** The claim for an agent pause or stop: the device's time, floored and clamped by the ingest; else receipt. */
+function agentClaim(body: unknown, now: Date): { claimedEffectiveAt: Date; floorAtLastCommand: boolean } | null {
+  const parsed = claimedTimeSchema.safeParse(body ?? {});
+  if (!parsed.success) return null;
+  const { effectiveAt } = parsed.data;
+  return effectiveAt
+    ? { claimedEffectiveAt: new Date(effectiveAt), floorAtLastCommand: true }
+    : { claimedEffectiveAt: now, floorAtLastCommand: false };
+}
+
 const activityEventSchema = z.object({
   type: z.enum(["input_activity", "active_window", "idle_start", "idle_end"]),
   timestamp: z.string(),
@@ -1114,12 +1133,14 @@ export function registerAgentRoutes(app: Express): void {
       if (entry.status !== "running") return res.status(400).json({ message: "Entry is not running" });
 
       const now = new Date();
+      const claim = agentClaim(req.body, now);
+      if (!claim) return res.status(400).json({ message: "Invalid effectiveAt" });
       const result = await applyTimerCommand({
         userId,
         origin: agentTimerOrigin(req),
         sequence: nextTimerSequence(),
         kind: "pause",
-        claimedEffectiveAt: now,
+        ...claim,
         receivedAt: now,
         payload: { timeEntryId: entry.id },
       });
@@ -1182,12 +1203,14 @@ export function registerAgentRoutes(app: Express): void {
       if (entry.status === "stopped") return res.status(400).json({ message: "Entry is already stopped" });
 
       const now = new Date();
+      const claim = agentClaim(req.body, now);
+      if (!claim) return res.status(400).json({ message: "Invalid effectiveAt" });
       const result = await applyTimerCommand({
         userId,
         origin: agentTimerOrigin(req),
         sequence: nextTimerSequence(),
         kind: "stop",
-        claimedEffectiveAt: now,
+        ...claim,
         receivedAt: now,
         payload: { timeEntryId: entry.id },
       });
