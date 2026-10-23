@@ -54,6 +54,8 @@ import {
   composeAdministration,
   composeAnalytics,
   composeTrackingPolicyEditor,
+  composeWorkspaceTimeZone,
+  normalizeScreenshotPolicy,
   TRACKING_POLICY_SAVED,
   hostedBillingSession,
   planPickerNote,
@@ -1318,6 +1320,43 @@ describe("Administration analytics (#212)", () => {
     expect(analyticsSource).not.toMatch(/recharts|chart\.js|ResponsiveContainer/i);
     expect(rule(".df-analytics-figure")).toMatch(/animation:\s*none/);
     expect(rule(".df-analytics-figure")).toMatch(/transition:\s*none/);
+  });
+});
+
+describe("Low-activity threshold and Workspace time zone (#341)", () => {
+  it("keeps the threshold in the normalised policy, defaulting to 10, and refuses what the server refuses", () => {
+    expect(normalizeScreenshotPolicy(null).lowActivityThresholdPercent).toBe(10);
+    expect(normalizeScreenshotPolicy({ lowActivityThresholdPercent: 25 }).lowActivityThresholdPercent).toBe(25);
+    expect(trackingPolicyIssue(policyDraft({ lowActivityThresholdPercent: 0 }))).toBeNull();
+    expect(trackingPolicyIssue(policyDraft({ lowActivityThresholdPercent: 100 }))).toBeNull();
+    const refusal = "Low-activity threshold must be a whole number from 0 to 100.";
+    expect(trackingPolicyIssue(policyDraft({ lowActivityThresholdPercent: 101 }))).toBe(refusal);
+    expect(trackingPolicyIssue(policyDraft({ lowActivityThresholdPercent: -1 }))).toBe(refusal);
+    expect(trackingPolicyIssue(policyDraft({ lowActivityThresholdPercent: 7.5 }))).toBe(refusal);
+    expect(trackingPolicyHints(policyDraft({ lowActivityThresholdPercent: 15 })).lowActivity).toContain("below 15 %");
+  });
+
+  it("saves a changed threshold only", () => {
+    const changed = composeTrackingPolicyEditor(
+      editorInput({ draft: policyDraft({ lowActivityThresholdPercent: 20 }) }),
+    );
+    expect(changed).toMatchObject({ kind: "ready", dirty: true, canSave: true });
+  });
+
+  it("composes the Workspace time zone card", () => {
+    const saved = composeWorkspaceTimeZone({ saved: "Europe/Paris", draft: "Europe/Paris", editable: true });
+    expect(saved).toMatchObject({ current: "Europe/Paris", dirty: false, canSave: false, issue: null });
+    expect(saved.copy).toContain("18:00");
+
+    const changed = composeWorkspaceTimeZone({ saved: "Europe/Paris", draft: "Asia/Tokyo", editable: true });
+    expect(changed).toMatchObject({ dirty: true, canSave: true });
+    expect(composeWorkspaceTimeZone({ saved: "Europe/Paris", draft: "Asia/Tokyo", editable: false }).canSave).toBe(false);
+
+    const invalid = composeWorkspaceTimeZone({ saved: "Europe/Paris", draft: "Mars/Olympus", editable: true });
+    expect(invalid.canSave).toBe(false);
+    expect(invalid.issue).toContain("not a valid IANA timezone");
+
+    expect(composeWorkspaceTimeZone({ saved: null, draft: "", editable: true }).current).toBe("Not set");
   });
 });
 

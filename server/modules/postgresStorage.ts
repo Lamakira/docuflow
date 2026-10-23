@@ -2936,7 +2936,7 @@ export class DatabaseStorage implements IStorage {
     return getTimeEntryScreenshots(options);
   }
 
-  async updateTimeEntryScreenshot(id: string, data: { storageKey: string; contentHash?: string }): Promise<TimeEntryScreenshot | undefined> {
+  async updateTimeEntryScreenshot(id: string, data: { storageKey: string; contentHash?: string; perceptualHash?: string | null }): Promise<TimeEntryScreenshot | undefined> {
     return updateTimeEntryScreenshot(id, data);
   }
 

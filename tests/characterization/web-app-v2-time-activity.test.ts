@@ -77,7 +77,7 @@ function emptyGallery(overrides: Partial<ActivityGalleryInput> = {}): ActivityGa
     currentUserId: "me",
     canReview: false,
     lowActivityOnly: false,
-    identicalOnly: false,
+    similarOnly: false,
     selectedIds: [],
     expandedId: null,
     page: 1,
@@ -393,7 +393,7 @@ describe("Activity Evidence gallery (#214)", () => {
     expect(JSON.stringify(page).toLowerCase()).not.toContain("productivity");
   });
 
-  it("keeps the low-activity and identical filters v1 already had", () => {
+  it("describes the minute before each capture and marks Similar ones, the server having applied the lenses (#341)", () => {
     const shot = (id: string, overrides: Record<string, unknown> = {}) => ({
       id,
       capturedAt: new Date(2026, 8, 10, 9, 0, 0),
@@ -404,25 +404,51 @@ describe("Activity Evidence gallery (#214)", () => {
       ...overrides,
     });
     const evidence = [
-      shot("s-busy", { entryDuration: 3600, entryIdleTime: 600, contentHash: "aaa" }),
-      shot("s-idle", { entryDuration: 600, entryIdleTime: 3600, contentHash: "bbb" }),
-      shot("s-twin-a", { entryDuration: 3600, entryIdleTime: 0, contentHash: "ccc" }),
-      shot("s-twin-b", { entryDuration: 3600, entryIdleTime: 0, contentHash: "ccc" }),
+      shot("s-busy", { keyboardActivityPercent: 45, mouseActivityPercent: 30, similarToPrevious: false }),
+      shot("s-idle", { keyboardActivityPercent: 4, mouseActivityPercent: 9, similarToPrevious: true }),
+      shot("s-edge", { keyboardActivityPercent: 10, mouseActivityPercent: 2 }),
+      shot("s-none", { keyboardActivityPercent: null, mouseActivityPercent: null }),
     ];
 
-    const all = composeActivityGallery(emptyGallery({ evidence }));
+    const all = composeActivityGallery(
+      emptyGallery({ evidence, lowActivityThresholdPercent: 10, counts: { lowActivity: 1, similar: 1 } }),
+    );
+    const tiles = Object.fromEntries(all.groups.flatMap((group) => group.tiles).map((tile) => [tile.id, tile]));
     expect(all.count).toBe(4);
-    expect(all.identicalCount).toBe(2);
+    expect(all.lowActivityCount).toBe(1);
+    expect(all.similarCount).toBe(1);
 
-    const low = composeActivityGallery(emptyGallery({ evidence, lowActivityOnly: true }));
-    expect(low.groups.flatMap((group) => group.tiles).map((tile) => tile.id)).toEqual(["s-idle"]);
+    expect(tiles["s-busy"].activity).toEqual({
+      hasData: true,
+      keyboardPercent: 45,
+      mousePercent: 30,
+      low: false,
+      label: "Keyboard 45 % · Mouse 30 %",
+    });
+    expect(tiles["s-idle"].activity.low).toBe(true);
+    // Equal to the threshold is not below it; one busy input keeps the capture out.
+    expect(tiles["s-edge"].activity.low).toBe(false);
+    // No data is not idleness.
+    expect(tiles["s-none"].activity).toEqual({
+      hasData: false,
+      keyboardPercent: null,
+      mousePercent: null,
+      low: false,
+      label: "No activity data",
+    });
+    expect(tiles["s-idle"].similar).toBe(true);
+    expect(tiles["s-idle"].similarCopy).toBe("Similar to the previous capture");
+    expect(tiles["s-busy"].similar).toBe(false);
 
-    const twins = composeActivityGallery(emptyGallery({ evidence, identicalOnly: true }));
-    expect(twins.groups.flatMap((group) => group.tiles).map((tile) => tile.id)).toEqual([
-      "s-twin-a",
-      "s-twin-b",
-    ]);
-    expect(twins.groups.flatMap((group) => group.tiles).every((tile) => tile.identical)).toBe(true);
+    // A higher Workspace threshold changes the reading, not the data.
+    const strict = composeActivityGallery(emptyGallery({ evidence, lowActivityThresholdPercent: 50 }));
+    expect(
+      strict.groups.flatMap((group) => group.tiles).filter((tile) => tile.activity.low).map((tile) => tile.id).sort(),
+    ).toEqual(["s-busy", "s-edge", "s-idle"]);
+
+    // The model shows what the server returned; the lens flags only colour the empty state.
+    const lens = composeActivityGallery(emptyGallery({ evidence, lowActivityOnly: true, similarOnly: true }));
+    expect(lens.count).toBe(4);
   });
 
   it("only offers a batch download once captures are selected, and names each file by its capture", () => {
@@ -582,7 +608,7 @@ describe("Activity Evidence gallery (#214)", () => {
     expect(view("missing")).toBeNull();
   });
 
-  it("never labels one capture as low activity — the filter is a lens, not a verdict", () => {
+  it("never scores or ranks Members from a capture's activity", () => {
     const page = composeActivityGallery(
       emptyGallery({
         evidence: [
@@ -593,14 +619,13 @@ describe("Activity Evidence gallery (#214)", () => {
             crmProjectId: "prj-1",
             timeEntryId: "te-1",
             storageKey: "agent-screenshots/s-idle.png",
-            entryDuration: 600,
-            entryIdleTime: 3600,
+            keyboardActivityPercent: 1,
+            mouseActivityPercent: 2,
           },
         ],
       }),
     );
-    expect(JSON.stringify(page)).not.toMatch(/lowActivity"?\s*:/);
-    expect(activitySource).not.toMatch(/>LOW ACTIVITY</);
+    expect(JSON.stringify(page).toLowerCase()).not.toMatch(/score|rank|productiv/);
   });
 });
 
@@ -616,10 +641,10 @@ describe("Time and Activity under the v2 visual system (#214)", () => {
   it("writes badges in Switzer, keeping mono for what the system recorded", () => {
     // AMENDMENTS.md Amendment 1: stages, statuses, badges and category labels move to Switzer.
     expect(rule(".df-status-word")).toMatch(/var\(--df-font-ui\)/);
-    // The new Task Status and Identical badges are vocabulary, so Switzer.
+    // The new Task Status and Low activity badges are vocabulary, so Switzer.
     expect(tableSource).toContain('className="df-status-word"');
     expect(tableSource).not.toContain('className="df-status"');
-    expect(activitySource).toContain('className="df-status-word">Identical<');
+    expect(activitySource).toContain('className="df-status-word" data-tone="active"');
     expect(activitySource).not.toMatch(/df-mono df-meta">IDENTICAL/);
   });
 

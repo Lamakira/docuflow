@@ -334,7 +334,7 @@ describe("Activity", () => {
     currentUserId: "me",
     canReview: false,
     lowActivityOnly: false,
-    identicalOnly: false,
+    similarOnly: false,
     selectedIds: [],
     expandedId: null,
     page: 1,

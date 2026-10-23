@@ -25,7 +25,7 @@ export interface ActivityPersistence {
   getTimeEntryScreenshots(options: ScreenshotListOptions): Promise<ScreenshotList>;
   updateTimeEntryScreenshot(
     id: string,
-    data: { storageKey: string; contentHash?: string }
+    data: { storageKey: string; contentHash?: string; perceptualHash?: string | null }
   ): Promise<TimeEntryScreenshot | undefined>;
   deleteTimeEntryScreenshot(id: string): Promise<void>;
   softDeleteTimeEntryScreenshot(

@@ -52,7 +52,9 @@ function at(hhmm: string): Date {
 
 describe("Tracking Policy defaults (#293)", () => {
   it("mirrors the server's defaults so an unreached server changes nothing", () => {
-    expect(DEFAULT_TRACKING_POLICY).toEqual({ ...DEFAULT_SCREENSHOT_POLICY, activityCaptureEnabled: true });
+    // The low-activity threshold is read by the gallery only; the Device never receives it (#341).
+    const { lowActivityThresholdPercent: _readByGallery, ...captureRules } = DEFAULT_SCREENSHOT_POLICY;
+    expect(DEFAULT_TRACKING_POLICY).toEqual({ ...captureRules, activityCaptureEnabled: true });
   });
 
   it("keeps the Plan's screenshot Projects and activity capture from the delivered policy (#299)", () => {

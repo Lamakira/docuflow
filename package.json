@@ -30,6 +30,7 @@
     "db:verify:workspace-backfill": "tsx --env-file-if-exists=.env scripts/verify-workspace-backfill.ts",
     "db:seed": "tsx --env-file-if-exists=.env scripts/seed-defaults.ts",
     "db:backfill:crm-links": "tsx --env-file-if-exists=.env scripts/backfill-crm-links.ts",
+    "db:backfill:screenshot-fingerprints": "tsx --env-file-if-exists=.env scripts/backfill-screenshot-fingerprints.ts",
     "billing:assign-plan": "tsx --env-file-if-exists=.env scripts/assign-plan.ts",
     "identity:import:users": "tsx --env-file-if-exists=.env scripts/identity-import-users.ts",
     "identity:invite:password-set": "tsx --env-file-if-exists=.env scripts/identity-password-set-invites.ts",

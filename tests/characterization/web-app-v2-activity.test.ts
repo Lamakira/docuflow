@@ -152,6 +152,7 @@ describe("Activity from Activity Evidence (#191)", () => {
       { label: "Capture", value: "Every 3–5 min" },
       { label: "Hours", value: "Any hours" },
       { label: "Idle", value: "Pause after 10 min, asked first" },
+      { label: "Low activity", value: "Below 10 % keyboard and mouse" },
     ]);
     expect(page.policyFootnote.toLowerCase()).toContain("tracking policy");
     expect(JSON.stringify(page.policyLines).toLowerCase()).not.toContain("productivity");
@@ -173,6 +174,7 @@ describe("Activity from Activity Evidence (#191)", () => {
       { label: "Capture", value: "Every 3–5 min" },
       { label: "Hours", value: "22:00–06:00, computer clock" },
       { label: "Idle", value: "Pause after 10 min, without asking" },
+      { label: "Low activity", value: "Below 10 % keyboard and mouse" },
     ]);
   });
 
@@ -257,6 +259,12 @@ describe("Activity from Activity Evidence (#191)", () => {
     expect(decoded).toContain("2026-09-10T00:00:00.000Z");
     expect(decoded).toContain("crmProjectId=prj-live");
     expect(decoded).toContain("userId=user-2");
+    expect(path).not.toContain("lowActivity");
+    expect(path).not.toContain("similar");
+    const lenses = activityEvidencePath({ lowActivity: true, similar: true, limit: 50 });
+    expect(lenses).toContain("lowActivity=1");
+    expect(lenses).toContain("similar=1");
+    expect(activityEvidencePath({ lowActivity: false, similar: false })).toBe("/api/time-tracking/screenshots");
     expect(trackingPolicyPath()).toBe("/api/time-tracking/tracking-policy");
     expect(pageSource).toContain("/api/time-tracking/screenshots");
     expect(pageSource).toContain("/api/time-tracking/tracking-policy");

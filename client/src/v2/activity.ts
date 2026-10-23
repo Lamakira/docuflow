@@ -19,6 +19,11 @@ import {
 } from "./time";
 import { memberName } from "./today";
 import type { ScreenshotPolicy } from "@shared/schema";
+import {
+  DEFAULT_LOW_ACTIVITY_THRESHOLD_PERCENT,
+  hasActivityData,
+  isLowActivityCapture,
+} from "@shared/activityEvidence";
 import { MONTHS, formatFullDate } from "./dates";
 
 export const REVIEW_ACTIVITY_EVIDENCE_CAPABILITY = "Review Activity Evidence";
@@ -102,6 +107,10 @@ export type ActivityEvidenceFilter = {
   /** The BFF caps this at 100; the gallery asks for one page of captures. */
   limit?: number | null;
   offset?: number | null;
+  /** Only captures whose minute was low activity, judged by the server over the whole period. */
+  lowActivity?: boolean;
+  /** Only captures Similar to the previous one, judged by the server over the whole period. */
+  similar?: boolean;
 };
 
 function parseDate(value: Date | string | null | undefined): Date | null {
@@ -145,6 +154,8 @@ export function activityEvidencePath(filters: ActivityEvidenceFilter = {}): stri
   if (filters.userId) params.set("userId", filters.userId);
   if (filters.limit) params.set("limit", String(filters.limit));
   if (filters.offset) params.set("offset", String(filters.offset));
+  if (filters.lowActivity) params.set("lowActivity", "1");
+  if (filters.similar) params.set("similar", "1");
   const query = params.toString();
   return query ? `/api/time-tracking/screenshots?${query}` : "/api/time-tracking/screenshots";
 }
@@ -170,6 +181,10 @@ export function composeTrackingPolicy(policy: ScreenshotPolicy | null): Activity
     { label: "Capture", value: capture },
     { label: "Hours", value: hours },
     { label: "Idle", value: idle },
+    {
+      label: "Low activity",
+      value: `Below ${policy.lowActivityThresholdPercent ?? DEFAULT_LOW_ACTIVITY_THRESHOLD_PERCENT} % keyboard and mouse`,
+    },
   ];
 }
 
@@ -286,9 +301,12 @@ export function composeActivity(input: ActivityInput): ActivityModel {
 
 /* ---------------------------------------------------------------------------
  * Activity Evidence gallery (#214) — the v1 screenshot gallery over the same
- * `/api/time-tracking/screenshots` contract: hour groups, the low-activity and
- * identical filters, and a batch download. Still no scores: a low-activity
- * capture is flagged as a fact about its Time Entry, never scored or ranked.
+ * `/api/time-tracking/screenshots` contract: hour groups, the Low activity and
+ * Similar filters, and a batch download. Still no scores and no ranking of
+ * people: the keyboard and mouse share of the minute before a capture, whether
+ * it is low activity and whether it is Similar to the previous capture are
+ * facts about that capture. The server applies both lenses over the whole
+ * period (#341), so the model never re-filters a page.
  * ------------------------------------------------------------------------ */
 
 const ACTIVITY_TAB_LABEL: Record<ActivityTabId, string> = {
@@ -352,9 +370,12 @@ export function activityTabs(active: ActivityTabId): ActivityTab[] {
 }
 
 export type GalleryEvidenceInput = ActivityEvidenceInput & {
-  contentHash?: string | null;
-  entryDuration?: number | null;
-  entryIdleTime?: number | null;
+  keyboardActivityPercent?: number | null;
+  mouseActivityPercent?: number | null;
+  keyboardCount?: number | null;
+  mouseCount?: number | null;
+  perceptualHash?: string | null;
+  similarToPrevious?: boolean;
 };
 
 export type ActivityGalleryInput = {
@@ -362,7 +383,11 @@ export type ActivityGalleryInput = {
   currentUserId: string;
   canReview: boolean;
   lowActivityOnly: boolean;
-  identicalOnly: boolean;
+  similarOnly: boolean;
+  /** The Workspace's threshold, as the server judged with it. */
+  lowActivityThresholdPercent?: number;
+  /** Capture counts over the period before the two lenses apply. */
+  counts?: { lowActivity: number; similar: number };
   selectedIds: string[];
   expandedId: string | null;
   /** Server paging over the capture set, so a long day is never silently cut. */
@@ -384,13 +409,23 @@ export type GalleryTile = EvidenceProvenance & {
   fileName: string;
   selected: boolean;
   expanded: boolean;
-  /**
-   * Whether this capture's content repeats inside the shown set. It is a fact
-   * about the image, not a judgement about the Member — which is why there is
-   * no matching per-capture low-activity flag: that lens stays a filter.
-   */
-  identical: boolean;
+  /** The minute before the capture: a fact about it, not a score about the Member. */
+  activity: TileActivity;
+  /** Whether the screen looks the same as the previous capture. */
+  similar: boolean;
+  similarCopy: string;
 };
+
+export type TileActivity = {
+  hasData: boolean;
+  keyboardPercent: number | null;
+  mousePercent: number | null;
+  low: boolean;
+  label: string;
+};
+
+export const SIMILAR_COPY = "Similar to the previous capture";
+export const LOW_ACTIVITY_COPY = "Low activity";
 
 export type GalleryGroup = {
   key: string;
@@ -419,7 +454,8 @@ export type ActivityGalleryModel = {
   groups: GalleryGroup[];
   count: number;
   countCopy: string;
-  identicalCount: number;
+  lowActivityCount: number;
+  similarCount: number;
   selectedCount: number;
   canBatch: boolean;
   batchLabel: string;
@@ -429,12 +465,17 @@ export type ActivityGalleryModel = {
   emptyState: EmptyModel | null;
 };
 
-/** Idle over half of the Time Entry's tracked span, as v1 counted it. */
-function isLowActivity(shot: GalleryEvidenceInput): boolean {
-  const duration = shot.entryDuration ?? 0;
-  const idle = shot.entryIdleTime ?? 0;
-  const total = duration + idle;
-  return total > 0 && idle / total > 0.5;
+function tileActivity(shot: GalleryEvidenceInput, thresholdPercent: number): TileActivity {
+  const hasData = hasActivityData(shot);
+  const keyboardPercent = hasData ? (shot.keyboardActivityPercent ?? null) : null;
+  const mousePercent = hasData ? (shot.mouseActivityPercent ?? null) : null;
+  return {
+    hasData,
+    keyboardPercent,
+    mousePercent,
+    low: isLowActivityCapture(shot, thresholdPercent),
+    label: hasData ? `Keyboard ${keyboardPercent} % · Mouse ${mousePercent} %` : "No activity data",
+  };
 }
 
 function pad(value: number): string {
@@ -453,27 +494,10 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
   const lookup = evidenceLookup(input);
   const selected = new Set(input.selectedIds);
   const visible = allowedEvidence(input.evidence, input);
-  const filtered = Boolean(input.facetsActive) || input.lowActivityOnly || input.identicalOnly;
+  const filtered = Boolean(input.facetsActive) || input.lowActivityOnly || input.similarOnly;
+  const threshold = input.lowActivityThresholdPercent ?? DEFAULT_LOW_ACTIVITY_THRESHOLD_PERCENT;
 
-  // Identical means the same content hash shows up more than once in what the
-  // current filters returned — the same window captured twice over.
-  const hashCounts = new Map<string, number>();
-  for (const shot of visible) {
-    if (!shot.contentHash) continue;
-    hashCounts.set(shot.contentHash, (hashCounts.get(shot.contentHash) ?? 0) + 1);
-  }
-  const identicalIds = new Set(
-    visible
-      .filter((shot) => shot.contentHash && (hashCounts.get(shot.contentHash) ?? 0) > 1)
-      .map((shot) => shot.id),
-  );
-
-  const shown = visible
-    .filter((shot) => {
-      if (input.lowActivityOnly && !isLowActivity(shot)) return false;
-      if (input.identicalOnly && !identicalIds.has(shot.id)) return false;
-      return true;
-    })
+  const shown = [...visible]
     // Inside an hour, captures read forward in time.
     .sort((a, b) => (parseDate(a.capturedAt)?.getTime() ?? 0) - (parseDate(b.capturedAt)?.getTime() ?? 0));
 
@@ -498,7 +522,9 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
       fileName: evidenceFileName(shot.capturedAt),
       selected: selected.has(shot.id),
       expanded: input.expandedId === shot.id,
-      identical: identicalIds.has(shot.id),
+      activity: tileActivity(shot, threshold),
+      similar: Boolean(shot.similarToPrevious),
+      similarCopy: SIMILAR_COPY,
     });
   }
 
@@ -533,7 +559,8 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
     groups: ordered,
     count,
     countCopy: count === 1 ? "1 capture" : `${count} captures`,
-    identicalCount: identicalIds.size,
+    lowActivityCount: input.counts?.lowActivity ?? 0,
+    similarCount: input.counts?.similar ?? 0,
     selectedCount,
     canBatch: selectedCount > 0,
     batchLabel:

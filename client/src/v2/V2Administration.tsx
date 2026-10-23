@@ -41,6 +41,7 @@ import {
   billingSubscriptionPath,
   canManageAdministration,
   composeAdministration,
+  composeWorkspaceTimeZone,
   composeTrackingPolicyEditor,
   hostedBillingSession,
   planPickerNote,
@@ -128,6 +129,8 @@ const SECRET_MOTION = motionForSurface("secret-once").enterExit;
 type WorkspaceSettingsResponse = {
   screenshotPolicy: ScreenshotPolicy | null;
   allowedTimezones: string[] | null;
+  /** The Workspace time zone Workday Daily Update reminders count in (#341). */
+  timeZone?: string | null;
 };
 
 /** Stripe hands the customer back to the tab that sent them. */
@@ -174,6 +177,7 @@ export function V2AdministrationPage() {
   const [actionRefusal, setActionRefusal] = useState<string | null>(null);
   const [policyDraft, setPolicyDraft] = useState<ScreenshotPolicy>(() => normalizeScreenshotPolicy(null));
   const [timezoneDraft, setTimezoneDraft] = useState<string[]>([]);
+  const [workspaceZoneDraft, setWorkspaceZoneDraft] = useState("");
   const [timezoneInput, setTimezoneInput] = useState("");
   const [timezoneError, setTimezoneError] = useState<string | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<PipelineFeedback | null>(null);
@@ -255,6 +259,7 @@ export function V2AdministrationPage() {
     if (!workspaceSettings) return;
     setPolicyDraft(normalizeScreenshotPolicy(workspaceSettings.screenshotPolicy));
     setTimezoneDraft(workspaceSettings.allowedTimezones ?? []);
+    setWorkspaceZoneDraft(workspaceSettings.timeZone ?? "");
   }, [workspaceSettings]);
 
   const ownerName = workspaceOwnerName(people?.memberships ?? []);
@@ -293,6 +298,12 @@ export function V2AdministrationPage() {
     savedTimezones,
     draftTimezones: timezoneDraft,
     refused: settingsRefused,
+  });
+
+  const workspaceZone = composeWorkspaceTimeZone({
+    saved: workspaceSettings ? (workspaceSettings.timeZone ?? "") : null,
+    draft: workspaceZoneDraft,
+    editable: trackingPolicy.kind === "ready" && trackingPolicy.editable,
   });
 
   function refuseWrite(message: string) {
@@ -424,6 +435,16 @@ export function V2AdministrationPage() {
       queryClient.invalidateQueries({ queryKey: [trackingPolicyPath()] });
       setActionRefusal(null);
       notify.success(TRACKING_POLICY_SAVED);
+    },
+    onError: (error: Error) => refuseWrite(error.message),
+  });
+
+  const saveWorkspaceZone = useMutation({
+    mutationFn: () => apiRequest("PATCH", workspaceSettingsPath(), { timeZone: workspaceZoneDraft.trim() }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [workspaceSettingsPath()] });
+      setActionRefusal(null);
+      notify.success("Workspace time zone saved");
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -1303,6 +1324,30 @@ export function V2AdministrationPage() {
                     </div>
                   ) : null}
                   <div className="df-policy-group">
+                    <p className="df-policy-hint">{trackingPolicy.hints.lowActivity}</p>
+                    <div className="df-policy-grid">
+                      <label className="df-daily-field">
+                        Low-activity threshold (%)
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={policyDraft.lowActivityThresholdPercent}
+                          disabled={!trackingPolicy.editable}
+                          aria-label="Low-activity threshold"
+                          onChange={(event) =>
+                            editPolicy({
+                              lowActivityThresholdPercent: policyNumber(
+                                event.target.value,
+                                policyDraft.lowActivityThresholdPercent,
+                              ),
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="df-policy-group">
                     <p className="df-policy-hint">{trackingPolicy.hints.idleTimeout}</p>
                     <div className="df-policy-grid">
                       <label className="df-daily-field">
@@ -1371,6 +1416,49 @@ export function V2AdministrationPage() {
                   )}
                   <Button variant="default" type="button" disabled={!trackingPolicy.canSave || saveTrackingPolicy.isPending} onClick={() => { if (!guardWrite()) return; saveTrackingPolicy.mutate(); }} className="df-btn">
                     {saveTrackingPolicy.isPending ? "Saving…" : "Save Tracking Policy"}
+                  </Button>
+                </div>
+              </section>
+
+              <section className="df-card df-policy-form" data-testid="v2-administration-workspace-timezone">
+                <div className="df-card-head">
+                  <div className="df-card-head-text">
+                    <h2 className="df-card-title">Workspace time zone</h2>
+                    <p className="df-card-sub">{workspaceZone.copy}</p>
+                  </div>
+                </div>
+                <div className="df-daily-form">
+                  <div className="df-kv">
+                    <span>Current</span>
+                    <span className="df-mono" data-testid="v2-administration-workspace-timezone-current">
+                      {workspaceZone.current}
+                    </span>
+                  </div>
+                  <div className="df-admin-form df-inline-form">
+                    <label className="df-daily-field">
+                      IANA timezone
+                      <input
+                        type="text"
+                        value={workspaceZoneDraft}
+                        placeholder="Europe/Paris"
+                        disabled={!trackingPolicy.editable}
+                        aria-label="Workspace time zone"
+                        onChange={(event) => setWorkspaceZoneDraft(event.target.value)}
+                      />
+                    </label>
+                    <TimezonePicker
+                      zones={timezoneSuggestions([])}
+                      disabled={!trackingPolicy.editable}
+                      onChoose={setWorkspaceZoneDraft}
+                      testId="v2-workspace-timezone-picker"
+                    />
+                  </div>
+                  {workspaceZone.issue ? <p className="df-refusal">{workspaceZone.issue}</p> : null}
+                </div>
+                <div className="df-form-actions">
+                  <p className="df-form-note">{workspaceZone.dirty ? "Unsaved changes." : "No change to save."}</p>
+                  <Button variant="default" type="button" disabled={!workspaceZone.canSave || saveWorkspaceZone.isPending} onClick={() => { if (!guardWrite()) return; saveWorkspaceZone.mutate(); }} className="df-btn">
+                    {saveWorkspaceZone.isPending ? "Saving…" : "Save time zone"}
                   </Button>
                 </div>
               </section>
@@ -1573,10 +1661,12 @@ function TimezonePicker({
   zones,
   disabled,
   onChoose,
+  testId = "v2-timezone-picker",
 }: {
   zones: string[];
   disabled: boolean;
   onChoose: (zone: string) => void;
+  testId?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1587,7 +1677,7 @@ function TimezonePicker({
           type="button"
           disabled={disabled}
           className="df-btn"
-          data-testid="v2-timezone-picker"
+          data-testid={testId}
         >
           Choose from list
         </Button>
