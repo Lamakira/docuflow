@@ -43,6 +43,7 @@ const GH_WORKFLOW   = process.env.GH_WORKFLOW || "desktop-release.yml";
 
 const POLL_INTERVAL = 30_000;  // 30 s entre chaque vérification du run
 const POLL_TIMEOUT  = 60 * 60 * 1000; // 1h max d'attente
+const DOWNLOAD_ATTEMPTS = 4;           // par artifact
 
 function detectPlatform(filename) {
   if (filename.endsWith("-windows-setup.exe")) return "windows";
@@ -149,7 +150,27 @@ function downloadArtifacts(id) {
   mkdirSync(dir, { recursive: true });
 
   console.log(`\n[3/5] Téléchargement des artifacts du run ${id}...`);
-  ghCmd(["run", "download", id, "--repo", GH_REPO, "--dir", dir]);
+  // Une connexion lente vers le stockage de GitHub coupe parfois en plein
+  // téléchargement ("connection timed out" / "reset by peer"). Chaque artifact
+  // est téléchargé à part et retenté, pour ne pas tout reprendre à zéro.
+  const names = JSON.parse(
+    ghCmd(["api", `repos/${GH_REPO}/actions/runs/${id}/artifacts`, "--jq", "[.artifacts[].name]"])
+  );
+  for (const name of names) {
+    const target = join(dir, name);
+    for (let attempt = 1; ; attempt++) {
+      try {
+        if (existsSync(target)) rmSync(target, { recursive: true, force: true });
+        ghCmd(["run", "download", id, "--repo", GH_REPO, "--name", name, "--dir", target]);
+        console.log(`      ${name} téléchargé`);
+        break;
+      } catch (error) {
+        if (attempt >= DOWNLOAD_ATTEMPTS) throw error;
+        console.log(`      ${name} : échec (tentative ${attempt}/${DOWNLOAD_ATTEMPTS}), nouvel essai dans 10 s…`);
+        sleepSync(10_000);
+      }
+    }
+  }
 
   // Trouver les 3 fichiers installeurs (ils peuvent être dans des sous-dossiers)
   const files = [];
@@ -247,6 +268,8 @@ async function registerInDb({ platform, version, filename, sha256, fileSize, sto
 // ── Utilitaires ───────────────────────────────────────────────────────────────
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function sleepSync(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 
 function extractVersion(filename) {
   const m = filename.match(/(\d+\.\d+\.\d+)/);
