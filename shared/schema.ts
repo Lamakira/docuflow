@@ -18,6 +18,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
+import { DEFAULT_LOW_ACTIVITY_THRESHOLD_PERCENT } from "./activityEvidence";
 import { z } from "zod";
 
 /**
@@ -1526,6 +1527,12 @@ export const timeEntryScreenshots = pgTable("time_entry_screenshots", {
   keyboardCount: integer("keyboard_count"),
   /** Raw pointer event count (mousedown + throttled mousemove + wheel) in the 60-second window. */
   mouseCount: integer("mouse_count"),
+  /**
+   * 64-bit difference hash of the image, as 16 hex digits (#341). Two captures
+   * a few bits apart show the same screen. Null when the server could not read
+   * the image (no `sharp`, or the object is gone): such a capture is never Similar.
+   */
+  perceptualHash: varchar("perceptual_hash", { length: 16 }),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
   // ── Soft-delete tombstone ───────────────────────────────────────────────────
@@ -1546,6 +1553,8 @@ export const timeEntryScreenshots = pgTable("time_entry_screenshots", {
   index("idx_screenshots_user").on(table.userId),
   index("idx_screenshots_project").on(table.crmProjectId),
   index("idx_screenshots_captured").on(table.capturedAt),
+  // A capture's previous capture by the same Member: the Similar lookup (#341).
+  index("idx_screenshots_user_captured").on(table.workspaceId, table.userId, table.capturedAt),
   // Partial index — only indexes tombstoned rows; zero cost for live rows
   index("idx_screenshots_deleted").on(table.deletedAt),
   workspaceScopedFk("screenshots_time_entry_workspace_fk", [table.timeEntryId, table.workspaceId], timeEntries),
@@ -1681,6 +1690,11 @@ export interface ScreenshotPolicy {
    * Plan with a screenshot Project capacity (Starter) captures only on these.
    */
   screenshotProjectIds: string[] | null;
+  /**
+   * A capture is low activity when both its keyboard and its mouse share of the
+   * minute before it are below this percentage (#341). Integer, 0–100.
+   */
+  lowActivityThresholdPercent: number;
 }
 
 /** A Tracking Policy clock time: 24-hour "HH:mm". */
@@ -1699,7 +1713,11 @@ export const DEFAULT_SCREENSHOT_POLICY: ScreenshotPolicy = {
   idleTimeoutMinutes: 10,
   idleCountdownSeconds: 60,
   screenshotProjectIds: null,
+  lowActivityThresholdPercent: DEFAULT_LOW_ACTIVITY_THRESHOLD_PERCENT,
 };
+
+/** The Workspace time zone before an Administrator picks one: the zone every nudge ran on before #341. */
+export const DEFAULT_WORKSPACE_TIME_ZONE = "America/Toronto";
 
 /** IANA timezone strings the admin allows in the Screencasts timezone selector.
  *  Empty array = no restriction (each user's browser timezone is used). */
@@ -1723,6 +1741,12 @@ export const orgSettings = pgTable("org_settings", {
   helpCenterScreenshots: jsonb("help_center_screenshots").$type<HelpCenterScreenshotsMap>(),
   /** Owner-controlled. Off until set. Enforced from the session, not the Workspace Role (#300). */
   requireTwoFactor: boolean("require_two_factor").notNull().default(false),
+  /**
+   * The Workspace time zone (IANA). Its calendar day is the Workday the Daily
+   * Update nudge and the reader notifications count in (#341). A Workspace
+   * without a row reads `DEFAULT_WORKSPACE_TIME_ZONE`.
+   */
+  timeZone: varchar("time_zone", { length: 64 }).notNull().default(DEFAULT_WORKSPACE_TIME_ZONE),
   updatedAt: timestamp("updated_at").defaultNow(),
   workspaceId: workspaceIdColumn(),
 }, (table) => [

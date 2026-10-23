@@ -70,6 +70,10 @@ import {
   projectWriteFeature,
 } from "./modules/billing";
 import { registerPublicApiV1 } from "./publicApi/http";
+import { getWorkspaceTimeZone, upsertWorkspaceTimeZone } from "./modules/time";
+import type { ScreenshotListOptions } from "./modules/activity/evidence";
+import { isLowActivityThreshold } from "@shared/activityEvidence";
+import { isIanaTimeZone } from "@shared/timeZone";
 import mammoth from "mammoth";
 import { 
   insertProjectSchema, 
@@ -3148,15 +3152,16 @@ Instructions:
     next();
   };
 
-  // Org settings — screenshot policy + timezone allow-list
+  // Org settings — screenshot policy, timezone allow-list, Workspace time zone
   app.get("/api/admin/org-settings", isAuthenticated, requireAdministration, async (_req, res) => {
     try {
-      const [screenshotPolicy, allowedTimezones, helpCenterScreenshots] = await Promise.all([
+      const [screenshotPolicy, allowedTimezones, helpCenterScreenshots, timeZone] = await Promise.all([
         storage.getScreenshotPolicy(),
         storage.getAllowedTimezones(),
         storage.getHelpCenterScreenshots(),
+        getWorkspaceTimeZone(),
       ]);
-      res.json({ screenshotPolicy, allowedTimezones, helpCenterScreenshots });
+      res.json({ screenshotPolicy, allowedTimezones, helpCenterScreenshots, timeZone });
     } catch (error) {
       console.error("Error fetching org settings:", error);
       res.status(500).json({ message: "Failed to fetch org settings" });
@@ -3165,8 +3170,13 @@ Instructions:
 
   app.patch("/api/admin/org-settings", isAuthenticated, requireAdministration, async (req: any, res) => {
     try {
-      const { screenshotPolicy, allowedTimezones, helpCenterScreenshots } = req.body;
+      const { screenshotPolicy, allowedTimezones, helpCenterScreenshots, timeZone } = req.body;
       const ops: Promise<void>[] = [];
+      if (timeZone !== undefined) {
+        if (!isIanaTimeZone(timeZone))
+          return res.status(400).json({ message: "Time zone must be an IANA time zone, for example Europe/Paris" });
+        ops.push(upsertWorkspaceTimeZone(timeZone));
+      }
       if (screenshotPolicy && typeof screenshotPolicy === "object") {
         const p = screenshotPolicy;
         // ── Screenshot interval validation ──────────────────────────────────
@@ -3187,6 +3197,9 @@ Instructions:
           if (p.idleCountdownSeconds < 15 || p.idleCountdownSeconds > 120)
             return res.status(400).json({ message: "Idle countdown must be between 15 and 120 seconds" });
         }
+        // ── Low-activity threshold (#341) ────────────────────────────────────
+        if (p.lowActivityThresholdPercent !== undefined && !isLowActivityThreshold(p.lowActivityThresholdPercent))
+          return res.status(400).json({ message: "Low-activity threshold must be a whole percentage from 0 to 100" });
         // ── Active hours validation ──────────────────────────────────────────
         for (const key of ["activeHoursStart", "activeHoursEnd"] as const) {
           if (p[key] !== undefined && !isTrackingPolicyClockTime(p[key]))
@@ -4828,15 +4841,7 @@ Instructions:
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = parseInt(req.query.offset as string) || 0;
 
-      const filters: {
-        timeEntryId?: string;
-        userId?: string;
-        crmProjectId?: string;
-        startDate?: Date;
-        endDate?: Date;
-        limit: number;
-        offset: number;
-      } = { limit, offset };
+      const filters: ScreenshotListOptions = { limit, offset };
 
       if (req.query.timeEntryId) filters.timeEntryId = req.query.timeEntryId;
       if (req.query.crmProjectId) filters.crmProjectId = req.query.crmProjectId;
@@ -4849,7 +4854,14 @@ Instructions:
         filters.userId = req.query.userId;
       }
 
-      const { data, total } = await storage.getTimeEntryScreenshots(filters);
+      // The two lenses run over the whole period, server-side, so paging and
+      // totals agree with what the gallery shows (#341).
+      const { lowActivityThresholdPercent } = await storage.getScreenshotPolicy();
+      filters.lowActivityThresholdPercent = lowActivityThresholdPercent;
+      if (req.query.lowActivity === "1") filters.lowActivityOnly = true;
+      if (req.query.similar === "1") filters.similarOnly = true;
+
+      const { data, total, counts } = await storage.getTimeEntryScreenshots(filters);
 
       // Enrich each screenshot with its time entry's duration/idleTime for activity filtering
       const uniqueEntryIds = [...new Set(data.map((s) => s.timeEntryId))];
@@ -4863,7 +4875,7 @@ Instructions:
         entryIdleTime: entryMap[s.timeEntryId]?.idleTime ?? null,
       }));
 
-      res.json({ data: enriched, total, limit, offset });
+      res.json({ data: enriched, total, limit, offset, lowActivityThresholdPercent, counts });
     } catch (error) {
       console.error("Error fetching screenshots:", error);
       res.status(500).json({ message: "Failed to fetch screenshots" });

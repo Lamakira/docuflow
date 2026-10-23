@@ -295,6 +295,20 @@
       "when": 1792508803000,
       "tag": "0041_workspace_locators",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792752486477,
+      "tag": "0042_workspace_time_zone",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792752538266,
+      "tag": "0043_screenshot_fingerprint",
+      "breakpoints": true
     }
   ]
 }

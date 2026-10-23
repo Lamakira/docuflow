@@ -47,7 +47,7 @@ export async function getTimeEntryScreenshotById(
   return screenshot;
 }
 
-export async function getTimeEntryScreenshots(options: {
+export type ScreenshotListOptions = {
   timeEntryId?: string;
   userId?: string;
   crmProjectId?: string;
@@ -55,7 +55,28 @@ export async function getTimeEntryScreenshots(options: {
   endDate?: Date;
   limit?: number;
   offset?: number;
-}): Promise<{ data: TimeEntryScreenshot[]; total: number }> {
+  /** Keep low-activity captures only (#341), judged against `lowActivityThresholdPercent`. */
+  lowActivityOnly?: boolean;
+  /** The Workspace's Tracking Policy threshold; the default when absent. */
+  lowActivityThresholdPercent?: number;
+  /** Keep captures Similar to the previous capture of the same Member only (#341). */
+  similarOnly?: boolean;
+};
+
+export type ListedScreenshot = TimeEntryScreenshot & {
+  /** Within SIMILAR_MAX_HAMMING_DISTANCE of the same Member's previous live capture. */
+  similarToPrevious: boolean;
+};
+
+export type ScreenshotList = {
+  data: ListedScreenshot[];
+  /** Captures matching every filter, the two lenses included: what paging walks. */
+  total: number;
+  /** Over the same period and facets, before the two lenses apply. */
+  counts: { lowActivity: number; similar: number };
+};
+
+export async function getTimeEntryScreenshots(options: ScreenshotListOptions): Promise<ScreenshotList> {
   const conditions = [inWorkspace(timeEntryScreenshots)];
   if (options.timeEntryId) conditions.push(eq(timeEntryScreenshots.timeEntryId, options.timeEntryId));
   if (options.userId) conditions.push(eq(timeEntryScreenshots.userId, options.userId));
@@ -83,7 +104,12 @@ export async function getTimeEntryScreenshots(options: {
       .where(where),
   ]);
 
-  return { data, total: countResult[0]?.count ?? 0 };
+  // TODO(#341): the two lenses, similarToPrevious and counts.
+  return {
+    data: data.map((row) => ({ ...row, similarToPrevious: false })),
+    total: countResult[0]?.count ?? 0,
+    counts: { lowActivity: 0, similar: 0 },
+  };
 }
 
 export async function updateTimeEntryScreenshot(

@@ -14,21 +14,15 @@ import {
   markAgentBatchProcessed,
   softDeleteTimeEntryScreenshot,
   updateTimeEntryScreenshot,
+  type ScreenshotList,
+  type ScreenshotListOptions,
 } from "./evidence";
 import { getScreenshotPolicy, upsertScreenshotPolicy } from "./policy";
 
 export interface ActivityPersistence {
   createTimeEntryScreenshot(screenshot: InsertTimeEntryScreenshot): Promise<TimeEntryScreenshot>;
   getTimeEntryScreenshotById(id: string): Promise<TimeEntryScreenshot | undefined>;
-  getTimeEntryScreenshots(options: {
-    timeEntryId?: string;
-    userId?: string;
-    crmProjectId?: string;
-    startDate?: Date;
-    endDate?: Date;
-    limit?: number;
-    offset?: number;
-  }): Promise<{ data: TimeEntryScreenshot[]; total: number }>;
+  getTimeEntryScreenshots(options: ScreenshotListOptions): Promise<ScreenshotList>;
   updateTimeEntryScreenshot(
     id: string,
     data: { storageKey: string; contentHash?: string }
