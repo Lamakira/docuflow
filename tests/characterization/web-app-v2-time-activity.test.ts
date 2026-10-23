@@ -589,6 +589,29 @@ describe("Activity Evidence gallery (#214)", () => {
     expect(css).not.toContain(".df-gallery-full");
   });
 
+  it("keeps each gallery tile meta to two short lines with an icon-only download", () => {
+    const tile = activitySource.slice(
+      activitySource.indexOf('className="df-gallery-meta"'),
+      activitySource.indexOf('className="df-gallery-facts"'),
+    );
+    // Provenance is project and task only; the source stays in the viewer.
+    expect(tile).toContain("{tile.project} · {tile.task}</span>");
+    expect(tile).not.toContain("tile.source");
+    expect(activitySource.slice(activitySource.indexOf("function CaptureViewer"))).toContain("source");
+    // Download is an icon button named by aria-label, tipped by the shadcn Tooltip.
+    expect(tile).toContain('size="icon"');
+    expect(tile).toContain("aria-label={`Download the capture from ${tile.when}`}");
+    expect(tile).toContain("<TooltipTrigger asChild>");
+    expect(tile).toContain("<TooltipContent");
+    expect(activitySource).toContain('from "@/components/ui/tooltip"');
+    expect(tile).not.toMatch(/df-gallery-download"\s*>\s*Download/);
+    expect(tile).toContain("<Download ");
+    expect(rule(".df-gallery-provenance")).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule(".df-gallery-provenance")).toMatch(/white-space:\s*nowrap/);
+    expect(rule(".df-gallery-when")).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule(".df-gallery-when")).toMatch(/white-space:\s*nowrap/);
+  });
+
   it("stops Previous and Next at the first and last capture of the page", () => {
     const shot = (id: string, hour: number, minute: number) => ({
       id,

@@ -28,7 +28,9 @@ import {
   type TileActivity,
   type GalleryViewer,
 } from "./activity";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -673,18 +675,26 @@ function ActivityGallery({
                       aria-label={`Select the capture from ${tile.when}`}
                       onChange={() => onSelect(tile.id)}
                     />
-                    <span style={{ minWidth: 0, flex: 1 }}>
-                      <span className="df-mono df-meta">
-                        {tile.when} · {tile.who}
-                      </span>
-                      <span className="df-gallery-provenance">
-                        {tile.project} · {tile.task} · {tile.source}
-                      </span>
+                    <span className="df-mono df-meta df-gallery-when" title={`${tile.when} · ${tile.who}`}>
+                      {tile.when} · {tile.who}
                     </span>
-                    <Button variant="outline" type="button" onClick={() => onSave(tile)} className="df-btn">
-                      Download
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          type="button"
+                          onClick={() => onSave(tile)}
+                          aria-label={`Download the capture from ${tile.when}`}
+                          className="df-btn df-gallery-download"
+                        >
+                          <Download width={16} height={16} strokeWidth={1.6} aria-hidden />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="df-v2 df-tooltip">Download</TooltipContent>
+                    </Tooltip>
                   </span>
+                  <span className="df-gallery-provenance" title={`${tile.project} · ${tile.task}`}>{tile.project} · {tile.task}</span>
                   <span className="df-gallery-facts">
                     <ActivityFacts activity={tile.activity} />
                     {tile.similar ? <span className="df-gallery-similar">{tile.similarCopy}</span> : null}
