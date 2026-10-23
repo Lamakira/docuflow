@@ -237,6 +237,34 @@ describe("Timer Command application", () => {
     expect(commands).toEqual([]);
   });
 
+  it("lists the task name for an entry with a task and none for an entry without", async () => {
+    const { storage, user, crmProject, task } = await seedTrackableWork();
+
+    const [withTask, withoutTask] = await inSeededWorkspace(async () => [
+      await storage.createTimeEntry({
+        userId: user.id,
+        crmProjectId: crmProject.id,
+        taskId: task.id,
+        startTime: new Date("2026-08-01T09:00:00.000Z"),
+        endTime: new Date("2026-08-01T09:30:00.000Z"),
+        status: "stopped",
+        duration: 1800,
+      }),
+      await storage.createTimeEntry({
+        userId: user.id,
+        crmProjectId: crmProject.id,
+        startTime: new Date("2026-08-01T10:00:00.000Z"),
+        endTime: new Date("2026-08-01T10:30:00.000Z"),
+        status: "stopped",
+        duration: 1800,
+      }),
+    ]);
+
+    const listed = await inSeededWorkspace(() => storage.getTimeEntries({ userId: user.id }));
+    expect(listed.find((row) => row.id === withTask.id)?.task?.name).toBe(task.name);
+    expect(listed.find((row) => row.id === withoutTask.id)?.task).toBeUndefined();
+  });
+
   it("clamps a future claimed effective time and flags the command", async () => {
     const { user, crmProject, task } = await seedTrackableWork();
     const { applyTimerCommand } = await import("../../server/modules/time/commands");

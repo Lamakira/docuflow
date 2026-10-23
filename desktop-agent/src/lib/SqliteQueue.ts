@@ -71,6 +71,7 @@ export class SqliteQueue {
   private data: QueueData;
   private filePath: string;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastTimerCommandSyncedMonoValue: number | null = null;
 
   constructor(userDataPath: string) {
     this.filePath = path.join(userDataPath, "agent-queue.json");
@@ -298,6 +299,7 @@ export class SqliteQueue {
 
     const oldEntryId = cmd.entryId;
     cmd.syncedAt = Date.now();
+    this.lastTimerCommandSyncedMonoValue = performance.now();
 
     // Propagate real server entry ID to subsequent commands that had the local placeholder
     if (resolvedEntryId && oldEntryId && oldEntryId !== resolvedEntryId) {
@@ -326,6 +328,11 @@ export class SqliteQueue {
   /** Number of pending (not synced, not failed) timer commands. */
   pendingTimerCommandCount(): number {
     return this.data.timerCommands.filter((c) => c.syncedAt === null && c.failedAt === null).length;
+  }
+
+  /** performance.now() of the last timer command synced in this process, null before any. Monotonic, not persisted. */
+  lastTimerCommandSyncedMono(): number | null {
+    return this.lastTimerCommandSyncedMonoValue;
   }
 
   /**

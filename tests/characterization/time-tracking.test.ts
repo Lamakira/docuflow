@@ -100,6 +100,19 @@ describe("time tracking (characterization)", () => {
     expect((await user.agent.get("/api/time-tracking/active")).body.id).toBe(replacement.id);
   });
 
+  it("attaches the task to each listed entry", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const { crmProject } = await createCrmProject(user.agent);
+    const task = await createTask(user.agent, crmProject.id, "Write the brief");
+    const started = await startTimer(user.agent, crmProject.id, task.id);
+    await user.agent.post(`/api/time-tracking/${started.id}/stop`);
+
+    const entries = await user.agent.get("/api/time-tracking/entries");
+    const listed = entries.body.data.find((e: { id: string }) => e.id === started.id);
+    expect(listed.task).toMatchObject({ id: task.id, name: "Write the brief" });
+  });
+
   it("walks an entry through pause, resume and stop, refusing out-of-order calls", async () => {
     const app = await makeApp();
     const user = await registerUser(app);

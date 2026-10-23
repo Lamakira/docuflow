@@ -1,6 +1,6 @@
 {
   "name": "docuflow-desktop-agent",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "homepage": "https://github.com/Lamakira/docuflow",
   "description": "DocuFlow Desktop Agent — time tracking, activity monitoring, and screenshot capture",
   "main": ".webpack/main",
