@@ -10,7 +10,12 @@ export {
   nextTimerSequence,
 } from "./commands";
 export type { ApplyTimerCommandInput, ApplyTimerCommandResult } from "./commands";
-export { getAllowedTimezones, upsertAllowedTimezones } from "./schedule";
+export {
+  getAllowedTimezones,
+  getWorkspaceTimeZone,
+  upsertAllowedTimezones,
+  upsertWorkspaceTimeZone,
+} from "./schedule";
 
 export const TIME_TABLES = ["time_entries", "timer_commands"] as const;
 

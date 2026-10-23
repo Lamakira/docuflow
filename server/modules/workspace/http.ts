@@ -335,6 +335,7 @@ const createWorkspaceBody = z.object({
   name: z.string(),
   intendedPlan: z.unknown().optional(),
   intendedInterval: z.unknown().optional(),
+  timeZone: z.unknown().optional(),
 });
 const successorBody = z.object({ userId: z.string().min(1) });
 const deleteWorkspaceBody = z.object({ confirmName: z.string() });

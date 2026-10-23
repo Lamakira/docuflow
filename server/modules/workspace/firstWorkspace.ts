@@ -17,6 +17,7 @@ import {
   auditEvents,
   capabilities,
   memberships,
+  orgSettings,
   users,
   workspaceRoleCapabilities,
   workspaceRoles,
@@ -24,6 +25,7 @@ import {
 } from "@shared/schema";
 import { WORKSPACE_NAME_MAX, workspaceNameError } from "@shared/workspaceName";
 import { parsePlanIntent } from "@shared/planIntent";
+import { isIanaTimeZone } from "@shared/timeZone";
 import { db } from "../../db";
 import { runWithWorkspaceContext, stampWorkspace } from "../../workspaceContext";
 import { startTrial } from "../billing/stateMachine";
@@ -117,7 +119,7 @@ function cleanName(raw: unknown): string {
  */
 export async function createWorkspace(
   userId: string,
-  input: { name: unknown; intendedPlan?: unknown; intendedInterval?: unknown },
+  input: { name: unknown; intendedPlan?: unknown; intendedInterval?: unknown; timeZone?: unknown },
 ): Promise<CreatedWorkspace> {
   const name = cleanName(input.name);
   const intent = parsePlanIntent(input.intendedPlan, input.intendedInterval);
@@ -131,10 +133,16 @@ export async function createWorkspace(
   // `app.workspace_id` fails closed once the application role is in use
   // (migration 0010).
   const workspaceId = randomUUID();
+  // The creator's own zone seeds the Workspace time zone (#341). A name the
+  // runtime does not know is dropped, not refused: the default applies.
+  const timeZone = isIanaTimeZone(input.timeZone) ? input.timeZone : null;
 
   await runWithWorkspaceContext({ workspaceId }, async () => {
     await db.transaction(async (tx) => {
       await tx.insert(workspaces).values({ id: workspaceId, name });
+      if (timeZone) {
+        await tx.insert(orgSettings).values({ id: "default", workspaceId, timeZone });
+      }
 
       const roles = await tx
         .insert(workspaceRoles)

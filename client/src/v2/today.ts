@@ -20,6 +20,8 @@ export type TodayNotification = {
   isRead: number;
   createdAt: Date | string | null;
   crmProjectId?: string | null;
+  /** Who the notification is about; `daily_update_submitted` carries the submitter. */
+  fromUserId?: string | null;
 };
 
 export type TodayDocument = {
@@ -188,14 +190,37 @@ function attentionSubhead(count: number): string {
 }
 
 function notificationKind(type: string): AttentionKind | null {
-  if (type === "daily_update_reminder") return "UPDATE";
+  if (type === "daily_update_reminder" || type === "daily_update_submitted") return "UPDATE";
   if (type === "mention") return "MENTION";
   if (type === "reminder") return "REMINDER";
   return null;
 }
 
+/**
+ * Team Daily Updates filtered to one Member and the local day a notification
+ * landed on: the screen reads `member` and `day` from the URL (#341).
+ */
+export function teamDailyUpdatesHref(
+  fromUserId: string | null | undefined,
+  createdAt: Date | string | null | undefined,
+): string {
+  const params = new URLSearchParams();
+  if (fromUserId) params.set("member", fromUserId);
+  const created = createdAt ? new Date(createdAt) : null;
+  if (created && !Number.isNaN(created.getTime())) {
+    const month = String(created.getMonth() + 1).padStart(2, "0");
+    const day = String(created.getDate()).padStart(2, "0");
+    params.set("day", `${created.getFullYear()}-${month}-${day}`);
+  }
+  const query = params.toString();
+  return query ? `/daily-updates?${query}` : "/daily-updates";
+}
+
 function notificationHref(notification: TodayNotification): string {
   if (notification.type === "daily_update_reminder") return "/daily-update";
+  if (notification.type === "daily_update_submitted") {
+    return teamDailyUpdatesHref(notification.fromUserId, notification.createdAt);
+  }
   if (notification.crmProjectId) return projectHref(notification.crmProjectId);
   return "/";
 }

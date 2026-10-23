@@ -14,6 +14,7 @@ import {
   VIEW_DAILY_UPDATES_CAPABILITY_ID,
   type ScreenshotPolicy,
 } from "@shared/schema";
+import { isLowActivityThreshold } from "@shared/activityEvidence";
 import { chromeRefusal } from "./chrome";
 import { formatRelativeTime } from "./devices";
 import { formatHours, memberName } from "./today";
@@ -1351,6 +1352,7 @@ export type TimezoneEdit = { ok: true; timezones: string[] } | { ok: false; reas
 export type TrackingPolicyHints = {
   activeHours: string;
   idleTimeout: string;
+  lowActivity: string;
   prompt: string;
   countdown: string;
 };
@@ -1370,6 +1372,7 @@ export function trackingPolicyHints(draft: ScreenshotPolicy): TrackingPolicyHint
   return {
     activeHours: `${clock}${span}`,
     idleTimeout: `After ${draft.idleTimeoutMinutes} min without keyboard or mouse input, the Timer pauses and the idle time is not counted.`,
+    lowActivity: `A capture is low activity when both keyboard and mouse are below ${draft.lowActivityThresholdPercent} % of the minute before it. It is a fact about the capture, not a score.`,
     prompt: draft.idlePromptEnabled
       ? `The Member is asked first and has ${draft.idleCountdownSeconds} s to answer before the Timer pauses.`
       : "The Timer pauses at the timeout without asking. The Member resumes it.",
@@ -1390,6 +1393,9 @@ export function trackingPolicyIssue(draft: ScreenshotPolicy): string | null {
   }
   if (draft.idleTimeoutMinutes < 1 || draft.idleTimeoutMinutes > 60) {
     return "Idle timeout must be between 1 and 60 minutes.";
+  }
+  if (!isLowActivityThreshold(draft.lowActivityThresholdPercent)) {
+    return "Low-activity threshold must be a whole number from 0 to 100.";
   }
   if (draft.idleCountdownSeconds < 15 || draft.idleCountdownSeconds > 120) {
     return "Idle countdown must be between 15 and 120 seconds.";
@@ -1440,6 +1446,36 @@ export function timezoneSuggestions(allowed: string[]): string[] {
   const supported =
     typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
   return supported.filter((zone) => !taken.has(zone)).sort();
+}
+
+export type WorkspaceTimeZoneInput = {
+  /** `null` when the Workspace settings have not been read. */
+  saved: string | null | undefined;
+  draft: string;
+  editable: boolean;
+};
+
+export type WorkspaceTimeZoneModel = {
+  /** The zone in force, or the plain statement that none is set. */
+  current: string;
+  copy: string;
+  dirty: boolean;
+  issue: string | null;
+  canSave: boolean;
+};
+
+/** The Workspace time zone card (#341): the zone Workday Daily Update reminders count in. */
+export function composeWorkspaceTimeZone(input: WorkspaceTimeZoneInput): WorkspaceTimeZoneModel {
+  const draft = input.draft.trim();
+  const dirty = draft !== (input.saved ?? "");
+  const issue = draft && !isValidTimezone(draft) ? `"${draft}" is not a valid IANA timezone.` : null;
+  return {
+    current: input.saved || "Not set",
+    copy: "The Workday Daily Update reminders and notifications count in this time zone: the reminder goes out at 18:00 here.",
+    dirty,
+    issue,
+    canSave: input.editable && dirty && draft !== "" && issue === null,
+  };
 }
 
 export function removeAllowedTimezone(timezones: string[], value: string): string[] {

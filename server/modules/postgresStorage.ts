@@ -155,6 +155,8 @@ import {
   markAgentBatchProcessed,
   softDeleteTimeEntryScreenshot,
   updateTimeEntryScreenshot,
+  type ScreenshotList,
+  type ScreenshotListOptions,
 } from "./activity/evidence";
 import { getScreenshotPolicy, upsertScreenshotPolicy } from "./activity/policy";
 import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
@@ -2232,7 +2234,7 @@ export class DatabaseStorage implements IStorage {
     return newNotif;
   }
 
-  async hasRecentNotification(userId: string, type: string, since: Date): Promise<boolean> {
+  async hasRecentNotification(userId: string, type: string, since: Date, fromUserId?: string): Promise<boolean> {
     const [result] = await db
       .select({ count: count() })
       .from(notifications)
@@ -2241,6 +2243,7 @@ export class DatabaseStorage implements IStorage {
           eq(notifications.userId, userId),
           eq(notifications.type, type),
           gte(notifications.createdAt, since),
+          fromUserId ? eq(notifications.fromUserId, fromUserId) : undefined,
         ),
       );
     return (result?.count || 0) > 0;
@@ -2929,19 +2932,11 @@ export class DatabaseStorage implements IStorage {
     return getTimeEntryScreenshotById(id);
   }
 
-  async getTimeEntryScreenshots(options: {
-    timeEntryId?: string;
-    userId?: string;
-    crmProjectId?: string;
-    startDate?: Date;
-    endDate?: Date;
-    limit?: number;
-    offset?: number;
-  }): Promise<{ data: TimeEntryScreenshot[]; total: number }> {
+  async getTimeEntryScreenshots(options: ScreenshotListOptions): Promise<ScreenshotList> {
     return getTimeEntryScreenshots(options);
   }
 
-  async updateTimeEntryScreenshot(id: string, data: { storageKey: string; contentHash?: string }): Promise<TimeEntryScreenshot | undefined> {
+  async updateTimeEntryScreenshot(id: string, data: { storageKey: string; contentHash?: string; perceptualHash?: string | null }): Promise<TimeEntryScreenshot | undefined> {
     return updateTimeEntryScreenshot(id, data);
   }
 

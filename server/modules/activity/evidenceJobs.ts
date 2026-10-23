@@ -134,12 +134,13 @@ export async function commitActivityScreenshot(input: {
   id: string;
   storageKey: string;
   contentHash?: string;
+  perceptualHash?: string | null;
   tx?: ActivityJobsWriter;
 }): Promise<TimeEntryScreenshot | undefined> {
   const persist = async (writer: ActivityJobsWriter) => {
     const row = await updateTimeEntryScreenshot(
       input.id,
-      { storageKey: input.storageKey, contentHash: input.contentHash },
+      { storageKey: input.storageKey, contentHash: input.contentHash, perceptualHash: input.perceptualHash },
       writer
     );
     if (!row) return undefined;

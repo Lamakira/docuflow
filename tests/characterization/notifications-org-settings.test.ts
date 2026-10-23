@@ -85,8 +85,10 @@ describe("notifications and org settings (characterization)", () => {
       idleTimeoutMinutes: 10,
       idleCountdownSeconds: 60,
       screenshotProjectIds: null,
+      lowActivityThresholdPercent: 10,
     });
     expect(res.body.allowedTimezones).toEqual([]);
+    expect(res.body.timeZone).toBe("America/Toronto");
     expect(res.body.helpCenterScreenshots).toEqual({});
   });
 

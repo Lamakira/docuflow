@@ -8,8 +8,9 @@ import { sentEmails } from "../fakes/resend";
  * Daily Update nudge as a Job (#84, spec #81).
  *
  * The seam is the Job handler and the jobs port — not HTTP, not Worker
- * internals. The occurrence key is the Workday (America/Toronto calendar
- * day), so a retry the same day does not double-nudge.
+ * internals. The occurrence key is the Workday (the calendar day in the
+ * Workspace time zone, America/Toronto until one is set), so a retry the same
+ * day does not double-nudge.
  */
 
 /** 6:00 PM America/Toronto on 18 Aug 2026 (EDT, UTC−4). */
@@ -127,5 +128,62 @@ describe("Daily Update nudge Job", () => {
 
     expect(await inSeededWorkspace(() => storage.getUserNotifications(user.id))).toHaveLength(1);
     expect(sentEmails()).toEqual([]);
+  });
+
+  it("nudges a Europe/Paris Workspace at 18:00 Paris time, not at 18:00 Toronto time", async () => {
+    const { user } = await seedMember();
+    const { upsertWorkspaceTimeZone } = await import("../../server/modules/time");
+    const { nudgeMembersMissingDailyUpdate } = await import("../../server/dailyUpdateNudge");
+    await inSeededWorkspace(() => upsertWorkspaceTimeZone("Europe/Paris"));
+
+    // 18:00 Toronto is already 00:00 the next day in Paris.
+    expect(await nudgeMembersMissingDailyUpdate(SIX_PM)).toBe(0);
+    // 17:59 Paris.
+    expect(await nudgeMembersMissingDailyUpdate(new Date("2026-08-18T15:59:00.000Z"))).toBe(0);
+    // 18:00 Paris is noon in Toronto.
+    expect(await nudgeMembersMissingDailyUpdate(new Date("2026-08-18T16:00:00.000Z"))).toBe(1);
+
+    const { storage } = await import("../../server/storage");
+    expect(await inSeededWorkspace(() => storage.getUserNotifications(user.id))).toHaveLength(1);
+  });
+
+  it("skips a Workspace per Workspace in the HTTP fast-path set", async () => {
+    await seedMember();
+    const { nudgeMembersMissingDailyUpdate } = await import("../../server/dailyUpdateNudge");
+    const done = new Set<string>();
+
+    expect(await nudgeMembersMissingDailyUpdate(SIX_PM, done)).toBe(1);
+    expect(done.has(`${SEEDED_WORKSPACE_ID}:${WORKDAY}`)).toBe(true);
+    expect(await nudgeMembersMissingDailyUpdate(SIX_PM, done)).toBe(0);
+  });
+
+  it("keys the Workday on the Workspace zone, not Toronto's calendar day", async () => {
+    const { user } = await seedMember();
+    const { db } = await import("../../server/db");
+    const { createJobsPort } = await import("../../server/jobs");
+    const { DAILY_UPDATE_NUDGE_JOB, DAILY_UPDATE_NUDGE_JOB_TYPE, dailyUpdateNudgeOccurrenceKey } =
+      await import("../../server/dailyUpdateNudge");
+    const { createDailyUpdateNudgeScheduler } = await import("../../server/scheduler");
+    const { upsertWorkspaceTimeZone } = await import("../../server/modules/time");
+    await inSeededWorkspace(() => upsertWorkspaceTimeZone("Pacific/Honolulu"));
+
+    const jobs = createJobsPort({
+      db,
+      types: { [DAILY_UPDATE_NUDGE_JOB]: DAILY_UPDATE_NUDGE_JOB_TYPE },
+    });
+    // 18:30 on 18 Aug in Honolulu (UTC−10); 00:30 on 19 Aug in Toronto.
+    const scheduler = createDailyUpdateNudgeScheduler({
+      role: "worker",
+      jobs,
+      holderId: "worker-1",
+      now: () => new Date("2026-08-19T04:30:00.000Z"),
+    });
+    expect(await scheduler.tick()).toBe(1);
+
+    const claimed = await jobs.claim("worker-1");
+    expect(claimed).toMatchObject({
+      payload: { userId: user.id, workday: "2026-08-18" },
+      occurrenceKey: dailyUpdateNudgeOccurrenceKey(user.id, "2026-08-18"),
+    });
   });
 });

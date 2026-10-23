@@ -4,7 +4,7 @@
  * Entry the evidence is attached to. Evidence is not turned into scores.
  */
 
-import { and, desc, eq, gt, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lte, sql, type SQL } from "drizzle-orm";
 import {
   agentActivityEvents,
   agentProcessedBatches,
@@ -13,6 +13,7 @@ import {
   type InsertTimeEntryScreenshot,
   type TimeEntryScreenshot,
 } from "@shared/schema";
+import { DEFAULT_LOW_ACTIVITY_THRESHOLD_PERCENT, SIMILAR_MAX_HAMMING_DISTANCE } from "@shared/activityEvidence";
 import { db, type Db } from "../../db";
 import { inWorkspace, stampWorkspace } from "../../workspaceContext";
 
@@ -47,7 +48,7 @@ export async function getTimeEntryScreenshotById(
   return screenshot;
 }
 
-export async function getTimeEntryScreenshots(options: {
+export type ScreenshotListOptions = {
   timeEntryId?: string;
   userId?: string;
   crmProjectId?: string;
@@ -55,7 +56,63 @@ export async function getTimeEntryScreenshots(options: {
   endDate?: Date;
   limit?: number;
   offset?: number;
-}): Promise<{ data: TimeEntryScreenshot[]; total: number }> {
+  /** Keep low-activity captures only (#341), judged against `lowActivityThresholdPercent`. */
+  lowActivityOnly?: boolean;
+  /** The Workspace's Tracking Policy threshold; the default when absent. */
+  lowActivityThresholdPercent?: number;
+  /** Keep captures Similar to the previous capture of the same Member only (#341). */
+  similarOnly?: boolean;
+};
+
+export type ListedScreenshot = TimeEntryScreenshot & {
+  /** Within SIMILAR_MAX_HAMMING_DISTANCE of the same Member's previous live capture. */
+  similarToPrevious: boolean;
+};
+
+export type ScreenshotList = {
+  data: ListedScreenshot[];
+  /** Captures matching every filter, the two lenses included: what paging walks. */
+  total: number;
+  /** Over the same period and facets, before the two lenses apply. */
+  counts: { lowActivity: number; similar: number };
+};
+
+/**
+ * SQL twin of `isLowActivityCapture` (shared/activityEvidence.ts): both metrics
+ * recorded and both strictly below the threshold; a capture without metrics is
+ * never low. A test holds the two to the same answers.
+ */
+export function lowActivityPredicate(thresholdPercent: number): SQL {
+  return sql`(${timeEntryScreenshots.keyboardActivityPercent} IS NOT NULL
+    AND ${timeEntryScreenshots.mouseActivityPercent} IS NOT NULL
+    AND ${timeEntryScreenshots.keyboardActivityPercent} < ${thresholdPercent}
+    AND ${timeEntryScreenshots.mouseActivityPercent} < ${thresholdPercent})`;
+}
+
+/**
+ * SQL twin of `isSimilarFingerprint` against the same Member's previous live
+ * capture: same Workspace and user, strictly earlier, not deleted, uploaded —
+ * whatever its project, and even before the requested period. The Hamming
+ * distance is the bit count of the XOR of the two 64-bit fingerprints. A missing
+ * fingerprint on either side is never Similar.
+ */
+export function similarToPreviousPredicate(): SQL {
+  const hex = "^[0-9a-f]{16}$";
+  return sql`COALESCE((
+    SELECT bit_count(('x' || ${timeEntryScreenshots.perceptualHash})::bit(64) # ('x' || prev.perceptual_hash)::bit(64))
+      <= ${SIMILAR_MAX_HAMMING_DISTANCE}
+    FROM time_entry_screenshots prev
+    WHERE prev.workspace_id = ${timeEntryScreenshots.workspaceId}
+      AND prev.user_id = ${timeEntryScreenshots.userId}
+      AND prev.captured_at < ${timeEntryScreenshots.capturedAt}
+      AND prev.deleted_at IS NULL
+      AND prev.storage_key NOT LIKE 'pending-%'
+    ORDER BY prev.captured_at DESC
+    LIMIT 1
+  ), false) AND ${timeEntryScreenshots.perceptualHash} ~ ${hex}`;
+}
+
+export async function getTimeEntryScreenshots(options: ScreenshotListOptions): Promise<ScreenshotList> {
   const conditions = [inWorkspace(timeEntryScreenshots)];
   if (options.timeEntryId) conditions.push(eq(timeEntryScreenshots.timeEntryId, options.timeEntryId));
   if (options.userId) conditions.push(eq(timeEntryScreenshots.userId, options.userId));
@@ -65,13 +122,20 @@ export async function getTimeEntryScreenshots(options: {
   conditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
   conditions.push(isNull(timeEntryScreenshots.deletedAt));
 
-  const where = and(...conditions);
+  const low = lowActivityPredicate(options.lowActivityThresholdPercent ?? DEFAULT_LOW_ACTIVITY_THRESHOLD_PERCENT);
+  const similar = similarToPreviousPredicate();
+
+  const base = and(...conditions);
+  const lensConditions = [...conditions];
+  if (options.lowActivityOnly) lensConditions.push(low);
+  if (options.similarOnly) lensConditions.push(similar);
+  const where = and(...lensConditions);
   const limit = options.limit ?? 50;
   const offset = options.offset ?? 0;
 
-  const [data, countResult] = await Promise.all([
+  const [data, totalResult, countsResult] = await Promise.all([
     db
-      .select()
+      .select({ row: timeEntryScreenshots, similarToPrevious: sql<boolean>`(${similar})` })
       .from(timeEntryScreenshots)
       .where(where)
       .orderBy(desc(timeEntryScreenshots.capturedAt))
@@ -81,19 +145,35 @@ export async function getTimeEntryScreenshots(options: {
       .select({ count: sql<number>`count(*)::int` })
       .from(timeEntryScreenshots)
       .where(where),
+    db
+      .select({
+        lowActivity: sql<number>`(count(*) FILTER (WHERE ${low}))::int`,
+        similar: sql<number>`(count(*) FILTER (WHERE ${similar}))::int`,
+      })
+      .from(timeEntryScreenshots)
+      .where(base),
   ]);
 
-  return { data, total: countResult[0]?.count ?? 0 };
+  return {
+    data: data.map(({ row, similarToPrevious }) => ({ ...row, similarToPrevious: similarToPrevious === true })),
+    total: totalResult[0]?.count ?? 0,
+    counts: {
+      lowActivity: countsResult[0]?.lowActivity ?? 0,
+      similar: countsResult[0]?.similar ?? 0,
+    },
+  };
 }
 
 export async function updateTimeEntryScreenshot(
   id: string,
-  data: { storageKey: string; contentHash?: string },
+  data: { storageKey: string; contentHash?: string; perceptualHash?: string | null },
   writer: Pick<Db, "update"> = db
 ): Promise<TimeEntryScreenshot | undefined> {
   const [result] = await writer
     .update(timeEntryScreenshots)
-    .set({ storageKey: data.storageKey, ...(data.contentHash ? { contentHash: data.contentHash } : {}) })
+    .set({ storageKey: data.storageKey, ...(data.contentHash ? { contentHash: data.contentHash } : {}),
+      ...(data.perceptualHash ? { perceptualHash: data.perceptualHash } : {}),
+    })
     .where(and(eq(timeEntryScreenshots.id, id), inWorkspace(timeEntryScreenshots)))
     .returning();
   return result;

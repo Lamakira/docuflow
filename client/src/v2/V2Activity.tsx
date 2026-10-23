@@ -25,6 +25,7 @@ import {
   type ActivityProjectInput,
   type GalleryEvidenceInput,
   type GalleryTile,
+  type TileActivity,
   type GalleryViewer,
 } from "./activity";
 import { Button } from "@/components/ui/button";
@@ -39,7 +40,12 @@ import {
 import { V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
-type ScreenshotsResponse = { data: GalleryEvidenceInput[]; total?: number };
+type ScreenshotsResponse = {
+  data: GalleryEvidenceInput[];
+  total?: number;
+  lowActivityThresholdPercent?: number;
+  counts?: { lowActivity: number; similar: number };
+};
 type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
 type TrackingPolicyResponse = { screenshotPolicy: ScreenshotPolicy };
 
@@ -110,7 +116,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   const [userFilter, setUserFilter] = useState("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [lowActivityOnly, setLowActivityOnly] = useState(false);
-  const [identicalOnly, setIdenticalOnly] = useState(false);
+  const [similarOnly, setSimilarOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedCaptureId, setExpandedCaptureId] = useState<string | null>(null);
   const [galleryPage, setGalleryPage] = useState(1);
@@ -135,7 +141,13 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   };
   const evidenceUrl = activityEvidencePath(
     tab === "gallery"
-      ? { ...filters, limit: GALLERY_PAGE_SIZE, offset: (galleryPage - 1) * GALLERY_PAGE_SIZE }
+      ? {
+          ...filters,
+          limit: GALLERY_PAGE_SIZE,
+          offset: (galleryPage - 1) * GALLERY_PAGE_SIZE,
+          lowActivity: lowActivityOnly,
+          similar: similarOnly,
+        }
       : filters,
   );
   const entriesUrl = timeEntriesPath({
@@ -221,7 +233,9 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     currentUserId: user?.id ?? "",
     canReview,
     lowActivityOnly,
-    identicalOnly,
+    similarOnly,
+    lowActivityThresholdPercent: evidenceResponse?.lowActivityThresholdPercent,
+    counts: evidenceResponse?.counts,
     selectedIds,
     expandedId: expandedCaptureId,
     page: galleryPage,
@@ -247,7 +261,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   useEffect(() => {
     setSelectedIds([]);
     setExpandedCaptureId(null);
-  }, [range, typedDay, typedFrom, typedTo, projectFilter, userFilter, lowActivityOnly, identicalOnly, galleryPage, tab]);
+  }, [range, typedDay, typedFrom, typedTo, projectFilter, userFilter, lowActivityOnly, similarOnly, galleryPage, tab]);
 
   function onSelect(id: string) {
     setSelectedIds((current) =>
@@ -268,7 +282,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     setProjectFilter("all");
     setUserFilter("all");
     setLowActivityOnly(false);
-    setIdenticalOnly(false);
+    setSimilarOnly(false);
     setGalleryPage(1);
   }
 
@@ -445,24 +459,25 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
               <input
                 type="checkbox"
                 checked={lowActivityOnly}
+                disabled={gallery.lowActivityCount === 0 && !lowActivityOnly}
                 onChange={(event) => {
                   setLowActivityOnly(event.target.checked);
                   setGalleryPage(1);
                 }}
               />
-              Low activity
+              Low activity ({gallery.lowActivityCount})
             </label>
-            <label className="df-filter-chip df-gallery-filter" data-active={identicalOnly ? "true" : "false"}>
+            <label className="df-filter-chip df-gallery-filter" data-active={similarOnly ? "true" : "false"}>
               <input
                 type="checkbox"
-                checked={identicalOnly}
-                disabled={gallery.identicalCount === 0}
+                checked={similarOnly}
+                disabled={gallery.similarCount === 0 && !similarOnly}
                 onChange={(event) => {
-                  setIdenticalOnly(event.target.checked);
+                  setSimilarOnly(event.target.checked);
                   setGalleryPage(1);
                 }}
               />
-              Identical{gallery.identicalCount > 0 ? ` (${gallery.identicalCount})` : ""}
+              Similar ({gallery.similarCount})
             </label>
             {canReview ? (
               <label className="df-filter-chip df-gallery-filter" data-active={includeArchivedUsers ? "true" : "false"}>
@@ -666,10 +681,13 @@ function ActivityGallery({
                         {tile.project} · {tile.task} · {tile.source}
                       </span>
                     </span>
-                    {tile.identical ? <span className="df-status-word">Identical</span> : null}
                     <Button variant="outline" type="button" onClick={() => onSave(tile)} className="df-btn">
                       Download
                     </Button>
+                  </span>
+                  <span className="df-gallery-facts">
+                    <ActivityFacts activity={tile.activity} />
+                    {tile.similar ? <span className="df-gallery-similar">{tile.similarCopy}</span> : null}
                   </span>
                 </div>
               ))}
@@ -692,6 +710,40 @@ function ActivityGallery({
         </div>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The minute before a capture: two short bars and their figures, or the plain
+ * words when the agent recorded nothing. Low activity is said in text; the
+ * warning tone on the bars only backs the words up.
+ */
+function ActivityFacts({ activity }: { activity: TileActivity }) {
+  if (!activity.hasData) {
+    return <span className="df-gallery-noactivity df-meta">{activity.label}</span>;
+  }
+  return (
+    <span className="df-activity-facts" data-low={activity.low ? "true" : "false"} title={activity.label}>
+      {activity.low ? (
+        <span className="df-status-word" data-tone="active">
+          Low activity
+        </span>
+      ) : null}
+      {(
+        [
+          ["Keyboard", activity.keyboardPercent],
+          ["Mouse", activity.mousePercent],
+        ] as const
+      ).map(([name, percent]) => (
+        <span key={name} className="df-activity-bar-row">
+          <span className="df-meta">{name}</span>
+          <span className="df-activity-bar" aria-hidden="true">
+            <span style={{ width: `${Math.min(100, Math.max(0, percent ?? 0))}%` }} />
+          </span>
+          <span className="df-activity-figure">{percent} %</span>
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -771,6 +823,19 @@ function CaptureViewer({ viewer, onOpen, onClose, onSave, openerId }: CaptureVie
               <span>Source</span>
               <span>{viewer.tile.source}</span>
             </div>
+            <div className="df-kv">
+              <span>Activity</span>
+              <span>
+                {viewer.tile.activity.low ? "Low activity · " : ""}
+                {viewer.tile.activity.label}
+              </span>
+            </div>
+            {viewer.tile.similar ? (
+              <div className="df-kv">
+                <span>Screen</span>
+                <span>{viewer.tile.similarCopy}</span>
+              </div>
+            ) : null}
           </div>
           <DialogFooter className="df-capture-viewer-actions">
             <Button

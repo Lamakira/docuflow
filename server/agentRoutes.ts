@@ -9,18 +9,8 @@ import express from "express";
 import type { Express, Request, Response, NextFunction } from "express";
 import { randomBytes, createHash } from "crypto";
 import { z } from "zod";
-// sharp is optional — loaded lazily so the server starts even if libvips is unavailable
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let sharpLib: ((input: Buffer) => any) | null = null;
-(async () => {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sharpLib = ((await import("sharp" as any)) as any).default;
-  } catch {
-    console.warn("[agentRoutes] sharp not available — screenshot compression disabled, raw PNG will be stored");
-  }
-})();
 import { storage } from "./storage";
+import { differenceHash, loadSharp } from "./modules/activity/fingerprint";
 import { canAccessCrmProject, visibleProjectScope } from "./modules/projects/access";
 import { isAuthenticated, getUserId } from "./auth";
 import { config } from "./config";
@@ -501,8 +491,11 @@ export function registerAgentRoutes(app: Express): void {
         };
       }
 
-      // The Tracking Policy for the running Project, narrowed by the Plan
-      const screenshotPolicy = await deliveredTrackingPolicy(timerSync ? serverActive!.crmProjectId : null);
+      // The Tracking Policy for the running Project, narrowed by the Plan. The
+      // low-activity threshold is how the gallery reads captures, not a capture
+      // rule, so the Device does not receive it (#341).
+      const { lowActivityThresholdPercent: _readByGallery, ...screenshotPolicy } =
+        await deliveredTrackingPolicy(timerSync ? serverActive!.crmProjectId : null);
 
       logInfo("agent.heartbeat", {
         deviceId: body.deviceId,
@@ -707,8 +700,9 @@ export function registerAgentRoutes(app: Express): void {
         let imageExt: string;
         let imageMime: string;
 
+        const sharpLib = await loadSharp();
         if (sharpLib) {
-          imageBuffer = await (sharpLib as any)(rawBuffer)
+          imageBuffer = await sharpLib(rawBuffer)
             .resize({ width: 1920, withoutEnlargement: true })
             .webp({ quality: 75 })
             .toBuffer();
@@ -741,11 +735,14 @@ export function registerAgentRoutes(app: Express): void {
         // DB storageKey uses /objects/ prefix so getObjectEntityFile() can resolve it
         const storageKey = `/objects/${objectSubPath}`;
         const contentHash = createHash("sha256").update(rawBuffer).digest("hex");
+        // From the original PNG, not the WebP: what the Member saw. Never fails the upload.
+        const perceptualHash = await differenceHash(sharpLib, rawBuffer);
         await commitActivityScreenshot({
           jobs: createActivityJobsPort(),
           id,
           storageKey,
           contentHash,
+          perceptualHash,
         });
 
         logInfo("agent.screenshots.upload", {
