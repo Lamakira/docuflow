@@ -86,6 +86,7 @@ export function SettingsScreen() {
   const [prefs, setPrefs] = useState<{ openAtLogin: boolean; isPackaged: boolean; appVersion: string } | null>(null);
   const [openAtLogin, setOpenAtLogin] = useState(false);
   const [tz, setTz] = useState<'local' | 'utc'>('local');
+  const [noTimerReminder, setNoTimerReminder] = useState<boolean | null>(null);
 
   // Re-read while open: the source flips when a heartbeat lands or fails.
   useEffect(() => {
@@ -98,6 +99,7 @@ export function SettingsScreen() {
   useEffect(() => {
     void window.agentBridge.getLocalPrefs().then((p) => { setPrefs(p); setOpenAtLogin(p.openAtLogin); });
     void window.agentBridge.getDisplayTimezone().then(setTz);
+    void window.agentBridge.getNoTimerReminder().then(setNoTimerReminder);
   }, []);
 
   // A tray deep-link lands on a section; consume it so a later tab switch does
@@ -120,6 +122,16 @@ export function SettingsScreen() {
     { id: 'timezone', label: 'Time Zone', meta: zone, Icon: GlobeIcon },
     { id: 'advanced', label: 'Advanced', meta: 'Device, account, updates', Icon: WrenchIcon },
   ];
+
+  async function saveNoTimerReminder(next: boolean) {
+    setNoTimerReminder(next);
+    try {
+      const result = await window.agentBridge.setNoTimerReminder(next);
+      if (result.ok) return;
+    } catch { /* fall through to revert */ }
+    setNoTimerReminder(!next);
+    showToast('Could not change the reminder setting', 'error');
+  }
 
   async function saveOpenAtLogin(next: boolean) {
     setOpenAtLogin(next);
@@ -275,15 +287,24 @@ export function SettingsScreen() {
           <>
             <StageHead title="Reminders" />
             <p className="v2-set__desc">
-              Reminders nudge you to start tracking when you have been idle or away from DocuFlow.
-              Administrators can configure time-based rules in the web app today.
+              Reminders nudge you to start tracking when you seem to be working without a timer.
             </p>
             <div className="v2-card v2-set__card">
-              <Row label="Nudge when idle without a timer"><Soon /></Row>
+              <Row
+                label="Nudge when working without a timer"
+                hint="A desktop notification when you are working with no timer running."
+              >
+                <Toggle
+                  on={noTimerReminder ?? false}
+                  locked={noTimerReminder === null}
+                  label="Nudge when working without a timer"
+                  onChange={(next) => void saveNoTimerReminder(next)}
+                />
+              </Row>
               <Row label="Daily summary at end of day"><Soon /></Row>
               <Row label="Quiet hours"><Soon /></Row>
             </div>
-            <p className="v2-set__foot">Desktop reminders arrive in a future release.</p>
+            <p className="v2-set__foot">Daily summary and quiet hours arrive in a future release.</p>
           </>
         )}
 

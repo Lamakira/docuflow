@@ -53,6 +53,8 @@ interface PersistedData {
   activeEntryStartTime: string | null;
   /** User-selected display timezone for week/month aggregate boundaries. 'local' = OS timezone (default). 'utc' = UTC. */
   displayTimezone: 'local' | 'utc';
+  /** Device-local preference: nudge when working with no timer running (issue #351). On unless turned off. */
+  noTimerReminderEnabled: boolean;
   /**
    * Which renderer booted last, so the next launch can create the right window.
    *
@@ -116,6 +118,7 @@ export class AgentStore {
       timerStatus: "stopped",
       activeEntryStartTime: null,
       displayTimezone: 'local',
+      noTimerReminderEnabled: true,
       uiMode: null,
     };
     try {
@@ -169,6 +172,12 @@ export class AgentStore {
   getDisplayTimezone(): 'local' | 'utc' { return this.data.displayTimezone ?? 'local'; }
   setDisplayTimezone(tz: 'local' | 'utc'): void {
     this.data.displayTimezone = tz;
+    this.saveToDisk();
+  }
+
+  getNoTimerReminderEnabled(): boolean { return this.data.noTimerReminderEnabled ?? true; }
+  setNoTimerReminderEnabled(enabled: boolean): void {
+    this.data.noTimerReminderEnabled = enabled;
     this.saveToDisk();
   }
 

@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld("agentBridge", {
     ipcRenderer.on("agent:idle-prompt", handler);
     return () => ipcRenderer.off("agent:idle-prompt", handler);
   },
+  onShowTimer: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("agent:show-timer", handler);
+    return () => ipcRenderer.off("agent:show-timer", handler);
+  },
   onIdleDismiss: (callback: () => void) => {
     const handler = () => callback();
     ipcRenderer.on("agent:idle-dismiss", handler);
@@ -108,6 +113,10 @@ contextBridge.exposeInMainWorld("agentBridge", {
   // Display timezone preference
   getDisplayTimezone: (): Promise<'local' | 'utc'> => ipcRenderer.invoke("settings:get-display-timezone"),
   setDisplayTimezone: (tz: 'local' | 'utc') => ipcRenderer.invoke("settings:set-display-timezone", tz),
+
+  // No-timer reminder preference
+  getNoTimerReminder: (): Promise<boolean> => ipcRenderer.invoke("settings:get-no-timer-reminder"),
+  setNoTimerReminder: (enabled: boolean) => ipcRenderer.invoke("settings:set-no-timer-reminder", enabled),
 
   // Period-based worked time (for hover card week/month aggregates)
   getWorkedPeriod: (startIso: string, endIso: string): Promise<{ ok: boolean; total: number }> =>
