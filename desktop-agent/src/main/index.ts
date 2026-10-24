@@ -27,6 +27,15 @@ if (process.platform === "linux") {
   app.commandLine.appendSwitch("enable-features", "WebRTCPipeWireCapturer");
 }
 
+// ─── Windows notification identity ───
+// Toasts show the name and icon of the Start-menu shortcut whose AppUserModelID
+// matches the app's; electron-builder gives that shortcut build.appId. (The app
+// keeps its package name: it locates every installed agent's userData folder.)
+const APP_USER_MODEL_ID = "com.docuflow.agent";
+if (process.platform === "win32") {
+  app.setAppUserModelId(APP_USER_MODEL_ID);
+}
+
 // ─── File logger ───
 // Writes to the platform userData dir — readable without DevTools.
 //   Windows : %APPDATA%\docuflow-desktop-agent\debug.log
@@ -274,10 +283,15 @@ let mainWindowChrome: ChromeMode = 'native';
 /** Pre-paint fill for an opaque v2 window; the renderer confirms it on load. */
 const V2_BACKGROUND = '#f3f5f7';
 
-function createMainWindow(): BrowserWindow {
-  const iconPath = app.isPackaged
+/** The app icon: the window's, and the one reminder notifications carry. */
+function appIconPath(): string {
+  return app.isPackaged
     ? path.join(process.resourcesPath, "assets", "icon.png")
     : path.join(__dirname, "../../assets/icon.png");
+}
+
+function createMainWindow(): BrowserWindow {
+  const iconPath = appIconPath();
 
   const chrome = chromeModeForNextWindow();
   mainWindowChrome = chrome;
@@ -1323,6 +1337,7 @@ function checkPausedReminder(): void {
   const notification = new Notification({
     title: "Timer is paused",
     body: `You seem to be working but "${name}" is paused. Click to resume tracking.`,
+    icon: appIconPath(),
   });
   notification.on("click", () => {
     resumeActiveTimer();
@@ -1365,6 +1380,7 @@ function checkNoTimerReminder(): void {
   const notification = new Notification({
     title: "No timer running",
     body: "You seem to be working. Click to start tracking.",
+    icon: appIconPath(),
   });
   notification.on("click", () => {
     showMainWindow();
