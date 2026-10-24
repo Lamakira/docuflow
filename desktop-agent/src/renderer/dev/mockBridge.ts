@@ -324,6 +324,7 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
     idleBreak: async () => { patch({ status: 'stopped', entryId: null }); idleDismissCbs.forEach((cb) => cb()); return { ok: true }; },
     idleResume: async () => { patch({ status: 'running' }); idleDismissCbs.forEach((cb) => cb()); return { ok: true }; },
     onIdlePrompt: (cb) => { idlePromptCbs.push(cb); return () => idlePromptCbs.splice(idlePromptCbs.indexOf(cb), 1); },
+    onShowTimer: () => () => {},
     onIdleDismiss: (cb) => { idleDismissCbs.push(cb); return () => idleDismissCbs.splice(idleDismissCbs.indexOf(cb), 1); },
 
     getTodayBreakdown: async () => {
@@ -401,6 +402,8 @@ export function createMockBridge(scenario: Scenario = 'running'): AgentBridge {
     copyToClipboard: async (text) => { await navigator.clipboard?.writeText(text).catch(() => {}); return { ok: true }; },
     getDisplayTimezone: async () => 'local',
     setDisplayTimezone: async () => ({ ok: true }),
+    getNoTimerReminder: async () => true,
+    setNoTimerReminder: async () => ({ ok: true }),
 
     checkUpdate: async () => ({
       ok: true, updateAvailable: true, currentVersion: '2.3.9',

@@ -446,14 +446,28 @@ export class ActivityWorker {
    * Public: main uses it for the paused-while-active reminder.
    */
   public getEffectiveIdleSeconds(): number {
+    return this.readIdle().seconds;
+  }
+
+  /**
+   * False when the idle reading is just powerMonitor on Linux/Wayland (Mutter and
+   * uiohook both unavailable): it is often stuck at 0, so it cannot tell away from active.
+   */
+  public idleSourceReliable(): boolean {
+    return this.readIdle().reliable;
+  }
+
+  /** One read of the idle source: seconds and whether it can be trusted. */
+  public readIdle(): { seconds: number; reliable: boolean } {
     if (process.platform === "linux" && isWaylandSession()) {
       const linuxIdle = getLinuxIdleSeconds();
-      if (linuxIdle !== null) return linuxIdle;
+      if (linuxIdle !== null) return { seconds: linuxIdle, reliable: true };
       if (this._uiohookActive) {
-        return Math.floor((Date.now() - this.lastInputAtMs) / 1000);
+        return { seconds: Math.floor((Date.now() - this.lastInputAtMs) / 1000), reliable: true };
       }
+      return { seconds: powerMonitor.getSystemIdleTime(), reliable: false };
     }
-    return powerMonitor.getSystemIdleTime();
+    return { seconds: powerMonitor.getSystemIdleTime(), reliable: true };
   }
 
   private checkIdle(): void {

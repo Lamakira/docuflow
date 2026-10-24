@@ -99,6 +99,7 @@ export interface AgentBridge {
   idleResume: () => Promise<{ ok: boolean; error?: string }>;
   onIdlePrompt: (cb: (data: IdlePromptPayload) => void) => () => void;
   onIdleDismiss: (cb: () => void) => () => void;
+  onShowTimer: (cb: () => void) => () => void;
   getTodayBreakdown: () => Promise<{ ok: boolean; rows: BreakdownRow[]; error?: string }>;
   onLoginProgress: (cb: (data: { message: string }) => void) => () => void;
   onStateUpdate: (cb: (state: any) => void) => void;
@@ -136,6 +137,8 @@ export interface AgentBridge {
   copyToClipboard: (text: string) => Promise<{ ok: boolean }>;
   getDisplayTimezone: () => Promise<'local' | 'utc'>;
   setDisplayTimezone: (tz: 'local' | 'utc') => Promise<{ ok: boolean }>;
+  getNoTimerReminder: () => Promise<boolean>;
+  setNoTimerReminder: (enabled: boolean) => Promise<{ ok: boolean }>;
   getWorkedPeriod: (startIso: string, endIso: string) => Promise<{ ok: boolean; total: number }>;
   /** Tracking Policy in force on this Device and where it came from; null when not paired. */
   getOrgPolicy: () => Promise<DeviceTrackingPolicy | null>;

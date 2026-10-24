@@ -152,7 +152,7 @@ describe("wiring (source)", () => {
 
   it("shares the stop path with agent:timer-stop and runs the reminder interval", () => {
     expect(body(/ipcMain\.handle\("agent:timer-stop"/)).toContain("stopActiveTimer(");
-    expect(main).toContain("setInterval(checkPausedReminder, PAUSED_REMINDER_CHECK_MS)");
+    expect(main).toMatch(/setInterval\(\(\) => \{\s*checkPausedReminder\(\);\s*checkNoTimerReminder\(\);\s*\}, PAUSED_REMINDER_CHECK_MS\)/);
     expect(main).toContain("clearInterval(pausedReminderInterval)");
   });
 

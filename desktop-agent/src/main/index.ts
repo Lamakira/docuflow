@@ -71,12 +71,14 @@ import {
   pausedFromPreviousDay,
   pausedReminderDue,
 } from "../lib/pausedTimer";
+import { nextActiveSince, noTimerReminderDue } from "../lib/noTimerReminder";
 import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
 import { IdleFlow } from "../lib/idleFlow";
 import { droppedIdleCommands, pauseCommandAt, pauseForSystemAway, stopCommandAt, type TimerCommandDraft } from "../lib/systemAway";
 import { timerSyncApplies } from "../lib/timerResync";
 import {
   DEFAULT_TRACKING_POLICY,
+  isWithinActiveHours,
   normalizeTrackingPolicy,
   startupTrackingPolicy,
   type TrackingPolicy,
@@ -228,6 +230,11 @@ let resyncInterval: ReturnType<typeof setInterval> | null = null;
 let workedTodayInterval: ReturnType<typeof setInterval> | null = null;
 let pausedReminderInterval: ReturnType<typeof setInterval> | null = null;
 let lastPausedReminderAt = 0;
+// No-timer reminder (#351). stoppedSince tracks the last time a timer ran (app start / sign-in
+// until then); activeSince is the start of the current run of active checks.
+let noTimerStoppedSince = Date.now();
+let noTimerActiveSince: number | null = null;
+let lastNoTimerReminderAt = 0;
 
 // ─── Suspend / Resume handlers (registered in startWorkers, removed in stopWorkers) ───
 let suspendMainHandler: (() => void) | null = null;
@@ -743,7 +750,10 @@ function startWorkers(): void {
 
   scheduleWorkedTodayTick();
 
-  pausedReminderInterval = setInterval(checkPausedReminder, PAUSED_REMINDER_CHECK_MS);
+  pausedReminderInterval = setInterval(() => {
+    checkPausedReminder();
+    checkNoTimerReminder();
+  }, PAUSED_REMINDER_CHECK_MS);
 
   // System suspend / screen lock — pause the timer here and on the server (dated when the machine slept or locked), manual resume required.
   const onSystemAway = (reason: string) => pauseTimerForSystemAway(reason);
@@ -1037,6 +1047,8 @@ ipcMain.handle("agent:login", async (event, { pairingCode }) => {
     // and active entry context cannot leak to the new user.
     store.clearTimer();
     store.setWorkedTodayServerBase(0);
+    noTimerStoppedSince = Date.now();
+    noTimerActiveSince = null;
 
     console.log(`[Main] auth.pair.success — user=${result.user.email} device=${result.deviceId}`);
     startWorkers();
@@ -1320,6 +1332,48 @@ function checkPausedReminder(): void {
   console.log(`[Main] paused-reminder shown (entry=${entryId})`);
 }
 
+/** Notify the Member when they are active while no timer runs (#351). Local only: never started, queued or synced. */
+function checkNoTimerReminder(): void {
+  if (!store.isPaired() || !activityWorker) return;
+  const now = Date.now();
+  // Running or paused counts as tracking: the stopped clock starts when it ends.
+  const status = store.getActiveEntryId() ? store.getTimerStatus() : "stopped";
+  if (status !== "stopped") noTimerStoppedSince = now;
+  // Nothing to decide unless the preference is on and no timer runs: skip the idle read.
+  const enabled = store.getNoTimerReminderEnabled();
+  if (!enabled || status !== "stopped") {
+    noTimerActiveSince = null;
+    return;
+  }
+  const { seconds, reliable } = activityWorker.readIdle();
+  noTimerActiveSince = nextActiveSince(noTimerActiveSince, seconds, now);
+
+  if (!Notification.isSupported()) return;
+  if (!noTimerReminderDue({
+    enabled,
+    timerStatus: status,
+    stoppedSinceMs: noTimerStoppedSince,
+    activeSinceMs: noTimerActiveSince,
+    lastReminderAtMs: lastNoTimerReminderAt,
+    nowMs: now,
+    withinActiveHours: isWithinActiveHours(trackingPolicy, new Date(now)),
+    blocked: idleFlow.active || pausedForScreenshotPortal,
+    idleSourceReliable: reliable,
+  })) return;
+
+  lastNoTimerReminderAt = now;
+  const notification = new Notification({
+    title: "No timer running",
+    body: "You seem to be working. Click to start tracking.",
+  });
+  notification.on("click", () => {
+    showMainWindow();
+    mainWindow?.webContents.send("agent:show-timer");
+  });
+  notification.show();
+  console.log("[Main] no-timer reminder shown");
+}
+
 ipcMain.handle("agent:timer-state", () => {
   return store.getTimerState();
 });
@@ -1378,6 +1432,13 @@ ipcMain.handle("settings:copy-to-clipboard", (_event, text: string) => {
 });
 
 ipcMain.handle("settings:get-display-timezone", () => store.getDisplayTimezone());
+
+ipcMain.handle("settings:get-no-timer-reminder", () => store.getNoTimerReminderEnabled());
+
+ipcMain.handle("settings:set-no-timer-reminder", (_event, enabled: boolean) => {
+  store.setNoTimerReminderEnabled(enabled === true);
+  return { ok: true };
+});
 
 ipcMain.handle("settings:set-display-timezone", (_event, tz: string) => {
   const value = tz === 'utc' ? 'utc' : 'local';
