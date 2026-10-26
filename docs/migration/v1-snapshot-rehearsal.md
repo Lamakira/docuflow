@@ -3,7 +3,7 @@
 - **Recorded:** 2026-10-26
 - **Ticket:** [#355](https://github.com/Lamakira/docuflow/issues/355) (ADR-0017, ADR-0018, ADR-0022)
 - **Source:** a `pg_dump -Fc` of the v1 production database, exported by the operator on 2026-10-26 at 13:30:39 UTC and held on the operator's machine outside this repository. The export was restored into a scratch database, `docuflow_rehearsal`, on the operator's local PostgreSQL 16. The v2 production database, the Replit development database and the test database were not touched.
-- **Verdict:** **the pipeline runs on real v1 data**. It needed two fixes, both made in this ticket: the v1 schema does not fit `--baseline 0002`, and three file columns had no scrub rule. No objects were copied, so the key check against the v1 bucket is still open (see *Still open*).
+- **Verdict:** **the pipeline runs on real v1 data**. It needed two fixes, both made in this ticket: the v1 schema does not fit `--baseline 0002`, and three file columns had no scrub rule. No objects were copied. The key check ran against a listing of the v1 bucket: the only missing objects are the 95 screenshots whose upload never finished in v1 (see *Key check against the v1 bucket*).
 
 Counts only. No email, name, file name or storage key from production appears in this record.
 
@@ -117,6 +117,30 @@ Keys the database names: **16,446**.
 
 The 3 public note attachments are not in the key check, which reads only `storage_key` / `storage_path` columns.
 
+### Key check against the v1 bucket
+
+The operator listed the v1 bucket's object names from the v1 Replit Shell, through the Replit sidecar. That gave 17,591 objects in the bucket the database names:
+
+| Prefix | Objects |
+| --- | ---: |
+| `.private/agent-screenshots/` | 17,360 |
+| `.private/uploads/` | 175 |
+| `public/uploads/` | 40 |
+| `public/installers/` | 15 |
+| `public/` (folder marker) | 1 |
+
+`npm run snapshot:check -- --keys <listing>` exits 1 with **95 dangling keys**. These are exactly the 95 `pending-<timestamp>` screenshot rows; every other key resolves.
+
+The check covers only the `storage_key` / `storage_path` columns. So the rest of the data was searched separately for `/objects/…` and `/public-objects/…` references, in documents, notes, recordings and every other table except screenshots and activity events. That found 149 distinct references: 121 private uploads and 28 public ones. **All 149 are in the bucket.**
+
+The bucket also holds objects nothing references:
+- 1,014 screenshots with no row, most likely captures v1 deleted;
+- 54 private uploads;
+- 12 public uploads;
+- the 15 installers, which `desktop_releases` no longer points at after the scrub.
+
+They cost nothing to carry. A whole-bucket copy is simpler than a selective one, and it keeps any reference this search missed working.
+
 ## Identity
 
 `npm run identity:import:users -- --dry-run`, as `docuflow_app`:
@@ -143,7 +167,7 @@ Sign-in was not exercised: Clerk production does not exist yet.
 
 ## Still open
 
-- **The key check against the v1 bucket.** It needs the operator's listing of the v1 bucket's object keys. Then run `npm run snapshot:check -- --keys <listing>` and record the number of dangling keys here. Expect at least the 95 `pending-…` rows.
+- **The key check misses content references.** `snapshot:check --keys` reads only `storage_key` / `storage_path`. The 149 references inside documents, notes and recordings were checked by hand for this record. A cutover run should check them by command too.
 - **Screenshot fingerprints.** 16,346 live captures need `scripts/backfill-screenshot-fingerprints.ts`. It reads every image, so it runs where the objects are, after the copy. This is a cutover step.
 
 ## Decisions for the cutover
