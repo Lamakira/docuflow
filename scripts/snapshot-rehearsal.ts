@@ -118,9 +118,12 @@ export function ownBucketsOf(env: Record<string, string | undefined>): string[] 
   return Array.from(new Set(buckets));
 }
 
-/** The prefix beneath the bucket that `PRIVATE_OBJECT_DIR` names, without slashes. */
-function privatePrefixOf(privateDir: string): string {
-  return privateDir.replace(/^\//, "").split("/").slice(1).join("/");
+/**
+ * The object-name prefix beneath the bucket that a root names, without slashes:
+ * `.private` for `PRIVATE_OBJECT_DIR`, `public` for a public search path.
+ */
+function prefixOfRoot(root: string): string {
+  return root.trim().replace(/^\//, "").split("/").slice(1).join("/");
 }
 
 /**
@@ -137,7 +140,7 @@ export function toObjectName(value: string, privateDir: string): string {
 
   if (value.startsWith("/objects/")) {
     const entityId = value.slice("/objects/".length);
-    const prefix = privatePrefixOf(privateDir);
+    const prefix = prefixOfRoot(privateDir);
     return prefix ? `${prefix}/${entityId}` : entityId;
   }
 
@@ -160,7 +163,101 @@ const KEY_SOURCES: ColumnRef[] = [
 export interface ScrubRule extends ColumnRef {
   /** Shown in the report, so the run says what it did and why. */
   label: string;
-  apply(client: Client, ownBuckets: string[]): Promise<number>;
+  apply(client: Client, context: ScrubContext): Promise<number>;
+}
+
+/** What a rule needs to know about this environment, built once from its configuration. */
+export interface ScrubContext {
+  ownBuckets: string[];
+  /** `PRIVATE_OBJECT_DIR`, e.g. `/<bucket>/.private`. */
+  privateDir: string;
+  /** Each `PUBLIC_OBJECT_SEARCH_PATHS` entry, e.g. `/<bucket>/public`. */
+  publicSearchPaths: string[];
+}
+
+/** The context `main` and the tests build from an environment. */
+export function scrubContextOf(env: Record<string, string | undefined>): ScrubContext {
+  return {
+    ownBuckets: ownBucketsOf(env),
+    privateDir: env.PRIVATE_OBJECT_DIR ?? "",
+    publicSearchPaths: (env.PUBLIC_OBJECT_SEARCH_PATHS ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  };
+}
+
+/** The name after `prefix/`, or undefined when the object lies outside it. */
+function underPrefix(objectName: string, prefix: string): string | undefined {
+  const head = prefix ? `${prefix}/` : "";
+  if (!objectName.startsWith(head)) return undefined;
+  const rest = objectName.slice(head.length);
+  return rest.length > 0 ? rest : undefined;
+}
+
+/** A URL carrying a query string or fragment is more than an object name; never rewritten. */
+function isBareStorageUrl(url: string): boolean {
+  return !/[?#]/.test(url);
+}
+
+function refusal(table: string, column: string, rows: number, why: string): Error {
+  return new Error(
+    `Refusing to scrub ${table}.${column}: ${rows} row(s) hold a foreign storage URL that ${why}. ` +
+      `Nothing was written.`
+  );
+}
+
+/**
+ * A `storage_path` column holding one bare URL per row. The object copy
+ * (ADR-0022) is key-preserving, so an object named `.private/uploads/<id>` in
+ * the production bucket sits under the same name in ours, and v2 reaches a
+ * private object as `/objects/<entityId>` beneath `PRIVATE_OBJECT_DIR`. The
+ * v2 path form is therefore the faithful rewrite. A value that is anything
+ * other than exactly one URL under our private prefix is not rewritten on a
+ * guess: the run refuses.
+ */
+function storagePathRule(table: string): ScrubRule {
+  return {
+    table,
+    column: "storage_path",
+    label: "→ /objects/{key}",
+    async apply(client, { ownBuckets, privateDir }) {
+      const prefix = prefixOfRoot(privateDir);
+      const { rows } = await client.query<{ id: string; storage_path: string }>(
+        `SELECT id, storage_path FROM ${quoted(table)} WHERE storage_path IS NOT NULL`
+      );
+
+      const rewrites: { id: string; path: string }[] = [];
+      let misfits = 0;
+      for (const row of rows) {
+        const foreign = foreignStorageUrls(row.storage_path, ownBuckets);
+        if (foreign.length === 0) continue;
+
+        const entityId =
+          foreign.length === 1 && foreign[0] === row.storage_path && isBareStorageUrl(row.storage_path)
+            ? underPrefix(splitStorageUrl(row.storage_path).objectName, prefix)
+            : undefined;
+        if (entityId === undefined) {
+          misfits += 1;
+        } else {
+          rewrites.push({ id: row.id, path: `/objects/${entityId}` });
+        }
+      }
+
+      if (misfits > 0) {
+        throw refusal(
+          table,
+          "storage_path",
+          misfits,
+          `is not exactly one bare URL under the private prefix '${prefix}/'`
+        );
+      }
+      for (const { id, path } of rewrites) {
+        await client.query(`UPDATE ${quoted(table)} SET storage_path = $1 WHERE id = $2`, [path, id]);
+      }
+      return rewrites.length;
+    },
+  };
 }
 
 const SCRUB_RULES: ScrubRule[] = [
@@ -174,7 +271,7 @@ const SCRUB_RULES: ScrubRule[] = [
      * already understands. Until this environment has built an installer, that
      * path reports the platform unavailable, which is the honest state (#60).
      */
-    async apply(client, ownBuckets) {
+    async apply(client, { ownBuckets }) {
       const { rows } = await client.query<{ id: string; platform: string; storage_url: string }>(
         `SELECT id, platform, storage_url FROM desktop_releases WHERE storage_url IS NOT NULL`
       );
@@ -186,6 +283,75 @@ const SCRUB_RULES: ScrubRule[] = [
         ]);
       }
       return foreign.length;
+    },
+  },
+  storagePathRule("files"),
+  storagePathRule("company_documents"),
+  {
+    table: "crm_project_notes",
+    column: "attachments",
+    label: "→ /public-objects/{key}",
+    /**
+     * `attachments` is a JSON array held in a `text` column. The copy is
+     * key-preserving (ADR-0022), so `public/uploads/<id>` in the production
+     * bucket is the same object name in ours, and v2 serves public objects as
+     * `/public-objects/<key>` by searching `<searchPath>/<key>` over
+     * `PUBLIC_OBJECT_SEARCH_PATHS`. The key is the object name without the
+     * search path's prefix, so it resolves to the copied object. Each URL is
+     * replaced in place and the rest of the text is left byte for byte. A URL
+     * outside every search-path prefix, or with a query string or fragment, makes
+     * the run refuse.
+     */
+    async apply(client, { ownBuckets, publicSearchPaths }) {
+      const prefixes = publicSearchPaths.map(prefixOfRoot);
+      const keyOf = (url: string): string | undefined => {
+        if (!isBareStorageUrl(url)) return undefined;
+        const { objectName } = splitStorageUrl(url);
+        for (const prefix of prefixes) {
+          const key = underPrefix(objectName, prefix);
+          if (key !== undefined) return key;
+        }
+        return undefined;
+      };
+
+      const { rows } = await client.query<{ id: string; attachments: string }>(
+        `SELECT id, attachments FROM crm_project_notes WHERE attachments IS NOT NULL`
+      );
+
+      const rewrites: { id: string; text: string }[] = [];
+      let misfits = 0;
+      for (const row of rows) {
+        if (foreignStorageUrls(row.attachments, ownBuckets).length === 0) continue;
+
+        let fits = true;
+        const text = row.attachments.replace(STORAGE_URL, (match) => {
+          if (foreignStorageUrls(match, ownBuckets).length === 0) return match;
+          const key = keyOf(match);
+          if (key === undefined) {
+            fits = false;
+            return match;
+          }
+          return `/public-objects/${key}`;
+        });
+        if (fits) {
+          rewrites.push({ id: row.id, text });
+        } else {
+          misfits += 1;
+        }
+      }
+
+      if (misfits > 0) {
+        throw refusal(
+          "crm_project_notes",
+          "attachments",
+          misfits,
+          `is outside the public search paths (${publicSearchPaths.join(", ")}) or carries a query string or fragment`
+        );
+      }
+      for (const { id, text } of rewrites) {
+        await client.query(`UPDATE crm_project_notes SET attachments = $1 WHERE id = $2`, [text, id]);
+      }
+      return rewrites.length;
     },
   },
 ];
@@ -259,10 +425,10 @@ export async function scanStorageUrls(
  */
 export async function scrubStorageUrls(
   client: Client,
-  ownBuckets: string[],
+  context: ScrubContext,
   report: Report = () => {}
 ): Promise<StorageUrlFinding[]> {
-  const findings = await scanStorageUrls(client, ownBuckets);
+  const findings = await scanStorageUrls(client, context.ownBuckets);
 
   const undeclared = findings.filter((finding) => finding.rule === undefined);
   if (undeclared.length > 0) {
@@ -278,10 +444,21 @@ export async function scrubStorageUrls(
     );
   }
 
-  for (const { table, column, rule } of findings) {
-    const changed = await rule!.apply(client, ownBuckets);
-    report(`scrubbed ${table}.${column}: ${changed} row(s) ${rule!.label}`);
+  // One transaction: a rule that refuses midway must not leave the earlier
+  // rules' rewrites behind.
+  const messages: string[] = [];
+  await client.query("BEGIN");
+  try {
+    for (const { table, column, rule } of findings) {
+      const changed = await rule!.apply(client, context);
+      messages.push(`scrubbed ${table}.${column}: ${changed} row(s) ${rule!.label}`);
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   }
+  messages.forEach((message) => report(message));
 
   return findings;
 }
@@ -371,7 +548,8 @@ function parseArgs(argv: string[]): Options {
 async function main(options: Options): Promise<number> {
   assertRehearsalTarget(process.env);
 
-  const ownBuckets = ownBucketsOf(process.env);
+  const context = scrubContextOf(process.env);
+  const { ownBuckets, privateDir } = context;
   if (ownBuckets.length === 0) {
     throw new Error(
       `No object-storage roots configured. PRIVATE_OBJECT_DIR and ` +
@@ -380,7 +558,6 @@ async function main(options: Options): Promise<number> {
     );
   }
 
-  const privateDir = process.env.PRIVATE_OBJECT_DIR ?? "";
   console.log(`rehearsing ${maskDatabaseUrl(options.against)}`);
   console.log(`this environment's buckets: ${ownBuckets.join(", ")}`);
 
@@ -388,7 +565,7 @@ async function main(options: Options): Promise<number> {
   await client.connect();
   try {
     if (options.scrub) {
-      await scrubStorageUrls(client, ownBuckets, (message) => console.log(message));
+      await scrubStorageUrls(client, context, (message) => console.log(message));
     }
 
     const findings = await scanStorageUrls(client, ownBuckets);

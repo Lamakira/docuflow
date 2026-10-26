@@ -164,6 +164,39 @@ baselined before running it: `npm run db:verify -- --against "$URL"` is that
 check, and it reports anything the database has that the journal does not.
 `npm run db:migrate:status` afterwards should show every migration applied.
 
+### The v1 production database
+
+The `--baseline 0002_slimy_whirlwind` line above describes a database that has
+the daily-update tables. v1 production does not. A rehearsal on the real v1
+export (2026-10-26, #355) measured it against a database built from `0000`–`0002`:
+it equals `0000_fair_amazoness` exactly, except that `project_daily_updates` does
+not exist at all — no table, no foreign keys, no indexes. `0001` (which alters
+that table) and `0002` (`users.can_view_daily_updates`) are not applied either.
+
+So baseline through `0000`, after creating the missing table. The statements are
+in `migrations/cutover/v1-project-daily-updates.sql`, copied from `0000`; like
+`legacy/`, it is not in the journal and the runner never applies it.
+
+```bash
+psql "$DATABASE_MIGRATE_URL" -v ON_ERROR_STOP=1 -f migrations/cutover/v1-project-daily-updates.sql
+npm run db:migrate -- --baseline 0000_fair_amazoness
+npm run db:verify -- --against "$DATABASE_MIGRATE_URL"
+```
+
+`db:migrate` then applies `0001` onwards for real. `0003` and `0004` use
+`IF NOT EXISTS`, so v1's existing `idx_time_entries_task_id` and missing vector
+columns are both fine. `db:verify` should report that the schema matches the
+journal exactly. Run the cutover file once, on the restored copy of the v1
+export only, never on v1 itself, which stays untouched as the rollback
+(ADR-0018). It is not a journal migration because every database built from the
+journal already has the table through `0000`; like `--baseline`, it corrects one
+database's history rather than the schema.
+
+v1 has no `org_settings` row, so seed afterwards with
+`NODE_ENV=production npm run db:seed`. Without `NODE_ENV=production` the seed
+also creates the demo Workspace "Harbour View". The full rehearsal record is
+[`docs/migration/v1-snapshot-rehearsal.md`](../docs/migration/v1-snapshot-rehearsal.md).
+
 ## Adding a migration
 
 1. Change `shared/schema.ts`.
