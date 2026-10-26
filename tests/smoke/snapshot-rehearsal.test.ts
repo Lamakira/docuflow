@@ -8,6 +8,7 @@ import {
   ownBucketsOf,
   readManifestKeys,
   scanStorageUrls,
+  type ScrubContext,
   scrubStorageUrls,
   toObjectName,
 } from "../../scripts/snapshot-rehearsal";
@@ -33,6 +34,12 @@ import { SEEDED_WORKSPACE_ID } from "../../shared/schema";
 
 const OWN_BUCKET = "test-bucket";
 const OWN_PRIVATE_DIR = `/${OWN_BUCKET}/.private`;
+const OWN_PUBLIC_PATH = `/${OWN_BUCKET}/public`;
+const CONTEXT: ScrubContext = {
+  ownBuckets: [OWN_BUCKET],
+  privateDir: OWN_PRIVATE_DIR,
+  publicSearchPaths: [OWN_PUBLIC_PATH],
+};
 const FOREIGN = "https://storage.googleapis.com/docuflow-production/.private/uploads/abc";
 
 const url = resolveTestDatabaseUrl();
@@ -192,7 +199,7 @@ describe("scrubbing a restored database", () => {
   it("points a production installer row at this environment instead", async () => {
     await insertRelease("https://storage.googleapis.com/docuflow-production/installers/setup.exe");
 
-    await withClient(url, (client) => scrubStorageUrls(client, [OWN_BUCKET]));
+    await withClient(url, (client) => scrubStorageUrls(client, CONTEXT));
 
     // `/downloads/:platform` is what downloadRoutes.ts treats as a local
     // artifact, and it reports the platform unavailable while this environment
@@ -204,7 +211,7 @@ describe("scrubbing a restored database", () => {
     const ours = `https://storage.googleapis.com/${OWN_BUCKET}/installers/setup.exe`;
     await insertRelease(ours);
 
-    await withClient(url, (client) => scrubStorageUrls(client, [OWN_BUCKET]));
+    await withClient(url, (client) => scrubStorageUrls(client, CONTEXT));
 
     expect(await releaseUrl()).toBe(ours);
   });
@@ -216,7 +223,7 @@ describe("scrubbing a restored database", () => {
     );
 
     await expect(
-      withClient(url, (client) => scrubStorageUrls(client, [OWN_BUCKET]))
+      withClient(url, (client) => scrubStorageUrls(client, CONTEXT))
     ).rejects.toThrow(/users\.profile_image_url/);
   });
 
@@ -228,12 +235,140 @@ describe("scrubbing a restored database", () => {
     await insertRelease("https://storage.googleapis.com/docuflow-production/installers/setup.exe");
 
     await expect(
-      withClient(url, (client) => scrubStorageUrls(client, [OWN_BUCKET]))
+      withClient(url, (client) => scrubStorageUrls(client, CONTEXT))
     ).rejects.toThrow();
 
     expect(await releaseUrl()).toBe(
       "https://storage.googleapis.com/docuflow-production/installers/setup.exe"
     );
+  });
+
+  describe("storage paths and attachments", () => {
+    const V1 = "https://storage.googleapis.com/docuflow-v1";
+    let userId: string;
+
+    beforeEach(async () => {
+      userId = await insertUser();
+    });
+
+    async function insertFile(table: "files" | "company_documents", path: string): Promise<string> {
+      const id = randomUUID();
+      await withClient(url, (client) =>
+        client.query(
+          `INSERT INTO ${table} (id, name, storage_path, uploaded_by_id, workspace_id)
+           VALUES ($1, 'Doc', $2, $3, $4)`,
+          [id, path, userId, SEEDED_WORKSPACE_ID]
+        )
+      );
+      return id;
+    }
+
+    async function pathOf(table: string, id: string): Promise<string> {
+      const { rows } = await withClient(url, (client) =>
+        client.query(`SELECT storage_path FROM ${table} WHERE id = $1`, [id])
+      );
+      return rows[0].storage_path;
+    }
+
+    async function insertNote(attachments: string): Promise<string> {
+      const id = randomUUID();
+      const projectId = randomUUID();
+      const crmProjectId = randomUUID();
+      await withClient(url, async (client) => {
+        await client.query(
+          `INSERT INTO projects (id, name, owner_id, workspace_id) VALUES ($1, 'P', $2, $3)`,
+          [projectId, userId, SEEDED_WORKSPACE_ID]
+        );
+        await client.query(
+          `INSERT INTO crm_projects (id, project_id, workspace_id) VALUES ($1, $2, $3)`,
+          [crmProjectId, projectId, SEEDED_WORKSPACE_ID]
+        );
+        await client.query(
+          `INSERT INTO crm_project_notes (id, crm_project_id, content, created_by_id, attachments, workspace_id)
+           VALUES ($1, $2, 'note', $3, $4, $5)`,
+          [id, crmProjectId, userId, attachments, SEEDED_WORKSPACE_ID]
+        );
+      });
+      return id;
+    }
+
+    async function attachmentsOf(id: string): Promise<string> {
+      const { rows } = await withClient(url, (client) =>
+        client.query(`SELECT attachments FROM crm_project_notes WHERE id = $1`, [id])
+      );
+      return rows[0].attachments;
+    }
+
+    it.each(["files", "company_documents"] as const)(
+      "rewrites a foreign private URL in %s.storage_path to /objects/ and leaves /objects/ rows",
+      async (table) => {
+        const foreignId = await insertFile(table, `${V1}/.private/uploads/abc`);
+        const localId = await insertFile(table, "/objects/uploads/def");
+
+        await withClient(url, (client) => scrubStorageUrls(client, CONTEXT));
+
+        expect(await pathOf(table, foreignId)).toBe("/objects/uploads/abc");
+        expect(await pathOf(table, localId)).toBe("/objects/uploads/def");
+      }
+    );
+
+    it("rewrites a foreign public URL inside attachments and keeps the other fields", async () => {
+      const attachments = JSON.stringify([
+        { url: `${V1}/public/uploads/abc`, filename: "a.pdf", filesize: 164158, filetype: "application/pdf" },
+      ]);
+      const id = await insertNote(attachments);
+
+      await withClient(url, (client) => scrubStorageUrls(client, CONTEXT));
+
+      expect(await attachmentsOf(id)).toBe(
+        attachments.replace(`${V1}/public/uploads/abc`, "/public-objects/uploads/abc")
+      );
+    });
+
+    it("refuses a private URL outside the private prefix and changes nothing", async () => {
+      const okId = await insertFile("files", `${V1}/.private/uploads/abc`);
+      const badId = await insertFile("company_documents", `${V1}/other/x`);
+
+      await expect(
+        withClient(url, (client) => scrubStorageUrls(client, CONTEXT))
+      ).rejects.toThrow(/company_documents\.storage_path.*1 row/);
+
+      expect(await pathOf("files", okId)).toBe(`${V1}/.private/uploads/abc`);
+      expect(await pathOf("company_documents", badId)).toBe(`${V1}/other/x`);
+    });
+
+    it("refuses a storage_path that is more than the bare URL", async () => {
+      await insertFile("files", `${V1}/.private/uploads/abc?X-Goog-Signature=1`);
+
+      await expect(
+        withClient(url, (client) => scrubStorageUrls(client, CONTEXT))
+      ).rejects.toThrow(/files\.storage_path/);
+    });
+
+    it("refuses an attachment outside the public prefix and rolls back earlier rules", async () => {
+      await insertRelease("https://storage.googleapis.com/docuflow-production/installers/setup.exe");
+      const id = await insertNote(JSON.stringify([{ url: `${V1}/elsewhere/abc` }]));
+
+      await expect(
+        withClient(url, (client) => scrubStorageUrls(client, CONTEXT))
+      ).rejects.toThrow(/crm_project_notes\.attachments.*1 row/);
+
+      expect(await releaseUrl()).toBe(
+        "https://storage.googleapis.com/docuflow-production/installers/setup.exe"
+      );
+      expect(await attachmentsOf(id)).toContain(`${V1}/elsewhere/abc`);
+    });
+
+    it("keeps the rewritten rows named by the same object names the copy carries", async () => {
+      await insertFile("files", `${V1}/.private/uploads/abc`);
+      await insertFile("company_documents", `${V1}/.private/uploads/def`);
+
+      await withClient(url, (client) => scrubStorageUrls(client, CONTEXT));
+      const keys = await withClient(url, (client) => namedStorageKeys(client, OWN_PRIVATE_DIR));
+
+      expect(keys).toContain(".private/uploads/abc");
+      expect(keys).toContain(".private/uploads/def");
+    });
   });
 });
 
