@@ -18,6 +18,17 @@ import { copyToClipboard, isStandingRefusal, notify } from "./notify";
 import { statusTone } from "./palette";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { V2EmptyState } from "./V2EmptyState";
 import { SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
 
@@ -37,7 +48,6 @@ export function V2DevicesPage() {
     code: null,
     expiresAt: null,
   });
-  const [revokeKey, setRevokeKey] = useState<string | null>(null);
   const [actionRefusal, setActionRefusal] = useState<string | null>(null);
 
   const { data, isLoading, isError } = useQuery<DevicesResponse>({
@@ -92,7 +102,6 @@ export function V2DevicesPage() {
       apiRequest("POST", revokeMachinePath(), { name: row.name, os: row.os }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [agentDevicesPath()] });
-      setRevokeKey(null);
       setActionRefusal(null);
       notify.success("Device revoked");
     },
@@ -112,10 +121,6 @@ export function V2DevicesPage() {
   function onRevoke(row: { key: string; name: string; os: string | null }) {
     if (!page.revokeAllowed) {
       setActionRefusal(page.writeRefusal);
-      return;
-    }
-    if (revokeKey !== row.key) {
-      setRevokeKey(row.key);
       return;
     }
     revoke.mutate({ name: row.name, os: row.os });
@@ -238,9 +243,7 @@ export function V2DevicesPage() {
                       <RevokeControl
                         row={row}
                         pending={revoke.isPending}
-                        confirming={revokeKey === row.key}
                         onRevoke={onRevoke}
-                        onCancel={() => setRevokeKey(null)}
                       />
                     ) : null}
                   </span>
@@ -260,10 +263,8 @@ export function V2DevicesPage() {
                         <RevokeControl
                           row={row}
                           pending={revoke.isPending}
-                          confirming={revokeKey === row.key}
-                          onRevoke={onRevoke}
-                          onCancel={() => setRevokeKey(null)}
-                        />
+                            onRevoke={onRevoke}
+                          />
                       ) : null}
                     </span>
                   </>
@@ -320,34 +321,46 @@ function InstallerRowView({ row }: { row: InstallerRow }) {
 function RevokeControl({
   row,
   pending,
-  confirming,
   onRevoke,
-  onCancel,
 }: {
   row: { key: string; name: string; os: string | null };
   pending: boolean;
-  confirming: boolean;
   onRevoke: (row: { key: string; name: string; os: string | null }) => void;
-  onCancel: () => void;
 }) {
-  if (confirming) {
-    return (
-      <span className="df-devices-confirm">
-        <span className="df-empty df-flush">
-          Revoke this Device Enrollment? It ends access to the Workspace.
-        </span>
-        <Button variant="outline" type="button" disabled={pending} data-testid={`v2-devices-revoke-${row.key}`} onClick={() => onRevoke(row)} className="df-btn">
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="destructiveOutline"
+          type="button"
+          disabled={pending}
+          data-testid={`v2-devices-revoke-${row.key}`}
+          className="df-btn"
+        >
           Revoke
         </Button>
-        <Button variant="outline" type="button" onClick={onCancel} className="df-btn">
-          Cancel
-        </Button>
-      </span>
-    );
-  }
-  return (
-    <Button variant="outline" type="button" disabled={pending} data-testid={`v2-devices-revoke-${row.key}`} onClick={() => onRevoke(row)} className="df-btn">
-      Revoke
-    </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent className="df-v2 df-alert">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Revoke this Device?</AlertDialogTitle>
+          <AlertDialogDescription>
+            It ends {row.name}&rsquo;s access to the Workspace.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel className="df-btn" autoFocus>
+            Keep Device
+          </AlertDialogCancel>
+          <AlertDialogAction
+            className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            disabled={pending}
+            data-testid={`v2-devices-revoke-confirm-${row.key}`}
+            onClick={() => onRevoke(row)}
+          >
+            Revoke
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

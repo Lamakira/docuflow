@@ -351,3 +351,25 @@ function reducedMotionCss(): string {
     .map((match) => match[1])
     .join("\n");
 }
+
+describe("Revoking a Device confirms in an AlertDialog (F7)", () => {
+  const source = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Devices.tsx"),
+    "utf8",
+  );
+
+  it("opens a dialog from Revoke and revokes only from the dialog's Revoke", () => {
+    const control = source.slice(source.indexOf("function RevokeControl("));
+    expect(control).toMatch(/<AlertDialog>\s*<AlertDialogTrigger asChild>\s*<Button\s+variant="destructiveOutline"/);
+    expect(control).toContain("data-testid={`v2-devices-revoke-${row.key}`}");
+    expect(control).toContain('<AlertDialogContent className="df-v2 df-alert">');
+    expect(control).toContain("<AlertDialogTitle>Revoke this Device?</AlertDialogTitle>");
+    expect(control).toMatch(/<AlertDialogCancel className="df-btn" autoFocus>\s*Keep Device/);
+    expect(control).toMatch(
+      /<AlertDialogAction\s+className="df-btn bg-destructive[^"]*"\s+disabled=\{pending\}\s+data-testid=\{`v2-devices-revoke-confirm-\$\{row\.key\}`\}\s+onClick=\{\(\) => onRevoke\(row\)\}/,
+    );
+    // The trigger only opens the dialog; no inline confirming state remains.
+    expect(source).not.toContain("revokeKey");
+    expect(source).not.toContain("df-devices-confirm");
+  });
+});

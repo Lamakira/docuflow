@@ -66,7 +66,6 @@ describe("v2 row actions look like controls", () => {
     for (const container of [
       ".df-register-row",
       ".df-people-action",
-      ".df-devices-confirm",
       ".df-card-head",
     ]) {
       expect(block).toContain(`${container} .df-btn`);

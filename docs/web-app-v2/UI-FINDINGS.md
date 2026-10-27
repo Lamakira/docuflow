@@ -258,3 +258,31 @@ Administration is the outlier.
 has to explain itself, and the page already does. Worth deciding in the same
 pass whether the rail should say anything at all about a hidden destination, or
 simply not draw it.
+
+---
+
+## F7 — Devices, revoking a Device still confirms inline, not in a modal
+
+- **Status:** closed
+- **Found:** 2026-10-27, by the owner, on the first day of the v1 → v2 cutover
+- **Where:** `client/src/v2/V2Devices.tsx` (`RevokeControl`, used twice at the row and on the stacked mobile row), `client/src/v2/tokens.css` (`.df-devices-confirm`)
+- **Severity:** degrading. The guard works (one press does not revoke), but the confirmation looks unlike every other destructive one in v2
+- **Fixed:** 2026-10-27. Revoke now opens `alert-dialog.tsx` like the other destructive confirmations; the inline confirming state, `revokeKey` and `.df-devices-confirm` are gone.
+
+Pressing `Revoke` on a Device row swaps the button for a sentence and two
+buttons inside the row: "Revoke this Device Enrollment? It ends access to the
+Workspace.", then `Revoke` and `Cancel`. The question wraps over two lines in the
+action column and pushes the row taller. Both buttons are the same outline
+style, so the destructive one does not read as destructive.
+
+F5 called this the pattern that "works because it lives inside a narrow register
+row". That stopped being true: since F5 was fixed, the destructive confirmations
+in Administration, Workspace Documents, the Project Dossier, Opportunities and
+the back office all open `alert-dialog.tsx`. Devices is now the one left behind,
+and the owner noticed the difference at once.
+
+**What it would take:** replace `RevokeControl`'s inline state with the same
+`AlertDialog` the other screens use. `Revoke` opens it, and the dialog carries
+the consequence and a destructive `Revoke` action. Drop `.df-devices-confirm`
+and the `revokeKey` state that only the inline shape needs. The stacked mobile
+row gets the same dialog for free.
