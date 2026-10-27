@@ -149,6 +149,10 @@ async function adoptInvitedRow(identity: ProviderIdentity): Promise<User | undef
   if (!(await orUnauthorized(() => identityProvider.hasAcceptedPasswordSetInvite(identity.email)))) {
     return undefined;
   }
+  // The accepted invitation proves someone controls the address; this binds that
+  // someone to the session: the provider's account for the address is this subject.
+  const holder = await orUnauthorized(() => identityProvider.findIdentityByEmail(identity.email));
+  if (holder?.providerSubjectId !== identity.providerSubjectId) return undefined;
   // The null guard makes a concurrent link by someone else win rather than be overwritten.
   const [linked] = await db
     .update(users)

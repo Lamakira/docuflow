@@ -213,6 +213,25 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
       expect(row.identityProviderSubjectId).toBeNull();
     });
 
+    it("is refused when the provider's account for the address is not this session's", async () => {
+      const app = await makeApp();
+      const { plantClerkUser, issueClerkSession } = await import("../fakes/clerk");
+      const migrated = await createUnlinkedUser({ firstName: "Ada" });
+      // The invitee redeemed the invitation; a second subject also reports the
+      // address as verified. The accepted invitation is the invitee's proof, not its.
+      const invitee = plantClerkUser({ addresses: [{ email: migrated.email, primary: true }] });
+      await invite(migrated.email);
+      const other = plantClerkUser({ addresses: [{ email: migrated.email, primary: true }] });
+      expect(other).not.toBe(invitee);
+      const agent = newAgent(app).set("Authorization", `Bearer ${issueClerkSession(other)}`);
+
+      const res = await agent.post("/api/auth/user").send({});
+
+      expect(res.status).toBe(409);
+      const [row] = await ownerDb.select().from(users).where(eq(users.id, migrated.id));
+      expect(row.identityProviderSubjectId).toBeNull();
+    });
+
     it("never takes a row already linked to another subject, invitation or not", async () => {
       const app = await makeApp();
       const { storage } = await import("../../server/storage");
