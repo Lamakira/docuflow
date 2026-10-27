@@ -107,6 +107,12 @@ export interface IdentityProvider {
   /** Addresses with an outstanding invite, for the drain's verifier. */
   pendingPasswordSetInvites(): Promise<string[]>;
   /**
+   * Whether the provider holds an invitation for this address that the invitee
+   * accepted (case-insensitive). DocuFlow sent it to that address, so its
+   * acceptance is proof the person controls the mailbox.
+   */
+  hasAcceptedPasswordSetInvite(email: string): Promise<boolean>;
+  /**
    * The identity this provider already holds for an address, if any. An invitee
    * who has set their password has one, which is how the drain tells an accepted
    * invite from an unanswered one.
@@ -150,6 +156,10 @@ export class UnconfiguredIdentityProvider implements IdentityProvider {
   }
 
   async pendingPasswordSetInvites(): Promise<string[]> {
+    this.closed();
+  }
+
+  async hasAcceptedPasswordSetInvite(): Promise<boolean> {
     this.closed();
   }
 

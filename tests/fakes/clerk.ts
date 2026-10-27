@@ -118,7 +118,7 @@ export function createClerkClient(_options: { secretKey?: string; publishableKey
         invitations.push(stored);
         return stored;
       },
-      getInvitationList: async (params: { status?: string } = {}) => {
+      getInvitationList: async (params: { status?: string; query?: string; limit?: number } = {}) => {
         const data = params.status
           ? invitations.filter((entry) => entry.status === params.status)
           : [...invitations];
@@ -247,6 +247,13 @@ export function updateClerkUser(
 
 export function clerkCreateUserCalls(): CreateUserParams[] {
   return createUserCalls;
+}
+
+/** Test helper — not on the Clerk surface. The invitee redeemed their invitation. */
+export function acceptClerkInvitation(email: string): void {
+  const invitation = invitations.find((entry) => entry.emailAddress === email);
+  if (!invitation) throw new Error(`No invitation for ${email}`);
+  invitation.status = "accepted";
 }
 
 export function clerkCreateInvitationCalls(): CreateInvitationParams[] {
