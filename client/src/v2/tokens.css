@@ -2208,8 +2208,7 @@ button.df-activity-row {
   gap: var(--df-space-2);
 }
 
-.df-devices-action,
-.df-devices-confirm {
+.df-devices-action {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -3059,7 +3058,6 @@ button.df-activity-row {
 .df-row-actions .df-btn,
 .df-register-row .df-btn,
 .df-people-action .df-btn,
-.df-devices-confirm .df-btn,
 .df-policy-timezone .df-btn,
 .df-pipeline-option .df-btn,
 .df-card-head .df-btn {
