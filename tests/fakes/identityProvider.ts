@@ -42,6 +42,7 @@ export class FakeIdentityProvider implements IdentityProvider {
   private readonly byEmail = new Map<string, Stored>();
   private readonly sessions = new Map<string, IdentitySession>();
   private readonly pendingInvites = new Map<string, PasswordSetInvite>();
+  private readonly acceptedInvites = new Set<string>();
   private seq = 0;
   private inviteSeq = 0;
 
@@ -121,6 +122,10 @@ export class FakeIdentityProvider implements IdentityProvider {
     return [...this.pendingInvites.keys()];
   }
 
+  async hasAcceptedPasswordSetInvite(email: string): Promise<boolean> {
+    return this.acceptedInvites.has(email.toLowerCase());
+  }
+
   async findIdentityByEmail(email: string): Promise<ProviderIdentity | undefined> {
     const stored = this.byEmail.get(email);
     return stored ? identityOf(stored) : undefined;
@@ -139,6 +144,7 @@ export class FakeIdentityProvider implements IdentityProvider {
    */
   acceptPasswordSetInvite(email: string, passwordHash = "$2b$04$" + "x".repeat(53)): string {
     this.pendingInvites.delete(email);
+    this.acceptedInvites.add(email.toLowerCase());
     this.seq += 1;
     const stored: Stored = {
       providerSubjectId: `user_fake_${this.seq}`,

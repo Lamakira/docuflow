@@ -172,6 +172,82 @@ describe("a visitor with no account becomes a User (#230, Flow 1)", () => {
     }
   });
 
+  describe("a migrated User returning from a password-set invitation", () => {
+    async function invite(email: string) {
+      const { identityProvider } = await import("../../server/modules/identity");
+      const { acceptClerkInvitation } = await import("../fakes/clerk");
+      await identityProvider.sendPasswordSetInvite({ email });
+      acceptClerkInvitation(email);
+    }
+
+    it("is linked to the row that holds the address, creating no second User", async () => {
+      const app = await makeApp();
+      const migrated = await createUnlinkedUser({ firstName: "Ada" });
+      await invite(migrated.email);
+      const visitor = await signUpAtProvider(app, { email: migrated.email });
+
+      const res = await visitor.agent.post("/api/auth/user").send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(migrated.id);
+      const rows = await ownerDb
+        .select({ id: users.id, subject: users.identityProviderSubjectId })
+        .from(users)
+        .where(eq(users.email, migrated.email));
+      expect(rows).toEqual([{ id: migrated.id, subject: visitor.providerSubjectId }]);
+      expect((await visitor.agent.get("/api/auth/user")).body.id).toBe(migrated.id);
+    });
+
+    it("is still refused when no invitation was accepted", async () => {
+      const app = await makeApp();
+      const { identityProvider } = await import("../../server/modules/identity");
+      const migrated = await createUnlinkedUser({ firstName: "Ada" });
+      // Sent but never redeemed: pending is not proof of control.
+      await identityProvider.sendPasswordSetInvite({ email: migrated.email });
+      const visitor = await signUpAtProvider(app, { email: migrated.email });
+
+      const res = await visitor.agent.post("/api/auth/user").send({});
+
+      expect(res.status).toBe(409);
+      const [row] = await ownerDb.select().from(users).where(eq(users.id, migrated.id));
+      expect(row.identityProviderSubjectId).toBeNull();
+    });
+
+    it("is refused when the provider's account for the address is not this session's", async () => {
+      const app = await makeApp();
+      const { plantClerkUser, issueClerkSession } = await import("../fakes/clerk");
+      const migrated = await createUnlinkedUser({ firstName: "Ada" });
+      // The invitee redeemed the invitation; a second subject also reports the
+      // address as verified. The accepted invitation is the invitee's proof, not its.
+      const invitee = plantClerkUser({ addresses: [{ email: migrated.email, primary: true }] });
+      await invite(migrated.email);
+      const other = plantClerkUser({ addresses: [{ email: migrated.email, primary: true }] });
+      expect(other).not.toBe(invitee);
+      const agent = newAgent(app).set("Authorization", `Bearer ${issueClerkSession(other)}`);
+
+      const res = await agent.post("/api/auth/user").send({});
+
+      expect(res.status).toBe(409);
+      const [row] = await ownerDb.select().from(users).where(eq(users.id, migrated.id));
+      expect(row.identityProviderSubjectId).toBeNull();
+    });
+
+    it("never takes a row already linked to another subject, invitation or not", async () => {
+      const app = await makeApp();
+      const { storage } = await import("../../server/storage");
+      const linked = await createUnlinkedUser({ firstName: "Grace" });
+      await storage.linkUserToIdentityProvider(linked.id, "user_someone_else");
+      await invite(linked.email);
+      const visitor = await signUpAtProvider(app, { email: linked.email });
+
+      const res = await visitor.agent.post("/api/auth/user").send({});
+
+      expect(res.status).toBe(409);
+      const [row] = await ownerDb.select().from(users).where(eq(users.id, linked.id));
+      expect(row.identityProviderSubjectId).toBe("user_someone_else");
+    });
+  });
+
   it("refuses to write a row under an address the provider never challenged", async () => {
     const app = await makeApp();
     const { plantClerkUser, issueClerkSession } = await import("../fakes/clerk");

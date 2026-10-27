@@ -23,19 +23,22 @@
  *    a cosmetic error: register as `ada@acme.com` before anyone invites the real
  *    Ada, and the Invitation meant for her is offered to, and accepted by, whoever
  *    claimed it first. DocuFlow refuses to write the row instead.
- *  - **An address this DocuFlow already holds is refused, linked or not.** The
- *    tempting behaviour is to adopt an unlinked row on a matching address, the
- *    way Invitation acceptance does. Acceptance can: possession of the token
- *    sent to that address is proof of control over it. A sign-up is not — the
- *    provider reports an address this side never challenged — so adopting on a
- *    match would hand a stranger an existing User, its role included. Linking
- *    a legacy account stays where Phase 5 put it, with the #108 import.
+ *  - **An address this DocuFlow already holds is refused, linked or not — unless
+ *    DocuFlow itself invited it and the invitee accepted.** A sign-up is never
+ *    adopted on a matching address, the way Invitation acceptance adopts one.
+ *    Acceptance can: possession of the token sent to that address is proof of
+ *    control over it. A sign-up is not — the provider reports an address this
+ *    side never challenged — so adopting on a match would hand a stranger an
+ *    existing User, its role included. A password-set invitation DocuFlow sent
+ *    and the person accepted is that same proof, so an unlinked row (a User
+ *    migrated from v1) is linked to the subject that redeemed it. A row already
+ *    linked to another subject is never taken.
  *  - **The new User joins no Workspace.** The row is written here rather than
  *    through `storage.createUser`, which in development also joins Harbour
  *    View — for a stranger off the internet, somebody else's data.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { RequestHandler } from "express";
 import { toSafeUser, users, type User } from "@shared/schema";
 import { db } from "../../db";
@@ -127,8 +130,36 @@ export async function registerIdentity(input: {
   const raced = await userBySubject(identity.providerSubjectId);
   if (raced) return { user: raced, created: false };
   // Nothing was written and this subject still has no row, so the address is
-  // what collided: somebody else already holds it here.
+  // what collided: somebody else already holds it here. Only an unlinked row
+  // whose address DocuFlow invited, and the invitee accepted, may be adopted.
+  const adopted = await adoptInvitedRow(identity);
+  if (adopted) return { user: adopted, created: false };
   throw new RegistrationEmailTakenError();
+}
+
+async function adoptInvitedRow(identity: ProviderIdentity): Promise<User | undefined> {
+  const [row] = await db
+    .select()
+    .from(users)
+    .where(
+      and(sql`lower(${users.email}) = lower(${identity.email})`, isNull(users.identityProviderSubjectId))
+    )
+    .limit(1);
+  if (!row) return undefined;
+  if (!(await orUnauthorized(() => identityProvider.hasAcceptedPasswordSetInvite(identity.email)))) {
+    return undefined;
+  }
+  // The accepted invitation proves someone controls the address; this binds that
+  // someone to the session: the provider's account for the address is this subject.
+  const holder = await orUnauthorized(() => identityProvider.findIdentityByEmail(identity.email));
+  if (holder?.providerSubjectId !== identity.providerSubjectId) return undefined;
+  // The null guard makes a concurrent link by someone else win rather than be overwritten.
+  const [linked] = await db
+    .update(users)
+    .set({ identityProviderSubjectId: identity.providerSubjectId })
+    .where(and(eq(users.id, row.id), isNull(users.identityProviderSubjectId)))
+    .returning();
+  return linked ?? (await userBySubject(identity.providerSubjectId));
 }
 
 async function userById(id: string): Promise<User | undefined> {

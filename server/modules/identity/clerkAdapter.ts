@@ -6,6 +6,7 @@
 
 import { createHash } from "node:crypto";
 import { createClerkClient, verifyToken } from "@clerk/backend";
+import { config } from "../../config";
 import {
   IdentityProviderClosedError,
   IdentityProviderError,
@@ -212,6 +213,10 @@ export class ClerkIdentityProvider implements IdentityProvider {
    * Idempotent the same way the import is: an outstanding invitation for this
    * address is returned rather than a second one being sent, so re-running the
    * drain does not mail the same person twice.
+   *
+   * The invitation carries a `redirectUrl` because the invitee must come back to
+   * DocuFlow, where `<SignUp>` redeems the ticket Clerk appends; without one they
+   * are left on Clerk's Account Portal, which cannot send them anywhere.
    */
   async sendPasswordSetInvite(request: PasswordSetInviteRequest): Promise<PasswordSetInvite> {
     const outstanding = await this.findPendingInvitation(request.email);
@@ -221,6 +226,7 @@ export class ClerkIdentityProvider implements IdentityProvider {
     try {
       const created = await this.clerk.invitations.createInvitation({
         emailAddress: request.email,
+        redirectUrl: `${config.appUrl}/sign-up`,
       });
       return { email: request.email, inviteId: created.id, alreadyPending: false };
     } catch (error) {
@@ -232,6 +238,21 @@ export class ClerkIdentityProvider implements IdentityProvider {
 
   async pendingPasswordSetInvites(): Promise<string[]> {
     return (await this.listPendingInvitations()).map((invitation) => invitation.emailAddress);
+  }
+
+  /**
+   * Asked per address (`query`) and with the largest page Clerk allows, so the
+   * answer does not depend on the invitation being on a first page; the match
+   * is still made here, since `query` is a search and not an equality.
+   */
+  async hasAcceptedPasswordSetInvite(email: string): Promise<boolean> {
+    const wanted = email.toLowerCase();
+    const list = await this.clerk.invitations.getInvitationList({
+      status: "accepted",
+      query: email,
+      limit: 500,
+    });
+    return (list.data ?? []).some((invitation) => invitation.emailAddress.toLowerCase() === wanted);
   }
 
   async findIdentityByEmail(email: string): Promise<ProviderIdentity | undefined> {

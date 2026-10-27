@@ -168,6 +168,9 @@ describe("IdentityProvider without live credentials", () => {
     await expect(provider.pendingPasswordSetInvites()).rejects.toBeInstanceOf(
       IdentityProviderClosedError
     );
+    await expect(provider.hasAcceptedPasswordSetInvite("oidc@example.com")).rejects.toBeInstanceOf(
+      IdentityProviderClosedError
+    );
   });
 });
 
@@ -238,7 +241,12 @@ describe("Clerk adapter", () => {
 
     expect(first.alreadyPending).toBe(false);
     expect(second).toEqual({ ...first, alreadyPending: true });
-    expect(clerkCreateInvitationCalls()).toEqual([{ emailAddress: "oidc@example.com" }]);
+    // The invitee must come back to DocuFlow's sign-up, where the ticket is redeemed.
+    const { config } = await import("../../server/config");
+    expect(clerkCreateInvitationCalls()).toEqual([
+      { emailAddress: "oidc@example.com", redirectUrl: `${config.appUrl}/sign-up` },
+    ]);
+    expect(clerkCreateInvitationCalls()[0].redirectUrl).toMatch(/\/sign-up$/);
     await expect(provider.pendingPasswordSetInvites()).resolves.toEqual(["oidc@example.com"]);
   });
 });
