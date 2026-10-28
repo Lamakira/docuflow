@@ -8,6 +8,12 @@
  * other height; measuring the container means the page size follows whatever
  * space is actually left.
  *
+ * `itemHeight` is only the assumed height. With `item` (a CSS selector), the
+ * first matching element in the pane is measured and its real rendered height
+ * wins, so platform font metrics or DPI scaling cannot make the page size
+ * disagree with what is on screen. Falls back to `itemHeight` while no such
+ * element is rendered.
+ *
  * Returns a ref to attach to the pane and the number of items that fit.
  */
 
@@ -15,13 +21,15 @@ import { useEffect, useRef, useState } from 'react';
 
 export function useFitCount<T extends HTMLElement>(
   itemHeight: number,
-  { min = 1, max = 40, gap = 0, reserve = 0 }: {
+  { min = 1, max = 40, gap = 0, reserve = 0, item }: {
     min?: number;
     max?: number;
     gap?: number;
     /** Chrome inside the measured pane that is not an item — a table header,
      *  a "N more" footer. Subtracted before the division. */
     reserve?: number;
+    /** Selector for a rendered item to measure instead of trusting `itemHeight`. */
+    item?: string;
   } = {},
 ): [React.RefObject<T | null>, number] {
   const ref = useRef<T>(null);
@@ -31,18 +39,34 @@ export function useFitCount<T extends HTMLElement>(
     const el = ref.current;
     if (!el) return;
 
+    let observed: Element | null = null;
+    const observer = new ResizeObserver(() => measure());
+
     const measure = () => {
+      const first = item ? el.querySelector(item) : null;
+      if (first !== observed) {
+        if (observed) observer.unobserve(observed);
+        if (first) observer.observe(first);
+        observed = first;
+      }
+      const measured = first ? first.getBoundingClientRect().height : 0;
+      const itemH = measured > 0 ? measured : itemHeight;
       const h = el.clientHeight - reserve;
       // (n * item) + ((n - 1) * gap) <= h
-      const fit = Math.floor((h + gap) / (itemHeight + gap));
+      const fit = Math.floor((h + gap) / (itemH + gap));
       setCount(Math.max(min, Math.min(max, fit)));
     };
 
     measure();
-    const observer = new ResizeObserver(measure);
     observer.observe(el);
-    return () => observer.disconnect();
-  }, [itemHeight, min, max, gap, reserve]);
+    // Rows are added/removed as pages change; pick up the first item then.
+    const mutations = item ? new MutationObserver(measure) : null;
+    mutations?.observe(el, { childList: true });
+    return () => {
+      observer.disconnect();
+      mutations?.disconnect();
+    };
+  }, [itemHeight, min, max, gap, reserve, item]);
 
   return [ref, count];
 }
