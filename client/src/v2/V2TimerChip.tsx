@@ -13,7 +13,7 @@ export function V2TimerChip({
 }) {
   const {
     activeEntry,
-    displayDuration,
+    taskTodayDuration,
     isRunning,
     isPaused,
     hasActiveEntry,
@@ -37,7 +37,7 @@ export function V2TimerChip({
     isRunning,
     isPaused,
     hasActiveEntry,
-    displayDuration,
+    displayDuration: taskTodayDuration,
     projectLabel,
     taskLabel: task?.name ?? null,
     workspaceLabel,

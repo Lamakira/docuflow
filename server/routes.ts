@@ -141,6 +141,7 @@ import {
   ingestActivityScreenshot,
 } from "./modules/activity/evidenceJobs";
 import { applyTimerCommand, inTimeEntryWorkspace, loadTimeEntryById, nextTimerSequence } from "./modules/time/commands";
+import { serverDayWindow } from "./modules/time/dayWindow";
 import { logTimeEvent, logError, logInfo } from "./logger";
 import { HELP_SCREENSHOT_SLOT_IDS, isHelpScreenshotSlotId } from "@shared/helpCenterScreenshotSlots";
 
@@ -4330,7 +4331,14 @@ Instructions:
     try {
       const userId = getUserId(req)!;
       const entry = await storage.getActiveTimeEntry(userId);
-      res.json(entry || null);
+      if (!entry) return res.json(null);
+      // The Task's stopped time today, as the agent shows it; the web chip adds the live entry on top.
+      let taskAccumulatedToday = 0;
+      if (entry.taskId) {
+        const { startOfDay, endOfDay } = serverDayWindow(new Date());
+        taskAccumulatedToday = await storage.getTaskDurationToday(userId, entry.taskId, startOfDay, endOfDay);
+      }
+      res.json({ ...entry, taskAccumulatedToday });
     } catch (error) {
       console.error("Error fetching active time entry:", error);
       res.status(500).json({ message: "Failed to fetch active time entry" });

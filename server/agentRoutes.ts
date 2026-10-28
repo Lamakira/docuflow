@@ -25,6 +25,7 @@ import {
   ingestActivityScreenshot,
 } from "./modules/activity/evidenceJobs";
 import { applyTimerCommand, nextTimerSequence } from "./modules/time/commands";
+import { serverDayWindow } from "./modules/time/dayWindow";
 import { gateSessionWrite } from "./modules/billing/sessionWriteGate";
 import { PlanFeatureNotIncludedError, featureIncluded } from "./modules/billing";
 import { assertScreenshotProject, deliveredTrackingPolicy } from "./modules/activity/policy";
@@ -929,9 +930,7 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(404).json({ message: "Project not found" });
       }
       const taskList = await storage.getTasks({ crmProjectId });
-      const now = new Date();
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      const endOfDay   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      const { startOfDay, endOfDay } = serverDayWindow(new Date());
       const taskIds = taskList.map((t) => t.id).filter(Boolean) as string[];
       const durations = await storage.getTasksDurationToday(userId, taskIds, startOfDay, endOfDay);
       // `crmProjectId` travels with the Task because the agent starts a timer
@@ -1105,9 +1104,7 @@ export function registerAgentRoutes(app: Express): void {
       // Return accumulated duration for this task today so the client can resume display from the right offset
       let taskAccumulatedToday = 0;
       if (taskId) {
-        const now2 = new Date();
-        const startOfDay = new Date(now2.getFullYear(), now2.getMonth(), now2.getDate(), 0, 0, 0, 0);
-        const endOfDay   = new Date(now2.getFullYear(), now2.getMonth(), now2.getDate(), 23, 59, 59, 999);
+        const { startOfDay, endOfDay } = serverDayWindow(new Date());
         taskAccumulatedToday = await storage.getTaskDurationToday(userId, taskId, startOfDay, endOfDay);
       }
       res.json({ ...entry, taskAccumulatedToday });

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { makeApp } from "../helpers/app";
-import { resetDb } from "../helpers/db";
+import { getOwnerPool, resetDb } from "../helpers/db";
 import { registerAdmin, registerUser } from "../helpers/auth";
 import { createCrmProject, createTask, startTimer } from "../helpers/fixtures";
 
@@ -98,6 +98,27 @@ describe("time tracking (characterization)", () => {
     expect(previous.status).toBe("stopped");
     expect(typeof previous.endTime).toBe("string");
     expect((await user.agent.get("/api/time-tracking/active")).body.id).toBe(replacement.id);
+  });
+
+  it("reports the Task's stopped time today on the active entry, as the agent does", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const { crmProject } = await createCrmProject(user.agent);
+    const worked = await createTask(user.agent, crmProject.id, "Worked task");
+    const fresh = await createTask(user.agent, crmProject.id, "Fresh task");
+
+    const first = await startTimer(user.agent, crmProject.id, worked.id);
+    await user.agent.post(`/api/time-tracking/${first.id}/stop`);
+    // A fast test stops at 0 seconds; the owner connection gives the entry real time.
+    await getOwnerPool().query("UPDATE time_entries SET duration = 90 WHERE id = $1", [first.id]);
+
+    await startTimer(user.agent, crmProject.id, worked.id);
+    const resumed = await user.agent.get("/api/time-tracking/active");
+    expect(resumed.body).toMatchObject({ taskId: worked.id, duration: 0, taskAccumulatedToday: 90 });
+
+    await startTimer(user.agent, crmProject.id, fresh.id);
+    const other = await user.agent.get("/api/time-tracking/active");
+    expect(other.body).toMatchObject({ taskId: fresh.id, taskAccumulatedToday: 0 });
   });
 
   it("attaches the task to each listed entry", async () => {
