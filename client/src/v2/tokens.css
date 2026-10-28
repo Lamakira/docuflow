@@ -5903,6 +5903,36 @@ button.df-activity-row {
   animation: none;
 }
 
+/* A sheet of paper while the page loads: the ratio holds the height the first
+   page will take, so the viewer does not jump on arrival. */
+.df-file-page-skeleton {
+  width: min(100%, 640px);
+  aspect-ratio: 1 / 1.414;
+  padding: var(--df-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-4);
+  box-sizing: border-box;
+}
+
+.df-file-page-skeleton .df-skeleton-lines {
+  padding: 0;
+}
+
+.df-v2 .df-file-page-skeleton .df-skeleton:not([data-role]) {
+  width: 100%;
+}
+
+.df-v2 .df-file-page-skeleton .df-skeleton[data-width="medium"] {
+  width: 60%;
+}
+
+.df-file-identity-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-2);
+}
+
 .df-file-image {
   display: block;
   max-width: 100%;

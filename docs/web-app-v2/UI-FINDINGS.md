@@ -338,3 +338,18 @@ already takes the overflow.
 Delete is a trash can, not the X the colleague first suggested: X already means
 close on every panel and dialog in v2, so on a delete it would read as
 "dismiss".
+
+---
+
+## F11 — Opening a Document waits with a fake title and two different loading lines
+
+- **Status:** closed
+- **Found:** 2026-10-28, using the app after the v1 → v2 cutover
+- **Where:** `client/src/v2/V2Document.tsx` (`EditorLoading`), `client/src/v2/V2FileViewer.tsx` (the previews)
+- **Severity:** cosmetic. Nothing is lost; the page just jumps and reads twice
+- **Fixed:** 2026-10-28. A Document waits with its real header (Back to … and a bar for the name and meta line) over a page-shaped skeleton, and a File preview waits with the same page; the words are left to a screen reader.
+
+The header said "Document" until the content landed, then jumped to Back and the
+real name. The file viewer then showed a second, different line ("Loading this
+File…") for the same wait. Every other destination already waited with the
+skeleton: the real frame, bars where the values go.

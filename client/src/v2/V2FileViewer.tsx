@@ -27,6 +27,7 @@ import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from "pdfjs-d
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Button } from "@/components/ui/button";
 import { V2RefusalPopover } from "./V2RefusalPopover";
+import { SkeletonBar, SkeletonLines } from "./V2Skeleton";
 import {
   composeFileViewer,
   formatZoom,
@@ -95,6 +96,24 @@ function FileStatus({ copy }: { copy: string }) {
   return (
     <div className="df-file-body">
       <p className="df-empty">{copy}</p>
+    </div>
+  );
+}
+
+/**
+ * The wait for a File or a Document: a page-shaped blank under the real header,
+ * so nothing moves when the content lands. The words are for a screen reader.
+ */
+export function FileLoading({ status = LOADING_COPY }: { status?: string }) {
+  return (
+    <div className="df-file-body" aria-busy="true" data-testid="v2-file-loading">
+      <p className="df-sr-only" role="status">
+        {status}
+      </p>
+      <div className="df-file-page df-file-page-skeleton">
+        <SkeletonBar role="title" />
+        <SkeletonLines count={8} />
+      </div>
     </div>
   );
 }
@@ -194,7 +213,7 @@ function ImagePreview({ src, alt }: { src: string; alt: string }) {
   }
 
   if (!url) {
-    return <FileStatus copy={LOADING_COPY} />;
+    return <FileLoading />;
   }
 
   return (
@@ -268,7 +287,7 @@ function PdfPreview({ src }: { src: string }) {
   }, [src]);
 
   if (state === "loading") {
-    return <FileStatus copy={LOADING_COPY} />;
+    return <FileLoading />;
   }
 
   if (state === "failed" || !pdf) {
@@ -362,7 +381,7 @@ function WordPreview({ href }: { href: string }) {
   const body = useMemo(() => (data?.html ? wordElements(data.html) : []), [data?.html]);
 
   if (isLoading) {
-    return <FileStatus copy={LOADING_COPY} />;
+    return <FileLoading />;
   }
 
   if (isError || body.length === 0) {
@@ -389,7 +408,7 @@ function TextPreview({ src }: { src: string }) {
   });
 
   if (isLoading) {
-    return <FileStatus copy={LOADING_COPY} />;
+    return <FileLoading />;
   }
 
   if (isError) {

@@ -71,4 +71,16 @@ describe("v2 waits with real geometry", () => {
     expect(skeleton).toContain('aria-busy="true"');
     expect(skeleton).toContain('role="status"');
   });
+
+  it("waits for a Document with the skeleton, not a fake title and two loading lines", () => {
+    const document = source("V2Document.tsx");
+    const viewer = source("V2FileViewer.tsx");
+    expect(document).not.toMatch(/>\s*Document\s*</);
+    expect(document).not.toMatch(/<p className="df-subhead[^"]*">Loading this Document/);
+    expect(document).toContain("SkeletonBar");
+    expect(document).toContain("<FileLoading");
+    expect(viewer).not.toContain("<FileStatus copy={LOADING_COPY}");
+    expect(viewer).toContain("<FileLoading />");
+    expect(viewer).toMatch(/className="df-sr-only" role="status"/);
+  });
 });

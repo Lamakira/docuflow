@@ -68,9 +68,15 @@ export function workspaceDocumentHref(id: string): string {
   return documentHref(id);
 }
 
+/** Where Back goes from a Document: known before any fetch, so the wait can show it. */
+export function documentBack(source: DocumentEditorSource): { backHref: string; backLabel: string } {
+  return source === "project"
+    ? { backHref: "/project-documentation", backLabel: "Project Documentation" }
+    : { backHref: "/documents", backLabel: "Workspace Documents" };
+}
+
 export function composeDocumentEditor(input: DocumentEditorInput): DocumentEditorModel {
-  const backHref = input.source === "project" ? "/project-documentation" : "/documents";
-  const backLabel = input.source === "project" ? "Project Documentation" : "Workspace Documents";
+  const { backHref, backLabel } = documentBack(input.source);
   const capability =
     input.source === "project" ? VIEW_PROJECT_DOCUMENTS_CAPABILITY : VIEW_WORKSPACE_DOCUMENTS_CAPABILITY;
 
