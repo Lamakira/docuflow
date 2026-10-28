@@ -80,6 +80,7 @@ import {
   pausedFromPreviousDay,
   pausedReminderDue,
 } from "../lib/pausedTimer";
+import { applyOpenAtLoginDefault, linuxAutostartPath, readLinuxOpenAtLogin, writeLinuxOpenAtLogin } from "../lib/loginItem";
 import { nextActiveSince, noTimerReminderDue } from "../lib/noTimerReminder";
 import { isWaylandSession, shouldSkipWaylandCaptures } from "../lib/platform";
 import { IdleFlow } from "../lib/idleFlow";
@@ -1427,17 +1428,39 @@ ipcMain.handle("widget:reset-position", () => {
 
 // ─── IPC: Settings ───
 
+/** Linux has no Electron login item: use an XDG autostart entry. AppImage runs from a temp mount, so point at the image. */
+function linuxAutostartFile(): string {
+  return linuxAutostartPath(process.env, os.homedir());
+}
+
+function getOpenAtLogin(): boolean {
+  if (process.platform === "linux") return readLinuxOpenAtLogin(linuxAutostartFile());
+  return app.getLoginItemSettings().openAtLogin;
+}
+
+function setOpenAtLogin(value: boolean): void {
+  if (process.platform === "linux") {
+    writeLinuxOpenAtLogin(linuxAutostartFile(), value, process.env.APPIMAGE || process.execPath);
+    return;
+  }
+  app.setLoginItemSettings({ openAtLogin: value });
+}
+
 ipcMain.handle("settings:get-local-prefs", () => {
-  const loginSettings = app.getLoginItemSettings();
   return {
-    openAtLogin: loginSettings.openAtLogin,
+    openAtLogin: getOpenAtLogin(),
     isPackaged: app.isPackaged,
     appVersion: app.getVersion(),
   };
 });
 
 ipcMain.handle("settings:set-open-at-login", (_event, value: boolean) => {
-  app.setLoginItemSettings({ openAtLogin: value });
+  try {
+    setOpenAtLogin(value);
+  } catch (err) {
+    console.error("[Settings] openAtLogin failed:", err);
+    return { ok: false };
+  }
   console.log(`[Settings] openAtLogin → ${value}`);
   return { ok: true };
 });
@@ -1938,9 +1961,14 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   store.setClientVersion(app.getVersion());
 
-  // Register for OS autostart (packaged builds only — avoids polluting dev registry).
+  // Enable OS autostart once, on the first packaged run (avoids polluting dev registry);
+  // afterwards the user's choice in Settings stands.
   if (app.isPackaged) {
-    app.setLoginItemSettings({ openAtLogin: true });
+    try {
+      applyOpenAtLoginDefault(store, setOpenAtLogin);
+    } catch (err) {
+      console.error("[Main] openAtLogin default failed:", err);
+    }
   }
 
   // Close any sessions that were left open by a crash or force-quit.
