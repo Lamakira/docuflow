@@ -4989,12 +4989,18 @@ button.df-activity-row {
 }
 
 /* A side panel of the register: a fixed column beside it that never grows past
-   the room it has, so `Manage access` is never clipped (#245, F2). */
+   the room it has, so `Manage access` is never clipped (#245, F2). It holds the
+   visible height under the command bar and stays put while the register
+   scrolls; stretched to a long register, its footer sat below the fold. */
 .df-folder-preview {
   flex: 0 0 380px;
   width: 380px;
   min-width: 0;
   max-width: 40%;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: calc(100dvh - 62px);
 }
 
 /* The heading stacks; the close button holds the top-right corner. */

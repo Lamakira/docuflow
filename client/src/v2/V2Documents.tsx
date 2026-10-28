@@ -623,22 +623,20 @@ export function V2DocumentsPage() {
               </div>
             </form>
           </div>
-          <footer className="df-panel-foot">
-            <Button variant="default" type="button" style={{ flex: 1 }} onClick={() => { if (!selectedFolderId) return; setExpandedFolderIds((current) => current.includes(selectedFolderId) ? current : [...current, selectedFolderId], ); }} className="df-btn">
-              Open folder
-            </Button>
-            {library.preview.canManageAccess ? (
+          {library.preview.canManageAccess ? (
+            <footer className="df-panel-foot">
               <Button
                 variant="outline"
                 type="button"
+                style={{ flex: 1 }}
                 className="df-btn"
                 data-testid="v2-folder-manage-access"
                 onClick={() => setManagingFolderId(library.preview?.folderId ?? null)}
               >
                 Manage access
               </Button>
-            ) : null}
-          </footer>
+            </footer>
+          ) : null}
         </aside>
       ) : null}
       {managingFolderId ? (

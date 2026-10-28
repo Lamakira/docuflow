@@ -305,3 +305,22 @@ selects that are not there.
 **What it would take:** put the field in `.df-library-actions` beside the
 button, give it the shared control height, and call it Search everywhere. The
 other lists keep it in their filter bar, where it sits next to real filters.
+
+---
+
+## F9 — Workspace Documents, the folder preview stretches past the screen
+
+- **Status:** closed
+- **Found:** 2026-10-28, by a colleague, in the first days after the v1 → v2 cutover
+- **Where:** `client/src/v2/tokens.css` (`.df-folder-preview`), used by `client/src/v2/V2Documents.tsx`
+- **Severity:** degrading. The panel's footer action is out of reach until you scroll the whole register
+- **Fixed:** 2026-10-28. The panel is sticky at the top of the scrolling area and holds the visible height under the command bar, so its footer always shows. Its `Open folder` button is gone: selecting the folder in the register already opens it.
+
+The aside is a flex sibling of the register, so it stretched to the register's
+height. With a long library the panel grew with it and `Open folder` /
+`Manage access` sat far below the fold, with an empty column above them. F2 fixed
+the panel's width; nothing fixed its height.
+
+**What it would take:** `position: sticky; top: 0; align-self: flex-start` and
+a height of the viewport under the 62px command bar; the panel's own scroll area
+already takes the overflow.
