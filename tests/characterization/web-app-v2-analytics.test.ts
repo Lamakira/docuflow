@@ -458,8 +458,8 @@ describe("The Workspace, Members & Roles and Billing tabs (#281)", () => {
 describe("A destructive row action asks before it runs (#281)", () => {
   it("confirms removing a list option and revoking a Service Account in an AlertDialog", () => {
     expect(adminSource).toContain("function DestructiveConfirm(");
-    expect(adminSource).toMatch(/<DestructiveConfirm\s+label="Remove"\s+title=\{`Remove \$\{row\.label\}`\}\s+consequence=\{row\.removeConsequence\}/);
-    expect(adminSource).toMatch(/<DestructiveConfirm\s+label="Revoke"/);
+    expect(adminSource).toMatch(/<DestructiveConfirm\s+(?:\w+=\{\w+\}\s+)*label="Remove"\s+title=\{`Remove \$\{row\.label\}`\}\s+consequence=\{row\.removeConsequence\}/);
+    expect(adminSource).toMatch(/<DestructiveConfirm\s+(?:\w+=\{\w+\}\s+)*label="Revoke"/);
     // No press mutates on its own.
     expect(adminSource).not.toMatch(/onClick=\{\(\) => onEdit\(removePipelineOption/);
     expect(adminSource).not.toMatch(/onClick=\{\(\) => onRevoke\(/);

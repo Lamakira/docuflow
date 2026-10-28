@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Ban, Copy, Plus, RefreshCw } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   agentDevicesPath,
@@ -152,6 +153,7 @@ export function V2DevicesPage() {
         </div>
         <div className="df-devices-actions">
           <Button variant="default" type="button" data-testid="v2-devices-pair" onClick={onPair} className="df-btn">
+            <Plus strokeWidth={1.6} aria-hidden />
             Pair a device
           </Button>
         </div>
@@ -183,9 +185,11 @@ export function V2DevicesPage() {
                 ) : null}
                 <div className="df-devices-actions">
                   <Button variant="outline" type="button" onClick={onPair} disabled={pair.isPending} className="df-btn">
+                    <RefreshCw strokeWidth={1.6} aria-hidden />
                     New code
                   </Button>
                   <Button variant="default" type="button" onClick={() => copyToClipboard(page.pairing.code!, "Pairing code copied")} className="df-btn">
+                    <Copy strokeWidth={1.6} aria-hidden />
                     Copy code
                   </Button>
                 </div>
@@ -221,6 +225,7 @@ export function V2DevicesPage() {
               action={
                 page.pairAllowed ? (
                   <Button variant="default" type="button" onClick={onPair} className="df-btn">
+                    <Plus strokeWidth={1.6} aria-hidden />
                     Pair a device
                   </Button>
                 ) : undefined
@@ -337,6 +342,7 @@ function RevokeControl({
           data-testid={`v2-devices-revoke-${row.key}`}
           className="df-btn"
         >
+          <Ban strokeWidth={1.6} aria-hidden />
           Revoke
         </Button>
       </AlertDialogTrigger>
@@ -357,6 +363,7 @@ function RevokeControl({
             data-testid={`v2-devices-revoke-confirm-${row.key}`}
             onClick={() => onRevoke(row)}
           >
+            <Ban strokeWidth={1.6} aria-hidden />
             Revoke
           </AlertDialogAction>
         </AlertDialogFooter>

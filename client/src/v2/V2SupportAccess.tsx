@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Ban } from "lucide-react";
 import { TaskSetupMFA, useSession } from "@clerk/clerk-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -108,6 +109,7 @@ export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
                   onClick={() => revoke.mutate(row.id)}
                   data-testid={`v2-support-access-revoke-${row.id}`}
                 >
+                  <Ban strokeWidth={1.6} aria-hidden />
                   Revoke
                 </Button>
               </li>

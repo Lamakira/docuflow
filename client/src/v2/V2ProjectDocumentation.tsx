@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Plus, Search, Upload } from "lucide-react";
 import type { CrmClient, Document, Project, SafeUser } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
@@ -323,12 +323,15 @@ export function V2ProjectDocumentationPage() {
           </div>
           <div className="df-library-actions">
             <Button variant="outline" type="button" onClick={() => openCreate("project")} className="df-btn">
+              <Plus strokeWidth={1.6} aria-hidden />
               New project
             </Button>
             <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+              <Upload strokeWidth={1.6} aria-hidden />
               Upload File
             </Button>
             <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
+              <Plus strokeWidth={1.6} aria-hidden />
               New Document
             </Button>
           </div>
@@ -469,12 +472,15 @@ export function V2ProjectDocumentationPage() {
           createActions={
             <>
               <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
+                <Plus strokeWidth={1.6} aria-hidden />
                 New Document
               </Button>
               <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+                <Upload strokeWidth={1.6} aria-hidden />
                 Upload File
               </Button>
               <Button variant="outline" type="button" onClick={() => openCreate("project")} className="df-btn">
+                <Plus strokeWidth={1.6} aria-hidden />
                 New project
               </Button>
             </>

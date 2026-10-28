@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { KeyRound, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import type {
   CompanyDocumentFolderWithCreator,
   CompanyDocumentWithUploader,
@@ -415,12 +415,15 @@ export function V2DocumentsPage() {
           </div>
           <div className="df-library-actions">
             <Button variant="outline" type="button" onClick={() => openCreate("folder")} className="df-btn">
+              <Plus strokeWidth={1.6} aria-hidden />
               New folder
             </Button>
             <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+              <Upload strokeWidth={1.6} aria-hidden />
               Upload File
             </Button>
             <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
+              <Plus strokeWidth={1.6} aria-hidden />
               New Document
             </Button>
           </div>
@@ -544,12 +547,15 @@ export function V2DocumentsPage() {
           createActions={
             <>
               <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
+                <Plus strokeWidth={1.6} aria-hidden />
                 New Document
               </Button>
               <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+                <Upload strokeWidth={1.6} aria-hidden />
                 Upload File
               </Button>
               <Button variant="outline" type="button" onClick={() => openCreate("folder")} className="df-btn">
+                <Plus strokeWidth={1.6} aria-hidden />
                 New folder
               </Button>
             </>
@@ -590,6 +596,7 @@ export function V2DocumentsPage() {
                       disabled={deleteFolder.isPending}
                       data-testid="v2-folder-delete"
                     >
+                      <Trash2 strokeWidth={1.6} aria-hidden />
                       Delete folder
                     </Button>
                   </AlertDialogTrigger>
@@ -607,6 +614,7 @@ export function V2DocumentsPage() {
                         data-testid="v2-folder-delete-confirm"
                         onClick={onDeleteFolder}
                       >
+                        <Trash2 strokeWidth={1.6} aria-hidden />
                         Delete folder
                       </AlertDialogAction>
                     </AlertDialogFooter>
@@ -618,6 +626,7 @@ export function V2DocumentsPage() {
                   disabled={renameFolder.isPending || !folderName.trim() || folderName.trim() === library.preview.name}
                   className="df-btn"
                 >
+                  <Pencil strokeWidth={1.6} aria-hidden />
                   Rename
                 </Button>
               </div>
@@ -633,6 +642,7 @@ export function V2DocumentsPage() {
                 data-testid="v2-folder-manage-access"
                 onClick={() => setManagingFolderId(library.preview?.folderId ?? null)}
               >
+                <KeyRound strokeWidth={1.6} aria-hidden />
                 Manage access
               </Button>
             </footer>

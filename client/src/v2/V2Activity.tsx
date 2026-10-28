@@ -631,6 +631,7 @@ function ActivityGallery({
             {gallery.selectedCount === gallery.count && gallery.count > 0 ? "Clear selection" : "Select all"}
           </Button>
           <Button variant="default" type="button" disabled={!gallery.canBatch || downloading} onClick={onBatchDownload} className="df-btn">
+            <Download strokeWidth={1.6} aria-hidden />
             {downloading ? "Downloading…" : gallery.batchLabel}
           </Button>
         </span>
@@ -867,6 +868,7 @@ function CaptureViewer({ viewer, onOpen, onClose, onSave, openerId }: CaptureVie
               Next
             </Button>
             <Button variant="default" type="button" className="df-btn" onClick={() => onSave(viewer.tile)}>
+              <Download strokeWidth={1.6} aria-hidden />
               Download
             </Button>
           </DialogFooter>

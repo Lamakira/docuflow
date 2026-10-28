@@ -324,3 +324,17 @@ the panel's width; nothing fixed its height.
 **What it would take:** `position: sticky; top: 0; align-self: flex-start` and
 a height of the viewport under the 62px command bar; the panel's own scroll area
 already takes the overflow.
+
+---
+
+## F10 — Action buttons are words only
+
+- **Status:** closed
+- **Found:** 2026-10-28, by a colleague, in the first days after the v1 → v2 cutover
+- **Where:** the item actions across `client/src/v2/` (Dossier, Opportunities, Clients, Documents, Project Documentation, Devices, Administration, Time, Activity, the file viewer, Support access)
+- **Severity:** cosmetic. Every action works; a row of text buttons is slow to scan
+- **Fixed:** 2026-10-28. Item actions carry a leading icon: pencil for Edit and Rename, trash for Delete and Remove, ban for Revoke, plus for New and Add, and Download, Upload, Copy, Reopen, Manage access and New code their own. Dialog housekeeping (Cancel, Save, Close, Keep …, Create …) stays text only, and row menus are unchanged.
+
+Delete is a trash can, not the X the colleague first suggested: X already means
+close on every panel and dialog in v2, so on a delete it would read as
+"dismiss".

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { PanelLeft, PanelLeftClose } from "lucide-react";
+import { Pencil, PanelLeft, PanelLeftClose, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -1042,6 +1042,7 @@ export function V2DossierPage() {
                   Start Timer
                 </Button>
                 <Button variant="default" type="button" onClick={onNewTask} className="df-btn">
+                  <Plus strokeWidth={1.6} aria-hidden />
                   New Task
                 </Button>
               </div>
@@ -1626,6 +1627,7 @@ function DossierTasks({
           <span className="df-count-chip">{dossier.tasks.rows.length}</span>
           {!dossier.tasks.empty ? (
             <Button variant="outline" type="button" onClick={onNewTask} className="df-btn">
+              <Plus strokeWidth={1.6} aria-hidden />
               New Task
             </Button>
           ) : null}
@@ -1844,6 +1846,7 @@ function DossierNotes({
           <span className="df-count-chip">{dossier.notes.rows.length}</span>
           {!dossier.notes.empty ? (
             <Button variant="outline" type="button" onClick={onNewNote} className="df-btn">
+              <Plus strokeWidth={1.6} aria-hidden />
               New Note
             </Button>
           ) : null}
@@ -1866,6 +1869,7 @@ function DossierNotes({
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructiveOutline" type="button" className="df-btn" data-testid={`v2-dossier-delete-note-${note.id}`}>
+                  <Trash2 strokeWidth={1.6} aria-hidden />
                   Delete
                 </Button>
               </AlertDialogTrigger>
@@ -1882,6 +1886,7 @@ function DossierNotes({
                     className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     onClick={() => onDeleteNote(note.id)}
                   >
+                    <Trash2 strokeWidth={1.6} aria-hidden />
                     Delete note
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -1986,15 +1991,18 @@ function ReminderRow({
         ) : null}
         {reminder.canReopen ? (
           <Button variant="outline" type="button" onClick={() => onSetStatus(reminder.id, "upcoming")} className="df-btn">
+            <RotateCcw strokeWidth={1.6} aria-hidden />
             Reopen
           </Button>
         ) : null}
         <Button variant="outline" type="button" onClick={open} className="df-btn">
+          <Pencil strokeWidth={1.6} aria-hidden />
           Edit
         </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button variant="destructiveOutline" type="button" className="df-btn" data-testid={`v2-dossier-delete-reminder-${reminder.id}`}>
+              <Trash2 strokeWidth={1.6} aria-hidden />
               Delete
             </Button>
           </AlertDialogTrigger>
@@ -2011,6 +2019,7 @@ function ReminderRow({
                 className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={() => onDelete(reminder.id)}
               >
+                <Trash2 strokeWidth={1.6} aria-hidden />
                 Delete Reminder
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -2043,6 +2052,7 @@ function DossierReminders({
           <span className="df-count-chip">{dossier.reminders.rows.length}</span>
           {!dossier.reminders.empty ? (
             <Button variant="outline" type="button" onClick={onNewReminder} className="df-btn">
+              <Plus strokeWidth={1.6} aria-hidden />
               New Reminder
             </Button>
           ) : null}
@@ -2185,6 +2195,7 @@ function DossierFiles({
           <span className="df-count-chip">{dossier.files.rows.length + projectFiles.length}</span>
           {dossier.documents.canCreate ? (
             <Button variant="outline" type="button" onClick={onUploadFile} className="df-btn">
+              <Upload strokeWidth={1.6} aria-hidden />
               Upload File
             </Button>
           ) : null}
@@ -2625,6 +2636,7 @@ function DossierSettings({
                       disabled={deletePending}
                       data-testid="v2-dossier-delete-project"
                     >
+                      <Trash2 strokeWidth={1.6} aria-hidden />
                       {deletePending ? "Deleting…" : "Delete Project"}
                     </Button>
                   </AlertDialogTrigger>
@@ -2641,6 +2653,7 @@ function DossierSettings({
                         className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         onClick={onDeleteProject}
                       >
+                        <Trash2 strokeWidth={1.6} aria-hidden />
                         Delete Project
                       </AlertDialogAction>
                     </AlertDialogFooter>
@@ -2711,6 +2724,7 @@ function TagRow({
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button type="button" variant="destructiveOutline" className="df-btn">
+                <Trash2 strokeWidth={1.6} aria-hidden />
                 Delete
               </Button>
             </AlertDialogTrigger>
@@ -2730,6 +2744,7 @@ function TagRow({
                     setEditing(false);
                   }}
                 >
+                  <Trash2 strokeWidth={1.6} aria-hidden />
                   Delete Tag
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -2770,6 +2785,7 @@ function TagRow({
           }}
           className="df-btn"
         >
+          <Pencil strokeWidth={1.6} aria-hidden />
           Edit
         </Button>
       </span>

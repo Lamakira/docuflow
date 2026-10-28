@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
-import { Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { DragDropContext, Draggable, Droppable, type DraggableProvided, type DropResult } from "@hello-pangea/dnd";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
@@ -659,6 +659,7 @@ export function V2ProjectsPage() {
   // The empty state's primary action: only a reader who may create sees it.
   const newProjectAction = readOnly ? undefined : (
     <Button variant="default" type="button" className="df-btn" onClick={startCreate}>
+      <Plus strokeWidth={1.6} aria-hidden />
       New Project
     </Button>
   );
@@ -722,6 +723,7 @@ export function V2ProjectsPage() {
             onClick={startCreate}
             className="df-btn"
           >
+            <Plus strokeWidth={1.6} aria-hidden />
             New Project
           </Button>
         </div>
