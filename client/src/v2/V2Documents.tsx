@@ -27,6 +27,7 @@ import {
 } from "./library";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
+import { WORKSPACE_LIBRARY_OPEN_KEY, readLibraryOpenState, writeLibraryOpenState, type LibraryOpenState } from "./presentation";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2ManageAccessDialog } from "./V2ManageAccessDialog";
@@ -57,6 +58,14 @@ type LibraryPayload = {
 type CreateMode = "document" | "folder" | "upload" | null;
 
 const SEARCH_SETTLE_MS = 250;
+
+function restoredOpenState(): LibraryOpenState {
+  try {
+    return readLibraryOpenState(window.sessionStorage, WORKSPACE_LIBRARY_OPEN_KEY);
+  } catch {
+    return { expanded: [], selected: null };
+  }
+}
 
 function actionFromSearch(): CreateMode {
   const params = new URLSearchParams(window.location.search);
@@ -157,8 +166,15 @@ export function V2DocumentsPage() {
   const { memberships } = useV2Chrome();
   const filters = readLibraryFilters(search);
   const [filterQuery, setFilterQuery] = useState(filters.q);
-  const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>([]);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>(() => restoredOpenState().expanded);
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(() => restoredOpenState().selected);
+  useEffect(() => {
+    try {
+      writeLibraryOpenState(window.sessionStorage, WORKSPACE_LIBRARY_OPEN_KEY, { expanded: expandedFolderIds, selected: selectedFolderId });
+    } catch {
+      // Storage can throw in private modes; the folders just start closed next time.
+    }
+  }, [expandedFolderIds, selectedFolderId]);
   const [createMode, setCreateMode] = useState<CreateMode>(() => actionFromSearch());
   const [managingFolderId, setManagingFolderId] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);

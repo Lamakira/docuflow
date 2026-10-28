@@ -928,6 +928,35 @@ export function writeRailCollapsed(storage: Pick<Storage, "setItem">, collapsed:
   storage.setItem(RAIL_COLLAPSED_STORAGE_KEY, collapsed ? "true" : "false");
 }
 
+export type LibraryOpenState = { expanded: string[]; selected: string | null };
+
+export const WORKSPACE_LIBRARY_OPEN_KEY = "docuflow.v2.documents.open";
+export const PROJECT_DOCUMENTATION_OPEN_KEY = "docuflow.v2.projectDocumentation.open";
+
+/**
+ * Which folders are open, kept for the browser tab so coming back from a File
+ * finds them as they were. Per tab, so a new tab starts closed; ids of folders
+ * that no longer exist are harmless, the register only expands folders it lists.
+ */
+export function readLibraryOpenState(storage: Pick<Storage, "getItem">, key: string): LibraryOpenState {
+  const empty: LibraryOpenState = { expanded: [], selected: null };
+  try {
+    const parsed: unknown = JSON.parse(storage.getItem(key) ?? "null");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return empty;
+    const { expanded, selected } = parsed as { expanded?: unknown; selected?: unknown };
+    return {
+      expanded: Array.isArray(expanded) ? expanded.filter((id): id is string => typeof id === "string") : [],
+      selected: typeof selected === "string" ? selected : null,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export function writeLibraryOpenState(storage: Pick<Storage, "setItem">, key: string, state: LibraryOpenState): void {
+  storage.setItem(key, JSON.stringify(state));
+}
+
 export function memberCountLabel(count: number): string {
   const noun = count === 1 ? "member" : "members";
   return `Workspace · ${count} ${noun}`;
