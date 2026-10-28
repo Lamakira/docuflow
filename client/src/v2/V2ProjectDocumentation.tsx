@@ -21,6 +21,7 @@ import {
 } from "./projectDocumentation";
 import { composePaging } from "./paging";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
+import { PROJECT_DOCUMENTATION_OPEN_KEY, readLibraryOpenState, writeLibraryOpenState, type LibraryOpenState } from "./presentation";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { useV2Chrome } from "./V2Shell";
 import { V2FormDialog } from "./V2FormDialog";
@@ -64,6 +65,14 @@ async function loadDocumentationPage(path: string): Promise<LibraryPayload> {
   return { capabilityMiss: false, page: (await res.json()) as DocumentationPage };
 }
 
+function restoredOpenState(): LibraryOpenState {
+  try {
+    return readLibraryOpenState(window.sessionStorage, PROJECT_DOCUMENTATION_OPEN_KEY);
+  } catch {
+    return { expanded: [], selected: null };
+  }
+}
+
 export function V2ProjectDocumentationPage() {
   const now = useMemo(() => new Date(), []);
   const search = useSearch();
@@ -71,8 +80,15 @@ export function V2ProjectDocumentationPage() {
   const { memberships } = useV2Chrome();
   const filters = readDocumentationFilters(search);
   const [filterQuery, setFilterQuery] = useState(filters.q);
-  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>(() => restoredOpenState().expanded);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(() => restoredOpenState().selected);
+  useEffect(() => {
+    try {
+      writeLibraryOpenState(window.sessionStorage, PROJECT_DOCUMENTATION_OPEN_KEY, { expanded: expandedProjectIds, selected: selectedProjectId });
+    } catch {
+      // Storage can throw in private modes; the folders just start closed next time.
+    }
+  }, [expandedProjectIds, selectedProjectId]);
   const [createMode, setCreateMode] = useState<"document" | "project" | "upload" | null>(null);
   const [name, setName] = useState("");
   const [targetProjectId, setTargetProjectId] = useState<string>(V2_SELECT_NONE);
