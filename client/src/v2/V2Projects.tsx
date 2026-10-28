@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { Search } from "lucide-react";
 import { DragDropContext, Draggable, Droppable, type DraggableProvided, type DropResult } from "@hello-pangea/dnd";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
@@ -803,12 +804,13 @@ export function V2ProjectsPage() {
 
       <div className="df-filter-bar">
         <label className="df-filter-input">
+          <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
           <input
             type="search"
             value={filterQuery}
             onChange={(event) => setFilterQuery(event.target.value)}
-            placeholder="Filter Projects"
-            aria-label="Filter Projects"
+            placeholder="Search Projects"
+            aria-label="Search Projects"
           />
         </label>
         {boardView ? null : (

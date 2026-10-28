@@ -410,8 +410,8 @@ export function V2ProjectDocumentationPage() {
               type="search"
               value={filterQuery}
               onChange={(event) => setFilterQuery(event.target.value)}
-              placeholder="Filter this library"
-              aria-label="Filter this library"
+              placeholder="Search this library"
+              aria-label="Search this library"
             />
           </label>
           {projectChipOptions.length === 0 && filters.project === "all" ? null : (

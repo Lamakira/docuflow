@@ -286,3 +286,22 @@ and the owner noticed the difference at once.
 the consequence and a destructive `Revoke` action. Drop `.df-devices-confirm`
 and the `revokeKey` state that only the inline shape needs. The stacked mobile
 row gets the same dialog for free.
+
+---
+
+## F8 — Opportunities, the search field takes a row of its own
+
+- **Status:** closed
+- **Found:** 2026-10-28, by a colleague, in the first days after the v1 → v2 cutover
+- **Where:** `client/src/v2/V2Opportunities.tsx` (the `df-filter-bar` under the header), and the free-text field on every v2 list page
+- **Severity:** degrading. The field works; it wastes a row and is misnamed
+- **Fixed:** 2026-10-28. The field moved into the header's actions, left of `New Opportunity`, with the search icon. Every v2 list field now reads "Search …" instead of "Filter …", and Clients, People and Projects got the icon Documents already had.
+
+On Opportunities the filter bar held nothing but the text field, so it took a
+whole row under the header for one 250px input. The field matches free text
+across the pipeline: people read it as a search, and "Filter" made them look for
+selects that are not there.
+
+**What it would take:** put the field in `.df-library-actions` beside the
+button, give it the shared control height, and call it Search everywhere. The
+other lists keep it in their filter bar, where it sits next to real filters.

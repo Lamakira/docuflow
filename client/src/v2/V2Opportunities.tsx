@@ -8,6 +8,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
+import { Search } from "lucide-react";
 import {
   DragDropContext,
   Draggable,
@@ -1270,6 +1271,16 @@ export function V2OpportunitiesPage() {
           <p className="df-subhead">{pipeline.subhead}</p>
         </div>
         <div className="df-library-actions">
+          <label className="df-filter-input">
+            <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
+            <input
+              type="search"
+              value={filterQuery}
+              onChange={(event) => setFilterQuery(event.target.value)}
+              placeholder="Search Opportunities"
+              aria-label="Search Opportunities"
+            />
+          </label>
           <Button
             variant="default"
             type="button"
@@ -1324,18 +1335,6 @@ export function V2OpportunitiesPage() {
         </div>
       </V2FormDialog>
       {writeRefusal && !creating ? <p className="df-refusal">{writeRefusal}</p> : null}
-
-      <div className="df-filter-bar df-opportunities-filter">
-        <label className="df-filter-input">
-          <input
-            type="search"
-            value={filterQuery}
-            onChange={(event) => setFilterQuery(event.target.value)}
-            placeholder="Filter Opportunities"
-            aria-label="Filter Opportunities"
-          />
-        </label>
-      </div>
 
       {pipeline.emptyState ? (
         <V2RecordEmpty

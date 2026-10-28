@@ -481,8 +481,8 @@ export function V2DocumentsPage() {
               type="search"
               value={filterQuery}
               onChange={(event) => setFilterQuery(event.target.value)}
-              placeholder="Filter this library"
-              aria-label="Filter this library"
+              placeholder="Search this library"
+              aria-label="Search this library"
             />
           </label>
           <V2FilterSelect

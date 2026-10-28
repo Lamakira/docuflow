@@ -2392,11 +2392,6 @@ button.df-activity-row {
   margin: 0 14px 12px;
 }
 
-.df-opportunities-filter {
-  transition: none;
-  animation: none;
-}
-
 .df-opportunity-pipeline {
   display: flex;
   align-items: stretch;
@@ -4607,6 +4602,7 @@ button.df-activity-row {
    of the ink button next to it. */
 .df-filter-bar .df-filter-chip,
 .df-filter-bar .df-filter-input,
+.df-library-actions .df-filter-input,
 .df-filter-bar .df-btn {
   display: inline-flex;
   align-items: center;
