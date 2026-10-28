@@ -12,6 +12,7 @@ import { isStandingRefusal, notify } from "./notify";
 import { composeFileViewer } from "./fileViewer";
 import {
   composeDocumentEditor,
+  documentBack,
   projectDocumentDossierHref,
   type DocumentEditorRecord,
   type DocumentEditorSaveState,
@@ -19,7 +20,8 @@ import {
 } from "./documentEditor";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
-import { V2FileViewer } from "./V2FileViewer";
+import { FileLoading, V2FileViewer } from "./V2FileViewer";
+import { SkeletonBar, SkeletonLines } from "./V2Skeleton";
 import { V2ManageAccessDialog } from "./V2ManageAccessDialog";
 import { projectVisibleTo } from "./projects";
 import { useV2Chrome } from "./V2Shell";
@@ -123,21 +125,37 @@ function ProjectDocumentRedirect({ documentId }: { documentId: string }) {
       : null;
 
   if (href) return <Redirect to={href} />;
-  if (isLoading || (projectId && projectsLoading)) return <EditorLoading embedded={false} />;
+  if (isLoading || (projectId && projectsLoading)) return <EditorLoading embedded={false} {...documentBack("project")} />;
   return <V2DocumentEditor source="project" documentId={documentId} />;
 }
 
-function EditorLoading({ embedded }: { embedded: boolean }) {
+const LOADING_DOCUMENT_COPY = "Loading this Document…";
+
+function EditorLoading({ embedded, backHref, backLabel }: { embedded: boolean; backHref: string; backLabel: string }) {
   return (
-    <div className="df-editor-page" data-testid="v2-document-editor">
-      {embedded ? null : (
-        <header className="df-editor-head">
-          <h1 className="df-title" style={{ fontSize: 22 }}>
-            Document
-          </h1>
-        </header>
+    <div className="df-editor-page" data-testid="v2-document-editor" aria-busy="true">
+      {embedded ? (
+        <div className="df-editor">
+          <p className="df-sr-only" role="status">
+            {LOADING_DOCUMENT_COPY}
+          </p>
+          <SkeletonBar role="title" />
+          <SkeletonLines count={8} />
+        </div>
+      ) : (
+        <>
+          <header className="df-editor-head df-file-head">
+            <Button asChild variant="outline" className="df-btn"><Link href={backHref}>
+              Back to {backLabel}
+            </Link></Button>
+            <div className="df-file-identity df-file-identity-skeleton">
+              <SkeletonBar role="title" />
+              <SkeletonBar width="medium" />
+            </div>
+          </header>
+          <FileLoading status={LOADING_DOCUMENT_COPY} />
+        </>
       )}
-      <p className="df-subhead df-page-inset">Loading this Document…</p>
     </div>
   );
 }
@@ -450,7 +468,7 @@ export function V2DocumentEditor({
     window.setTimeout(() => window.print(), 100);
   };
 
-  if (isLoading || assignmentPending) return <EditorLoading embedded={embedded} />;
+  if (isLoading || assignmentPending) return <EditorLoading embedded={embedded} {...documentBack(source)} />;
 
   if (editor.missing) {
     return (
