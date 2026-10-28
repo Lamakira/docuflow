@@ -395,6 +395,10 @@ button:disabled { cursor: default; }
 .v2-row__name {
   display: block;
   font-size: 13px;
+  /* Explicit line-heights: rows are paged by measured height (ROW_H = 55 in
+     TimerPanel), and `normal` varies with platform font metrics and DPI.
+     2 border + 24 padding + 15 name + 1 margin + 13 meta = 55. */
+  line-height: 15px;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -402,8 +406,9 @@ button:disabled { cursor: default; }
 }
 .v2-row__meta {
   display: block;
-  margin-top: 2px;
+  margin-top: 1px;
   font-size: 11px;
+  line-height: 13px;
   color: var(--text-meta);
   white-space: nowrap;
   overflow: hidden;

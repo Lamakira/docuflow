@@ -55,6 +55,7 @@ interface PersistedData {
   displayTimezone: 'local' | 'utc';
   /** Device-local preference: nudge when working with no timer running (issue #351). On unless turned off. */
   noTimerReminderEnabled: boolean;
+  openAtLoginDefaulted?: boolean;
   /**
    * Which renderer booted last, so the next launch can create the right window.
    *
@@ -178,6 +179,12 @@ export class AgentStore {
   getNoTimerReminderEnabled(): boolean { return this.data.noTimerReminderEnabled ?? true; }
   setNoTimerReminderEnabled(enabled: boolean): void {
     this.data.noTimerReminderEnabled = enabled;
+    this.saveToDisk();
+  }
+
+  getOpenAtLoginDefaulted(): boolean { return this.data.openAtLoginDefaulted ?? false; }
+  setOpenAtLoginDefaulted(done: boolean): void {
+    this.data.openAtLoginDefaulted = done;
     this.saveToDisk();
   }
 

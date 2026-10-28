@@ -48,7 +48,7 @@ export function TimerPanel() {
   const [createError, setCreateError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [listRef, perPage] = useFitCount<HTMLDivElement>(ROW_H, { min: 2, max: 14 });
+  const [listRef, perPage] = useFitCount<HTMLDivElement>(ROW_H, { min: 2, max: 14, item: '.v2-row' });
 
   useEffect(() => {
     bridge.getProjects().then((r) => {
