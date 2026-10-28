@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, Redirect, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { KeyRound } from "lucide-react";
 import type { CompanyDocumentWithUploader, CrmProjectWithDetails, DocumentWithCreator } from "@shared/schema";
 import { BlockEditor } from "@/components/editor/BlockEditor";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -420,6 +421,7 @@ export function V2DocumentEditor({
           data-testid="v2-document-manage-access"
           onClick={() => setManagingAccess(true)}
         >
+          <KeyRound strokeWidth={1.6} aria-hidden />
           Manage access
         </Button>
         {managingAccess ? (

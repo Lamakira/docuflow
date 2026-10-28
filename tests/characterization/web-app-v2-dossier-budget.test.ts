@@ -343,11 +343,11 @@ describe("Notes, Reminders and Documents all create through a dialog (#277)", ()
     expect(tasks).not.toContain("<input");
     expect(tasks).toContain("onCompose={onNewTask}");
     expect(tasks).toMatch(
-      /\{!dossier\.tasks\.empty \? \(\s*<Button variant="outline" type="button" onClick=\{onNewTask\} className="df-btn">\s*New Task/,
+      /\{!dossier\.tasks\.empty \? \(\s*<Button variant="outline" type="button" onClick=\{onNewTask\} className="df-btn">\s*(?:<\w+ [^>]*\/>\s*)?New Task/,
     );
     // The header's New Task opens the same dialog from any tab.
     const actions = dossierSource.slice(dossierSource.indexOf('<div className="df-dossier-actions">'));
-    expect(actions.slice(0, actions.indexOf("</div>"))).toMatch(/onClick=\{onNewTask\}[^>]*>\s*New Task/);
+    expect(actions.slice(0, actions.indexOf("</div>"))).toMatch(/onClick=\{onNewTask\}[^>]*>\s*(?:<\w+ [^>]*\/>\s*)?New Task/);
     expect(taskDialog).toContain('title="New Task"');
     expect(taskDialog).toContain("description={dossier.tasks.assignment}");
     expect(taskDialog).toMatch(/id=\{DOSSIER_FIELD\.taskName\}[\s\S]*?autoFocus/);
@@ -370,7 +370,7 @@ describe("Notes, Reminders and Documents all create through a dialog (#277)", ()
     for (const { source, tab, label, open } of cases) {
       expect(source, tab).toContain(`onCompose={${open}}`);
       expect(source, tab).toMatch(
-        new RegExp(`\\{!dossier\\.${tab}\\.empty \\? \\(\\s*<Button variant="outline" type="button" onClick=\\{${open}\\} className="df-btn">\\s*${label}`),
+        new RegExp(`\\{!dossier\\.${tab}\\.empty \\? \\(\\s*<Button variant="outline" type="button" onClick=\\{${open}\\} className="df-btn">\\s*(?:<\\w+ [^>]*\\/>\\s*)?${label}`),
       );
     }
     // Documentation's empty state opens the New Document dialog; once there are
@@ -447,13 +447,13 @@ describe("deleting a note or a Reminder asks first (#277)", () => {
     ];
     for (const { source, item, run, model } of cases) {
       expect(source, item).toMatch(
-        /<AlertDialog>\s*<AlertDialogTrigger asChild>\s*<Button variant="destructiveOutline"[^>]*>\s*Delete\s*<\/Button>/,
+        /<AlertDialog>\s*<AlertDialogTrigger asChild>\s*<Button variant="destructiveOutline"[^>]*>\s*(?:<\w+ [^>]*\/>\s*)?Delete\s*<\/Button>/,
       );
       expect(source, item).toContain(`<AlertDialogTitle>Delete ${item}</AlertDialogTitle>`);
       expect(source, item).toContain(`<AlertDialogDescription>{${model}.deleteConsequence}</AlertDialogDescription>`);
       expect(source, item).toMatch(new RegExp(`<AlertDialogCancel className="df-btn" autoFocus>\\s*Keep ${item}`));
       expect(source, item).toMatch(
-        new RegExp(`<AlertDialogAction\\s+className="df-btn bg-destructive[^"]*"\\s+onClick=\\{\\(\\) => ${run.replace(/[().]/g, "\\$&")}\\}\\s*>\\s*Delete ${item}`),
+        new RegExp(`<AlertDialogAction\\s+className="df-btn bg-destructive[^"]*"\\s+onClick=\\{\\(\\) => ${run.replace(/[().]/g, "\\$&")}\\}\\s*>\\s*(?:<\\w+ [^>]*\\/>\\s*)?Delete ${item}`),
       );
       // The only path to the delete is the dialog's action.
       expect(source.split(run).length - 1, item).toBe(1);

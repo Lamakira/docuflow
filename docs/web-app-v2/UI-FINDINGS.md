@@ -286,3 +286,55 @@ and the owner noticed the difference at once.
 the consequence and a destructive `Revoke` action. Drop `.df-devices-confirm`
 and the `revokeKey` state that only the inline shape needs. The stacked mobile
 row gets the same dialog for free.
+
+---
+
+## F8 — Opportunities, the search field takes a row of its own
+
+- **Status:** closed
+- **Found:** 2026-10-28, by a colleague, in the first days after the v1 → v2 cutover
+- **Where:** `client/src/v2/V2Opportunities.tsx` (the `df-filter-bar` under the header), and the free-text field on every v2 list page
+- **Severity:** degrading. The field works; it wastes a row and is misnamed
+- **Fixed:** 2026-10-28. The field moved into the header's actions, left of `New Opportunity`, with the search icon. Every v2 list field now reads "Search …" instead of "Filter …", and Clients, People and Projects got the icon Documents already had.
+
+On Opportunities the filter bar held nothing but the text field, so it took a
+whole row under the header for one 250px input. The field matches free text
+across the pipeline: people read it as a search, and "Filter" made them look for
+selects that are not there.
+
+**What it would take:** put the field in `.df-library-actions` beside the
+button, give it the shared control height, and call it Search everywhere. The
+other lists keep it in their filter bar, where it sits next to real filters.
+
+---
+
+## F9 — Workspace Documents, the folder preview stretches past the screen
+
+- **Status:** closed
+- **Found:** 2026-10-28, by a colleague, in the first days after the v1 → v2 cutover
+- **Where:** `client/src/v2/tokens.css` (`.df-folder-preview`), used by `client/src/v2/V2Documents.tsx`
+- **Severity:** degrading. The panel's footer action is out of reach until you scroll the whole register
+- **Fixed:** 2026-10-28. The panel is sticky at the top of the scrolling area and holds the visible height under the command bar, so its footer always shows. Its `Open folder` button is gone: selecting the folder in the register already opens it.
+
+The aside is a flex sibling of the register, so it stretched to the register's
+height. With a long library the panel grew with it and `Open folder` /
+`Manage access` sat far below the fold, with an empty column above them. F2 fixed
+the panel's width; nothing fixed its height.
+
+**What it would take:** `position: sticky; top: 0; align-self: flex-start` and
+a height of the viewport under the 62px command bar; the panel's own scroll area
+already takes the overflow.
+
+---
+
+## F10 — Action buttons are words only
+
+- **Status:** closed
+- **Found:** 2026-10-28, by a colleague, in the first days after the v1 → v2 cutover
+- **Where:** the item actions across `client/src/v2/` (Dossier, Opportunities, Clients, Documents, Project Documentation, Devices, Administration, Time, Activity, the file viewer, Support access)
+- **Severity:** cosmetic. Every action works; a row of text buttons is slow to scan
+- **Fixed:** 2026-10-28. Item actions carry a leading icon: pencil for Edit and Rename, trash for Delete and Remove, ban for Revoke, plus for New and Add, and Download, Upload, Copy, Reopen, Manage access and New code their own. Dialog housekeeping (Cancel, Save, Close, Keep …, Create …) stays text only, and row menus are unchanged.
+
+Delete is a trash can, not the X the colleague first suggested: X already means
+close on every panel and dialog in v2, so on a delete it would read as
+"dismiss".

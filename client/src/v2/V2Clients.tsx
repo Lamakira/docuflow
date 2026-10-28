@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { Pencil, Plus, Search } from "lucide-react";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { createColumnHelper, rowSortingFeature, tableFeatures, useTable, type SortingState } from "@tanstack/react-table";
@@ -428,6 +429,7 @@ export function V2ClientsPage() {
             onClick={startCreate}
             className="df-btn"
           >
+            <Plus strokeWidth={1.6} aria-hidden />
             New Client
           </Button>
         </div>
@@ -461,12 +463,13 @@ export function V2ClientsPage() {
 
       <div className="df-filter-bar df-clients-filter">
         <label className="df-filter-input">
+          <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
           <input
             type="search"
             value={filterQuery}
             onChange={(event) => setFilterQuery(event.target.value)}
-            placeholder="Filter Clients"
-            aria-label="Filter Clients"
+            placeholder="Search Clients"
+            aria-label="Search Clients"
           />
         </label>
         <V2FilterSelect
@@ -503,6 +506,7 @@ export function V2ClientsPage() {
             action={
               readOnly ? undefined : (
                 <Button variant="default" type="button" className="df-btn" onClick={startCreate}>
+                  <Plus strokeWidth={1.6} aria-hidden />
                   New Client
                 </Button>
               )
@@ -767,6 +771,7 @@ export function V2ClientRecordPage() {
                 <div className="df-card-head">
                   <h2 className="df-card-title">Client details</h2>
                   <Button variant="outline" type="button" onClick={openEdit} className="df-btn">
+                    <Pencil strokeWidth={1.6} aria-hidden />
                     Edit Client
                   </Button>
                 </div>
@@ -866,6 +871,7 @@ export function V2ClientRecordPage() {
                     }}
                     className="df-btn"
                   >
+                    <Plus strokeWidth={1.6} aria-hidden />
                     Add contact
                   </Button>
                 </div>

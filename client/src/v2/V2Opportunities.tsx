@@ -8,6 +8,7 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
+import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import {
   DragDropContext,
   Draggable,
@@ -658,6 +659,7 @@ function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
           <span className="df-count-chip">{thread.rows.length}</span>
           {!thread.empty ? (
             <Button variant="outline" type="button" onClick={() => open({ mode: "new" }, "")} className="df-btn">
+              <Plus strokeWidth={1.6} aria-hidden />
               New Note
             </Button>
           ) : null}
@@ -690,6 +692,7 @@ function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
                 onClick={() => open({ mode: "edit", id: note.id }, note.content)}
                 data-testid={`v2-opportunity-edit-note-${note.id}`}
               >
+                <Pencil strokeWidth={1.6} aria-hidden />
                 Edit
               </Button>
               <AlertDialog>
@@ -700,6 +703,7 @@ function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
                     className="df-btn"
                     data-testid={`v2-opportunity-delete-note-${note.id}`}
                   >
+                    <Trash2 strokeWidth={1.6} aria-hidden />
                     Delete
                   </Button>
                 </AlertDialogTrigger>
@@ -719,6 +723,7 @@ function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
                         else deleteNote.mutate(note.id);
                       }}
                     >
+                      <Trash2 strokeWidth={1.6} aria-hidden />
                       Delete note
                     </AlertDialogAction>
                   </AlertDialogFooter>
@@ -976,6 +981,7 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
             </div>
             {editing ? null : (
               <Button variant="outline" type="button" onClick={onEdit} className="df-btn" data-testid="v2-opportunity-edit">
+                <Pencil strokeWidth={1.6} aria-hidden />
                 Edit
               </Button>
             )}
@@ -1039,6 +1045,7 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
                   <span className="df-settings-value df-settings-inline">
                     <span className="df-settings-copy">Not recorded</span>
                     <Button variant="outline" type="button" className="df-btn" onClick={onLostReason}>
+                      <Plus strokeWidth={1.6} aria-hidden />
                       Add reason
                     </Button>
                   </span>
@@ -1270,12 +1277,23 @@ export function V2OpportunitiesPage() {
           <p className="df-subhead">{pipeline.subhead}</p>
         </div>
         <div className="df-library-actions">
+          <label className="df-filter-input">
+            <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
+            <input
+              type="search"
+              value={filterQuery}
+              onChange={(event) => setFilterQuery(event.target.value)}
+              placeholder="Search Opportunities"
+              aria-label="Search Opportunities"
+            />
+          </label>
           <Button
             variant="default"
             type="button"
             onClick={startCreate}
             className="df-btn"
           >
+            <Plus strokeWidth={1.6} aria-hidden />
             New Opportunity
           </Button>
         </div>
@@ -1325,18 +1343,6 @@ export function V2OpportunitiesPage() {
       </V2FormDialog>
       {writeRefusal && !creating ? <p className="df-refusal">{writeRefusal}</p> : null}
 
-      <div className="df-filter-bar df-opportunities-filter">
-        <label className="df-filter-input">
-          <input
-            type="search"
-            value={filterQuery}
-            onChange={(event) => setFilterQuery(event.target.value)}
-            placeholder="Filter Opportunities"
-            aria-label="Filter Opportunities"
-          />
-        </label>
-      </div>
-
       {pipeline.emptyState ? (
         <V2RecordEmpty
           model={pipeline.emptyState}
@@ -1344,6 +1350,7 @@ export function V2OpportunitiesPage() {
           action={
             readOnly ? undefined : (
               <Button variant="default" type="button" className="df-btn" onClick={startCreate}>
+                <Plus strokeWidth={1.6} aria-hidden />
                 New Opportunity
               </Button>
             )

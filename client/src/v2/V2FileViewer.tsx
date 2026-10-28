@@ -10,6 +10,7 @@ import { Fragment, createElement, useEffect, useMemo, useRef, useState, type Rea
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Download,
   File as FileIcon,
   FileArchive,
   FileAudio,
@@ -214,6 +215,7 @@ function DownloadControl({ href, fileName }: { href: string; fileName: string })
       onDismiss={() => setFailed(false)}
       trigger={
         <Button variant="default" type="button" data-testid="v2-file-download" onClick={async () => { setFailed(false); try { await saveFile(href, fileName); } catch { setFailed(true); } }} className="df-btn">
+          <Download strokeWidth={1.6} aria-hidden />
           Download
         </Button>
       }

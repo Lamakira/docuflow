@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Search } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -280,12 +281,13 @@ export function V2PeoplePage() {
 
       <div className="df-filter-bar df-people-filter">
         <label className="df-filter-input">
+          <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
           <input
             type="search"
             value={filterQuery}
             onChange={(event) => setFilterQuery(event.target.value)}
-            placeholder="Filter People"
-            aria-label="Filter People"
+            placeholder="Search People"
+            aria-label="Search People"
           />
         </label>
         {canReviewArchived ? (

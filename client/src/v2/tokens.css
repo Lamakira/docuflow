@@ -2392,11 +2392,6 @@ button.df-activity-row {
   margin: 0 14px 12px;
 }
 
-.df-opportunities-filter {
-  transition: none;
-  animation: none;
-}
-
 .df-opportunity-pipeline {
   display: flex;
   align-items: stretch;
@@ -4607,6 +4602,7 @@ button.df-activity-row {
    of the ink button next to it. */
 .df-filter-bar .df-filter-chip,
 .df-filter-bar .df-filter-input,
+.df-library-actions .df-filter-input,
 .df-filter-bar .df-btn {
   display: inline-flex;
   align-items: center;
@@ -4993,12 +4989,18 @@ button.df-activity-row {
 }
 
 /* A side panel of the register: a fixed column beside it that never grows past
-   the room it has, so `Manage access` is never clipped (#245, F2). */
+   the room it has, so `Manage access` is never clipped (#245, F2). It holds the
+   visible height under the command bar and stays put while the register
+   scrolls; stretched to a long register, its footer sat below the fold. */
 .df-folder-preview {
   flex: 0 0 380px;
   width: 380px;
   min-width: 0;
   max-width: 40%;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: calc(100dvh - 62px);
 }
 
 /* The heading stacks; the close button holds the top-right corner. */

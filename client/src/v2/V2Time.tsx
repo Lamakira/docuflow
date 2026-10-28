@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -506,6 +507,7 @@ function TimeEntriesPane() {
                   <span className="df-mono df-time-clock">{row.duration}</span>
                   {row.canDelete ? (
                     <Button variant="outline" type="button" onClick={() => onDelete(row.id)} className="df-btn">
+                      <Trash2 strokeWidth={1.6} aria-hidden />
                       Remove
                     </Button>
                   ) : null}
@@ -523,6 +525,7 @@ function TimeEntriesPane() {
                   <span style={{ textAlign: "right" }}>
                     {row.canDelete ? (
                       <Button variant="outline" type="button" onClick={() => onDelete(row.id)} className="df-btn">
+                        <Trash2 strokeWidth={1.6} aria-hidden />
                         Remove
                       </Button>
                     ) : null}
@@ -948,6 +951,7 @@ function ProjectTasksPane() {
                   />
                 </label>
                 <Button variant="default" type="button" disabled={!taskName.trim() || createTask.isPending} onClick={onCreate} className="df-btn">
+                  <Plus strokeWidth={1.6} aria-hidden />
                   Add Task
                 </Button>
               </div>

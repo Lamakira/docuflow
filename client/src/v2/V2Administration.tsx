@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams } from "wouter";
-import { ArrowRight, CalendarDays, Lock, PenLine, Users } from "lucide-react";
+import { ArrowRight, Ban, CalendarDays, Copy, Lock, PenLine, Plus, Trash2, Users, type LucideIcon } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   PUBLIC_API_CAPABILITIES,
@@ -936,6 +936,7 @@ export function V2AdministrationPage() {
                   {page.secretOnce.confirmation}
                 </p>
                 <Button variant="outline" type="button" onClick={() => copyToClipboard(page.secretOnce!.plaintext, "Secret copied")} className="df-btn">
+                  <Copy strokeWidth={1.6} aria-hidden />
                   Copy
                 </Button>
               </div>
@@ -955,6 +956,7 @@ export function V2AdministrationPage() {
                   }}
                   className="df-btn"
                 >
+                  <Plus strokeWidth={1.6} aria-hidden />
                   New Service Account
                 </Button>
               ) : null}
@@ -1024,6 +1026,7 @@ export function V2AdministrationPage() {
                       }}
                       className="df-btn"
                     >
+                      <Plus strokeWidth={1.6} aria-hidden />
                       New Service Account
                     </Button>
                   ) : undefined
@@ -1076,6 +1079,7 @@ export function V2AdministrationPage() {
                   }}
                   className="df-btn"
                 >
+                  <Plus strokeWidth={1.6} aria-hidden />
                   New Webhook Endpoint
                 </Button>
               ) : null}
@@ -1145,6 +1149,7 @@ export function V2AdministrationPage() {
                       }}
                       className="df-btn"
                     >
+                      <Plus strokeWidth={1.6} aria-hidden />
                       New Webhook Endpoint
                     </Button>
                   ) : undefined
@@ -1500,6 +1505,7 @@ export function V2AdministrationPage() {
                       onChoose={(zone) => onAddTimezone(zone)}
                     />
                     <Button variant="outline" type="submit" disabled={!trackingPolicy.editable} className="df-btn">
+                      <Plus strokeWidth={1.6} aria-hidden />
                       Add
                     </Button>
                   </form>
@@ -1515,6 +1521,7 @@ export function V2AdministrationPage() {
                       >
                         <span>{timezone}</span>
                         <Button variant="outline" type="button" disabled={!trackingPolicy.editable} onClick={() => setTimezoneDraft((current) => removeAllowedTimezone(current, timezone))} className="df-btn">
+                          <Trash2 strokeWidth={1.6} aria-hidden />
                           Remove
                         </Button>
                       </div>
@@ -1607,6 +1614,7 @@ function AccountActions({
       ) : null}
       {row.revoke ? (
         <DestructiveConfirm
+          icon={Ban}
           label="Revoke"
           title={`Revoke ${row.name}`}
           consequence="Its key stops working at once, and every call the integration makes with it is refused. A revoked Service Account cannot be restored."
@@ -1897,6 +1905,7 @@ function PlanPicker({
  * and the dismissal is focused so the keyboard does not agree by reflex.
  */
 function DestructiveConfirm({
+  icon: Icon,
   label,
   title,
   consequence,
@@ -1906,6 +1915,7 @@ function DestructiveConfirm({
   testId,
   onConfirm,
 }: {
+  icon: LucideIcon;
   label: string;
   title: string;
   consequence: string;
@@ -1919,6 +1929,7 @@ function DestructiveConfirm({
     <AlertDialog>
       <AlertDialogTrigger asChild>
         <Button type="button" variant="destructiveOutline" className="df-btn" disabled={pending} data-testid={testId}>
+          <Icon strokeWidth={1.6} aria-hidden />
           {label}
         </Button>
       </AlertDialogTrigger>
@@ -1937,6 +1948,7 @@ function DestructiveConfirm({
             data-testid={`${testId}-confirm`}
             onClick={onConfirm}
           >
+            <Icon strokeWidth={1.6} aria-hidden />
             {confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -2040,6 +2052,7 @@ function PipelineListCard({
                       </Button>
                       {row.canRemove ? (
                         <DestructiveConfirm
+                          icon={Trash2}
                           label="Remove"
                           title={`Remove ${row.label}`}
                           consequence={row.removeConsequence}
