@@ -6,10 +6,15 @@ import { MultiTabCoordinator, type TabRole, type TimeTrackingSyncPayload } from 
 import { ScreenCaptureWebService } from "@/lib/ScreenCaptureWebService";
 import type { TimeEntry, CrmProjectWithDetails, Task } from "@shared/schema";
 
+/** The active entry as `GET /api/time-tracking/active` serves it. */
+type ActiveTimeEntry = TimeEntry & { taskAccumulatedToday?: number };
+
 interface TimeTrackerState {
-  activeEntry: TimeEntry | null;
+  activeEntry: ActiveTimeEntry | null;
   isLoadingActive: boolean;
   displayDuration: number;
+  /** The Task's time today (stopped entries + the live one), as the desktop agent shows it. */
+  taskTodayDuration: number;
   isRunning: boolean;
   isPaused: boolean;
   hasActiveEntry: boolean;
@@ -85,7 +90,7 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
   // ─── Multi-tab coordinator ───
   const coordinatorRef = useRef<MultiTabCoordinator | null>(null);
 
-  const { data: activeEntry, isLoading: isLoadingActive } = useQuery<TimeEntry | null>({
+  const { data: activeEntry, isLoading: isLoadingActive } = useQuery<ActiveTimeEntry | null>({
     queryKey: ["/api/time-tracking/active"],
     refetchInterval: 10000,
   });
@@ -400,10 +405,16 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
   const isPaused = activeEntry?.status === "paused";
   const hasActiveEntry = !!activeEntry;
 
+  const taskTodayDuration = useMemo(
+    () => (activeEntry ? displayDuration + (activeEntry.taskAccumulatedToday ?? 0) : 0),
+    [activeEntry, displayDuration],
+  );
+
   const value: TimeTrackerContextType = {
     activeEntry: activeEntry ?? null,
     isLoadingActive,
     displayDuration,
+    taskTodayDuration,
     isRunning: !!isRunning,
     isPaused: !!isPaused,
     hasActiveEntry,

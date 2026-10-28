@@ -17,6 +17,8 @@ export {
   upsertWorkspaceTimeZone,
 } from "./schedule";
 
+export { serverDayWindow } from "./dayWindow";
+
 export const TIME_TABLES = ["time_entries", "timer_commands"] as const;
 
 export const timeModule = {
