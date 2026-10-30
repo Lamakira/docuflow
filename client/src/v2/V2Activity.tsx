@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Link, useParams } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { notify } from "./notify";
 import { useAuth } from "@/hooks/useAuth";
 import type { CrmProjectWithDetails, SafeUser, ScreenshotPolicy, TimeEntryWithDetails } from "@shared/schema";
 import { canManageAdministration } from "./administration";
@@ -16,6 +18,7 @@ import {
   activityTabs,
   composeActivity,
   composeActivityGallery,
+  screenshotPath,
   evidenceDateLabel,
   evidenceDateRange,
   trackingPolicyPath,
@@ -28,7 +31,7 @@ import {
   type TileActivity,
   type GalleryViewer,
 } from "./activity";
-import { Download } from "lucide-react";
+import { Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -39,6 +42,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
@@ -234,6 +248,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     now,
     currentUserId: user?.id ?? "",
     canReview,
+    currentUserEmail: user?.email ?? null,
     lowActivityOnly,
     similarOnly,
     lowActivityThresholdPercent: evidenceResponse?.lowActivityThresholdPercent,
@@ -249,6 +264,20 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     evidence: evidenceResponse?.data ?? [],
     facetsActive: projectFilter !== "all" || userFilter !== "all",
     everRecorded,
+  });
+
+  const deleteCapture = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", screenshotPath(id)),
+    onSuccess: (_result, id) => {
+      const viewer = gallery.viewer;
+      if (viewer && viewer.tile.id === id) setExpandedCaptureId(viewer.nextId ?? viewer.previousId ?? null);
+      setSelectedIds((current) => current.filter((selectedId) => selectedId !== id));
+      queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/screenshots"] });
+      notify.success("Capture deleted");
+    },
+    onError: (error: Error) => {
+      notify.error(error.message);
+    },
   });
 
   const refusal = page.refusal;
@@ -583,6 +612,9 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           onOpen={(id) => setExpandedCaptureId(id)}
           onClose={() => setExpandedCaptureId(null)}
           onSave={saveCapture}
+          canDelete={gallery.canDelete}
+          deleting={deleteCapture.isPending}
+          onDelete={(tile) => deleteCapture.mutate(tile.id)}
           onPage={(step) => setGalleryPage((current) => Math.max(1, current + step))}
           onClearFilters={onClearFilters}
         />
@@ -600,6 +632,9 @@ type ActivityGalleryProps = {
   onOpen: (id: string) => void;
   onClose: () => void;
   onSave: (tile: GalleryTile) => void;
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: (tile: GalleryTile) => void;
   onPage: (step: number) => void;
   onClearFilters: () => void;
 };
@@ -617,6 +652,9 @@ function ActivityGallery({
   onOpen,
   onClose,
   onSave,
+  canDelete,
+  deleting,
+  onDelete,
   onPage,
   onClearFilters,
 }: ActivityGalleryProps) {
@@ -706,7 +744,16 @@ function ActivityGallery({
           </div>
         ))
       )}
-      <CaptureViewer viewer={gallery.viewer} onOpen={onOpen} onClose={onClose} onSave={onSave} openerId={openerId} />
+      <CaptureViewer
+        viewer={gallery.viewer}
+        onOpen={onOpen}
+        onClose={onClose}
+        onSave={onSave}
+        canDelete={canDelete}
+        deleting={deleting}
+        onDelete={onDelete}
+        openerId={openerId}
+      />
       {gallery.paging.pageCount > 1 ? (
         <div className="df-gallery-paging">
           <span className="df-mono df-meta">{gallery.paging.label}</span>
@@ -763,6 +810,9 @@ type CaptureViewerProps = {
   onOpen: (id: string) => void;
   onClose: () => void;
   onSave: (tile: GalleryTile) => void;
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: (tile: GalleryTile) => void;
   openerId: MutableRefObject<string | null>;
 };
 
@@ -770,11 +820,21 @@ type CaptureViewerProps = {
  * One capture as large as the viewport allows (#332), on the shadcn Dialog.
  * Radix portals outside `.df-v2`, so the panel carries the class itself.
  */
-function CaptureViewer({ viewer, onOpen, onClose, onSave, openerId }: CaptureViewerProps) {
+function CaptureViewer({
+  viewer,
+  onOpen,
+  onClose,
+  onSave,
+  canDelete,
+  deleting,
+  onDelete,
+  openerId,
+}: CaptureViewerProps) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   // On the window, not the panel: stepping onto the last capture disables Next,
   // and the focus it held falls to the body, out of the panel's key events.
   useEffect(() => {
-    if (!viewer) return;
+    if (!viewer || confirmingDelete) return;
     const { previousId, nextId } = viewer;
     function onKey(event: KeyboardEvent) {
       const target = event.key === "ArrowLeft" ? previousId : event.key === "ArrowRight" ? nextId : null;
@@ -784,7 +844,7 @@ function CaptureViewer({ viewer, onOpen, onClose, onSave, openerId }: CaptureVie
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [viewer, onOpen]);
+  }, [viewer, onOpen, confirmingDelete]);
 
   return (
     <Dialog
@@ -849,6 +909,43 @@ function CaptureViewer({ viewer, onOpen, onClose, onSave, openerId }: CaptureVie
             ) : null}
           </div>
           <DialogFooter className="df-capture-viewer-actions">
+            {canDelete ? (
+              <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="destructiveOutline"
+                    className="df-btn"
+                    disabled={deleting}
+                    data-testid="v2-activity-capture-delete"
+                  >
+                    <Trash2 strokeWidth={1.6} aria-hidden />
+                    Delete capture
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="df-v2 df-alert">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this capture</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {`The capture from ${viewer.tile.when} by ${viewer.tile.who} leaves Activity for everyone in this Workspace. This cannot be undone.`}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="df-btn" autoFocus>
+                      Keep capture
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      data-testid="v2-activity-capture-delete-confirm"
+                      onClick={() => onDelete(viewer.tile)}
+                    >
+                      <Trash2 strokeWidth={1.6} aria-hidden />
+                      Delete capture
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : null}
             <Button
               variant="outline"
               type="button"

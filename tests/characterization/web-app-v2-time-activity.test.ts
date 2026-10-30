@@ -21,6 +21,9 @@ import {
 } from "../../client/src/v2/tasks";
 import {
   activityTabs,
+  canDeleteCapture,
+  CAPTURE_DELETE_ALLOWLIST,
+  screenshotPath,
   composeActivityGallery,
   evidenceDateRange,
   evidenceFileName,
@@ -901,3 +904,25 @@ function rule(selector: string): string {
   if (!match) throw new Error(`missing rule ${selector}`);
   return match[1];
 }
+
+describe("Deleting a capture from the viewer", () => {
+  const [allowed] = CAPTURE_DELETE_ALLOWLIST;
+
+  it("offers Delete to an allowlisted Administrator only", () => {
+    expect(canDeleteCapture({ canReview: true, email: allowed })).toBe(true);
+    expect(canDeleteCapture({ canReview: true, email: `  ${allowed.toUpperCase()} ` })).toBe(true);
+    expect(canDeleteCapture({ canReview: true, email: "other@example.com" })).toBe(false);
+    expect(canDeleteCapture({ canReview: false, email: allowed })).toBe(false);
+    expect(canDeleteCapture({ canReview: true, email: null })).toBe(false);
+    expect(canDeleteCapture({ canReview: true, email: undefined })).toBe(false);
+  });
+
+  it("carries the decision on the gallery model", () => {
+    expect(composeActivityGallery(emptyGallery({ canReview: true, currentUserEmail: allowed })).canDelete).toBe(true);
+    expect(composeActivityGallery(emptyGallery({ canReview: true, currentUserEmail: "x@example.com" })).canDelete).toBe(false);
+  });
+
+  it("addresses the screenshot by its encoded id", () => {
+    expect(screenshotPath("a b")).toBe("/api/time-tracking/screenshots/a%20b");
+  });
+});
