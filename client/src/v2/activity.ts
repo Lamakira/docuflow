@@ -378,10 +378,28 @@ export type GalleryEvidenceInput = ActivityEvidenceInput & {
   similarToPrevious?: boolean;
 };
 
+/**
+ * Who sees Delete on a capture. Removing a capture is an Administration act
+ * (the BFF refuses a Member). For now it is offered to one Administrator only;
+ * widening it to every Owner and Administrator is removing the allowlist check.
+ */
+export const CAPTURE_DELETE_ALLOWLIST: readonly string[] = ["said.arikama-chabi@techma.ca"];
+
+export function canDeleteCapture(input: { canReview: boolean; email: string | null | undefined }): boolean {
+  if (!input.canReview) return false;
+  const email = input.email?.trim().toLowerCase();
+  return Boolean(email) && CAPTURE_DELETE_ALLOWLIST.includes(email as string);
+}
+
+export function screenshotPath(id: string): string {
+  return `/api/time-tracking/screenshots/${encodeURIComponent(id)}`;
+}
+
 export type ActivityGalleryInput = {
   now: Date;
   currentUserId: string;
   canReview: boolean;
+  currentUserEmail?: string | null;
   lowActivityOnly: boolean;
   similarOnly: boolean;
   /** The Workspace's threshold, as the server judged with it. */
@@ -458,6 +476,7 @@ export type ActivityGalleryModel = {
   similarCount: number;
   selectedCount: number;
   canBatch: boolean;
+  canDelete: boolean;
   batchLabel: string;
   paging: GalleryPaging;
   viewer: GalleryViewer | null;
@@ -563,6 +582,7 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
     similarCount: input.counts?.similar ?? 0,
     selectedCount,
     canBatch: selectedCount > 0,
+    canDelete: canDeleteCapture({ canReview: input.canReview, email: input.currentUserEmail }),
     batchLabel:
       selectedCount === 1 ? "Download 1 capture" : `Download ${selectedCount} captures`,
     paging: {
