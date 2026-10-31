@@ -353,3 +353,19 @@ The header said "Document" until the content landed, then jumped to Back and the
 real name. The file viewer then showed a second, different line ("Loading this
 File…") for the same wait. Every other destination already waited with the
 skeleton: the real frame, bars where the values go.
+
+## F12 — A list empty for its Range shows a bare line instead of the designed state
+
+- **Status:** closed
+- **Found:** 2026-10-31, Activity → Gallery on Today with no capture yet
+- **Where:** `client/src/v2/V2EmptyState.tsx` (`V2RecordEmpty`, the `range` case), and the four record lists that reach it: Time Tracking's register, Activity Evidence, Activity Gallery, team Daily Updates
+- **Severity:** cosmetic. Nothing is lost; the screen reads as unfinished
+- **Fixed:** 2026-10-31. A record list empty for its Range shows the designed state like every other empty list — icon, "No … today", one line saying only this Range is shown, and a button that widens the Range one step (Today → This week → …). Dashboard sections (Today, Analytics) keep the compact line, as #325 set.
+
+#325 gave a short Range its own case: rows may exist outside it, so the list
+must not invite a first use, and it chose the dashboard's one-line `df-empty`
+for it. In a record list that line sits alone under a card head and filter row
+built for rows, where every other empty list in v2 shows the designed panel, so
+the owner read it as a screen nobody had designed. The case is kept — the copy
+still says earlier rows exist rather than inviting a first one — but it now
+takes the designed panel, and its action is the way out the line only named.

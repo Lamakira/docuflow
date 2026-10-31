@@ -10,6 +10,7 @@ import {
   canViewTeamDailyUpdates,
   composeTeamDailyUpdates,
   teamDailyUpdatesLinkFilters,
+  widerDailyUpdateRange,
   type TeamDailyUpdateMember,
   type TeamDailyUpdatesKpis,
 } from "./dailyUpdate";
@@ -258,6 +259,7 @@ export function V2TeamDailyUpdatesPage() {
             setStatusFilter("all");
             setMemberFilter("all");
           }}
+          onWiden={widerDailyUpdateRange(rangeDays) ? () => setRangeDays(widerDailyUpdateRange(rangeDays)!) : undefined}
           testIds={{ none: "v2-daily-updates-empty" }}
         />
       ) : (

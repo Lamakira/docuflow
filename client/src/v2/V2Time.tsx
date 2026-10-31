@@ -32,6 +32,7 @@ import {
   endOfDayLocal as endOfDay,
   startOfDayLocal as startOfDay,
   TIME_PERIODS,
+  widerTimeRange,
   type TimeEntryRowInput,
   type TimePeriod,
   type TimeStatsResponse,
@@ -475,6 +476,7 @@ function TimeEntriesPane() {
               setStatusFilter("all");
               setUserFilter("all");
             }}
+            onWiden={widerTimeRange(range) ? () => setRange(widerTimeRange(range)!) : undefined}
             testIds={{ none: "v2-time-register-empty", filtered: "v2-time-register-filtered", range: "v2-time-register-range" }}
           />
         ) : (
