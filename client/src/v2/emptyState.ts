@@ -3,16 +3,18 @@
  * `none`: nothing exists yet, so the screen shows the designed V2EmptyState;
  * `filtered`: filters hide every row, so a short line and `Clear filters`;
  * `range`: a period (Today, This week) holds nothing but rows may exist outside
- * it, so no first-use invitation: the compact in-card `df-empty` line a
- * dashboard section uses, with a hint to widen the Range.
+ * it, so no first-use invitation: the designed state with an action that widens
+ * the Range one step. Dashboard sections keep the compact `df-empty` line
+ * through `V2CompactEmpty`.
  */
 export type EmptyKind = "none" | "filtered" | "range";
 
 /**
  * What an empty list carries to its screen: the case, the headline of the
- * designed state (`none` only; empty otherwise) and the one line of copy.
+ * designed state, the one line of copy and, for `range`, the label of the action
+ * that widens the Range (`null` when none is wider, and for the other cases).
  */
-export type EmptyModel = { kind: EmptyKind; title: string; copy: string };
+export type EmptyModel = { kind: EmptyKind; title: string; copy: string; widenLabel: string | null };
 
 /**
  * `narrowRange`: the Range filter is shorter than the widest one on offer, so
@@ -41,17 +43,26 @@ export function filteredEmptyCopy(noun: string): string {
 /**
  * The empty model of a list: `null` while it has rows. `noun` names what
  * filters hid; `none` is the first-use headline and sentence, or null for a
- * list that is always read over a Range; `range` is the compact line for it.
+ * list that is always read over a Range; `range` names the period that holds
+ * nothing (`window`, e.g. "today") and the label of the action that widens it.
  */
 export function emptyModelOf(
   kind: EmptyKind | null,
   noun: string,
   none: { title: string; copy: string } | null,
-  range = "",
+  range?: { window: string; widenLabel: string | null },
 ): EmptyModel | null {
   if (!kind) return null;
-  if (kind === "filtered") return { kind, title: "", copy: filteredEmptyCopy(noun) };
+  if (kind === "filtered") return { kind, title: "", copy: filteredEmptyCopy(noun), widenLabel: null };
   // A list with no first-use case (`none` null) is always a Range that holds nothing.
-  if (kind === "range" || !none) return { kind: "range", title: "", copy: range };
-  return { kind, title: none.title, copy: none.copy };
+  if (kind === "range" || !none) {
+    const { window, widenLabel } = range ?? { window: "in this Range", widenLabel: null };
+    return {
+      kind: "range",
+      title: `No ${noun} ${window}`,
+      copy: "Only this Range is shown. Widen it to look further back.",
+      widenLabel,
+    };
+  }
+  return { kind, title: none.title, copy: none.copy, widenLabel: null };
 }

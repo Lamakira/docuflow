@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { composeActivity, composeActivityGallery } from "../../client/src/v2/activity";
+import { composeActivity, composeActivityGallery, EVIDENCE_DATE_MODES, widerEvidenceRange } from "../../client/src/v2/activity";
 import { composeClientRegister } from "../../client/src/v2/clients";
 import { composeDevices } from "../../client/src/v2/devices";
-import { composeTeamDailyUpdates } from "../../client/src/v2/dailyUpdate";
+import { composeTeamDailyUpdates, widerDailyUpdateRange } from "../../client/src/v2/dailyUpdate";
 import { emptyKindOf, emptyModelOf, filteredEmptyCopy } from "../../client/src/v2/emptyState";
 import {
   composeOpportunityPipeline,
@@ -15,13 +15,14 @@ import {
 import { composePeople } from "../../client/src/v2/people";
 import { composeProjectBoard, composeProjectRegister } from "../../client/src/v2/projects";
 import { composeProjectTasks } from "../../client/src/v2/tasks";
-import { composeTimeStats, composeTimeTracking } from "../../client/src/v2/time";
+import { composeTimeStats, composeTimeTracking, widerTimeRange } from "../../client/src/v2/time";
 
 /**
  * Empty states (#325). Three cases, one rule each: nothing exists yet reads as
  * the designed V2EmptyState; filters that hide every row read as one short line
- * with Clear filters; a dashboard section with no data for its range keeps a
- * compact in-card line.
+ * with Clear filters; a record list whose Range holds nothing reads as the
+ * designed state with an action that widens the Range; a dashboard section with
+ * no data for its range keeps a compact in-card line.
  */
 
 const v2 = (name: string) =>
@@ -54,15 +55,31 @@ describe("the shared empty-state kinds", () => {
   it("bundles the kind, headline and copy as one model, and none for a list that has rows", () => {
     const first = { title: "Add your first Thing", copy: "A Thing is a thing." };
     expect(emptyModelOf(null, "Things", first)).toBeNull();
-    expect(emptyModelOf("none", "Things", first)).toEqual({ kind: "none", ...first });
+    expect(emptyModelOf("none", "Things", first)).toEqual({ kind: "none", ...first, widenLabel: null });
     expect(emptyModelOf("filtered", "Things", first)).toEqual({
       kind: "filtered",
       title: "",
       copy: "No Things match these filters.",
+      widenLabel: null,
     });
-    expect(emptyModelOf("range", "Things", first, "Nothing today.")).toEqual({ kind: "range", title: "", copy: "Nothing today." });
+    const range = { window: "today", widenLabel: "Show this week" };
+    expect(emptyModelOf("range", "Things", first, range)).toEqual({
+      kind: "range",
+      title: "No Things today",
+      copy: "Only this Range is shown. Widen it to look further back.",
+      widenLabel: "Show this week",
+    });
     // A list read only over a Range has no first-use case.
-    expect(emptyModelOf("none", "Things", null, "Nothing today.")?.kind).toBe("range");
+    expect(emptyModelOf("none", "Things", null, range)?.kind).toBe("range");
+  });
+
+  it("falls back to a generic window and no action when the range case has no range argument", () => {
+    expect(emptyModelOf("range", "Things", null)).toEqual({
+      kind: "range",
+      title: "No Things in this Range",
+      copy: "Only this Range is shown. Widen it to look further back.",
+      widenLabel: null,
+    });
   });
 
   it("renders every case through one V2RecordEmpty, and every dashboard section through one compact line", () => {
@@ -192,15 +209,23 @@ describe("Time Tracking", () => {
     expect(composeTimeTracking(input).emptyState?.kind).toBe("none");
   });
 
-  it("keeps a compact line that names the window on a short Range, since rows may sit outside it", () => {
+  it("shows the designed Range state that names the window on a short Range, since rows may sit outside it", () => {
     expect(composeTimeTracking({ ...input, range: "today" }).emptyState).toEqual({
       kind: "range",
-      title: "",
-      copy: "No Time Entries today. Widen the Range to look further back.",
+      title: "No Time Entries today",
+      copy: "Only this Range is shown. Widen it to look further back.",
+      widenLabel: "Show this week",
     });
-    expect(composeTimeTracking({ ...input, range: "week" }).emptyState?.copy).toBe(
-      "No Time Entries this week. Widen the Range to look further back.",
-    );
+    expect(composeTimeTracking({ ...input, range: "week" }).emptyState).toMatchObject({
+      title: "No Time Entries this week",
+      widenLabel: "Show all time",
+    });
+  });
+
+  it("widens the Range one step, and stops at all time", () => {
+    expect(widerTimeRange("today")).toBe("week");
+    expect(widerTimeRange("week")).toBe("all");
+    expect(widerTimeRange("all")).toBeNull();
   });
 
   it("says filters hide every row when the Project, Status or Member filter is on, on any Range", () => {
@@ -346,10 +371,49 @@ describe("Activity", () => {
     evidence: [],
   };
 
-  it("keeps a compact line for a date range with no Evidence", () => {
-    const range = { kind: "range", copy: "No Activity Evidence for this date range." };
-    expect(composeActivity(activity).emptyState).toMatchObject(range);
-    expect(composeActivityGallery(gallery).emptyState).toMatchObject(range);
+  it("shows the designed Range state for a date range with no Evidence, widening one step", () => {
+    const range = {
+      kind: "range",
+      title: "No Activity Evidence today",
+      copy: "Only this Range is shown. Widen it to look further back.",
+      widenLabel: "Show this week",
+    };
+    expect(composeActivity(activity).emptyState).toEqual(range);
+    expect(composeActivityGallery(gallery).emptyState).toEqual(range);
+    expect(composeActivity({ ...activity, range: "30d" }).emptyState).toMatchObject({
+      title: "No Activity Evidence in the last 30 days",
+      widenLabel: "Show all time",
+    });
+    expect(composeActivityGallery({ ...gallery, range: "custom" }).emptyState).toMatchObject({
+      title: "No Activity Evidence in these dates",
+      widenLabel: "Show all time",
+    });
+  });
+
+  it("widens the date range one step, and stops at all time", () => {
+    const steps: Record<(typeof EVIDENCE_DATE_MODES)[number], string | null> = {
+      today: "week",
+      week: "month",
+      month: "30d",
+      "30d": "all",
+      day: "all",
+      custom: "all",
+      all: null,
+    };
+    for (const mode of EVIDENCE_DATE_MODES) expect(widerEvidenceRange(mode), mode).toBe(steps[mode]);
+    const labels = { week: "Show this week", month: "Show this month", "30d": "Show last 30 days", all: "Show all time" };
+    for (const [from, label] of [["today", labels.week], ["week", labels.month], ["month", labels["30d"]], ["30d", labels.all]] as const) {
+      expect(composeActivity({ ...activity, range: from }).emptyState?.widenLabel, from).toBe(label);
+    }
+    expect(composeActivity({ ...activity, range: "day" }).emptyState).toMatchObject({
+      title: "No Activity Evidence on this day",
+      widenLabel: "Show all time",
+    });
+  });
+
+  it("is none, not a range, on All time with no Evidence and nothing known about earlier", () => {
+    expect(composeActivity({ ...activity, range: "all", everRecorded: null }).emptyState?.kind).toBe("none");
+    expect(composeActivityGallery({ ...gallery, range: "all", everRecorded: null }).emptyState?.kind).toBe("none");
   });
 
   it("invites the desktop agent when no Evidence was ever recorded, and keeps the range line when some exists", () => {
@@ -435,6 +499,13 @@ describe("People, Devices and team Daily Updates", () => {
     expect(v2("V2Devices.tsx")).toMatch(/page\.pairAllowed \? \(\s*<Button[\s\S]*?Pair a device/);
   });
 
+  it("widens the Daily Updates Range one step, and stops at 30 days", () => {
+    expect(widerDailyUpdateRange("1")).toBe("7");
+    expect(widerDailyUpdateRange("7")).toBe("14");
+    expect(widerDailyUpdateRange("14")).toBe("30");
+    expect(widerDailyUpdateRange("30")).toBeNull();
+  });
+
   it("separates no Daily Updates from filters hiding them", () => {
     const input = {
       now: NOW,
@@ -449,13 +520,19 @@ describe("People, Devices and team Daily Updates", () => {
       statusFilter: "all",
       memberFilter: "all",
     };
-    // A short Range keeps the compact line: older Daily Updates may exist outside it.
+    // A short Range shows the Range state: older Daily Updates may exist outside it.
     expect(composeTeamDailyUpdates({ ...input, rangeDays: "7" })).toMatchObject({
-      emptyState: { kind: "range", copy: "No Daily Updates in the last 7 days. Widen the Range to look further back." },
+      emptyState: {
+        kind: "range",
+        title: "No Daily Updates in the last 7 days",
+        copy: "Only this Range is shown. Widen it to look further back.",
+        widenLabel: "Show last 14 days",
+      },
     });
     expect(composeTeamDailyUpdates({ ...input, rangeDays: "1" })).toMatchObject({
-      emptyState: { kind: "range", copy: "No Daily Updates today. Widen the Range to look further back." },
+      emptyState: { kind: "range", title: "No Daily Updates today", widenLabel: "Show last 7 days" },
     });
+    expect(composeTeamDailyUpdates({ ...input, rangeDays: "14" }).emptyState?.widenLabel).toBe("Show last 30 days");
     // Last 30 days is the widest Range on offer.
     expect(composeTeamDailyUpdates({ ...input, rangeDays: "30" })).toMatchObject({
       emptyState: { kind: "none", title: "No Daily Updates yet" },

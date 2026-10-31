@@ -363,6 +363,14 @@ export function teamDailyUpdatesLinkFilters(
   return { memberFilter: member || "all", rangeDays };
 }
 
+/** The Range (in days) one step wider than this one; `null` when it is already the widest. */
+export function widerDailyUpdateRange(days: string): string | null {
+  if (days === "1") return "7";
+  if (days === "7") return "14";
+  if (days === "14") return "30";
+  return null;
+}
+
 export function composeTeamDailyUpdates(input: TeamDailyUpdatesInput): TeamDailyUpdatesModel {
   if (!input.canView) {
     return {
@@ -422,6 +430,7 @@ export function composeTeamDailyUpdates(input: TeamDailyUpdatesInput): TeamDaily
   const kpis = input.kpis ?? { total: 0, waitingOnClient: 0, blocked: 0, activeUsers: 0 };
   const empty = groups.length === 0;
   const shortRange = Boolean(input.rangeDays) && input.rangeDays !== "30";
+  const wider = input.rangeDays ? widerDailyUpdateRange(input.rangeDays) : null;
   const facetsActive = Boolean(needle) || input.statusFilter !== "all" || input.memberFilter !== "all";
   const submitted = input.submittedToday.map(teamMemberChip);
   const missing = input.missingToday.map(teamMemberChip);
@@ -460,7 +469,10 @@ export function composeTeamDailyUpdates(input: TeamDailyUpdatesInput): TeamDaily
         title: "No Daily Updates yet",
         copy: "A Daily Update is a Member's one submission for the workday. They appear here as your Members submit them.",
       },
-      `No Daily Updates ${input.rangeDays === "1" ? "today" : `in the last ${input.rangeDays} days`}. Widen the Range to look further back.`,
+      {
+        window: input.rangeDays === "1" ? "today" : `in the last ${input.rangeDays} days`,
+        widenLabel: wider ? `Show last ${wider} days` : null,
+      },
     ),
     groups,
     members: [...members.values()].sort((a, b) => a.name.localeCompare(b.name)),
