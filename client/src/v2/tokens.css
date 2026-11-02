@@ -895,7 +895,12 @@ button.df-activity-row {
   display: flex;
   flex-direction: column;
   gap: var(--df-space-2);
-  padding: var(--df-space-4) var(--df-space-5) 0;
+  padding: var(--df-space-4) var(--df-space-5);
+}
+
+/* Who may read what, under the facts and on their left edge; outranks .df-policy-hint's margin. */
+.df-activity-policy .df-activity-policy-note {
+  margin-top: var(--df-space-2);
 }
 
 .df-activity-expand[data-motion="standard"] {

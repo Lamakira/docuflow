@@ -75,6 +75,8 @@ export type ActivityInput = {
   facetsActive?: boolean;
   /** Whether the reader may see any Activity Evidence in any period; `null` while unknown. */
   everRecorded?: boolean | null;
+  /** The date range being read; "today" when absent. */
+  range?: EvidenceDateMode;
 };
 
 export type ActivityPolicyLine = {
@@ -253,17 +255,55 @@ function allowedEvidence<T extends ActivityEvidenceInput>(
  * Activity Evidence is a stream over a date range: it invites first use only
  * once the reader is known to see none in any period.
  */
-function evidenceEmptyState(empty: boolean, filtered: boolean, everRecorded: boolean | null = null): EmptyModel | null {
+function evidenceEmptyState(
+  empty: boolean,
+  filtered: boolean,
+  everRecorded: boolean | null = null,
+  range: EvidenceDateMode = "today",
+): EmptyModel | null {
+  const wider = widerEvidenceRange(range);
   return emptyModelOf(
-    emptyKindOf(empty, filtered, true, everRecorded),
+    emptyKindOf(empty, filtered, range !== "all", everRecorded),
     "Activity Evidence",
     {
       title: "No Activity Evidence yet",
       copy: "Activity Evidence is captured by the desktop agent while a Member's Timer runs, following the Tracking Policy above.",
     },
-    "No Activity Evidence for this date range.",
+    {
+      window: EVIDENCE_RANGE_WINDOW[range],
+      widenLabel: wider ? `Show ${evidenceDateLabel(wider).toLowerCase()}` : null,
+    },
   );
 }
+
+/** The Range one step wider than this one; `null` when it is already All time. */
+export function widerEvidenceRange(mode: EvidenceDateMode): EvidenceDateMode | null {
+  switch (mode) {
+    case "today":
+      return "week";
+    case "week":
+      return "month";
+    case "month":
+      return "30d";
+    case "30d":
+    case "day":
+    case "custom":
+      return "all";
+    default:
+      return null;
+  }
+}
+
+/** How the empty title names the period, after "No Activity Evidence". */
+const EVIDENCE_RANGE_WINDOW: Record<EvidenceDateMode, string> = {
+  today: "today",
+  week: "this week",
+  month: "this month",
+  "30d": "in the last 30 days",
+  day: "on this day",
+  custom: "in these dates",
+  all: "in this Workspace",
+};
 
 export function composeActivity(input: ActivityInput): ActivityModel {
   const refusal =
@@ -288,7 +328,7 @@ export function composeActivity(input: ActivityInput): ActivityModel {
   return {
     subhead: `Activity Evidence in ${input.workspaceName}.`,
     empty,
-    emptyState: evidenceEmptyState(empty, Boolean(input.facetsActive), input.everRecorded ?? null),
+    emptyState: evidenceEmptyState(empty, Boolean(input.facetsActive), input.everRecorded ?? null, input.range),
     refusal,
     policyLines: composeTrackingPolicy(input.policy),
     policyFootnote: input.canReview
@@ -420,6 +460,8 @@ export type ActivityGalleryInput = {
   facetsActive?: boolean;
   /** Whether the reader may see any Activity Evidence in any period; `null` while unknown. */
   everRecorded?: boolean | null;
+  /** The date range being read; "today" when absent. */
+  range?: EvidenceDateMode;
 };
 
 export type GalleryTile = EvidenceProvenance & {
@@ -597,6 +639,6 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
     },
     viewer,
     empty: count === 0,
-    emptyState: evidenceEmptyState(count === 0, filtered, input.everRecorded ?? null),
+    emptyState: evidenceEmptyState(count === 0, filtered, input.everRecorded ?? null, input.range),
   };
 }

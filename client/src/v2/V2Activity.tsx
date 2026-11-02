@@ -23,6 +23,7 @@ import {
   evidenceDateRange,
   trackingPolicyPath,
   EVIDENCE_DATE_MODES,
+  widerEvidenceRange,
   type EvidenceDateMode,
   type ActivityEntryInput,
   type ActivityProjectInput,
@@ -242,6 +243,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     evidence: evidenceResponse?.data ?? [],
     facetsActive: projectFilter !== "all" || userFilter !== "all",
     everRecorded,
+    range,
   });
 
   const gallery = composeActivityGallery({
@@ -304,6 +306,14 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     const shown = gallery.groups.flatMap((group) => group.tiles).map((tile) => tile.id);
     setSelectedIds((current) => (current.length === shown.length ? [] : shown));
   }
+
+  const widerRange = widerEvidenceRange(range);
+  const onWiden = widerRange
+    ? () => {
+        setRange(widerRange);
+        setGalleryPage(1);
+      }
+    : undefined;
 
   function onClearFilters() {
     setRange("today");
@@ -396,10 +406,8 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
               <span className="df-mono">{line.value}</span>
             </div>
           ))}
+          <p className="df-policy-hint df-activity-policy-note">{page.policyFootnote}</p>
         </div>
-        <p className="df-empty" data-edge="end">
-          {page.policyFootnote}
-        </p>
       </section>
 
       <div className="df-filter-bar">
@@ -542,7 +550,13 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           </div>
         )}
         {page.emptyState ? (
-          <V2RecordEmpty model={page.emptyState} icon="activity" action={<SetUpAgentAction />} onClear={onClearFilters} />
+          <V2RecordEmpty
+            model={page.emptyState}
+            icon="activity"
+            action={<SetUpAgentAction />}
+            onClear={onClearFilters}
+            onWiden={onWiden}
+          />
         ) : (
           page.rows.map((row) => (
             <div key={row.id}>
@@ -617,6 +631,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           onDelete={(tile) => deleteCapture.mutate(tile.id)}
           onPage={(step) => setGalleryPage((current) => Math.max(1, current + step))}
           onClearFilters={onClearFilters}
+          onWiden={onWiden}
         />
       )}
     </div>
@@ -637,6 +652,7 @@ type ActivityGalleryProps = {
   onDelete: (tile: GalleryTile) => void;
   onPage: (step: number) => void;
   onClearFilters: () => void;
+  onWiden?: () => void;
 };
 
 /**
@@ -657,6 +673,7 @@ function ActivityGallery({
   onDelete,
   onPage,
   onClearFilters,
+  onWiden,
 }: ActivityGalleryProps) {
   // The thumbnail that opened the viewer, so closing returns focus to it.
   const openerId = useRef<string | null>(null);
@@ -664,18 +681,27 @@ function ActivityGallery({
     <section className="df-card df-gallery" data-testid="v2-activity-gallery">
       <div className="df-card-head">
         <h2 className="df-card-title">{gallery.countCopy}</h2>
-        <span className="df-gallery-actions">
-          <Button variant="outline" type="button" onClick={onSelectShown} className="df-btn">
-            {gallery.selectedCount === gallery.count && gallery.count > 0 ? "Clear selection" : "Select all"}
-          </Button>
-          <Button variant="default" type="button" disabled={!gallery.canBatch || downloading} onClick={onBatchDownload} className="df-btn">
-            <Download strokeWidth={1.6} aria-hidden />
-            {downloading ? "Downloading…" : gallery.batchLabel}
-          </Button>
-        </span>
+        {/* Nothing to select or download in an empty gallery. */}
+        {gallery.count > 0 ? (
+          <span className="df-gallery-actions">
+            <Button variant="outline" type="button" onClick={onSelectShown} className="df-btn">
+              {gallery.selectedCount === gallery.count ? "Clear selection" : "Select all"}
+            </Button>
+            <Button variant="default" type="button" disabled={!gallery.canBatch || downloading} onClick={onBatchDownload} className="df-btn">
+              <Download strokeWidth={1.6} aria-hidden />
+              {downloading ? "Downloading…" : gallery.batchLabel}
+            </Button>
+          </span>
+        ) : null}
       </div>
       {gallery.emptyState ? (
-        <V2RecordEmpty model={gallery.emptyState} icon="activity" action={<SetUpAgentAction />} onClear={onClearFilters} />
+        <V2RecordEmpty
+          model={gallery.emptyState}
+          icon="activity"
+          action={<SetUpAgentAction />}
+          onClear={onClearFilters}
+          onWiden={onWiden}
+        />
       ) : (
         gallery.groups.map((group) => (
           <div key={group.key} className="df-gallery-group">

@@ -147,6 +147,21 @@ export function timeStatsPath(filters: Omit<TimeEntriesFilter, "status"> = {}): 
   return query ? `/api/time-tracking/stats?${query}` : "/api/time-tracking/stats";
 }
 
+/** The Range one step wider than this one; `null` when it is already the widest. */
+export function widerTimeRange(range: "today" | "week" | "all"): "week" | "all" | null {
+  if (range === "today") return "week";
+  if (range === "week") return "all";
+  return null;
+}
+
+/** The label of the action that widens the Range: "Show this week", "Show all time". */
+function widenTimeLabel(range: "today" | "week" | "all"): string | null {
+  const wider = widerTimeRange(range);
+  if (!wider) return null;
+  const label = timePeriodLabel(wider);
+  return `Show ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+}
+
 export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel {
   const rows = input.entries.map((entry) => {
     const running = entry.status === "running" || entry.id === input.activeEntryId;
@@ -168,10 +183,11 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
     };
   });
   const empty = rows.length === 0;
-  // A short Range cannot claim the Workspace has none: rows may sit outside it, so the compact line names the window.
+  // A short Range cannot claim the Workspace has none: rows may sit outside it, so the Range state names the window.
   const hasProjects = input.hasProjects !== false;
   const newProject = { label: "New Project", href: "/projects?new=1" };
   const window = input.range === "today" ? "today" : input.range === "week" ? "this week" : null;
+  const widenLabel = input.range ? widenTimeLabel(input.range) : null;
   return {
     subhead: `Time Entries in ${input.workspaceName}.`,
     workdayHours: formatHours(input.workdaySeconds),
@@ -185,7 +201,7 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
           ? "Time Entries are the intervals worked on a Project. Choose a Project and Task in the Timer above, then press Start."
           : "A Time Entry is logged against a Task in a Project, so a Project has to exist first. Create one, then start the Timer.",
       },
-      `No Time Entries ${window}. Widen the Range to look further back.`,
+      { window: window ?? "in this Workspace", widenLabel },
     ),
     emptyAction: !hasProjects && input.canCreateProject ? newProject : null,
     timerHint: hasProjects

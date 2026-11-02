@@ -82,7 +82,7 @@ describe("Activity from Activity Evidence (#191)", () => {
 
     expect(page.empty).toBe(true);
     expect(page.rows).toEqual([]);
-    expect(page.emptyState?.copy.toLowerCase()).toContain("activity evidence");
+    expect(`${page.emptyState?.title} ${page.emptyState?.copy}`.toLowerCase()).toContain("activity evidence");
     expect(page.pagePrimary).toBe("case-ink");
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
