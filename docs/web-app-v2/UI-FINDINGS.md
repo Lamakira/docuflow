@@ -369,3 +369,10 @@ built for rows, where every other empty list in v2 shows the designed panel, so
 the owner read it as a screen nobody had designed. The case is kept — the copy
 still says earlier rows exist rather than inviting a first one — but it now
 takes the designed panel, and its action is the way out the line only named.
+
+The same pass fixed two defects on that screen. The empty Gallery still offered
+`Select all` and a disabled `Download 0 captures` with nothing to act on; they
+now show only when the Gallery holds a capture. The Tracking Policy card's
+footnote ("You can inspect Activity Evidence…") sat flush against the last
+policy line and 4 px left of it, borrowed from the empty-line class `df-empty`;
+it is now a hint inside the policy block, on the same left edge, a step below.
