@@ -101,6 +101,7 @@ export type TodayModel = {
   dateChip: string;
   subhead: string;
   attention: AttentionRow[];
+  attentionTotal: number;
   projects: ActiveProjectRow[];
   workday: {
     memberCount: number;
@@ -108,6 +109,7 @@ export type TodayModel = {
     members: WorkdayMemberRow[];
   };
   knowledge: KnowledgeRow[];
+  knowledgeTotal: number;
   approvals: {
     empty: true;
     kicker: string;
@@ -115,6 +117,8 @@ export type TodayModel = {
     copy: string;
   };
 };
+
+export const TODAY_SECTION_LIMIT = 5;
 
 const LIVE_PROJECT_STATUSES = new Set(["active", "on_hold", "in_review", "completed"]);
 
@@ -272,6 +276,7 @@ function composeProjects(input: TodayInput): ActiveProjectRow[] {
   const month = new Map(input.monthSecondsByProject.map((row) => [row.crmProjectId, row.totalDuration]));
   return input.projects
     .filter((project) => LIVE_PROJECT_STATUSES.has(project.projectStatus))
+    .sort((a, b) => (month.get(b.id) ?? 0) - (month.get(a.id) ?? 0))
     .map((project) => {
       const budgeted = budgetedHoursTotal(project);
       const actual = project.actualHours ?? 0;
@@ -354,13 +359,16 @@ export const EMPTY_TIMESHEET_APPROVALS = {
 export function composeToday(input: TodayInput): TodayModel {
   const attention = composeAttention(input);
   const projects = composeProjects(input);
+  const knowledge = composeKnowledge(input);
   return {
     dateChip: formatDateChip(input.now),
     subhead: attentionSubhead(attention.length),
-    attention,
-    projects,
+    attention: attention.slice(0, TODAY_SECTION_LIMIT),
+    attentionTotal: attention.length,
+    projects: projects.slice(0, TODAY_SECTION_LIMIT),
     workday: composeWorkday(input),
-    knowledge: composeKnowledge(input),
+    knowledge: knowledge.slice(0, TODAY_SECTION_LIMIT),
+    knowledgeTotal: knowledge.length,
     approvals: EMPTY_TIMESHEET_APPROVALS,
   };
 }

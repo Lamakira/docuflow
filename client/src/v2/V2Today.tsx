@@ -22,7 +22,7 @@ import {
 import { motionForSurface } from "./motion";
 import { isStandingRefusal, notify } from "./notify";
 import { meterTone, swatchStyle } from "./palette";
-import { composeToday, mobileProjectMeta, type TodayInput, type TodayProject } from "./today";
+import { composeToday, mobileProjectMeta, TODAY_SECTION_LIMIT, type TodayInput, type TodayProject } from "./today";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { Button } from "@/components/ui/button";
 import { SkeletonRegister, SkeletonSection, SkeletonSubhead } from "./V2Skeleton";
@@ -246,11 +246,24 @@ export function V2TodayPage() {
         <div className="df-card-head">
           <div className="df-cluster">
             <h2 className="df-card-title">Needs attention</h2>
-            <span className="df-count-chip">{today.attention.length} items</span>
+            <span className="df-count-chip">{today.attentionTotal} items</span>
           </div>
-          <span className="df-mono df-attention-sort" style={{ fontSize: 10, color: "var(--df-muted-ink)" }}>
-            Sorted by impact
-          </span>
+          <div className="df-cluster">
+            <span className="df-mono df-attention-sort" style={{ fontSize: 10, color: "var(--df-muted-ink)" }}>
+              Sorted by impact
+            </span>
+            {today.attentionTotal > TODAY_SECTION_LIMIT ? (
+              <Button
+                variant="outline"
+                type="button"
+                className="df-btn"
+                data-testid="v2-today-attention-all"
+                onClick={() => openPanel("notifications")}
+              >
+                View all {today.attentionTotal}
+              </Button>
+            ) : null}
+          </div>
         </div>
         {today.attention.length === 0 ? (
           <V2CompactEmpty>
@@ -416,9 +429,16 @@ export function V2TodayPage() {
         <section className="df-card" data-testid="v2-today-knowledge">
           <div className="df-card-head">
             <h2 className="df-card-title">Recent knowledge changes</h2>
-            <span className="df-mono" style={{ fontSize: 10, color: "var(--df-muted-ink)" }}>
-              Access-filtered
-            </span>
+            <div className="df-cluster">
+              <span className="df-mono" style={{ fontSize: 10, color: "var(--df-muted-ink)" }}>
+                Access-filtered
+              </span>
+              {today.knowledgeTotal > TODAY_SECTION_LIMIT ? (
+                <Link href="/documents" className="df-ghost-link" data-testid="v2-today-knowledge-all">
+                  View all
+                </Link>
+              ) : null}
+            </div>
           </div>
           {today.knowledge.length === 0 ? (
             <V2CompactEmpty>No recent knowledge changes you can access.</V2CompactEmpty>

@@ -376,3 +376,14 @@ now show only when the Gallery holds a capture. The Tracking Policy card's
 footnote ("You can inspect Activity Evidence…") sat flush against the last
 policy line and 4 px left of it, borrowed from the empty-line class `df-empty`;
 it is now a hint inside the policy block, on the same left edge, a step below.
+
+## F13 — Today lists every row in its sections
+
+- **Status:** closed
+- **Found:** 2026-11-05, Today on the real Workspace: 11 rows in Needs attention, 123 in Active Projects
+- **Where:** `client/src/v2/today.ts` (`composeToday`, `composeProjects`), `client/src/v2/V2Today.tsx`
+- **Severity:** cosmetic. Nothing is lost; everything below Active Projects sits far out of reach
+- **Fixed:** 2026-11-05. Needs attention, Active Projects and Recent knowledge changes show five rows each, keep the real total in the count, and offer `View all` when there are more. Projects are ordered by Tracked MTD, so the five shown are the ones being worked on. Workday stays whole: it has no fuller page to send anyone to.
+
+`View all` on Needs attention opens the Notifications panel rather than a page,
+so it is a Button, not the quiet `.df-ghost-link` the other two use.

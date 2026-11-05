@@ -281,4 +281,63 @@ describe("Today desktop from live Workspace records (#172)", () => {
     expect(today.attention[0].href).toBe("/projects/prj-live");
     expect(today.attention[0].kind).toBe("MENTION");
   });
+
+  it("caps Needs attention at five rows, keeps the remind row first and the full count", () => {
+    const today = composeToday(
+      emptyInput({
+        missingDailyUpdates: [
+          { id: "m-1", firstName: "Sam", lastName: "Lee", email: "sam@example.com" },
+          { id: "m-2", firstName: "Ravi", lastName: "Das", email: "ravi@example.com" },
+        ],
+        notifications: Array.from({ length: 7 }, (_, index) => ({
+          id: `n-${index}`,
+          type: "mention",
+          message: `Mention ${index}`,
+          isRead: 0,
+          createdAt: new Date(2026, 8, 8, 8, index, 0),
+          crmProjectId: "prj-live",
+        })),
+      }),
+    );
+    expect(today.attention).toHaveLength(5);
+    expect(today.attention[0].id).toBe("daily-updates-missing");
+    expect(today.attentionTotal).toBe(8);
+    expect(today.subhead).toContain("8 items");
+  });
+
+  it("caps Active Projects at five rows, most Tracked MTD first", () => {
+    const projects = Array.from({ length: 8 }, (_, index) => ({
+      id: `prj-${index}`,
+      projectStatus: "active",
+      projectType: "one_time",
+      budgetedHours: null,
+      actualHours: null,
+      project: { id: `doc-${index}`, name: `Project ${index}` },
+      client: { name: "Harbor Co" },
+      assignee: null,
+    }));
+    const today = composeToday(
+      emptyInput({
+        projects,
+        monthSecondsByProject: [{ crmProjectId: "prj-7", totalDuration: 7200 }],
+      }),
+    );
+    expect(today.projects).toHaveLength(5);
+    expect(today.projects[0].id).toBe("prj-7");
+  });
+
+  it("caps Recent knowledge changes at five rows and keeps the full count", () => {
+    const today = composeToday(
+      emptyInput({
+        recentDocuments: Array.from({ length: 7 }, (_, index) => ({
+          id: `doc-${index}`,
+          title: `Runbook ${index}`,
+          updatedAt: new Date(2026, 8, 8, 9, index, 0),
+          projectId: "doc-1",
+        })),
+      }),
+    );
+    expect(today.knowledge).toHaveLength(5);
+    expect(today.knowledgeTotal).toBe(7);
+  });
 });
