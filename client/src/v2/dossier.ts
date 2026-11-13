@@ -7,6 +7,8 @@ import {
   projectBudgetDraft,
   projectBudgetPercent,
   projectDatesDraft,
+  projectStatusChoices,
+  projectStatusMovable,
   type ProjectBudgetDraft,
   type ProjectDatesDraft,
 } from "./projects";
@@ -23,6 +25,8 @@ export type DossierPerson = {
 export type DossierProject = {
   id: string;
   projectStatus: string;
+  // The combined lifecycle as HTTP returns it: what a write sends, and what decides whether the status can move.
+  status?: string | null;
   projectType: string | null;
   budgetedHours: number | null;
   budgetedMinutes?: number | null;
@@ -255,6 +259,9 @@ export type DossierModel = {
     title: string;
     status: string;
     statusColor: string;
+    statusValue: string;
+    statusOptions: Array<{ value: string; label: string }>;
+    statusMovable: boolean;
     lead: { name: string; initials: string; self: boolean } | null;
     team: Array<{ name: string; initials: string }>;
     updatedLabel: string | null;
@@ -812,7 +819,7 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
     action: documentationEnabled ? "Turn Documentation off" : "Turn Documentation on",
   };
   const lifecycleNote =
-    "Project Status moves on the Projects board. Every change is kept in Status history on the Overview.";
+    "Project Status changes from the header or the Projects board. Every change is kept in Status history on the Overview.";
   if (!project) {
     return {
       identity: [],
@@ -1031,6 +1038,13 @@ export function composeDossier(input: DossierInput): DossierModel {
       title: project.project?.name || "Untitled Project",
       status: statusLabel(project.projectStatus),
       statusColor: projectStatusColor(project.projectStatus),
+      statusValue: project.projectStatus,
+      statusOptions: projectStatusChoices(project.projectStatus),
+      statusMovable: projectStatusMovable({
+        projectType: project.projectType,
+        clientName: project.client?.name ?? null,
+        status: project.status,
+      }),
       lead: project.assignee
         ? { ...personChip(project.assignee), self: project.assignee.id === input.currentUserId }
         : null,

@@ -2657,6 +2657,22 @@ button.df-activity-row {
   background: var(--df-swatch-tint-dark);
 }
 
+/* The Dossier's Project Status select reads as the status chip, in its board colour. */
+.df-v2 .df-dossier-status-control .df-select-trigger {
+  font-size: var(--df-text-1);
+  letter-spacing: 0.04em;
+  padding: var(--df-space-1) var(--df-space-2);
+  color: var(--df-swatch-ink);
+  border-color: var(--df-swatch-line);
+  background: var(--df-swatch-tint);
+}
+
+.dark .df-v2 .df-dossier-status-control .df-select-trigger {
+  color: var(--df-swatch-ink-dark);
+  border-color: var(--df-swatch-line-dark);
+  background: var(--df-swatch-tint-dark);
+}
+
 .df-meter-row {
   display: flex;
   align-items: center;

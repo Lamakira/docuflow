@@ -739,3 +739,17 @@ describe("Project Dossier Documentation tab (#307)", () => {
     expect(tab.selectPage).toBeNull();
   });
 });
+
+describe("Project Status control in the Dossier header (#368)", () => {
+  it("carries the raw status, the choices and whether it can move", () => {
+    const base = liveProject();
+    const won = composeDossier(emptyInput({ project: { ...base, status: "won_in_progress" } }));
+    expect(won.identity?.statusValue).toBe("active");
+    expect(won.identity?.statusMovable).toBe(true);
+    expect(won.identity?.statusOptions.map((o) => o.value)).not.toContain("on_hold");
+    const lead = composeDossier(emptyInput({ project: { ...base, status: "lead" } }));
+    expect(lead.identity?.statusMovable).toBe(false);
+    const internal = composeDossier(emptyInput({ project: { ...base, status: "lead", projectType: "internal" } }));
+    expect(internal.identity?.statusMovable).toBe(true);
+  });
+});
