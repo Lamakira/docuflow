@@ -52,7 +52,10 @@ import { PageTree } from "@/components/PageTree";
 import {
   composeBudgetForm,
   composeProjectDatesForm,
+  combinedStatusForProjectStatus,
   projectBudgetDraft,
+  projectsAllPath,
+  projectsKanbanPath,
   type ProjectBudgetDraft,
   type ProjectDatesDraft,
 } from "./projects";
@@ -137,6 +140,7 @@ function toDossierProject(project: CrmProjectWithDetails): DossierProject {
   return {
     id: project.id,
     projectStatus: project.projectStatus,
+    status: project.status,
     projectType: project.projectType,
     budgetedHours: project.budgetedHours,
     budgetedMinutes: project.budgetedMinutes,
@@ -522,6 +526,40 @@ export function V2DossierPage() {
     },
   });
 
+  const setProjectStatus = useMutation({
+    mutationFn: (next: string) =>
+      apiRequest("PATCH", `/api/crm/projects/${projectId}`, { status: combinedStatusForProjectStatus(next) }),
+    onMutate: async (next: string) => {
+      // Exact: the bare prefix would also cancel the notes and reminders queries.
+      await queryClient.cancelQueries({ queryKey: ["/api/crm/projects", projectId], exact: true });
+      const previous = queryClient.getQueryData<CrmProjectWithDetails | null>(["/api/crm/projects", projectId]);
+      if (previous) {
+        queryClient.setQueryData<CrmProjectWithDetails | null>(["/api/crm/projects", projectId], {
+          ...previous,
+          projectStatus: next,
+          status: combinedStatusForProjectStatus(next),
+        });
+      }
+      setWriteRefusal(null);
+      return { previous };
+    },
+    onError: (error: Error, _next, context) => {
+      if (context?.previous) queryClient.setQueryData(["/api/crm/projects", projectId], context.previous);
+      // Same toast as a board move; a standing refusal still goes to the chrome.
+      if (!isStandingRefusal(error)) return notify.error(error, { fallback: "Project could not be moved." });
+      refuseWrite(error.message);
+    },
+    onSuccess: () => {
+      notify.success("Project Status saved");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      queryClient.invalidateQueries({ queryKey: [projectsKanbanPath()] });
+      queryClient.invalidateQueries({ queryKey: [projectsAllPath()] });
+      queryClient.invalidateQueries({ queryKey: [projectStageHistoryPath(projectId)] });
+    },
+  });
+
   const deleteProject = useMutation({
     mutationFn: () => apiRequest("DELETE", `/api/crm/projects/${projectId}`),
     onSuccess: () => {
@@ -829,6 +867,12 @@ export function V2DossierPage() {
   const dossier = composeDossier(input);
   const firstTodoTask = dossier.nextActions.rows.find((row) => !row.done);
 
+  function onSetProjectStatus(next: string) {
+    if (next === dossier.identity?.statusValue) return;
+    if (refuseWrite()) return;
+    setProjectStatus.mutate(next);
+  }
+
   function onStartTimer() {
     if (!projectId) return;
     setSelectedProjectId(projectId);
@@ -967,9 +1011,23 @@ export function V2DossierPage() {
                 </div>
                 <div className="df-dossier-title-row">
                   <h1 className="df-record-title">{dossier.identity.title}</h1>
-                  <span className="df-status" data-status={dossier.identity.status} data-swatch="" style={swatchStyle(dossier.identity.statusColor)}>
-                    {dossier.identity.status}
-                  </span>
+                  {dossier.identity.statusMovable ? (
+                    <span className="df-dossier-status-control" data-swatch="" style={swatchStyle(dossier.identity.statusColor)}>
+                      <V2FilterSelect
+                        label=""
+                        ariaLabel="Project Status"
+                        value={dossier.identity.statusValue}
+                        options={dossier.identity.statusOptions}
+                        onChange={onSetProjectStatus}
+                        disabled={setProjectStatus.isPending}
+                        testId="v2-dossier-status-select"
+                      />
+                    </span>
+                  ) : (
+                    <span className="df-status" data-status={dossier.identity.status} data-swatch="" style={swatchStyle(dossier.identity.statusColor)}>
+                      {dossier.identity.status}
+                    </span>
+                  )}
                   {dossier.identity.tags.map((tag) => (
                     <span key={tag.id} className="df-tag-chip" data-testid={`v2-dossier-tag-${tag.id}`}>
                       {/* Per-instance: the swatch is this Tag's own colour. */}

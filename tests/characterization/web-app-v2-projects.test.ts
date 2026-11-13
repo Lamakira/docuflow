@@ -12,6 +12,8 @@ import {
   composeProjectRegister,
   EMPTY_PROJECT_BUDGET_DRAFT,
   newProjectPayload,
+  projectStatusChoices,
+  projectStatusMovable,
   PROJECT_SORTS,
   projectDatesDraft,
   projectsAllPath,
@@ -483,5 +485,20 @@ describe("Projects view switcher", () => {
   it("keeps the global button rule from overriding the segment items", () => {
     expect(css).toContain(':not(.df-segment-item)');
     expect(css).toMatch(/\.df-segment-item\[data-state="on"\]/);
+  });
+});
+
+describe("Project Status from the Dossier header (#368)", () => {
+  it("moves won work, Internal work and Client-less work, and nothing else", () => {
+    expect(projectStatusMovable({ projectType: "one_time", clientName: "Harbor Co", status: "won_in_progress" })).toBe(true);
+    expect(projectStatusMovable({ projectType: "one_time", clientName: "Harbor Co", status: "lead" })).toBe(false);
+    expect(projectStatusMovable({ projectType: "one_time", clientName: "Harbor Co", status: "lost" })).toBe(false);
+    expect(projectStatusMovable({ projectType: "internal", clientName: "Harbor Co", status: "lead" })).toBe(true);
+    expect(projectStatusMovable({ projectType: "one_time", clientName: null, status: "lead" })).toBe(true);
+  });
+
+  it("offers the board's statuses, and On hold only while it is current", () => {
+    expect(projectStatusChoices("active").map((o) => o.value)).toEqual(["planned", "active", "in_review", "completed", "archived"]);
+    expect(projectStatusChoices("on_hold").map((o) => o.value)).toEqual(["planned", "active", "on_hold", "in_review", "completed", "archived"]);
   });
 });

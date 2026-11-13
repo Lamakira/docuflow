@@ -366,6 +366,15 @@ const COMBINED_FOR_PROJECT_STATUS: Record<string, string> = {
   archived: "won_cancelled",
 };
 
+/**
+ * The Project Status choices a Dossier can offer: the board's columns. `on_hold`
+ * has no combined source, so it cannot be picked; a Project already On hold still
+ * shows it as the current value.
+ */
+export function projectStatusChoices(current: string): Array<{ value: string; label: string }> {
+  return PROJECT_STATUS_OPTIONS.filter((option) => option.value !== "on_hold" || current === "on_hold");
+}
+
 export function combinedStatusForProjectStatus(projectStatus: string): string {
   return COMBINED_FOR_PROJECT_STATUS[projectStatus] ?? "won_not_started";
 }
@@ -375,8 +384,12 @@ export function combinedStatusForProjectStatus(projectStatus: string): string {
  * sale. "Internal" is the register's definition, a Project type or no Client at
  * all, so the two views agree on what they call it.
  */
-function movesOnBoard(project: { projectType: string | null; clientName: string | null; status: string }): boolean {
-  if (project.status.startsWith("won")) return true;
+export function projectStatusMovable(project: {
+  projectType: string | null;
+  clientName: string | null;
+  status: string | null | undefined;
+}): boolean {
+  if (project.status?.startsWith("won")) return true;
   return project.projectType === "internal" || !project.clientName;
 }
 
@@ -459,7 +472,7 @@ export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel
       status: projectStatus,
       href: projectHref(project.id),
       changing: project.id === input.changingId,
-      movable: movesOnBoard(project),
+      movable: projectStatusMovable(project),
     });
   }
 

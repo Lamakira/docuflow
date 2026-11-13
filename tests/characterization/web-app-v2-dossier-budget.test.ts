@@ -223,6 +223,7 @@ describe("Dossier Settings reads as labelled groups (#277)", () => {
     expect(dossier.settings.lifecycle.rows.find((row) => row.label === "Last change")?.value).toBe("07 Sep · Pat Ng");
     expect(dossier.settings.lifecycle.rows[0]).toMatchObject({ label: "Status", value: "ACTIVE", chip: true });
     expect(dossier.settings.lifecycle.note).toMatch(/Projects board/);
+    expect(dossier.settings.lifecycle.note).toMatch(/header/);
   });
 });
 
