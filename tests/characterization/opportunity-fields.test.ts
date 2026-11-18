@@ -3,6 +3,7 @@ import { makeApp } from "../helpers/app";
 import { resetDb } from "../helpers/db";
 import { registerAdmin, registerUser } from "../helpers/auth";
 import { createClient } from "../helpers/fixtures";
+import { opportunityFieldsIssue, type OpportunityFieldsState } from "../../shared/opportunityFields";
 
 /**
  * An Opportunity carries more than a name and a Client (#276). The row behind
@@ -345,5 +346,43 @@ describe("Opportunity fields (#276)", () => {
     expect(notes.body[0].createdAt).toBeTruthy();
     expect((await admin.agent.delete(`/api/crm/projects/${id}/notes/${created.body.id}`)).status).toBe(204);
     expect((await admin.agent.get(`/api/crm/projects/${id}/notes`)).body).toEqual([]);
+  });
+});
+
+describe("A won Opportunity cannot go back to an open stage (#372)", () => {
+  const state = (overrides: Partial<OpportunityFieldsState> = {}): OpportunityFieldsState => ({
+    status: "lead",
+    projectType: "one_time",
+    isDocumentationOnly: 0,
+    estimatedValueMinor: null,
+    estimatedValueCurrency: null,
+    lostReason: null,
+    lostReasonDetail: null,
+    ...overrides,
+  });
+  const changing = { status: true, lostReason: false, requireLostReason: false };
+  const move = (from: string, to: string, extra: Partial<OpportunityFieldsState> = {}) =>
+    opportunityFieldsIssue(state({ status: from, ...extra }), state({ status: to, ...extra }), changing);
+  const message = "A won Opportunity cannot go back to an open stage.";
+
+  it("refuses leaving a won status for a non-won one", () => {
+    expect(move("won_in_review_pm", "lead")).toBe(message);
+    expect(move("won", "follow_up")).toBe(message);
+    expect(move("won_completed", "lost")).toBe(message);
+  });
+
+  it("allows moves between won statuses, out of lost, into won, and on rows without an Opportunity", () => {
+    expect(move("won_not_started", "won_in_progress")).toBeNull();
+    expect(move("lost", "lead")).toBeNull();
+    expect(move("lead", "won")).toBeNull();
+    expect(move("won_in_review_pm", "lead", { projectType: "internal" })).toBeNull();
+    expect(move("won_paid", "lead")).toBeNull();
+  });
+
+  it("does not treat a move into the custom stage won_paid as winning", () => {
+    const toInternal = (to: string) =>
+      opportunityFieldsIssue(state({ status: "lead" }), state({ status: to, projectType: "internal" }), changing);
+    expect(toInternal("won_paid")).toBeNull();
+    expect(toInternal("won")).toBe("Winning creates a Client Project, so its Project type cannot be Internal.");
   });
 });
