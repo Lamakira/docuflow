@@ -3,12 +3,15 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assignPlan, migrateV1Plans } from "../../scripts/assign-plan";
 import { backfillCrmLinks } from "../../scripts/backfill-crm-links";
+import { backfillLegacyStatuses } from "../../scripts/backfill-legacy-statuses";
 import { openDb } from "../../scripts/lib/db";
 import { seedDefaults } from "../../scripts/seed-defaults";
 import {
   auditEvents,
   crmModuleFields,
   crmModules,
+  crmProjects,
+  opportunities,
   orgSettings,
   outboxEvents,
   projects,
@@ -223,6 +226,86 @@ describe("db:backfill:crm-links", () => {
 
     expect(result).toEqual({ linkedCount: 0, failedCount: 0, remainingOrphans: 1 });
     expect(await db.query.crmProjects.findMany()).toHaveLength(0);
+  });
+});
+
+describe("db:backfill:legacy-statuses (#372)", () => {
+  /**
+   * A row as the cutover left it: v1's status, the Project Status migration 0012
+   * stored for it, and, when it is a sale, the raw status copied as the stage.
+   */
+  async function insertRow(
+    status: string,
+    stored: { projectStatus: string; stage: string | null },
+  ): Promise<string> {
+    const [owner] = await db
+      .insert(users)
+      .values({ id: randomUUID(), email: `${randomUUID()}@example.test`, role: "user" })
+      .returning({ id: users.id });
+    const [project] = await db
+      .insert(projects)
+      .values({ name: `Row ${status}`, ownerId: owner.id, workspaceId: SEEDED_WORKSPACE_ID })
+      .returning({ id: projects.id });
+    const [row] = await db
+      .insert(crmProjects)
+      .values({ projectId: project.id, status, projectStatus: stored.projectStatus, workspaceId: SEEDED_WORKSPACE_ID })
+      .returning({ id: crmProjects.id });
+    if (stored.stage) {
+      await db.insert(opportunities).values({ crmProjectId: row.id, stage: stored.stage, workspaceId: SEEDED_WORKSPACE_ID });
+    }
+    return row.id;
+  }
+
+  async function storedOf(id: string) {
+    const row = await db.query.crmProjects.findFirst({ where: eq(crmProjects.id, id) });
+    const opportunity = await db.query.opportunities.findFirst({ where: eq(opportunities.crmProjectId, id) });
+    return { status: row?.status, projectStatus: row?.projectStatus, stage: opportunity?.stage ?? null };
+  }
+
+  it("re-derives the stored Project Status and stage of the three v1 statuses, and keeps the status", async () => {
+    const pm = await insertRow("won_in_review_pm", { projectStatus: "planned", stage: "won_in_review_pm" });
+    const client = await insertRow("won_in_review_client", { projectStatus: "planned", stage: "won_in_review_client" });
+    // An Internal row in review: no Opportunity, so only its Project Status moves.
+    const internal = await insertRow("won_in_review_pm", { projectStatus: "planned", stage: null });
+    const negotiating = await insertRow("in_negociation", { projectStatus: "planned", stage: "in_negociation" });
+
+    const result = await backfillLegacyStatuses(db);
+
+    expect(result).toEqual({ projectStatusChanged: 3, stageChanged: 3, remaining: 0 });
+    expect(await storedOf(pm)).toEqual({ status: "won_in_review_pm", projectStatus: "in_review", stage: "won" });
+    expect(await storedOf(client)).toEqual({ status: "won_in_review_client", projectStatus: "in_review", stage: "won" });
+    expect(await storedOf(internal)).toEqual({ status: "won_in_review_pm", projectStatus: "in_review", stage: null });
+    expect(await storedOf(negotiating)).toEqual({ status: "in_negociation", projectStatus: "planned", stage: "in_negotiation" });
+  });
+
+  it("leaves every other status alone, On hold included", async () => {
+    // On hold has no combined source: a general re-derivation would overwrite it.
+    const onHold = await insertRow("won_in_progress", { projectStatus: "on_hold", stage: "won" });
+    const lead = await insertRow("lead", { projectStatus: "planned", stage: "lead" });
+
+    const result = await backfillLegacyStatuses(db);
+
+    expect(result).toEqual({ projectStatusChanged: 0, stageChanged: 0, remaining: 0 });
+    expect(await storedOf(onHold)).toEqual({ status: "won_in_progress", projectStatus: "on_hold", stage: "won" });
+    expect(await storedOf(lead)).toEqual({ status: "lead", projectStatus: "planned", stage: "lead" });
+  });
+
+  it("is a no-op on a second run", async () => {
+    await insertRow("won_in_review_client", { projectStatus: "planned", stage: "won_in_review_client" });
+    await backfillLegacyStatuses(db);
+
+    const second = await backfillLegacyStatuses(db);
+
+    expect(second).toEqual({ projectStatusChanged: 0, stageChanged: 0, remaining: 0 });
+  });
+
+  it("counts without writing under --dry-run", async () => {
+    const pm = await insertRow("won_in_review_pm", { projectStatus: "planned", stage: "won_in_review_pm" });
+
+    const result = await backfillLegacyStatuses(db, { dryRun: true });
+
+    expect(result).toEqual({ projectStatusChanged: 0, stageChanged: 0, remaining: 2 });
+    expect(await storedOf(pm)).toEqual({ status: "won_in_review_pm", projectStatus: "planned", stage: "won_in_review_pm" });
   });
 });
 

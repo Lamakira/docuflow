@@ -144,6 +144,19 @@ npm run db:backfill:crm-links        # only where legacy projects predate the CR
 every start. Both are idempotent and safe to re-run; the backfill reports what
 it linked and verifies nothing is left behind.
 
+A database converted from v1 also takes, once, after `db:migrate`:
+
+```bash
+npm run db:backfill:legacy-statuses -- --dry-run   # count, change nothing
+npm run db:backfill:legacy-statuses
+```
+
+`scripts/backfill-legacy-statuses.ts` (#372) rewrites the stored Project Status
+and Opportunity stage of rows still carrying v1's `won_in_review_pm`,
+`won_in_review_client` or `in_negociation`, which `0012` mapped only by v2's
+statuses. It leaves `crm_projects.status` as v1 wrote it, is a no-op on a second
+run, and exits 1 if any such row is still stored wrong.
+
 ## A database that predates the journal
 
 Production was built with `drizzle-kit push` and has no migration record, so a
