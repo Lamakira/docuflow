@@ -599,10 +599,11 @@ Estimated value and the column totals, and the loading and error states.
 
 ## F24 — Two v1 stages become open pipeline columns, and their won Projects can be dragged back to Lead
 
-- **Status:** open — [#372](https://github.com/Lamakira/docuflow/issues/372), confirmed on the real Workspace
+- **Status:** closed — [#372](https://github.com/Lamakira/docuflow/issues/372), confirmed on the real Workspace
 - **Found:** 2026-11-18, from the cutover rehearsal run through `composeOpportunityPipeline`, then on the real Workspace (captures by the owner, pipeline read in production)
 - **Where:** `shared/projectLifecycle.ts:25` (`OPPORTUNITY_STAGE_BY_COMBINED`), `client/src/v2/opportunities.ts:199` (`stageOptionsFromFieldOptions`), `opportunities.ts:224` (`composeOpportunityStages`), `client/src/v2/V2Opportunities.tsx:1218` (`onStageChange`), `shared/opportunityFields.ts:48` (the server's only stage rule is about entering Won)
 - **Severity:** misleading on sight; damaging if anyone drags one
+- **Fixed:** 2026-11-18, [#372](https://github.com/Lamakira/docuflow/issues/372). `shared/projectLifecycle.ts` reads `won_in_review_pm` and `won_in_review_client` as stage Won and Project Status In review, and `in_negociation` as `in_negotiation`: on the cutover rehearsal the pipeline draws seven columns, Won 83, Lost 22, twelve draggable cards. A PATCH that moves a won Opportunity out of a won status, Lost included, is refused, as `/lost` already refused it. `npm run db:backfill:legacy-statuses` rewrites the stored Project Status and Opportunity stage of those rows (16 and 16 on the rehearsal copy); it has to be run on production. `crm_projects.status` keeps v1's values, so the PM / Client distinction survives. A status that is neither in the lifecycle map nor in the Workspace's stage list still gets its own column, so no card vanishes, but that column is locked: nothing is dragged out of it or dropped into it. A rule on the `won_` prefix was not taken, because an Administrator may name an open stage `Won - Paid`, which a test pins.
 
 The rehearsal's stage list still carries v1's labels: `In Negociation`,
 `Won - In Review (PM)` and `Won - In Review (Client)`, and 18 rows carry the
