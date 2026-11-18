@@ -2463,11 +2463,9 @@ button.df-activity-row {
   margin: 0 14px 12px;
 }
 
-/* Each column is as tall as its own cards; stretching them all to the longest
-   (Won) left the open stages as empty tinted strips (F25). */
 .df-opportunity-pipeline {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: var(--df-space-3);
   min-height: 320px;
   overflow-x: auto;
@@ -2548,6 +2546,38 @@ button.df-activity-row {
   background: var(--df-hover);
 }
 
+/*
+ * As on Trello: the board fills the window below the page head, every column
+ * is the board's height, and a column with more cards than fit scrolls inside
+ * itself. Before, the page grew to the longest column (Won, thousands of
+ * pixels) and every other column stretched to it as an empty strip (F25).
+ * Not in the stacked layout, where columns sit one under the other.
+ */
+.df-workspace-content:has(> .df-page > .df-opportunity-pipeline[data-stacked="false"]) {
+  height: 100%;
+}
+
+.df-page:has(> .df-opportunity-pipeline[data-stacked="false"]) {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] {
+  flex: 1 1 0;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-column {
+  min-height: 0;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 .df-opportunity-card {
   position: relative;
   display: flex;
@@ -2613,8 +2643,10 @@ button.df-activity-row {
   max-width: 100%;
 }
 
+/* A column that scrolls inside keeps scrolling during a drag; the dragged card
+   is a clone outside the board, so nothing needs to spill out of it. */
 .df-opportunity-pipeline[data-dragging="true"] .df-opportunity-column,
-.df-opportunity-pipeline[data-dragging="true"] .df-opportunity-drop {
+.df-opportunity-pipeline[data-dragging="true"][data-stacked="true"] .df-opportunity-drop {
   overflow: visible;
 }
 

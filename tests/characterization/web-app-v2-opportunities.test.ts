@@ -323,8 +323,16 @@ describe("Opportunity Stage-change motion (#187)", () => {
     expect(rule(".df-opportunity-pipeline")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/scroll-behavior:\s*auto/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/scrollbar-width:\s*none/);
-    // Columns keep their own height; stretching them to Won's left empty strips (F25).
-    expect(rule(".df-opportunity-pipeline")).toMatch(/align-items:\s*flex-start/);
+    // As on Trello (F25): the board fills the page, every column is its height, and a
+    // long column scrolls inside itself, during a drag too.
+    expect(rule(".df-opportunity-pipeline")).toMatch(/align-items:\s*stretch/);
+    expect(rule(".df-page:has(> .df-opportunity-pipeline[data-stacked=\"false\"])")).toMatch(/height:\s*100%/);
+    expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"]")).toMatch(/flex:\s*1 1 0/);
+    expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"] .df-opportunity-drop")).toMatch(/overflow-y:\s*auto/);
+    expect(rule(".df-opportunity-pipeline[data-dragging=\"true\"][data-stacked=\"true\"] .df-opportunity-drop")).toMatch(
+      /overflow:\s*visible/,
+    );
+    expect(css).not.toMatch(/\.df-opportunity-pipeline\[data-dragging="true"\] \.df-opportunity-drop\s*[,{]/);
     expect(rule(".df-opportunity-column")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-column")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-drop")).toMatch(/transition:\s*none/);
