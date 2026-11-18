@@ -1400,6 +1400,7 @@ export function V2OpportunitiesPage() {
               </div>
               <Droppable
                 droppableId={column.id}
+                isDropDisabled={column.locked}
                 renderClone={(provided, _snapshot, rubric) =>
                   renderOpportunityClone(cardsById, provided, rubric)
                 }

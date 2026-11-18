@@ -155,6 +155,8 @@ export type OpportunityColumn = {
   id: string;
   label: string;
   terminal: boolean;
+  /** Made on the fly for a status the Workspace does not configure: shown, never a drop target (#372). */
+  locked: boolean;
   /** The stage colour, as a pill over a tint (v1 parity). */
   color: string;
   ink: "light" | "dark";
@@ -267,9 +269,15 @@ export function combinedStatusForStage(stage: string, currentCombined?: string):
   return stage;
 }
 
-function stageColumn(id: string, label: string, terminal: boolean, configured?: string): OpportunityColumn {
+function stageColumn(
+  id: string,
+  label: string,
+  terminal: boolean,
+  configured?: string,
+  locked = false,
+): OpportunityColumn {
   const color = stageColor(id, configured);
-  return { id, label, terminal, color, ink: stageInk(color), cards: [], totals: [] };
+  return { id, label, terminal, locked, color, ink: stageInk(color), cards: [], totals: [] };
 }
 
 export function composeOpportunityPipeline(input: OpportunityPipelineInput): OpportunityPipelineModel {
@@ -306,6 +314,7 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
         spec?.label ?? stageLabel(stage),
         spec?.terminal || isOpportunityTerminal(stage),
         spec?.color,
+        true,
       );
       columns.push(column);
       columnById.set(stage, column);
@@ -319,7 +328,7 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
       stage,
       stageLabel: column.label,
       terminal,
-      canChangeStage: !terminal,
+      canChangeStage: !terminal && !column.locked,
       projectHref: projectHref(row.id),
       recordHref: opportunityHref(row.id),
       changing: row.id === input.changingId,
