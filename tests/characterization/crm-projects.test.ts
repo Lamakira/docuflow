@@ -78,6 +78,19 @@ describe("CRM projects (characterization)", () => {
     expect(invalid.body.message).toBe("Invalid data");
   });
 
+  it("refuses to send a won Opportunity back to an open stage (#372)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const { crmProject } = await createCrmProject(user.agent, { name: "Won row", status: "won_in_review" });
+
+    const res = await user.agent.patch(`/api/crm/projects/${crmProject.id}`).send({ status: "lead" });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe("A won Opportunity cannot go back to an open stage.");
+
+    const read = await user.agent.get(`/api/crm/projects/${crmProject.id}`);
+    expect(read.body.status).toBe("won_in_review");
+  });
+
   it("keeps a budget's minutes on create, patch and clone (#277)", async () => {
     const app = await makeApp();
     const user = await registerUser(app);

@@ -8,7 +8,7 @@
  * units with its ISO 4217 code. It is never the Project budget, which is hours.
  */
 
-import { projectHasOpportunity } from "./projectLifecycle";
+import { isWonStatus, projectHasOpportunity } from "./projectLifecycle";
 
 export const OPPORTUNITY_CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "AUD", "MAD"] as const;
 export type OpportunityCurrency = (typeof OPPORTUNITY_CURRENCIES)[number];
@@ -55,12 +55,23 @@ export function opportunityFieldsIssue(
   }
   const winning =
     changing.status &&
-    next.status.startsWith("won") &&
+    isWonStatus(next.status) &&
     previous !== null &&
     projectHasOpportunity(previous) &&
-    !previous.status.startsWith("won");
+    !isWonStatus(previous.status);
   if (winning && next.projectType === "internal") {
     return "Winning creates a Client Project, so its Project type cannot be Internal.";
+  }
+  // A won Opportunity stays won: `POST /lost` refuses it too, and leaving Won
+  // would un-win its Client Project.
+  if (
+    changing.status &&
+    previous !== null &&
+    projectHasOpportunity(previous) &&
+    isWonStatus(previous.status) &&
+    !isWonStatus(next.status)
+  ) {
+    return "A won Opportunity cannot go back to an open stage.";
   }
   if (!projectHasOpportunity(next)) return null;
   const lost = next.status === "lost";

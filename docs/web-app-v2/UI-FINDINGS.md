@@ -581,3 +581,205 @@ of content beside a 240px rail. A 1680px screen at 200% zoom is 840 CSS px wide,
 so Today, and every other `df-page`, scrolls sideways. It would take letting
 the content shrink between 640px and 1300px (the stacked register already
 exists for mobile) or switching to the mobile layout at a wider breakpoint.
+
+---
+
+The eight entries below come from one full UI review of Opportunities (the
+pipeline, New Opportunity, the Opportunity record and its won and lost dialogs)
+on 2026-11-18. The app ran locally on the seeded DocuFlow Workspace, which
+holds two Opportunities; the dialogs were opened and cancelled, nothing was
+saved. The real Workspace's shape came first from the cutover rehearsal of
+2026-10-26 (`docuflow_rehearsal`, the v1 export with the v2 migrations applied,
+122 rows), passed through the real client functions. The same day the owner
+sent two captures of the real Opportunities page, and its pipeline was then
+read in production (columns, cards, pill colours; nothing clicked). Read from
+code only: dark mode, the stacked mobile board, a live drag, a
+Read-only Workspace, 200% zoom, a notes thread with notes in it, a card with an
+Estimated value and the column totals, and the loading and error states.
+
+## F24 — Two v1 stages become open pipeline columns, and their won Projects can be dragged back to Lead
+
+- **Status:** closed — [#372](https://github.com/Lamakira/docuflow/issues/372), confirmed on the real Workspace
+- **Found:** 2026-11-18, from the cutover rehearsal run through `composeOpportunityPipeline`, then on the real Workspace (captures by the owner, pipeline read in production)
+- **Where:** `shared/projectLifecycle.ts:25` (`OPPORTUNITY_STAGE_BY_COMBINED`), `client/src/v2/opportunities.ts:199` (`stageOptionsFromFieldOptions`), `opportunities.ts:224` (`composeOpportunityStages`), `client/src/v2/V2Opportunities.tsx:1218` (`onStageChange`), `shared/opportunityFields.ts:48` (the server's only stage rule is about entering Won)
+- **Severity:** misleading on sight; damaging if anyone drags one
+- **Fixed:** 2026-11-18, [#372](https://github.com/Lamakira/docuflow/issues/372). `shared/projectLifecycle.ts` reads `won_in_review_pm` and `won_in_review_client` as stage Won and Project Status In review, and `in_negociation` as `in_negotiation`: on the cutover rehearsal the pipeline draws seven columns, Won 83, Lost 22, twelve draggable cards. A PATCH that moves a won Opportunity out of a won status, Lost included, is refused, as `/lost` already refused it. `npm run db:backfill:legacy-statuses` rewrites the stored Project Status and Opportunity stage of those rows (16 and 16 on the rehearsal copy); it has to be run on production. `crm_projects.status` keeps v1's values, so the PM / Client distinction survives. A status that is neither in the lifecycle map nor in the Workspace's stage list still gets its own column, so no card vanishes, but that column is locked: nothing is dragged out of it or dropped into it. A rule on the `won_` prefix was not taken, because an Administrator may name an open stage `Won - Paid`, which a test pins.
+
+The rehearsal's stage list still carries v1's labels: `In Negociation`,
+`Won - In Review (PM)` and `Won - In Review (Client)`, and 18 rows carry the
+matching statuses. The labels become the ids `in_negociation`,
+`won_in_review_pm` and `won_in_review_client`, which the lifecycle map does not
+know (it knows `in_negotiation` and `won_in_review`), so each is read as an
+open stage. With the 122 rows the pipeline draws nine columns: Lead 4,
+Discovering Call Completed 1, Proposal Sent 1, Follow Up 4, In Negociation 2,
+**Won - In Review (PM) 5, Won - In Review (Client) 9**, Won 69, Lost 22. The
+fourteen cards in the two Won - In Review columns are won Client Projects in
+review, yet they are draggable: dropping one on Lead sends `status: "lead"`,
+and the PATCH handler has no rule against leaving a won status, so it would
+un-win it. New Opportunity offers both as a starting stage. Their stored
+Project Status is Planned in the rehearsal. No code or migration renames these
+values; migration 0012 maps only the exact v2 statuses.
+
+The real Workspace shows the same nine columns, 119 cards: Lead 5, Discovering
+Call Completed 1, Proposal Sent 1, Follow Up 4, In Negociation 2, **Won - In
+Review (PM) 4, Won - In Review (Client) 9**, Won 71, Lost 22. Won and Lost are
+locked (93 cards); the thirteen won Projects in the two Won - In Review columns
+are not. Because a drop writes at once, this stops being a findings entry and
+has its own issue, #372 (see the rule at the top). It would take
+mapping the three v1 ids in `shared/projectLifecycle.ts`
+(`won_in_review_pm` and `won_in_review_client` to Won / In review,
+`in_negociation` to `in_negotiation`), or a data migration that renames them,
+and never treating an unknown id as an open stage.
+
+## F25 — Won and Lost sit off-screen with no scrollbar, and the board is mostly closed history
+
+- **Status:** open
+- **Found:** 2026-11-18, the pipeline in a 1680px window (measured), and the cutover rehearsal (counted)
+- **Where:** `client/src/v2/tokens.css:2466-2483` (`.df-opportunity-pipeline`, `scrollbar-width: none`), `client/src/v2/opportunities.ts:275` (`composeOpportunityPipeline` keeps every terminal card)
+- **Severity:** misleading. Won and Lost are invisible and nothing says so
+
+Seven 280px columns need 2032px; the pipeline shows 1392px. In Negotiation
+loses its right edge and its count chip, and Won and Lost are entirely
+off-screen, with the scrollbar hidden on purpose, so nothing tells the reader
+the board goes on. From code: the board does not turn a vertical wheel into a
+sideways scroll, so a plain mouse wheel never reaches them. On the real
+Workspace the board is nine columns, 2616px wide in a 1392px view, and the two
+hidden columns hold 93 of 119 cards (Won 71, Lost 22): the sales pipeline is
+thirteen cards at the front of a long archive. Every column stretches to the
+Won column's height, 6558px, so the board ends in eight tinted columns that
+are empty for some 6000px, and "119 Opportunities" sits at the very bottom of
+the page (seen in the owner's captures). It would take a visible scrollbar (or
+edge fades with scroll buttons), and terminal columns that show a count and the
+most recent few with a way to the rest, as F13 did for Today.
+
+## F26 — Winning or losing an Opportunity from its record takes Edit → Stage → Save changes
+
+- **Status:** open — questions a decision of [#307](https://github.com/Lamakira/docuflow/issues/307)
+- **Found:** 2026-11-18, the record of `Az` (DocuFlow Workspace)
+- **Where:** `client/src/v2/V2Opportunities.tsx:1012-1055` (the Stage card), `V2Opportunities.tsx:856-882` (`finish`, the form path that opens the outcome dialog)
+- **Severity:** degrading. The sale's two decisive actions are hidden behind the form
+
+#307 chose this: "The stage changes in Edit mode, with the other fields. Won
+and Lost still open the existing outcome dialog." In use it costs this: the
+Stage card holds one row, the stage pill the header already shows, and a
+sentence, "Edit changes the stage." To close a sale you open Edit, pick Won in
+the Stage select, and press `Save changes`, which saves nothing (with no other
+change there is no PATCH) and opens the Mark as won dialog instead. Cancelling
+that dialog drops the choice and closes the form. My suggestion, not #307's:
+`Mark as won` and `Mark as lost` buttons in the Stage card of an open
+Opportunity, in place of the repeated pill, each opening its dialog directly;
+Edit keeps the stage for the other moves.
+
+## F27 — A pipeline card cannot be opened from the keyboard or in a new tab
+
+- **Status:** open
+- **Found:** 2026-11-18, the pipeline: Enter on a focused card did nothing (tested)
+- **Where:** `client/src/v2/V2Opportunities.tsx:216-283` (`OpportunityCardView`)
+- **Severity:** accessibility floor
+
+The card is an `<article>` that the drag library turns into `role="button"`
+with `tabindex="0"`. It opens only from a mouse click (`onClick` checks the
+pointer did not move), so Enter on a focused card does nothing: a keyboard user
+can reach every card and open none. Space lifts the card for a drag instead.
+There is no link either, so a middle click does nothing and Ctrl-click works
+only through `window.open`. It would take making the card's drag handle a real
+`<a href>` to the record: the drag library blocks drags from buttons and inputs
+but not from links, and its click threshold already tells a click from a drag.
+Enter, middle click and a screen reader's link list then work, with Space left
+to the drag.
+
+## F28 — Mark as won and Mark as lost cannot be undone, and neither dialog says so
+
+- **Status:** open
+- **Found:** 2026-11-18, both dialogs opened from the record and cancelled
+- **Where:** `client/src/v2/opportunities.ts:253` (`canChangeOpportunityStage` refuses any move out of Won or Lost), `client/src/v2/V2Opportunities.tsx:443,528` (the dialog descriptions), `V2Opportunities.tsx:896` (the Stage select is disabled once terminal)
+- **Severity:** misleading for an irreversible action
+
+Once Won or Lost, the card is locked on the pipeline and the record's Stage
+select is disabled; nothing in v2 reopens it (the server would accept a move
+out of Lost; the lock is the client's). Mark as lost says "Losing Az closes
+it", and Mark as won says it "makes it a Client Project", but neither says the
+stage cannot be changed afterwards, and both submit with the amber primary
+button. A drop onto Lost by mistake ends in a reason select, not a warning. It
+would take one sentence in each dialog ("This cannot be undone"). My
+suggestion, beyond that: a way to reopen a Lost Opportunity, since the server
+already allows it.
+
+## F29 — Stage pills fail contrast at 10px
+
+- **Status:** open
+- **Found:** 2026-11-18, the pipeline heads (measured locally and on the real Workspace)
+- **Where:** `client/src/v2/stageColor.ts:41` (`WHITE_MIN_CONTRAST = 3`), `client/src/v2/tokens.css:6948` (`.df-stage-pill`, `--df-text-1` = 10px, 600)
+- **Severity:** accessibility floor
+
+The pill takes white text whenever white clears 3:1, a threshold `stageColor.ts`
+chose on purpose. The text is 10px, so it owes 4.5:1. White on Lead (#ec4899)
+measures 3.53:1, on In negotiation (#3b82f6) 3.68:1, on Lost (#ef4444) 3.76:1,
+on Discovering call completed (#8b5cf6) 4.23:1. Dark ink would clear the first
+three (5.16, 4.95, 4.84) but not Discovering (4.30), which needs a darker fill.
+An Administrator's own stage colour goes through the same rule. On the real
+Workspace, whose stages carry v1's colours, three pills fail: Discovering Call
+Completed 4.23:1, In Negociation 3.68:1, Lost 3.76:1 (Lead is slate there,
+4.76:1). Lead and Won - In Review (Client) also share one slate (#64748b), so
+two columns wear the same colour. Amendment 6
+keeps the capitals; only the contrast is at fault. It would take a 4.5:1
+threshold that falls back to dark ink, and a darker step where neither ink
+clears. The record and Stage history wear the tinted swatch style instead,
+which clears 4.5:1 by design.
+
+## F30 — A card says nothing about who owns the sale or when it should close
+
+- **Status:** open
+- **Found:** 2026-11-18, the pipeline, and the real Workspace (counted)
+- **Where:** `client/src/v2/V2Opportunities.tsx:278-280`, `client/src/v2/opportunities.ts:315` (the card model)
+- **Severity:** degrading. The board cannot be triaged without opening each card
+
+A card shows the name, the Client and the Estimated value. On the real
+Workspace none of the 119 cards has an Estimated value, so every card is a
+name and a Client, and no column shows a total. The fields that make a pipeline scannable, the Owner
+and the Expected close, are on the record only; nothing marks a card whose
+close date has passed or that has sat in its stage for weeks. It would take the
+Owner's initials and the Expected close on the card, the date in the alert ink
+once passed.
+
+## F31 — Opportunities polish: labels, repetition, states
+
+- **Status:** open
+- **Found:** 2026-11-18, the pipeline and the record (seen unless marked)
+- **Where:** `client/src/v2/V2Opportunities.tsx` (lines below), `client/src/v2/tokens.css:2500` and `:3475`, `client/src/v2/emptyState.ts:40`
+- **Severity:** cosmetic
+
+- The breadcrumb ends in "Record", not the Opportunity's name.
+- The header reads `OPEN` or `TERMINAL` beside the Client (`:972`). Terminal is
+  an internal word, and it is a small label in capitals, which Amendment 6
+  retired outside chips. The boxed `OPPORTUNITY` chip beside it repeats the
+  breadcrumb and looks like a control.
+- The stage appears three times on the record (header pill, Stage card row,
+  latest Stage history row), in two styles: the pipeline's filled pill and the
+  record's tinted swatch.
+- Stage sits alone at half width on the edit form's first row; in New
+  Opportunity it sits near the bottom, under Currency. Same field, two orders.
+- `Edit` vanishes while editing and the header chips jump right.
+- `.df-opportunity-column` names both the pipeline column and the record's two
+  layout columns, so the record's columns inherit `overflow: hidden` and
+  `flex: 0 0 280px` (measured). Nothing is clipped today; anything that pokes
+  out of a card there will be.
+- In a Read-only Workspace the empty state hides `New Opportunity` but the
+  header keeps it (`:1290` vs `:1351`); the refusal arrives after the form is
+  filled (from code).
+- The filtered empty state says "No Opportunities match these filters." and
+  `Clear filters`, but the page has one search field and no filters. The copy
+  is shared (`emptyState.ts:40`), so every list with search alone says it.
+  Under the line the board still draws seven empty columns and "0
+  Opportunities".
+- An empty Workspace shows `New Opportunity` twice (header and empty state)
+  and a search field with nothing to search.
+- A stage drop gives no sign while it saves: `card.changing` is computed and
+  never rendered, and the stage-change motion is declared with no rule behind
+  it. An accidental drop has no undo; Stage history records it (from code).
+- Cards have no hover state, only the pointer cursor (from code).
+- Estimated value's placeholder "Not set" reads like a value in the field.
+- The Notes head shows a `0` chip above the "No notes yet" panel.
+- A failed load reads "This Opportunity could not be loaded." with no retry
+  and no way back; a missing Opportunity and a failed request share the line
+  (from code).
