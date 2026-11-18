@@ -329,6 +329,9 @@ describe("Opportunity Stage-change motion (#187)", () => {
     expect(rule(".df-page:has(> .df-opportunity-pipeline[data-stacked=\"false\"])")).toMatch(/height:\s*100%/);
     expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"]")).toMatch(/flex:\s*1 1 0/);
     expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"] .df-opportunity-drop")).toMatch(/overflow-y:\s*auto/);
+    // A horizontal trackpad swipe over the cards must reach the board: contain the vertical axis only.
+    expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"] .df-opportunity-drop")).toMatch(/overscroll-behavior-y:\s*contain/);
+    expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"] .df-opportunity-drop")).not.toMatch(/overscroll-behavior:/);
     expect(rule(".df-opportunity-pipeline[data-dragging=\"true\"][data-stacked=\"true\"] .df-opportunity-drop")).toMatch(
       /overflow:\s*visible/,
     );

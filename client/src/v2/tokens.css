@@ -2573,8 +2573,11 @@ button.df-activity-row {
 
 .df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop {
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  /* Vertical only: containing both axes swallowed a trackpad's horizontal
+     swipe over the cards instead of passing it on to the board. */
+  overscroll-behavior-y: contain;
   scrollbar-width: thin;
 }
 
