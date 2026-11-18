@@ -71,10 +71,12 @@ export type DailyUpdateRollCallMember = {
   profileImageUrl: string | null;
 };
 
+export type MissingDailyUpdateMember = DailyUpdateRollCallMember & { remindedToday: boolean };
+
 export async function todayDailyUpdateStatus(at: Date): Promise<{
   date: string;
   submitted: DailyUpdateRollCallMember[];
-  missing: DailyUpdateRollCallMember[];
+  missing: MissingDailyUpdateMember[];
 }> {
   const timeZone = await getWorkspaceTimeZone();
   const { workday } = workdayAt(at, timeZone);
@@ -96,10 +98,18 @@ export async function todayDailyUpdateStatus(at: Date): Promise<{
     email: u.email,
     profileImageUrl: u.profileImageUrl,
   });
+  const remindSince = startOfWorkday(workday, timeZone);
+  const missing: MissingDailyUpdateMember[] = [];
+  for (const u of members.filter((m) => !submittedIds.has(m.id))) {
+    missing.push({
+      ...toDto(u),
+      remindedToday: await storage.hasRecentNotification(u.id, "daily_update_reminder", remindSince),
+    });
+  }
   return {
     date: workday,
     submitted: members.filter((u) => submittedIds.has(u.id)).map(toDto),
-    missing: members.filter((u) => !submittedIds.has(u.id)).map(toDto),
+    missing,
   };
 }
 

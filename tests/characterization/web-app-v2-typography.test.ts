@@ -70,11 +70,12 @@ describe("v2 typography (#325)", () => {
     expect(byClass.get(".df-library-foot")).toBe("0.04em");
   });
 
-  it("keeps Kind and Today attention-kind chips uppercase, and puts no letter-spacing on a label inline", () => {
+  it("keeps the Kind chip uppercase, puts Today's attention kinds in sentence case, and no letter-spacing on a label inline", () => {
     const dossier = readFileSync(join(root, "client/src/v2/dossier.ts"), "utf8");
     expect(dossier).toContain('return "INTERNAL"');
     const today = readFileSync(join(root, "client/src/v2/today.ts"), "utf8");
-    expect(today).toContain('export type AttentionKind = "UPDATE" | "MENTION" | "REMINDER"');
+    expect(today).toContain('export type AttentionKind = "Team" | "Update" | "Mention" | "Reminder"');
+    expect(css).toMatch(/\.df-today \.df-kind \{[^}]*letter-spacing:\s*0;/);
     for (const name of readdirSync(join(root, "client/src/v2"))) {
       if (!/^V2.*\.tsx$/.test(name) || /^V2(BackOffice|Platform)/.test(name)) continue;
       expect(readFileSync(join(root, "client/src/v2", name), "utf8"), name).not.toContain("letterSpacing");

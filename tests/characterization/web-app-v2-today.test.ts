@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { remindToastMessage } from "../../client/src/v2/dailyUpdate";
 import { matchV2Route } from "../../client/src/v2/presentation";
-import { composeToday, type TodayInput } from "../../client/src/v2/today";
+import { throwIfResNotOk } from "../../client/src/lib/queryClient";
+import { composeToday, mobileProjectMeta, nameInitials, todayCardState, type TodayInput } from "../../client/src/v2/today";
 
 /**
  * Today desktop from live Workspace records (#172).
@@ -36,8 +38,8 @@ describe("Today desktop from live Workspace records (#172)", () => {
     expect(today.knowledge).toEqual([]);
     expect(today.workday.members).toEqual([]);
     expect(today.subhead).toBe("Nothing needs you yet.");
-    expect(today.approvals.empty).toBe(true);
-    expect(today.approvals.copy.toLowerCase()).toContain("timesheet");
+    expect(today.projectsTotal).toBe(0);
+    expect(today.workday.openTimerSince).toBeNull();
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
     }
@@ -83,6 +85,7 @@ describe("Today desktop from live Workspace records (#172)", () => {
     );
 
     expect(today.projects).toHaveLength(1);
+    expect(today.projectsTotal).toBe(1);
     const row = today.projects[0];
     expect(row.name).toBe("Ledger rebuild");
     expect(row.clientLabel).toBe("Harbor Co");
@@ -122,13 +125,11 @@ describe("Today desktop from live Workspace records (#172)", () => {
       }),
     );
 
-    expect(today.attention.some((row) => row.kind === "APPROVAL")).toBe(false);
     expect(today.attention.map((row) => row.title).join(" ")).not.toMatch(/timesheet/i);
-    expect(today.attention.some((row) => row.kind === "UPDATE")).toBe(true);
+    expect(today.attention.some((row) => row.kind === "Update")).toBe(true);
     expect(today.attention.some((row) => /Pat Ng/.test(row.title))).toBe(true);
     expect(today.attention.some((row) => row.id === "n2")).toBe(false);
-    expect(today.subhead).toMatch(/need you/i);
-    expect(today.approvals.empty).toBe(true);
+    expect(today.subhead).toBe("2 items need your attention.");
 
     const submitted = composeToday(
       emptyInput({
@@ -146,13 +147,14 @@ describe("Today desktop from live Workspace records (#172)", () => {
       }),
     ).attention.find((row) => row.id === "n3");
     expect(submitted).toMatchObject({
-      kind: "UPDATE",
+      kind: "Update",
       href: "/daily-updates?member=user-ada&day=2026-09-08",
     });
 
     const remind = today.attention.find((row) => row.id === "daily-updates-missing");
     expect(remind).toMatchObject({
-      kind: "UPDATE",
+      kind: "Team",
+      meta: "Today",
       cta: "Remind",
       action: "remind",
       state: "open",
@@ -177,7 +179,6 @@ describe("Today desktop from live Workspace records (#172)", () => {
         meta: "Reminded",
       }),
     ]);
-    expect(today.approvals.empty).toBe(true);
     expect(JSON.stringify(today.attention).toLowerCase()).not.toMatch(/timesheet/);
   });
 
@@ -231,7 +232,7 @@ describe("Today desktop from live Workspace records (#172)", () => {
       {
         id: "doc-9",
         title: "Scope notes",
-        meta: "Project doc · Ledger rebuild",
+        meta: "Ledger rebuild",
         when: "12:41",
         href: "/document/doc-9",
       },
@@ -279,7 +280,7 @@ describe("Today desktop from live Workspace records (#172)", () => {
     );
     expect(today.attention).toHaveLength(1);
     expect(today.attention[0].href).toBe("/projects/prj-live");
-    expect(today.attention[0].kind).toBe("MENTION");
+    expect(today.attention[0].kind).toBe("Mention");
   });
 
   it("caps Needs attention at five rows, keeps the remind row first and the full count", () => {
@@ -319,10 +320,14 @@ describe("Today desktop from live Workspace records (#172)", () => {
     const today = composeToday(
       emptyInput({
         projects,
-        monthSecondsByProject: [{ crmProjectId: "prj-7", totalDuration: 7200 }],
+        monthSecondsByProject: projects.map((project, index) => ({
+          crmProjectId: project.id,
+          totalDuration: 3600 * (index + 1),
+        })),
       }),
     );
     expect(today.projects).toHaveLength(5);
+    expect(today.projectsTotal).toBe(8);
     expect(today.projects[0].id).toBe("prj-7");
   });
 
@@ -339,5 +344,241 @@ describe("Today desktop from live Workspace records (#172)", () => {
     );
     expect(today.knowledge).toHaveLength(5);
     expect(today.knowledgeTotal).toBe(7);
+  });
+});
+
+const NOW = new Date(2026, 8, 8, 12, 0, 0);
+const PAT = { id: "u2", firstName: "Pat", lastName: "Ng", email: "pat@example.com" };
+const RAVI = { id: "u3", firstName: "Ravi", lastName: "Das", email: "ravi@example.com" };
+
+function liveProject(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    projectStatus: "active",
+    projectType: "one_time",
+    budgetedHours: null,
+    actualHours: null,
+    project: { id: `doc-${id}`, name: `Project ${id}` },
+    client: { name: "Harbor Co" },
+    assignee: null,
+    ...overrides,
+  };
+}
+
+describe("Today redesign composition (#370)", () => {
+  it("rule 1: roll-call row reflects partial and full reminders", () => {
+    const partial = composeToday(
+      emptyInput({ missingDailyUpdates: [{ ...PAT, remindedToday: true }, RAVI] }),
+    ).attention[0];
+    expect(partial).toMatchObject({
+      id: "daily-updates-missing",
+      kind: "Team",
+      href: "/daily-updates",
+      action: "remind",
+      state: "open",
+      cta: "Remind",
+      meta: "1 of 2 reminded",
+    });
+    const all = composeToday(
+      emptyInput({ missingDailyUpdates: [{ ...PAT, remindedToday: true }, { ...RAVI, remindedToday: true }] }),
+    ).attention[0];
+    expect(all).toMatchObject({ state: "resolved", cta: "Reminded", meta: "Reminded" });
+  });
+
+  it("rule 2: all own Daily Update reminders collapse into one row", () => {
+    const today = composeToday(
+      emptyInput({
+        notifications: [
+          { id: "r1", type: "daily_update_reminder", message: "a", isRead: 0, createdAt: new Date(2026, 8, 8, 9, 0, 0) },
+          { id: "r2", type: "daily_update_reminder", message: "b", isRead: 0, createdAt: new Date(2026, 8, 8, 10, 30, 0) },
+          { id: "r3", type: "daily_update_reminder", message: "c", isRead: 1, createdAt: new Date(2026, 8, 8, 11, 0, 0) },
+        ],
+      }),
+    );
+    expect(today.attention).toEqual([
+      {
+        id: "own-daily-update",
+        kind: "Update",
+        title: "Submit your Daily Update",
+        meta: "10:30",
+        href: "/daily-update",
+        cta: "Open",
+        action: "open",
+        state: "open",
+      },
+    ]);
+    expect(today.attentionTotal).toBe(1);
+    expect(today.subhead).toBe("One item needs your attention.");
+  });
+
+  it("rules 3-4: other notifications sort newest first, fall back to the notifications action, after roll-call and own reminder", () => {
+    const today = composeToday(
+      emptyInput({
+        missingDailyUpdates: [PAT],
+        notifications: [
+          { id: "old", type: "mention", message: "old", isRead: 0, createdAt: new Date(2026, 8, 8, 8, 0, 0), crmProjectId: "prj-1" },
+          { id: "nodate", type: "reminder", message: "nodate", isRead: 0, createdAt: null, crmProjectId: "prj-1" },
+          { id: "new", type: "reminder", message: "new", isRead: 0, createdAt: new Date(2026, 8, 8, 11, 0, 0), crmProjectId: null },
+          { id: "own", type: "daily_update_reminder", message: "x", isRead: 0, createdAt: new Date(2026, 8, 8, 7, 0, 0) },
+        ],
+      }),
+    );
+    expect(today.attention.map((row) => row.id)).toEqual([
+      "daily-updates-missing",
+      "own-daily-update",
+      "new",
+      "old",
+      "nodate",
+    ]);
+    expect(today.attention[2]).toMatchObject({ kind: "Reminder", action: "notifications", href: "", cta: "Open" });
+    expect(today.attention[3]).toMatchObject({ kind: "Mention", action: "open", href: "/projects/prj-1" });
+    expect(today.attentionTotal).toBe(5);
+  });
+
+  it("rule 5: the subhead counts items", () => {
+    expect(composeToday(emptyInput()).subhead).toBe("Nothing needs you yet.");
+    expect(composeToday(emptyInput({ missingDailyUpdates: [PAT] })).subhead).toBe("One item needs your attention.");
+  });
+
+  it("rules 6-8: Active Projects keep live statuses with month seconds only", () => {
+    const statuses = ["active", "in_review", "on_hold", "completed", "planned"];
+    const today = composeToday(
+      emptyInput({
+        projects: [
+          ...statuses.map((status) => liveProject(`s-${status}`, { projectStatus: status })),
+          liveProject("zero"),
+        ],
+        monthSecondsByProject: [
+          ...statuses.map((status, index) => ({ crmProjectId: `s-${status}`, totalDuration: 3600 * (index + 1) })),
+          { crmProjectId: "zero", totalDuration: 0 },
+        ],
+      }),
+    );
+    expect(today.projects.map((row) => row.id)).toEqual(["s-on_hold", "s-in_review", "s-active"]);
+    expect(today.projectsTotal).toBe(3);
+  });
+
+  it("rules 9-10: client, meta, lead and mobile meta never render a dash", () => {
+    const today = composeToday(
+      emptyInput({
+        projects: [
+          liveProject("a", { assignee: { firstName: "Sam", lastName: "Lee", email: "s@x.com" } }),
+          liveProject("b", { client: null, projectType: "internal" }),
+        ],
+        monthSecondsByProject: [
+          { crmProjectId: "a", totalDuration: 7200 },
+          { crmProjectId: "b", totalDuration: 3600 },
+        ],
+      }),
+    );
+    const [a, b] = today.projects;
+    expect(a).toMatchObject({ clientLabel: "Harbor Co", meta: "Harbor Co · Client project", lead: "Sam Lee" });
+    expect(b).toMatchObject({ clientLabel: null, meta: "Internal", lead: null });
+    expect(mobileProjectMeta(a)).toBe("Harbor Co · ACTIVE · 2.0 h");
+    expect(mobileProjectMeta(b)).toBe("ACTIVE · 1.0 h");
+  });
+
+  it("rule 11: nameInitials", () => {
+    expect(nameInitials("sam@example.com")).toBe("S");
+    expect(nameInitials("Sam Lee")).toBe("SL");
+    expect(nameInitials("amy van der Berg")).toBe("AB");
+    expect(nameInitials("Madonna")).toBe("M");
+  });
+
+  it("rule 12: Workday sorts the reader first, then missing, tracking, posted, none", () => {
+    const user = (id: string, firstName: string) => ({ id, firstName, lastName: "X", email: `${id}@x.com` });
+    const today = composeToday(
+      emptyInput({
+        currentUserId: "me",
+        users: [user("posted", "Aa"), user("track", "Bb"), user("miss2", "Zed"), user("miss1", "Amy"), user("me", "Zoe")],
+        todaySecondsByUser: [],
+        trackingUserId: "track",
+        missingDailyUpdates: [
+          { id: "miss1", firstName: "Amy", lastName: "X", email: "a@x.com" },
+          { id: "miss2", firstName: "Zed", lastName: "X", email: "z@x.com" },
+        ],
+      }),
+    );
+    expect(today.workday.members.map((member) => member.id)).toEqual(["me", "miss1", "miss2", "track", "posted"]);
+    expect(today.workday.members[0].initials).toBe("ZX");
+  });
+
+  it("rule 13: openTimerSince only for a Timer started before today", () => {
+    const base = { missingDailyUpdates: null };
+    expect(
+      composeToday(emptyInput({ ...base, openTimer: { startTime: new Date(2026, 10, 16, 14, 2, 0) }, now: new Date(2026, 10, 17, 9, 0, 0) }))
+        .workday.openTimerSince,
+    ).toBe("Timer open since 16 Nov 14:02");
+    expect(
+      composeToday(emptyInput({ ...base, openTimer: { startTime: new Date(2026, 10, 17, 0, 5, 0) }, now: new Date(2026, 10, 17, 9, 0, 0) }))
+        .workday.openTimerSince,
+    ).toBeNull();
+    expect(composeToday(emptyInput({ ...base, openTimer: null })).workday.openTimerSince).toBeNull();
+  });
+
+  it("rule 14: knowledge meta names the Project and the author when known", () => {
+    const doc = (createdById: string | null) => ({
+      id: "d",
+      title: "T",
+      updatedAt: NOW,
+      projectId: "doc-1",
+      createdById,
+    });
+    const users = [{ id: "u-sam", firstName: "Sam", lastName: "Lee", email: "sam@x.com" }];
+    const projects = [liveProject("1", { project: { id: "doc-1", name: "Ledger rebuild" } })];
+    const meta = (input: Partial<TodayInput>) => composeToday(emptyInput(input)).knowledge[0].meta;
+    expect(meta({ recentDocuments: [doc("u-sam")], users, projects })).toBe("Ledger rebuild · by Sam Lee");
+    expect(meta({ recentDocuments: [doc(null)], users, projects })).toBe("Ledger rebuild");
+    expect(meta({ recentDocuments: [doc("u-sam")], users, projects: [] })).toBe("by Sam Lee");
+    expect(meta({ recentDocuments: [doc(null)], users, projects: [] })).toBe("Project doc");
+  });
+
+  it("rule 15: the Remind toast says how many were reminded and how many were skipped", () => {
+    expect(remindToastMessage({ sent: 1, missing: 1 })).toBe("Reminded 1 member");
+    expect(remindToastMessage({ sent: 3, missing: 3 })).toBe("Reminded 3 members");
+    expect(remindToastMessage({ sent: 3, missing: 7 })).toBe("Reminded 3 members · 4 already reminded today");
+    expect(remindToastMessage({ sent: 0, missing: 7 })).toBe("Everyone missing was already reminded today");
+  });
+});
+
+describe("Today review fixes after code review (#370)", () => {
+  it("shows a card's error over its loading state, and never as its empty line", () => {
+    const idle = { isLoading: false, isError: false };
+    const loading = { isLoading: true, isError: false };
+    const failed = { isLoading: false, isError: true };
+    expect(todayCardState([idle, idle])).toEqual({ loading: false, failed: false, ready: true });
+    expect(todayCardState([loading, idle])).toEqual({ loading: true, failed: false, ready: false });
+    expect(todayCardState([loading, failed])).toEqual({ loading: false, failed: true, ready: false });
+  });
+
+  it("turns a failed read into an error carrying the server's message (res.ok)", async () => {
+    await expect(
+      throwIfResNotOk(new Response(JSON.stringify({ message: "Failed to fetch stats" }), { status: 500 })),
+    ).rejects.toThrow("Failed to fetch stats");
+    await expect(throwIfResNotOk(new Response("{}", { status: 200 }))).resolves.toBeUndefined();
+  });
+
+  it("hides a Project whose month reads 0.0 h even with a few seconds tracked", () => {
+    const project = (id: string) => ({
+      id,
+      projectStatus: "active",
+      projectType: "one_time",
+      budgetedHours: null,
+      actualHours: null,
+      project: { id: `doc-${id}`, name: id },
+      client: null,
+      assignee: null,
+    });
+    const today = composeToday(
+      emptyInput({
+        projects: [project("seconds"), project("tenth")],
+        monthSecondsByProject: [
+          { crmProjectId: "seconds", totalDuration: 120 },
+          { crmProjectId: "tenth", totalDuration: 360 },
+        ],
+      }),
+    );
+    expect(today.projects.map((row) => row.id)).toEqual(["tenth"]);
+    expect(today.projectsTotal).toBe(1);
   });
 });

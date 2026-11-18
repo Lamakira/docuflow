@@ -397,10 +397,11 @@ only.
 
 ## F14 — Today's one primary action opens a panel that is always empty
 
-- **Status:** open — [#370](https://github.com/Lamakira/docuflow/issues/370)
+- **Status:** closed — [#370](https://github.com/Lamakira/docuflow/issues/370)
 - **Found:** 2026-11-17, Today on the real Workspace (seen in capture)
 - **Where:** `client/src/v2/V2Today.tsx:240` (`Resolve approvals`), `client/src/v2/V2ContextPanel.tsx:76`, `client/src/v2/today.ts:352` (`EMPTY_TIMESHEET_APPROVALS`)
 - **Severity:** misleading. The only amber button on the page leads nowhere
+- **Fixed:** 2026-11-18, [#370](https://github.com/Lamakira/docuflow/issues/370). `Resolve approvals` and the Approvals panel are gone (header, mobile action bar, context panel, `V2CommandPanel`). Today has no header action; the top Needs attention row carries its own.
 
 `Resolve approvals` is the page's one filled amber button, top right. It opens
 the context panel, which can only ever say "Timesheets are not a product record
@@ -414,10 +415,11 @@ or `New Project`.
 
 ## F15 — Needs attention fills with the same Daily Update reminder, one per day
 
-- **Status:** open — [#370](https://github.com/Lamakira/docuflow/issues/370)
+- **Status:** closed — [#370](https://github.com/Lamakira/docuflow/issues/370)
 - **Found:** 2026-11-17, Today on the real Workspace (seen in capture): four of the five rows read "Don't forget to submit your daily update before you finish your day.", dated Yesterday, 15 Nov, 14 Nov, 13 Nov
 - **Where:** `client/src/v2/today.ts:232` (`composeAttention`), `today.ts:223` (`notificationHref`), `server/dailyUpdateNudge.ts:155-163`, `client/src/v2/V2ContextPanel.tsx:269` (the only place a notification is marked read)
 - **Severity:** misleading. The queue's five rows are mostly one repeated nag
+- **Fixed:** 2026-11-18, [#370](https://github.com/Lamakira/docuflow/issues/370). The reader's unread reminders collapse into one row, "Submit your Daily Update". `POST /api/daily-updates` marks them read. A notification with no Project opens the Notifications panel instead of reloading Today.
 
 The scheduler writes one `daily_update_reminder` per workday. Nothing marks it
 read when the Daily Update is submitted or when the row is opened from Today —
@@ -430,10 +432,11 @@ dropping reminders for past days.
 
 ## F16 — Today's header and queue say things the data does not support
 
-- **Status:** open — [#370](https://github.com/Lamakira/docuflow/issues/370)
+- **Status:** closed — [#370](https://github.com/Lamakira/docuflow/issues/370)
 - **Found:** 2026-11-17, Today on the real Workspace (seen in capture)
 - **Where:** `client/src/v2/today.ts:190` (`attentionSubhead`), `client/src/v2/V2Today.tsx:252` (`Sorted by impact`)
 - **Severity:** misleading copy
+- **Fixed:** 2026-11-18, [#370](https://github.com/Lamakira/docuflow/issues/370). The subhead reads "N items need your attention". "Sorted by impact" is gone; the queue reads roll-call, own reminder, then newest first.
 
 "23 items need you before end of day." counts reminders from 13 Nov, which are
 not due today, and counts seven missing team Daily Updates as one item. "Sorted
@@ -444,10 +447,11 @@ the sort label or saying what the order is ("Newest first").
 
 ## F17 — Active Projects lists Completed Projects and counts every Project
 
-- **Status:** open — [#370](https://github.com/Lamakira/docuflow/issues/370)
+- **Status:** closed — [#370](https://github.com/Lamakira/docuflow/issues/370)
 - **Found:** 2026-11-17, Today on the real Workspace (seen in capture): `360 Autowrap` shows `COMPLETED` under Active Projects; the head says `View all 124`
 - **Where:** `client/src/v2/today.ts:123` (`LIVE_PROJECT_STATUSES` includes `completed`), `client/src/v2/V2Today.tsx:167` (`projectTotal` is the API total of all Projects)
 - **Severity:** misleading
+- **Fixed:** 2026-11-18, [#370](https://github.com/Lamakira/docuflow/issues/370). Active, In review and On hold Projects with hours this month only; the count chip is that set. `View all` opens `/projects`, which takes one status and has no hours sort, so the link cannot carry the same filter.
 
 The section is called Active Projects and shows Active, In review, On hold and
 Completed. The `View all 124` count is every Project in the Workspace, not the
@@ -462,10 +466,11 @@ same set.
 
 ## F18 — Recent knowledge changes sends `View all` to the wrong destination
 
-- **Status:** open — [#370](https://github.com/Lamakira/docuflow/issues/370)
+- **Status:** closed — [#370](https://github.com/Lamakira/docuflow/issues/370)
 - **Found:** 2026-11-17, Today on the real Workspace (seen in capture): five rows, all "Project doc · …", three of them titled `Resources`; `View all` with no count
 - **Where:** `client/src/v2/V2Today.tsx:437`, `client/src/v2/today.ts:340`, `server/routes.ts:444` (`/api/documents/recent` returns Project Documents)
 - **Severity:** misleading
+- **Fixed:** 2026-11-18, [#370](https://github.com/Lamakira/docuflow/issues/370). `View all` opens Project Documentation. Each row names the document's creator (`documents` keeps no last editor). No total: the endpoint returns ten at most.
 
 Every row is a Project Document and says so ("Project doc · …"), but `View all`
 opens Workspace Documents (`/documents`, company documents), which lists none
@@ -481,10 +486,11 @@ document, and dropping the note.
 
 ## F19 — Today shows empty sections before their data arrives, and errors as empty
 
-- **Status:** open — [#370](https://github.com/Lamakira/docuflow/issues/370)
+- **Status:** closed — [#370](https://github.com/Lamakira/docuflow/issues/370)
 - **Found:** 2026-11-17, from code
 - **Where:** `client/src/v2/V2Today.tsx:114-145` (only `projectsLoading` gates the skeleton; projects and stats `queryFn`s never check `res.ok`)
 - **Severity:** misleading for a moment on every load; misleading for good when a read fails
+- **Fixed:** 2026-11-18, [#370](https://github.com/Lamakira/docuflow/issues/370). Each card loads, fails and retries on its own; reads check `res.ok`, so an error shows "Couldn't load …" with Retry, never the empty line. `now` refreshes on focus and on return to the tab.
 
 The skeleton waits for Projects only. Notifications, Daily Update status,
 users and time stats start empty, so the page can show "Nothing needs
@@ -497,10 +503,11 @@ date and figures. It would take a per-section skeleton tied to each query,
 
 ## F20 — `Remind` looks larger than `Open`, and its toast always says sent
 
-- **Status:** open — [#370](https://github.com/Lamakira/docuflow/issues/370)
+- **Status:** closed — [#370](https://github.com/Lamakira/docuflow/issues/370)
 - **Found:** 2026-11-17, Today on the real Workspace (seen in capture: `Remind` is visibly larger than the `Open` links below it)
 - **Where:** `client/src/v2/tokens.css:783` (`button.df-cta { font: inherit }` resets the 12px size), `client/src/v2/V2Today.tsx:108,176`, `server/dailyUpdateNudge.ts:155`
 - **Severity:** cosmetic for the size; misleading for the toast
+- **Fixed:** 2026-11-18, [#370](https://github.com/Lamakira/docuflow/issues/370). `button.df-cta` takes the link CTA's 12px/500 back. The toast is built from the response ("Reminded 3 members · 4 already reminded today"), and Reminded comes from the server's `remindedToday`.
 
 `Remind` messages every member missing a Daily Update in one click (seven on
 the real Workspace), by notification and email. The server skips anyone
@@ -513,10 +520,11 @@ from the server.
 
 ## F21 — Today's rows read as one run-on link, and two labels fail contrast
 
-- **Status:** open — [#370](https://github.com/Lamakira/docuflow/issues/370)
+- **Status:** closed — [#370](https://github.com/Lamakira/docuflow/issues/370)
 - **Found:** 2026-11-17, from code and the capture
 - **Where:** `client/src/v2/V2Today.tsx:336-393` (register rows), `V2Today.tsx:308` (queue rows), `V2Today.tsx:252,433` (`--df-muted-ink` at 10px), `client/src/v2/tokens.css:263` (focus ring)
 - **Severity:** accessibility floor
+- **Fixed:** 2026-11-18, [#370](https://github.com/Lamakira/docuflow/issues/370). Row links and buttons carry one-sentence `aria-label`s; the two muted labels are gone. The focus ring pairs the amber with a 2px case-ink band (`tokens.css`, `.df-v2 :focus-visible`); rows draw it inside.
 
 The Active Projects register is a grid of `<span>`s inside one `<a>` per row,
 with no table or header association, so a screen reader announces "Innover
@@ -530,10 +538,11 @@ real table semantics), and `--df-archive-slate` for the two labels.
 
 ## F22 — Today polish: alignment, casing, placeholders
 
-- **Status:** open — [#370](https://github.com/Lamakira/docuflow/issues/370)
+- **Status:** closed — [#370](https://github.com/Lamakira/docuflow/issues/370)
 - **Found:** 2026-11-17, Today on the real Workspace (seen in capture unless marked)
 - **Where:** `client/src/v2/tokens.css:2595` vs `:727`, `tokens.css:752`, `client/src/v2/today.ts:286`, `client/src/v2/V2Today.tsx:349,368,382,415`
 - **Severity:** cosmetic
+- **Fixed:** 2026-11-18, [#370](https://github.com/Lamakira/docuflow/issues/370). Register heads align with their rows; kind labels are sentence case; one dash for every empty cell; inline sizes moved onto the ramp; the count shows once; the date is plain text. Workday puts the reader first, then missing in the alert ink, takes initials from the shown name, and notes a Timer left open since an earlier day. Workday still lists every member beside a five-row Knowledge card: F13 kept it whole, since it has no fuller page to send anyone to.
 
 - The register head pads 20px left and right, its rows 16px, so every column
   head sits 4px off its values (`Project / client` at 284px, the names at 280px).
@@ -561,10 +570,11 @@ real table semantics), and `--df-archive-slate` for the two labels.
 
 ## F23 — v2 pages scroll sideways at 200% zoom
 
-- **Status:** open — [#370](https://github.com/Lamakira/docuflow/issues/370)
+- **Status:** closed — [#370](https://github.com/Lamakira/docuflow/issues/370)
 - **Found:** 2026-11-17, from code, reviewing Today
 - **Where:** `client/src/v2/tokens.css:642` (`.df-page { min-width: 1060px }`), `client/src/v2/presentation.ts:19-20`
 - **Severity:** accessibility floor (WCAG 1.4.10 reflow), shell-wide
+- **Fixed:** 2026-11-18, [#370](https://github.com/Lamakira/docuflow/issues/370). No page holds the 1060px floor; Today stacks its register and folds its split under 900px; the command bar drops its words under 760px and keeps every control. Checked at 600px of content on 17 v2 pages: no page scrolls sideways; the Kanban pipeline, the Projects table and the tab strips scroll inside themselves.
 
 The mobile layout starts at 639px and below; above it every page holds 1060px
 of content beside a 240px rail. A 1680px screen at 200% zoom is 840 CSS px wide,

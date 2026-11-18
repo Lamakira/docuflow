@@ -260,9 +260,20 @@
   text-decoration: none;
 }
 
+/* The amber ring alone is 2.2:1 on white, under the 3:1 a focus indicator
+   needs (#370, F21). A 2px case-ink band fills the offset gap, so the ring
+   reads against white and dark surfaces alike; the amber stays outside it. */
 .df-v2 :focus-visible {
   outline: 2px solid var(--df-amber);
   outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--df-case-ink);
+}
+
+/* Rows sit flush inside a card that clips its overflow, so their ring is
+   drawn inside the row: case-ink at the edge, amber within it. */
+.df-v2 .df-card :is(.df-attention-row, .df-register-row, .df-knowledge-row):focus-visible {
+  outline-offset: -4px;
+  box-shadow: inset 0 0 0 2px var(--df-case-ink);
 }
 
 .df-title {
@@ -507,6 +518,7 @@
 }
 
 .df-command {
+  container-type: inline-size;
   height: 62px;
   flex: none;
   display: flex;
@@ -544,16 +556,6 @@
   flex: none;
 }
 
-/* One line, cut with an ellipsis, rather than a label that wraps and grows the bar. */
-.df-search-label {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .df-keycap {
   font-family: var(--df-font-data);
   font-variant-numeric: tabular-nums;
@@ -564,6 +566,51 @@
   border: 1px solid var(--df-divider);
   border-radius: var(--df-radius-1);
   padding: var(--df-space-1) var(--df-space-1);
+}
+
+/* The Timer chip's title column; the clock and controls sit beside it. */
+.df-chip-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+/* A narrow command bar (200% zoom, a split screen) keeps every control and
+   drops the words the page already shows: the breadcrumb, the search label,
+   Ask's caption (still read aloud) and the Timer's title (#370, F23). */
+@container (max-width: 760px) {
+  .df-command .df-crumb,
+  .df-command .df-search-label,
+  .df-command .df-keycap,
+  .df-command .df-chip-text {
+    display: none;
+  }
+
+  .df-command .df-search {
+    flex: none;
+  }
+
+  .df-command .df-command-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* One line, cut with an ellipsis, rather than a label that wraps and grows the bar. */
+.df-search-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .df-chip {
@@ -639,8 +686,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--df-space-5);
-  min-width: 1060px;
 }
+
 
 .df-today-head {
   display: flex;
@@ -785,12 +832,31 @@ button.df-cta {
   border: 0;
   cursor: pointer;
   padding: 0;
-  font: inherit;
+  font-family: inherit;
+  line-height: inherit;
 }
 
-.df-attention-row[data-state="resolved"][data-motion="standard"] {
-  opacity: 0.55;
-  transition: opacity var(--duration-ui) var(--ease-out);
+/* The shared button reset above (`font: inherit`) outranks `.df-cta`, so a
+   button CTA takes back the link CTA's size and weight. */
+.df-v2 button.df-cta:not(.df-btn):not(.df-segment-item):not([class*="cl-"]) {
+  font-size: var(--df-text-2);
+  font-weight: 500;
+}
+
+/* A queue row that opens the Notifications panel is a button; it reads as the link rows do. */
+button.df-attention-row {
+  width: 100%;
+  text-align: start;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--df-divider-light);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* The roll-call row holds its own Remind control, so the row itself is not a target. */
+.df-attention-row.df-attention-remind:hover {
+  background: transparent;
 }
 
 .df-attention-row[data-state="resolved"] .df-cta {
@@ -2805,6 +2871,7 @@ button.df-activity-row {
    a ring inside a card that clips its overflow is the thing that got cut. */
 .df-v2.df-command-palette [cmdk-input]:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 
 .df-v2.df-command-palette [cmdk-input-wrapper]:has([cmdk-input]:focus-visible) {
@@ -2954,8 +3021,7 @@ button.df-activity-row {
 .df-timer-strip,
 .df-ws,
 .df-rail-item,
-.df-action-ask,
-.df-action-primary {
+.df-action-ask {
   transition: transform var(--duration-press) var(--ease-out);
 }
 
@@ -2966,8 +3032,7 @@ button.df-activity-row {
 .df-timer-strip:active,
 .df-ws:active,
 .df-rail-item:active,
-.df-action-ask:active,
-.df-action-primary:active {
+.df-action-ask:active {
   transform: scale(0.97);
 }
 
@@ -3809,8 +3874,7 @@ button.df-activity-row {
   .df-timer-strip:active,
   .df-ws:active,
   .df-rail-item:active,
-  .df-action-ask:active,
-  .df-action-primary:active {
+  .df-action-ask:active {
     transform: none;
   }
 }
@@ -4035,7 +4099,6 @@ button.df-activity-row {
 
 .df-dossier-body {
   padding: var(--df-space-5) var(--df-space-6) var(--df-space-7);
-  min-width: 1060px;
 }
 
 .df-dossier-pane {
@@ -4532,14 +4595,14 @@ button.df-activity-row {
   text-transform: uppercase;
 }
 
-/* The page keeps the desktop floor; when a preview opens, the register gives
-   way so the aside always sits beside it (#245, F2). */
+/* When a preview opens, the register gives way so the aside always sits
+   beside it, whole (#245, F2). No desktop floor: the page reflows at 200%
+   zoom instead of scrolling sideways (#370, F23). */
 .df-library {
   display: flex;
   flex-wrap: nowrap;
   flex: 1;
   min-height: 0;
-  min-width: 1060px;
 }
 
 .df-library-main {
@@ -4598,10 +4661,12 @@ button.df-activity-row {
 .df-filter-input:has(input:focus-visible) {
   outline: 2px solid var(--df-amber);
   outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--df-case-ink);
 }
 
 .df-filter-input input:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 
 .df-filter-chip {
@@ -4691,7 +4756,8 @@ button.df-activity-row {
 
 .df-v2 .df-segment .df-segment-item:focus-visible {
   outline: 2px solid var(--df-amber);
-  outline-offset: -2px;
+  outline-offset: -4px;
+  box-shadow: inset 0 0 0 2px var(--df-case-ink);
 }
 
 .df-library-head,
@@ -5078,6 +5144,148 @@ button.df-activity-row {
   min-width: 0;
 }
 
+/* Today (#370). Its rows carry both the stacked and the desktop variant, and
+   the width Today has chooses between them, so it is a size container. */
+.df-today {
+  container-type: inline-size;
+}
+
+.df-today .df-register-row > .df-project-mobile {
+  display: none;
+}
+
+.df-today .df-register-head {
+  padding: var(--df-space-3) var(--df-space-4);
+}
+
+.df-today .df-date-chip {
+  border: 0;
+  padding: 0;
+}
+
+.df-today .df-kind {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.df-today .df-state[data-state="UPDATE MISSING"] {
+  color: var(--df-alert-ink);
+}
+
+.df-today-headline {
+  min-width: 0;
+}
+
+/* One placeholder for an empty cell, in the meta style. */
+.df-today-none {
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+}
+
+.df-today-cell {
+  min-width: 0;
+}
+
+.df-today-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.df-today-percent {
+  font-size: var(--df-text-2);
+}
+
+.df-meter-row .df-today-percent {
+  width: 36px;
+}
+
+.df-today-hours {
+  font-size: var(--df-text-2);
+}
+
+.df-today-end {
+  text-align: right;
+}
+
+.df-today-manager {
+  font-weight: 500;
+  font-size: var(--df-text-3);
+}
+
+.df-today-stacked-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.df-today-card-meta {
+  font-size: var(--df-text-1);
+  color: var(--df-archive-slate);
+}
+
+.df-today-timer {
+  margin: 0;
+  padding: var(--df-space-2) var(--df-space-4);
+  border-bottom: 1px solid var(--df-divider-light);
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+}
+
+.df-workday-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  font-size: var(--df-text-3);
+}
+
+.df-workday-you {
+  margin-left: var(--df-space-2);
+  font-weight: 400;
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+}
+
+.df-workday-hours {
+  width: 52px;
+  text-align: right;
+  font-size: var(--df-text-2);
+}
+
+.df-today-error {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-3);
+  margin: 0;
+  padding: var(--df-space-4);
+  color: var(--df-archive-slate);
+  font-size: var(--df-text-3);
+}
+
+/* Narrow Today without the mobile chrome: the register stacks and the split
+   becomes one column, as the mobile chrome does. */
+@container (max-width: 900px) {
+  .df-today .df-register-head,
+  .df-today .df-register-row > .df-today-cell {
+    display: none;
+  }
+
+  .df-today .df-register-row {
+    display: flex;
+    grid-template-columns: none;
+    gap: var(--df-space-3);
+  }
+
+  .df-today .df-register-row > .df-project-mobile {
+    display: flex;
+  }
+
+  .df-today .df-split {
+    grid-template-columns: 1fr;
+  }
+}
+
 .df-chrome-body {
   flex: 1;
   min-height: 0;
@@ -5230,23 +5438,6 @@ button.df-activity-row {
   flex: none;
 }
 
-.df-action-primary {
-  flex: 1;
-  min-height: 44px;
-  padding: var(--df-space-3) 0;
-  font-size: var(--df-text-3);
-}
-
-/* The bar's primary is a reach target, so it keeps its own height over the
-   shared control height on `.df-btn`. */
-.df-v2 button.df-btn.df-action-primary,
-.df-v2 a.df-btn.df-action-primary {
-  height: auto;
-  min-height: 44px;
-  padding: var(--df-space-3) 0;
-  font-size: var(--df-text-3);
-}
-
 .df-action-ask {
   width: 46px;
   height: 46px;
@@ -5328,8 +5519,6 @@ button.df-activity-row {
 }
 
 .df-v2[data-chrome="mobile"] .df-subhead,
-.df-v2[data-chrome="mobile"] .df-today-resolve,
-.df-v2[data-chrome="mobile"] .df-attention-sort,
 .df-v2[data-chrome="mobile"] .df-desktop-only {
   display: none;
 }
@@ -5520,10 +5709,6 @@ button.df-activity-row {
   .df-help-article[data-motion="standard"] {
     transform: none;
     transition: opacity var(--duration-ui) var(--ease-out);
-  }
-
-  .df-attention-row[data-state="resolved"][data-motion="standard"] {
-    transform: none;
   }
 
   .df-time-row[data-state="leaving"][data-motion="standard"] {
@@ -7402,7 +7587,7 @@ button.df-activity-row {
 }
 
 .df-v2 .df-theme-toggle-item:focus-visible {
-  box-shadow: 0 0 0 2px var(--df-amber-500);
+  box-shadow: 0 0 0 2px var(--df-case-ink);
 }
 
 .df-v2 .df-theme-toggle-item[data-state="checked"] {
@@ -7412,7 +7597,7 @@ button.df-activity-row {
 }
 
 .df-v2 .df-theme-toggle-item[data-state="checked"]:focus-visible {
-  box-shadow: 0 0 0 2px var(--df-amber-500);
+  box-shadow: 0 0 0 2px var(--df-case-ink);
 }
 
 /* Typography amendment (Amendment 6): small labels are sentence case across

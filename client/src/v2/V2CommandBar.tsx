@@ -98,7 +98,7 @@ export function V2CommandBar({
 
         <Button variant="outline" type="button" data-testid="v2-ask" onClick={() => onPanel(selectCommandPanel(panel, "ask"))} className="df-btn">
           <SparkleIcon />
-          Ask DocuFlow
+          <span className="df-command-label">Ask DocuFlow</span>
         </Button>
 
         <Button variant="outline" size="icon" type="button" data-testid="v2-notifications" onClick={() => onPanel(selectCommandPanel(panel, "notifications"))} aria-label="Notifications" className="df-btn">

@@ -13,7 +13,6 @@ import {
 } from "../../client/src/v2/chrome";
 import { motionForSurface } from "../../client/src/v2/motion";
 import { timerChipModel } from "../../client/src/v2/presentation";
-import { EMPTY_TIMESHEET_APPROVALS } from "../../client/src/v2/today";
 
 /**
  * v2 chrome actions: search, Timer, Ask, Notifications, toasts (#184).
@@ -113,18 +112,12 @@ describe("v2 chrome actions (#184)", () => {
     expect(running.appearance).toBe("running");
   });
 
-  it("opens Ask or Notifications by replacing the other panel and keeps Timesheet approvals an honest empty", () => {
+  it("opens Ask or Notifications by replacing the other panel", () => {
     expect(selectCommandPanel(null, "ask")).toBe("ask");
     expect(selectCommandPanel("ask", "notifications")).toBe("notifications");
     expect(selectCommandPanel("notifications", "ask")).toBe("ask");
     expect(selectCommandPanel("ask", "ask")).toBeNull();
-    expect(selectCommandPanel("approvals", "notifications")).toBe("notifications");
-
-    expect(EMPTY_TIMESHEET_APPROVALS.empty).toBe(true);
-    for (const name of SAMPLE_NAMES) {
-      expect(EMPTY_TIMESHEET_APPROVALS.copy).not.toContain(name);
-      expect(EMPTY_TIMESHEET_APPROVALS.title).not.toContain(name);
-    }
+    expect(selectCommandPanel("notifications", "notifications")).toBeNull();
   });
 
   it("loads Notifications as a global inbox that names origin, or an honest empty", () => {
@@ -257,8 +250,8 @@ describe("the command bar search shrinks with the window", () => {
     "utf8",
   );
 
-  // The command bar is at least the desktop content width (1060px); below the
-  // mobile breakpoint the app bar replaces it. So the label only needs to give way.
+  // The label gives way first; under 760px of bar (200% zoom) it hides and the
+  // search becomes its icon, keeping its accessible name (#370, F23).
   it("keeps its label on one line, cut with an ellipsis, instead of wrapping", () => {
     expect(rule(".df-search")).toMatch(/min-width:\s*0/);
     expect(rule(".df-search-label")).toMatch(/white-space:\s*nowrap/);

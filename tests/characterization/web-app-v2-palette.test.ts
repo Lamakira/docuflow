@@ -256,6 +256,8 @@ describe("where colour goes", () => {
 
   it("keeps the focus ring and the running timer amber", () => {
     expect(rule(".df-v2 :focus-visible")).toMatch(/outline:\s*2px solid var\(--df-amber\)/);
+    // Amber alone is 2.2:1 on white; the case-ink band carries the 3:1 (#370, F21).
+    expect(rule(".df-v2 :focus-visible")).toMatch(/box-shadow:\s*0 0 0 2px var\(--df-case-ink\)/);
     expect(rule('.df-chip[data-appearance="running"]')).toMatch(/background:\s*var\(--df-amber-wash\)/);
     expect(rule('.df-chip[data-appearance="running"]')).toMatch(/border-color:\s*var\(--df-amber\)/);
   });

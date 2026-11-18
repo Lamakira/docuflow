@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   chromeLayoutForViewport,
@@ -52,7 +54,8 @@ describe("Today mobile pattern (#175)", () => {
     expect(desktop.timer).toBe("chip");
     expect(desktop.context).toBe("side-panel");
     expect(desktop.rail).toBe("fixed");
-    expect(desktop.contentMinWidth).toBe(1060);
+    // The page carries its floor, so Today can reflow under the desktop chrome (#370, F23).
+    expect(desktop.contentMinWidth).toBeNull();
     expect(desktop.stackedRegister).toBe(false);
     expect(desktop.actionBar).toBe(false);
     expect(chromeLayoutForViewport(1440).mode).toBe("desktop");
@@ -60,7 +63,7 @@ describe("Today mobile pattern (#175)", () => {
 
   it("opens the desktop context panel as a full-height sheet on the same Today route", () => {
     const layout = chromeLayoutForViewport(390);
-    const open = contextSurface("approvals", layout, "/");
+    const open = contextSurface("notifications", layout, "/");
     expect(open.kind).toBe("sheet");
     expect(open.route).toBe("/");
     expect(matchV2Route(open.route).kind).toBe("today");
@@ -69,7 +72,7 @@ describe("Today mobile pattern (#175)", () => {
     expect(closed.kind).toBe("none");
     expect(closed.route).toBe("/");
 
-    const desktopOpen = contextSurface("approvals", chromeLayoutForViewport(1440), "/");
+    const desktopOpen = contextSurface("notifications", chromeLayoutForViewport(1440), "/");
     expect(desktopOpen.kind).toBe("side-panel");
     expect(desktopOpen.route).toBe("/");
   });
@@ -97,9 +100,6 @@ describe("Today mobile pattern (#175)", () => {
     expect(today.projects[0].href).toBe("/projects/prj-live");
     expect(mobileProjectMeta(today.projects[0])).toBe("Harbor Co · ACTIVE · 71.7 h");
     expect(today.attention.some((row) => /Pat Ng/.test(row.title))).toBe(true);
-    expect(today.attention.some((row) => row.kind === "APPROVAL")).toBe(false);
-    expect(today.approvals.empty).toBe(true);
-    expect(today.approvals.copy.toLowerCase()).toContain("timesheet");
     expect(JSON.stringify(today)).not.toContain("Keystone");
     expect(matchV2Route("/opportunities").kind).toBe("opportunities");
   });
@@ -116,5 +116,18 @@ describe("Today mobile pattern (#175)", () => {
     expect(running.holdsAmber).toBe(true);
     expect(running.pagePrimary).toBe("case-ink");
     expect(chromeLayoutForViewport(390).timer).toBe("strip");
+  });
+
+  it("lets v2 reflow under the desktop chrome instead of holding 1060px (#370, F23)", () => {
+    const css = readFileSync(join(__dirname, "../../client/src/v2/tokens.css"), "utf8");
+    // No page holds a 1060px desktop floor any more: v2 reflows at 200% zoom (#370, F23).
+    expect(css).not.toMatch(/min-width: 1060px/);
+    const bar = css.match(/@container \(max-width: 760px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(bar).toContain(".df-command .df-crumb");
+    expect(bar).toContain(".df-command .df-command-label");
+    expect(css).toMatch(/\.df-today \{\s*container-type: inline-size;/);
+    const narrow = css.match(/@container \(max-width: 900px\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(narrow).toContain(".df-today .df-register-row > .df-project-mobile");
+    expect(narrow).toMatch(/\.df-today \.df-split \{\s*grid-template-columns: 1fr;/);
   });
 });

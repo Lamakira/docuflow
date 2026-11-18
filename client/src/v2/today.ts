@@ -29,6 +29,7 @@ export type TodayDocument = {
   title: string;
   updatedAt: Date | string | null;
   projectId: string;
+  createdById?: string | null;
 };
 
 export type TodayUser = {
@@ -48,12 +49,20 @@ export type TodayInput = {
   users: TodayUser[];
   todaySecondsByUser: Array<{ userId: string; totalDuration: number }>;
   monthSecondsByProject: Array<{ crmProjectId: string; totalDuration: number }>;
-  missingDailyUpdates: Array<{ id: string; firstName: string | null; lastName: string | null; email: string }> | null;
+  missingDailyUpdates: Array<{
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+    remindedToday?: boolean;
+  }> | null;
   trackingUserId: string | null;
+  /** The reader's own active time entry (running or paused). */
+  openTimer?: { startTime: Date | string } | null;
   dailyUpdateReminded?: boolean;
 };
 
-export type AttentionKind = "UPDATE" | "MENTION" | "REMINDER";
+export type AttentionKind = "Team" | "Update" | "Mention" | "Reminder";
 
 export type AttentionRow = {
   id: string;
@@ -62,19 +71,20 @@ export type AttentionRow = {
   meta: string;
   href: string;
   cta: string;
-  action: "open" | "remind";
+  action: "open" | "remind" | "notifications";
   state: "open" | "resolved";
 };
 
 export type ActiveProjectRow = {
   id: string;
   name: string;
-  clientLabel: string;
+  clientLabel: string | null;
   kindLabel: string;
   status: string;
   /** The status's board colour; `swatchStyle` turns it into the badge. */
   statusColor: string;
-  lead: string;
+  lead: string | null;
+  meta: string;
   budgetPercent: number | null;
   trackedMtd: string;
   href: string;
@@ -107,20 +117,30 @@ export type TodayModel = {
     memberCount: number;
     hoursTodayLabel: string;
     members: WorkdayMemberRow[];
+    openTimerSince: string | null;
   };
   knowledge: KnowledgeRow[];
   knowledgeTotal: number;
-  approvals: {
-    empty: true;
-    kicker: string;
-    title: string;
-    copy: string;
-  };
+  projectsTotal: number;
 };
 
 export const TODAY_SECTION_LIMIT = 5;
 
-const LIVE_PROJECT_STATUSES = new Set(["active", "on_hold", "in_review", "completed"]);
+/**
+ * One Today card's state from the reads it waits on: a failed read wins, so an
+ * error never renders as the card's empty line; ready means neither (#370, F19).
+ */
+export function todayCardState(queries: Array<{ isLoading: boolean; isError: boolean }>): {
+  loading: boolean;
+  failed: boolean;
+  ready: boolean;
+} {
+  const failed = queries.some((query) => query.isError);
+  const loading = !failed && queries.some((query) => query.isLoading);
+  return { loading, failed, ready: !failed && !loading };
+}
+
+const LIVE_PROJECT_STATUSES = new Set(["active", "in_review", "on_hold"]);
 
 const PROJECT_STATUS_LABEL: Record<string, string> = {
   planned: "PLANNED",
@@ -149,6 +169,16 @@ export function memberInitials(user: { firstName?: string | null; lastName?: str
     return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
   }
   return (user.email?.[0] ?? "M").toUpperCase();
+}
+
+/** Two initials from a display name; an email fallback gives one letter. */
+export function nameInitials(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.includes("@")) return trimmed.charAt(0).toUpperCase();
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "";
+  if (words.length === 1) return words[0].charAt(0).toUpperCase();
+  return `${words[0].charAt(0)}${words[words.length - 1].charAt(0)}`.toUpperCase();
 }
 
 export function formatDateChip(now: Date): string {
@@ -189,14 +219,14 @@ function kindLabel(project: TodayProject): string {
 
 function attentionSubhead(count: number): string {
   if (count === 0) return "Nothing needs you yet.";
-  if (count === 1) return "One item needs you before end of day.";
-  return `${count} items need you before end of day.`;
+  if (count === 1) return "One item needs your attention.";
+  return `${count} items need your attention.`;
 }
 
 function notificationKind(type: string): AttentionKind | null {
-  if (type === "daily_update_reminder" || type === "daily_update_submitted") return "UPDATE";
-  if (type === "mention") return "MENTION";
-  if (type === "reminder") return "REMINDER";
+  if (type === "daily_update_reminder" || type === "daily_update_submitted") return "Update";
+  if (type === "mention") return "Mention";
+  if (type === "reminder") return "Reminder";
   return null;
 }
 
@@ -240,31 +270,61 @@ function composeAttention(input: TodayInput): AttentionRow[] {
         : names.length === 2
           ? `2 missing Daily Updates from ${names[0]} and ${names[1]}`
           : `${names.length} missing Daily Updates`;
-    const reminded = Boolean(input.dailyUpdateReminded);
+    const remindedCount = missing.filter((member) => member.remindedToday).length;
+    const allReminded = Boolean(input.dailyUpdateReminded) || remindedCount === missing.length;
     rows.push({
       id: "daily-updates-missing",
-      kind: "UPDATE",
+      kind: "Team",
       title,
-      meta: reminded ? "Reminded" : "Today",
+      meta: allReminded
+        ? "Reminded"
+        : remindedCount > 0
+          ? `${remindedCount} of ${missing.length} reminded`
+          : "Today",
       href: "/daily-updates",
-      cta: reminded ? "Reminded" : "Remind",
+      cta: allReminded ? "Reminded" : "Remind",
       action: "remind",
-      state: reminded ? "resolved" : "open",
+      state: allReminded ? "resolved" : "open",
     });
   }
 
-  for (const notification of input.notifications) {
-    if (notification.isRead) continue;
-    const kind = notificationKind(notification.type);
-    if (!kind) continue;
+  const time = (value: Date | string | null): number => {
+    if (!value) return Number.NEGATIVE_INFINITY;
+    const ms = (value instanceof Date ? value : new Date(value)).getTime();
+    return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+  };
+  const unread = input.notifications.filter((notification) => !notification.isRead);
+
+  const ownReminders = unread.filter((notification) => notification.type === "daily_update_reminder");
+  if (ownReminders.length > 0) {
+    const newest = ownReminders.reduce((best, item) => (time(item.createdAt) > time(best.createdAt) ? item : best));
+    rows.push({
+      id: "own-daily-update",
+      kind: "Update",
+      title: "Submit your Daily Update",
+      meta: newest.createdAt ? formatWhen(newest.createdAt, input.now) : "",
+      href: "/daily-update",
+      cta: "Open",
+      action: "open",
+      state: "open",
+    });
+  }
+
+  const others = unread
+    .filter((notification) => notification.type !== "daily_update_reminder" && notificationKind(notification.type))
+    .sort((a, b) => time(b.createdAt) - time(a.createdAt));
+  for (const notification of others) {
+    const kind = notificationKind(notification.type)!;
+    const href = notificationHref(notification);
+    const unrouted = href === "/";
     rows.push({
       id: notification.id,
       kind,
       title: notification.message || "You have a notification",
       meta: notification.createdAt ? formatWhen(notification.createdAt, input.now) : "",
-      href: notificationHref(notification),
+      href: unrouted ? "" : href,
       cta: "Open",
-      action: "open",
+      action: unrouted ? "notifications" : "open",
       state: "open",
     });
   }
@@ -275,19 +335,23 @@ function composeAttention(input: TodayInput): AttentionRow[] {
 function composeProjects(input: TodayInput): ActiveProjectRow[] {
   const month = new Map(input.monthSecondsByProject.map((row) => [row.crmProjectId, row.totalDuration]));
   return input.projects
-    .filter((project) => LIVE_PROJECT_STATUSES.has(project.projectStatus))
+    // "Tracked this month" means it shows more than 0.0 h, not merely a few seconds.
+    .filter((project) => LIVE_PROJECT_STATUSES.has(project.projectStatus) && formatHours(month.get(project.id) ?? 0) !== formatHours(0))
     .sort((a, b) => (month.get(b.id) ?? 0) - (month.get(a.id) ?? 0))
     .map((project) => {
       const budgeted = budgetedHoursTotal(project);
       const actual = project.actualHours ?? 0;
+      const client = project.client?.name || null;
+      const kind = kindLabel(project);
       return {
         id: project.id,
         name: project.project?.name || "Untitled Project",
-        clientLabel: project.client?.name || "—",
-        kindLabel: kindLabel(project),
+        clientLabel: client,
+        kindLabel: kind,
+        meta: client ? `${client} · ${kind}` : kind,
         status: PROJECT_STATUS_LABEL[project.projectStatus] ?? project.projectStatus.replace(/_/g, " ").toUpperCase(),
         statusColor: projectStatusColor(project.projectStatus),
-        lead: project.assignee ? memberName(project.assignee) : "—",
+        lead: project.assignee ? memberName(project.assignee) : null,
         budgetPercent: budgeted > 0 ? Math.round((actual / budgeted) * 100) : null,
         trackedMtd: formatHours(month.get(project.id) ?? 0),
         href: projectHref(project.id),
@@ -314,18 +378,34 @@ function composeWorkday(input: TodayInput): TodayModel["workday"] {
       return {
         id: user.id,
         name: memberName(user),
-        initials: memberInitials(user),
+        initials: nameInitials(memberName(user)),
         state,
         hours: formatHours(hoursByUser.get(user.id) ?? 0),
         self: user.id === input.currentUserId,
       };
+    })
+    .sort((a, b) => {
+      if (a.self !== b.self) return a.self ? -1 : 1;
+      const rank = (state: WorkdayMemberRow["state"]) =>
+        state === "UPDATE MISSING" ? 0 : state === "TRACKING" ? 1 : state === "UPDATE POSTED" ? 2 : 3;
+      return rank(a.state) - rank(b.state) || a.name.localeCompare(b.name);
     });
   const totalSeconds = [...hoursByUser.values()].reduce((sum, value) => sum + value, 0);
   return {
     memberCount: members.length,
     hoursTodayLabel: `${formatHours(totalSeconds)} today`,
     members,
+    openTimerSince: openTimerSince(input),
   };
+}
+
+function openTimerSince(input: TodayInput): string | null {
+  if (!input.openTimer) return null;
+  const start = new Date(input.openTimer.startTime);
+  if (Number.isNaN(start.getTime())) return null;
+  const startOfDay = new Date(input.now.getFullYear(), input.now.getMonth(), input.now.getDate());
+  if (start.getTime() >= startOfDay.getTime()) return null;
+  return `Timer open since ${start.getDate()} ${MONTHS[start.getMonth()]} ${formatClock(start)}`;
 }
 
 function composeKnowledge(input: TodayInput): KnowledgeRow[] {
@@ -334,27 +414,26 @@ function composeKnowledge(input: TodayInput): KnowledgeRow[] {
       .filter((project) => project.project?.id)
       .map((project) => [project.project!.id, project.project!.name]),
   );
-  return input.recentDocuments.map((document) => ({
-    id: document.id,
-    title: document.title,
-    meta: `Project doc · ${projectNameByDocProject.get(document.projectId) ?? "Project"}`,
-    when: formatWhen(document.updatedAt, input.now),
-    href: `/document/${document.id}`,
-  }));
+  const userById = new Map(input.users.map((user) => [user.id, user]));
+  return input.recentDocuments.map((document) => {
+    const projectName = projectNameByDocProject.get(document.projectId);
+    const author = document.createdById ? userById.get(document.createdById) : undefined;
+    const parts = [projectName, author ? `by ${memberName(author)}` : null].filter(Boolean);
+    return {
+      id: document.id,
+      title: document.title,
+      meta: parts.length > 0 ? parts.join(" · ") : "Project doc",
+      when: formatWhen(document.updatedAt, input.now),
+      href: `/document/${document.id}`,
+    };
+  });
 }
 
 export function mobileProjectMeta(
   row: Pick<ActiveProjectRow, "clientLabel" | "status" | "trackedMtd">,
 ): string {
-  return `${row.clientLabel} · ${row.status} · ${row.trackedMtd}`;
+  return [row.clientLabel, row.status, row.trackedMtd].filter(Boolean).join(" · ");
 }
-
-export const EMPTY_TIMESHEET_APPROVALS = {
-  empty: true as const,
-  kicker: "Approval queue",
-  title: "Timesheets",
-  copy: "Timesheets are not a product record yet. Approvals will appear here when this Workspace has them.",
-};
 
 export function composeToday(input: TodayInput): TodayModel {
   const attention = composeAttention(input);
@@ -369,6 +448,6 @@ export function composeToday(input: TodayInput): TodayModel {
     workday: composeWorkday(input),
     knowledge: knowledge.slice(0, TODAY_SECTION_LIMIT),
     knowledgeTotal: knowledge.length,
-    approvals: EMPTY_TIMESHEET_APPROVALS,
+    projectsTotal: projects.length,
   };
 }

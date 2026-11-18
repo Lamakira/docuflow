@@ -14,10 +14,9 @@ export function authenticatedPresentation(v2Enabled: boolean): AuthenticatedPres
     : { chrome: "v1", signedInHome: "home" };
 }
 
-export type V2CommandPanel = "ask" | "notifications" | "approvals";
+export type V2CommandPanel = "ask" | "notifications";
 
 export const V2_MOBILE_MAX_WIDTH = 639;
-export const V2_DESKTOP_CONTENT_MIN_WIDTH = 1060;
 
 export type V2ChromeLayout = {
   mode: "desktop" | "mobile";
@@ -49,7 +48,8 @@ export function chromeLayoutForViewport(width: number): V2ChromeLayout {
     timer: "chip",
     context: "side-panel",
     rail: "fixed",
-    contentMinWidth: V2_DESKTOP_CONTENT_MIN_WIDTH,
+    // Each page sets its own floor; Today reflows instead (#370, F23).
+    contentMinWidth: null,
     stackedRegister: false,
     actionBar: false,
   };

@@ -90,6 +90,9 @@ export function V2DailyUpdatePage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/daily-updates"] });
+      // The server marks this Workspace's reminders read on submit (#370, F15).
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
       setPickedProjectId("");
       setStatus("");
       setProgress("");

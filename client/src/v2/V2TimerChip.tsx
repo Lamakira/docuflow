@@ -96,7 +96,7 @@ export function V2TimerChip({
             flex: "none",
           }}
         />
-        <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3, minWidth: 0, flex: strip ? 1 : undefined }}>
+        <span className="df-chip-text" style={{ minWidth: 0, flex: strip ? 1 : undefined }}>
           <span
             className={model.appearance === "running" ? undefined : "df-nav"}
             style={{

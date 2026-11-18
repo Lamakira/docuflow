@@ -2265,6 +2265,14 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  /** Marks one type of the user's notifications read in the request's Workspace only. */
+  async markNotificationsReadByType(userId: string, type: string): Promise<void> {
+    await db
+      .update(notifications)
+      .set({ isRead: 1 })
+      .where(and(eq(notifications.userId, userId), eq(notifications.type, type), inWorkspace(notifications)));
+  }
+
   async getAudioRecording(id: string): Promise<AudioRecording | undefined> {
     const [recording] = await db.select().from(audioRecordings).where(eq(audioRecordings.id, id));
     return recording;

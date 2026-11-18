@@ -8,4 +8,6 @@ export interface NotificationsPersistence {
   hasRecentNotification(userId: string, type: string, since: Date, fromUserId?: string): Promise<boolean>;
   markNotificationRead(id: string, userId: string): Promise<void>;
   markAllNotificationsRead(userId: string): Promise<void>;
+  /** In the request's Workspace only: a Daily Update clears that Workspace's reminders. */
+  markNotificationsReadByType(userId: string, type: string): Promise<void>;
 }
