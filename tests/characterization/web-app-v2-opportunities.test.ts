@@ -323,6 +323,8 @@ describe("Opportunity Stage-change motion (#187)", () => {
     expect(rule(".df-opportunity-pipeline")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/scroll-behavior:\s*auto/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/scrollbar-width:\s*none/);
+    // Columns keep their own height; stretching them to Won's left empty strips (F25).
+    expect(rule(".df-opportunity-pipeline")).toMatch(/align-items:\s*flex-start/);
     expect(rule(".df-opportunity-column")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-column")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-drop")).toMatch(/transition:\s*none/);

@@ -633,10 +633,11 @@ and never treating an unknown id as an open stage.
 
 ## F25 — Won and Lost sit off-screen with no scrollbar, and the board is mostly closed history
 
-- **Status:** open
+- **Status:** open — the column height is fixed; the hidden scrollbar and the long terminal columns remain
 - **Found:** 2026-11-18, the pipeline in a 1680px window (measured), and the cutover rehearsal (counted)
-- **Where:** `client/src/v2/tokens.css:2466-2483` (`.df-opportunity-pipeline`, `scrollbar-width: none`), `client/src/v2/opportunities.ts:275` (`composeOpportunityPipeline` keeps every terminal card)
+- **Where:** `client/src/v2/tokens.css:2468-2485` (`.df-opportunity-pipeline`, `scrollbar-width: none`), `client/src/v2/opportunities.ts:275` (`composeOpportunityPipeline` keeps every terminal card)
 - **Severity:** misleading. Won and Lost are invisible and nothing says so
+- **Partly fixed:** 2026-11-18. `.df-opportunity-pipeline` aligns its columns to the top instead of stretching them, so each column is as tall as its own cards (an empty one keeps its 88px drop zone). Measured on the DocuFlow Workspace: every column 316px before, 164px after (Follow Up, one card with a client, 175px); stacked layout still full width; a keyboard drag still drops into a short column. Still open: Won and Lost off-screen with no visible scrollbar, and Won alone as long as its card count.
 
 Seven 280px columns need 2032px; the pipeline shows 1392px. In Negotiation
 loses its right edge and its count chip, and Won and Lost are entirely

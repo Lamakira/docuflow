@@ -2463,9 +2463,11 @@ button.df-activity-row {
   margin: 0 14px 12px;
 }
 
+/* Each column is as tall as its own cards; stretching them all to the longest
+   (Won) left the open stages as empty tinted strips (F25). */
 .df-opportunity-pipeline {
   display: flex;
-  align-items: stretch;
+  align-items: flex-start;
   gap: var(--df-space-3);
   min-height: 320px;
   overflow-x: auto;
