@@ -18,7 +18,6 @@ import { CloseIcon, SendIcon } from "./icons";
 import { motionForSurface } from "./motion";
 import { notify } from "./notify";
 import type { V2ChromeLayout, V2CommandPanel } from "./presentation";
-import { EMPTY_TIMESHEET_APPROVALS } from "./today";
 import { useV2Chrome } from "./V2Shell";
 
 const ASK_COMPOSER_MOTION = motionForSurface("ask-composer").enterExit;
@@ -36,10 +35,8 @@ export function V2ContextPanel({
 }) {
   const sheet = surface === "sheet";
   const ask = composeAsk({ messages: [] });
-  const title =
-    panel === "ask" ? ask.title : panel === "approvals" ? EMPTY_TIMESHEET_APPROVALS.title : "Notifications";
-  const kicker =
-    panel === "ask" ? ask.kicker : panel === "approvals" ? EMPTY_TIMESHEET_APPROVALS.kicker : "Inbox";
+  const title = panel === "ask" ? ask.title : "Notifications";
+  const kicker = panel === "ask" ? ask.kicker : "Inbox";
 
   return (
     <aside
@@ -73,13 +70,7 @@ export function V2ContextPanel({
           </button>
         )}
       </header>
-      {panel === "approvals" ? (
-        <div className="df-panel-scroll">
-          <p style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "62ch", color: "var(--df-archive-slate)" }}>
-            {EMPTY_TIMESHEET_APPROVALS.copy}
-          </p>
-        </div>
-      ) : panel === "ask" ? (
+      {panel === "ask" ? (
         <AskBody />
       ) : (
         <NotificationsBody onClose={onClose} />

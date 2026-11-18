@@ -361,7 +361,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
             {panel && surface.kind === "sheet" ? (
               <>
                 <SheetTitle className="sr-only">
-                  {panel === "ask" ? "Ask DocuFlow" : panel === "approvals" ? "Approvals" : "Notifications"}
+                  {panel === "ask" ? "Ask DocuFlow" : "Notifications"}
                 </SheetTitle>
                 <V2ContextPanel panel={panel} onClose={() => setPanel(null)} surface="sheet" />
               </>

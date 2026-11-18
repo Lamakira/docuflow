@@ -269,6 +269,15 @@ export function adminDailyUpdateTodayStatusPath(): string {
   return "/api/admin/daily-updates/today-status";
 }
 
+/** The Remind toast says what the server did: members already nudged today are skipped. */
+export function remindToastMessage(result: { sent: number; missing: number }): string {
+  const { sent, missing } = result;
+  if (sent === 0) return "Everyone missing was already reminded today";
+  const skipped = missing - sent;
+  const reminded = `Reminded ${sent} ${sent === 1 ? "member" : "members"}`;
+  return skipped > 0 ? `${reminded} · ${skipped} already reminded today` : reminded;
+}
+
 function adminDailyUpdatesQuery(opts: { startDate: Date; endDate: Date }): string {
   return new URLSearchParams({
     startDate: opts.startDate.toISOString(),

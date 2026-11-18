@@ -243,7 +243,7 @@ describe("Team Daily Update review (#209)", () => {
 });
 
 describe("Daily Update Remind motion (#209)", () => {
-  it("resolves the Remind row or opens a refusal from that control, without KPI or filter motion", () => {
+  it("resolves the Remind control or opens a refusal from it, without KPI or filter motion", () => {
     const remind = motionForSurface("daily-update-remind");
     expect(remind.enterExit).toBe("standard");
     expect(remind.movement).toBe("allowed");
@@ -252,20 +252,14 @@ describe("Daily Update Remind motion (#209)", () => {
     expect(reduced.movement).toBe("none");
     expect(reduced.keepOpacity).toBe(true);
 
-    expect(rule('.df-attention-row[data-state="resolved"][data-motion="standard"]')).toMatch(
-      /var\(--ease-out\)/,
-    );
-    expect(rule('.df-attention-row[data-state="resolved"][data-motion="standard"]')).not.toMatch(
-      /transition\s*:\s*all\b/,
-    );
+    // Reminded members are still missing, so the resolved row stays at full strength (#370).
+    expect(css).not.toMatch(/\.df-attention-row\[data-state="resolved"\]\[data-motion="standard"\]/);
+    expect(todaySource).not.toContain("data-motion={REMIND_MOTION}");
     expect(rule(".df-kpi-value")).toMatch(/transition:\s*none/);
     expect(rule(".df-filter-input input")).toMatch(/transition:\s*none/);
     expect(todaySource).toMatch(/v2-today-remind/);
     expect(todaySource).toContain("ownerName");
     expect(todaySource).toContain("v2-today-remind-refusal");
-    expect(reducedMotionCss()).toMatch(
-      /\.df-attention-row\[data-state="resolved"\]\[data-motion="standard"\][^{]*\{[^}]*transform:\s*none/,
-    );
   });
 });
 
@@ -274,12 +268,6 @@ function rule(selector: string): string {
   const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
   if (!match) throw new Error(`missing rule ${selector}`);
   return match[1];
-}
-
-function reducedMotionCss(): string {
-  return [...css.matchAll(/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)\s*\{([\s\S]*?)\n\}/g)]
-    .map((match) => match[1])
-    .join("\n");
 }
 
 describe("Team Daily Updates link from a notification (#341)", () => {

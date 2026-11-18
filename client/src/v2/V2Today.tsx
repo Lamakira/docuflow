@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import type {
@@ -9,7 +9,7 @@ import type {
   NotificationWithDetails,
   SafeUser,
 } from "@shared/schema";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, throwIfResNotOk } from "@/lib/queryClient";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { SparkleIcon } from "./icons";
@@ -18,14 +18,23 @@ import {
   canViewTeamDailyUpdates,
   dailyUpdateRemindRefusal,
   remindDailyUpdatesPath,
+  remindToastMessage,
 } from "./dailyUpdate";
-import { motionForSurface } from "./motion";
 import { isStandingRefusal, notify } from "./notify";
 import { meterTone, swatchStyle } from "./palette";
-import { composeToday, mobileProjectMeta, TODAY_SECTION_LIMIT, type TodayInput, type TodayProject } from "./today";
+import {
+  composeToday,
+  mobileProjectMeta,
+  TODAY_SECTION_LIMIT,
+  todayCardState,
+  type ActiveProjectRow,
+  type AttentionRow,
+  type TodayInput,
+  type TodayProject,
+} from "./today";
 import { V2RefusalPopover } from "./V2RefusalPopover";
 import { Button } from "@/components/ui/button";
-import { SkeletonRegister, SkeletonSection, SkeletonSubhead } from "./V2Skeleton";
+import { SkeletonLines, SkeletonRows, SkeletonSubhead } from "./V2Skeleton";
 import { V2CompactEmpty } from "./V2EmptyState";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
@@ -35,8 +44,21 @@ type TimeStats = {
   byUser: Array<{ userId: string; totalDuration: number }>;
 };
 type DailyUpdateTodayStatus = {
-  missing: Array<{ id: string; firstName: string | null; lastName: string | null; email: string }>;
+  missing: Array<{
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string;
+    remindedToday?: boolean;
+  }>;
 };
+type RemindResult = { date: string; sent: number; missing: number };
+
+/** Parses a read, or throws with the server's message so the card shows an error, not an empty. */
+async function readJson<T>(res: Response): Promise<T> {
+  await throwIfResNotOk(res);
+  return res.json();
+}
 
 function startOfDay(value: Date): Date {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -78,12 +100,9 @@ function toTodayProject(project: CrmProjectWithDetails): TodayProject {
   };
 }
 
-function TodayActionBar({ onApprovals, onAsk }: { onApprovals: () => void; onAsk: () => void }) {
+function TodayActionBar({ onAsk }: { onAsk: () => void }) {
   return (
     <div className="df-action-bar" data-testid="v2-action-bar">
-      <Button variant="default" type="button" className="df-btn df-action-primary" onClick={onApprovals}>
-        Resolve approvals
-      </Button>
       <button type="button" className="df-action-ask" data-testid="v2-ask" aria-label="Ask DocuFlow" onClick={onAsk}>
         <SparkleIcon />
       </button>
@@ -91,12 +110,66 @@ function TodayActionBar({ onApprovals, onAsk }: { onApprovals: () => void; onAsk
   );
 }
 
-const REMIND_MOTION = motionForSurface("daily-update-remind").enterExit;
+/** One card's failed read: a compact line and a Retry for that card's queries only. */
+function CardError({ section, queries }: { section: string; queries: UseQueryResult<unknown>[] }) {
+  return (
+    <p className="df-today-error">
+      Couldn't load {section}.
+      <Button
+        variant="outline"
+        size="sm"
+        type="button"
+        className="df-btn"
+        onClick={() => {
+          for (const query of queries) if (query.isError) void query.refetch();
+        }}
+      >
+        Retry
+      </Button>
+    </p>
+  );
+}
+
+function attentionLabel(row: AttentionRow): string {
+  return row.meta ? `${row.kind}: ${row.title}, ${row.meta}` : `${row.kind}: ${row.title}`;
+}
+
+function projectLabel(row: ActiveProjectRow): string {
+  const parts = [row.name, row.meta, row.status];
+  if (row.lead) parts.push(`managed by ${row.lead}`);
+  if (row.budgetPercent != null) parts.push(`${row.budgetPercent}% of budget used`);
+  parts.push(`${row.trackedMtd} tracked this month`);
+  return parts.join(", ");
+}
+
+const emptyCell = (
+  <span className="df-today-none" aria-hidden="true">
+    —
+  </span>
+);
+
+function cardBody({
+  loading,
+  failed,
+  skeleton,
+  error,
+  children,
+}: {
+  loading: boolean;
+  failed: boolean;
+  skeleton: ReactNode;
+  error: ReactNode;
+  children: ReactNode;
+}): ReactNode {
+  if (failed) return error;
+  if (loading) return skeleton;
+  return children;
+}
 
 export function V2TodayPage() {
-  const now = useMemo(() => new Date(), []);
+  const [now, setNow] = useState(() => new Date());
   const { user } = useAuth();
-  const { isRunning } = useTimeTracker();
+  const { isRunning, activeEntry } = useTimeTracker();
   const { openPanel, layout, memberships } = useV2Chrome();
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
@@ -111,45 +184,94 @@ export function V2TodayPage() {
   const dayEnd = useMemo(() => endOfDay(now), [now]);
   const monthStart = useMemo(() => startOfMonth(now), [now]);
 
-  const { data: projectsResponse, isLoading: projectsLoading } = useQuery<ProjectsResponse>({
+  // A page left open past midnight moves to the new day when the reader comes back to it.
+  useEffect(() => {
+    let shownDay = startOfDay(new Date()).getTime();
+    const refresh = () => {
+      const next = new Date();
+      const day = startOfDay(next).getTime();
+      if (day !== shownDay) {
+        // Time stats key on the day; these reads do not, so a new day refetches them.
+        shownDay = day;
+        queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+        queryClient.invalidateQueries({ queryKey: [adminDailyUpdateTodayStatusPath()] });
+        queryClient.invalidateQueries({ queryKey: ["/api/documents/recent"] });
+      }
+      setNow(next);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
+  const projectsQuery = useQuery<ProjectsResponse>({
     queryKey: ["/api/crm/projects", { pageSize: 500 }],
-    queryFn: () => fetch("/api/crm/projects?pageSize=500", { credentials: "include" }).then((res) => res.json()),
+    queryFn: () => fetch("/api/crm/projects?pageSize=500", { credentials: "include" }).then(readJson<ProjectsResponse>),
   });
-  const { data: notifications = [] } = useQuery<NotificationWithDetails[]>({
+  const notificationsQuery = useQuery<NotificationWithDetails[]>({
     queryKey: ["/api/notifications"],
   });
-  const { data: recentDocuments = [] } = useQuery<Document[]>({
+  const recentDocumentsQuery = useQuery<Document[]>({
     queryKey: ["/api/documents/recent"],
   });
-  const { data: users = [] } = useQuery<SafeUser[]>({
+  const usersQuery = useQuery<SafeUser[]>({
     queryKey: ["/api/users"],
   });
-  const { data: todayStats } = useQuery<TimeStats>({
+  const todayStatsQuery = useQuery<TimeStats>({
     queryKey: ["/api/time-tracking/stats", "today", dayStart.toISOString()],
-    queryFn: () => fetch(statsUrl(dayStart, dayEnd), { credentials: "include" }).then((res) => res.json()),
+    queryFn: () => fetch(statsUrl(dayStart, dayEnd), { credentials: "include" }).then(readJson<TimeStats>),
   });
-  const { data: monthStats } = useQuery<TimeStats>({
+  const monthStatsQuery = useQuery<TimeStats>({
     queryKey: ["/api/time-tracking/stats", "month", monthStart.toISOString()],
-    queryFn: () => fetch(statsUrl(monthStart, dayEnd), { credentials: "include" }).then((res) => res.json()),
+    queryFn: () => fetch(statsUrl(monthStart, dayEnd), { credentials: "include" }).then(readJson<TimeStats>),
   });
   const ownerName = useWorkspaceOwnerName();
-  const { data: todayStatus } = useQuery<DailyUpdateTodayStatus | null>({
+  const todayStatusQuery = useQuery<DailyUpdateTodayStatus | null>({
     queryKey: [adminDailyUpdateTodayStatusPath()],
     enabled: canViewTeam,
     queryFn: async () => {
       const res = await fetch(adminDailyUpdateTodayStatusPath(), { credentials: "include" });
       if (res.status === 401 || res.status === 403) return null;
-      if (!res.ok) return null;
-      return res.json();
+      return readJson<DailyUpdateTodayStatus>(res);
     },
   });
+  const projectsResponse = projectsQuery.data;
+  const notifications = notificationsQuery.data ?? [];
+  const recentDocuments = recentDocumentsQuery.data ?? [];
+  const users = usersQuery.data ?? [];
+  const todayStats = todayStatsQuery.data;
+  const monthStats = monthStatsQuery.data;
+  const todayStatus = todayStatusQuery.data;
+
+  // Each card waits on, fails with and retries its own reads (#370, F19).
+  const attentionQueries = canViewTeam ? [notificationsQuery, todayStatusQuery] : [notificationsQuery];
+  const projectQueries = [projectsQuery, monthStatsQuery];
+  const workdayQueries = canViewTeam ? [usersQuery, todayStatsQuery, todayStatusQuery] : [usersQuery, todayStatsQuery];
+  const knowledgeQueries = [recentDocumentsQuery, usersQuery];
+  const { loading: attentionLoading, failed: attentionFailed, ready: attentionReady } = todayCardState(attentionQueries);
+  const { loading: projectsLoading, failed: projectsFailed, ready: projectsReady } = todayCardState(projectQueries);
+  const { loading: workdayLoading, failed: workdayFailed, ready: workdayReady } = todayCardState(workdayQueries);
+  const { loading: knowledgeLoading, failed: knowledgeFailed, ready: knowledgeReady } = todayCardState(knowledgeQueries);
+  const anyLoading = attentionLoading || projectsLoading || workdayLoading || knowledgeLoading;
 
   const input: TodayInput = {
     now,
     currentUserId: user?.id ?? "",
     projects: (projectsResponse?.data ?? []).map(toTodayProject),
     notifications,
-    recentDocuments,
+    recentDocuments: recentDocuments.map((document) => ({
+      id: document.id,
+      title: document.title,
+      updatedAt: document.updatedAt,
+      projectId: document.projectId,
+      createdById: document.createdById,
+    })),
     users: users.map((member) => ({
       id: member.id,
       firstName: member.firstName,
@@ -161,19 +283,19 @@ export function V2TodayPage() {
     monthSecondsByProject: monthStats?.byProject ?? [],
     missingDailyUpdates: todayStatus ? todayStatus.missing : null,
     trackingUserId: isRunning && user?.id ? user.id : null,
+    openTimer: activeEntry ? { startTime: activeEntry.startTime } : null,
     dailyUpdateReminded,
   };
   const today = composeToday(input);
-  const projectTotal = projectsResponse?.total ?? today.projects.length;
 
   const remind = useMutation({
-    mutationFn: () => apiRequest("POST", remindDailyUpdatesPath()),
-    onSuccess: () => {
+    mutationFn: (): Promise<RemindResult> => apiRequest("POST", remindDailyUpdatesPath()),
+    onSuccess: (result) => {
       setDailyUpdateReminded(true);
       setRemindRefusal(null);
       queryClient.invalidateQueries({ queryKey: [adminDailyUpdateTodayStatusPath()] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-      notify.success("Daily Update reminders sent");
+      notify.success(remindToastMessage(result));
     },
     onError: (error: Error) => {
       if (error.message && !isStandingRefusal(error)) return notify.error(error);
@@ -195,180 +317,172 @@ export function V2TodayPage() {
     remind.mutate();
   }
 
-  if (projectsLoading) {
-    return (
-      <div className="df-page df-today" data-testid="v2-today" aria-busy="true">
-        <div className="df-today-body">
-          <header className="df-today-head">
-            <div>
-              <h1 className="df-title">Today</h1>
-              <SkeletonSubhead />
-            </div>
-          </header>
-          <p className="df-sr-only" role="status">
-            Loading Today for this Workspace.
-          </p>
-          <SkeletonSection title="Needs attention" lines={3} />
-          <SkeletonRegister
-            title="Active Projects"
-            heads={["Project / client", "Status", "Project manager", "Budget used", "Tracked MTD"]}
-            rows={4}
-          />
-          <div className="df-split">
-            <SkeletonSection title="Workday" lines={3} />
-            <SkeletonSection title="Recent knowledge changes" lines={3} />
-          </div>
-        </div>
-        {layout.actionBar ? (
-          <TodayActionBar onApprovals={() => openPanel("approvals")} onAsk={() => openPanel("ask")} />
-        ) : null}
-      </div>
-    );
-  }
-
   return (
-    <div className="df-page df-today" data-testid="v2-today">
+    <div className="df-page df-today" data-testid="v2-today" aria-busy={anyLoading ? "true" : undefined}>
       <div className="df-today-body">
       <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
+        <div className="df-today-headline">
           <div className="df-today-title-row">
             <h1 className="df-title">Today</h1>
             <span className="df-date-chip">{today.dateChip}</span>
           </div>
-          <p className="df-subhead">{today.subhead}</p>
+          {attentionFailed ? null : attentionLoading ? <SkeletonSubhead /> : <p className="df-subhead">{today.subhead}</p>}
         </div>
-        <Button variant="default" type="button" className="df-btn df-today-resolve" onClick={() => openPanel("approvals")}>
-          Resolve approvals
-        </Button>
       </header>
+      {anyLoading ? (
+        <p className="df-sr-only" role="status">
+          Loading Today for this Workspace.
+        </p>
+      ) : null}
 
       <section className="df-card" data-testid="v2-today-attention">
         <div className="df-card-head">
           <div className="df-cluster">
             <h2 className="df-card-title">Needs attention</h2>
-            <span className="df-count-chip">{today.attentionTotal} items</span>
+            {attentionReady ? <span className="df-count-chip">{today.attentionTotal} items</span> : null}
           </div>
-          <div className="df-cluster">
-            <span className="df-mono df-attention-sort" style={{ fontSize: 10, color: "var(--df-muted-ink)" }}>
-              Sorted by impact
-            </span>
-            {today.attentionTotal > TODAY_SECTION_LIMIT ? (
-              <Button
-                variant="outline"
-                type="button"
-                className="df-btn"
-                data-testid="v2-today-attention-all"
-                onClick={() => openPanel("notifications")}
-              >
-                View all {today.attentionTotal}
-              </Button>
-            ) : null}
-          </div>
+          {attentionReady && today.attentionTotal > TODAY_SECTION_LIMIT ? (
+            <Button
+              variant="outline"
+              type="button"
+              className="df-btn"
+              data-testid="v2-today-attention-all"
+              onClick={() => openPanel("notifications")}
+            >
+              View all
+            </Button>
+          ) : null}
         </div>
-        {today.attention.length === 0 ? (
-          <V2CompactEmpty>
-            Nothing needs attention. This queue is composed from Notifications and Daily Updates in this
-            Workspace.
-          </V2CompactEmpty>
-        ) : (
-          today.attention.map((row) =>
-            row.action === "remind" ? (
-              <div
-                key={row.id}
-                className="df-attention-row"
-                data-state={row.state}
-                data-motion={REMIND_MOTION}
-                data-testid="v2-today-remind-row"
-              >
-                <span className="df-mono df-kind">{row.kind}</span>
-                <Link href={row.href} className="df-row-title">
-                  {row.title}
-                </Link>
-                <span className="df-mono df-meta">{row.meta}</span>
-                <V2RefusalPopover
-                  controlId="remind"
-                  failedControlId={remindRefusal ? "remind" : null}
-                  message={remindRefusal}
-                  testId="v2-today-remind-refusal"
-                  onDismiss={() => setRemindRefusal(null)}
-                  trigger={
-                  <button
-                    type="button"
-                    className="df-cta"
-                    data-testid="v2-today-remind"
-                    disabled={row.state === "resolved" || remind.isPending}
-                    onClick={onRemind}
-                  >
-                    {row.cta}
-                  </button>
-                  }
-                />
-              </div>
+        {cardBody({
+          loading: attentionLoading,
+          failed: attentionFailed,
+          skeleton: <SkeletonLines count={3} />,
+          error: <CardError section="Needs attention" queries={attentionQueries} />,
+          children:
+            today.attention.length === 0 ? (
+              <V2CompactEmpty>
+                Nothing needs attention. This queue is composed from Notifications and Daily Updates in this
+                Workspace.
+              </V2CompactEmpty>
             ) : (
-              <Link key={row.id} href={row.href} className="df-attention-row">
-                <span className="df-mono df-kind">{row.kind}</span>
-                <span className="df-row-title">{row.title}</span>
-                <span className="df-mono df-meta">{row.meta}</span>
-                <span className="df-cta">{row.cta}</span>
-              </Link>
+              today.attention.map((row) =>
+                row.action === "remind" ? (
+                  <div
+                    key={row.id}
+                    className="df-attention-row df-attention-remind"
+                    data-state={row.state}
+                    data-testid="v2-today-remind-row"
+                  >
+                    <span className="df-mono df-kind">{row.kind}</span>
+                    <Link href={row.href} className="df-row-title" aria-label={attentionLabel(row)}>
+                      {row.title}
+                    </Link>
+                    <span className="df-mono df-meta">{row.meta}</span>
+                    <V2RefusalPopover
+                      controlId="remind"
+                      failedControlId={remindRefusal ? "remind" : null}
+                      message={remindRefusal}
+                      testId="v2-today-remind-refusal"
+                      onDismiss={() => setRemindRefusal(null)}
+                      trigger={
+                      <button
+                        type="button"
+                        className="df-cta"
+                        data-testid="v2-today-remind"
+                        disabled={row.state === "resolved" || remind.isPending}
+                        onClick={onRemind}
+                      >
+                        {row.cta}
+                      </button>
+                      }
+                    />
+                  </div>
+                ) : row.action === "notifications" ? (
+                  <button
+                    key={row.id}
+                    type="button"
+                    className="df-attention-row"
+                    aria-label={attentionLabel(row)}
+                    onClick={() => openPanel("notifications")}
+                  >
+                    <span className="df-mono df-kind">{row.kind}</span>
+                    <span className="df-row-title">{row.title}</span>
+                    <span className="df-mono df-meta">{row.meta}</span>
+                    <span className="df-cta">{row.cta}</span>
+                  </button>
+                ) : (
+                  <Link key={row.id} href={row.href} className="df-attention-row" aria-label={attentionLabel(row)}>
+                    <span className="df-mono df-kind">{row.kind}</span>
+                    <span className="df-row-title">{row.title}</span>
+                    <span className="df-mono df-meta">{row.meta}</span>
+                    <span className="df-cta">{row.cta}</span>
+                  </Link>
+                ),
+              )
             ),
-          )
-        )}
+        })}
       </section>
 
       <section className="df-card" data-testid="v2-today-projects">
         <div className="df-card-head">
-          <h2 className="df-card-title">Active Projects</h2>
+          <div className="df-cluster">
+            <h2 className="df-card-title">Active Projects</h2>
+            {projectsReady ? <span className="df-count-chip">{today.projectsTotal}</span> : null}
+          </div>
           <Link href="/projects" className="df-ghost-link">
-            View all {projectTotal}
+            View all
           </Link>
         </div>
-        <div className="df-register-head df-desktop-only">
-          <span>Project / client</span>
-          <span>Status</span>
-          <span>Project manager</span>
-          <span>Budget used</span>
-          <span style={{ textAlign: "right" }}>Tracked MTD</span>
-        </div>
-        {today.projects.length === 0 ? (
-          <V2CompactEmpty>No active Projects in this Workspace yet.</V2CompactEmpty>
-        ) : (
-          today.projects.map((row) => (
-            <Link
-              key={row.id}
-              href={row.href}
-              className="df-register-row"
-              data-testid={`v2-project-row-${row.id}`}
-            >
-              {layout.stackedRegister ? (
-                <span className="df-project-mobile">
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <div className="df-row-title">{row.name}</div>
-                    <div className="df-mono df-meta">{mobileProjectMeta(row)}</div>
+        {projectsReady && today.projects.length > 0 ? (
+          <div className="df-register-head df-desktop-only">
+            <span>Project / client</span>
+            <span>Status</span>
+            <span>Project manager</span>
+            <span>Budget used</span>
+            <span className="df-today-end">Tracked MTD</span>
+          </div>
+        ) : null}
+        {cardBody({
+          loading: projectsLoading,
+          failed: projectsFailed,
+          skeleton: <SkeletonRows columns={5} rows={4} />,
+          error: <CardError section="Active Projects" queries={projectQueries} />,
+          children:
+            today.projects.length === 0 ? (
+              <V2CompactEmpty>No Projects tracked this month yet.</V2CompactEmpty>
+            ) : (
+              today.projects.map((row) => (
+                <Link
+                  key={row.id}
+                  href={row.href}
+                  className="df-register-row"
+                  data-testid={`v2-project-row-${row.id}`}
+                  aria-label={projectLabel(row)}
+                >
+                  <span className="df-project-mobile">
+                    <span className="df-today-stacked-text">
+                      <div className="df-row-title">{row.name}</div>
+                      <div className="df-mono df-meta">{mobileProjectMeta(row)}</div>
+                    </span>
+                    {row.budgetPercent == null ? (
+                      emptyCell
+                    ) : (
+                      <span className="df-mono df-today-percent">{row.budgetPercent}%</span>
+                    )}
                   </span>
-                  <span className="df-mono" style={{ fontSize: 11 }}>
-                    {row.budgetPercent == null ? "—" : `${row.budgetPercent}%`}
+                  <span className="df-today-cell df-desktop-only">
+                    <div className="df-row-title df-today-ellipsis">{row.name}</div>
+                    <div className="df-mono df-meta">{row.meta}</div>
                   </span>
-                </span>
-              ) : (
-                <>
-                  <span style={{ minWidth: 0 }}>
-                    <div className="df-row-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {row.name}
-                    </div>
-                    <div className="df-mono df-meta">
-                      {row.clientLabel} · {row.kindLabel}
-                    </div>
-                  </span>
-                  <span>
+                  <span className="df-today-cell df-desktop-only">
                     <span className="df-status" data-status={row.status} data-swatch="" style={swatchStyle(row.statusColor)}>
                       {row.status}
                     </span>
                   </span>
-                  <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.lead}</span>
-                  <span>
+                  <span className="df-today-cell df-desktop-only df-today-manager">{row.lead ?? emptyCell}</span>
+                  <span className="df-today-cell df-desktop-only">
                     {row.budgetPercent == null ? (
-                      <span className="df-mono df-meta">—</span>
+                      emptyCell
                     ) : (
                       <span className="df-meter-row">
                         <span className="df-meter">
@@ -379,91 +493,101 @@ export function V2TodayPage() {
                             style={{ width: `${Math.min(100, row.budgetPercent)}%` }}
                           />
                         </span>
-                        <span className="df-mono" style={{ fontSize: 11, width: 36 }}>
-                          {row.budgetPercent}%
-                        </span>
+                        <span className="df-mono df-today-percent">{row.budgetPercent}%</span>
                       </span>
                     )}
                   </span>
-                  <span className="df-mono" style={{ fontSize: 12, textAlign: "right" }}>
+                  <span className="df-today-cell df-desktop-only df-mono df-today-hours df-today-end">
                     {row.trackedMtd}
                   </span>
-                </>
-              )}
-            </Link>
-          ))
-        )}
+                </Link>
+              ))
+            ),
+        })}
       </section>
 
       <div className="df-split">
         <section className="df-card" data-testid="v2-today-workday">
           <div className="df-card-head">
             <h2 className="df-card-title">Workday</h2>
-            <span className="df-mono" style={{ fontSize: 10, color: "var(--df-archive-slate)" }}>
-              {today.workday.memberCount} {today.workday.memberCount === 1 ? "member" : "members"} ·{" "}
-              {today.workday.hoursTodayLabel}
-            </span>
+            {workdayReady ? (
+              <span className="df-mono df-today-card-meta">
+                {today.workday.memberCount} {today.workday.memberCount === 1 ? "member" : "members"} ·{" "}
+                {today.workday.hoursTodayLabel}
+              </span>
+            ) : null}
           </div>
-          {today.workday.members.length === 0 ? (
-            <V2CompactEmpty>No members to show for this workday.</V2CompactEmpty>
-          ) : (
-            today.workday.members.map((member) => (
-              <div key={member.id} className="df-workday-row">
-                <span className="df-avatar" data-self={member.self ? "true" : "false"}>
-                  {member.initials}
-                </span>
-                <span style={{ flex: 1, minWidth: 0, fontWeight: 500, fontSize: 13.5 }}>{member.name}</span>
-                {member.state ? (
-                  <span className="df-state" data-state={member.state}>
-                    {member.state}
-                  </span>
-                ) : null}
-                <span className="df-mono" style={{ width: 52, textAlign: "right", fontSize: 12 }}>
-                  {member.hours}
-                </span>
-              </div>
-            ))
-          )}
+          {workdayReady && today.workday.openTimerSince ? (
+            <p className="df-today-timer">{today.workday.openTimerSince}</p>
+          ) : null}
+          {cardBody({
+            loading: workdayLoading,
+            failed: workdayFailed,
+            skeleton: <SkeletonLines count={3} />,
+            error: <CardError section="Workday" queries={workdayQueries} />,
+            children:
+              today.workday.members.length === 0 ? (
+                <V2CompactEmpty>No members to show for this workday.</V2CompactEmpty>
+              ) : (
+                today.workday.members.map((member) => (
+                  <div key={member.id} className="df-workday-row">
+                    <span className="df-avatar" data-self={member.self ? "true" : "false"}>
+                      {member.initials}
+                    </span>
+                    <span className="df-workday-name">
+                      {member.name}
+                      {member.self ? <span className="df-workday-you">You</span> : null}
+                    </span>
+                    {member.state ? (
+                      <span className="df-state" data-state={member.state}>
+                        {member.state}
+                      </span>
+                    ) : null}
+                    <span className="df-mono df-workday-hours">{member.hours}</span>
+                  </div>
+                ))
+              ),
+          })}
         </section>
 
         <section className="df-card" data-testid="v2-today-knowledge">
           <div className="df-card-head">
             <h2 className="df-card-title">Recent knowledge changes</h2>
-            <div className="df-cluster">
-              <span className="df-mono" style={{ fontSize: 10, color: "var(--df-muted-ink)" }}>
-                Access-filtered
-              </span>
-              {today.knowledgeTotal > TODAY_SECTION_LIMIT ? (
-                <Link href="/documents" className="df-ghost-link" data-testid="v2-today-knowledge-all">
-                  View all
-                </Link>
-              ) : null}
-            </div>
-          </div>
-          {today.knowledge.length === 0 ? (
-            <V2CompactEmpty>No recent knowledge changes you can access.</V2CompactEmpty>
-          ) : (
-            today.knowledge.map((row) => (
-              <Link key={row.id} href={row.href} className="df-knowledge-row">
-                <span style={{ minWidth: 0, flex: 1 }}>
-                  <div
-                    className="df-row-title"
-                    style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                  >
-                    {row.title}
-                  </div>
-                  <div className="df-mono df-meta">{row.meta}</div>
-                </span>
-                <span className="df-mono df-meta">{row.when}</span>
+            {knowledgeReady && today.knowledgeTotal > TODAY_SECTION_LIMIT ? (
+              <Link href="/project-documentation" className="df-ghost-link" data-testid="v2-today-knowledge-all">
+                View all
               </Link>
-            ))
-          )}
+            ) : null}
+          </div>
+          {cardBody({
+            loading: knowledgeLoading,
+            failed: knowledgeFailed,
+            skeleton: <SkeletonLines count={3} />,
+            error: <CardError section="Recent knowledge changes" queries={knowledgeQueries} />,
+            children:
+              today.knowledge.length === 0 ? (
+                <V2CompactEmpty>No recent knowledge changes you can access.</V2CompactEmpty>
+              ) : (
+                today.knowledge.map((row) => (
+                  <Link
+                    key={row.id}
+                    href={row.href}
+                    className="df-knowledge-row"
+                    aria-label={`${row.title}, ${row.meta}, ${row.when}`}
+                  >
+                    <span className="df-today-stacked-text">
+                      <div className="df-row-title df-today-ellipsis">{row.title}</div>
+                      <div className="df-mono df-meta">{row.meta}</div>
+                    </span>
+                    <span className="df-mono df-meta">{row.when}</span>
+                  </Link>
+                ))
+              ),
+          })}
         </section>
       </div>
       </div>
-      {layout.actionBar ? (
-        <TodayActionBar onApprovals={() => openPanel("approvals")} onAsk={() => openPanel("ask")} />
-      ) : null}
+      {layout.actionBar ? <TodayActionBar onAsk={() => openPanel("ask")} /> : null}
     </div>
   );
 }

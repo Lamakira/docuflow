@@ -271,6 +271,47 @@ describe("project daily updates (characterization)", () => {
     expect(again.body.missing).toBe(missingIds.length);
   });
 
+  it("flags on the roll call whether a missing member was already reminded today", async () => {
+    const app = await makeApp();
+    const manager = await registerUser(app);
+    await grantDailyUpdatesAccess(manager.id);
+    const missing = await registerUser(app, { firstName: "Miss" });
+
+    const before = await manager.agent.get("/api/admin/daily-updates/today-status");
+    const rowBefore = before.body.missing.find((row: { id: string }) => row.id === missing.id);
+    expect(rowBefore.remindedToday).toBe(false);
+
+    const reminded = await manager.agent.post("/api/admin/daily-updates/remind");
+    expect(reminded.status).toBe(200);
+
+    const after = await manager.agent.get("/api/admin/daily-updates/today-status");
+    const rowAfter = after.body.missing.find((row: { id: string }) => row.id === missing.id);
+    expect(rowAfter.remindedToday).toBe(true);
+  });
+
+  it("marks the reminder read when the reminded member submits a Daily Update", async () => {
+    const app = await makeApp();
+    const manager = await registerUser(app);
+    await grantDailyUpdatesAccess(manager.id);
+    const member = await registerUser(app, { firstName: "Late" });
+    const { crmProject } = await createCrmProject(manager.agent, { memberIds: [manager.id, member.id] });
+
+    await manager.agent.post("/api/admin/daily-updates/remind");
+    const unread = await member.agent.get("/api/notifications");
+    const reminder = unread.body.find((row: { type: string }) => row.type === "daily_update_reminder");
+    expect(reminder.isRead).toBe(0);
+
+    const submitted = await member.agent
+      .post("/api/daily-updates")
+      .send({ crmProjectId: crmProject.id, status: "on_track" });
+    expect(submitted.status).toBe(201);
+
+    const inbox = await member.agent.get("/api/notifications");
+    const reminders = inbox.body.filter((row: { type: string }) => row.type === "daily_update_reminder");
+    expect(reminders.length).toBe(1);
+    expect(reminders[0].isRead).toBe(1);
+  });
+
   it("does not remind a User without a Membership in this Workspace", async () => {
     const app = await makeApp();
     const manager = await registerUser(app);

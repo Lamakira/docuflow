@@ -4965,8 +4965,13 @@ Instructions:
         ...data,
         userId: getUserId(req)!,
       });
-      // A notification never fails the submission, and runs inside this
-      // request's Workspace context.
+      // Neither the reminder cleanup nor a notification fails the submission;
+      // both run inside this request's Workspace context.
+      try {
+        await storage.markNotificationsReadByType(getUserId(req)!, "daily_update_reminder");
+      } catch (readError) {
+        console.error("Error marking Daily Update reminders read:", readError);
+      }
       try {
         await notifyDailyUpdateReaders(update);
       } catch (notifyError) {
