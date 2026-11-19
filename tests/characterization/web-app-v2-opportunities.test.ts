@@ -336,6 +336,9 @@ describe("Opportunity Stage-change motion (#187)", () => {
       /overflow:\s*visible/,
     );
     expect(css).not.toMatch(/\.df-opportunity-pipeline\[data-dragging="true"\] \.df-opportunity-drop\s*[,{]/);
+    // Every column head is the same two lines, so no column's cards start lower than the others.
+    expect(rule(".df-opportunity-column .df-card-head")).toMatch(/flex-direction:\s*column/);
+    expect(rule(".df-opportunity-column .df-card-head")).not.toMatch(/flex-wrap:\s*wrap/);
     expect(rule(".df-opportunity-column")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-column")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-drop")).toMatch(/transition:\s*none/);

@@ -2507,9 +2507,19 @@ button.df-activity-row {
   animation: none;
 }
 
+/* The same two lines in every column, the stage above its count and total: a
+   head that wrapped only when the stage name was long ("Discovering call
+   completed") pushed that column's cards below the others. */
 .df-opportunity-column .df-card-head {
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: var(--df-space-2);
   padding: var(--df-space-4);
+}
+
+.df-opportunity-column .df-card-head > .df-card-title {
+  max-width: 100%;
 }
 
 /* One total per currency; amounts in different currencies are never added. */
