@@ -50,7 +50,6 @@ const css = readFileSync(
 function emptyTeam(overrides: Partial<TeamDailyUpdatesInput> = {}): TeamDailyUpdatesInput {
   return {
     now: new Date(2026, 8, 11, 15, 0, 0),
-    workspaceName: "Harbor Co",
     ownerName: "Sam Lee",
     canView: true,
     kpis: { total: 0, waitingOnClient: 0, blocked: 0, activeUsers: 0 },
@@ -74,10 +73,7 @@ describe("Team Daily Update routing (#209)", () => {
       kind: "daily-updates",
       href: "/daily-updates",
     });
-    expect(breadcrumbFor("/daily-updates", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Daily Updates",
-    ]);
+    expect(breadcrumbFor("/daily-updates", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(matchV2Route("/daily-update").kind).toBe("daily-update");
     expect(matchV2Route("/admin").kind).toBe("administration");
     expect(matchV2Route("/admin/analytics").kind).toBe("analytics");

@@ -206,7 +206,6 @@ function TimeEntriesPane() {
 
   const page = composeTimeTracking({
     now,
-    workspaceName,
     currentUserId: user?.id ?? "",
     isAdmin: canManage,
     isRunning,
@@ -300,7 +299,7 @@ function TimeEntriesPane() {
 
   if (!ready || isLoading) {
     return (
-      <V2PageSkeleton title="Time Tracking" frame="fragment" status="Loading Time Entries for this Workspace.">
+      <V2PageSkeleton title="Time Tracking" hasSubhead={false} frame="fragment" status="Loading Time Entries for this Workspace.">
         <SkeletonSection title="Timer" lines={2} />
         <SkeletonRegister
           className="df-time-register"
@@ -316,7 +315,6 @@ function TimeEntriesPane() {
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Time Tracking</h1>
-            <p className="df-subhead">{page.subhead}</p>
           </div>
         </header>
         <p className="df-empty">Time Entries in this Workspace could not be loaded.</p>
@@ -329,7 +327,6 @@ function TimeEntriesPane() {
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Time Tracking</h1>
-          <p className="df-subhead">{page.subhead}</p>
         </div>
         <span className="df-count-chip">{page.workdayHours}</span>
       </header>
@@ -842,7 +839,6 @@ function ProjectTasksPane() {
     <header className="df-today-head">
       <div style={{ minWidth: 0 }}>
         <h1 className="df-title">Projects &amp; Tasks</h1>
-        <p className="df-subhead">{page.subhead}</p>
       </div>
     </header>
   );

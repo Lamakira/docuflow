@@ -1125,7 +1125,7 @@ export function V2OpportunitiesPage() {
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
-  const { workspaceName, readOnly, refusal, failed } = useWorkspaceWrites();
+  const { readOnly, refusal, failed } = useWorkspaceWrites();
   const lists = useOpportunityLists();
   const { stages } = lists;
 
@@ -1139,7 +1139,6 @@ export function V2OpportunitiesPage() {
   });
 
   const pipeline = composeOpportunityPipeline({
-    workspaceName,
     stages,
     rows: (projectsResponse?.data ?? []).map(toPipelineRow),
     filterQuery,
@@ -1248,7 +1247,7 @@ export function V2OpportunitiesPage() {
 
   if (isLoading) {
     return (
-      <V2PageSkeleton title="Opportunities" testId="v2-opportunities" status="Loading Opportunities for this Workspace.">
+      <V2PageSkeleton title="Opportunities" hasSubhead={false} testId="v2-opportunities" status="Loading Opportunities for this Workspace.">
         {/* Stage names come from the CRM field options, so the columns wait unnamed. */}
         <SkeletonBoard columns={[null, null, null, null, null]} />
       </V2PageSkeleton>
@@ -1261,7 +1260,6 @@ export function V2OpportunitiesPage() {
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Opportunities</h1>
-            <p className="df-subhead">{pipeline.subhead}</p>
           </div>
         </header>
         <p className="df-empty">Opportunities in this Workspace could not be loaded.</p>
@@ -1274,7 +1272,6 @@ export function V2OpportunitiesPage() {
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Opportunities</h1>
-          <p className="df-subhead">{pipeline.subhead}</p>
         </div>
         <div className="df-library-actions">
           <label className="df-filter-input">

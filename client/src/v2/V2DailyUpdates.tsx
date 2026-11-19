@@ -38,7 +38,6 @@ export function V2TeamDailyUpdatesPage() {
   const { user } = useAuth();
   const { memberships } = useV2Chrome();
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
-  const workspaceName = current?.workspaceName ?? "this Workspace";
   const canView = canViewTeamDailyUpdates({
     workspaceRole: current?.workspaceRole,
     canViewDailyUpdates: user?.canViewDailyUpdates,
@@ -98,7 +97,6 @@ export function V2TeamDailyUpdatesPage() {
 
   const page = composeTeamDailyUpdates({
     now,
-    workspaceName,
     ownerName,
     canView,
     kpis,
@@ -113,7 +111,7 @@ export function V2TeamDailyUpdatesPage() {
 
   if (updatesLoading || kpisLoading || todayLoading) {
     return (
-      <V2PageSkeleton title="Daily Updates" testId="v2-daily-updates" status="Loading Daily Updates for this Workspace.">
+      <V2PageSkeleton title="Daily Updates" hasSubhead={false} testId="v2-daily-updates" status="Loading Daily Updates for this Workspace.">
         <SkeletonSection title="Today" tiles={4} />
         <SkeletonSection title="Updates" lines={4} />
       </V2PageSkeleton>
@@ -126,7 +124,6 @@ export function V2TeamDailyUpdatesPage() {
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Daily Updates</h1>
-            <p className="df-subhead">Team Daily Updates in {workspaceName}.</p>
           </div>
         </header>
         <p className="df-refusal" data-testid="v2-daily-updates-refusal">
@@ -144,7 +141,6 @@ export function V2TeamDailyUpdatesPage() {
             <h1 className="df-title">Daily Updates</h1>
             <span className="df-date-chip">{page.dateChip}</span>
           </div>
-          <p className="df-subhead">{page.subhead}</p>
         </div>
       </header>
 

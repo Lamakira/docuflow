@@ -35,7 +35,6 @@ export type TimeEntryRowInput = {
 
 export type TimeTrackingInput = {
   now: Date;
-  workspaceName: string;
   currentUserId: string;
   isAdmin: boolean;
   isRunning: boolean;
@@ -69,7 +68,6 @@ export type TimeTrackingRow = {
 };
 
 export type TimeTrackingModel = {
-  subhead: string;
   workdayHours: string;
   empty: boolean;
   /** Why the register shows nothing (#325); null while it has rows. */
@@ -189,7 +187,6 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
   const window = input.range === "today" ? "today" : input.range === "week" ? "this week" : null;
   const widenLabel = input.range ? widenTimeLabel(input.range) : null;
   return {
-    subhead: `Time Entries in ${input.workspaceName}.`,
     workdayHours: formatHours(input.workdaySeconds),
     empty,
     emptyState: emptyModelOf(

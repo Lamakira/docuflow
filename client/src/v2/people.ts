@@ -32,7 +32,6 @@ export type PeopleInvitationInput = {
 };
 
 export type PeopleInput = {
-  workspaceName: string;
   currentUserId: string;
   ownerName: string | null;
   condition: "Trial" | "Read-only" | "Past due" | null;
@@ -68,7 +67,6 @@ export type PeopleRow = {
 };
 
 export type PeopleModel = {
-  subhead: string;
   seatCopy: string;
   invitePreview: string;
   empty: boolean;
@@ -195,7 +193,6 @@ export function composePeople(input: PeopleInput): PeopleModel {
   const activeCount = input.memberships.filter((row) => !row.archived).length;
   const empty = rows.length === 0;
   return {
-    subhead: `Memberships in ${input.workspaceName}.`,
     seatCopy: seatCopy(activeCount, invitations.length, input.purchasedSeats),
     invitePreview: composeInvitePreview({ activeCount, purchasedSeats: input.purchasedSeats }),
     empty,

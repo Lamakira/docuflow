@@ -342,7 +342,6 @@ export function V2ClientsPage() {
 
   // The server already narrowed these rows; the composer only names what did it.
   const register = composeClientRegister({
-    workspaceName,
     clients: (clientPage?.data ?? []).map(toRegisterClient),
     filterQuery: "",
     activeFilters: clientFilterLabels(filters),
@@ -392,7 +391,7 @@ export function V2ClientsPage() {
 
   if (isLoading) {
     return (
-      <V2PageSkeleton title="Clients" testId="v2-clients" status="Loading Clients for this Workspace.">
+      <V2PageSkeleton title="Clients" hasSubhead={false} testId="v2-clients" status="Loading Clients for this Workspace.">
         <SkeletonRegister
           className="df-clients-register"
           heads={["Client", "Company", "Status", "Source", "Projects", "Created"]}
@@ -407,7 +406,6 @@ export function V2ClientsPage() {
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Clients</h1>
-            <p className="df-subhead">{register.subhead}</p>
           </div>
         </header>
         <p className="df-empty">Clients in this Workspace could not be loaded.</p>
@@ -420,7 +418,6 @@ export function V2ClientsPage() {
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Clients</h1>
-          <p className="df-subhead">{register.subhead}</p>
         </div>
         <div className="df-library-actions">
           <Button

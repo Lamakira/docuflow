@@ -38,7 +38,6 @@ const css = readFileSync(
 function emptyActivity(overrides: Partial<ActivityInput> = {}): ActivityInput {
   return {
     now: new Date(2026, 8, 10, 15, 0, 0),
-    workspaceName: "Harbor Co",
     currentUserId: "me",
     canReview: false,
     ownerName: "Sam Lee",
@@ -58,10 +57,7 @@ describe("Activity routing (#191)", () => {
     const match = matchV2Route("/activity");
     expect(match.kind).toBe("activity");
     expect(navIdForPath("/activity")).toBe("activity");
-    expect(breadcrumbFor("/activity", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Activity",
-    ]);
+    expect(breadcrumbFor("/activity", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toContain("V2ActivityPage");
     expect(appSource).toMatch(/path="\/activity\/:tab\?"/);
     expect(appSource).not.toContain('data-testid="v2-placeholder"');

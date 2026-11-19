@@ -82,7 +82,6 @@ export function V2PeoplePage() {
   const ownerName = workspaceOwnerName(data?.memberships ?? []);
 
   const page = composePeople({
-    workspaceName,
     currentUserId: user?.id ?? "",
     ownerName,
     condition: current?.condition ?? null,
@@ -242,7 +241,7 @@ export function V2PeoplePage() {
 
   if (isLoading) {
     return (
-      <V2PageSkeleton title="People" testId="v2-people" status="Loading People for this Workspace.">
+      <V2PageSkeleton title="People" hasSubhead={false} testId="v2-people" status="Loading People for this Workspace.">
         <SkeletonRegister
           className="df-people-register"
           heads={["Member", "Workspace role", "Capabilities", "Status"]}
@@ -257,7 +256,6 @@ export function V2PeoplePage() {
         <header className="df-today-head">
           <div>
             <h1 className="df-title">People</h1>
-            <p className="df-subhead">{page.subhead}</p>
           </div>
         </header>
         <p className="df-empty">Memberships in this Workspace could not be loaded.</p>
@@ -270,7 +268,6 @@ export function V2PeoplePage() {
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">People</h1>
-          <p className="df-subhead">{page.subhead}</p>
         </div>
         <span className="df-count-chip df-people-seats">{page.rows.length}</span>
       </header>

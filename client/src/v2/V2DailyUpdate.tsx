@@ -125,7 +125,7 @@ export function V2DailyUpdatePage() {
 
   if (projectsLoading || submissionsLoading) {
     return (
-      <V2PageSkeleton title="Daily Update" testId="v2-daily-update" status="Loading your Daily Update.">
+      <V2PageSkeleton title="Daily Update" hasSubhead={false} testId="v2-daily-update" status="Loading your Daily Update.">
         <SkeletonSection title="Today" lines={3} />
         <SkeletonSection title="Submitted today" lines={2} />
         <SkeletonSection title="Submit today's update" lines={4} />
@@ -141,7 +141,6 @@ export function V2DailyUpdatePage() {
             <h1 className="df-title">Daily Update</h1>
             <span className="df-date-chip">{page.dateChip}</span>
           </div>
-          <p className="df-subhead">{page.subhead}</p>
         </div>
       </header>
 

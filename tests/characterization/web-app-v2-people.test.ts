@@ -41,7 +41,6 @@ const css = readFileSync(
 
 function emptyPeople(overrides: Partial<PeopleInput> = {}): PeopleInput {
   return {
-    workspaceName: "Harbor Co",
     currentUserId: "me",
     ownerName: "Sam Lee",
     condition: null,
@@ -57,10 +56,7 @@ describe("People routing (#192)", () => {
     const match = matchV2Route("/people");
     expect(match.kind).toBe("people");
     expect(navIdForPath("/people")).toBe("people");
-    expect(breadcrumbFor("/people", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "People",
-    ]);
+    expect(breadcrumbFor("/people", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toContain("V2PeoplePage");
     expect(appSource).toMatch(/path="\/people"/);
     expect(appSource).not.toContain('data-testid="v2-placeholder"');

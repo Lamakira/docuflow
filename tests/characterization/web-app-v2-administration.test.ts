@@ -129,10 +129,7 @@ describe("Administration routing (#193)", () => {
     const match = matchV2Route("/administration");
     expect(match.kind).toBe("administration");
     expect(navIdForPath("/administration")).toBe("administration");
-    expect(breadcrumbFor("/administration", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Administration",
-    ]);
+    expect(breadcrumbFor("/administration", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toContain("V2AdministrationPage");
     expect(appSource).toMatch(/path="\/administration\/:tab\?"/);
     expect(appSource).not.toContain('data-testid="v2-placeholder"');

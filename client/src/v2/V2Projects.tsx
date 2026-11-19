@@ -519,7 +519,6 @@ export function V2ProjectsPage() {
   });
   // The server already narrowed these rows; the composer only names what did it.
   const register = composeProjectRegister({
-    workspaceName,
     projects: (projectsResponse?.data ?? []).map((project) =>
       toRegisterProject(project, monthByProject.get(project.id) ?? 0, {
         userId: user?.id ?? "",
@@ -538,7 +537,6 @@ export function V2ProjectsPage() {
   };
   const boardSource = kanbanResponse?.data ?? [];
   const board = composeProjectBoard({
-    workspaceName,
     projects: boardSource.map((project) => {
       const memberIds = (project.members ?? [])
         .map((row) => row.userId || row.user?.id)
@@ -682,7 +680,7 @@ export function V2ProjectsPage() {
 
   if (isLoading || (boardView && boardLoading)) {
     return (
-      <V2PageSkeleton title="Projects" testId="v2-projects" status="Loading Projects for this Workspace.">
+      <V2PageSkeleton title="Projects" hasSubhead={false} testId="v2-projects" status="Loading Projects for this Workspace.">
         {boardView ? (
           <SkeletonBoard columns={PROJECT_BOARD_COLUMNS.map((column) => column.label)} />
         ) : (
@@ -701,7 +699,6 @@ export function V2ProjectsPage() {
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Projects</h1>
-            <p className="df-subhead">{register.subhead}</p>
           </div>
         </header>
         <p className="df-empty">Projects in this Workspace could not be loaded.</p>
@@ -714,7 +711,6 @@ export function V2ProjectsPage() {
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Projects</h1>
-          <p className="df-subhead">{register.subhead}</p>
         </div>
         <div className="df-library-actions">
           <Button

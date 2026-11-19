@@ -91,10 +91,7 @@ describe("Analytics is its own destination on the rail (#281)", () => {
   it("resolves /analytics to a live destination with its own crumb and rail entry", () => {
     expect(matchV2Route("/analytics")).toEqual({ kind: "analytics", title: "Analytics", href: "/analytics" });
     expect(navIdForPath("/analytics")).toBe("analytics");
-    expect(breadcrumbFor("/analytics", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Analytics",
-    ]);
+    expect(breadcrumbFor("/analytics", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toMatch(/<Route path="\/analytics" component=\{V2AnalyticsPage\} \/>/);
     expect(railIcons).toMatch(/analytics:\s*\w+/);
   });

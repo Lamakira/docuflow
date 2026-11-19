@@ -80,7 +80,6 @@ describe("Estimated value", () => {
 
   it("shows each card's Estimated value and no money total on the column", () => {
     const pipeline = composeOpportunityPipeline({
-      workspaceName: "Harbour",
       stages,
       filterQuery: "",
       changingId: null,

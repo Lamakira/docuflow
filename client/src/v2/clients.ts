@@ -24,7 +24,6 @@ export type ClientRegisterRowInput = {
 };
 
 export type ClientRegisterInput = {
-  workspaceName: string;
   clients: ClientRegisterRowInput[];
   filterQuery: string;
   selectedId: string | null;
@@ -53,7 +52,6 @@ export type ClientRegisterRow = {
 };
 
 export type ClientRegisterModel = {
-  subhead: string;
   empty: boolean;
   /** Why the register shows nothing (#325); null while it has rows. */
   emptyState: EmptyModel | null;
@@ -115,7 +113,6 @@ export function composeClientRegister(input: ClientRegisterInput): ClientRegiste
   const activeFilters = input.activeFilters ?? [];
   const filtered = empty && (activeFilters.length > 0 || Boolean(needle));
   return {
-    subhead: `Clients in ${input.workspaceName}.`,
     empty,
     emptyState: emptyModelOf(emptyKindOf(empty, filtered), "Clients", {
       title: "Add your first Client",

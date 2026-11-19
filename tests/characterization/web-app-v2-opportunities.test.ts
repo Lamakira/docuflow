@@ -41,7 +41,6 @@ function row(overrides: Partial<OpportunityPipelineRowInput> = {}): OpportunityP
 
 function emptyPipeline(overrides: Partial<OpportunityPipelineInput> = {}): OpportunityPipelineInput {
   return {
-    workspaceName: "Harbor Co",
     stages: composeOpportunityStages(FALLBACK_OPEN_STAGES),
     rows: [],
     filterQuery: "",
@@ -60,14 +59,22 @@ const pageSource = readFileSync(
 );
 
 describe("Opportunities routing (#187)", () => {
+  it("names a top-level page only by its Workspace crumb, and keeps a record's full breadcrumb", () => {
+    // The page title and the active sidebar item already name a top-level page.
+    expect(breadcrumbFor("/opportunities", "Harbor Co")).toEqual([{ label: "Harbor Co" }]);
+    expect(breadcrumbFor("/opportunities/opp-1", "Harbor Co")).toEqual([
+      { label: "Harbor Co", href: "/" },
+      { label: "Opportunities", href: "/opportunities" },
+      { label: "Record" },
+    ]);
+    expect(breadcrumbFor("/platform/users", "Harbor Co")).toEqual([{ label: "PLATFORM" }]);
+  });
+
   it("shows a live pipeline on the rail Opportunities destination", () => {
     const match = matchV2Route("/opportunities");
     expect(match.kind).toBe("opportunities");
     expect(navIdForPath("/opportunities")).toBe("opportunities");
-    expect(breadcrumbFor("/opportunities", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Opportunities",
-    ]);
+    expect(breadcrumbFor("/opportunities", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toContain("V2OpportunitiesPage");
     expect(appSource).toMatch(/path="\/opportunities"/);
     expect(appSource).toMatch(/path="\/opportunities"\s+component=\{V2OpportunitiesPage\}/);

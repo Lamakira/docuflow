@@ -125,10 +125,7 @@ describe("Time Tracking tabs and v1 rewrites (#214)", () => {
   });
 
   it("names the open tab in the breadcrumb without renaming the destination", () => {
-    expect(breadcrumbFor("/time", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Time Tracking",
-    ]);
+    expect(breadcrumbFor("/time", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(breadcrumbFor("/time/stats", "Harbor Co").map((crumb) => crumb.label)).toEqual([
       "Harbor Co",
       "Time Tracking",

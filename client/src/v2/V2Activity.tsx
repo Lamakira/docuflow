@@ -141,7 +141,6 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   const [downloading, setDownloading] = useState(false);
 
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
-  const workspaceName = current?.workspaceName ?? "this Workspace";
   const canReview = canManageAdministration(current?.workspaceRole ?? "");
 
   const rangeDates = useMemo(
@@ -230,7 +229,6 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
 
   const page = composeActivity({
     now,
-    workspaceName,
     currentUserId: user?.id ?? "",
     canReview,
     ownerName,
@@ -345,7 +343,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
 
   if (isLoading) {
     return (
-      <V2PageSkeleton title="Activity" testId="v2-activity" status="Loading Activity for this Workspace.">
+      <V2PageSkeleton title="Activity" hasSubhead={false} testId="v2-activity" status="Loading Activity for this Workspace.">
         <SkeletonSection title="Tracking Policy" lines={3} />
         <SkeletonRegister
           className="df-activity-register df-activity-stream"
@@ -361,7 +359,6 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Activity</h1>
-            <p className="df-subhead">{page.subhead}</p>
           </div>
         </header>
         <p className="df-empty">Activity Evidence in this Workspace could not be loaded.</p>
@@ -374,7 +371,6 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Activity</h1>
-          <p className="df-subhead">{page.subhead}</p>
         </div>
         <span className="df-count-chip">
           {tab === "gallery" ? gallery.count : page.rows.length}

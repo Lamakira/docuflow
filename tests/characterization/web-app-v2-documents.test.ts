@@ -38,10 +38,7 @@ describe("Workspace Documents routing (#174)", () => {
     const match = matchV2Route("/documents");
     expect(match.kind).toBe("documents");
     expect(navIdForPath("/documents")).toBe("documents");
-    expect(breadcrumbFor("/documents", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Workspace Documents",
-    ]);
+    expect(breadcrumbFor("/documents", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
   });
 
   it("opens a Workspace Document in the v2 editor, not a placeholder or the v1 editor", () => {

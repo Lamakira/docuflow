@@ -60,7 +60,6 @@ export type ActivityPerson = {
 
 export type ActivityInput = {
   now: Date;
-  workspaceName: string;
   currentUserId: string;
   canReview: boolean;
   ownerName: string | null;
@@ -90,7 +89,6 @@ export type ActivityRow = EvidenceProvenance & {
 };
 
 export type ActivityModel = {
-  subhead: string;
   empty: boolean;
   /** `filtered`: a Project or Member filter hides it; `range`: nothing for the date range (#325). */
   emptyState: EmptyModel | null;
@@ -326,7 +324,6 @@ export function composeActivity(input: ActivityInput): ActivityModel {
 
   const empty = rows.length === 0;
   return {
-    subhead: `Activity Evidence in ${input.workspaceName}.`,
     empty,
     emptyState: evidenceEmptyState(empty, Boolean(input.facetsActive), input.everRecorded ?? null, input.range),
     refusal,

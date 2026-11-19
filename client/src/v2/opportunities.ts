@@ -47,7 +47,6 @@ export type OpportunityPipelineRowInput = {
 };
 
 export type OpportunityPipelineInput = {
-  workspaceName: string;
   stages: OpportunityStageOption[];
   rows: OpportunityPipelineRowInput[];
   filterQuery: string;
@@ -164,7 +163,6 @@ export type OpportunityColumn = {
 };
 
 export type OpportunityPipelineModel = {
-  subhead: string;
   empty: boolean;
   /** Why the pipeline shows no card (#325); null while it has cards. */
   emptyState: EmptyModel | null;
@@ -336,7 +334,6 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
   const count = columns.reduce((sum, column) => sum + column.cards.length, 0);
   const empty = count === 0;
   return {
-    subhead: `Opportunities in ${input.workspaceName}.`,
     empty,
     emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle)), "Opportunities", {
       title: "Add your first Opportunity",

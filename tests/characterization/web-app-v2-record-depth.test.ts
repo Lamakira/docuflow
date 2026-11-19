@@ -228,7 +228,6 @@ describe("A Project's Documents can be duplicated and reordered (#260, E)", () =
 describe("Register reads and filters by Tag (#260, C)", () => {
   function registerInput(overrides: Partial<ProjectRegisterInput> = {}): ProjectRegisterInput {
     return {
-      workspaceName: "Harbor Co",
       filterQuery: "",
       statusFilter: "all",
       selectedId: null,

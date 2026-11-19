@@ -65,10 +65,7 @@ describe("Devices and Help Center routing (#194)", () => {
     const match = matchV2Route("/devices");
     expect(match.kind).toBe("devices");
     expect(navIdForPath("/devices")).toBe("devices");
-    expect(breadcrumbFor("/devices", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Devices",
-    ]);
+    expect(breadcrumbFor("/devices", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toContain("V2DevicesPage");
     expect(appSource).toMatch(/path="\/devices"/);
     expect(appSource).not.toMatch(/path="\/time-tracking\/devices"[\s\S]{0,80}v2-placeholder/);
@@ -84,10 +81,7 @@ describe("Devices and Help Center routing (#194)", () => {
     const match = matchV2Route("/help");
     expect(match.kind).toBe("help");
     expect(navIdForPath("/help")).toBe("help");
-    expect(breadcrumbFor("/help", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Help Center",
-    ]);
+    expect(breadcrumbFor("/help", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toContain("V2HelpPage");
     expect(appSource).toMatch(/path="\/help"/);
   });

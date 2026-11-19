@@ -160,7 +160,6 @@ describe("an emptied register says why", () => {
       tags: new Map(),
     });
     const register = composeProjectRegister({
-      workspaceName: "Harbor Co",
       projects: [],
       filterQuery: "",
       statusFilter: "all",
@@ -175,7 +174,6 @@ describe("an emptied register says why", () => {
 
   it("does not offer to clear a Workspace that simply has no Projects", () => {
     const register = composeProjectRegister({
-      workspaceName: "Harbor Co",
       projects: [],
       filterQuery: "",
       statusFilter: "all",
@@ -261,7 +259,6 @@ describe("Clients filters in the URL and on the route", () => {
   it("names each filter when the register empties, and clearing keeps the page size", () => {
     const filters = readClientFilters("?status=client_recurrent&source=none&open=yes&q=pier&size=100&page=3");
     const register = composeClientRegister({
-      workspaceName: "Harbor Co",
       clients: [],
       filterQuery: "",
       activeFilters: clientFilterLabels(filters),
