@@ -3568,11 +3568,19 @@ button.df-activity-row {
   align-items: start;
 }
 
-.df-opportunity-column {
+.df-opportunity-record-column {
   display: flex;
   flex-direction: column;
   gap: var(--df-space-4);
   min-width: 0;
+}
+
+/* The Stage card's Won and Lost buttons, side by side under its copy. */
+.df-opportunity-outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--df-space-3);
+  padding: var(--df-space-4);
 }
 
 .df-opportunity-head-side {

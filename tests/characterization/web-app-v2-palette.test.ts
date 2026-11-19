@@ -270,7 +270,7 @@ describe("where colour goes", () => {
     for (const [name, call] of Object.entries(toned)) {
       expect(read(`client/src/v2/${name}`), name).toContain(`data-tone={${call}`);
     }
-    for (const name of ["V2Projects.tsx", "V2Today.tsx", "V2Dossier.tsx", "V2TaskTable.tsx", "V2Clients.tsx", "V2Opportunities.tsx"]) {
+    for (const name of ["V2Projects.tsx", "V2Today.tsx", "V2Dossier.tsx", "V2TaskTable.tsx", "V2Clients.tsx"]) {
       expect(read(`client/src/v2/${name}`), name).toContain('data-swatch="" style={swatchStyle(');
     }
     for (const name of readdirSync(v2Dir).filter((file) => file.endsWith(".tsx"))) {

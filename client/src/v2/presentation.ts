@@ -662,8 +662,12 @@ export function navIdForPath(path: string): V2NavId | null {
   return item?.id ?? null;
 }
 
-export function breadcrumbFor(path: string, workspaceName: string): Array<{ label: string; href?: string }> {
-  const crumbs = fullBreadcrumbFor(path, workspaceName);
+export function breadcrumbFor(
+  path: string,
+  workspaceName: string,
+  recordLabel?: string,
+): Array<{ label: string; href?: string }> {
+  const crumbs = fullBreadcrumbFor(path, workspaceName, recordLabel);
   // A top-level page keeps only its parent crumb, now the current one: its title
   // (and its sidebar item, when it has one) already names the page. The File
   // viewer keeps "File": its title is the File's name, not the word.
@@ -672,7 +676,11 @@ export function breadcrumbFor(path: string, workspaceName: string): Array<{ labe
   return crumbs;
 }
 
-function fullBreadcrumbFor(path: string, workspaceName: string): Array<{ label: string; href?: string }> {
+function fullBreadcrumbFor(
+  path: string,
+  workspaceName: string,
+  recordLabel?: string,
+): Array<{ label: string; href?: string }> {
   const match = matchV2Route(path);
   const workspace = workspaceName;
   if (match.kind === "today" || match.kind === "auth-redirect") {
@@ -742,7 +750,7 @@ function fullBreadcrumbFor(path: string, workspaceName: string): Array<{ label: 
     return [
       { label: workspace, href: "/" },
       { label: "Opportunities", href: "/opportunities" },
-      { label: "Record" },
+      { label: recordLabel || "Opportunity" },
     ];
   }
   if (match.kind === "time") {
@@ -843,7 +851,7 @@ function fullBreadcrumbFor(path: string, workspaceName: string): Array<{ label: 
     return [
       { label: workspace, href: "/" },
       { label: "Clients", href: "/clients" },
-      { label: "Record" },
+      { label: recordLabel || "Client" },
     ];
   }
   return [
