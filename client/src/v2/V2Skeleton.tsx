@@ -229,6 +229,7 @@ export function V2PageSkeleton({
   testId,
   status,
   frame = "page",
+  hasSubhead = true,
   children,
 }: {
   title: string;
@@ -236,6 +237,8 @@ export function V2PageSkeleton({
   /** What a screen reader hears, e.g. "Loading Projects for this Workspace." */
   status: string;
   frame?: "page" | "library" | "fragment";
+  /** False on a destination whose loaded page has no subhead, so the header does not shrink on arrival. */
+  hasSubhead?: boolean;
   children: ReactNode;
 }) {
   const body = (
@@ -243,7 +246,7 @@ export function V2PageSkeleton({
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">{title}</h1>
-          <SkeletonSubhead />
+          {hasSubhead ? <SkeletonSubhead /> : null}
         </div>
       </header>
       <p className="df-sr-only" role="status">

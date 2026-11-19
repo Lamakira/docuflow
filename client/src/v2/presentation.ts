@@ -663,6 +663,16 @@ export function navIdForPath(path: string): V2NavId | null {
 }
 
 export function breadcrumbFor(path: string, workspaceName: string): Array<{ label: string; href?: string }> {
+  const crumbs = fullBreadcrumbFor(path, workspaceName);
+  // A top-level page keeps only its parent crumb, now the current one: its title
+  // (and its sidebar item, when it has one) already names the page. The File
+  // viewer keeps "File": its title is the File's name, not the word.
+  const repeatsTitle = matchV2Route(path).kind !== "file-viewer";
+  if (repeatsTitle && crumbs.length === 2 && crumbs[0].href && !crumbs[1].href) return [{ label: crumbs[0].label }];
+  return crumbs;
+}
+
+function fullBreadcrumbFor(path: string, workspaceName: string): Array<{ label: string; href?: string }> {
   const match = matchV2Route(path);
   const workspace = workspaceName;
   if (match.kind === "today" || match.kind === "auth-redirect") {

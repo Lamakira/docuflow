@@ -153,9 +153,9 @@ describe("Projects", () => {
   });
 
   it("does the same on the board: columns give way to the designed state only when nothing exists", () => {
-    const none = composeProjectBoard({ workspaceName: "Harbor Co", projects: [], filterQuery: "", changingId: null });
+    const none = composeProjectBoard({ projects: [], filterQuery: "", changingId: null });
     expect(none.emptyState).toMatchObject({ kind: "none", title: "Add your first Project" });
-    const filtered = composeProjectBoard({ workspaceName: "Harbor Co", projects: [], filterQuery: "x", changingId: null });
+    const filtered = composeProjectBoard({ projects: [], filterQuery: "x", changingId: null });
     expect(filtered.emptyState?.kind).toBe("filtered");
     const page = v2("V2Projects.tsx");
     expect(page).toContain('board.emptyState?.kind === "none"');

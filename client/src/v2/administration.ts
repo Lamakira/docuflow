@@ -178,7 +178,6 @@ export type AdministrationModel =
   | { kind: "refusal"; refusal: string; pagePrimary: "case-ink" }
   | {
       kind: "ready";
-      subhead: string;
       pagePrimary: "case-ink";
       writeRefusal: string | null;
       secretOnce: SecretOnce | null;
@@ -534,7 +533,6 @@ export function composeAdministration(input: AdministrationInput): Administratio
   }));
   return {
     kind: "ready",
-    subhead: `Operator controls for ${input.workspaceName}.`,
     pagePrimary: "case-ink",
     writeRefusal: readOnly
       ? chromeRefusal({

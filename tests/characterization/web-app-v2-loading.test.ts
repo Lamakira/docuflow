@@ -28,12 +28,28 @@ describe("v2 waits with real geometry", () => {
     const skeleton = source("V2Skeleton.tsx");
     expect(skeleton).not.toContain("Loading this Workspace");
     expect(skeleton).not.toMatch(/subhead\??:\s*string/);
-    expect(skeleton).toMatch(/<h1 className="df-title">\{title\}<\/h1>\s*<SkeletonSubhead \/>/);
+    expect(skeleton).toMatch(/<h1 className="df-title">\{title\}<\/h1>\s*\{hasSubhead \? <SkeletonSubhead \/> : null\}/);
     const offenders = sources
       .filter(({ source: text }) => /<V2PageSkeleton[^>]*\bsubhead=/.test(text) || text.includes("LOADING_SUBHEAD"))
       .map(({ name }) => name);
     expect(offenders).toEqual([]);
     expect(source("V2Today.tsx")).toContain("<SkeletonSubhead />");
+  });
+
+  it("draws no subhead bar on a destination whose page has no subhead, so the header does not shrink", () => {
+    for (const name of [
+      "V2Opportunities.tsx",
+      "V2Clients.tsx",
+      "V2Projects.tsx",
+      "V2Activity.tsx",
+      "V2People.tsx",
+      "V2DailyUpdate.tsx",
+      "V2DailyUpdates.tsx",
+      "V2Administration.tsx",
+    ]) {
+      expect(source(name), name).toMatch(/<V2PageSkeleton[^>]*hasSubhead=\{false\}/);
+    }
+    expect(source("V2Today.tsx")).not.toMatch(/hasSubhead=\{false\}/);
   });
 
   it.each([

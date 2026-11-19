@@ -67,7 +67,6 @@ export type TaskManagerRow = {
 };
 
 export type ProjectTasksModel = {
-  subhead: string;
   projects: Array<{ id: string; name: string; selected: boolean }>;
   projectsEmpty: boolean;
   /** `none`: no Project yet; `filtered`: the search hides every Project (#325). */
@@ -115,7 +114,6 @@ export function composeProjectTasks(input: ProjectTasksInput): ProjectTasksModel
   const archived = tasks.filter((task) => task.status === "archived").map(toTaskRow);
 
   return {
-    subhead: `Tasks on the Projects in ${input.workspaceName}.`,
     projects,
     projectsEmpty: projects.length === 0,
     projectsEmptyState: emptyModelOf(emptyKindOf(projects.length === 0, Boolean(needle)), "Projects", {

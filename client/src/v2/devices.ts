@@ -132,7 +132,7 @@ export function composeDevices(input: DevicesInput): DevicesModel {
   const rows = groupByMachine(input.devices, input.now);
   const empty = rows.length === 0;
   return {
-    subhead: `Enrolled Devices for you in ${input.workspaceName}.`,
+    subhead: "Devices you enrolled.",
     empty,
     emptyState: emptyModelOf(emptyKindOf(empty, false), "Devices", {
       title: "Pair your first Device",

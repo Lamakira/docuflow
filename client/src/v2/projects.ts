@@ -28,7 +28,6 @@ export type ProjectRegisterRowInput = {
 };
 
 export type ProjectRegisterInput = {
-  workspaceName: string;
   projects: ProjectRegisterRowInput[];
   filterQuery: string;
   statusFilter: string;
@@ -62,7 +61,6 @@ export type ProjectRegisterRow = {
 };
 
 export type ProjectRegisterModel = {
-  subhead: string;
   empty: boolean;
   /** Why the register shows nothing (#325); null while it has rows. */
   emptyState: EmptyModel | null;
@@ -288,7 +286,6 @@ const PROJECTS_NONE = {
 };
 
 export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegisterModel {
-  const subhead = `Projects in ${input.workspaceName}.`;
   const needle = input.filterQuery.trim().toLowerCase();
   const rows = input.projects
     .filter((project) => project.visible)
@@ -315,7 +312,6 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
   const filtered =
     empty && (activeFilters.length > 0 || Boolean(needle) || input.statusFilter !== "all" || input.tagFilter !== "all");
   return {
-    subhead,
     empty,
     emptyState: emptyModelOf(emptyKindOf(empty, filtered), "Projects", PROJECTS_NONE),
     filtered,
@@ -406,7 +402,6 @@ export type ProjectBoardRowInput = {
 };
 
 export type ProjectBoardInput = {
-  workspaceName: string;
   projects: ProjectBoardRowInput[];
   filterQuery: string;
   changingId: string | null;
@@ -438,7 +433,6 @@ function boardColumn(id: string, label: string): ProjectBoardColumn {
 }
 
 export type ProjectBoardModel = {
-  subhead: string;
   empty: boolean;
   emptyState: EmptyModel | null;
   columns: ProjectBoardColumn[];
@@ -479,7 +473,6 @@ export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel
   const count = columns.reduce((sum, column) => sum + column.cards.length, 0);
   const empty = count === 0;
   return {
-    subhead: `Projects in ${input.workspaceName}.`,
     empty,
     emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle)), "Projects", PROJECTS_NONE),
     columns,

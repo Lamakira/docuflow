@@ -59,10 +59,7 @@ describe("Project Documentation and Document editor routing (#189)", () => {
     const match = matchV2Route("/project-documentation");
     expect(match.kind).toBe("project-documentation");
     expect(navIdForPath("/project-documentation")).toBe("project-documentation");
-    expect(breadcrumbFor("/project-documentation", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Project Documentation",
-    ]);
+    expect(breadcrumbFor("/project-documentation", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toContain("V2ProjectDocumentationPage");
     expect(appSource).toMatch(/path="\/project-documentation"/);
   });

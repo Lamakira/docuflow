@@ -80,7 +80,6 @@ describe("Estimated value", () => {
 
   it("totals each stage column once per currency and never adds currencies together", () => {
     const pipeline = composeOpportunityPipeline({
-      workspaceName: "Harbour",
       stages,
       filterQuery: "",
       changingId: null,

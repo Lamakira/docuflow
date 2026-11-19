@@ -166,7 +166,6 @@ const SAMPLE_NAMES = ["Keystone", "Northwind", "Amina", "Kofi", "Elena", "Jules"
 
 function emptyRegister(overrides: Partial<ClientRegisterInput> = {}): ClientRegisterInput {
   return {
-    workspaceName: "Harbor Co",
     clients: [],
     filterQuery: "",
     selectedId: null,
@@ -314,10 +313,7 @@ describe("Clients routing (#186)", () => {
     const match = matchV2Route("/clients");
     expect(match.kind).toBe("clients");
     expect(navIdForPath("/clients")).toBe("clients");
-    expect(breadcrumbFor("/clients", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Clients",
-    ]);
+    expect(breadcrumbFor("/clients", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toContain("V2ClientsPage");
     expect(appSource).toMatch(/path="\/clients"/);
     expect(appSource).not.toContain("ClientDetailPage");
@@ -666,7 +662,6 @@ describe("Clients register: when each Client was created (#307)", () => {
 
   it("shows the creation date in full, and orders by it on the server", () => {
     const register = composeClientRegister({
-      workspaceName: "Harbor Co",
       clients: [
         { id: "c-1", name: "Harbor", company: null, status: "client", source: null, projectCount: 0, createdAt: "2026-09-29T10:15:00.000Z" },
         { id: "c-2", name: "Pier", company: null, status: "lead", source: null, projectCount: 0, createdAt: null },

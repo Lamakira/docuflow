@@ -58,7 +58,7 @@ describe("a stage's colour", () => {
 
 describe("the Projects board wears Project Status colours", () => {
   it("colours every column, empty ones included", () => {
-    const board = composeProjectBoard({ workspaceName: "Harbor Co", projects: [], filterQuery: "", changingId: null });
+    const board = composeProjectBoard({ projects: [], filterQuery: "", changingId: null });
     expect(board.columns.map((column) => [column.id, column.color, column.ink])).toEqual([
       ["planned", "#6366f1", "light"],
       ["active", "#14b8a6", "dark"],
@@ -78,7 +78,6 @@ describe("the Opportunities pipeline wears the configured stage colours", () => 
       ]),
     );
     const pipeline = composeOpportunityPipeline({
-      workspaceName: "Harbor Co",
       stages,
       rows: [],
       filterQuery: "",

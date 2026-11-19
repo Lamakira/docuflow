@@ -33,7 +33,6 @@ const SAMPLE_NAMES = ["Keystone", "Northwind", "Amina", "Kofi", "Elena", "Jules"
 
 function emptyInput(overrides: Partial<ProjectRegisterInput> = {}): ProjectRegisterInput {
   return {
-    workspaceName: "Harbor Co",
     projects: [],
     filterQuery: "",
     statusFilter: "all",
@@ -48,10 +47,7 @@ describe("Projects routing (#185)", () => {
     const match = matchV2Route("/projects");
     expect(match.kind).toBe("projects");
     expect(navIdForPath("/projects")).toBe("projects");
-    expect(breadcrumbFor("/projects", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Projects",
-    ]);
+    expect(breadcrumbFor("/projects", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
   });
 
   it("rewrites v1 /crm and /project URLs into this destination or the matching Dossier", () => {
@@ -214,7 +210,6 @@ describe("Projects register from live Project rows (#185)", () => {
 
 function emptyBoard(overrides: Partial<ProjectBoardInput> = {}): ProjectBoardInput {
   return {
-    workspaceName: "Harbor Co",
     projects: [],
     filterQuery: "",
     changingId: null,

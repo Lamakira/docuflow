@@ -646,7 +646,6 @@ export function V2AdministrationPage() {
         <header className="df-today-head">
           <div>
             <h1 className="df-title">Administration</h1>
-            <p className="df-subhead">Operator controls for {workspaceName}.</p>
           </div>
         </header>
         <p className="df-refusal" data-testid="v2-administration-refusal">
@@ -663,7 +662,6 @@ export function V2AdministrationPage() {
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Administration</h1>
-          <p className="df-subhead">{page.subhead}</p>
         </div>
       </header>
 
@@ -1558,6 +1556,7 @@ function AdministrationSkeleton() {
     <V2PageSkeleton
       title="Administration"
       testId="v2-administration"
+      hasSubhead={false}
       status="Loading Administration for this Workspace."
     >
       <SkeletonSection title="Workspace" className="df-analytics-register" tiles={4} />

@@ -47,7 +47,6 @@ const dailyPageSource = readFileSync(
 function emptyTime(overrides: Partial<TimeTrackingInput> = {}): TimeTrackingInput {
   return {
     now: new Date(2026, 8, 10, 15, 0, 0),
-    workspaceName: "Harbor Co",
     currentUserId: "me",
     isAdmin: false,
     isRunning: false,
@@ -64,10 +63,7 @@ describe("Time Tracking and Daily Update routing (#190)", () => {
     const match = matchV2Route("/time");
     expect(match.kind).toBe("time");
     expect(navIdForPath("/time")).toBe("time");
-    expect(breadcrumbFor("/time", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Time Tracking",
-    ]);
+    expect(breadcrumbFor("/time", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toContain("V2TimePage");
     expect(appSource).toMatch(/path="\/time\/:tab\?"/);
     expect(appSource).not.toContain('data-testid="v2-placeholder"');
@@ -87,10 +83,7 @@ describe("Time Tracking and Daily Update routing (#190)", () => {
   it("shows a live Daily Update destination under v2, not a rewritten placeholder", () => {
     const match = matchV2Route("/daily-update");
     expect(match.kind).toBe("daily-update");
-    expect(breadcrumbFor("/daily-update", "Harbor Co").map((crumb) => crumb.label)).toEqual([
-      "Harbor Co",
-      "Daily Update",
-    ]);
+    expect(breadcrumbFor("/daily-update", "Harbor Co").map((crumb) => crumb.label)).toEqual(["Harbor Co"]);
     expect(appSource).toContain("V2DailyUpdatePage");
     expect(appSource).toMatch(/path="\/daily-update"/);
   });

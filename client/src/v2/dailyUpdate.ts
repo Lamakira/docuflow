@@ -56,7 +56,6 @@ export type DailyUpdateToday = {
 
 export type DailyUpdatePageModel = {
   dateChip: string;
-  subhead: string;
   kind: "empty" | "submitted" | "refusal";
   today: DailyUpdateToday;
   refusal: string | null;
@@ -149,7 +148,6 @@ export function composeDailyUpdatePage(input: DailyUpdatePageInput): DailyUpdate
   if (input.readOnly) {
     return {
       dateChip: formatDateChip(input.now),
-      subhead: `Today's Daily Update in ${input.workspaceName}.`,
       kind: "refusal",
       today: composeToday(input, submissions, false),
       refusal: chromeRefusal({
@@ -164,7 +162,6 @@ export function composeDailyUpdatePage(input: DailyUpdatePageInput): DailyUpdate
 
   return {
     dateChip: formatDateChip(input.now),
-    subhead: `Today's Daily Update in ${input.workspaceName}.`,
     kind: empty ? "empty" : "submitted",
     today: composeToday(input, submissions, canSubmit),
     refusal: null,
@@ -205,7 +202,6 @@ export type TeamDailyUpdatesKpis = {
 
 export type TeamDailyUpdatesInput = {
   now: Date;
-  workspaceName: string;
   ownerName: string | null;
   canView: boolean;
   kpis: TeamDailyUpdatesKpis | null;
@@ -240,7 +236,6 @@ export type TeamDailyUpdatesModel =
   | {
       kind: "ready";
       dateChip: string;
-      subhead: string;
       pagePrimary: "case-ink";
       kpis: Array<{ id: string; label: string; value: string }>;
       submitted: Array<{ id: string; name: string }>;
@@ -447,7 +442,6 @@ export function composeTeamDailyUpdates(input: TeamDailyUpdatesInput): TeamDaily
   return {
     kind: "ready",
     dateChip: formatDateChip(input.now),
-    subhead: `Team Daily Updates in ${input.workspaceName}.`,
     pagePrimary: "case-ink",
     kpis: [
       { id: "total", label: "Total", value: String(kpis.total) },
