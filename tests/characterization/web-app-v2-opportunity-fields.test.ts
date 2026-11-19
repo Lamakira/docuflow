@@ -185,6 +185,37 @@ describe("New Opportunity and the Opportunity record", () => {
     expect(JSON.stringify(record)).not.toContain("/projects/");
   });
 
+  it("reads every empty value as Not set", () => {
+    const record = composeOpportunityRecord({ ...row(), stages });
+    expect(record.fields.map((field) => [field.label, field.value])).toEqual([
+      ["Owner", "Not set"],
+      ["Expected close", "Not set"],
+      ["Source", "Not set"],
+      ["Estimated value", "Not set"],
+    ]);
+    expect(pageSource).toContain('placeholder="e.g. 4 500"');
+  });
+
+  it("puts Stage after Client in both forms, through the shared field inputs", () => {
+    const inputs = pageSource.slice(pageSource.indexOf("function OpportunityFieldInputs"), pageSource.indexOf("type Outcome ="));
+    const order = ["Name", "Client", "Stage", "Owner", "Expected close", "Source", "Estimated value", "Currency"].map((label) =>
+      inputs.search(new RegExp(`^\\s+${label}$`, "m")),
+    );
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(pageSource).toContain("stageDisabled={terminal}");
+    expect(pageSource).toContain("stageOptions={openStages.map(");
+    expect(pageSource).not.toMatch(/<label className="df-daily-field" data-wide="true">\s+Stage/);
+  });
+
+  it("hides the Notes count chip until there is a note", () => {
+    expect(pageSource).toMatch(/\{!thread\.empty \? \(\s*<>\s*<span className="df-count-chip">\{thread\.rows\.length\}<\/span>/);
+  });
+
+  it("warns in both outcome dialogs that the move cannot be undone", () => {
+    expect(pageSource.match(/It cannot be moved back to an open stage afterwards\./g)).toHaveLength(2);
+  });
+
   it("keeps a saved choice offered after its option left the list", () => {
     const options = [{ value: "zoho", label: "Zoho" }];
     expect(withSavedChoice(options, "trade_fair").map((option) => option.value)).toEqual(["zoho", "trade_fair"]);
@@ -322,6 +353,11 @@ describe("Stage history and notes", () => {
       ["h2", "LEAD", "PROPOSAL SENT"],
       ["h1", null, "LEAD"],
     ]);
+    expect(history.rows[0].toInk).toMatch(/^(light|dark)$/);
+    expect(history.rows[0].fromInk).toMatch(/^(light|dark)$/);
+    expect(history.rows[2].fromInk).toBeNull();
+    expect(pageSource).toContain('<span className="df-stage-pill" data-ink={row.toInk}');
+    expect(pageSource).not.toContain("swatchStyle(row.toColor)");
     expect(history.rows[0].held).toMatch(/so far$/);
     expect(history.rows[2].who).toBe("Amina");
     expect(composeOpportunityHistory([], stages, now)).toMatchObject({ empty: true });

@@ -87,11 +87,13 @@ export type OpportunityRecordInput = OpportunityPipelineRowInput & {
 export type OpportunityRecordModel = {
   id: string;
   title: string;
-  clientLabel: string;
+  /** Null when the Opportunity has no Client: the header then shows nothing. */
+  clientLabel: string | null;
   clientHref: string | null;
   stageId: string;
   stage: string;
   stageColor: string;
+  stageInk: "light" | "dark";
   terminal: boolean;
   fields: Array<{ label: string; value: string }>;
   lostReason: { label: string; detail: string | null } | null;
@@ -119,17 +121,19 @@ export function composeOpportunityRecord(input: OpportunityRecordInput): Opportu
   const close = parseDate(input.dueDate ?? null);
   const isLost = stage === "lost";
   const lost = isLost && input.lostReason;
+  const color = stageColor(stage, input.stages?.find((option) => option.id === stage)?.color);
   return {
     id: input.id,
     title: input.name || "Untitled Opportunity",
-    clientLabel: input.clientName?.trim() || "—",
+    clientLabel: input.clientName?.trim() || null,
     clientHref: input.clientId ? clientHref(input.clientId) : null,
     stageId: stage,
     stage: stageLabel(stage).toUpperCase(),
-    stageColor: stageColor(stage, input.stages?.find((option) => option.id === stage)?.color),
+    stageColor: color,
+    stageInk: stageInk(color),
     terminal: isOpportunityTerminal(stage),
     fields: [
-      { label: "Owner", value: input.owner ? memberName(input.owner) : "No Owner" },
+      { label: "Owner", value: input.owner ? memberName(input.owner) : "Not set" },
       { label: "Expected close", value: close ? formatCloseDate(close) : "Not set" },
       { label: "Source", value: input.source ? optionLabel(input.sourceOptions, input.source) : "Not set" },
       { label: "Estimated value", value: value ?? "Not set" },
@@ -694,7 +698,7 @@ export type OpportunityStageChange = {
 };
 
 export type OpportunityHistoryModel = {
-  rows: Array<{ id: string; from: string | null; fromColor: string | null; to: string; toColor: string; when: string; who: string; held: string }>;
+  rows: Array<{ id: string; from: string | null; fromColor: string | null; fromInk: "light" | "dark" | null; to: string; toColor: string; toInk: "light" | "dark"; when: string; who: string; held: string }>;
   empty: boolean;
   emptyState: EmptyStateCopy;
 };
@@ -711,7 +715,8 @@ export function composeOpportunityHistory(
   const describe = (combined: string) => {
     const stage = opportunityStageFromCombined(combined);
     const spec = stages.find((option) => option.id === stage);
-    return { label: (spec?.label ?? stageLabel(stage)).toUpperCase(), color: stageColor(stage, spec?.color) };
+    const color = stageColor(stage, spec?.color);
+    return { label: (spec?.label ?? stageLabel(stage)).toUpperCase(), color, ink: stageInk(color) };
   };
   const moves = changes
     .filter((change) => !change.fromStatus || opportunityStageFromCombined(change.fromStatus) !== opportunityStageFromCombined(change.toStatus))
@@ -726,8 +731,10 @@ export function composeOpportunityHistory(
       id: change.id,
       from: from?.label ?? null,
       fromColor: from?.color ?? null,
+      fromInk: from?.ink ?? null,
       to: to.label,
       toColor: to.color,
+      toInk: to.ink,
       when: at ? formatDayStamp(at) : "",
       who: change.changedBy ? memberName(change.changedBy) : "—",
       held: next || !at ? held : `${held} so far`,

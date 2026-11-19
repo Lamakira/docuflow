@@ -335,7 +335,12 @@ describe("Clients routing (#186)", () => {
     expect(breadcrumbFor("/clients/cli-1", "Harbor Co").map((crumb) => crumb.label)).toEqual([
       "Harbor Co",
       "Clients",
-      "Record",
+      "Client",
+    ]);
+    expect(breadcrumbFor("/clients/cli-1", "Harbor Co", "Acme").map((crumb) => crumb.label)).toEqual([
+      "Harbor Co",
+      "Clients",
+      "Acme",
     ]);
     expect(appSource).toContain("V2ClientRecordPage");
     expect(appSource).toMatch(/path="\/clients\/:id"/);

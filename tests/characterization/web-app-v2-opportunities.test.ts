@@ -57,6 +57,10 @@ const pageSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Opportunities.tsx"),
   "utf8",
 );
+const commandBarSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2CommandBar.tsx"),
+  "utf8",
+);
 
 describe("Opportunities routing (#187)", () => {
   it("names a top-level page only by its Workspace crumb, and keeps a record's full breadcrumb", () => {
@@ -65,7 +69,13 @@ describe("Opportunities routing (#187)", () => {
     expect(breadcrumbFor("/opportunities/opp-1", "Harbor Co")).toEqual([
       { label: "Harbor Co", href: "/" },
       { label: "Opportunities", href: "/opportunities" },
-      { label: "Record" },
+      { label: "Opportunity" },
+    ]);
+    // The record's crumb is its name; "trim to the Workspace" never applies to it.
+    expect(breadcrumbFor("/opportunities/opp-1", "Harbor Co", "Ledger renewal")).toEqual([
+      { label: "Harbor Co", href: "/" },
+      { label: "Opportunities", href: "/opportunities" },
+      { label: "Ledger renewal" },
     ]);
     expect(breadcrumbFor("/platform/users", "Harbor Co")).toEqual([{ label: "PLATFORM" }]);
   });
@@ -127,6 +137,59 @@ describe("Opportunity record (#213)", () => {
     // would point the Opportunity at itself; the record offers none.
     expect(JSON.stringify(record)).not.toContain("/projects/");
     expect(pageSource).not.toContain("linked Client Project");
+  });
+
+  it("says there is no Client with null, never a lone dash", () => {
+    const bare = composeOpportunityRecord({
+      id: "opp-2",
+      name: "Cold lead",
+      clientName: null,
+      combinedStatus: "lead",
+      projectType: "one_time",
+      isDocumentationOnly: 0,
+    });
+    expect(bare.clientLabel).toBeNull();
+    expect(bare.clientHref).toBeNull();
+    expect(pageSource).toContain("record.clientLabel ? (");
+    expect(pageSource).not.toContain('"TERMINAL"');
+    expect(pageSource).not.toContain(">OPPORTUNITY<");
+  });
+
+  it("names the record in the breadcrumb from the page's cache entry", () => {
+    expect(commandBarSource).toContain('queryKey: ["/api/crm/projects", opportunityId]');
+    expect(commandBarSource).toContain("enabled: false");
+    expect(commandBarSource).toContain("breadcrumbFor(location, workspaceName, recordLabel)");
+  });
+
+  it("wears the stage as the pipeline's filled pill and keeps Edit in place while editing", () => {
+    expect(composeOpportunityRecord({ id: "o", name: "N", combinedStatus: "lead", projectType: "one_time", isDocumentationOnly: 0 }).stageInk).toMatch(/^(light|dark)$/);
+    expect(pageSource).toContain('data-ink={record.stageInk}');
+    expect(pageSource).toContain("disabled={editing}");
+    expect(pageSource).not.toContain("{editing ? null : (\n              <Button");
+  });
+
+  it("closes from the Stage card with Mark as won and Mark as lost, and says what each does", () => {
+    expect(pageSource).toMatch(/variant="default"[^>]*onClick=\{\(\) => onOutcomeButton\("won"\)\}/);
+    expect(pageSource).toMatch(/variant="outline"[^>]*onClick=\{\(\) => onOutcomeButton\("lost"\)\}/);
+    expect(pageSource).toContain("else setOutcome({ kind, row });");
+    expect(pageSource).toContain("Neither can be moved back to an open stage.");
+    expect(pageSource).toContain("Won: it is now a Client Project.");
+    expect(pageSource).toContain("Lost. The reason stays with the Opportunity.");
+    expect(pageSource).not.toContain('<span className="df-settings-label">Stage</span>');
+  });
+
+  it("tells the two failed loads apart and gives a way out of each", () => {
+    expect(pageSource).toContain("This Opportunity is not in this Workspace, or it was deleted.");
+    expect(pageSource).toContain("This Opportunity could not be loaded.");
+    expect(pageSource).toContain("Try again");
+    expect(pageSource).toContain("onClick={() => refetch()}");
+    expect(pageSource).toContain("Back to Opportunities");
+  });
+
+  it("names the record's layout columns apart from the pipeline's", () => {
+    expect(pageSource).toContain('className="df-opportunity-record-column"');
+    expect(pageSource).not.toMatch(/<div className="df-opportunity-column">/);
+    expect(css).toMatch(/\.df-opportunity-record-column\s*\{/);
   });
 });
 

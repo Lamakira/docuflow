@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import type { CrmProjectWithDetails } from "@shared/schema";
+import type { CrmClient, CrmProjectWithDetails } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 import {
   CommandDialog,
@@ -14,7 +14,7 @@ import { BellIcon, SearchIcon, SparkleIcon } from "./icons";
 import { V2TimerChip } from "./V2TimerChip";
 import { composeSearch, selectCommandPanel, chromeRefusal, type SearchModel } from "./chrome";
 import { motionForSurface } from "./motion";
-import { type V2CommandPanel, breadcrumbFor } from "./presentation";
+import { type V2CommandPanel, breadcrumbFor, matchV2Route } from "./presentation";
 import { projectVisibleTo } from "./projects";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,26 @@ export function V2CommandBar({
   timerWorkspaceLabel = null,
 }: V2CommandBarProps) {
   const [location] = useLocation();
-  const crumbs = breadcrumbFor(location, workspaceName);
+  // A record's crumb is its name. The record page fills these cache entries;
+  // the bar only reads them (enabled: false) and re-renders when the data lands.
+  const route = matchV2Route(location);
+  const opportunityId = route.kind === "opportunity-record" ? route.opportunityId : "";
+  const clientId = route.kind === "client-record" ? route.clientId : "";
+  const { data: opportunityRecord } = useQuery<CrmProjectWithDetails | null>({
+    queryKey: ["/api/crm/projects", opportunityId],
+    enabled: false,
+  });
+  const { data: clientRecord } = useQuery<CrmClient | null>({
+    queryKey: ["/api/crm/clients", clientId],
+    enabled: false,
+  });
+  const recordLabel =
+    route.kind === "opportunity-record"
+      ? opportunityRecord?.project?.name?.trim() || undefined
+      : route.kind === "client-record"
+        ? clientRecord?.name?.trim() || undefined
+        : undefined;
+  const crumbs = breadcrumbFor(location, workspaceName, recordLabel);
   const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {

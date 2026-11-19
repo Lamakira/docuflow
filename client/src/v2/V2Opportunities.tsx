@@ -30,7 +30,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
 import { isStandingRefusal, notify } from "./notify";
-import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
@@ -291,6 +290,8 @@ function OpportunityFieldInputs({
   sources,
   savedSource,
   autoFocus,
+  stageOptions,
+  stageDisabled,
 }: {
   draft: OpportunityDraft;
   onChange: (draft: OpportunityDraft) => void;
@@ -299,6 +300,9 @@ function OpportunityFieldInputs({
   sources: ListOption[];
   savedSource?: string | null;
   autoFocus?: boolean;
+  /** The Stages the Stage select offers; omitted, the form has no Stage field. */
+  stageOptions?: ListOption[];
+  stageDisabled?: boolean;
 }) {
   const set = (patch: Partial<OpportunityDraft>) => onChange({ ...draft, ...patch });
   return (
@@ -327,6 +331,19 @@ function OpportunityFieldInputs({
           onChange={(value) => set({ clientId: fromSelect(value) })}
         />
       </label>
+      {stageOptions ? (
+        <label className="df-daily-field">
+          Stage
+          <V2FilterSelect
+            label=""
+            ariaLabel="Stage"
+            value={draft.stage}
+            options={stageOptions}
+            onChange={(stage) => set({ stage })}
+            disabled={stageDisabled}
+          />
+        </label>
+      ) : null}
       <label className="df-daily-field">
         Owner
         <V2FilterSelect
@@ -363,7 +380,7 @@ function OpportunityFieldInputs({
           inputMode="decimal"
           value={draft.amount}
           onChange={(event) => set({ amount: event.target.value })}
-          placeholder="Not set"
+          placeholder="e.g. 4 500"
           aria-label="Estimated value"
         />
       </label>
@@ -440,7 +457,7 @@ function OpportunityOutcomeDialog({
         open
         onOpenChange={(open) => !open && onClose()}
         title="Mark as won"
-        description={`Winning ${name} makes it a Client Project. Its Estimated value stays on the Opportunity; the Project's budget is time.`}
+        description={`Winning ${name} makes it a Client Project. Its Estimated value stays on the Opportunity; the Project's budget is time. It cannot be moved back to an open stage afterwards.`}
         submitLabel="Mark as won"
         pending={save.isPending}
         canSubmit={Boolean(readWin.payload)}
@@ -525,7 +542,7 @@ function OpportunityOutcomeDialog({
       description={
         alreadyLost
           ? `Why ${name} was lost.`
-          : `Losing ${name} closes it. Say why, so the pipeline can learn from it.`
+          : `Losing ${name} closes it. Say why, so the pipeline can learn from it. It cannot be moved back to an open stage afterwards.`
       }
       submitLabel={alreadyLost ? "Save reason" : "Mark as lost"}
       pending={save.isPending}
@@ -584,11 +601,11 @@ function StageHistoryCard({ opportunityId, stages }: { opportunityId: string; st
             <div className="df-history-move">
               {row.from && row.fromColor ? (
                 <>
-                  <span className="df-status" data-swatch="" style={swatchStyle(row.fromColor)}>{row.from}</span>
+                  <span className="df-stage-pill" data-ink={row.fromInk ?? undefined} style={{ "--df-stage": row.fromColor } as CSSProperties}>{row.from}</span>
                   <span className="df-mono df-meta">→</span>
                 </>
               ) : null}
-              <span className="df-status" data-swatch="" style={swatchStyle(row.toColor)}>{row.to}</span>
+              <span className="df-stage-pill" data-ink={row.toInk} style={{ "--df-stage": row.toColor } as CSSProperties}>{row.to}</span>
             </div>
             <div className="df-mono df-meta">
               {row.when} · {row.who} · held {row.held}
@@ -656,12 +673,14 @@ function OpportunityNotesCard({ opportunityId }: { opportunityId: string }) {
       <div className="df-card-head">
         <h2 className="df-card-title">Notes</h2>
         <span className="df-cluster">
-          <span className="df-count-chip">{thread.rows.length}</span>
           {!thread.empty ? (
-            <Button variant="outline" type="button" onClick={() => open({ mode: "new" }, "")} className="df-btn">
-              <Plus strokeWidth={1.6} aria-hidden />
-              New Note
-            </Button>
+            <>
+              <span className="df-count-chip">{thread.rows.length}</span>
+              <Button variant="outline" type="button" onClick={() => open({ mode: "new" }, "")} className="df-btn">
+                <Plus strokeWidth={1.6} aria-hidden />
+                New Note
+              </Button>
+            </>
           ) : null}
         </span>
       </div>
@@ -885,17 +904,6 @@ function OpportunityEditForm({
   return (
     <form onSubmit={onSubmit}>
       <div className="df-opportunity-fields">
-        <label className="df-daily-field">
-          Stage
-          <V2FilterSelect
-            label=""
-            ariaLabel="Stage"
-            value={draft.stage}
-            options={stages.map((stage) => ({ value: stage.id, label: stage.label }))}
-            onChange={(stage) => setDraft({ ...draft, stage })}
-            disabled={terminal}
-          />
-        </label>
         <OpportunityFieldInputs
           draft={draft}
           onChange={setDraft}
@@ -904,6 +912,8 @@ function OpportunityEditForm({
           sources={sources}
           savedSource={row.source}
           autoFocus
+          stageOptions={stages.map((stage) => ({ value: stage.id, label: stage.label }))}
+          stageDisabled={terminal}
         />
       </div>
       <div className="df-form-actions">
@@ -957,6 +967,18 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
     else setOutcome({ kind: "lost", row });
   }
 
+  function onOutcomeButton(kind: OpportunityOutcome) {
+    if (writes.readOnly) setRefusal(writes.refusal());
+    else setOutcome({ kind, row });
+  }
+
+  const stageCopy =
+    record.stageId === "won"
+      ? "Won: it is now a Client Project."
+      : record.stageId === "lost"
+        ? "Lost. The reason stays with the Opportunity."
+        : "Won and Lost close the pipeline: winning makes it a Client Project, losing asks why. Neither can be moved back to an open stage.";
+
   return (
     <div className="df-page" data-testid="v2-opportunity-record">
       <header className="df-dossier-head">
@@ -964,34 +986,43 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
           <div className="df-dossier-copy">
             <h1 className="df-record-title">{record.title}</h1>
             <div className="df-dossier-provenance">
-              {record.clientHref ? (
-                <Link href={record.clientHref} className="df-mono df-meta">{record.clientLabel}</Link>
-              ) : (
-                <span className="df-mono df-meta">{record.clientLabel}</span>
-              )}
-              <span className="df-mono df-meta">{record.terminal ? "TERMINAL" : "OPEN"}</span>
+              {record.clientLabel ? (
+                record.clientHref ? (
+                  <Link href={record.clientHref} className="df-mono df-meta">{record.clientLabel}</Link>
+                ) : (
+                  <span className="df-mono df-meta">{record.clientLabel}</span>
+                )
+              ) : null}
             </div>
           </div>
           <div className="df-opportunity-head-side">
             <div className="df-dossier-meta">
-              <span className="df-status">OPPORTUNITY</span>
-              <span className="df-status" data-status={record.stage} data-swatch="" style={swatchStyle(record.stageColor)}>
+              <span
+                className="df-stage-pill"
+                data-ink={record.stageInk}
+                style={{ "--df-stage": record.stageColor } as CSSProperties}
+              >
                 {record.stage}
               </span>
             </div>
-            {editing ? null : (
-              <Button variant="outline" type="button" onClick={onEdit} className="df-btn" data-testid="v2-opportunity-edit">
-                <Pencil strokeWidth={1.6} aria-hidden />
-                Edit
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              type="button"
+              onClick={onEdit}
+              disabled={editing}
+              className="df-btn"
+              data-testid="v2-opportunity-edit"
+            >
+              <Pencil strokeWidth={1.6} aria-hidden />
+              Edit
+            </Button>
           </div>
         </div>
       </header>
       {refusal ? <p className="df-refusal">{refusal}</p> : null}
 
       <div className="df-opportunity-layout">
-        <div className="df-opportunity-column">
+        <div className="df-opportunity-record-column">
           <OpportunityDetailsCard
             key={`${row.id}-${String(row.updatedAt)}`}
             row={row}
@@ -1008,23 +1039,25 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
           <OpportunityNotesCard opportunityId={row.id} />
         </div>
 
-        <div className="df-opportunity-column">
+        <div className="df-opportunity-record-column">
           <section className="df-card" data-testid="v2-opportunity-stage">
             <div className="df-card-head">
               <div className="df-card-head-text">
                 <h2 className="df-card-title">Stage</h2>
-                <p className="df-card-sub">Won and Lost close the pipeline. Marking it won makes it a Client Project; marking it lost asks why. Edit changes the stage.</p>
+                <p className="df-card-sub">{stageCopy}</p>
               </div>
             </div>
-            <div className="df-settings-grid">
-              <div className="df-settings-row">
-                <span className="df-settings-label">Stage</span>
-                <span className="df-settings-value">
-                  <span className="df-status" data-swatch="" style={swatchStyle(record.stageColor)}>
-                    {record.stage}
-                  </span>
-                </span>
+            {record.stageId === "won" || record.stageId === "lost" ? null : (
+              <div className="df-opportunity-outcomes">
+                <Button variant="default" type="button" className="df-btn" onClick={() => onOutcomeButton("won")}>
+                  Mark as won
+                </Button>
+                <Button variant="outline" type="button" className="df-btn" onClick={() => onOutcomeButton("lost")}>
+                  Mark as lost
+                </Button>
               </div>
+            )}
+            <div className="df-settings-grid">
               {record.lostReason ? (
                 <div className="df-settings-row" data-testid="v2-opportunity-lost-reason">
                   <span className="df-settings-label">Lost reason</span>
@@ -1076,7 +1109,7 @@ export function V2OpportunityRecordPage() {
   const [location] = useLocation();
   const match = matchV2Route(location);
   const opportunityId = match.kind === "opportunity-record" ? match.opportunityId : "";
-  const { data: row, isLoading, isError } = useQuery<CrmProjectWithDetails | null>({
+  const { data: row, isLoading, isError, refetch } = useQuery<CrmProjectWithDetails | null>({
     queryKey: ["/api/crm/projects", opportunityId],
     enabled: Boolean(opportunityId),
     queryFn: async () => {
@@ -1097,7 +1130,39 @@ export function V2OpportunityRecordPage() {
     );
   }
   if (isError || !row) {
-    return <div className="df-page"><p className="df-empty">This Opportunity could not be loaded.</p></div>;
+    const back = (
+      <Button variant="outline" className="df-btn" asChild>
+        <Link href="/opportunities">Back to Opportunities</Link>
+      </Button>
+    );
+    return (
+      <div className="df-page" data-testid="v2-opportunity-record">
+        {isError ? (
+          <V2EmptyState
+            icon="opportunities"
+            title="This Opportunity could not be loaded."
+            copy="Something went wrong while loading it. Try again, or go back to the pipeline."
+            testId="v2-opportunity-load-failed"
+            action={
+              <span className="df-cluster">
+                <Button variant="default" type="button" className="df-btn" onClick={() => refetch()}>
+                  Try again
+                </Button>
+                {back}
+              </span>
+            }
+          />
+        ) : (
+          <V2EmptyState
+            icon="opportunities"
+            title="This Opportunity is not in this Workspace, or it was deleted."
+            copy="Check the link, or find it on the pipeline."
+            testId="v2-opportunity-missing"
+            action={back}
+          />
+        )}
+      </div>
+    );
   }
 
   return <OpportunityRecord row={row} />;
@@ -1316,17 +1381,8 @@ export function V2OpportunitiesPage() {
             users={users}
             sources={lists.sources}
             autoFocus
+            stageOptions={openStages.map((stage) => ({ value: stage.id, label: stage.label }))}
           />
-          <label className="df-daily-field" data-wide="true">
-            Stage
-            <V2FilterSelect
-              label=""
-              ariaLabel="Stage"
-              value={draft.stage}
-              options={openStages.map((stage) => ({ value: stage.id, label: stage.label }))}
-              onChange={(stage) => setDraft({ ...draft, stage })}
-            />
-          </label>
           <label className="df-daily-field" data-wide="true">
             First note
             <textarea

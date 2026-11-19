@@ -655,7 +655,7 @@ most recent few with a way to the rest, as F13 did for Today.
 
 ## F26 — Winning or losing an Opportunity from its record takes Edit → Stage → Save changes
 
-- **Status:** open — questions a decision of [#307](https://github.com/Lamakira/docuflow/issues/307)
+- **Status:** closed — fixed on the record, 2026-11-19
 - **Found:** 2026-11-18, the record of `Az` (DocuFlow Workspace)
 - **Where:** `client/src/v2/V2Opportunities.tsx:1012-1055` (the Stage card), `V2Opportunities.tsx:856-882` (`finish`, the form path that opens the outcome dialog)
 - **Severity:** degrading. The sale's two decisive actions are hidden behind the form
@@ -670,6 +670,8 @@ that dialog drops the choice and closes the form. My suggestion, not #307's:
 `Mark as won` and `Mark as lost` buttons in the Stage card of an open
 Opportunity, in place of the repeated pill, each opening its dialog directly;
 Edit keeps the stage for the other moves.
+
+- **Fixed:** 2026-11-19. The record's Stage card of an open Opportunity holds `Mark as won` and `Mark as lost`, each opening its dialog directly; the repeated stage row is gone. A won record says it is now a Client Project; a lost one keeps its Lost reason. Edit still moves the stage between open stages.
 
 ## F27 — A pipeline card cannot be opened from the keyboard or in a new tab
 
@@ -691,7 +693,7 @@ to the drag.
 
 ## F28 — Mark as won and Mark as lost cannot be undone, and neither dialog says so
 
-- **Status:** open
+- **Status:** open — both dialogs now say it; reopening a Lost Opportunity is still impossible
 - **Found:** 2026-11-18, both dialogs opened from the record and cancelled
 - **Where:** `client/src/v2/opportunities.ts:253` (`canChangeOpportunityStage` refuses any move out of Won or Lost), `client/src/v2/V2Opportunities.tsx:443,528` (the dialog descriptions), `V2Opportunities.tsx:896` (the Stage select is disabled once terminal)
 - **Severity:** misleading for an irreversible action
@@ -705,6 +707,8 @@ button. A drop onto Lost by mistake ends in a reason select, not a warning. It
 would take one sentence in each dialog ("This cannot be undone"). My
 suggestion, beyond that: a way to reopen a Lost Opportunity, since the server
 already allows it.
+
+- **Partly fixed:** 2026-11-19. Both dialog descriptions end with "It cannot be moved back to an open stage afterwards.", and the record's Stage card says it before either is opened. Still open: no way to reopen a Lost Opportunity, which the server would allow.
 
 ## F29 — Stage pills fail contrast at 10px
 
@@ -745,7 +749,7 @@ once passed.
 
 ## F31 — Opportunities polish: labels, repetition, states
 
-- **Status:** open
+- **Status:** open — the record's items are fixed (2026-11-19); the pipeline's remain
 - **Found:** 2026-11-18, the pipeline and the record (seen unless marked)
 - **Where:** `client/src/v2/V2Opportunities.tsx` (lines below), `client/src/v2/tokens.css:2500` and `:3475`, `client/src/v2/emptyState.ts:40`
 - **Severity:** cosmetic
@@ -784,3 +788,5 @@ once passed.
 - A failed load reads "This Opportunity could not be loaded." with no retry
   and no way back; a missing Opportunity and a failed request share the line
   (from code).
+
+- **Fixed on the record, 2026-11-19:** the breadcrumb ends in the Opportunity's name (the Client record's in the Client's name); the header drops `OPEN`/`TERMINAL`, the `OPPORTUNITY` chip and the lone "—" when there is no Client; the stage is the pipeline's filled pill in the header and in Stage history, and no longer repeats in the Stage card; `Edit` stays in place, disabled, while editing; Stage sits right after Client in both the edit form and New Opportunity; the read view says "Not set" for all four empty fields and Estimated value's placeholder is `e.g. 4 500`; the Notes head hides its count at zero; the record's layout columns are `.df-opportunity-record-column`, no longer the pipeline's class; a missing Opportunity and a failed load say which it is, with `Try again` and a way back. Still open: the Read-only header button, the filtered empty state's copy, the empty Workspace's double `New Opportunity`, no saving sign or undo on a drop, and no card hover state.
