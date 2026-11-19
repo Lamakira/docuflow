@@ -2507,23 +2507,22 @@ button.df-activity-row {
   animation: none;
 }
 
-/* The same two lines in every column, the stage above its count and total: a
-   head that wrapped only when the stage name was long ("Discovering call
-   completed") pushed that column's cards below the others. */
+/* One line in every column, the stage and its count: a head that wrapped when
+   the stage name was long ("Discovering call completed") pushed that column's
+   cards below the others. A name too long for the line ends in an ellipsis. */
 .df-opportunity-column .df-card-head {
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: var(--df-space-2);
+  flex-wrap: nowrap;
   padding: var(--df-space-4);
 }
 
 .df-opportunity-column .df-card-head > .df-card-title {
-  max-width: 100%;
+  min-width: 0;
 }
 
-/* One total per currency; amounts in different currencies are never added. */
-.df-opportunity-totals,
+.df-opportunity-column .df-card-head > .df-count-chip {
+  flex-shrink: 0;
+}
+
 .df-opportunity-card-value {
   font-family: var(--df-font-data);
   font-size: var(--df-text-1);
@@ -2588,7 +2587,57 @@ button.df-activity-row {
   /* Vertical only: containing both axes swallowed a trackpad's horizontal
      swipe over the cards instead of passing it on to the board. */
   overscroll-behavior-y: contain;
-  scrollbar-width: thin;
+  /* Every column keeps the bar's room, so cards are the same width whether
+     their column scrolls or not; the right padding gives that room back. */
+  scrollbar-gutter: stable;
+  padding-right: var(--df-space-1);
+}
+
+/*
+ * The column's own scrollbar, part of the column: no arrows, no track, a thin
+ * rounded thumb in the stage's colour that shows while the pointer is over
+ * the column. Styled through ::-webkit-scrollbar, which Chrome ignores as soon
+ * as scrollbar-width or scrollbar-color is set, so neither is set here.
+ */
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar {
+  /* 8px of room plus the 4px padding match the 12px on the left. */
+  width: 8px;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-track,
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-thumb {
+  background: transparent;
+  /* A transparent edge leaves a 6px thumb inside the 8px room. */
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-column:hover .df-opportunity-drop::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--df-stage) 35%, transparent);
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-thumb:hover,
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in srgb, var(--df-stage) 60%, transparent);
+}
+
+/* Firefox has no ::-webkit-scrollbar: the closest it offers. */
+@supports not selector(::-webkit-scrollbar) {
+  .df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--df-stage) 35%, transparent) transparent;
+  }
 }
 
 .df-opportunity-card {

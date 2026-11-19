@@ -1389,14 +1389,7 @@ export function V2OpportunitiesPage() {
                     {column.label}
                   </span>
                 </h2>
-                <span className="df-cluster">
-                  <span className="df-count-chip">{column.cards.length}</span>
-                  {column.totals.length ? (
-                    <span className="df-opportunity-totals" data-testid={`v2-opportunity-totals-${column.id}`}>
-                      {column.totals.join(" · ")}
-                    </span>
-                  ) : null}
-                </span>
+                <span className="df-count-chip">{column.cards.length}</span>
               </div>
               <Droppable
                 droppableId={column.id}

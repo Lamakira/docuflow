@@ -332,13 +332,19 @@ describe("Opportunity Stage-change motion (#187)", () => {
     // A horizontal trackpad swipe over the cards must reach the board: contain the vertical axis only.
     expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"] .df-opportunity-drop")).toMatch(/overscroll-behavior-y:\s*contain/);
     expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"] .df-opportunity-drop")).not.toMatch(/overscroll-behavior:/);
+    // The column's scrollbar blends in: no arrows, no track, and scrollbar-width left unset,
+    // since setting it makes Chrome ignore ::-webkit-scrollbar.
+    expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"] .df-opportunity-drop")).not.toMatch(/scrollbar-(width|color):/);
+    expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"] .df-opportunity-drop::-webkit-scrollbar-button")).toMatch(/display:\s*none/);
+    expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"] .df-opportunity-drop::-webkit-scrollbar-thumb")).toMatch(/background:\s*transparent/);
+    expect(rule(".df-opportunity-pipeline[data-stacked=\"false\"] .df-opportunity-column:hover .df-opportunity-drop::-webkit-scrollbar-thumb")).toMatch(/background-color:[^;]*var\(--df-stage\)/);
     expect(rule(".df-opportunity-pipeline[data-dragging=\"true\"][data-stacked=\"true\"] .df-opportunity-drop")).toMatch(
       /overflow:\s*visible/,
     );
     expect(css).not.toMatch(/\.df-opportunity-pipeline\[data-dragging="true"\] \.df-opportunity-drop\s*[,{]/);
-    // Every column head is the same two lines, so no column's cards start lower than the others.
-    expect(rule(".df-opportunity-column .df-card-head")).toMatch(/flex-direction:\s*column/);
-    expect(rule(".df-opportunity-column .df-card-head")).not.toMatch(/flex-wrap:\s*wrap/);
+    // Every column head is one line, so no column's cards start lower than the others.
+    expect(rule(".df-opportunity-column .df-card-head")).toMatch(/flex-wrap:\s*nowrap/);
+    expect(rule(".df-opportunity-column .df-card-head > .df-card-title")).toMatch(/min-width:\s*0/);
     expect(rule(".df-opportunity-column")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-column")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-drop")).toMatch(/transition:\s*none/);

@@ -78,7 +78,7 @@ describe("Estimated value", () => {
     expect(readAmount("99999999999", "EUR").issue).toBe("That Estimated value is too large.");
   });
 
-  it("totals each stage column once per currency and never adds currencies together", () => {
+  it("shows each card's Estimated value and no money total on the column", () => {
     const pipeline = composeOpportunityPipeline({
       workspaceName: "Harbour",
       stages,
@@ -94,21 +94,20 @@ describe("Estimated value", () => {
     });
     const proposal = pipeline.columns.find((column) => column.id === "proposal_sent")!;
     expect(proposal.cards).toHaveLength(4);
-    expect(proposal.totals.map(spaced)).toEqual(["4 500 €", "1 200 $"]);
+    expect(proposal).not.toHaveProperty("totals");
     expect(proposal.cards.map((card) => card.valueLabel && spaced(card.valueLabel))).toEqual([
       "3 000 €",
       "1 500 €",
       "1 200 $",
       null,
     ]);
-    expect(pipeline.columns.find((column) => column.id === "lead")!.totals.map(spaced)).toEqual(["50 £"]);
-    expect(pipeline.columns.find((column) => column.id === "follow_up")!.totals).toEqual([]);
   });
 
-  it("shows the board totals beside each column's count", () => {
-    expect(pageSource).toContain('column.totals.join(" · ")');
+  it("shows the card's value on the board, and no column total beside the count", () => {
+    expect(pageSource).not.toContain("df-opportunity-totals");
     expect(pageSource).toContain("card.valueLabel");
-    expect(css).toMatch(/\.df-opportunity-totals,\s*\.df-opportunity-card-value\s*\{/);
+    expect(css).not.toMatch(/\.df-opportunity-totals/);
+    expect(css).toMatch(/\.df-opportunity-card-value\s*\{/);
   });
 });
 
