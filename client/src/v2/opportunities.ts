@@ -161,8 +161,6 @@ export type OpportunityColumn = {
   color: string;
   ink: "light" | "dark";
   cards: OpportunityCard[];
-  /** One total per currency, never summed across currencies. */
-  totals: string[];
 };
 
 export type OpportunityPipelineModel = {
@@ -277,7 +275,7 @@ function stageColumn(
   locked = false,
 ): OpportunityColumn {
   const color = stageColor(id, configured);
-  return { id, label, terminal, locked, color, ink: stageInk(color), cards: [], totals: [] };
+  return { id, label, terminal, locked, color, ink: stageInk(color), cards: [] };
 }
 
 export function composeOpportunityPipeline(input: OpportunityPipelineInput): OpportunityPipelineModel {
@@ -288,7 +286,6 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
     stageColumn(stage.id, stage.label, stage.terminal || isOpportunityTerminal(stage.id), stage.color),
   );
   const columnById = new Map(columns.map((column) => [column.id, column]));
-  const sums = new Map<string, Map<string, number>>();
 
   for (const row of input.rows) {
     if (
@@ -334,19 +331,6 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
       changing: row.id === input.changingId,
       valueLabel: estimatedValueLabel(row.estimatedValueMinor, row.estimatedValueCurrency),
     });
-    if (row.estimatedValueMinor != null && isOpportunityCurrency(row.estimatedValueCurrency)) {
-      const byCurrency = sums.get(column.id) ?? new Map<string, number>();
-      byCurrency.set(row.estimatedValueCurrency, (byCurrency.get(row.estimatedValueCurrency) ?? 0) + row.estimatedValueMinor);
-      sums.set(column.id, byCurrency);
-    }
-  }
-
-  for (const column of columns) {
-    const byCurrency = sums.get(column.id);
-    if (!byCurrency) continue;
-    column.totals = [...byCurrency.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([currency, minor]) => formatMoney(minor, currency));
   }
 
   const count = columns.reduce((sum, column) => sum + column.cards.length, 0);

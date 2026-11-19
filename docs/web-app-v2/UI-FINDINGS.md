@@ -633,10 +633,11 @@ and never treating an unknown id as an open stage.
 
 ## F25 — Won and Lost sit off-screen with no scrollbar, and the board is mostly closed history
 
-- **Status:** open
+- **Status:** open — the column height is fixed; Won and Lost still sit off-screen with no visible scrollbar
 - **Found:** 2026-11-18, the pipeline in a 1680px window (measured), and the cutover rehearsal (counted)
 - **Where:** `client/src/v2/tokens.css:2466-2483` (`.df-opportunity-pipeline`, `scrollbar-width: none`), `client/src/v2/opportunities.ts:275` (`composeOpportunityPipeline` keeps every terminal card)
 - **Severity:** misleading. Won and Lost are invisible and nothing says so
+- **Partly fixed:** 2026-11-18, as on Trello. The board fills the page below its head, every column is the board's height, and a column with more cards than fit scrolls inside itself (`.df-opportunity-pipeline[data-stacked="false"]` and its `.df-opportunity-drop`, `overflow-y: auto`), during a drag too; the stacked layout keeps columns at their own height, one under the other. Measured on the DocuFlow Workspace seeded with `npm run db:seed:demo` (110 Opportunities, 1680px window): every column 7495px tall before, 710px after; Won scrolls 7419px of cards inside 634px, Lost 2143px; the page itself no longer scrolls and "110 Opportunities" stays in view. A keyboard drag between columns still works. Still open: Won and Lost off-screen with no visible scrollbar.
 
 Seven 280px columns need 2032px; the pipeline shows 1392px. In Negotiation
 loses its right edge and its count chip, and Won and Lost are entirely

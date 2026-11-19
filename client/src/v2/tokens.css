@@ -2507,13 +2507,22 @@ button.df-activity-row {
   animation: none;
 }
 
+/* One line in every column, the stage and its count: a head that wrapped when
+   the stage name was long ("Discovering call completed") pushed that column's
+   cards below the others. A name too long for the line ends in an ellipsis. */
 .df-opportunity-column .df-card-head {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   padding: var(--df-space-4);
 }
 
-/* One total per currency; amounts in different currencies are never added. */
-.df-opportunity-totals,
+.df-opportunity-column .df-card-head > .df-card-title {
+  min-width: 0;
+}
+
+.df-opportunity-column .df-card-head > .df-count-chip {
+  flex-shrink: 0;
+}
+
 .df-opportunity-card-value {
   font-family: var(--df-font-data);
   font-size: var(--df-text-1);
@@ -2544,6 +2553,91 @@ button.df-activity-row {
 
 .df-opportunity-drop[data-over="true"] {
   background: var(--df-hover);
+}
+
+/*
+ * As on Trello: the board fills the window below the page head, every column
+ * is the board's height, and a column with more cards than fit scrolls inside
+ * itself. Before, the page grew to the longest column (Won, thousands of
+ * pixels) and every other column stretched to it as an empty strip (F25).
+ * Not in the stacked layout, where columns sit one under the other.
+ */
+.df-workspace-content:has(> .df-page > .df-opportunity-pipeline[data-stacked="false"]) {
+  height: 100%;
+}
+
+.df-page:has(> .df-opportunity-pipeline[data-stacked="false"]) {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] {
+  flex: 1 1 0;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-column {
+  min-height: 0;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Vertical only: containing both axes swallowed a trackpad's horizontal
+     swipe over the cards instead of passing it on to the board. */
+  overscroll-behavior-y: contain;
+  /* Every column keeps the bar's room, so cards are the same width whether
+     their column scrolls or not; the right padding gives that room back. */
+  scrollbar-gutter: stable;
+  padding-right: var(--df-space-1);
+}
+
+/*
+ * The column's own scrollbar, part of the column: no arrows, no track, a thin
+ * rounded thumb in the stage's colour that shows while the pointer is over
+ * the column. Styled through ::-webkit-scrollbar, which Chrome ignores as soon
+ * as scrollbar-width or scrollbar-color is set, so neither is set here.
+ */
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar {
+  /* 8px of room plus the 4px padding match the 12px on the left. */
+  width: 8px;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-track,
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-thumb {
+  background: transparent;
+  /* A transparent edge leaves a 6px thumb inside the 8px room. */
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-column:hover .df-opportunity-drop::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--df-stage) 35%, transparent);
+}
+
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-thumb:hover,
+.df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in srgb, var(--df-stage) 60%, transparent);
+}
+
+/* Firefox has no ::-webkit-scrollbar: the closest it offers. */
+@supports not selector(::-webkit-scrollbar) {
+  .df-opportunity-pipeline[data-stacked="false"] .df-opportunity-drop {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--df-stage) 35%, transparent) transparent;
+  }
 }
 
 .df-opportunity-card {
@@ -2611,8 +2705,10 @@ button.df-activity-row {
   max-width: 100%;
 }
 
+/* A column that scrolls inside keeps scrolling during a drag; the dragged card
+   is a clone outside the board, so nothing needs to spill out of it. */
 .df-opportunity-pipeline[data-dragging="true"] .df-opportunity-column,
-.df-opportunity-pipeline[data-dragging="true"] .df-opportunity-drop {
+.df-opportunity-pipeline[data-dragging="true"][data-stacked="true"] .df-opportunity-drop {
   overflow: visible;
 }
 

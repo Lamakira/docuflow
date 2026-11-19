@@ -21,6 +21,9 @@
  *    first, which is also what makes it idempotent.
  *
  * Dates are relative to the run, so the register never opens on a dead month.
+ *
+ * `WORK` is the hand-written showcase; `historyWork()` adds the volume of a real
+ * Workspace, where closed work dominates the Opportunities board.
  */
 
 import { and, eq, like, sql } from "drizzle-orm";
@@ -41,6 +44,7 @@ import {
   workspaceRoles,
   workspaces,
 } from "../shared/schema";
+import { projectStatusFromCombined } from "../shared/projectLifecycle";
 import { openDb, type Report, type ScriptDb } from "./lib/db";
 import { isEntryPoint } from "./lib/entrypoint";
 
@@ -103,6 +107,61 @@ const WORK = [
   { key: "kiosk", name: "Kiosk replacement", client: "caldera", status: "lost", projectStatus: "archived", budgetedHours: 30, assignee: "owner", dueIn: -20 },
 ];
 
+const SUBJECTS = ["Warehouse", "Invoice", "Payroll", "Fleet", "Customer portal", "Inventory", "Reporting", "Onboarding", "Compliance", "Booking", "Dispatch", "Billing"];
+const KINDS = ["audit", "migration", "rollout", "redesign", "integration", "automation", "pilot"];
+const LOST_REASONS = ["price", "timing", "chose_a_competitor", "no_response"];
+const OPEN_STAGES: [string, number][] = [
+  ["lead", 3],
+  ["discovering_call_completed", 2],
+  ["proposal_sent", 2],
+  ["follow_up", 1],
+  ["in_negotiation", 1],
+];
+
+/**
+ * The closed work a real Workspace piles up (production: Won 84, Lost 22, about a
+ * dozen open cards). Pure and deterministic — everything derives from the index,
+ * so a re-run writes the same board. Names are a subject and a kind; a repeated
+ * pair gets a roman suffix so every card is distinct.
+ */
+function historyWork() {
+  const stages: { status: string; lostReason: string | null }[] = [];
+  for (let i = 0; i < 70; i += 1) {
+    const status = i % 7 === 0 ? "won_in_review" : i % 7 <= 2 ? "won_in_progress" : "won_completed";
+    stages.push({ status, lostReason: null });
+  }
+  for (let i = 0; i < 20; i += 1) stages.push({ status: "lost", lostReason: LOST_REASONS[i % LOST_REASONS.length] });
+  for (const [status, count] of OPEN_STAGES) {
+    for (let i = 0; i < count; i += 1) stages.push({ status, lostReason: null });
+  }
+
+  const seen = new Map<string, number>();
+  const taken = new Set(WORK.map((item) => item.name));
+  return stages.map((stage, index) => {
+    const base = `${SUBJECTS[index % SUBJECTS.length]} ${KINDS[index % KINDS.length]}`;
+    const times = (seen.get(base) ?? 0) + 1;
+    seen.set(base, times);
+    let name = times === 1 ? base : `${base} ${["", "II", "III", "IV", "V"][times - 1] ?? times}`;
+    while (taken.has(name)) name += " II";
+    taken.add(name);
+
+    const closedInThePast = stage.status === "won_completed" || stage.status === "lost";
+    return {
+      key: `history-${index}`,
+      name,
+      client: CLIENTS[index % CLIENTS.length].key,
+      status: stage.status,
+      projectStatus: projectStatusFromCombined(stage.status) as string,
+      lostReason: stage.lostReason,
+      budgetedHours: 10 + ((index * 37) % 111),
+      assignee: index % 2 === 0 ? "owner" : "member",
+      dueIn: closedInThePast ? -15 - ((index * 53) % 386) : 15 + ((index * 29) % 76),
+      estimatedValueMinor: (2000 + ((index * 7919) % 58001)) * 100,
+      estimatedValueCurrency: "EUR",
+    };
+  });
+}
+
 const TASKS: Record<string, string[]> = {
   atlas: ["Survey the Bremen site", "Map the WMS integration", "Write the cutover runbook", "Train the floor supervisors"],
   ledger: ["Reconcile the opening balances", "Port the recurring journals", "Sign-off pack for the auditor"],
@@ -134,13 +193,14 @@ export async function seedDemo(
 
   await writeClients(db, cast);
   await writeWork(db, cast);
+  await writeHistory(db, cast);
   await writeTasksAndMembers(db, cast);
   await writeTime(db, cast);
   await writeDailyUpdates(db, cast);
   await writeDocuments(db, cast);
   await writeNotifications(db, cast);
 
-  report(`seeded ${CLIENTS.length} Clients, ${WORK.length} Opportunities and Projects`);
+  report(`seeded ${CLIENTS.length} Clients, ${WORK.length + historyWork().length} Opportunities and Projects`);
   report(`workspace: ${cast.workspaceId}`);
   report("undo with: npm run db:seed:demo -- --workspace <name> --undo");
 }
@@ -239,6 +299,40 @@ async function writeWork(db: ScriptDb, cast: Cast): Promise<void> {
       budgetedMinutes: 0,
       documentationEnabled: TRACKED.includes(item.key) ? 1 : 0,
       comments: NOTES[WORK.indexOf(item) % NOTES.length],
+      workspaceId: cast.workspaceId,
+    });
+  }
+}
+
+/** The same two rows `writeWork` writes, with no tasks, time or members behind them. */
+async function writeHistory(db: ScriptDb, cast: Cast): Promise<void> {
+  for (const [index, item] of historyWork().entries()) {
+    const assignee = item.assignee === "owner" ? cast.ownerId : cast.memberId;
+    await db.insert(projects).values({
+      id: `${ID}project-history-${index}`,
+      name: item.name,
+      description: `${item.name} for ${CLIENTS.find((client) => client.key === item.client)?.name}.`,
+      ownerId: cast.ownerId,
+      workspaceId: cast.workspaceId,
+    });
+    await db.insert(crmProjects).values({
+      id: `${ID}crm-history-${index}`,
+      projectId: `${ID}project-history-${index}`,
+      clientId: `${ID}client-${item.client}`,
+      status: item.status,
+      projectStatus: item.projectStatus,
+      projectType: "one_time",
+      assigneeId: assignee,
+      startDate: at(-40),
+      dueDate: at(item.dueIn),
+      actualFinishDate: item.projectStatus === "completed" ? at(item.dueIn) : null,
+      budgetedHours: item.budgetedHours,
+      budgetedMinutes: 0,
+      lostReason: item.lostReason,
+      estimatedValueMinor: item.estimatedValueMinor,
+      estimatedValueCurrency: item.estimatedValueCurrency,
+      documentationEnabled: 0,
+      comments: null,
       workspaceId: cast.workspaceId,
     });
   }
@@ -430,4 +524,4 @@ if (isEntryPoint(import.meta.url)) {
   }
 }
 
-export { CLIENTS, WORK };
+export { CLIENTS, WORK, historyWork };
