@@ -4,8 +4,11 @@ import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { formatFullDate } from "./dates";
 import { clientStatusColor, projectStatusColor } from "./palette";
 import { readPage, readPageSize, writePaging } from "./paging";
+import { opportunityHref, stageLabel, type OpportunityStageOption } from "./opportunities";
+import { stageColor, stagePill } from "./stageColor";
 import { projectHref } from "./today";
 import { capitalize } from "./text";
+import { opportunityStageFromCombined } from "@shared/projectLifecycle";
 
 /**
  * Clients register and Client record (#186).
@@ -261,7 +264,13 @@ export type ClientRecordProjectInput = {
   id: string;
   name: string;
   projectStatus: string;
+  /** The combined status: it says the Opportunity stage; `won` and `won_*` are won. */
+  combinedStatus: string;
+  isDocumentationOnly?: number | null;
 };
+
+/** How many rows each Opportunity and Client Project card shows before "Show all". */
+export const CLIENT_RECORD_PREVIEW = 8;
 
 export type ClientIdentitySeed = {
   name: string;
@@ -292,11 +301,12 @@ export type ClientRecordInput = {
   pending?: boolean;
   loadFailed?: boolean;
   projects: ClientRecordProjectInput[];
+  /** The Workspace's Opportunity stages, for the stage labels and colours. */
+  stages: OpportunityStageOption[];
 };
 
 export type ClientRecordIdentity = {
   title: string;
-  kindLabel: string;
   status: string;
   statusColor: string;
   company: string;
@@ -327,12 +337,28 @@ export type ClientRecordModel = {
   identity: ClientRecordIdentity | null;
   contacts: ClientRecordContactRow[];
   contactsEmptyCopy: string;
+  /** Open then lost sales; a won one is a Client Project instead. */
+  opportunities: ClientRecordOpportunityRow[];
+  opportunitiesEmptyCopy: string;
   projects: Array<{ id: string; name: string; status: string; statusColor: string; href: string }>;
   projectsEmptyCopy: string;
   notes: string | null;
   /** What the editor just wrote, readable without reopening the editor (#213). */
   details: Array<{ label: string; value: string; wide?: true }>;
 };
+
+export type ClientRecordOpportunityRow = {
+  id: string;
+  name: string;
+  stage: string;
+  /** The stage pill's fill and ink, from `stagePill`. */
+  fill: string;
+  ink: "light" | "dark";
+  href: string;
+  lost: boolean;
+};
+
+const PROJECT_STATUS_ORDER = ["active", "planned", "in_review", "on_hold", "completed", "archived"];
 
 const PROJECT_STATUS_LABEL: Record<string, string> = {
   planned: "PLANNED",
@@ -350,7 +376,6 @@ function projectStatusLabel(status: string): string {
 function identityFrom(client: ClientIdentitySeed): ClientRecordIdentity {
   return {
     title: client.name || "Untitled Client",
-    kindLabel: "Client",
     status: statusLabel(client.status),
     statusColor: clientStatusColor(client.status),
     company: client.company || "—",
@@ -367,6 +392,8 @@ function emptyRecord(partial: Pick<ClientRecordModel, "missing" | "unavailable" 
   return {
     contacts: [],
     contactsEmptyCopy: "",
+    opportunities: [],
+    opportunitiesEmptyCopy: "",
     projects: [],
     projectsEmptyCopy: "",
     notes: null,
@@ -416,13 +443,49 @@ export function composeClientRecord(input: ClientRecordInput): ClientRecordModel
     phone: contact.phone ?? null,
     primary: contact.isPrimary === 1,
   }));
-  const projects = input.projects.map((project) => ({
-    id: project.id,
-    name: project.name || "Untitled Project",
-    status: projectStatusLabel(project.projectStatus),
-    statusColor: projectStatusColor(project.projectStatus),
-    href: projectHref(project.id),
-  }));
+  // A sale is an Opportunity until it is won; only a won row is a Client Project.
+  const delivery = input.projects.filter((project) => !project.isDocumentationOnly);
+  const stageOrder = input.stages.map((stage) => stage.id);
+  const stageRank = (stage: string) => {
+    const rank = stageOrder.indexOf(stage);
+    return rank === -1 ? stageOrder.length : rank;
+  };
+  const opportunities = delivery
+    .map((project) => ({ project, stage: opportunityStageFromCombined(project.combinedStatus) }))
+    .filter(({ stage }) => stage !== "won")
+    .map(({ project, stage }) => {
+      const option = input.stages.find((candidate) => candidate.id === stage);
+      const { fill, ink } = stagePill(stageColor(stage, option?.color));
+      const lost = stage === "lost";
+      return {
+        rank: lost ? Number.MAX_SAFE_INTEGER : stageRank(stage),
+        row: {
+          id: project.id,
+          name: project.name || "Untitled Opportunity",
+          stage: option?.label ?? stageLabel(stage),
+          fill,
+          ink,
+          href: opportunityHref(project.id),
+          lost,
+        } satisfies ClientRecordOpportunityRow,
+      };
+    })
+    .sort((a, b) => a.rank - b.rank || a.row.name.localeCompare(b.row.name))
+    .map(({ row }) => row);
+  const statusRank = (status: string) => {
+    const rank = PROJECT_STATUS_ORDER.indexOf(status);
+    return rank === -1 ? PROJECT_STATUS_ORDER.length : rank;
+  };
+  const projects = delivery
+    .filter((project) => opportunityStageFromCombined(project.combinedStatus) === "won")
+    .sort((a, b) => statusRank(a.projectStatus) - statusRank(b.projectStatus) || a.name.localeCompare(b.name))
+    .map((project) => ({
+      id: project.id,
+      name: project.name || "Untitled Project",
+      status: projectStatusLabel(project.projectStatus),
+      statusColor: projectStatusColor(project.projectStatus),
+      href: projectHref(project.id),
+    }));
 
   return {
     missing: false,
@@ -430,9 +493,11 @@ export function composeClientRecord(input: ClientRecordInput): ClientRecordModel
     emptyCopy: "",
     identity: identityFrom(input.client),
     contacts,
-    contactsEmptyCopy: contacts.length === 0 ? "No one filed on this Client yet." : "",
+    contactsEmptyCopy: contacts.length === 0 ? "No contacts yet. Add the people you work with at this Client." : "",
+    opportunities,
+    opportunitiesEmptyCopy: opportunities.length === 0 ? "No Opportunities for this Client yet." : "",
     projects,
-    projectsEmptyCopy: projects.length === 0 ? "No Client Projects yet." : "",
+    projectsEmptyCopy: projects.length === 0 ? "No Client Projects yet. A won Opportunity becomes one." : "",
     notes: input.client.notes,
     details: clientDetails(identityFrom(input.client), input.client.notes),
   };

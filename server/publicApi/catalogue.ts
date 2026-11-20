@@ -7,6 +7,8 @@ import {
   TIME_ENTRIES_READ_CAPABILITY_ID,
   type CrmClient,
   type CrmProjectWithDetails,
+  crmClientStatusValues,
+  insertCrmClientSchema,
   type TimeEntry,
 } from "@shared/schema";
 import { workspaceOwnerUserId } from "../modules/workspace";
@@ -21,13 +23,10 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const CRM_PROJECT_PAGE = 500;
 
-const createClientBody = z.object({
-  name: z.string().min(1),
-  company: z.string().nullish(),
-  email: z.string().nullish(),
-  phone: z.string().nullish(),
-  status: z.string().nullish(),
-});
+/** The web app's Client rules, on the fields the public API takes. */
+const createClientBody = insertCrmClientSchema
+  .pick({ name: true, company: true, email: true, phone: true })
+  .extend({ status: z.enum(crmClientStatusValues).nullish() });
 
 function requestId(req: PublicApiRequest): string {
   return req.publicApiRequestId ?? requestIdOf(req);

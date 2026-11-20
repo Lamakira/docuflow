@@ -11,6 +11,7 @@ import {
   clientWriteRefusal,
   CLIENT_SORTS,
   composeClientRecord,
+  CLIENT_RECORD_PREVIEW,
   composeClientRegister,
   type ClientRegisterInput,
 } from "../../client/src/v2/clients";
@@ -78,9 +79,8 @@ describe("the Client record's two forms match every other v2 form (#280)", () =>
   });
 
   it("gives both forms the same field shape: a label above a typed input", () => {
-    for (const fields of ["CONTACT_FIELDS", "DETAIL_FIELDS"]) {
-      expect(source).toContain(`${fields}.map((field, index) => (`);
-    }
+    expect(source).toContain("CONTACT_FIELDS.map((field, index) => (");
+    expect(source).toContain("DETAIL_FIELDS.map((field) => (");
     expect(source).toMatch(/id: "email", label: "Email", type: "email"/);
     expect(source).toMatch(/id: "phone", label: "Phone", type: "tel"/);
   });
@@ -129,7 +129,6 @@ describe("a Client Source wears one mark everywhere v2 shows it", () => {
 
   it("uses the shared SourceMark on the register, the record, the details and both Source selects", () => {
     expect(clientsSource).toContain("<SourceMark value={row.original.sourceValue} />");
-    expect(clientsSource).toContain("<SourceMark value={record.identity.sourceValue} />");
     expect(clientsSource).toContain("<SourceMark value={record.identity?.sourceValue} />");
     expect(clientsSource).toContain('options={withSourceMarks([{ value: "all", label: "All" }, ...sourceOptions])}');
     expect(selectSource).toContain("icon?: ReactNode;");
@@ -204,6 +203,7 @@ describe("Client editor shows what it saved (#213)", () => {
         contacts: [],
       },
       projects: [],
+      stages: [],
       now: new Date(2026, 8, 14, 12, 0, 0),
     });
 
@@ -240,6 +240,7 @@ describe("Client editor shows what it saved (#213)", () => {
         ],
       },
       projects: [],
+      stages: [],
       now: new Date(2026, 8, 14, 12, 0, 0),
     });
 
@@ -442,20 +443,21 @@ describe("Client record from live Client reads (#186)", () => {
         ],
       },
       projects: [
-        { id: "prj-live", name: "Harbour rebuild", projectStatus: "active" },
-        { id: "prj-other", name: "Other dock", projectStatus: "planned" },
+        { id: "prj-live", name: "Harbour rebuild", projectStatus: "active", combinedStatus: "won_in_progress" },
+        { id: "prj-other", name: "Other dock", projectStatus: "planned", combinedStatus: "won_not_started" },
       ],
+      stages: [],
     });
 
     expect(record.missing).toBe(false);
     expect(record.identity).toMatchObject({
       title: "Harbour Shipping",
-      kindLabel: "Client",
       status: "CLIENT",
       company: "Harbour Shipping Ltd",
       email: "ops@harbour.test",
       source: "Direct",
     });
+    expect(record.identity).not.toHaveProperty("kindLabel");
     expect(record.contacts.map((row) => row.name)).toEqual(["Sam Lee", "Pat Ng"]);
     expect(record.projects).toEqual([
       { id: "prj-live", name: "Harbour rebuild", status: "ACTIVE", statusColor: "#14b8a6", href: "/projects/prj-live" },
@@ -489,6 +491,7 @@ describe("Client record from live Client reads (#186)", () => {
         }],
       },
       projects: [],
+      stages: [],
     });
 
     expect(record.identity).toMatchObject({
@@ -505,7 +508,7 @@ describe("Client record from live Client reads (#186)", () => {
   });
 
   it("empty and missing records are honest", () => {
-    const missing = composeClientRecord({ client: null, projects: [] });
+    const missing = composeClientRecord({ client: null, projects: [], stages: [] });
     expect(missing.missing).toBe(true);
     expect(missing.unavailable).toBe(false);
     expect(missing.identity).toBeNull();
@@ -524,12 +527,13 @@ describe("Client record from live Client reads (#186)", () => {
         contacts: [],
       },
       projects: [],
+      stages: [],
     });
     expect(empty.missing).toBe(false);
     expect(empty.unavailable).toBe(false);
-    expect(empty.contactsEmptyCopy.toLowerCase()).not.toContain("contact");
-    expect(empty.contactsEmptyCopy.toLowerCase()).toContain("client");
-    expect(empty.projectsEmptyCopy.toLowerCase()).toContain("project");
+    expect(empty.contactsEmptyCopy).toBe("No contacts yet. Add the people you work with at this Client.");
+    expect(empty.opportunitiesEmptyCopy).toBe("No Opportunities for this Client yet.");
+    expect(empty.projectsEmptyCopy).toBe("No Client Projects yet. A won Opportunity becomes one.");
   });
 
   it("keeps register identity while the record body is still loading", () => {
@@ -544,13 +548,13 @@ describe("Client record from live Client reads (#186)", () => {
         email: null,
       },
       projects: [],
+      stages: [],
     });
 
     expect(pending.missing).toBe(false);
     expect(pending.unavailable).toBe(false);
     expect(pending.identity).toMatchObject({
       title: "Harbour Shipping",
-      kindLabel: "Client",
       status: "CLIENT",
       company: "Harbour Shipping Ltd",
     });
@@ -569,6 +573,7 @@ describe("Client record from live Client reads (#186)", () => {
         source: "direct",
       },
       projects: [],
+      stages: [],
     });
 
     expect(failed.missing).toBe(false);
@@ -693,14 +698,15 @@ describe("Client record order (#307)", () => {
       source.slice(source.indexOf('<div className="df-overview" aria-busy="true">')),
     ]) {
       const details = layout.search(/Client details/);
-      const contacts = layout.search(/On this Client/);
+      const contacts = layout.search(/Contacts/);
+      const opportunities = layout.search(/Opportunities/);
       const projects = layout.search(/Client Projects/);
       expect(details).toBeGreaterThan(-1);
       expect(details).toBeLessThan(contacts);
-      expect(contacts).toBeLessThan(projects);
+      expect(contacts).toBeLessThan(opportunities);
+      expect(opportunities).toBeLessThan(projects);
     }
-    // The contacts card keeps its title.
-    expect(source).toContain(title("On this Client"));
+    expect(source).toContain(title("Contacts"));
   });
 
   it("stacks Client Projects below the details and contacts on a phone", () => {
@@ -712,5 +718,108 @@ describe("Client record order (#307)", () => {
       /\.df-v2\[data-chrome="mobile"\] \.df-client-record-body \.df-overview\s*\{([^}]*)\}/,
     );
     expect(stacked?.[1]).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
+  });
+});
+
+const read = (file: string) =>
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), file), "utf8");
+
+describe("Client record: Opportunities apart from Client Projects (F32)", () => {
+  const stages = [
+    { id: "lead", label: "Lead", terminal: false },
+    { id: "proposal_sent", label: "Proposal sent", terminal: false },
+    { id: "won", label: "Won", terminal: true },
+    { id: "lost", label: "Lost", terminal: true },
+  ];
+  const client = {
+    id: "c1", name: "Harbor", company: null, email: null, status: "client", source: null, notes: null, contacts: [],
+  };
+
+  it("splits sales from won rows, orders each, and drops documentation-only rows", () => {
+    const record = composeClientRecord({
+      client,
+      stages,
+      projects: [
+        { id: "a", name: "Zed lost", projectStatus: "archived", combinedStatus: "lost" },
+        { id: "b", name: "Beta proposal", projectStatus: "planned", combinedStatus: "proposal_sent" },
+        { id: "c", name: "Alpha proposal", projectStatus: "planned", combinedStatus: "proposal_sent" },
+        { id: "d", name: "Lead one", projectStatus: "planned", combinedStatus: "lead" },
+        { id: "e", name: "Done job", projectStatus: "completed", combinedStatus: "won_completed" },
+        { id: "f", name: "Live job", projectStatus: "active", combinedStatus: "won_in_progress" },
+        { id: "g", name: "Old job", projectStatus: "archived", combinedStatus: "won_cancelled" },
+        { id: "h", name: "Planned job", projectStatus: "planned", combinedStatus: "won_not_started" },
+        { id: "i", name: "Docs only", projectStatus: "active", combinedStatus: "won_in_progress", isDocumentationOnly: 1 },
+      ],
+    });
+    expect(record.opportunities.map((row) => [row.name, row.stage, row.lost])).toEqual([
+      ["Lead one", "Lead", false],
+      ["Alpha proposal", "Proposal sent", false],
+      ["Beta proposal", "Proposal sent", false],
+      ["Zed lost", "Lost", true],
+    ]);
+    expect(record.opportunities[0]).toMatchObject({ href: "/opportunities/d", ink: expect.stringMatching(/light|dark/) });
+    expect(record.projects.map((row) => row.name)).toEqual(["Live job", "Planned job", "Done job", "Old job"]);
+  });
+
+  it("says what each empty card holds", () => {
+    const record = composeClientRecord({ client, stages, projects: [] });
+    expect(record.opportunitiesEmptyCopy).toBe("No Opportunities for this Client yet.");
+    expect(record.projectsEmptyCopy).toBe("No Client Projects yet. A won Opportunity becomes one.");
+  });
+
+  it("shows eight rows then Show all N / Show fewer, and the stage pill markup", () => {
+    const source = read("../../client/src/v2/V2Clients.tsx");
+    expect(CLIENT_RECORD_PREVIEW).toBe(8);
+    expect(source).toContain("`Show all ${rows.length}`");
+    expect(source).toContain('"Show fewer"');
+    expect(source).toContain('className="df-stage-pill"');
+    expect(source).toContain('"--df-stage": opportunity.fill');
+    expect(source).toContain('<span className="df-count-chip">{rows.length}</span>');
+  });
+});
+
+describe("Client record: edit, head, missing, contacts (F33-F36)", () => {
+  const source = read("../../client/src/v2/V2Clients.tsx");
+
+  it("edits the name and status, and blocks a blank name (F33)", () => {
+    expect(source).toContain("name: draft.name.trim(),");
+    expect(source).toContain("status: draft.status,");
+    expect(source).toContain("canSubmit={Boolean(draft.name.trim())}");
+    expect(source).toContain("options={CLIENT_STATUS_OPTIONS}");
+    expect(source).toContain('description="Who this Client is, how to reach them, and where they came from."');
+    expect(source.indexOf("Client name")).toBeLessThan(source.indexOf('ariaLabel="Client status"'));
+    expect(source.indexOf('ariaLabel="Client status"')).toBeLessThan(source.indexOf("DETAIL_FIELDS.map"));
+  });
+
+  it("keeps the head to the title and its status chip (F34)", () => {
+    const head = source.slice(source.indexOf('<header className="df-dossier-head">'), source.lastIndexOf("</header>"));
+    expect(head).toContain("record.identity.title");
+    expect(head).toContain("record.identity.status");
+    expect(head).not.toContain("kindLabel");
+    expect(head).not.toContain("df-dossier-provenance");
+    expect(head).not.toContain("SourceMark");
+  });
+
+  it("renders only an empty state, with a way back, for a missing or failed Client (F35)", () => {
+    expect(source).toContain('testId="v2-client-missing"');
+    expect(source).toContain('testId="v2-client-load-failed"');
+    expect(source).toContain('title="This Client is not in this Workspace, or it was deleted."');
+    expect(source).toContain('copy="Check the link, or find it in Clients."');
+    expect(source).toContain('title="This Client could not be loaded."');
+    expect(source).toContain("onClick={() => refetch()}");
+    expect(source).toContain('<Link href="/clients">Back to Clients</Link>');
+    expect(source).not.toContain("Client unavailable");
+    expect(source).not.toContain("Client not found");
+  });
+
+  it("titles the card Contacts and edits a contact in place (F36)", () => {
+    expect(source).not.toContain("On this Client");
+    expect(source).toContain('apiRequest("PATCH", `/api/crm/contacts/${contactId}`');
+    expect(source).toContain('title={editingContact ? "Edit contact" : "Add contact"}');
+    expect(source).toContain('"Save contact"');
+    expect(source).toContain('notify.success("Contact saved")');
+    expect(source).toContain("aria-label={`Edit ${contact.name}`}");
+    expect(source.match(/editContactButton\(contact\)/g)?.length).toBe(2);
+    expect(source).not.toMatch(/fontSize: 1[23]/);
   });
 });

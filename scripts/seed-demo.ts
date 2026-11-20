@@ -258,7 +258,7 @@ async function writeClients(db: ScriptDb, cast: Cast): Promise<void> {
       company: client.company,
       email: client.email,
       status: "client",
-      source: "referral",
+      source: "direct",
       ownerId: cast.ownerId,
       workspaceId: cast.workspaceId,
     });

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { Pencil, Plus, Search } from "lucide-react";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { createColumnHelper, rowSortingFeature, tableFeatures, useTable, type SortingState } from "@tanstack/react-table";
+import { CRM_CLIENT_LIMITS, CRM_PHONE_HTML_PATTERN } from "@shared/schema";
 import type { CrmClient, CrmContact, CrmProjectWithDetails } from "@shared/schema";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,12 +23,14 @@ import {
   CLIENT_SORTS,
   clientSourceOptions,
   type ClientSourceOption,
+  CLIENT_RECORD_PREVIEW,
   CLIENT_STATUS_OPTIONS,
   type ClientRegisterFilters,
   type ClientRegisterRow,
   type ClientRegisterRowInput,
   type ClientSort,
 } from "./clients";
+import { composeOpportunityStages, stageOptionsFromFieldOptions } from "./opportunities";
 import { composePaging } from "./paging";
 import { isStandingRefusal, notify } from "./notify";
 import { motionForSurface } from "./motion";
@@ -35,7 +38,7 @@ import { swatchStyle } from "./palette";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
-import { V2RecordEmpty } from "./V2EmptyState";
+import { V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, type V2SelectOption } from "./V2Select";
 import { SourceMark } from "./icons";
@@ -156,7 +159,7 @@ function ClientRegisterTable({
         }),
         clientColumn.accessor("company", {
           header: "Company",
-          cell: ({ row }) => <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.original.company}</span>,
+          cell: ({ row }) => <span className="df-client-company">{row.original.company}</span>,
         }),
         clientColumn.accessor("status", {
           header: "Status",
@@ -176,7 +179,7 @@ function ClientRegisterTable({
         clientColumn.accessor("projectCount", {
           id: "projects",
           header: "Projects",
-          cell: ({ row }) => <span className="df-mono" style={{ fontSize: 12 }}>{row.original.projectCount}</span>,
+          cell: ({ row }) => <span className="df-mono df-client-count">{row.original.projectCount}</span>,
         }),
         clientColumn.accessor("created", {
           header: "Created",
@@ -277,16 +280,16 @@ export function V2ClientRecordRedirect() {
 
 /** The Client record's two forms share one field shape: a label above a typed input. */
 const CONTACT_FIELDS = [
-  { id: "name", label: "Name", type: "text", placeholder: "Full name" },
-  { id: "role", label: "Role", type: "text", placeholder: "Project lead" },
-  { id: "email", label: "Email", type: "email", placeholder: "name@company.com" },
-  { id: "phone", label: "Phone", type: "tel", placeholder: "+33 6 12 34 56 78" },
+  { id: "name", label: "Name", type: "text", placeholder: "Full name", maxLength: CRM_CLIENT_LIMITS.name },
+  { id: "role", label: "Role", type: "text", placeholder: "Project lead", maxLength: CRM_CLIENT_LIMITS.role },
+  { id: "email", label: "Email", type: "email", placeholder: "name@company.com", maxLength: CRM_CLIENT_LIMITS.email },
+  { id: "phone", label: "Phone", type: "tel", placeholder: "+33 6 12 34 56 78", maxLength: CRM_CLIENT_LIMITS.phone },
 ] as const;
 
 const DETAIL_FIELDS = [
-  { id: "company", label: "Company", type: "text", placeholder: "Company name" },
-  { id: "email", label: "Email", type: "email", placeholder: "name@company.com" },
-  { id: "phone", label: "Phone", type: "tel", placeholder: "+33 6 12 34 56 78" },
+  { id: "company", label: "Company", type: "text", placeholder: "Company name", maxLength: CRM_CLIENT_LIMITS.company },
+  { id: "email", label: "Email", type: "email", placeholder: "name@company.com", maxLength: CRM_CLIENT_LIMITS.email },
+  { id: "phone", label: "Phone", type: "tel", placeholder: "+33 6 12 34 56 78", maxLength: CRM_CLIENT_LIMITS.phone },
 ] as const;
 
 export function V2ClientsPage() {
@@ -449,6 +452,7 @@ export function V2ClientsPage() {
           <input
             type="text"
             value={name}
+            maxLength={CRM_CLIENT_LIMITS.name}
             autoFocus
             onChange={(event) => setName(event.target.value)}
             placeholder="Client name"
@@ -558,6 +562,42 @@ export function V2ClientsPage() {
   );
 }
 
+/** A record card that shows its first rows and offers the rest behind "Show all N". */
+function ClientPreviewCard<T extends { id: string }>({
+  title,
+  rows,
+  emptyCopy,
+  testId,
+  renderRow,
+}: {
+  title: string;
+  rows: T[];
+  emptyCopy: string;
+  testId: string;
+  renderRow: (row: T) => ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? rows : rows.slice(0, CLIENT_RECORD_PREVIEW);
+  return (
+    <section className="df-card" data-testid={testId}>
+      <div className="df-card-head">
+        <span className="df-client-card-title">
+          <h2 className="df-card-title">{title}</h2>
+          <span className="df-count-chip">{rows.length}</span>
+        </span>
+      </div>
+      {rows.length === 0 ? <p className="df-empty">{emptyCopy}</p> : shown.map(renderRow)}
+      {rows.length > CLIENT_RECORD_PREVIEW ? (
+        <div className="df-client-card-more">
+          <Button variant="ghost" type="button" className="df-btn" onClick={() => setExpanded((value) => !value)}>
+            {expanded ? "Show fewer" : `Show all ${rows.length}`}
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function V2ClientRecordPage() {
   const { layout, memberships } = useV2Chrome();
   const [location] = useLocation();
@@ -567,15 +607,26 @@ export function V2ClientRecordPage() {
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const readOnly = current?.condition === "Read-only";
   const [editing, setEditing] = useState(false);
-  const [addingContact, setAddingContact] = useState(false);
-  const [draft, setDraft] = useState({ email: "", phone: "", company: "", notes: "", source: "", fiverrUsername: "" });
+  /** `"new"` while adding a contact, a contact's id while editing it. */
+  const [contactDialog, setContactDialog] = useState<string | null>(null);
+  const addingContact = contactDialog !== null;
+  const [draft, setDraft] = useState({ name: "", status: "lead", email: "", phone: "", company: "", notes: "", source: "", fiverrUsername: "" });
   const [contactDraft, setContactDraft] = useState({ name: "", role: "", email: "", phone: "", isPrimary: false });
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
   const seed = registerSeed(clientId);
   const sourceOptions = useClientSourceOptions();
 
-  const { data: client, isLoading, isError } = useQuery<ClientWithContacts | null>({
+  const { data: projectFields = [] } = useQuery<Array<{ slug: string; options?: string[] | null }>>({
+    queryKey: ["/api/modules/projects/fields"],
+  });
+  const statusField = projectFields.find((field) => field.slug === "status");
+  const stages = useMemo(
+    () => composeOpportunityStages(stageOptionsFromFieldOptions(statusField?.options)),
+    [statusField],
+  );
+
+  const { data: client, isLoading, isError, refetch } = useQuery<ClientWithContacts | null>({
     queryKey: ["/api/crm/clients", clientId],
     enabled: Boolean(clientId),
     queryFn: async () => {
@@ -602,6 +653,8 @@ export function V2ClientRecordPage() {
   function resetDraft() {
     if (!client) return;
     setDraft({
+      name: client.name,
+      status: client.status ?? "lead",
       email: client.email ?? "",
       phone: client.phone ?? "",
       company: client.company ?? "",
@@ -630,6 +683,8 @@ export function V2ClientRecordPage() {
 
   const updateClient = useMutation({
     mutationFn: () => apiRequest("PATCH", `/api/crm/clients/${clientId}`, {
+      name: draft.name.trim(),
+      status: draft.status,
       email: draft.email || null,
       phone: draft.phone || null,
       company: draft.company || null,
@@ -647,23 +702,56 @@ export function V2ClientRecordPage() {
     onError: onWriteError,
   });
 
+  const contactBody = () => ({
+    name: contactDraft.name.trim(),
+    role: contactDraft.role || null,
+    email: contactDraft.email || null,
+    phone: contactDraft.phone || null,
+    isPrimary: contactDraft.isPrimary ? 1 : 0,
+  });
+
   const createContact = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/crm/clients/${clientId}/contacts`, {
-      name: contactDraft.name.trim(),
-      role: contactDraft.role || null,
-      email: contactDraft.email || null,
-      phone: contactDraft.phone || null,
-      isPrimary: contactDraft.isPrimary ? 1 : 0,
-    }),
+    mutationFn: () => apiRequest("POST", `/api/crm/clients/${clientId}/contacts`, contactBody()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/clients", clientId] });
       setContactDraft({ name: "", role: "", email: "", phone: "", isPrimary: false });
-      setAddingContact(false);
+      setContactDialog(null);
       setWriteRefusal(null);
       notify.success("Contact added");
     },
     onError: onWriteError,
   });
+
+  const updateContact = useMutation({
+    mutationFn: (contactId: string) => apiRequest("PATCH", `/api/crm/contacts/${contactId}`, contactBody()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/clients", clientId] });
+      setContactDialog(null);
+      setWriteRefusal(null);
+      notify.success("Contact saved");
+    },
+    onError: onWriteError,
+  });
+
+  function openAddContact() {
+    setWriteRefusal(null);
+    setContactDraft({ name: "", role: "", email: "", phone: "", isPrimary: false });
+    setContactDialog("new");
+  }
+
+  function openEditContact(contact: { id: string; name: string; role: string | null; email: string | null; phone: string | null; primary: boolean }) {
+    setWriteRefusal(null);
+    setContactDraft({
+      name: contact.name,
+      role: contact.role ?? "",
+      email: contact.email ?? "",
+      phone: contact.phone ?? "",
+      isPrimary: contact.primary,
+    });
+    setContactDialog(contact.id);
+  }
+
+  const editingContact = contactDialog !== null && contactDialog !== "new";
 
   const record = composeClientRecord({
     client: client
@@ -703,10 +791,62 @@ export function V2ClientRecordPage() {
       id: project.id,
       name: project.project?.name || "Untitled Project",
       projectStatus: project.projectStatus,
+      combinedStatus: project.status,
+      isDocumentationOnly: project.isDocumentationOnly,
     })),
+    stages,
   });
 
+  const editContactButton = (contact: (typeof record.contacts)[number]) => (
+    <Button
+      variant="ghost"
+      size="icon"
+      type="button"
+      className="df-btn"
+      aria-label={`Edit ${contact.name}`}
+      onClick={() => openEditContact(contact)}
+    >
+      <Pencil width={16} height={16} strokeWidth={1.6} aria-hidden />
+    </Button>
+  );
+
   if (!clientId) return <Redirect to="/clients" />;
+
+  if (record.missing || record.unavailable) {
+    const back = (
+      <Button variant="outline" className="df-btn" asChild>
+        <Link href="/clients">Back to Clients</Link>
+      </Button>
+    );
+    return (
+      <div className="df-page" data-testid="v2-client-record">
+        {record.unavailable ? (
+          <V2EmptyState
+            icon="clients"
+            title="This Client could not be loaded."
+            copy="Something went wrong while loading it. Try again, or go back to Clients."
+            testId="v2-client-load-failed"
+            action={
+              <span className="df-cluster">
+                <Button variant="default" type="button" className="df-btn" onClick={() => refetch()}>
+                  Try again
+                </Button>
+                {back}
+              </span>
+            }
+          />
+        ) : (
+          <V2EmptyState
+            icon="clients"
+            title="This Client is not in this Workspace, or it was deleted."
+            copy="Check the link, or find it in Clients."
+            testId="v2-client-missing"
+            action={back}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div data-testid="v2-client-record">
@@ -714,35 +854,13 @@ export function V2ClientRecordPage() {
         <div className="df-dossier-identity df-client-identity">
           <div className="df-dossier-copy">
             {record.identity ? (
-              <>
-                <div className="df-dossier-meta">
-                  <span className="df-status">{record.identity.kindLabel}</span>
-                  <span className="df-status" data-status={record.identity.status} data-swatch="" style={swatchStyle(record.identity.statusColor)}>
-                    {record.identity.status}
-                  </span>
-                </div>
-                <div className="df-dossier-title-row">
-                  <h1 className="df-record-title">{record.identity.title}</h1>
-                </div>
-                <div className="df-dossier-provenance">
-                  <span className="df-mono df-meta">{record.identity.company}</span>
-                  {record.identity.email ? (
-                    <span className="df-mono df-meta">{record.identity.email}</span>
-                  ) : null}
-                  <span className="df-source-cell">
-                    <SourceMark value={record.identity.sourceValue} />
-                    <span className="df-mono df-meta">{record.identity.source}</span>
-                  </span>
-                  {record.identity.phone ? <span className="df-mono df-meta">{record.identity.phone}</span> : null}
-                  {record.identity.fiverrUsername ? <span className="df-mono df-meta">Fiverr @{record.identity.fiverrUsername}</span> : null}
-                </div>
-              </>
-            ) : (
-              <>
-                <h1 className="df-record-title">{record.unavailable ? "Client unavailable" : "Client not found"}</h1>
-                <p className="df-subhead">{record.emptyCopy}</p>
-              </>
-            )}
+              <div className="df-dossier-title-row">
+                <h1 className="df-record-title">{record.identity.title}</h1>
+                <span className="df-status" data-status={record.identity.status} data-swatch="" style={swatchStyle(record.identity.statusColor)}>
+                  {record.identity.status}
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
       </header>
@@ -753,14 +871,13 @@ export function V2ClientRecordPage() {
           <div className="df-overview" aria-busy="true">
             <div className="df-stack">
               <SkeletonSection title="Client details" lines={4} />
-              <SkeletonSection title="On this Client" lines={3} />
+              <SkeletonSection title="Contacts" lines={3} />
             </div>
             <div className="df-stack">
+              <SkeletonSection title="Opportunities" lines={2} />
               <SkeletonSection title="Client Projects" lines={2} />
             </div>
           </div>
-        ) : record.missing || record.unavailable ? (
-          <p className="df-empty">{record.emptyCopy}</p>
         ) : (
           <div className="df-overview">
             <div className="df-stack">
@@ -776,10 +893,10 @@ export function V2ClientRecordPage() {
                   open={editing}
                   onOpenChange={setEditing}
                   title="Edit Client"
-                  description={`How to reach ${record.identity?.title ?? "this Client"}, and where they came from.`}
+                  description="Who this Client is, how to reach them, and where they came from."
                   submitLabel="Save Client"
                   pending={updateClient.isPending}
-                  canSubmit
+                  canSubmit={Boolean(draft.name.trim())}
                   onSubmit={() => {
                     if (readOnly) return refuse();
                     updateClient.mutate();
@@ -787,13 +904,36 @@ export function V2ClientRecordPage() {
                   refusal={writeRefusal}
                   testId="v2-client-edit"
                 >
-                  {DETAIL_FIELDS.map((field, index) => (
+                  <label className="df-daily-field">
+                    Name
+                    <input
+                      type="text"
+                      value={draft.name}
+                      maxLength={CRM_CLIENT_LIMITS.name}
+                      autoFocus
+                      placeholder="Client name"
+                      aria-label="Client name"
+                      onChange={(event) => setDraft((value) => ({ ...value, name: event.target.value }))}
+                    />
+                  </label>
+                  <label className="df-daily-field">
+                    Status
+                    <V2FilterSelect
+                      label=""
+                      ariaLabel="Client status"
+                      value={draft.status}
+                      options={CLIENT_STATUS_OPTIONS}
+                      onChange={(next) => setDraft((value) => ({ ...value, status: next }))}
+                    />
+                  </label>
+                  {DETAIL_FIELDS.map((field) => (
                     <label key={field.id} className="df-daily-field">
                       {field.label}
                       <input
                         type={field.type}
                         value={draft[field.id]}
-                        autoFocus={index === 0}
+                        maxLength={field.maxLength}
+                        pattern={field.type === "tel" ? CRM_PHONE_HTML_PATTERN : undefined}
                         placeholder={field.placeholder}
                         aria-label={`Client ${field.id}`}
                         onChange={(event) => setDraft((value) => ({ ...value, [field.id]: event.target.value }))}
@@ -816,6 +956,7 @@ export function V2ClientRecordPage() {
                       <input
                         type="text"
                         value={draft.fiverrUsername}
+                        maxLength={CRM_CLIENT_LIMITS.fiverrUsername}
                         placeholder="username"
                         aria-label="Fiverr username"
                         onChange={(event) => setDraft((value) => ({ ...value, fiverrUsername: event.target.value }))}
@@ -826,6 +967,7 @@ export function V2ClientRecordPage() {
                     Notes
                     <textarea
                       value={draft.notes}
+                      maxLength={CRM_CLIENT_LIMITS.notes}
                       placeholder="What to know about this Client"
                       aria-label="Client notes"
                       onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))}
@@ -857,32 +999,29 @@ export function V2ClientRecordPage() {
 
               <section className="df-card df-client-contacts">
                 <div className="df-card-head">
-                  <h2 className="df-card-title">On this Client</h2>
-                  <span className="df-mono df-meta">{record.contacts.length}</span>
-                  <Button
-                    variant="outline"
-                    type="button"
-                    onClick={() => {
-                      setWriteRefusal(null);
-                      setAddingContact(true);
-                    }}
-                    className="df-btn"
-                  >
+                  <span className="df-client-card-title">
+                    <h2 className="df-card-title">Contacts</h2>
+                    <span className="df-count-chip">{record.contacts.length}</span>
+                  </span>
+                  <Button variant="outline" type="button" onClick={openAddContact} className="df-btn">
                     <Plus strokeWidth={1.6} aria-hidden />
                     Add contact
                   </Button>
                 </div>
                 <V2FormDialog
                   open={addingContact}
-                  onOpenChange={setAddingContact}
-                  title="Add contact"
+                  onOpenChange={(open) => {
+                    if (!open) setContactDialog(null);
+                  }}
+                  title={editingContact ? "Edit contact" : "Add contact"}
                   description={`A person to reach at ${record.identity?.title ?? "this Client"}.`}
-                  submitLabel="Create contact"
-                  pending={createContact.isPending}
+                  submitLabel={editingContact ? "Save contact" : "Create contact"}
+                  pending={createContact.isPending || updateContact.isPending}
                   canSubmit={Boolean(contactDraft.name.trim())}
                   onSubmit={() => {
                     if (readOnly) return refuse();
-                    createContact.mutate();
+                    if (editingContact && contactDialog) updateContact.mutate(contactDialog);
+                    else createContact.mutate();
                   }}
                   refusal={writeRefusal}
                   testId="v2-client-add-contact"
@@ -893,6 +1032,8 @@ export function V2ClientRecordPage() {
                       <input
                         type={field.type}
                         value={contactDraft[field.id]}
+                        maxLength={field.maxLength}
+                        pattern={field.type === "tel" ? CRM_PHONE_HTML_PATTERN : undefined}
                         autoFocus={index === 0}
                         placeholder={field.placeholder}
                         aria-label={`Contact ${field.id}`}
@@ -927,6 +1068,7 @@ export function V2ClientRecordPage() {
                           </div>
                         </span>
                       </span>
+                      {editContactButton(contact)}
                     </div>
                   ))
                 ) : (
@@ -958,6 +1100,7 @@ export function V2ClientRecordPage() {
                       <span className="df-contact-role">{contact.role ?? "—"}</span>
                       <span className="df-contact-badges">
                         {contact.primary ? <span className="df-flag">PRIMARY</span> : null}
+                        {editContactButton(contact)}
                       </span>
                     </div>
                   ))}
@@ -966,22 +1109,38 @@ export function V2ClientRecordPage() {
               </section>
             </div>
 
-            <section className="df-card">
-              <div className="df-card-head">
-                <h2 className="df-card-title">Client Projects</h2>
-                <span className="df-mono df-meta">{record.projects.length}</span>
-              </div>
-              {record.projects.length === 0 ? (
-                <p className="df-empty">{record.projectsEmptyCopy}</p>
-              ) : (
-                record.projects.map((project) => (
+            <div className="df-stack">
+              <ClientPreviewCard
+                title="Opportunities"
+                rows={record.opportunities}
+                emptyCopy={record.opportunitiesEmptyCopy}
+                testId="v2-client-opportunities"
+                renderRow={(opportunity) => (
+                  <Link key={opportunity.id} href={opportunity.href} className="df-register-row">
+                    <span className="df-row-title">{opportunity.name}</span>
+                    <span
+                      className="df-stage-pill"
+                      data-ink={opportunity.ink}
+                      style={{ "--df-stage": opportunity.fill } as CSSProperties}
+                    >
+                      {opportunity.stage}
+                    </span>
+                  </Link>
+                )}
+              />
+              <ClientPreviewCard
+                title="Client Projects"
+                rows={record.projects}
+                emptyCopy={record.projectsEmptyCopy}
+                testId="v2-client-projects"
+                renderRow={(project) => (
                   <Link key={project.id} href={project.href} className="df-register-row">
                     <span className="df-row-title">{project.name}</span>
                     <span className="df-status-word" data-swatch="" style={swatchStyle(project.statusColor)}>{project.status}</span>
                   </Link>
-                ))
-              )}
-            </section>
+                )}
+              />
+            </div>
           </div>
         )}
       </div>

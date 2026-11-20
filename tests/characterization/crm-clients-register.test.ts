@@ -87,4 +87,26 @@ describe("the Clients register page (#275)", () => {
     expect(await names({ sort: "created" })).toEqual(["Zephyr", "Alder"]);
     expect(await names({ sort: "created", dir: "desc" })).toEqual(["Alder", "Zephyr"]);
   });
+
+  it("counts won rows only: open and lost sales are Opportunities, not Projects (F32)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const sales = await createClient(user.agent, { name: "Sales only" });
+    const delivering = await createClient(user.agent, { name: "Delivering" });
+    await createCrmProject(user.agent, { name: "Open sale", clientId: sales.id, status: "proposal_sent" });
+    await createCrmProject(user.agent, { name: "Lost sale", clientId: sales.id, status: "lost" });
+    await createCrmProject(user.agent, { name: "Open sale 2", clientId: delivering.id, status: "lead" });
+    await createCrmProject(user.agent, { name: "Won job", clientId: delivering.id, status: "won_in_progress" });
+    const page = async (query: Record<string, string>) =>
+      (await user.agent.get("/api/crm/clients").query({ page: 1, ...query })).body.data.map(
+        (client: { name: string; projectCount: number }) => [client.name, client.projectCount],
+      );
+
+    expect(await page({})).toEqual([
+      ["Delivering", 1],
+      ["Sales only", 0],
+    ]);
+    expect(await page({ openProjects: "yes" })).toEqual([["Delivering", 1]]);
+    expect(await page({ openProjects: "no" })).toEqual([["Sales only", 0]]);
+  });
 });

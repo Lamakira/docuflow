@@ -492,12 +492,59 @@ export const crmClientsRelations = relations(crmClients, ({ one, many }) => ({
   opportunities: many(opportunities),
 }));
 
-export const insertCrmClientSchema = createInsertSchema(crmClients).omit({
-  id: true,
-  workspaceId: true,
-  ownerId: true,
-  createdAt: true,
-  updatedAt: true,
+export const crmClientStatusValues = ["lead", "prospect", "client", "client_recurrent"] as const;
+export const crmPhoneFormatValues = ["us", "international", "eu", "none"] as const;
+
+/** Character limits of the Client and Contact text fields; the v2 forms reuse them. */
+export const CRM_CLIENT_LIMITS = {
+  name: 255,
+  company: 255,
+  email: 255,
+  phone: 50,
+  fiverrUsername: 100,
+  source: 50,
+  notes: 10000,
+  role: 100,
+} as const;
+
+/** Digits, spaces and + ( ) . - /, with at least one digit. */
+export const CRM_PHONE_PATTERN = /^\+?[0-9 ().\-/]*[0-9][0-9 ().\-/]*$/;
+
+/** The same rule as an HTML `pattern`: anchored by the browser, every class character escaped for the `v` flag. */
+export const CRM_PHONE_HTML_PATTERN = "\\+?[0-9 \\(\\)\\.\\-\\/]*[0-9][0-9 \\(\\)\\.\\-\\/]*";
+
+const requiredText = (max: number) => z.string().trim().min(1, "Required").max(max);
+
+/** Optional, nullable text: trimmed, and a blank value is stored as null. */
+const optionalText = (max: number, check?: { test: (value: string) => boolean; message: string }) => {
+  let text: z.ZodTypeAny = z.string().trim().max(max);
+  if (check) text = text.refine((value: string) => value === "" || check.test(value), check.message);
+  return text
+    .nullish()
+    .transform((value: string | null | undefined) => (value === undefined ? undefined : value || null)) as z.ZodEffects<
+    z.ZodOptional<z.ZodNullable<z.ZodString>>,
+    string | null | undefined,
+    string | null | undefined
+  >;
+};
+
+const emailCheck = { test: (value: string) => z.string().email().safeParse(value).success, message: "Invalid email" };
+const phoneCheck = { test: (value: string) => CRM_PHONE_PATTERN.test(value), message: "Invalid phone number" };
+
+export const insertCrmClientSchema = z.object({
+  name: requiredText(CRM_CLIENT_LIMITS.name),
+  company: optionalText(CRM_CLIENT_LIMITS.company),
+  email: optionalText(CRM_CLIENT_LIMITS.email, emailCheck),
+  phone: optionalText(CRM_CLIENT_LIMITS.phone, phoneCheck),
+  phoneFormat: z.enum(crmPhoneFormatValues).optional(),
+  notes: z
+    .string()
+    .max(CRM_CLIENT_LIMITS.notes)
+    .nullish()
+    .transform((value) => (value === undefined ? undefined : value?.trim() ? value : null)),
+  status: z.enum(crmClientStatusValues).optional(),
+  source: optionalText(CRM_CLIENT_LIMITS.source),
+  fiverrUsername: optionalText(CRM_CLIENT_LIMITS.fiverrUsername),
 });
 
 export type CrmClient = typeof crmClients.$inferSelect;
@@ -527,11 +574,16 @@ export const crmContactsRelations = relations(crmContacts, ({ one }) => ({
   }),
 }));
 
-export const insertCrmContactSchema = createInsertSchema(crmContacts).omit({
-  id: true,
-  workspaceId: true,
-  createdAt: true,
-  updatedAt: true,
+export const insertCrmContactSchema = z.object({
+  clientId: z.string(),
+  name: requiredText(CRM_CLIENT_LIMITS.name),
+  role: optionalText(CRM_CLIENT_LIMITS.role),
+  email: optionalText(CRM_CLIENT_LIMITS.email, emailCheck),
+  phone: optionalText(CRM_CLIENT_LIMITS.phone, phoneCheck),
+  isPrimary: z
+    .union([z.boolean(), z.literal(0), z.literal(1)])
+    .transform((value) => Number(value))
+    .optional(),
 });
 
 export type CrmContact = typeof crmContacts.$inferSelect;

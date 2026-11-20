@@ -778,11 +778,14 @@ export class DatabaseStorage implements IStorage {
     options: CrmClientListOptions,
   ): Promise<{ data: CrmClientRegisterRow[]; total: number; page: number; pageSize: number }> {
     const { page, pageSize } = options;
-    // The Projects register's rows: documentation-only Projects are not delivery work.
+    // The Client Projects: documentation-only Projects are not delivery work,
+    // and a row is a Client Project only once its Opportunity is won (open and
+    // lost sales are Opportunities, not Projects).
     const clientProjects = sql`from ${crmProjects}
       where ${crmProjects.clientId} = ${crmClients.id}
         and ${crmProjects.workspaceId} = ${crmClients.workspaceId}
-        and coalesce(${crmProjects.isDocumentationOnly}, 0) = 0`;
+        and coalesce(${crmProjects.isDocumentationOnly}, 0) = 0
+        and ${crmProjects.status} like 'won%'`;
     const projectCount = sql<number>`(select count(*)::int ${clientProjects})`;
     const hasOpenProject = sql`exists (select 1 ${clientProjects}
       and ${crmProjects.projectStatus} not in ('completed', 'archived'))`;

@@ -2832,6 +2832,34 @@ button.df-activity-row {
   grid-template-columns: 1.6fr 1fr;
 }
 
+.df-client-company {
+  font-weight: 500;
+  font-size: var(--df-text-3);
+}
+
+.df-client-count {
+  font-size: var(--df-text-2);
+}
+
+/* Title and count chip sit together at the left of a card head. */
+.df-client-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-3);
+  min-width: 0;
+}
+
+.df-client-card-more {
+  display: flex;
+  justify-content: center;
+  padding: var(--df-space-2) var(--df-space-4);
+}
+
+/* A Contact row with an edit button: the button takes the end of the row. */
+.df-client-record-body .df-register-row:has(> .df-btn) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 /* The Contact register carries four columns, so it overrides the two-column
    default above — same weight, so it has to come after it. Distinct from
    `.df-contact-row`, which is the Dossier's flex contact line. Head and row
