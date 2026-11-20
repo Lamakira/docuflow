@@ -48,6 +48,10 @@ export function isStandingRefusal(error: unknown): boolean {
 type NotifyOptions = {
   /** A toast with the same id replaces the one on screen rather than stacking. */
   id?: string;
+  /** A button in the toast, e.g. Undo. */
+  action?: { label: string; onClick: () => void };
+  /** How long it stays, in ms; a toast with an action needs time to be reached. */
+  duration?: number;
 };
 
 export const notify = {

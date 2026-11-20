@@ -35,12 +35,22 @@ export function V2EmptyState({ icon, title, copy, action, testId }: V2EmptyState
  * Filters hide every row (#325): one short line and the way out, compact
  * enough to sit where the rows would.
  */
-export function V2FilteredEmpty({ copy, onClear, testId }: { copy: string; onClear: () => void; testId?: string }) {
+export function V2FilteredEmpty({
+  copy,
+  onClear,
+  clearLabel = "Clear filters",
+  testId,
+}: {
+  copy: string;
+  onClear: () => void;
+  clearLabel?: string;
+  testId?: string;
+}) {
   return (
     <div className="df-empty-state" data-testid={testId}>
       <p className="df-empty">{copy}</p>
       <Button variant="outline" type="button" className="df-btn" onClick={onClear}>
-        Clear filters
+        {clearLabel}
       </Button>
     </div>
   );
@@ -60,7 +70,7 @@ export function V2CompactEmpty({ children, testId }: { children: ReactNode; test
 
 /**
  * The empty list of a record screen, whichever of the three cases it is in:
- * the designed state, the filtered line with Clear filters, or the designed
+ * the designed state, the filtered line with its Clear button, or the designed
  * Range state whose action widens the Range. `action` is the screen's primary
  * action, already gated to the readers who may take it; the designed state
  * shows no button without one. `onWiden` is omitted when no Range is wider.
@@ -81,7 +91,16 @@ export function V2RecordEmpty({
   /** A test id per case; the designed state is the one most screens pin. */
   testIds?: Partial<Record<EmptyKind, string>>;
 }) {
-  if (model.kind === "filtered") return <V2FilteredEmpty copy={model.copy} onClear={onClear} testId={testIds?.filtered} />;
+  if (model.kind === "filtered") {
+    return (
+      <V2FilteredEmpty
+        copy={model.copy}
+        onClear={onClear}
+        clearLabel={model.clearLabel ?? "Clear filters"}
+        testId={testIds?.filtered}
+      />
+    );
+  }
   if (model.kind === "range") {
     const widen =
       model.widenLabel && onWiden ? (

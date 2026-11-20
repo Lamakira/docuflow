@@ -17,8 +17,8 @@ import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { clientHref } from "./clients";
 import { formatDayStamp, formatSpan, formatWhen, noteName, parseDate } from "./dossier";
 import { readProjectBudget } from "./projects";
-import { stageColor, stageInk } from "./stageColor";
-import { memberName, projectHref } from "./today";
+import { stageColor, stagePill } from "./stageColor";
+import { memberName, nameInitials, projectHref } from "./today";
 
 /**
  * Opportunities pipeline (#187).
@@ -44,6 +44,11 @@ export type OpportunityPipelineRowInput = {
   isDocumentationOnly: number | null;
   estimatedValueMinor?: number | null;
   estimatedValueCurrency?: string | null;
+  /** When the row last changed: Won and Lost columns list the most recent first. */
+  updatedAt?: string | Date | null;
+  ownerName?: string | null;
+  /** The Expected close, a date-only field stored at UTC midnight. */
+  closeDate?: string | Date | null;
 };
 
 export type OpportunityPipelineInput = {
@@ -51,7 +56,13 @@ export type OpportunityPipelineInput = {
   rows: OpportunityPipelineRowInput[];
   filterQuery: string;
   changingId: string | null;
+  /** Won and Lost columns the reader opened past their first {@link TERMINAL_PREVIEW} cards. */
+  expandedColumns?: ReadonlySet<string>;
+  now: Date;
 };
+
+/** How many cards a Won or Lost column shows before "Show all". */
+export const TERMINAL_PREVIEW = 10;
 
 export type OpportunityCard = {
   id: string;
@@ -66,6 +77,12 @@ export type OpportunityCard = {
   changing: boolean;
   /** The Estimated value, formatted in its own currency. */
   valueLabel: string | null;
+  ownerName: string | null;
+  ownerInitials: string | null;
+  /** "12 Dec 2026", the record's Expected close format. */
+  closeLabel: string | null;
+  /** Open stages only: the close date is before today (UTC). */
+  closeOverdue: boolean;
 };
 
 /** One option of a Pipeline & lists list, as a select offers it. */
@@ -121,7 +138,8 @@ export function composeOpportunityRecord(input: OpportunityRecordInput): Opportu
   const close = parseDate(input.dueDate ?? null);
   const isLost = stage === "lost";
   const lost = isLost && input.lostReason;
-  const color = stageColor(stage, input.stages?.find((option) => option.id === stage)?.color);
+  // The pill's fill steps darker where neither ink clears 4.5:1 (F29).
+  const { fill: color, ink } = stagePill(stageColor(stage, input.stages?.find((option) => option.id === stage)?.color));
   return {
     id: input.id,
     title: input.name || "Untitled Opportunity",
@@ -130,7 +148,7 @@ export function composeOpportunityRecord(input: OpportunityRecordInput): Opportu
     stageId: stage,
     stage: stageLabel(stage).toUpperCase(),
     stageColor: color,
-    stageInk: stageInk(color),
+    stageInk: ink,
     terminal: isOpportunityTerminal(stage),
     fields: [
       { label: "Owner", value: input.owner ? memberName(input.owner) : "Not set" },
@@ -164,6 +182,10 @@ export type OpportunityColumn = {
   color: string;
   ink: "light" | "dark";
   cards: OpportunityCard[];
+  /** Every card the column holds, shown or not. */
+  total: number;
+  /** Cards a Won or Lost column leaves behind "Show all". */
+  hiddenCount: number;
 };
 
 export type OpportunityPipelineModel = {
@@ -276,8 +298,8 @@ function stageColumn(
   configured?: string,
   locked = false,
 ): OpportunityColumn {
-  const color = stageColor(id, configured);
-  return { id, label, terminal, locked, color, ink: stageInk(color), cards: [] };
+  const { fill: color, ink } = stagePill(stageColor(id, configured));
+  return { id, label, terminal, locked, color, ink, cards: [], total: 0, hiddenCount: 0 };
 }
 
 export function composeOpportunityPipeline(input: OpportunityPipelineInput): OpportunityPipelineModel {
@@ -288,6 +310,7 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
     stageColumn(stage.id, stage.label, stage.terminal || isOpportunityTerminal(stage.id), stage.color),
   );
   const columnById = new Map(columns.map((column) => [column.id, column]));
+  const updatedAtById = new Map<string, number | null>();
 
   for (const row of input.rows) {
     if (
@@ -320,6 +343,11 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
     }
 
     const terminal = column.terminal;
+    const close = parseDate(row.closeDate ?? null);
+    const ownerName = row.ownerName?.trim() || null;
+    const today = input.now ?? new Date();
+    const todayStart = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+    updatedAtById.set(row.id, parseDate(row.updatedAt ?? null)?.getTime() ?? null);
     column.cards.push({
       id: row.id,
       name: row.name || "Untitled Opportunity",
@@ -332,20 +360,52 @@ export function composeOpportunityPipeline(input: OpportunityPipelineInput): Opp
       recordHref: opportunityHref(row.id),
       changing: row.id === input.changingId,
       valueLabel: estimatedValueLabel(row.estimatedValueMinor, row.estimatedValueCurrency),
+      ownerName,
+      ownerInitials: ownerName ? nameInitials(ownerName) : null,
+      closeLabel: close ? formatCloseDate(close) : null,
+      closeOverdue: !terminal && close !== null && close.getTime() < todayStart,
     });
   }
 
-  const count = columns.reduce((sum, column) => sum + column.cards.length, 0);
+  for (const column of columns) {
+    column.total = column.cards.length;
+    if (!column.terminal) continue;
+    column.cards.sort((a, b) => (updatedAtById.get(b.id) ?? 0) - (updatedAtById.get(a.id) ?? 0));
+    const capped = !needle && !input.expandedColumns?.has(column.id) && column.cards.length > TERMINAL_PREVIEW;
+    if (capped) {
+      column.hiddenCount = column.cards.length - TERMINAL_PREVIEW;
+      column.cards = column.cards.slice(0, TERMINAL_PREVIEW);
+    }
+  }
+
+  const count = columns.reduce((sum, column) => sum + column.total, 0);
   const empty = count === 0;
   return {
     empty,
     emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle)), "Opportunities", {
       title: "Add your first Opportunity",
       copy: "An Opportunity is a sale in the pipeline. Add one to follow it from lead to won.",
-    }),
+    }, undefined, { searchOnly: true }),
     columns,
     count,
   };
+}
+
+/**
+ * The open stage a Lost Opportunity goes back to by default: the one it left
+ * when it was last marked Lost, else the first open stage.
+ */
+export function reopenStageOf(
+  changes: Array<{ fromStatus: string | null; toStatus: string; changedAt: string | Date | null }>,
+  stages: OpportunityStageOption[],
+): string {
+  const open = stages.filter((stage) => !stage.terminal && !isOpportunityTerminal(stage.id));
+  const lastLoss = changes
+    .filter((change) => opportunityStageFromCombined(change.toStatus) === "lost")
+    .sort((a, b) => (parseDate(b.changedAt)?.getTime() ?? 0) - (parseDate(a.changedAt)?.getTime() ?? 0))[0];
+  const from = lastLoss?.fromStatus ? opportunityStageFromCombined(lastLoss.fromStatus) : null;
+  if (from && open.some((stage) => stage.id === from)) return from;
+  return open[0]?.id ?? "lead";
 }
 
 export function opportunityWriteRefusal(input: {
@@ -715,8 +775,8 @@ export function composeOpportunityHistory(
   const describe = (combined: string) => {
     const stage = opportunityStageFromCombined(combined);
     const spec = stages.find((option) => option.id === stage);
-    const color = stageColor(stage, spec?.color);
-    return { label: (spec?.label ?? stageLabel(stage)).toUpperCase(), color, ink: stageInk(color) };
+    const { fill: color, ink } = stagePill(stageColor(stage, spec?.color));
+    return { label: (spec?.label ?? stageLabel(stage)).toUpperCase(), color, ink };
   };
   const moves = changes
     .filter((change) => !change.fromStatus || opportunityStageFromCombined(change.fromStatus) !== opportunityStageFromCombined(change.toStatus))

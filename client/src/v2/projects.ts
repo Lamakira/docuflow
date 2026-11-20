@@ -1,5 +1,5 @@
 import { projectStatusFromCombined } from "@shared/projectLifecycle";
-import { stageColor, stageInk } from "./stageColor";
+import { stageColor, stagePill } from "./stageColor";
 import { projectStatusColor } from "./palette";
 import { budgetedHoursTotal, projectHref } from "./today";
 import { readPage, readPageSize, writePaging } from "./paging";
@@ -428,8 +428,9 @@ export type ProjectBoardColumn = {
 };
 
 function boardColumn(id: string, label: string): ProjectBoardColumn {
-  const color = stageColor(id);
-  return { id, label, color, ink: stageInk(color), cards: [] };
+  // The pill's fill steps darker where neither ink clears 4.5:1 (F29).
+  const { fill: color, ink } = stagePill(stageColor(id));
+  return { id, label, color, ink, cards: [] };
 }
 
 export type ProjectBoardModel = {
@@ -474,7 +475,9 @@ export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel
   const empty = count === 0;
   return {
     empty,
-    emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle)), "Projects", PROJECTS_NONE),
+    emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle)), "Projects", PROJECTS_NONE, undefined, {
+      searchOnly: true,
+    }),
     columns,
     count,
   };

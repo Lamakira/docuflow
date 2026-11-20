@@ -14,6 +14,8 @@ import {
   opportunityWriteRefusal,
   stageOptionsFromFieldOptions,
   opportunityHref,
+  reopenStageOf,
+  TERMINAL_PREVIEW,
   composeOpportunityRecord,
   type OpportunityPipelineInput,
   type OpportunityPipelineRowInput,
@@ -45,6 +47,7 @@ function emptyPipeline(overrides: Partial<OpportunityPipelineInput> = {}): Oppor
     rows: [],
     filterQuery: "",
     changingId: null,
+    now: new Date("2026-11-19T10:00:00Z"),
     ...overrides,
   };
 }
@@ -55,6 +58,10 @@ const appSource = readFileSync(
 );
 const pageSource = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/V2Opportunities.tsx"),
+  "utf8",
+);
+const notifySource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../../client/src/v2/notify.ts"),
   "utf8",
 );
 const commandBarSource = readFileSync(
@@ -172,9 +179,9 @@ describe("Opportunity record (#213)", () => {
     expect(pageSource).toMatch(/variant="default"[^>]*onClick=\{\(\) => onOutcomeButton\("won"\)\}/);
     expect(pageSource).toMatch(/variant="outline"[^>]*onClick=\{\(\) => onOutcomeButton\("lost"\)\}/);
     expect(pageSource).toContain("else setOutcome({ kind, row });");
-    expect(pageSource).toContain("Neither can be moved back to an open stage.");
+    expect(pageSource).toContain("A won Opportunity stays won; a lost one can be reopened.");
     expect(pageSource).toContain("Won: it is now a Client Project.");
-    expect(pageSource).toContain("Lost. The reason stays with the Opportunity.");
+    expect(pageSource).toContain("Lost. The reason stays with the Opportunity until it is reopened.");
     expect(pageSource).not.toContain('<span className="df-settings-label">Stage</span>');
   });
 
@@ -392,7 +399,8 @@ describe("Opportunity Stage-change motion (#187)", () => {
     expect(rule(".df-opportunity-pipeline")).toMatch(/transition:\s*none/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/animation:\s*none/);
     expect(rule(".df-opportunity-pipeline")).toMatch(/scroll-behavior:\s*auto/);
-    expect(rule(".df-opportunity-pipeline")).toMatch(/scrollbar-width:\s*none/);
+    // The board's horizontal bar stays visible (F25): never hidden.
+    expect(rule(".df-opportunity-pipeline")).not.toMatch(/scrollbar-width/);
     // As on Trello (F25): the board fills the page, every column is its height, and a
     // long column scrolls inside itself, during a drag too.
     expect(rule(".df-opportunity-pipeline")).toMatch(/align-items:\s*stretch/);
@@ -541,5 +549,92 @@ describe("v1 statuses the lifecycle maps once did not know (#372)", () => {
     for (const id of ["won_in_review_pm", "won_in_review_client", "in_negociation"]) {
       expect(column(id)).toBeUndefined();
     }
+  });
+});
+
+describe("Opportunities pipeline polish (F25, F27, F28, F30, F31)", () => {
+  const lostRows = (count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      row({
+        id: `lost-${index}`,
+        name: `Lost ${index}`,
+        combinedStatus: "lost",
+        updatedAt: new Date(Date.UTC(2026, 0, 1 + index)).toISOString(),
+      }),
+    );
+  const lostColumn = (input: Partial<OpportunityPipelineInput>) =>
+    composeOpportunityPipeline(emptyPipeline(input)).columns.find((column) => column.id === "lost")!;
+
+  it("keeps the 10 most recent cards of a Won or Lost column and says how many are left", () => {
+    const column = lostColumn({ rows: lostRows(22) });
+    expect(TERMINAL_PREVIEW).toBe(10);
+    expect(column.cards).toHaveLength(10);
+    expect(column.cards[0].id).toBe("lost-21");
+    expect(column.total).toBe(22);
+    expect(column.hiddenCount).toBe(12);
+    expect(composeOpportunityPipeline(emptyPipeline({ rows: lostRows(22) })).count).toBe(22);
+  });
+
+  it("shows every card once expanded, and never caps a search", () => {
+    const expanded = lostColumn({ rows: lostRows(22), expandedColumns: new Set(["lost"]) });
+    expect(expanded.cards).toHaveLength(22);
+    expect(expanded.hiddenCount).toBe(0);
+    const searched = lostColumn({ rows: lostRows(22), filterQuery: "Lost" });
+    expect(searched.cards).toHaveLength(22);
+    expect(searched.hiddenCount).toBe(0);
+    expect(lostColumn({ rows: lostRows(10) }).hiddenCount).toBe(0);
+  });
+
+  it("puts rows without a date last", () => {
+    const column = lostColumn({ rows: [row({ id: "none", combinedStatus: "lost" }), ...lostRows(2)] });
+    expect(column.cards.map((card) => card.id)).toEqual(["lost-1", "lost-0", "none"]);
+  });
+
+  it("gives a card its Owner initials and Expected close, overdue only while open", () => {
+    const pipeline = composeOpportunityPipeline(
+      emptyPipeline({
+        rows: [
+          row({ id: "a", ownerName: "Amina Kofi", closeDate: "2026-11-18T00:00:00.000Z" }),
+          row({ id: "b", closeDate: "2026-11-19T00:00:00.000Z" }),
+          row({ id: "c", combinedStatus: "lost", closeDate: "2026-01-01T00:00:00.000Z" }),
+          row({ id: "d" }),
+        ],
+      }),
+    );
+    const card = (id: string) => pipeline.columns.flatMap((column) => column.cards).find((c) => c.id === id)!;
+    expect(card("a")).toMatchObject({ ownerName: "Amina Kofi", ownerInitials: "AK", closeLabel: "18 Nov 2026", closeOverdue: true });
+    expect(card("b")).toMatchObject({ ownerName: null, ownerInitials: null, closeLabel: "19 Nov 2026", closeOverdue: false });
+    expect(card("c").closeOverdue).toBe(false);
+    expect(card("d")).toMatchObject({ closeLabel: null, closeOverdue: false });
+  });
+
+  it("reopens to the stage the last loss left, else the first open stage", () => {
+    const stages = composeOpportunityStages(FALLBACK_OPEN_STAGES);
+    const at = (day: number) => new Date(Date.UTC(2026, 0, day)).toISOString();
+    expect(
+      reopenStageOf(
+        [
+          { fromStatus: "lead", toStatus: "lost", changedAt: at(1) },
+          { fromStatus: "follow_up", toStatus: "lost", changedAt: at(5) },
+        ],
+        stages,
+      ),
+    ).toBe("follow_up");
+    expect(reopenStageOf([{ fromStatus: "won", toStatus: "lost", changedAt: at(1) }], stages)).toBe("lead");
+    expect(reopenStageOf([{ fromStatus: "gone_stage", toStatus: "lost", changedAt: at(1) }], stages)).toBe("lead");
+    expect(reopenStageOf([{ fromStatus: null, toStatus: "lost", changedAt: at(1) }], stages)).toBe("lead");
+    expect(reopenStageOf([], stages)).toBe("lead");
+  });
+
+  it("renders the card as a link, hides New Opportunity when read-only, offers Undo, and keeps the board bar", () => {
+    expect(pageSource).toMatch(/<a\s+ref=\{[\s\S]*?href=\{recordHref\}/);
+    expect(pageSource).toContain("role={undefined}");
+    expect(pageSource).not.toContain("window.open");
+    expect(pageSource).toMatch(/\{readOnly \? null : \(\s*<Button[\s\S]*?New Opportunity/);
+    expect(pageSource).toMatch(/notify\.success\(`Moved to \$\{labelOf\(status\)\}`, \{[\s\S]*?action: \{ label: "Undo"/);
+    expect(notifySource).toContain("action?: { label: string; onClick: () => void }");
+    const pipelineRule = css.slice(css.indexOf(".df-opportunity-pipeline {"), css.indexOf("}", css.indexOf(".df-opportunity-pipeline {")));
+    expect(pipelineRule).not.toContain("scrollbar-width");
+    expect(css).not.toMatch(/\.df-opportunity-pipeline::-webkit-scrollbar\s*\{\s*display:\s*none/);
   });
 });

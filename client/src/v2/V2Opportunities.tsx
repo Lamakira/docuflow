@@ -41,6 +41,7 @@ import {
   CURRENCY_OPTIONS,
   canChangeOpportunityStage,
   combinedStatusForStage,
+  TERMINAL_PREVIEW,
   composeOpportunityForm,
   composeOpportunityHistory,
   composeOpportunityNotes,
@@ -60,6 +61,7 @@ import {
   opportunityWriteRefusal,
   readLostDraft,
   readWinDraft,
+  reopenStageOf,
   stageOptionsFromFieldOptions,
   winDraft,
   winProjectTypeOptions,
@@ -126,6 +128,8 @@ function toPipelineRow(row: CrmProjectWithDetails): OpportunityPipelineRowInput 
     isDocumentationOnly: row.isDocumentationOnly ?? 0,
     estimatedValueMinor: row.estimatedValueMinor,
     estimatedValueCurrency: row.estimatedValueCurrency,
+    updatedAt: row.updatedAt,
+    closeDate: row.dueDate,
   };
 }
 
@@ -226,7 +230,7 @@ function OpportunityCardView({
   onOpen: (href: string) => void;
 }) {
   const origin = useRef<{ x: number; y: number } | null>(null);
-  const cardRef = useRef<HTMLElement | null>(null);
+  const cardRef = useRef<HTMLAnchorElement | null>(null);
   const recordHref = card.recordHref;
 
   useEffect(() => {
@@ -246,30 +250,36 @@ function OpportunityCardView({
   }
 
   function onClick(event: MouseEvent<HTMLElement>) {
-    if (dragging) return;
-    if (!isOpportunityCardClick(event, origin.current)) return;
-    origin.current = null;
+    // Ctrl, Cmd, Shift, Alt: the browser's own link behaviour (new tab, new window).
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    // The library cancels the click that ends a drag; that one opens nothing.
+    const endsDrag = event.defaultPrevented;
     event.preventDefault();
-    if (event.metaKey || event.ctrlKey) {
-      window.open(recordHref, "_blank", "noopener,noreferrer");
-      return;
-    }
+    if (dragging || endsDrag) return;
+    // Enter on the focused link fires a click with no pointer: it opens.
+    if (event.detail !== 0 && !isOpportunityCardClick(event, origin.current)) return;
+    origin.current = null;
     onOpen(recordHref);
   }
 
   return (
-    <article
+    <a
       ref={(element) => {
         provided.innerRef(element);
         cardRef.current = element;
       }}
+      href={recordHref}
       {...provided.draggableProps}
       {...provided.dragHandleProps}
+      // The library gives the handle role="button"; the card stays a link. Its
+      // lift instructions arrive as aria-describedby, so the link keeps its own name.
+      role={undefined}
       className="df-opportunity-card"
       data-dragging={dragging ? "true" : "false"}
       data-pressing="false"
       data-locked={locked ? "true" : "false"}
-      data-href={recordHref}
+      data-changing={card.changing ? "true" : "false"}
+      aria-busy={card.changing ? true : undefined}
       data-testid={`v2-opportunity-card-${card.id}`}
       onPointerDown={onPointerDown}
       onClick={onClick}
@@ -277,7 +287,27 @@ function OpportunityCardView({
       <div className="df-row-title">{card.name}</div>
       {card.clientLabel ? <div className="df-opportunity-card-client">{card.clientLabel}</div> : null}
       {card.valueLabel ? <div className="df-opportunity-card-value">{card.valueLabel}</div> : null}
-    </article>
+      {card.ownerName || card.closeLabel ? (
+        <div className="df-opportunity-card-meta">
+          {card.ownerName && card.ownerInitials ? (
+            <span
+              className="df-opportunity-card-owner"
+              role="img"
+              title={`Owner: ${card.ownerName}`}
+              aria-label={`Owner: ${card.ownerName}`}
+            >
+              {card.ownerInitials}
+            </span>
+          ) : null}
+          {card.closeLabel ? (
+            <span className="df-opportunity-card-close" data-overdue={card.closeOverdue ? "true" : undefined}>
+              Close {card.closeLabel}
+              {card.closeOverdue ? <span className="df-sr-only"> (passed)</span> : null}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </a>
   );
 }
 
@@ -542,7 +572,7 @@ function OpportunityOutcomeDialog({
       description={
         alreadyLost
           ? `Why ${name} was lost.`
-          : `Losing ${name} closes it. Say why, so the pipeline can learn from it. It cannot be moved back to an open stage afterwards.`
+          : `Losing ${name} closes it. Say why, so the pipeline can learn from it. You can reopen it later from its record.`
       }
       submitLabel={alreadyLost ? "Save reason" : "Mark as lost"}
       pending={save.isPending}
@@ -577,11 +607,74 @@ function OpportunityOutcomeDialog({
   );
 }
 
-function StageHistoryCard({ opportunityId, stages }: { opportunityId: string; stages: OpportunityStageOption[] }) {
-  const { data: changes = [] } = useQuery<CrmProjectStageHistoryWithUser[]>({
+function useStageHistory(opportunityId: string) {
+  return useQuery<CrmProjectStageHistoryWithUser[]>({
     queryKey: ["/api/crm/projects", opportunityId, "stage-history"],
     queryFn: () => apiRequest("GET", opportunityStageHistoryPath(opportunityId)),
   });
+}
+
+/** Reopen sends a Lost Opportunity back to an open stage, which clears its Lost reason. */
+function OpportunityReopenDialog({
+  row,
+  stages,
+  defaultStage,
+  onClose,
+}: {
+  row: CrmProjectWithDetails;
+  stages: OpportunityStageOption[];
+  defaultStage: string;
+  onClose: () => void;
+}) {
+  const writes = useWorkspaceWrites();
+  const [stage, setStage] = useState(defaultStage);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/crm/projects/${row.id}`, { status: combinedStatusForStage(stage) }),
+    onSuccess: () => {
+      // The record, the register and the Stage history all key from this prefix.
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      onClose();
+      notify.success("Opportunity reopened");
+    },
+    onError: (error: Error) => setRefusal(writes.failed(error, "Reopen Opportunity")),
+  });
+  function submit() {
+    if (writes.readOnly) {
+      setRefusal(writes.refusal());
+      return;
+    }
+    save.mutate();
+  }
+  return (
+    <V2FormDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={`Reopen ${row.project?.name || "this Opportunity"}`}
+      description="It goes back to the open stage you pick. Its Lost reason is cleared."
+      submitLabel="Reopen"
+      pending={save.isPending}
+      canSubmit
+      onSubmit={submit}
+      refusal={refusal}
+      testId="v2-opportunity-reopen"
+    >
+      <label className="df-daily-field">
+        Stage
+        <V2FilterSelect
+          label=""
+          ariaLabel="Stage"
+          value={stage}
+          options={stages.filter((option) => !option.terminal).map((option) => ({ value: option.id, label: option.label }))}
+          onChange={setStage}
+        />
+      </label>
+    </V2FormDialog>
+  );
+}
+
+function StageHistoryCard({ opportunityId, stages }: { opportunityId: string; stages: OpportunityStageOption[] }) {
+  const { data: changes = [] } = useStageHistory(opportunityId);
   const history = composeOpportunityHistory(changes, stages, new Date());
   return (
     <section className="df-card" data-testid="v2-opportunity-stage-history">
@@ -935,8 +1028,10 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
   const lists = useOpportunityLists();
   const writes = useWorkspaceWrites();
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [reopening, setReopening] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const { data: stageChanges = [] } = useStageHistory(row.id);
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
   const { data: clients = [] } = useQuery<CrmClient[]>({ queryKey: ["/api/crm/clients"] });
 
@@ -967,6 +1062,11 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
     else setOutcome({ kind: "lost", row });
   }
 
+  function onReopen() {
+    if (writes.readOnly) setRefusal(writes.refusal());
+    else setReopening(true);
+  }
+
   function onOutcomeButton(kind: OpportunityOutcome) {
     if (writes.readOnly) setRefusal(writes.refusal());
     else setOutcome({ kind, row });
@@ -976,8 +1076,8 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
     record.stageId === "won"
       ? "Won: it is now a Client Project."
       : record.stageId === "lost"
-        ? "Lost. The reason stays with the Opportunity."
-        : "Won and Lost close the pipeline: winning makes it a Client Project, losing asks why. Neither can be moved back to an open stage.";
+        ? "Lost. The reason stays with the Opportunity until it is reopened."
+        : "Won and Lost close the pipeline: winning makes it a Client Project, losing asks why. A won Opportunity stays won; a lost one can be reopened.";
 
   return (
     <div className="df-page" data-testid="v2-opportunity-record">
@@ -1047,6 +1147,13 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
                 <p className="df-card-sub">{stageCopy}</p>
               </div>
             </div>
+            {record.stageId === "lost" ? (
+              <div className="df-opportunity-outcomes">
+                <Button variant="outline" type="button" className="df-btn" onClick={onReopen}>
+                  Reopen
+                </Button>
+              </div>
+            ) : null}
             {record.stageId === "won" || record.stageId === "lost" ? null : (
               <div className="df-opportunity-outcomes">
                 <Button variant="default" type="button" className="df-btn" onClick={() => onOutcomeButton("won")}>
@@ -1099,6 +1206,14 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
           lists={lists}
           users={users}
           clients={clients}
+        />
+      ) : null}
+      {reopening ? (
+        <OpportunityReopenDialog
+          row={row}
+          stages={lists.stages}
+          defaultStage={reopenStageOf(stageChanges, lists.stages)}
+          onClose={() => setReopening(false)}
         />
       ) : null}
     </div>
@@ -1189,6 +1304,7 @@ export function V2OpportunitiesPage() {
   const [draft, setDraft] = useState(() => newOpportunityDraft(""));
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
 
   const { readOnly, refusal, failed } = useWorkspaceWrites();
   const lists = useOpportunityLists();
@@ -1205,10 +1321,41 @@ export function V2OpportunitiesPage() {
 
   const pipeline = composeOpportunityPipeline({
     stages,
-    rows: (projectsResponse?.data ?? []).map(toPipelineRow),
+    rows: (projectsResponse?.data ?? []).map((row) => {
+      const owner = row.opportunityOwnerId ? users.find((member) => member.id === row.opportunityOwnerId) : undefined;
+      return { ...toPipelineRow(row), ownerName: owner ? memberName(owner) : null };
+    }),
     filterQuery,
     changingId,
+    expandedColumns: expanded,
+    now: new Date(),
   });
+  const showBoard = !isLoading && !isError && !pipeline.emptyState;
+  const stacked = layout.stackedRegister;
+
+  // Edge fades: the board says which side still has columns beyond the window.
+  useEffect(() => {
+    const element = pipelineRef.current;
+    if (!element) return;
+    const update = () => {
+      const more = !stacked && element.scrollWidth > element.clientWidth + 1;
+      element.setAttribute("data-more-left", more && element.scrollLeft > 1 ? "true" : "false");
+      element.setAttribute(
+        "data-more-right",
+        more && element.scrollLeft + element.clientWidth < element.scrollWidth - 1 ? "true" : "false",
+      );
+    };
+    update();
+    element.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(element);
+    return () => {
+      element.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      observer?.disconnect();
+    };
+  }, [showBoard, stacked, pipeline.columns.length]);
 
   const created = newOpportunityPayload(draft);
   const openStages = stages.filter((stage) => !stage.terminal);
@@ -1234,8 +1381,25 @@ export function V2OpportunitiesPage() {
   });
 
   const changeStage = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
+    mutationFn: ({ id, status }: { id: string; status: string; previous: string; undo?: boolean }) =>
       apiRequest("PATCH", `/api/crm/projects/${id}`, { status }),
+    onSuccess: (_result, { id, status, previous, undo }) => {
+      const labelOf = (combined: string) => {
+        const stage = opportunityStageFromCombined(combined);
+        return stages.find((option) => option.id === stage)?.label ?? stage;
+      };
+      const toastId = `opportunity-stage-${id}`;
+      if (undo) {
+        // Its own id: the Undo toast is still being dismissed and would swallow an update.
+        notify.success(`Moved back to ${labelOf(status)}`, { id: `${toastId}-undone` });
+        return;
+      }
+      notify.success(`Moved to ${labelOf(status)}`, {
+        id: toastId,
+        duration: 8000,
+        action: { label: "Undo", onClick: () => changeStage.mutate({ id, status: previous, previous: status, undo: true }) },
+      });
+    },
     onMutate: async ({ id, status }) => {
       await queryClient.cancelQueries({ queryKey: ["/api/crm/projects"] });
       const previous = queryClient.getQueryData<OpportunityRowsResponse>(["/api/crm/projects", "register"]);
@@ -1292,6 +1456,7 @@ export function V2OpportunitiesPage() {
     changeStage.mutate({
       id: row.id,
       status: combinedStatusForStage(nextStage, row.status),
+      previous: row.status,
     });
   }
 
@@ -1338,27 +1503,31 @@ export function V2OpportunitiesPage() {
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Opportunities</h1>
         </div>
-        <div className="df-library-actions">
-          <label className="df-filter-input">
-            <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
-            <input
-              type="search"
-              value={filterQuery}
-              onChange={(event) => setFilterQuery(event.target.value)}
-              placeholder="Search Opportunities"
-              aria-label="Search Opportunities"
-            />
-          </label>
-          <Button
-            variant="default"
-            type="button"
-            onClick={startCreate}
-            className="df-btn"
-          >
-            <Plus strokeWidth={1.6} aria-hidden />
-            New Opportunity
-          </Button>
-        </div>
+        {pipeline.emptyState?.kind !== "none" ? (
+          <div className="df-library-actions">
+            <label className="df-filter-input">
+              <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
+              <input
+                type="search"
+                value={filterQuery}
+                onChange={(event) => setFilterQuery(event.target.value)}
+                placeholder="Search Opportunities"
+                aria-label="Search Opportunities"
+              />
+            </label>
+            {readOnly ? null : (
+              <Button
+                variant="default"
+                type="button"
+                onClick={startCreate}
+                className="df-btn"
+              >
+                <Plus strokeWidth={1.6} aria-hidden />
+                New Opportunity
+              </Button>
+            )}
+          </div>
+        ) : null}
       </header>
 
       <V2FormDialog
@@ -1413,7 +1582,8 @@ export function V2OpportunitiesPage() {
         />
       ) : null}
 
-      {pipeline.emptyState?.kind === "none" ? null : (
+      {/* The empty Workspace and an unmatched search each show their empty line alone. */}
+      {pipeline.emptyState?.kind === "none" || pipeline.emptyState?.kind === "filtered" ? null : (
       <>
       <DragDropContext
         onDragStart={() => pipelineRef.current?.setAttribute("data-dragging", "true")}
@@ -1422,7 +1592,9 @@ export function V2OpportunitiesPage() {
         <div
           ref={pipelineRef}
           className="df-opportunity-pipeline"
-          data-stacked={layout.stackedRegister ? "true" : "false"}
+          data-stacked={stacked ? "true" : "false"}
+          data-more-left="false"
+          data-more-right="false"
           data-dragging="false"
           data-motion={STAGE_CHANGE_MOTION}
           data-testid="v2-opportunities-pipeline"
@@ -1442,7 +1614,7 @@ export function V2OpportunitiesPage() {
                     {column.label}
                   </span>
                 </h2>
-                <span className="df-count-chip">{column.cards.length}</span>
+                <span className="df-count-chip">{column.total}</span>
               </div>
               <Droppable
                 droppableId={column.id}
@@ -1478,6 +1650,24 @@ export function V2OpportunitiesPage() {
                       </Draggable>
                     ))}
                     {provided.placeholder}
+                    {column.hiddenCount > 0 || (expanded.has(column.id) && column.total > TERMINAL_PREVIEW) ? (
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        size="sm"
+                        className="df-opportunity-more"
+                        onClick={() =>
+                          setExpanded((current) => {
+                            const next = new Set(current);
+                            if (next.has(column.id)) next.delete(column.id);
+                            else next.add(column.id);
+                            return next;
+                          })
+                        }
+                      >
+                        {column.hiddenCount > 0 ? `Show all ${column.total}` : "Show fewer"}
+                      </Button>
+                    ) : null}
                   </div>
                 )}
               </Droppable>

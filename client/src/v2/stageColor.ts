@@ -34,11 +34,15 @@ const STAGE_COLORS: Record<string, string> = {
 const HEX = /^#[0-9a-f]{6}$/i;
 
 /**
- * White reads best on a saturated fill (red, blue, purple) even where dark ink
- * would measure slightly higher. Below 3:1 — amber, lime, the greens and
- * cyans — white stops being legible, and the pill takes dark ink instead.
+ * The pill's text is 10px, so it owes 4.5:1 (F29). White wins when it clears
+ * that; dark ink when only it does; where neither does (a mid violet such as
+ * Discovering's #8b5cf6, 4.23:1 white, 4.30:1 dark) the pill's fill steps
+ * darker until white clears it. The Administrator's stored colour never
+ * changes: only what a pill wears.
  */
-const WHITE_MIN_CONTRAST = 3;
+const PILL_MIN_CONTRAST = 4.5;
+const PILL_PAPER = "#ffffff"; // --df-fill-paper
+const PILL_INK = "#0f1524"; // --df-fill-ink
 
 /** A configured colour lands in a style attribute, so only a hex colour is taken. */
 export function stageColor(stageId: string, configured?: string | null): string {
@@ -54,8 +58,32 @@ function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-/** White on the pill unless the fill is too light for it. */
+function contrast(a: string, b: string): number {
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+/** Mix toward black by `share` (0..1), as a hex colour. */
+function darken(hex: string, share: number): string {
+  const channel = (index: number) =>
+    Math.round(parseInt(hex.slice(index, index + 2), 16) * (1 - share))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${channel(1)}${channel(3)}${channel(5)}`;
+}
+
+/** What a stage pill wears: its fill and the ink on it, at 4.5:1 or better. */
+export function stagePill(hex: string): { fill: string; ink: "light" | "dark" } {
+  if (contrast(PILL_PAPER, hex) >= PILL_MIN_CONTRAST) return { fill: hex, ink: "light" };
+  if (contrast(PILL_INK, hex) >= PILL_MIN_CONTRAST) return { fill: hex, ink: "dark" };
+  for (let step = 1; step <= 25; step += 1) {
+    const fill = darken(hex, step * 0.04);
+    if (contrast(PILL_PAPER, fill) >= PILL_MIN_CONTRAST) return { fill, ink: "light" };
+  }
+  return { fill: PILL_INK, ink: "light" };
+}
+
+/** The ink on a pill of this fill; use `stagePill` where the fill may need to darken. */
 export function stageInk(hex: string): "light" | "dark" {
-  const whiteContrast = 1.05 / (luminance(hex) + 0.05);
-  return whiteContrast >= WHITE_MIN_CONTRAST ? "light" : "dark";
+  return stagePill(hex).ink;
 }
