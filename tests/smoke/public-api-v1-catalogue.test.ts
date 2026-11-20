@@ -206,6 +206,31 @@ describe("public /api/v1 catalogue — Clients", () => {
     expect(list.body.data).toHaveLength(1);
     expect(list.body.data[0].id).toBe(first.body.id);
   });
+
+  it("holds a created Client to the web app's field rules", async () => {
+    const app = await makeApp();
+    const { agent } = await serviceAccountAgent(app, [
+      CLIENTS_READ_CAPABILITY_ID,
+      CLIENTS_WRITE_CAPABILITY_ID,
+    ]);
+
+    for (const body of [
+      { name: "   " },
+      { name: "Acme", status: "hacked" },
+      { name: "Acme", email: "not-an-email" },
+      { name: "Acme", phone: "abc<script>" },
+    ]) {
+      const res = await agent.post("/api/v1/clients").send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(res.body.type).toBe("urn:docuflow:problem:bad-request");
+    }
+
+    const created = await agent
+      .post("/api/v1/clients")
+      .send({ name: "  Acme  ", email: "", phone: "+1 (415) 999-4863", status: "prospect" });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ name: "Acme", email: null, phone: "+1 (415) 999-4863", status: "prospect" });
+  });
 });
 
 describe("public /api/v1 catalogue — Projects", () => {

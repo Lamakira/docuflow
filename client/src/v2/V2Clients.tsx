@@ -3,6 +3,7 @@ import { Pencil, Plus, Search } from "lucide-react";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { createColumnHelper, rowSortingFeature, tableFeatures, useTable, type SortingState } from "@tanstack/react-table";
+import { CRM_CLIENT_LIMITS, CRM_PHONE_HTML_PATTERN } from "@shared/schema";
 import type { CrmClient, CrmContact, CrmProjectWithDetails } from "@shared/schema";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -279,16 +280,16 @@ export function V2ClientRecordRedirect() {
 
 /** The Client record's two forms share one field shape: a label above a typed input. */
 const CONTACT_FIELDS = [
-  { id: "name", label: "Name", type: "text", placeholder: "Full name" },
-  { id: "role", label: "Role", type: "text", placeholder: "Project lead" },
-  { id: "email", label: "Email", type: "email", placeholder: "name@company.com" },
-  { id: "phone", label: "Phone", type: "tel", placeholder: "+33 6 12 34 56 78" },
+  { id: "name", label: "Name", type: "text", placeholder: "Full name", maxLength: CRM_CLIENT_LIMITS.name },
+  { id: "role", label: "Role", type: "text", placeholder: "Project lead", maxLength: CRM_CLIENT_LIMITS.role },
+  { id: "email", label: "Email", type: "email", placeholder: "name@company.com", maxLength: CRM_CLIENT_LIMITS.email },
+  { id: "phone", label: "Phone", type: "tel", placeholder: "+33 6 12 34 56 78", maxLength: CRM_CLIENT_LIMITS.phone },
 ] as const;
 
 const DETAIL_FIELDS = [
-  { id: "company", label: "Company", type: "text", placeholder: "Company name" },
-  { id: "email", label: "Email", type: "email", placeholder: "name@company.com" },
-  { id: "phone", label: "Phone", type: "tel", placeholder: "+33 6 12 34 56 78" },
+  { id: "company", label: "Company", type: "text", placeholder: "Company name", maxLength: CRM_CLIENT_LIMITS.company },
+  { id: "email", label: "Email", type: "email", placeholder: "name@company.com", maxLength: CRM_CLIENT_LIMITS.email },
+  { id: "phone", label: "Phone", type: "tel", placeholder: "+33 6 12 34 56 78", maxLength: CRM_CLIENT_LIMITS.phone },
 ] as const;
 
 export function V2ClientsPage() {
@@ -451,6 +452,7 @@ export function V2ClientsPage() {
           <input
             type="text"
             value={name}
+            maxLength={CRM_CLIENT_LIMITS.name}
             autoFocus
             onChange={(event) => setName(event.target.value)}
             placeholder="Client name"
@@ -907,6 +909,7 @@ export function V2ClientRecordPage() {
                     <input
                       type="text"
                       value={draft.name}
+                      maxLength={CRM_CLIENT_LIMITS.name}
                       autoFocus
                       placeholder="Client name"
                       aria-label="Client name"
@@ -929,6 +932,8 @@ export function V2ClientRecordPage() {
                       <input
                         type={field.type}
                         value={draft[field.id]}
+                        maxLength={field.maxLength}
+                        pattern={field.type === "tel" ? CRM_PHONE_HTML_PATTERN : undefined}
                         placeholder={field.placeholder}
                         aria-label={`Client ${field.id}`}
                         onChange={(event) => setDraft((value) => ({ ...value, [field.id]: event.target.value }))}
@@ -951,6 +956,7 @@ export function V2ClientRecordPage() {
                       <input
                         type="text"
                         value={draft.fiverrUsername}
+                        maxLength={CRM_CLIENT_LIMITS.fiverrUsername}
                         placeholder="username"
                         aria-label="Fiverr username"
                         onChange={(event) => setDraft((value) => ({ ...value, fiverrUsername: event.target.value }))}
@@ -961,6 +967,7 @@ export function V2ClientRecordPage() {
                     Notes
                     <textarea
                       value={draft.notes}
+                      maxLength={CRM_CLIENT_LIMITS.notes}
                       placeholder="What to know about this Client"
                       aria-label="Client notes"
                       onChange={(event) => setDraft((value) => ({ ...value, notes: event.target.value }))}
@@ -1025,6 +1032,8 @@ export function V2ClientRecordPage() {
                       <input
                         type={field.type}
                         value={contactDraft[field.id]}
+                        maxLength={field.maxLength}
+                        pattern={field.type === "tel" ? CRM_PHONE_HTML_PATTERN : undefined}
                         autoFocus={index === 0}
                         placeholder={field.placeholder}
                         aria-label={`Contact ${field.id}`}

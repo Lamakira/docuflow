@@ -1461,6 +1461,9 @@ Instructions:
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
       
+      const sourceIssue = await clientSourceIssue(parsed.data.source);
+      if (sourceIssue) return res.status(400).json({ message: sourceIssue });
+      
       const client = await storage.createCrmClient({ ...parsed.data, ownerId: userId });
       res.status(201).json(client);
     } catch (error) {
@@ -1485,6 +1488,9 @@ Instructions:
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
+      
+      const sourceIssue = await clientSourceIssue(parsed.data.source, client.source);
+      if (sourceIssue) return res.status(400).json({ message: sourceIssue });
       
       const updated = await storage.updateCrmClient(req.params.id, parsed.data);
       res.json(updated);
@@ -1596,6 +1602,22 @@ Instructions:
     lostReasonDetail?: string | null;
   };
 
+  /** The values the Workspace's list for a module field offers. */
+  async function offeredValues(moduleSlug: string, fieldSlug: string): Promise<string[]> {
+    const modules = await storage.getCrmModules();
+    const list = builtInList(moduleSlug, fieldSlug);
+    const saved = modules.find((mod) => mod.slug === moduleSlug)?.fields?.find((field) => field.slug === fieldSlug)?.options;
+    return list ? workspaceListOptions(list, saved).map((option) => option.value) : [];
+  }
+
+  /** A Client's Source is one the Workspace's list offers, or the one it already holds. */
+  async function clientSourceIssue(source: string | null | undefined, held?: string | null): Promise<string | null> {
+    if (!source || source === held) return null;
+    return (await offeredValues("contacts", "source")).includes(source)
+      ? null
+      : `“${source}” is not in this Workspace's Source list.`;
+  }
+
   /**
    * A Source or Lost reason is one the Workspace's list offers; a value already
    * held may stay. Only v2's Mark as lost requires a Lost reason: v1 still moves
@@ -1616,16 +1638,10 @@ Instructions:
     const source = data.source && data.source !== previous?.source ? data.source : null;
     const lostReason = data.lostReason && data.lostReason !== previous?.lostReason ? data.lostReason : null;
     if (!source && !lostReason) return null;
-    const modules = await storage.getCrmModules();
-    const offered = (moduleSlug: string, fieldSlug: string) => {
-      const list = builtInList(moduleSlug, fieldSlug);
-      const saved = modules.find((mod) => mod.slug === moduleSlug)?.fields?.find((field) => field.slug === fieldSlug)?.options;
-      return list ? workspaceListOptions(list, saved).map((option) => option.value) : [];
-    };
-    if (source && !offered("contacts", "source").includes(source)) {
+    if (source && !(await offeredValues("contacts", "source")).includes(source)) {
       return `“${source}” is not in this Workspace's Source list.`;
     }
-    if (lostReason && !offered("projects", "lost_reason").includes(lostReason)) {
+    if (lostReason && !(await offeredValues("projects", "lost_reason")).includes(lostReason)) {
       return `“${lostReason}” is not in this Workspace's Lost reasons.`;
     }
     return null;
