@@ -209,7 +209,7 @@ const TERMINAL_STAGES: OpportunityStageOption[] = [
   { id: "lost", label: "Lost", terminal: true },
 ];
 
-function stageLabel(id: string, provided?: string): string {
+export function stageLabel(id: string, provided?: string): string {
   const source = (provided?.trim() || id).trim();
   if (!source) return id;
   const isSlug =

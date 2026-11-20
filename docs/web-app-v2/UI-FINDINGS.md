@@ -802,3 +802,115 @@ once passed.
 - **Fixed on the record, 2026-11-19:** the breadcrumb ends in the Opportunity's name (the Client record's in the Client's name); the header drops `OPEN`/`TERMINAL`, the `OPPORTUNITY` chip and the lone "—" when there is no Client; the stage is the pipeline's filled pill in the header and in Stage history, and no longer repeats in the Stage card; `Edit` stays in place, disabled, while editing; Stage sits right after Client in both the edit form and New Opportunity; the read view says "Not set" for all four empty fields and Estimated value's placeholder is `e.g. 4 500`; the Notes head hides its count at zero; the record's layout columns are `.df-opportunity-record-column`, no longer the pipeline's class; a missing Opportunity and a failed load say which it is, with `Try again` and a way back. Still open: the Read-only header button, the filtered empty state's copy, the empty Workspace's double `New Opportunity`, no saving sign or undo on a drop, and no card hover state.
 
 - **Fixed on the pipeline, 2026-11-19:** `New Opportunity` leaves the header of a Read-only Workspace; an empty Workspace's header shows neither the search nor the button (the empty state carries it); a search that matches nothing says "No Opportunities match your search." with `Clear search` and no board under it, and every list whose only control is a search now says the same (Projects board, the Time Tracking Projects card); a card being moved dims while it saves, and an open-stage move toasts `Moved to <stage>` with Undo for 8 seconds; cards take the register-row hover.
+
+---
+
+The five entries below come from one full UI review of Clients (the register,
+its filters and search, New Client, the Client record, Edit Client and Add
+contact) on 2026-11-20. The app ran locally on the seeded DocuFlow Workspace
+(5 Clients, 110 Opportunities); every dialog was opened and closed without
+saving. The real Workspace's shape comes from the cutover rehearsal copy
+(`docuflow_rehearsal`): 87 Clients, 50 of them Lead, 23 Client, 9 Client
+recurrent, 5 Prospect; Source Fiverr 51, Direct 25, none 10, Zoho 1; a company
+on 61, an email on 62, a phone on 15, notes on 70 (up to 1,943 characters), no
+Contact at all. Read from code only: the stacked mobile register and record, a
+Read-only Workspace, dark mode, and the failed-load state.
+
+## F32 — The Client record lists open and lost sales as Client Projects
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, the record of Brightfold Studio (seeded), then counted on the rehearsal copy
+- **Where:** `client/src/v2/V2Clients.tsx:588-600` (every `crm_projects` row of the Client), `client/src/v2/clients.ts:419-425` (each shown by its Project Status), `server/modules/postgresStorage.ts:781-788` (the register's count and its Open projects filter)
+- **Severity:** misleading
+
+The Client Projects card takes every row filed under the Client, sales
+included, and shows each by its Project Status. An open sale therefore reads
+`PLANNED` and a lost one `ARCHIVED`, and clicking either opens a Client Project
+dossier, with Start Timer, a budget and New Task: Invoice pilot II, at Follow
+up on the pipeline, opens as a planned Client Project with a 47-hour plan
+(seen). The glossary says the opposite: an Opportunity "is not itself delivery
+work". On the real Workspace 29 of the 87 Clients have sales mixed in this way:
+7 open sales shown as Planned and 22 lost ones as Archived, beside 68 won
+Projects. The register's Projects column counts the same rows, and its `Open
+projects: Yes` filter matches a Client whose only open row is a sale. The card
+has no cap and no stated order: Brightfold Studio's runs to 27 rows, 1,651px
+tall. It would take an Opportunities section on the record (stage pill, link to
+the Opportunity) and Client Projects that hold won rows only, the count and
+the filter following suit, each capped with a View all. The Projects register
+mixes them the same way; that belongs to its own review.
+
+- **Fixed:** 2026-11-20. The record has an Opportunities card (open sales in stage order, then lost ones, each with its stage pill, linking to the Opportunity) and Client Projects holds won rows only, ordered by Project Status; each card shows 8 rows and `Show all N`. The register's Projects column and its Open projects filter count won rows only. Checked on the seeded Brightfold Studio: Opportunities 8 (3 open, 5 lost), Client Projects 19, register 19 instead of 27. Over the rehearsal copy, through the real functions: 29 Opportunities (7 open, 22 lost) and 68 Client Projects across the 87 Clients; 51 Clients have a Client Project, 29 an open one.
+
+## F33 — A Client cannot be renamed, given a new status, deleted, or have a Project linked
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, Edit Client opened on Brightfold Studio, then v1 read
+- **Where:** `client/src/v2/V2Clients.tsx:286-290` (`DETAIL_FIELDS`: Company, Email, Phone), `:631-639` (the PATCH body), against v1's `client/src/pages/ClientDetailPage.tsx:337` (name and status), `:294` (delete), `:308` and `:322` (unlink and link a Project)
+- **Severity:** degrading, a v1 capability lost
+
+Edit Client offers Company, Email, Phone, Source and Notes. The name and the
+status are set once, at creation (status always Lead), and nothing in v2
+changes them afterwards; v1's editor did both, through the same `PATCH
+/api/crm/clients/:id` v2 already calls. On the real Workspace 20 Clients still
+read Lead although they already have a won Project, and v2 gives no way to
+correct them. v1 could also delete a Client and link or unlink a Project from
+its record; v2 has neither. PARITY.md missed this because it compares
+endpoints, and both versions call the same one. It would take Name and Status
+in Edit Client. Deleting a Client is destructive, so it waits for the v2 modal
+pass.
+
+- **Fixed:** 2026-11-20. Edit Client opens on Name (required) and Status, then Company, Email, Phone, Source and Notes; the PATCH carries both. Tested on the dev database: Brightfold Studio saved as Client recurrent, the head followed, then restored. Delete and linking a Project stay out: deleting waits for the v2 modal pass, and an Opportunity already sets its Client in Edit.
+
+## F34 — The Client record's head repeats the details card
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, the record of Brightfold Studio
+- **Where:** `client/src/v2/V2Clients.tsx:716-738`
+- **Severity:** cosmetic
+
+Above the title sit two chips, `Client` and `CLIENT`: the kind of record,
+which the breadcrumb already says, then the status. Under the title, the
+company, the email, the source, the phone and the Fiverr username are repeated
+from the Client details card right below, in the same order. The Opportunity
+record dropped both patterns in #377. It would take the status alone beside
+the title, and the details left to their card.
+
+- **Fixed:** 2026-11-20. The head holds the title and the status chip beside it; the kind chip and the repeated details are gone.
+
+## F35 — A missing Client says its sentence twice and offers no way back
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, `/clients/does-not-exist` (seen); the failed load from code
+- **Where:** `client/src/v2/V2Clients.tsx:740-744`, `:762-763`
+- **Severity:** degrading
+
+"Client not found" is followed by "This Client is not in this Workspace."
+twice, once as the head's subtitle and once in the body, with no link back to
+Clients. A failed load reads "This Client could not be loaded." the same way,
+with no Try again. The Opportunity record now uses the designed empty state
+with `Back to Opportunities` and `Try again` (#377); the Client record would
+take the same.
+
+- **Fixed:** 2026-11-20. A missing Client shows the designed empty state, "This Client is not in this Workspace, or it was deleted.", with `Back to Clients`; a failed load adds `Try again` (seen for missing, from code for failed).
+
+## F36 — Clients polish: contacts, type scale, seed
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, the register and the record (seen unless marked)
+- **Where:** `client/src/v2/V2Clients.tsx` (lines below), `scripts/seed-demo.ts`
+- **Severity:** cosmetic
+
+- The contacts card is titled "On this Client" (`:860`), which does not say
+  it holds people, and its count sits between the title and `Add contact`.
+  No real Client has a Contact (the v1 data holds none), so on every real
+  record it reads "No one filed on this Client yet."
+- A Contact can be added but never edited or removed, although the server
+  has both routes (`PATCH` and `DELETE /api/crm/contacts/:id`,
+  `server/routes.ts:1540`, `:1565`; from code).
+- The register's Company and Projects cells set `font-size: 13.5px` and `12px`
+  inline (`:159`, `:179`), off the type scale.
+- The demo seed files its four Clients under the Source "Referral", which the
+  Workspace's Source list does not hold, so the seeded register shows a source
+  the Source filter cannot select. Real data only uses listed sources.
+
+- **Fixed:** 2026-11-20. The card is titled Contacts, its count beside the title; each contact has an Edit button that opens the dialog prefilled and saves through `PATCH /api/crm/contacts/:id` (tested unchanged on the dev database: "Contact saved"); removing a contact waits for the modal pass. The register's cells use the type scale, and the demo seed files its Clients under Direct (the local dev database keeps "Referral" until it is reseeded).

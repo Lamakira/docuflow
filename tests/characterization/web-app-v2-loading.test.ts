@@ -55,7 +55,7 @@ describe("v2 waits with real geometry", () => {
   it.each([
     ["V2Today.tsx", ["Needs attention", "Active Projects", "Workday", "Recent knowledge changes"]],
     ["V2Projects.tsx", ["Project / client", "Budget used"]],
-    ["V2Clients.tsx", ["CLIENT", "Company", "Source", "On this Client", "Client details"]],
+    ["V2Clients.tsx", ["CLIENT", "Company", "Source", "Contacts", "Client details"]],
     ["V2Opportunities.tsx", ["Opportunity record"]],
     ["V2People.tsx", ["MEMBER", "Workspace role", "Capabilities"]],
     ["V2Time.tsx", ["Timer", "When", "Duration", "By Project", "By Member"]],
