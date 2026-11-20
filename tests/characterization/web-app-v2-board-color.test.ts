@@ -8,7 +8,8 @@ import {
   stageOptionsFromFieldOptions,
 } from "../../client/src/v2/opportunities";
 import { composeProjectBoard } from "../../client/src/v2/projects";
-import { STAGE_FALLBACK_COLOR, stageColor, stageInk } from "../../client/src/v2/stageColor";
+import { STAGE_FALLBACK_COLOR, stageColor, stageInk, stagePill } from "../../client/src/v2/stageColor";
+import { contrastRatio } from "../../client/src/v2/palette";
 
 /**
  * Colour on the v2 boards, as v1 had it. Each column wears its stage or
@@ -42,17 +43,33 @@ describe("a stage's colour", () => {
     expect(stageColor("proposal_sent", "")).toBe("#f59e0b");
   });
 
-  it("keeps white on a saturated pill and takes dark ink only where white falls under 3:1", () => {
-    // v1 wrote white on every pill, 2.15:1 on amber. Dark on red reads worse
-    // than white does, so white stays wherever it clears 3:1.
-    expect(stageInk("#ef4444")).toBe("light");
-    expect(stageInk("#f43f5e")).toBe("light");
-    expect(stageInk("#3b82f6")).toBe("light");
-    expect(stageInk("#8b5cf6")).toBe("light");
-    expect(stageInk(STAGE_FALLBACK_COLOR)).toBe("light");
+  it("gives every pill 4.5:1, its text being 10px (F29)", () => {
+    // Measured in F29: white on Lead 3.53, In negotiation 3.68, Lost 3.76 —
+    // dark ink clears all three (5.16, 4.95, 4.84).
+    expect(stagePill("#ec4899")).toEqual({ fill: "#ec4899", ink: "dark" });
+    expect(stagePill("#3b82f6")).toEqual({ fill: "#3b82f6", ink: "dark" });
+    expect(stagePill("#ef4444")).toEqual({ fill: "#ef4444", ink: "dark" });
+    // White still wins where it clears 4.5:1 (slate fallback 4.76).
+    expect(stagePill(STAGE_FALLBACK_COLOR)).toEqual({ fill: STAGE_FALLBACK_COLOR, ink: "light" });
     expect(stageInk("#f59e0b")).toBe("dark");
     expect(stageInk("#84cc16")).toBe("dark");
     expect(stageInk("#06b6d4")).toBe("dark");
+  });
+
+  it("darkens the fill where neither ink clears 4.5:1, never the stored colour", () => {
+    // Discovering #8b5cf6: white 4.23, dark 4.30.
+    const pill = stagePill("#8b5cf6");
+    expect(pill.ink).toBe("light");
+    expect(pill.fill).not.toBe("#8b5cf6");
+    expect(contrastRatio("#ffffff", pill.fill)).toBeGreaterThanOrEqual(4.5);
+    expect(stageColor("discovering_call_completed")).toBe("#8b5cf6");
+  });
+
+  it("holds 4.5:1 for every default stage and Project Status colour", () => {
+    for (const id of ["lead", "discovering_call_completed", "proposal_sent", "follow_up", "in_negotiation", "won", "lost", "planned", "active", "on_hold", "in_review", "completed", "archived"]) {
+      const { fill, ink } = stagePill(stageColor(id));
+      expect(contrastRatio(ink === "light" ? "#ffffff" : "#0f1524", fill), id).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });
 
@@ -60,7 +77,8 @@ describe("the Projects board wears Project Status colours", () => {
   it("colours every column, empty ones included", () => {
     const board = composeProjectBoard({ projects: [], filterQuery: "", changingId: null });
     expect(board.columns.map((column) => [column.id, column.color, column.ink])).toEqual([
-      ["planned", "#6366f1", "light"],
+      // Planned's #6366f1 clears neither ink at 4.5:1 (white 4.47), so its fill steps darker (F29).
+      ["planned", stagePill("#6366f1").fill, "light"],
       ["active", "#14b8a6", "dark"],
       ["in_review", "#0ea5e9", "dark"],
       ["completed", "#84cc16", "dark"],
@@ -85,7 +103,8 @@ describe("the Opportunities pipeline wears the configured stage colours", () => 
     });
     const colors = Object.fromEntries(pipeline.columns.map((column) => [column.id, column.color]));
     expect(colors).toEqual({
-      proposal_sent: "#8b5cf6",
+      // The Administrator's #8b5cf6 is kept as stored; only the pill steps darker to reach 4.5:1 (F29).
+      proposal_sent: stagePill("#8b5cf6").fill,
       follow_up: "#06b6d4",
       won: "#22c55e",
       lost: "#ef4444",

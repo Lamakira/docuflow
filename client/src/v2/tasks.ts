@@ -116,12 +116,18 @@ export function composeProjectTasks(input: ProjectTasksInput): ProjectTasksModel
   return {
     projects,
     projectsEmpty: projects.length === 0,
-    projectsEmptyState: emptyModelOf(emptyKindOf(projects.length === 0, Boolean(needle)), "Projects", {
-      title: "Add your first Project",
-      copy: input.readOnly
-        ? "Tasks hang from Projects."
-        : "Tasks hang from Projects. Create a Project, then add its Tasks here.",
-    }),
+    projectsEmptyState: emptyModelOf(
+      emptyKindOf(projects.length === 0, Boolean(needle)),
+      "Projects",
+      {
+        title: "Add your first Project",
+        copy: input.readOnly
+          ? "Tasks hang from Projects."
+          : "Tasks hang from Projects. Create a Project, then add its Tasks here.",
+      },
+      undefined,
+      { searchOnly: true },
+    ),
     noProjects: input.projects.length === 0 && !needle,
     selectedProjectName: selected ? fullProjectName(selected) : null,
     chooseCopy: "Choose a Project to read and manage its Tasks.",

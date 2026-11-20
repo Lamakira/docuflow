@@ -212,8 +212,9 @@ describe("New Opportunity and the Opportunity record", () => {
     expect(pageSource).toMatch(/\{!thread\.empty \? \(\s*<>\s*<span className="df-count-chip">\{thread\.rows\.length\}<\/span>/);
   });
 
-  it("warns in both outcome dialogs that the move cannot be undone", () => {
-    expect(pageSource.match(/It cannot be moved back to an open stage afterwards\./g)).toHaveLength(2);
+  it("warns in the Won dialog that the move cannot be undone, and tells Lost it can be reopened", () => {
+    expect(pageSource.match(/It cannot be moved back to an open stage afterwards\./g)).toHaveLength(1);
+    expect(pageSource).toContain("You can reopen it later from its record.");
   });
 
   it("keeps a saved choice offered after its option left the list", () => {

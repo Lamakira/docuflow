@@ -55,12 +55,20 @@ describe("the shared empty-state kinds", () => {
   it("bundles the kind, headline and copy as one model, and none for a list that has rows", () => {
     const first = { title: "Add your first Thing", copy: "A Thing is a thing." };
     expect(emptyModelOf(null, "Things", first)).toBeNull();
-    expect(emptyModelOf("none", "Things", first)).toEqual({ kind: "none", ...first, widenLabel: null });
+    expect(emptyModelOf("none", "Things", first)).toEqual({ kind: "none", ...first, widenLabel: null, clearLabel: null });
     expect(emptyModelOf("filtered", "Things", first)).toEqual({
       kind: "filtered",
       title: "",
       copy: "No Things match these filters.",
       widenLabel: null,
+      clearLabel: "Clear filters",
+    });
+    expect(emptyModelOf("filtered", "Things", first, undefined, { searchOnly: true })).toEqual({
+      kind: "filtered",
+      title: "",
+      copy: "No Things match your search.",
+      widenLabel: null,
+      clearLabel: "Clear search",
     });
     const range = { window: "today", widenLabel: "Show this week" };
     expect(emptyModelOf("range", "Things", first, range)).toEqual({
@@ -68,6 +76,7 @@ describe("the shared empty-state kinds", () => {
       title: "No Things today",
       copy: "Only this Range is shown. Widen it to look further back.",
       widenLabel: "Show this week",
+      clearLabel: null,
     });
     // A list read only over a Range has no first-use case.
     expect(emptyModelOf("none", "Things", null, range)?.kind).toBe("range");
@@ -79,6 +88,7 @@ describe("the shared empty-state kinds", () => {
       title: "No Things in this Range",
       copy: "Only this Range is shown. Widen it to look further back.",
       widenLabel: null,
+      clearLabel: null,
     });
   });
 
@@ -185,7 +195,7 @@ describe("Opportunities", () => {
 
   it("keeps the columns and adds Clear filters when a search hides every card", () => {
     const pipeline = composeOpportunityPipeline({ ...input, filterQuery: "zzz" });
-    expect(pipeline.emptyState).toMatchObject({ kind: "filtered", copy: "No Opportunities match these filters." });
+    expect(pipeline.emptyState).toMatchObject({ kind: "filtered", copy: "No Opportunities match your search.", clearLabel: "Clear search" });
     expect(pipeline.columns.length).toBeGreaterThan(0);
   });
 });
@@ -215,6 +225,7 @@ describe("Time Tracking", () => {
       title: "No Time Entries today",
       copy: "Only this Range is shown. Widen it to look further back.",
       widenLabel: "Show this week",
+      clearLabel: null,
     });
     expect(composeTimeTracking({ ...input, range: "week" }).emptyState).toMatchObject({
       title: "No Time Entries this week",
@@ -377,6 +388,7 @@ describe("Activity", () => {
       title: "No Activity Evidence today",
       copy: "Only this Range is shown. Widen it to look further back.",
       widenLabel: "Show this week",
+      clearLabel: null,
     };
     expect(composeActivity(activity).emptyState).toEqual(range);
     expect(composeActivityGallery(gallery).emptyState).toEqual(range);

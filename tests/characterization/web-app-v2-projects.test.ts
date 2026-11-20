@@ -377,7 +377,8 @@ describe("Projects board (#259)", () => {
     );
 
     expect(board.empty).toBe(true);
-    expect(board.emptyState?.copy).toBe("No Projects match these filters.");
+    expect(board.emptyState?.copy).toBe("No Projects match your search.");
+    expect(board.emptyState?.clearLabel).toBe("Clear search");
     expect(board.emptyState?.kind).toBe("filtered");
     expect(board.count).toBe(0);
   });

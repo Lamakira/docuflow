@@ -2474,12 +2474,59 @@ button.df-activity-row {
   transition: none;
   animation: none;
   scroll-behavior: auto;
-  scrollbar-width: none;
 }
 
+/*
+ * The board's own horizontal bar, always visible: the owner chose that over
+ * the hover-only bar of the columns (F25), so the board shows it has more
+ * columns than the window. Same blend otherwise: no arrows, no track, a thin
+ * rounded thumb. Styled through ::-webkit-scrollbar, never scrollbar-width.
+ */
 .df-opportunity-pipeline::-webkit-scrollbar {
+  height: 8px;
+}
+
+.df-opportunity-pipeline::-webkit-scrollbar-button {
   display: none;
+  width: 0;
   height: 0;
+}
+
+.df-opportunity-pipeline::-webkit-scrollbar-track,
+.df-opportunity-pipeline::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.df-opportunity-pipeline::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.df-opportunity-pipeline::-webkit-scrollbar-thumb:hover,
+.df-opportunity-pipeline::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in srgb, var(--df-archive-slate) 60%, transparent);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .df-opportunity-pipeline {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent) transparent;
+  }
+}
+
+/* The last 48px fade on the side that still has columns beyond it. */
+.df-opportunity-pipeline[data-stacked="false"][data-more-right="true"] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+}
+
+.df-opportunity-pipeline[data-stacked="false"][data-more-left="true"] {
+  mask-image: linear-gradient(to left, #000 calc(100% - 48px), transparent);
+}
+
+.df-opportunity-pipeline[data-stacked="false"][data-more-left="true"][data-more-right="true"] {
+  mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
 }
 
 .df-opportunity-pipeline[data-stacked="true"] {
@@ -2642,6 +2689,8 @@ button.df-activity-row {
 
 .df-opportunity-card {
   position: relative;
+  color: inherit;
+  text-decoration: none;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -2671,6 +2720,56 @@ button.df-activity-row {
 
 .df-opportunity-card[data-locked="true"] {
   cursor: pointer;
+}
+
+/* Same hover as a register row; none while a card is being dragged. */
+.df-opportunity-card:hover:not([data-dragging="true"]) {
+  background: var(--df-cold-stock);
+}
+
+/* Saving sign: dimmed, never moved. */
+.df-opportunity-card[data-changing="true"] {
+  opacity: 0.6;
+}
+
+.df-opportunity-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--df-space-2);
+  max-width: 100%;
+  font-size: var(--df-text-1);
+  color: var(--df-archive-slate);
+}
+
+.df-opportunity-card-owner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--df-space-1);
+  border-radius: 999px;
+  background: var(--df-hover);
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--df-text-1);
+  line-height: 1;
+}
+
+.df-opportunity-card-close {
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+.df-opportunity-card-close[data-overdue="true"] {
+  color: var(--df-alert-ink);
+}
+
+.df-opportunity-more {
+  flex-shrink: 0;
+  width: 100%;
+  font-size: var(--df-text-2);
 }
 
 .df-v2 .df-opportunity-card[data-rfd-drag-handle-context-id] {
@@ -3987,6 +4086,13 @@ button.df-activity-row {
   background: var(--df-card-white);
   border-bottom: 1px solid var(--df-divider);
   padding: var(--df-space-4) var(--df-space-6) 0;
+}
+
+/* Inside a padded page (the Opportunity record) the head sits among cards,
+   not edge to edge above tabs, so it wears the card's border and radius. */
+.df-page > .df-dossier-head {
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-3);
 }
 
 .df-dossier-identity {

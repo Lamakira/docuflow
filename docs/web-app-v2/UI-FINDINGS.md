@@ -633,7 +633,7 @@ and never treating an unknown id as an open stage.
 
 ## F25 — Won and Lost sit off-screen with no scrollbar, and the board is mostly closed history
 
-- **Status:** open — the column height is fixed; Won and Lost still sit off-screen with no visible scrollbar
+- **Status:** closed — fixed 2026-11-19
 - **Found:** 2026-11-18, the pipeline in a 1680px window (measured), and the cutover rehearsal (counted)
 - **Where:** `client/src/v2/tokens.css:2466-2483` (`.df-opportunity-pipeline`, `scrollbar-width: none`), `client/src/v2/opportunities.ts:275` (`composeOpportunityPipeline` keeps every terminal card)
 - **Severity:** misleading. Won and Lost are invisible and nothing says so
@@ -652,6 +652,8 @@ are empty for some 6000px, and "119 Opportunities" sits at the very bottom of
 the page (seen in the owner's captures). It would take a visible scrollbar (or
 edge fades with scroll buttons), and terminal columns that show a count and the
 most recent few with a way to the rest, as F13 did for Today.
+
+- **Fixed:** 2026-11-19. Won and Lost show their 10 most recently updated cards and `Show all N` / `Show fewer`; the count chip and the page count keep the totals, and a search never hides a match behind the cap. The board's horizontal bar is visible (thin, no arrows, no track: the owner's choice over the columns' hover-only bar), and the edge that still has columns beyond the window fades over 48px. Measured on the seeded DocuFlow Workspace (110 Opportunities, 1680px window): Won 10 of 73 shown, Lost 10 of 21; the right edge fades until the board is scrolled to Lost, then the left one does.
 
 ## F26 — Winning or losing an Opportunity from its record takes Edit → Stage → Save changes
 
@@ -675,7 +677,7 @@ Edit keeps the stage for the other moves.
 
 ## F27 — A pipeline card cannot be opened from the keyboard or in a new tab
 
-- **Status:** open
+- **Status:** closed — fixed 2026-11-19
 - **Found:** 2026-11-18, the pipeline: Enter on a focused card did nothing (tested)
 - **Where:** `client/src/v2/V2Opportunities.tsx:216-283` (`OpportunityCardView`)
 - **Severity:** accessibility floor
@@ -691,9 +693,11 @@ but not from links, and its click threshold already tells a click from a drag.
 Enter, middle click and a screen reader's link list then work, with Space left
 to the drag.
 
+- **Fixed:** 2026-11-19. The card is a link (`<a href>` to the record) and still the drag handle; the library's `role="button"` is dropped so it reads as a link, and its lift instructions stay in `aria-describedby`. Enter opens the record, Space still lifts it, Ctrl-click opens a new tab and the board stays put (tested); middle click is the browser's own link behaviour (not tested). A keyboard focus shows the shared focus ring.
+
 ## F28 — Mark as won and Mark as lost cannot be undone, and neither dialog says so
 
-- **Status:** open — both dialogs now say it; reopening a Lost Opportunity is still impossible
+- **Status:** closed — fixed 2026-11-19
 - **Found:** 2026-11-18, both dialogs opened from the record and cancelled
 - **Where:** `client/src/v2/opportunities.ts:253` (`canChangeOpportunityStage` refuses any move out of Won or Lost), `client/src/v2/V2Opportunities.tsx:443,528` (the dialog descriptions), `V2Opportunities.tsx:896` (the Stage select is disabled once terminal)
 - **Severity:** misleading for an irreversible action
@@ -710,9 +714,11 @@ already allows it.
 
 - **Partly fixed:** 2026-11-19. Both dialog descriptions end with "It cannot be moved back to an open stage afterwards.", and the record's Stage card says it before either is opened. Still open: no way to reopen a Lost Opportunity, which the server would allow.
 
+- **Fixed:** 2026-11-19. A Lost record's Stage card holds `Reopen`: a dialog offers the open stages, preselecting the one held before the loss (from Stage history; the first open stage when there is none), and the server clears the Lost reason. Won stays final; the Lost dialog now says it can be reopened later. Tested on the dev database: the PATCH was accepted, `lost_reason` went to null, and a `lost → lead` Stage history row was written.
+
 ## F29 — Stage pills fail contrast at 10px
 
-- **Status:** open
+- **Status:** closed — fixed 2026-11-19
 - **Found:** 2026-11-18, the pipeline heads (measured locally and on the real Workspace)
 - **Where:** `client/src/v2/stageColor.ts:41` (`WHITE_MIN_CONTRAST = 3`), `client/src/v2/tokens.css:6948` (`.df-stage-pill`, `--df-text-1` = 10px, 600)
 - **Severity:** accessibility floor
@@ -732,9 +738,11 @@ threshold that falls back to dark ink, and a darker step where neither ink
 clears. The record and Stage history wear the tinted swatch style instead,
 which clears 4.5:1 by design.
 
+- **Fixed:** 2026-11-19. A pill takes white when white clears 4.5:1, dark ink when only dark ink does, and otherwise its fill steps darker until white does (`stagePill`, `stageColor.ts`). Lead, In negotiation and Lost now wear dark ink; Discovering's #8b5cf6 and Planned's #6366f1 (Projects board) step darker. An Administrator's stored colour is never changed, only what the pill wears. Since #377 the record header and Stage history wear the same filled pill, so the rule covers them too.
+
 ## F30 — A card says nothing about who owns the sale or when it should close
 
-- **Status:** open
+- **Status:** closed — fixed 2026-11-19
 - **Found:** 2026-11-18, the pipeline, and the real Workspace (counted)
 - **Where:** `client/src/v2/V2Opportunities.tsx:278-280`, `client/src/v2/opportunities.ts:315` (the card model)
 - **Severity:** degrading. The board cannot be triaged without opening each card
@@ -747,9 +755,11 @@ close date has passed or that has sat in its stage for weeks. It would take the
 Owner's initials and the Expected close on the card, the date in the alert ink
 once passed.
 
+- **Fixed:** 2026-11-19. A card shows the Owner's initials (name on hover and to screen readers) and `Close <date>`, in the alert ink once the date has passed (open stages only). Nothing shows for a missing value. On the real Workspace this means 11 of the 12 open cards show a passed date, and 1 an Owner.
+
 ## F31 — Opportunities polish: labels, repetition, states
 
-- **Status:** open — the record's items are fixed (2026-11-19); the pipeline's remain
+- **Status:** closed — fixed 2026-11-19
 - **Found:** 2026-11-18, the pipeline and the record (seen unless marked)
 - **Where:** `client/src/v2/V2Opportunities.tsx` (lines below), `client/src/v2/tokens.css:2500` and `:3475`, `client/src/v2/emptyState.ts:40`
 - **Severity:** cosmetic
@@ -790,3 +800,5 @@ once passed.
   (from code).
 
 - **Fixed on the record, 2026-11-19:** the breadcrumb ends in the Opportunity's name (the Client record's in the Client's name); the header drops `OPEN`/`TERMINAL`, the `OPPORTUNITY` chip and the lone "—" when there is no Client; the stage is the pipeline's filled pill in the header and in Stage history, and no longer repeats in the Stage card; `Edit` stays in place, disabled, while editing; Stage sits right after Client in both the edit form and New Opportunity; the read view says "Not set" for all four empty fields and Estimated value's placeholder is `e.g. 4 500`; the Notes head hides its count at zero; the record's layout columns are `.df-opportunity-record-column`, no longer the pipeline's class; a missing Opportunity and a failed load say which it is, with `Try again` and a way back. Still open: the Read-only header button, the filtered empty state's copy, the empty Workspace's double `New Opportunity`, no saving sign or undo on a drop, and no card hover state.
+
+- **Fixed on the pipeline, 2026-11-19:** `New Opportunity` leaves the header of a Read-only Workspace; an empty Workspace's header shows neither the search nor the button (the empty state carries it); a search that matches nothing says "No Opportunities match your search." with `Clear search` and no board under it, and every list whose only control is a search now says the same (Projects board, the Time Tracking Projects card); a card being moved dims while it saves, and an open-stage move toasts `Moved to <stage>` with Undo for 8 seconds; cards take the register-row hover.

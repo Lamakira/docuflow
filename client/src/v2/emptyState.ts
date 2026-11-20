@@ -1,7 +1,8 @@
 /**
  * Why a record list shows nothing (#325). Three cases, one rule each:
  * `none`: nothing exists yet, so the screen shows the designed V2EmptyState;
- * `filtered`: filters hide every row, so a short line and `Clear filters`;
+ * `filtered`: filters hide every row, so a short line and `Clear filters` (or
+ * `Clear search` and a search line on a list whose only control is its search box);
  * `range`: a period (Today, This week) holds nothing but rows may exist outside
  * it, so no first-use invitation: the designed state with an action that widens
  * the Range one step. Dashboard sections keep the compact `df-empty` line
@@ -12,9 +13,16 @@ export type EmptyKind = "none" | "filtered" | "range";
 /**
  * What an empty list carries to its screen: the case, the headline of the
  * designed state, the one line of copy and, for `range`, the label of the action
- * that widens the Range (`null` when none is wider, and for the other cases).
+ * that widens the Range (`null` when none is wider, and for the other cases) and,
+ * for `filtered`, the label of the reset button (`null` for the other cases).
  */
-export type EmptyModel = { kind: EmptyKind; title: string; copy: string; widenLabel: string | null };
+export type EmptyModel = {
+  kind: EmptyKind;
+  title: string;
+  copy: string;
+  widenLabel: string | null;
+  clearLabel: string | null;
+};
 
 /**
  * `narrowRange`: the Range filter is shorter than the widest one on offer, so
@@ -40,20 +48,32 @@ export function filteredEmptyCopy(noun: string): string {
   return `No ${noun} match these filters.`;
 }
 
+/** The one line that says the search hid every row, on a list with no filters. */
+export function searchEmptyCopy(noun: string): string {
+  return `No ${noun} match your search.`;
+}
+
 /**
  * The empty model of a list: `null` while it has rows. `noun` names what
  * filters hid; `none` is the first-use headline and sentence, or null for a
  * list that is always read over a Range; `range` names the period that holds
  * nothing (`window`, e.g. "today") and the label of the action that widens it.
+ * `searchOnly`: the free-text search is the only control that can empty the
+ * list, so the line and the reset say search, not filters.
  */
 export function emptyModelOf(
   kind: EmptyKind | null,
   noun: string,
   none: { title: string; copy: string } | null,
   range?: { window: string; widenLabel: string | null },
+  options?: { searchOnly?: boolean },
 ): EmptyModel | null {
   if (!kind) return null;
-  if (kind === "filtered") return { kind, title: "", copy: filteredEmptyCopy(noun), widenLabel: null };
+  if (kind === "filtered") {
+    return options?.searchOnly
+      ? { kind, title: "", copy: searchEmptyCopy(noun), widenLabel: null, clearLabel: "Clear search" }
+      : { kind, title: "", copy: filteredEmptyCopy(noun), widenLabel: null, clearLabel: "Clear filters" };
+  }
   // A list with no first-use case (`none` null) is always a Range that holds nothing.
   if (kind === "range" || !none) {
     const { window, widenLabel } = range ?? { window: "in this Range", widenLabel: null };
@@ -62,7 +82,8 @@ export function emptyModelOf(
       title: `No ${noun} ${window}`,
       copy: "Only this Range is shown. Widen it to look further back.",
       widenLabel,
+      clearLabel: null,
     };
   }
-  return { kind, title: none.title, copy: none.copy, widenLabel: null };
+  return { kind, title: none.title, copy: none.copy, widenLabel: null, clearLabel: null };
 }
