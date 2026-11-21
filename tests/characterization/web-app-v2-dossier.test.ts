@@ -493,9 +493,10 @@ describe("Project Dossier remaining tabs from live records (#188)", () => {
 
   it("Settings expose BFF Project fields and Project Assignment, not custom Workspace Roles or Timesheets", () => {
     const dossier = composeDossier(emptyInput({ tab: "settings", project: liveProject() }));
-    expect(dossier.settings.identity).toEqual([
-      { label: "Client", value: "Harbor Co" },
-      { label: "Kind", value: "CLIENT PROJECT", chip: true },
+    // F39: a Client Project's Client and Type are pickers (detail in web-app-v2-dossier-identity.test.ts).
+    expect(dossier.settings.identity.map((row) => [row.label, row.value])).toEqual([
+      ["Client", "Harbor Co"],
+      ["Type", "One-time"],
     ]);
     expect(dossier.settings.lifecycle.rows.map((row) => [row.label, row.value])).toEqual([
       ["Status", "ACTIVE"],

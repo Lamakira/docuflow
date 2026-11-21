@@ -25,6 +25,8 @@ export type ProjectDocumentScope = { visibleToUserId?: string };
 export type CrmProjectListOptions = {
   page?: number;
   pageSize?: number;
+  /** Delivery work only (`isDeliveryProject`): open and lost sales are left out. */
+  deliveryOnly?: boolean;
   /** The combined lifecycle (`lead`, `won_in_progress`, …). */
   status?: string;
   /** Project Status (`planned`, `active`, …), what the v2 register groups by. */

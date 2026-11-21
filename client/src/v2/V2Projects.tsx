@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { projectStatusFromCombined } from "@shared/projectLifecycle";
 import { Plus, Search } from "lucide-react";
 import { DragDropContext, Draggable, Droppable, type DraggableProvided, type DropResult } from "@hello-pangea/dnd";
 import { Link, Redirect, useLocation, useSearch } from "wouter";
@@ -33,8 +34,10 @@ import {
   readProjectFilters,
   writeProjectFilters,
   PROJECT_BOARD_COLUMNS,
+  PROJECT_CLOSED_PREVIEW,
   PROJECT_DUE_OPTIONS,
   PROJECT_SORTS,
+  PROJECT_STATUS_FILTER_OPTIONS,
   PROJECT_STATUS_OPTIONS,
   PROJECT_TYPE_OPTIONS,
   type ProjectBoardCard,
@@ -47,7 +50,7 @@ import { V2DateField } from "./V2DateField";
 import { composePaging } from "./paging";
 import { formatHours, memberName, mobileProjectMeta } from "./today";
 import { useV2Chrome } from "./V2Shell";
-import { V2RecordEmpty } from "./V2EmptyState";
+import { V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect } from "./V2Select";
 import { V2RegisterPager } from "./V2RegisterPager";
@@ -98,7 +101,7 @@ async function loadProjectList(path: string): Promise<ProjectsResponse> {
 }
 
 function isBoardCardClick(
-  event: Pick<MouseEvent, "button" | "shiftKey" | "altKey" | "clientX" | "clientY">,
+  event: Pick<MouseEvent, "button" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "clientX" | "clientY">,
   origin: { x: number; y: number } | null,
 ): boolean {
   if (!origin) return false;
@@ -193,35 +196,37 @@ function ProjectBoardCardView({
   }
 
   function onClick(event: MouseEvent<HTMLElement>) {
-    if (!isBoardCardClick(event, origin.current)) return;
-    origin.current = null;
+    // Ctrl, Cmd, Shift, Alt, a middle click: the browser's own link behaviour (F40).
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    // The library cancels the click that ends a drag; that one opens nothing.
+    const endsDrag = event.defaultPrevented;
     event.preventDefault();
-    if (event.metaKey || event.ctrlKey) {
-      window.open(card.href, "_blank", "noopener,noreferrer");
-      return;
-    }
+    if (endsDrag) return;
+    // Enter on the focused link fires a click with no pointer: it opens.
+    if (event.detail !== 0 && !isBoardCardClick(event, origin.current)) return;
+    origin.current = null;
     onOpen(card.href);
   }
 
   return (
-    <article
+    <a
       ref={provided.innerRef}
+      href={card.href}
       {...provided.draggableProps}
       {...provided.dragHandleProps}
+      // The library gives the handle role="button"; the card stays a link.
+      role={undefined}
       className="df-opportunity-card"
       data-locked={locked ? "true" : "false"}
+      data-changing={card.changing ? "true" : "false"}
+      aria-busy={card.changing ? true : undefined}
       data-testid={`v2-project-card-${card.id}`}
       onPointerDown={onPointerDown}
       onClick={onClick}
     >
       <div className="df-row-title">{card.name}</div>
       {card.clientLabel ? <div className="df-opportunity-card-client">{card.clientLabel}</div> : null}
-      {card.movable ? null : (
-        <div className="df-project-card-opportunity" title="Still an Opportunity. Move it on Opportunities.">
-          OPPORTUNITY
-        </div>
-      )}
-    </article>
+    </a>
   );
 }
 
@@ -282,7 +287,7 @@ function ProjectRegisterTable({
         projectColumn.accessor("lead", {
           header: "Project manager",
           enableSorting: false,
-          cell: ({ row }) => <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.original.lead}</span>,
+          cell: ({ row }) => <span className="df-project-lead">{row.original.lead}</span>,
         }),
         projectColumn.accessor("budgetPercent", {
           id: "budget",
@@ -300,7 +305,7 @@ function ProjectRegisterTable({
                     style={{ width: `${Math.min(100, row.original.budgetPercent)}%` }}
                   />
                 </span>
-                <span className="df-mono" style={{ fontSize: 11, width: 36 }}>
+                <span className="df-mono df-project-budget-percent">
                   {row.original.budgetPercent}%
                 </span>
               </span>
@@ -310,7 +315,7 @@ function ProjectRegisterTable({
           id: "tracked",
           header: "Tracked MTD",
           enableSorting: false,
-          cell: ({ row }) => <span className="df-mono" style={{ fontSize: 12 }}>{row.original.trackedMtd}</span>,
+          cell: ({ row }) => <span className="df-mono df-project-tracked">{row.original.trackedMtd}</span>,
         }),
         projectColumn.accessor("created", {
           header: "Created",
@@ -323,8 +328,13 @@ function ProjectRegisterTable({
         projectColumn.accessor("due", {
           header: "Due",
           cell: ({ row }) => (
-            <span className="df-mono df-meta" style={{ whiteSpace: "nowrap" }}>
+            <span
+              className="df-mono df-meta df-project-due"
+              data-overdue={row.original.dueOverdue ? "true" : undefined}
+              style={{ whiteSpace: "nowrap" }}
+            >
               {row.original.due}
+              {row.original.dueOverdue ? <span className="df-sr-only"> (overdue)</span> : null}
             </span>
           ),
         }),
@@ -425,6 +435,7 @@ export function V2ProjectsPage() {
   const [filterQuery, setFilterQuery] = useState(filters.q);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [changingId, setChangingId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [creating, setCreating] = useState(
     () => new URLSearchParams(window.location.search).get("new") === "1",
   );
@@ -456,6 +467,7 @@ export function V2ProjectsPage() {
     data: projectsResponse,
     isLoading: registerLoading,
     isError: registerError,
+    refetch: refetchRegister,
   } = useQuery<ProjectsResponse>({
     queryKey: ["/api/crm/projects", "register-page", registerPath],
     enabled: !boardView,
@@ -464,13 +476,12 @@ export function V2ProjectsPage() {
   });
   const isLoading = !boardView && registerLoading;
   const isError = !boardView && registerError;
+  // The board filters as the register does, so both views need the options.
   const { data: clients = [] } = useQuery<CrmClient[]>({
     queryKey: ["/api/crm/clients"],
-    enabled: !boardView,
   });
   const { data: people } = useQuery<WorkspacePeople>({
     queryKey: ["/api/workspace/memberships"],
-    enabled: !boardView,
   });
   const total = projectsResponse?.total ?? projectsResponse?.data.length ?? 0;
   const paging = composePaging({
@@ -489,6 +500,7 @@ export function V2ProjectsPage() {
     data: kanbanResponse,
     isLoading: boardLoading,
     isError: boardError,
+    refetch: refetchBoard,
   } = useQuery<ProjectsResponse>({
     queryKey: [projectsKanbanPath()],
     enabled: boardView,
@@ -530,6 +542,7 @@ export function V2ProjectsPage() {
     tagFilter: "all",
     activeFilters,
     selectedId,
+    now,
   });
   const viewer = {
     userId: user?.id ?? "",
@@ -548,6 +561,13 @@ export function V2ProjectsPage() {
         projectType: project.projectType ?? null,
         status: project.status,
         projectStatus: project.projectStatus,
+        isDocumentationOnly: project.isDocumentationOnly,
+        clientId: project.clientId ?? null,
+        memberIds,
+        assigneeId: project.assigneeId ?? project.assignee?.id ?? null,
+        tagIds: (project.tags ?? []).map((tag) => tag.id),
+        dueDate: project.dueDate,
+        updatedAt: project.updatedAt,
         visible: projectVisibleTo({
           role: viewer.role,
           userId: viewer.userId,
@@ -559,11 +579,32 @@ export function V2ProjectsPage() {
     }),
     filterQuery,
     changingId,
+    filters,
+    expandedColumns: expanded,
+    now,
   });
 
   const moveProject = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
+    mutationFn: ({ id, status }: { id: string; status: string; previous: string; undo?: boolean }) =>
       apiRequest("PATCH", `/api/crm/projects/${id}`, { status }),
+    onSuccess: (_result, { id, status, previous, undo }) => {
+      const labelOf = (combined: string) => {
+        const projectStatus = projectStatusFromCombined(combined);
+        const label = PROJECT_STATUS_OPTIONS.find((option) => option.value === projectStatus)?.label ?? projectStatus;
+        return label.charAt(0) + label.slice(1).toLowerCase().replace(/_/g, " ");
+      };
+      const toastId = `project-status-${id}`;
+      if (undo) {
+        // Its own id: the Undo toast is still being dismissed and would swallow an update.
+        notify.success(`Moved back to ${labelOf(status)}`, { id: `${toastId}-undone` });
+        return;
+      }
+      notify.success(`Moved to ${labelOf(status)}`, {
+        id: toastId,
+        duration: 8000,
+        action: { label: "Undo", onClick: () => moveProject.mutate({ id, status: previous, previous: status, undo: true }) },
+      });
+    },
     onMutate: async ({ id, status }) => {
       await queryClient.cancelQueries({ queryKey: [projectsKanbanPath()] });
       const previous = queryClient.getQueryData<ProjectsResponse>([projectsKanbanPath()]);
@@ -595,7 +636,7 @@ export function V2ProjectsPage() {
     },
   });
 
-  function onMove(id: string, status: string) {
+  function onMove(id: string, status: string, previous: string) {
     if (readOnly) {
       setWriteRefusal(
         chromeRefusal({
@@ -606,7 +647,7 @@ export function V2ProjectsPage() {
       );
       return;
     }
-    moveProject.mutate({ id, status });
+    moveProject.mutate({ id, status, previous });
   }
 
   function onDragEnd(result: DropResult) {
@@ -614,8 +655,11 @@ export function V2ProjectsPage() {
     const { destination, source, draggableId } = result;
     if (!destination) return;
     if (destination.droppableId === source.droppableId) return;
-    // A column is a Project Status; HTTP writes the combined lifecycle.
-    onMove(draggableId, combinedStatusForProjectStatus(destination.droppableId));
+    // A column is a Project Status; HTTP writes the combined lifecycle. The
+    // combined value it had is what Undo writes back.
+    const previous = boardSource.find((row) => row.id === draggableId)?.status;
+    if (!previous) return;
+    onMove(draggableId, combinedStatusForProjectStatus(destination.droppableId), previous);
   }
 
   const createProject = useMutation({
@@ -701,10 +745,29 @@ export function V2ProjectsPage() {
             <h1 className="df-title">Projects</h1>
           </div>
         </header>
-        <p className="df-empty">Projects in this Workspace could not be loaded.</p>
+        <V2EmptyState
+          icon="projects"
+          title="Projects could not be loaded."
+          copy="Something went wrong while loading them. Try again."
+          testId="v2-projects-load-failed"
+          action={
+            <Button
+              variant="default"
+              type="button"
+              className="df-btn"
+              onClick={() => (boardView ? refetchBoard() : refetchRegister())}
+            >
+              Try again
+            </Button>
+          }
+        />
       </div>
     );
   }
+
+  // An empty Workspace's empty state carries its own New Project; a Read-only one offers none (F42).
+  const emptyWorkspace = (boardView ? board.emptyState : register.emptyState)?.kind === "none";
+  const showNewProject = !readOnly && !emptyWorkspace;
 
   return (
     <div className="df-page" data-testid="v2-projects">
@@ -712,24 +775,26 @@ export function V2ProjectsPage() {
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Projects</h1>
         </div>
-        <div className="df-library-actions">
-          <Button
-            variant="default"
-            type="button"
-            onClick={startCreate}
-            className="df-btn"
-          >
-            <Plus strokeWidth={1.6} aria-hidden />
-            New Project
-          </Button>
-        </div>
+        {showNewProject ? (
+          <div className="df-library-actions">
+            <Button
+              variant="default"
+              type="button"
+              onClick={startCreate}
+              className="df-btn"
+            >
+              <Plus strokeWidth={1.6} aria-hidden />
+              New Project
+            </Button>
+          </div>
+        ) : null}
       </header>
 
       <V2FormDialog
         open={creating}
         onOpenChange={setCreating}
         title="New Project"
-        description="A Project is the delivery work Tasks and Time Entries hang from. Its budget can wait for its Dossier's Settings, like everything else past its name."
+        description="An Internal Project: delivery work no Client pays for, where Tasks and Time Entries hang. A Client Project comes from a won Opportunity."
         submitLabel="Create Project"
         pending={createProject.isPending}
         canSubmit={newProjectPayload(name, budgetDraft, datesDraft) !== null}
@@ -811,67 +876,64 @@ export function V2ProjectsPage() {
             aria-label="Search Projects"
           />
         </label>
-        {boardView ? null : (
-          <>
-            <V2FilterSelect
-              label="Status"
-              ariaLabel="Filter by Project Status"
-              value={filters.status}
-              active={filters.status !== "all"}
-              options={[{ value: "all", label: "All" }, ...PROJECT_STATUS_OPTIONS]}
-              onChange={(status) => setFilters({ ...filters, status, page: 1 })}
-            />
-            {clientOptions.length === 0 ? null : (
-              <V2FilterSelect
-                label="Client"
-                ariaLabel="Filter by Client"
-                value={filters.client}
-                active={filters.client !== "all"}
-                options={[{ value: "all", label: "All" }, ...clientOptions]}
-                onChange={(client) => setFilters({ ...filters, client, page: 1 })}
-              />
-            )}
-            {leadOptions.length === 0 ? null : (
-              <V2FilterSelect
-                label="Project manager"
-                ariaLabel="Filter by Project Manager"
-                value={filters.lead}
-                active={filters.lead !== "all"}
-                options={[{ value: "all", label: "All" }, ...leadOptions]}
-                onChange={(lead) => setFilters({ ...filters, lead, page: 1 })}
-              />
-            )}
-            {workspaceTags.length === 0 ? null : (
-              <V2FilterSelect
-                label="Tag"
-                ariaLabel="Filter by Tag"
-                value={filters.tag}
-                active={filters.tag !== "all"}
-                options={[
-                  { value: "all", label: "All" },
-                  ...workspaceTags.map((tag) => ({ value: tag.id, label: tag.name })),
-                ]}
-                onChange={(tag) => setFilters({ ...filters, tag, page: 1 })}
-              />
-            )}
-            <V2FilterSelect
-              label="Type"
-              ariaLabel="Filter by Project type"
-              value={filters.type}
-              active={filters.type !== "all"}
-              options={[{ value: "all", label: "All" }, ...PROJECT_TYPE_OPTIONS]}
-              onChange={(type) => setFilters({ ...filters, type, page: 1 })}
-            />
-            <V2FilterSelect
-              label="Due"
-              ariaLabel="Filter by due date"
-              value={filters.due}
-              active={filters.due !== "all"}
-              options={[{ value: "all", label: "Any" }, ...PROJECT_DUE_OPTIONS]}
-              onChange={(due) => setFilters({ ...filters, due, page: 1 })}
-            />
-          </>
+        {/* The board applies the same filters, in the page (F40). */}
+        <V2FilterSelect
+          label="Status"
+          ariaLabel="Filter by Project Status"
+          value={filters.status}
+          active={filters.status !== "all"}
+          options={[{ value: "all", label: "All" }, ...PROJECT_STATUS_FILTER_OPTIONS]}
+          onChange={(status) => setFilters({ ...filters, status, page: 1 })}
+        />
+        {clientOptions.length === 0 ? null : (
+          <V2FilterSelect
+            label="Client"
+            ariaLabel="Filter by Client"
+            value={filters.client}
+            active={filters.client !== "all"}
+            options={[{ value: "all", label: "All" }, ...clientOptions]}
+            onChange={(client) => setFilters({ ...filters, client, page: 1 })}
+          />
         )}
+        {leadOptions.length === 0 ? null : (
+          <V2FilterSelect
+            label="Project manager"
+            ariaLabel="Filter by Project Manager"
+            value={filters.lead}
+            active={filters.lead !== "all"}
+            options={[{ value: "all", label: "All" }, ...leadOptions]}
+            onChange={(lead) => setFilters({ ...filters, lead, page: 1 })}
+          />
+        )}
+        {workspaceTags.length === 0 ? null : (
+          <V2FilterSelect
+            label="Tag"
+            ariaLabel="Filter by Tag"
+            value={filters.tag}
+            active={filters.tag !== "all"}
+            options={[
+              { value: "all", label: "All" },
+              ...workspaceTags.map((tag) => ({ value: tag.id, label: tag.name })),
+            ]}
+            onChange={(tag) => setFilters({ ...filters, tag, page: 1 })}
+          />
+        )}
+        <V2FilterSelect
+          label="Type"
+          ariaLabel="Filter by Project type"
+          value={filters.type}
+          active={filters.type !== "all"}
+          options={[{ value: "all", label: "All" }, ...PROJECT_TYPE_OPTIONS]}
+          onChange={(type) => setFilters({ ...filters, type, page: 1 })}
+        />
+        <V2FilterSelect
+          label="Due"
+          ariaLabel="Filter by due date"
+          value={filters.due}
+          active={filters.due !== "all"}
+          options={[{ value: "all", label: "Any" }, ...PROJECT_DUE_OPTIONS]}
+          onChange={(due) => setFilters({ ...filters, due, page: 1 })}
+        />
         <ToggleGroup
           type="single"
           className="df-segment"
@@ -902,7 +964,8 @@ export function V2ProjectsPage() {
               testIds={{ none: "v2-projects-board-empty" }}
             />
           ) : null}
-          {board.emptyState?.kind === "none" ? null : (
+          {/* The empty Workspace and an emptying filter each show their empty line alone. */}
+          {board.emptyState ? null : (
           <DragDropContext
             onDragStart={() => boardRef.current?.setAttribute("data-dragging", "true")}
             onDragEnd={onDragEnd}
@@ -928,7 +991,7 @@ export function V2ProjectsPage() {
                         {column.label}
                       </span>
                     </h2>
-                    <span className="df-count-chip">{column.cards.length}</span>
+                    <span className="df-count-chip">{column.total}</span>
                   </div>
                   <Droppable droppableId={column.id}>
                     {(provided, snapshot) => (
@@ -956,6 +1019,24 @@ export function V2ProjectsPage() {
                           </Draggable>
                         ))}
                         {provided.placeholder}
+                        {column.hiddenCount > 0 || (expanded.has(column.id) && column.total > PROJECT_CLOSED_PREVIEW) ? (
+                          <Button
+                            variant="ghost"
+                            type="button"
+                            size="sm"
+                            className="df-opportunity-more"
+                            onClick={() =>
+                              setExpanded((current) => {
+                                const next = new Set(current);
+                                if (next.has(column.id)) next.delete(column.id);
+                                else next.add(column.id);
+                                return next;
+                              })
+                            }
+                          >
+                            {column.hiddenCount > 0 ? `Show all ${column.total}` : "Show fewer"}
+                          </Button>
+                        ) : null}
                       </div>
                     )}
                   </Droppable>

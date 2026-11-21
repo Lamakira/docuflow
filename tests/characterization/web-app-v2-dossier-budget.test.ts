@@ -115,9 +115,12 @@ describe("a Project's budget reads and writes hours and minutes (#277)", () => {
   });
 
   it("New Project posts the name, and the budget only when one was given", () => {
-    expect(newProjectPayload("  Onboarding ", EMPTY_PROJECT_BUDGET_DRAFT)).toEqual({ name: "Onboarding" });
+    // An Internal Project, Planned (F38): never an Opportunity.
+    const internal = { projectType: "internal", status: "won_not_started" };
+    expect(newProjectPayload("  Onboarding ", EMPTY_PROJECT_BUDGET_DRAFT)).toEqual({ name: "Onboarding", ...internal });
     expect(newProjectPayload("Onboarding", { hours: "40", minutes: "30" })).toEqual({
       name: "Onboarding",
+      ...internal,
       budgetedHours: 40,
       budgetedMinutes: 30,
     });

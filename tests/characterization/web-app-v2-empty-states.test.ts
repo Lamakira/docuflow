@@ -168,7 +168,9 @@ describe("Projects", () => {
     const filtered = composeProjectBoard({ projects: [], filterQuery: "x", changingId: null });
     expect(filtered.emptyState?.kind).toBe("filtered");
     const page = v2("V2Projects.tsx");
-    expect(page).toContain('board.emptyState?.kind === "none"');
+    // The empty state shows alone, for an empty Workspace and for an emptying filter (F40).
+    expect(page).toContain("{board.emptyState ? null : (");
+    expect(page).toContain('(boardView ? board.emptyState : register.emptyState)?.kind === "none"');
     expect(page).toContain("clearProjectFilters(filters)");
   });
 });
