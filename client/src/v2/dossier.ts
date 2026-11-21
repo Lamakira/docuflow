@@ -163,6 +163,8 @@ export type DossierNote = {
 };
 
 export type DossierInput = {
+  /** The Workspace's Clients, for the Client picker in Settings (F39). */
+  clients?: Array<{ id: string; name: string }>;
   now: Date;
   currentUserId: string;
   tab: DossierTabId;
@@ -230,7 +232,25 @@ export type DossierSettingRow = {
   swatch?: string;
   /** The date this row sets with the date picker (#307). */
   date?: keyof ProjectDatesDraft;
+  /** The choice this row saves at once (F39); `value` then reads as the current choice's label. */
+  picker?: DossierSettingPicker;
 };
+
+export type DossierSettingPicker = {
+  /** The `PATCH /api/crm/projects/:id` field a pick sets. */
+  field: "clientId" | "projectType";
+  /** The chosen option's value; empty when nothing is chosen yet. */
+  value: string;
+  /** Shown while nothing is chosen. */
+  placeholder?: string;
+  options: Array<{ value: string; label: string }>;
+};
+
+export const PROJECT_TYPE_CHOICES = [
+  { value: "one_time", label: "One-time" },
+  { value: "monthly", label: "Monthly" },
+  { value: "hourly_budget", label: "Hourly" },
+];
 
 /** The fields the New dialogs focus first; the Tasks tab's opens in the New Task dialog (#307). */
 export const DOSSIER_FIELD = {
@@ -501,10 +521,45 @@ function hoursLabel(hours: number): string {
 }
 
 function kindLabel(project: DossierProject): string {
-  if (project.projectType === "internal" || !project.client) return "INTERNAL";
+  if (project.projectType === "internal") return "INTERNAL";
   if (project.projectType === "monthly") return "MONTHLY";
   if (project.projectType === "hourly_budget") return "HOURLY";
   return "CLIENT PROJECT";
+}
+
+function clientProjectIdentityRows(
+  project: DossierProject,
+  clients: Array<{ id: string; name: string }>,
+): DossierSettingRow[] {
+  const options = clients.map((client) => ({ value: client.id, label: client.name }));
+  const current = project.client;
+  if (current?.id && !options.some((option) => option.value === current.id)) {
+    options.push({ value: current.id, label: current.name });
+  }
+  options.sort((a, b) => a.label.localeCompare(b.label));
+  const type = PROJECT_TYPE_CHOICES.find((choice) => choice.value === project.projectType);
+  return [
+    {
+      label: "Client",
+      value: current?.name ?? "",
+      picker: {
+        field: "clientId",
+        value: current?.id ?? "",
+        ...(current?.id ? {} : { placeholder: "Choose a Client" }),
+        options,
+      },
+    },
+    {
+      label: "Type",
+      value: type?.label ?? "",
+      picker: {
+        field: "projectType",
+        value: type?.value ?? "",
+        ...(type ? {} : { placeholder: "Choose a Type" }),
+        options: PROJECT_TYPE_CHOICES,
+      },
+    },
+  ];
 }
 
 function statusLabel(status: string): string {
@@ -850,10 +905,13 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
   // Custom CRM field values are not shown here: `crm_custom_field_values`
   // holds them but no route exposes it, so there is nothing honest to render.
   // Composing one needs a BFF route, which #213 does not carry.
-  const identity: DossierSettingRow[] = [
-    { label: "Client", value: project.client?.name || "No Client" },
-    { label: "Kind", value: kindLabel(project), chip: true },
-  ];
+  const identity: DossierSettingRow[] =
+    project.projectType === "internal"
+      ? [
+          { label: "Client", value: "None — Internal Project" },
+          { label: "Kind", value: kindLabel(project), chip: true },
+        ]
+      : clientProjectIdentityRows(project, input.clients ?? []);
   const lifecycle: DossierSettingRow[] = [
     {
       label: "Status",

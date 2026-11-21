@@ -1699,6 +1699,7 @@ Instructions:
       const result = await storage.getCrmProjects(userId, {
         page,
         pageSize,
+        deliveryOnly: text("kind") === "delivery",
         status: text("status"),
         projectStatus: text("projectStatus"),
         search: text("search"),
@@ -1769,10 +1770,13 @@ Instructions:
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
 
-      // A Plan without Clients and Opportunities creates light Projects: Internal, Active.
+      // A Plan without Clients and Opportunities creates light Projects: Internal,
+      // Active unless a status is given. v2's New Project names Internal itself.
       const { projection: planPin, entitlements } = await planStanding();
       const lightProject =
-        !entitlements.features.crm && parsed.data.projectType === undefined && !parsed.data.clientId;
+        !entitlements.features.crm &&
+        (parsed.data.projectType === undefined || parsed.data.projectType === "internal") &&
+        !parsed.data.clientId;
       if (lightProject) {
         parsed.data.projectType = "internal";
         parsed.data.status ??= "won_in_progress";
@@ -1850,10 +1854,13 @@ Instructions:
           ...opportunityFields,
         }
       );
-      // Creation keeps its default Project type; a light Project is Internal.
-      const crmProject = lightProject
-        ? ((await storage.updateCrmProject(created.id, { projectType: "internal" })) ?? created)
-        : created;
+      // Creation keeps its default Project type; a light Project, or one asked
+      // for as Internal (v2's New Project), is Internal, and the update drops the
+      // Opportunity creation made for the default type.
+      const crmProject =
+        lightProject || parsed.data.projectType === "internal"
+          ? ((await storage.updateCrmProject(created.id, { projectType: "internal" })) ?? created)
+          : created;
 
       // Handle memberIds provided at creation time
       // createCrmProjectWithBase always auto-adds the creator; honour the caller's explicit selection

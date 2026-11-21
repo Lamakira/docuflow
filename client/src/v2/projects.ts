@@ -1,9 +1,9 @@
-import { projectStatusFromCombined } from "@shared/projectLifecycle";
+import { isDeliveryProject, isWonStatus, projectStatusFromCombined } from "@shared/projectLifecycle";
 import { stageColor, stagePill } from "./stageColor";
 import { projectStatusColor } from "./palette";
 import { budgetedHoursTotal, projectHref } from "./today";
 import { readPage, readPageSize, writePaging } from "./paging";
-import { formatFullDate, utcDay } from "./dates";
+import { dateToDay, formatFullDate, utcDay } from "./dates";
 import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 
 /**
@@ -39,6 +39,8 @@ export type ProjectRegisterInput = {
    * rows arrive narrowed, so the three filters above stay `""`/`all` then.
    */
   activeFilters?: string[];
+  /** Today, for the overdue mark (F41). */
+  now?: Date;
 };
 
 export type ProjectRegisterRow = {
@@ -55,6 +57,8 @@ export type ProjectRegisterRow = {
   /** When the Project was created and when it is due, in full (#307). */
   created: string;
   due: string;
+  /** Due before today and neither Completed nor Archived (F41). */
+  dueOverdue: boolean;
   href: string;
   selected: boolean;
   tags: string[];
@@ -79,8 +83,9 @@ const STATUS_LABEL: Record<string, string> = {
   archived: "ARCHIVED",
 };
 
+/** Internal is the type, not a missing Client: a won row with no Client is a Client project whose Client is missing. */
 function kindLabel(project: ProjectRegisterRowInput): string {
-  if (project.projectType === "internal" || !project.clientName) return "Internal";
+  if (project.projectType === "internal") return "Internal";
   if (project.projectType === "monthly") return "Monthly";
   if (project.projectType === "hourly_budget") return "Hourly";
   return "Client project";
@@ -111,6 +116,13 @@ export const PROJECT_STATUS_OPTIONS = [
   { value: "completed", label: "COMPLETED" },
   { value: "archived", label: "ARCHIVED" },
 ];
+
+/**
+ * The Status filter's choices on the register and the board: no `on_hold`, which
+ * no v2 screen can set (F43). A shared `status=on_hold` link still filters and
+ * is still named, through {@link PROJECT_STATUS_OPTIONS}.
+ */
+export const PROJECT_STATUS_FILTER_OPTIONS = PROJECT_STATUS_OPTIONS.filter((option) => option.value !== "on_hold");
 
 export const PROJECT_TYPE_OPTIONS = [
   { value: "one_time", label: "One-time" },
@@ -234,11 +246,13 @@ export function projectDueRange(preset: string, now: Date): { from?: Date; to?: 
 
 /**
  * The server page the register shows: `scope=visible` so a Member's page is
- * never short of rows the register would hide.
+ * never short of rows the register would hide, and `kind=delivery` so open and
+ * lost sales stay on Opportunities (F37).
  */
 export function projectRegisterPath(filters: ProjectRegisterFilters, now: Date): string {
   const params = new URLSearchParams({
     scope: "visible",
+    kind: "delivery",
     page: String(filters.page),
     pageSize: String(filters.pageSize),
   });
@@ -285,8 +299,20 @@ const PROJECTS_NONE = {
   copy: "A Project is the delivery work Tasks and Time Entries hang from. Create one to start planning and tracking work.",
 };
 
+/**
+ * A due date before today, on a Project still open. Due dates are date-only at
+ * UTC midnight, so the stored UTC day meets the reader's local today: a Project
+ * due today is not overdue.
+ */
+export function projectDueOverdue(dueDate: Date | string | null | undefined, projectStatus: string, now: Date): boolean {
+  if (projectStatus === "completed" || projectStatus === "archived") return false;
+  const due = utcDay(dueDate);
+  return due !== "" && due < dateToDay(now);
+}
+
 export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegisterModel {
   const needle = input.filterQuery.trim().toLowerCase();
+  const now = input.now ?? new Date();
   const rows = input.projects
     .filter((project) => project.visible)
     .filter((project) => matchesFilter(project, needle, input.statusFilter, input.tagFilter))
@@ -302,6 +328,7 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
       trackedMtd: project.trackedMtd,
       created: formatFullDate(project.createdAt),
       due: formatFullDate(project.dueDate, { dateOnly: true }),
+      dueOverdue: projectDueOverdue(project.dueDate, project.projectStatus, now),
       href: projectHref(project.id),
       selected: project.id === input.selectedId,
       tags: project.tags.map((tag) => tag.name),
@@ -322,14 +349,14 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
 
 /**
  * Delivery board (#259). The same Projects the register lists, grouped by the
- * same Project Status — the toggle changes how they are drawn, never which.
+ * same Project Status, narrowed by the same filters — the toggle changes how
+ * they are drawn, never which.
  *
  * v1's Kanban drew the whole combined lifecycle, so its first five columns were
  * the sales pipeline, which v2 already draws on Opportunities. ADR-0001
- * separates the two, and this board follows it for **writes**: an Opportunity
- * that is still open, or lost, sits where the register puts it but does not move
- * from here. Dropping a lead on ACTIVE would win the sale from the delivery
- * board.
+ * separates the two: an Opportunity that is still open, or lost, is not drawn
+ * here at all (F37). Dropping a lead on ACTIVE would win the sale from the
+ * delivery board.
  */
 
 export function projectsAllPath(): string {
@@ -377,16 +404,16 @@ export function combinedStatusForProjectStatus(projectStatus: string): string {
 
 /**
  * Moves from the board. Won work, and Internal work — which never went through a
- * sale. "Internal" is the register's definition, a Project type or no Client at
- * all, so the two views agree on what they call it.
+ * sale. Internal is the Project type, as the register reads it: a row with no
+ * Client is not Internal for that.
  */
 export function projectStatusMovable(project: {
   projectType: string | null;
-  clientName: string | null;
+  clientName?: string | null;
   status: string | null | undefined;
 }): boolean {
-  if (project.status?.startsWith("won")) return true;
-  return project.projectType === "internal" || !project.clientName;
+  if (isWonStatus(project.status)) return true;
+  return project.projectType === "internal";
 }
 
 export type ProjectBoardRowInput = {
@@ -399,13 +426,70 @@ export type ProjectBoardRowInput = {
   /** What the register groups by, so the board groups by it too. */
   projectStatus: string;
   visible: boolean;
+  isDocumentationOnly?: number | null;
+  clientId?: string | null;
+  /** Project Members in the order the server returns them (oldest first). */
+  memberIds?: string[];
+  assigneeId?: string | null;
+  tagIds?: string[];
+  dueDate?: Date | string | null;
+  updatedAt?: Date | string | null;
 };
+
+/** The register's filters, minus the search, which the board applies itself. */
+export type ProjectBoardFilters = Pick<ProjectRegisterFilters, "status" | "client" | "lead" | "tag" | "type" | "due">;
 
 export type ProjectBoardInput = {
   projects: ProjectBoardRowInput[];
   filterQuery: string;
   changingId: string | null;
+  filters?: ProjectBoardFilters;
+  /** COMPLETED and ARCHIVED columns the reader opened past their first {@link PROJECT_CLOSED_PREVIEW} cards. */
+  expandedColumns?: ReadonlySet<string>;
+  now?: Date;
 };
+
+/** The closed columns, capped to their most recently updated cards as the pipeline caps Won and Lost (F25). */
+export const PROJECT_CLOSED_COLUMNS: readonly string[] = ["completed", "archived"];
+export const PROJECT_CLOSED_PREVIEW = 10;
+
+function toTime(value: Date | string | null | undefined): number | null {
+  if (!value) return null;
+  const time = (value instanceof Date ? value : new Date(value)).getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+/**
+ * Whether a board row passes the register's filters, with the register's
+ * meaning (`getCrmProjects`): Project Status, Client, Project manager (the first
+ * Project Member, else the assignee), any Tag, type, and the due presets.
+ */
+export function matchesProjectBoardFilters(
+  row: ProjectBoardRowInput,
+  filters: ProjectBoardFilters,
+  now: Date,
+): boolean {
+  const projectStatus = row.projectStatus || projectStatusFromCombined(row.status);
+  if (filters.status !== "all" && projectStatus !== filters.status) return false;
+  if (filters.client !== "all" && row.clientId !== filters.client) return false;
+  if (filters.lead !== "all" && (row.memberIds?.[0] ?? row.assigneeId ?? null) !== filters.lead) return false;
+  if (filters.tag !== "all" && !(row.tagIds ?? []).includes(filters.tag)) return false;
+  if (filters.type !== "all" && row.projectType !== filters.type) return false;
+  const range = projectDueRange(filters.due, now);
+  if (range) {
+    const due = toTime(row.dueDate);
+    if (range.none) return due === null;
+    if (due === null) return false;
+    if (range.from && due < range.from.getTime()) return false;
+    if (range.to && due > range.to.getTime()) return false;
+  }
+  return true;
+}
+
+function boardFiltersActive(filters: ProjectBoardFilters | undefined): boolean {
+  if (!filters) return false;
+  return (["status", "client", "lead", "tag", "type", "due"] as const).some((name) => filters[name] !== "all");
+}
 
 export type ProjectBoardCard = {
   id: string;
@@ -414,7 +498,7 @@ export type ProjectBoardCard = {
   status: string;
   href: string;
   changing: boolean;
-  /** False for an Opportunity that is still open, or lost. */
+  /** False for a row the board may not write (a documented row that is not Internal). */
   movable: boolean;
 };
 
@@ -425,12 +509,16 @@ export type ProjectBoardColumn = {
   color: string;
   ink: "light" | "dark";
   cards: ProjectBoardCard[];
+  /** Every card the column holds, including those the cap leaves out. */
+  total: number;
+  /** Cards past the closed column's cap, behind `Show all`. */
+  hiddenCount: number;
 };
 
 function boardColumn(id: string, label: string): ProjectBoardColumn {
   // The pill's fill steps darker where neither ink clears 4.5:1 (F29).
   const { fill: color, ink } = stagePill(stageColor(id));
-  return { id, label, color, ink, cards: [] };
+  return { id, label, color, ink, cards: [], total: 0, hiddenCount: 0 };
 }
 
 export type ProjectBoardModel = {
@@ -442,11 +530,16 @@ export type ProjectBoardModel = {
 
 export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel {
   const needle = input.filterQuery.trim().toLowerCase();
+  const now = input.now ?? new Date();
   const columns: ProjectBoardColumn[] = PROJECT_BOARD_COLUMNS.map((column) => boardColumn(column.id, column.label));
   const columnById = new Map(columns.map((column) => [column.id, column]));
+  const updatedAtById = new Map<string, number | null>();
 
   for (const project of input.projects) {
     if (!project.visible) continue;
+    // Open and lost sales are Opportunities, never delivery work (F37).
+    if (!isDeliveryProject(project)) continue;
+    if (input.filters && !matchesProjectBoardFilters(project, input.filters, now)) continue;
     if (needle) {
       const haystack = `${project.name} ${project.clientName ?? ""}`.toLowerCase();
       if (!haystack.includes(needle)) continue;
@@ -469,14 +562,30 @@ export function composeProjectBoard(input: ProjectBoardInput): ProjectBoardModel
       changing: project.id === input.changingId,
       movable: projectStatusMovable(project),
     });
+    updatedAtById.set(project.id, toTime(project.updatedAt));
   }
 
-  const count = columns.reduce((sum, column) => sum + column.cards.length, 0);
+  for (const column of columns) {
+    column.total = column.cards.length;
+    if (!PROJECT_CLOSED_COLUMNS.includes(column.id)) continue;
+    column.cards.sort((a, b) => (updatedAtById.get(b.id) ?? 0) - (updatedAtById.get(a.id) ?? 0));
+    const capped =
+      !needle && !input.expandedColumns?.has(column.id) && column.cards.length > PROJECT_CLOSED_PREVIEW;
+    if (capped) {
+      column.hiddenCount = column.cards.length - PROJECT_CLOSED_PREVIEW;
+      column.cards = column.cards.slice(0, PROJECT_CLOSED_PREVIEW);
+    }
+  }
+
+  const count = columns.reduce((sum, column) => sum + column.total, 0);
   const empty = count === 0;
+  const filtersActive = boardFiltersActive(input.filters);
   return {
     empty,
-    emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle)), "Projects", PROJECTS_NONE, undefined, {
-      searchOnly: true,
+    // Filters emptied it: "No Projects match these filters" and Clear filters, as
+    // the register says; the search alone keeps its search line.
+    emptyState: emptyModelOf(emptyKindOf(empty, Boolean(needle) || filtersActive), "Projects", PROJECTS_NONE, undefined, {
+      searchOnly: !filtersActive,
     }),
     columns,
     count,
@@ -630,17 +739,28 @@ export function composeProjectDatesForm(draft: ProjectDatesDraft, saved: SavedPr
   return { issue: null, dirty, canSave: dirty, patch: dirty ? patch : null };
 }
 
-/** What New Project posts; null while the name is blank, or the budget or the dates do not read. */
+/** What New Project posts, an Internal Project at Planned; null while the name is blank, or the budget or the dates do not read. */
 export function newProjectPayload(
   name: string,
   draft: ProjectBudgetDraft,
   dates: ProjectDatesDraft = EMPTY_PROJECT_DATES_DRAFT,
-): { name: string; budgetedHours?: number; budgetedMinutes?: number; startDate?: string; dueDate?: string } | null {
+): {
+  name: string;
+  projectType: "internal";
+  status: "won_not_started";
+  budgetedHours?: number;
+  budgetedMinutes?: number;
+  startDate?: string;
+  dueDate?: string;
+} | null {
   const trimmed = name.trim();
   const read = readProjectBudget(draft);
   if (!trimmed || !read.budget || projectDatesIssue(dates)) return null;
+  // An Internal Project, Planned (F38): a Client Project only comes from a won Opportunity.
   return {
     name: trimmed,
+    projectType: "internal",
+    status: "won_not_started",
     ...(read.budget.budgetedHours == null
       ? {}
       : { budgetedHours: read.budget.budgetedHours, budgetedMinutes: read.budget.budgetedMinutes }),

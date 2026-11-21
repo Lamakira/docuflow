@@ -110,7 +110,7 @@ export function V2Shell({ children }: { children: React.ReactNode }) {
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
   const { data: projectsResponse } = useQuery<{ total?: number }>({
     queryKey: ["/api/crm/projects", "v2-count"],
-    queryFn: () => fetch("/api/crm/projects?pageSize=1").then((res) => res.json()),
+    queryFn: () => fetch("/api/crm/projects?pageSize=1&kind=delivery").then((res) => res.json()),
   });
   const { data: memberships } = useQuery<MembershipsResponse>({
     queryKey: ["/api/memberships"],

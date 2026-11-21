@@ -302,9 +302,9 @@ describe("CRM projects (characterization)", () => {
     // Case does not decide the order.
     expect(await names({ sort: "name" })).toEqual(["Alpha", "bravo", "Charlie"]);
     expect(await names({ sort: "name", dir: "desc" })).toEqual(["Charlie", "bravo", "Alpha"]);
-    // ACTIVE, COMPLETED, PLANNED: alphabetical, as the column reads.
-    expect(await names({ sort: "status" })).toEqual(["bravo", "Alpha", "Charlie"]);
-    expect(await names({ sort: "status", dir: "desc" })).toEqual(["Charlie", "Alpha", "bravo"]);
+    // PLANNED, ACTIVE, COMPLETED: the lifecycle, not the alphabet (F43).
+    expect(await names({ sort: "status" })).toEqual(["Charlie", "bravo", "Alpha"]);
+    expect(await names({ sort: "status", dir: "desc" })).toEqual(["Alpha", "bravo", "Charlie"]);
     // A Project with no budget sorts last in both directions.
     expect(await names({ sort: "budget", dir: "desc" })).toEqual(["bravo", "Alpha", "Charlie"]);
     expect(await names({ sort: "budget" })).toEqual(["Alpha", "bravo", "Charlie"]);
@@ -313,6 +313,109 @@ describe("CRM projects (characterization)", () => {
     expect(second.body.data[0].project.name).toBe("bravo");
     // An unknown column falls back to most recently updated.
     expect((await names({ sort: "nope" }))[0]).toBe("Alpha");
+  });
+
+  it("sorts by Project Status in lifecycle order, an unknown status last (F43)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const make = (name: string, status: string) => createCrmProject(user.agent, { name, status, projectType: "internal" });
+    await make("e-archived", "won_cancelled");
+    await make("d-completed", "won_completed");
+    await make("c-review", "won_in_review");
+    const held = await make("b-held", "won_in_progress");
+    const odd = await make("f-odd", "won_in_progress");
+    await make("a-active", "won_in_progress");
+    await make("z-planned", "won_not_started");
+    const pool = getOwnerPool();
+    await pool.query(`UPDATE crm_projects SET project_status = 'on_hold' WHERE id = $1`, [held.crmProject.id]);
+    await pool.query(`UPDATE crm_projects SET project_status = 'mystery' WHERE id = $1`, [odd.crmProject.id]);
+
+    const names = async (dir: string) =>
+      (await user.agent.get("/api/crm/projects").query({ pageSize: 50, sort: "status", dir })).body.data.map(
+        (p: { project: { name: string } }) => p.project.name,
+      );
+    expect(await names("asc")).toEqual(["z-planned", "a-active", "b-held", "c-review", "d-completed", "e-archived", "f-odd"]);
+    expect((await names("desc")).slice(0, 6)).toEqual(["f-odd", "e-archived", "d-completed", "c-review", "b-held", "a-active"]);
+  });
+
+  it("sorts Budget used by hours and minutes, as the meter counts them (F43)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    // 3 h over 4 h = 75 %; 3 h over 2 h 30 min = 120 %, though its whole hours alone read 150 %.
+    const fourHours = await createCrmProject(user.agent, { name: "four", status: "won_in_progress", budgetedHours: 4 });
+    const twoAndHalf = await createCrmProject(user.agent, {
+      name: "two-thirty",
+      status: "won_in_progress",
+      budgetedHours: 2,
+      budgetedMinutes: 30,
+    });
+    const minutesOnly = await createCrmProject(user.agent, {
+      name: "minutes-only",
+      status: "won_in_progress",
+      budgetedHours: 0,
+      budgetedMinutes: 30,
+    });
+    await createCrmProject(user.agent, { name: "none", status: "won_in_progress" });
+    for (const { crmProject } of [fourHours, twoAndHalf]) {
+      await user.agent.patch(`/api/crm/projects/${crmProject.id}`).send({ actualHours: 3 });
+    }
+    await user.agent.patch(`/api/crm/projects/${minutesOnly.crmProject.id}`).send({ actualHours: 1 });
+    const names = async (dir: string) =>
+      (await user.agent.get("/api/crm/projects").query({ pageSize: 50, sort: "budget", dir })).body.data.map(
+        (p: { project: { name: string } }) => p.project.name,
+      );
+    expect(await names("asc")).toEqual(["four", "two-thirty", "minutes-only", "none"]);
+    expect(await names("desc")).toEqual(["minutes-only", "two-thirty", "four", "none"]);
+  });
+
+  it("lists delivery rows only with kind=delivery: open and lost sales stay on Opportunities (F37)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const client = await createClient(user.agent);
+    await createCrmProject(user.agent, { name: "open sale", status: "follow_up", clientId: client.id });
+    await createCrmProject(user.agent, { name: "lost sale", status: "lost", clientId: client.id });
+    await createCrmProject(user.agent, { name: "custom stage", status: "won_paid", clientId: client.id });
+    const won = await createCrmProject(user.agent, { name: "won", status: "won_in_progress", clientId: client.id });
+    const legacy = await createCrmProject(user.agent, { name: "legacy review", status: "won_in_review_pm", clientId: client.id });
+    const internal = await createCrmProject(user.agent, { name: "internal", projectType: "internal", status: "won_not_started" });
+
+    const delivery = await user.agent.get("/api/crm/projects").query({ kind: "delivery", pageSize: 50 });
+    expect(delivery.status).toBe(200);
+    expect(delivery.body.total).toBe(3);
+    expect(delivery.body.data.map((p: { id: string }) => p.id).sort()).toEqual(
+      [won.crmProject.id, legacy.crmProject.id, internal.crmProject.id].sort(),
+    );
+    // The count holds across pages.
+    const page = await user.agent.get("/api/crm/projects").query({ kind: "delivery", page: 2, pageSize: 2 });
+    expect(page.body).toMatchObject({ total: 3, page: 2 });
+    expect(page.body.data).toHaveLength(1);
+    // Without `kind`, every row as before (v1 and the pipeline read these).
+    expect((await user.agent.get("/api/crm/projects").query({ pageSize: 50 })).body.total).toBe(6);
+  });
+
+  it("v2's New Project makes an Internal Project at Planned, not an Opportunity (F38)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const payload = newProjectPayload("Harbor tooling", { hours: "12", minutes: "30" }, {
+      startDate: "2026-11-01",
+      dueDate: "2026-12-01",
+    });
+    const created = await user.agent.post("/api/crm/projects").send(payload!);
+    expect(created.status).toBe(201);
+    const read = (await user.agent.get(`/api/crm/projects/${created.body.crmProject.id}`)).body;
+    expect(read).toMatchObject({
+      projectType: "internal",
+      status: "won_not_started",
+      projectStatus: "planned",
+      clientId: null,
+      budgetedHours: 12,
+      budgetedMinutes: 30,
+    });
+    expect(read.opportunityOwnerId).toBeNull();
+    const opportunities = await getOwnerPool().query(`SELECT id FROM opportunities WHERE crm_project_id = $1`, [read.id]);
+    expect(opportunities.rows).toHaveLength(0);
+    const delivery = await user.agent.get("/api/crm/projects").query({ kind: "delivery" });
+    expect(delivery.body.data.map((p: { id: string }) => p.id)).toContain(read.id);
   });
 
   it("saves the start and due dates v2's New Project and Settings send, and clears one (#307)", async () => {

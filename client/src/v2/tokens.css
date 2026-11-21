@@ -2708,16 +2708,6 @@ button.df-activity-row {
   animation: none;
 }
 
-/* An Opportunity that is still open, or lost, on the Projects board: where the
-   register puts it, but moved on Opportunities, not here (#259). */
-.df-project-card-opportunity {
-  margin-top: var(--df-space-2);
-  font-family: var(--df-font-data);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--df-text-1);
-  color: var(--df-archive-slate);
-}
-
 .df-opportunity-card[data-locked="true"] {
   cursor: pointer;
 }
@@ -2839,6 +2829,26 @@ button.df-activity-row {
 
 .df-client-count {
   font-size: var(--df-text-2);
+}
+
+/* The Projects register's cells, on the type scale (F43). */
+.df-project-lead {
+  font-weight: 500;
+  font-size: var(--df-text-3);
+}
+
+.df-project-budget-percent {
+  width: 36px;
+  font-size: var(--df-text-2);
+}
+
+.df-project-tracked {
+  font-size: var(--df-text-2);
+}
+
+/* A passed due date on a Project still open, in the alert ink (F41). */
+.df-project-due[data-overdue="true"] {
+  color: var(--df-alert-ink);
 }
 
 /* Title and count chip sit together at the left of a card head. */
