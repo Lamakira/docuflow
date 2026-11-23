@@ -914,3 +914,170 @@ take the same.
   the Source filter cannot select. Real data only uses listed sources.
 
 - **Fixed:** 2026-11-20. The card is titled Contacts, its count beside the title; each contact has an Edit button that opens the dialog prefilled and saves through `PATCH /api/crm/contacts/:id` (tested unchanged on the dev database: "Contact saved"); removing a contact waits for the modal pass. The register's cells use the type scale, and the demo seed files its Clients under Direct (the local dev database keeps "Referral" until it is reseeded).
+
+---
+
+The seven entries below come from one full UI review of the Projects screen
+(the register, its filters, sort and paging, the board, and New Project) on
+2026-11-20. The Project Dossier (`/projects/:id`) is left to its own review.
+The app ran locally on the seeded DocuFlow Workspace (110 rows on
+`/projects`); New Project was opened and closed without saving, and nothing
+was dropped on the board. What New Project writes was read through the real
+create route on the test database. The real Workspace's shape comes from the
+cutover rehearsal copy (`docuflow_rehearsal`): 122 rows, 88 of them won (33
+Active, 30 Completed, 25 Planned), 12 open sales and 22 lost ones; 25 rows
+without a Client; a due date on 113, a budget on 23; no row On hold or In
+review. Read from code only: the stacked mobile register, a Read-only
+Workspace, an empty Workspace, dark mode, and the failed-load state.
+
+## F37 — The Projects register and board list open and lost sales as Projects
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, `/projects` and `/projects?view=board` on the seeded Workspace, then counted on the rehearsal copy
+- **Where:** `server/modules/postgresStorage.ts:910-913` (the register's conditions keep every row that is not documentation-only), `client/src/v2/projects.ts:288-322` (`composeProjectRegister`) and `:443-485` (`composeProjectBoard`), `client/src/v2/V2Shell.tsx:113` (the rail's count)
+- **Severity:** misleading
+
+The register lists every `crm_projects` row of the Workspace, sales included,
+each by its Project Status: an open sale reads `PLANNED` and a lost one
+`ARCHIVED`, with the kind "Client project" and a Budget used meter, and the row
+opens a Project Dossier. Invoice pilot II, at Follow up on the pipeline, is the
+fourth row of the seeded register (seen). On the seed, 37 of the 110 rows are
+sales: 16 open, 21 lost. The board draws them in place: 15 of PLANNED's 16
+cards and all 21 of ARCHIVED's carry the `OPPORTUNITY` tag and cannot move, so
+ARCHIVED holds nothing but lost sales. The rail says `Projects 110` and the
+pager `1–50 of 110 projects`. On the real Workspace, 34 of 122 rows are sales
+(12 open shown as Planned, 22 lost as Archived) beside 88 won Projects, and the
+board's Archived column would again be lost sales only. F32 split the same rows
+on the Client record. It would take the register, its count, its filters, the
+rail and the board to hold won rows and Internal Projects only, which also
+retires the `OPPORTUNITY` tag.
+
+- **Fixed:** 2026-11-20. The register, its pager, its filters, the rail count and the board hold delivery work only: a row with no Opportunity (Internal, documented) or a won one (`isDeliveryProject`; the server's `kind=delivery` filters on the explicit won statuses, never `like 'won%'`). The `OPPORTUNITY` tag is gone. Seeded: `Projects 73` and `1–50 of 73 projects` instead of 110; PLANNED and ARCHIVED on the board hold no sale. Over the rehearsal copy through the real functions: 88 of 122 rows listed (33 Active, 25 Planned, 30 Completed). The Client register's Client Projects count uses the same won list.
+
+## F38 — New Project creates an Opportunity at Lead, which the board then wins by a drag
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, New Project read from code, then the create route called as the dialog calls it (test database)
+- **Where:** `client/src/v2/projects.ts:634-650` (`newProjectPayload`: name, budget, dates), `server/routes.ts:1772-1808` (no status means `lead`, no type means `one_time`, unless the Plan lacks Clients and Opportunities), `client/src/v2/projects.ts:383-390` (`projectStatusMovable`: no Client counts as Internal)
+- **Severity:** misleading, and it writes the wrong record
+
+On a Plan with Clients and Opportunities, New Project posts a name (and a
+budget and dates when given). The server stores that as a `one_time` row at
+`lead` with no Client: an Opportunity, not a Project. Called the same way on
+the test database, it answered `status: lead, projectType: one_time,
+clientId: null`. The new row lands on the Opportunities pipeline as a Lead card
+and on the Projects register as `PLANNED`. The board treats any row without a
+Client as Internal, so that Lead is draggable there, and dropping it on ACTIVE
+writes `won_in_progress`: the sale is won from the delivery board, which the
+board's own comment (`projects.ts:324-334`) says it must never do. The local dev
+database holds two such rows, both named "Project test", one at Lead and one at
+Proposal sent, both on the pipeline (seen). On the real Workspace 5 open sales
+have no Client (4 Lead, 1 Proposal sent) and are draggable on the board today.
+It would take New Project to create an Internal Project (type `internal`,
+status `won_in_progress`, as a Plan without Opportunities already does) or to
+ask whether the work is for a Client, and the board to read Internal from the
+type, not from a missing Client.
+
+- **Fixed:** 2026-11-20. New Project posts `projectType: internal` and `status: won_not_started`: called on the test database, it stores an Internal Project, Planned, with no Opportunity row and no stage history, on a Plan with Clients and Opportunities and on Starter. The board reads Internal from the type, so a sale without a Client is no longer draggable: over the rehearsal copy, no open or lost sale can be moved. The two "Project test" rows of the local dev database stay on the pipeline, where they belong.
+
+## F39 — A Project's Client and type cannot be set anywhere in v2
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, New Project and the Dossier read from code, then v1 read
+- **Where:** `client/src/v2/V2Projects.tsx:728-800` (New Project: name, budget, dates), `client/src/v2/V2Dossier.tsx:490-531` (the Dossier's writes: name, Project Manager, budget, dates, status), against v1's `client/src/pages/CrmProjectPage.tsx:1380` (the Client picker)
+- **Severity:** degrading, a v1 capability lost
+
+Nothing in v2 sets or changes a Project's Client or its type. A Project made
+with New Project stays without a Client, so the register calls it Internal
+forever; one filed under the wrong Client stays there. The Type filter offers
+One-time, Monthly, Hourly and Internal, none of which v2 can give. v1's Project
+page did both through the same `PATCH /api/crm/projects/:id` v2 already calls.
+On the real Workspace 25 rows have no Client, 20 of them won: each reads
+Internal, and v2 gives no way to say otherwise. PARITY.md misses it for the
+reason F33 gave: both versions call the same endpoint. It would take Client and
+Type in the Dossier's Settings (and, with F38, in New Project).
+
+- **Fixed:** 2026-11-20. A Client Project's Settings take a Client picker (the Workspace's Clients, "Choose a Client" while none is set, no "No Client") and a Type picker (One-time, Monthly, Hourly), each saving at once; an Internal Project reads "None — Internal Project" and keeps its INTERNAL chip. Internal is read from the type, so the 20 real won rows without a Client read Client project and can now be given one. Seen on Inventory rollout: Type saved as Monthly, the header followed, then restored to One-time.
+
+## F40 — The board lags the pipeline: filters, closed work, opening a card, undo
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, `/projects?view=board` on the seeded Workspace (seen unless marked)
+- **Where:** `client/src/v2/V2Projects.tsx:814` (the filters leave the bar in board view), `:540-562` (`composeProjectBoard` gets the search only), `:207-224` (the card), `:564-600` (a drop: no toast, no undo)
+- **Severity:** degrading
+
+- Switching to the board hides Status, Client, Project manager, Tag, Type and
+  Due, yet the URL keeps them, and the board ignores them: a register narrowed
+  to one Client becomes a board of all 110 rows, and switching back finds the
+  filter again. Only the search applies, and on the board it filters in the
+  page while the register asks the server.
+- COMPLETED holds 41 cards on the seed, scrolling 3,427px inside a 669px
+  column; the real Workspace has 30. F25 gave the pipeline's closed columns
+  their 10 most recent cards and `Show all`.
+- A card is an `<article role="button">`: Enter on a focused card does nothing
+  (seen), a middle click opens nothing (from code), and Ctrl-click goes through
+  `window.open`. F27 made the pipeline's cards links.
+- A drop saves without a word: no `Moved to` toast and no Undo, though a drop
+  on ARCHIVED cancels the work. F28 and F31 gave the pipeline both (from code).
+
+It would take the board to apply the register's filters (or keep them
+visible), cap the closed columns as the pipeline does, make each card a link,
+and toast a move with Undo.
+
+- **Fixed:** 2026-11-20. The board keeps the filter bar and applies every filter as the register does (seen: Client Brightfold Studio gives 19 cards, the Client record's count); COMPLETED and ARCHIVED show their 10 most recently updated cards and `Show all N` (seen: 10 of 41); a card is a link, and Enter on a focused card opens it (seen); a drop toasts `Moved to <Status>` with Undo for 8 seconds (seen: a keyboard move to In review, and Undo moving it back).
+
+## F41 — A passed due date looks like any other
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, the register on the seeded Workspace, then counted on the rehearsal copy
+- **Where:** `client/src/v2/projects.ts:304` (`due` is the formatted date only), `client/src/v2/V2Projects.tsx:323-330` (the Due cell)
+- **Severity:** misleading
+
+The Due column prints the date in the same grey whether it is next month or
+last spring; only the `Due: Overdue` filter tells them apart. On the real
+Workspace 31 of the 33 Active Projects and 19 of the 25 Planned ones are past
+their due date, which suggests the dates came over from v1 and no longer mean
+much, and the register gives no sign of it either way. F30 marked a passed
+close date on the pipeline's cards in the alert ink. It would take the same on
+the Due cell for Projects that are neither Completed nor Archived.
+
+- **Fixed:** 2026-11-20. The Due cell of a Project that is neither Completed nor Archived turns to the alert ink once its day has passed, with "(overdue)" for a screen reader (seen on a demo Project given a past date, then restored). Over the rehearsal copy, 50 Projects are marked: 31 Active and 19 Planned.
+
+## F42 — New Project shows where it cannot be used, and a failed load is a dead end
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, from code (no Read-only, empty or failing Workspace was at hand)
+- **Where:** `client/src/v2/V2Projects.tsx:715-725` (the header button), `:658-663` (the empty state's button), `:696-706` (the failed state)
+- **Severity:** degrading
+
+The header's `New Project` shows in a Read-only Workspace, where pressing
+Create only answers with a refusal; the empty state already hides its own
+button there. In an empty Workspace the header button sits above the empty
+state's, so the page offers `New Project` twice. A failed load prints "Projects
+in this Workspace could not be loaded." under the title with no `Try again`.
+Opportunities fixed the first two in F31 and the Client record the third in
+F35.
+
+- **Fixed:** 2026-11-20. The header's `New Project` leaves a Read-only Workspace and an empty one, where the empty state carries it; a failed load shows the designed empty state with `Try again` (from code and tests; no such Workspace was at hand).
+
+## F43 — Projects polish: dialog copy, type scale, sort, On hold
+
+- **Status:** closed — fixed 2026-11-20
+- **Found:** 2026-11-20, the register and New Project (seen unless marked)
+- **Where:** `client/src/v2/V2Projects.tsx` (lines below), `server/modules/postgresStorage.ts:982-986`, `client/src/v2/projects.ts:370`
+
+- New Project's description says its budget "can wait for its Dossier's
+  Settings, like everything else past its name", above Budget hours, Minutes,
+  Start date and Due date fields (`:732`).
+- The register sets `font-size: 13.5px`, `11px` and `12px` inline on the
+  Project manager, Budget used and Tracked MTD cells (`:285`, `:303`, `:313`),
+  off the type scale. F36 fixed the same on Clients.
+- Sorting by Status orders the raw values alphabetically: Active, Archived,
+  Completed, In review, On hold, Planned, not the lifecycle (from code).
+- Sorting by Budget used divides by the budget's hours and drops its minutes,
+  while the meter counts both (from code).
+- The Status filter offers ON HOLD, which no v2 screen can set
+  (`projectStatusChoices` leaves it out) and the board has no column for. No
+  real row is On hold.
+
+- **Fixed:** 2026-11-20. New Project describes an Internal Project and says a Client Project comes from a won Opportunity; the three cells use type-scale classes; Status sorts by the lifecycle (Planned to Archived, unknown last); Budget used sorts by hours and minutes; the Status filter leaves out ON HOLD.

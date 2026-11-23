@@ -120,6 +120,8 @@ describe("the server page the register asks for", () => {
     expect(path.startsWith("/api/crm/projects?")).toBe(true);
     expect(Object.fromEntries(params)).toEqual({
       scope: "visible",
+      // Delivery rows only: open and lost sales stay on Opportunities (F37).
+      kind: "delivery",
       page: "2",
       pageSize: "50",
       search: "pier",

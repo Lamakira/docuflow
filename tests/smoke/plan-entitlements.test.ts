@@ -8,6 +8,8 @@ import { loginDevice, type AgentDevice } from "../helpers/agent";
 import { resetDb, ownerDb } from "../helpers/db";
 import { createCrmProject, createTask } from "../helpers/fixtures";
 import { inSeededWorkspace } from "../helpers/workspace";
+import { sql } from "drizzle-orm";
+import { EMPTY_PROJECT_BUDGET_DRAFT, newProjectPayload } from "../../client/src/v2/projects";
 
 /**
  * #299 / ADR-0027: Plans that leave areas out. The server refuses every area a
@@ -271,6 +273,33 @@ describe("Starter tracks time against light Projects", () => {
       const refused = await h.owner.agent.post("/api/crm/projects").send(body);
       expect(refused.status, JSON.stringify(body)).toBe(403);
       expect(refused.body.code).toBe(UPGRADE);
+    }
+  });
+
+  it("accepts v2's New Project, an Internal Project at Planned, on Starter and on a Plan with Clients (F38)", async () => {
+    const h = await harness();
+    const cases: Array<{ plan: PlanPin; budget: { hours: string; minutes: string } }> = [
+      // Starter leaves Project management out, so New Project there carries no budget.
+      { plan: { planKey: "starter", registryVersion: 2 }, budget: EMPTY_PROJECT_BUDGET_DRAFT },
+      { plan: { planKey: "growth", registryVersion: 2 }, budget: { hours: "8", minutes: "15" } },
+    ];
+    for (const { plan, budget } of cases) {
+      await setPlan(plan);
+      const payload = newProjectPayload(`New ${plan.planKey}`, budget, { startDate: "2026-11-01", dueDate: "2026-12-01" });
+      const created = await h.owner.agent.post("/api/crm/projects").send(payload!);
+      expect(created.status, plan.planKey).toBe(201);
+      const read = (await h.owner.agent.get(`/api/crm/projects/${created.body.crmProject.id}`)).body;
+      expect(read, plan.planKey).toMatchObject({
+        projectType: "internal",
+        status: "won_not_started",
+        projectStatus: "planned",
+        clientId: null,
+        opportunityOwnerId: null,
+      });
+      const opportunities = await ownerDb.execute(
+        sql`select id from opportunities where crm_project_id = ${read.id}`,
+      );
+      expect(opportunities.rows, plan.planKey).toHaveLength(0);
     }
   });
 

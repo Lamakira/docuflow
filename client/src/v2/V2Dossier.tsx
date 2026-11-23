@@ -7,6 +7,7 @@ import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type {
   CrmProjectStageHistoryWithUser,
+  CrmClient,
   CrmTag,
   CrmProjectWithDetails,
   CrmProjectNoteWithCreator,
@@ -395,6 +396,7 @@ export function V2DossierPage() {
   });
 
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
+  const { data: clients = [] } = useQuery<CrmClient[]>({ queryKey: ["/api/crm/clients"] });
   const { data: projectsResponse } = useQuery<ProjectsResponse>({
     queryKey: ["/api/crm/projects", { pageSize: 500 }],
     queryFn: () => fetch("/api/crm/projects?pageSize=500", { credentials: "include" }).then((res) => res.json()),
@@ -486,12 +488,27 @@ export function V2DossierPage() {
   });
 
   const patchProject = useMutation({
-    mutationFn: (data: { projectName?: string; assigneeId?: string | null }) =>
-      apiRequest("PATCH", `/api/crm/projects/${projectId}`, data),
+    mutationFn: (data: {
+      projectName?: string;
+      assigneeId?: string | null;
+      clientId?: string;
+      projectType?: string;
+    }) => apiRequest("PATCH", `/api/crm/projects/${projectId}`, data),
     onSuccess: (_result, data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects", projectId] });
+      if (data.clientId !== undefined || data.projectType !== undefined) {
+        queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      }
       setWriteRefusal(null);
-      notify.success(data.projectName !== undefined ? "Project renamed" : "Project Manager saved");
+      notify.success(
+        data.projectName !== undefined
+          ? "Project renamed"
+          : data.clientId !== undefined
+            ? "Client saved"
+            : data.projectType !== undefined
+              ? "Type saved"
+              : "Project Manager saved",
+      );
     },
     onError: (error: Error) => {
       refuseWrite(error.message);
@@ -863,6 +880,7 @@ export function V2DossierPage() {
     })),
     tags: projectTags,
     workspaceTags,
+    clients: clients.map((client) => ({ id: client.id, name: client.name })),
   };
   const dossier = composeDossier(input);
   const firstTodoTask = dossier.nextActions.rows.find((row) => !row.done);
@@ -913,6 +931,11 @@ export function V2DossierPage() {
   function onAssignLead(assigneeId: string) {
     if (refuseWrite()) return;
     patchProject.mutate({ assigneeId: assigneeId || null });
+  }
+
+  function onPickIdentity(field: "clientId" | "projectType", value: string) {
+    if (refuseWrite()) return;
+    patchProject.mutate({ [field]: value });
   }
 
   function onAddMember(event: FormEvent) {
@@ -1353,6 +1376,7 @@ export function V2DossierPage() {
               setProjectName,
               onSaveName,
               onAssignLead,
+              onPickIdentity,
               memberId,
               setMemberId,
               onAddMember,
@@ -1411,6 +1435,7 @@ function renderDossierTab(props: {
   setProjectName: (value: string) => void;
   onSaveName: (event: FormEvent) => void;
   onAssignLead: (assigneeId: string) => void;
+  onPickIdentity: (field: "clientId" | "projectType", value: string) => void;
   memberId: string;
   setMemberId: (value: string) => void;
   onAddMember: (event: FormEvent) => void;
@@ -2317,12 +2342,33 @@ function DossierFiles({
 }
 
 /** One label and its value, on the two columns every Settings group shares. */
-function SettingRow({ row }: { row: DossierSettingRow }) {
+function SettingRow({
+  row,
+  onPick,
+}: {
+  row: DossierSettingRow;
+  onPick?: (field: "clientId" | "projectType", value: string) => void;
+}) {
+  const picker = row.picker;
   return (
     <div className="df-settings-row">
       <span className="df-settings-label">{row.label}</span>
       <span className="df-settings-value">
-        {row.chip ? (
+        {picker && onPick ? (
+          <V2FilterSelect
+            label=""
+            ariaLabel={row.label}
+            value={picker.value || V2_SELECT_NONE}
+            options={
+              picker.value
+                ? picker.options
+                : [{ value: V2_SELECT_NONE, label: picker.placeholder ?? "", disabled: true }, ...picker.options]
+            }
+            onChange={(value) => {
+              if (value !== V2_SELECT_NONE && value !== picker.value) onPick(picker.field, value);
+            }}
+          />
+        ) : row.chip ? (
           row.swatch ? (
             <span className="df-status" data-swatch="" style={swatchStyle(row.swatch)}>
               {row.value}
@@ -2378,6 +2424,7 @@ function DossierSettings({
   setProjectName,
   onSaveName,
   onAssignLead,
+  onPickIdentity,
   memberId,
   setMemberId,
   onAddMember,
@@ -2406,6 +2453,7 @@ function DossierSettings({
   setProjectName: (value: string) => void;
   onSaveName: (event: FormEvent) => void;
   onAssignLead: (assigneeId: string) => void;
+  onPickIdentity: (field: "clientId" | "projectType", value: string) => void;
   memberId: string;
   setMemberId: (value: string) => void;
   onAddMember: (event: FormEvent) => void;
@@ -2464,7 +2512,7 @@ function DossierSettings({
             </span>
           </form>
           {settings.identity.map((row) => (
-            <SettingRow key={row.label} row={row} />
+            <SettingRow key={row.label} row={row} onPick={onPickIdentity} />
           ))}
           <div className="df-settings-row" data-testid="v2-dossier-tags">
             <span className="df-settings-label">Tags</span>

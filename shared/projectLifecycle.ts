@@ -61,6 +61,13 @@ export function isWonStatus(status: string | null | undefined): boolean {
   return Boolean(status) && opportunityStageFromCombined(status) === "won";
 }
 
+/**
+ * Every combined value {@link isWonStatus} reads as won, legacy ones included.
+ * SQL filters on this list, never on `like 'won%'`, which would also take a
+ * custom open stage named `won_…`.
+ */
+export const WON_STATUSES: readonly string[] = Object.keys(OPPORTUNITY_STAGE_BY_COMBINED).filter(isWonStatus);
+
 export function projectHasOpportunity(row: {
   isDocumentationOnly?: number | null;
   projectType?: string | null;
@@ -70,6 +77,19 @@ export function projectHasOpportunity(row: {
   if (row.projectType === "internal") return false;
   if (row.status === "documented") return false;
   return true;
+}
+
+/**
+ * A row the Projects screens list: delivery work. Either it never had an
+ * Opportunity (Internal, documented, documentation-only), or its Opportunity is
+ * won. Open and lost sales belong to Opportunities only.
+ */
+export function isDeliveryProject(row: {
+  isDocumentationOnly?: number | null;
+  projectType?: string | null;
+  status?: string | null;
+}): boolean {
+  return !projectHasOpportunity(row) || isWonStatus(row.status);
 }
 
 export function isOpportunityTerminal(stage: string): boolean {
