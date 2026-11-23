@@ -297,6 +297,7 @@ describe("CRM projects (characterization)", () => {
   it("sorts by name, Project Status, or budget used, before paging (#275)", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
+    await setWorkspaceRole(user.id, "owner"); // Tracked time is for Owners and Administrators.
     const bravo = await createCrmProject(user.agent, { name: "bravo", status: "won_in_progress", budgetedHours: 10 });
     const alpha = await createCrmProject(user.agent, { name: "Alpha", status: "won_completed", budgetedHours: 10 });
     await createCrmProject(user.agent, { name: "Charlie" });
@@ -352,6 +353,7 @@ describe("CRM projects (characterization)", () => {
   it("sorts Budget used by hours and minutes, as the meter counts them (F43)", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
+    await setWorkspaceRole(user.id, "owner"); // Tracked time is for Owners and Administrators.
     // 3 h over 4 h = 75 %; 3 h over 2 h 30 min = 120 %, though its whole hours alone read 150 %.
     const fourHours = await createCrmProject(user.agent, { name: "four", status: "won_in_progress", budgetedHours: 4 });
     const twoAndHalf = await createCrmProject(user.agent, {
@@ -755,6 +757,7 @@ describe("CRM projects (characterization)", () => {
   it("reports tracked seconds on the detail and the list, summed over every user (F44)", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
+    await setWorkspaceRole(user.id, "owner"); // Tracked time is for Owners and Administrators.
     const teammate = await registerUser(app);
     const worked = await createCrmProject(user.agent, { name: "Worked" });
     const idle = await createCrmProject(user.agent, { name: "Idle" });
@@ -771,9 +774,44 @@ describe("CRM projects (characterization)", () => {
     expect(byId.get(idle.crmProject.id)).toBe(0);
   });
 
+  it("sends tracked seconds to Owners and Administrators only, and never orders a Member by them (F44)", async () => {
+    const app = await makeApp();
+    const owner = await registerUser(app);
+    await setWorkspaceRole(owner.id, "owner");
+    const member = await registerUser(app);
+    await setWorkspaceRole(member.id, "member");
+    const heavy = await createCrmProject(owner.agent, { name: "Heavy", budgetedHours: 10, memberIds: [owner.id, member.id] });
+    const light = await createCrmProject(owner.agent, { name: "Light", budgetedHours: 10, memberIds: [owner.id, member.id] });
+    await addTime(heavy.crmProject.id, owner.id, 8 * 3600);
+    await addTime(light.crmProject.id, owner.id, 3600);
+    // Light is the more recently changed, so the default order is Light, Heavy.
+    await getOwnerPool().query(`UPDATE crm_projects SET updated_at = now() + interval '1 minute' WHERE id = $1`, [light.crmProject.id]);
+
+    const detail = await member.agent.get(`/api/crm/projects/${heavy.crmProject.id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body).not.toHaveProperty("trackedSeconds");
+    const list = await member.agent.get("/api/crm/projects").query({ pageSize: 50 });
+    for (const row of list.body.data) expect(row).not.toHaveProperty("trackedSeconds");
+    for (const path of ["/api/crm/projects/all", "/api/crm/projects/all-kanban"]) {
+      for (const row of (await member.agent.get(path)).body.data) expect(row).not.toHaveProperty("trackedSeconds");
+    }
+
+    const names = async (agent: typeof member.agent, dir: string) =>
+      (await agent.get("/api/crm/projects").query({ pageSize: 50, sort: "budget", dir })).body.data.map(
+        (p: { project: { name: string } }) => p.project.name,
+      );
+    // Ascending by tracked time would be Light, Heavy; descending Heavy, Light. A Member gets the default order both ways.
+    expect(await names(member.agent, "asc")).toEqual(["Light", "Heavy"]);
+    expect(await names(member.agent, "desc")).toEqual(["Light", "Heavy"]);
+
+    expect((await owner.agent.get(`/api/crm/projects/${heavy.crmProject.id}`)).body.trackedSeconds).toBe(8 * 3600);
+    expect(await names(owner.agent, "desc")).toEqual(["Heavy", "Light"]);
+  });
+
   it("sorts budget used by tracked time, ignoring actual hours (F44)", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
+    await setWorkspaceRole(user.id, "owner"); // Tracked time is for Owners and Administrators.
     const heavy = await createCrmProject(user.agent, { name: "Heavy", budgetedHours: 10, actualHours: 0 });
     const light = await createCrmProject(user.agent, { name: "Light", budgetedHours: 10, actualHours: 0 });
     const stale = await createCrmProject(user.agent, { name: "Stale", budgetedHours: 10, actualHours: 500 });

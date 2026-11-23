@@ -86,7 +86,8 @@ describe("Dossier review (F44-F51)", () => {
   describe("F44: budget consumed is the Project's tracked time", () => {
     it("reads trackedSeconds and ignores the v1 typed actualHours", () => {
       const typed = { budgetedHours: 40, budgetedMinutes: 0, actualHours: 30 } as Parameters<typeof projectBudgetPercent>[0];
-      expect(projectBudgetPercent(typed)).toBe(0);
+      // No trackedSeconds (a Member is not sent it): unknown, not 0%.
+      expect(projectBudgetPercent(typed)).toBeNull();
       expect(projectBudgetPercent({ budgetedHours: 40, budgetedMinutes: 0, trackedSeconds: 30 * HOUR })).toBe(75);
       expect(projectBudgetPercent({ budgetedHours: 10, budgetedMinutes: 0, trackedSeconds: 14.1 * HOUR })).toBe(141);
       expect(projectBudgetPercent({ budgetedHours: null, budgetedMinutes: 0, trackedSeconds: 30 * HOUR })).toBeNull();
@@ -112,6 +113,22 @@ describe("Dossier review (F44-F51)", () => {
       expect(dossierSource).toContain('<div className="df-mono df-meta">Tracked</div>');
       expect(dossierSource).not.toContain("Tracked MTD");
       expect(dossierSource).not.toContain("actualHours");
+    });
+
+    it("reads every meter as unknown when trackedSeconds is absent (Members)", () => {
+      const base = input();
+      const { trackedSeconds: _omitted, ...rest } = base.project!;
+      const dossier = composeDossier({ ...base, project: rest });
+      expect(dossier.stats.budgetPercent).toBeNull();
+      expect(dossier.stats.tracked).toBe("—");
+      expect(dossier.stats.trackedSub).toBe("of 80.0 h budget");
+      expect(dossier.budgetTime.percent).toBeNull();
+      expect(dossier.budgetTime.consumedLabel).toBe("—");
+      expect(dossier.budgetTime.trackedThisMonth).toBe("20.5 h");
+      expect(dossier.settings.budget.consumed).toBe("—");
+      const unbudgeted = composeDossier({ ...base, project: { ...rest, budgetedHours: null } });
+      expect(unbudgeted.stats.tracked).toBe("—");
+      expect(unbudgeted.stats.trackedSub).toBe("20.5 h this month");
     });
 
     it("without a budget, the consumed label is the total and the header sub-line the month", () => {

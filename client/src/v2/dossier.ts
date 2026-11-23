@@ -979,7 +979,9 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
   const percent = projectBudgetPercent(project);
   const consumed =
     budgeted > 0
-      ? `${formatHours(project.trackedSeconds ?? 0)} of ${budgetLabel(project)} · ${percent}% used`
+      ? project.trackedSeconds == null
+        ? "—"
+        : `${formatHours(project.trackedSeconds)} of ${budgetLabel(project)} · ${percent}% used`
       : "No budget set";
   const memberRows: DossierModel["settings"]["memberRows"] = [];
   const seen = new Set<string>();
@@ -1130,7 +1132,9 @@ export function composeDossier(input: DossierInput): DossierModel {
   const openDocument = openDocumentId ? documents.find((document) => document.id === openDocumentId) ?? null : null;
   const assignees = projectAssignees(project);
   const trackedMtd = formatHours(input.monthSeconds);
-  const trackedTotal = formatHours(project?.trackedSeconds ?? 0);
+  // Every user's tracked total reaches Owners and Administrators only; without it the value is unknown, not 0.
+  const trackedKnown = project?.trackedSeconds != null;
+  const trackedTotal = trackedKnown ? formatHours(project?.trackedSeconds ?? 0) : "—";
   const budgeted = project ? budgetedHoursTotal(project) : 0;
   const budgetPercent = project ? projectBudgetPercent(project) : null;
   const screenshots = input.screenshots.filter((shot) => !shot.deletedAt);
@@ -1288,7 +1292,7 @@ export function composeDossier(input: DossierInput): DossierModel {
     },
     budgetTime: {
       consumedLabel:
-        budgeted > 0 ? `${trackedTotal} / ${hoursLabel(budgeted)}` : trackedTotal,
+        budgeted > 0 && trackedKnown ? `${trackedTotal} / ${hoursLabel(budgeted)}` : trackedTotal,
       percent: budgetPercent,
       trackedThisMonth: trackedMtd,
       unapproved: null,

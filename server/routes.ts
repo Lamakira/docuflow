@@ -1655,7 +1655,7 @@ Instructions:
   app.get("/api/crm/projects/all", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000, ...(await visibleProjectScope(userId)) });
+      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000, ...(await visibleProjectScope(userId)), withTrackedTime: await canManageAdministration() });
       res.json(result);
     } catch (error) {
       console.error("Error fetching Projects:", error);
@@ -1668,7 +1668,7 @@ Instructions:
       const userId = getUserId(req)!;
       
       // Fetch all projects without pagination for kanban view
-      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000, ...(await visibleProjectScope(userId)) });
+      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000, ...(await visibleProjectScope(userId)), withTrackedTime: await canManageAdministration() });
       res.json(result);
     } catch (error) {
       console.error("Error fetching CRM projects for kanban:", error);
@@ -1711,6 +1711,7 @@ Instructions:
         dueTo: date("dueTo"),
         dueNone: text("due") === "none",
         visibleToUserId,
+        withTrackedTime: await canManageAdministration(),
         sort: CRM_PROJECT_SORTS.find((sort) => sort === text("sort")),
         dir: text("dir") === "desc" ? "desc" : "asc",
       });
@@ -1731,6 +1732,10 @@ Instructions:
         return res.status(404).json({ message: "CRM Project not found" });
       }
       
+      // Every user's tracked time is for Owners and Administrators only.
+      if (await canManageAdministration()) {
+        return res.json({ ...crmProject, trackedSeconds: await storage.getCrmProjectTrackedSeconds(crmProject.id) });
+      }
       res.json(crmProject);
     } catch (error) {
       console.error("Error fetching CRM project:", error);

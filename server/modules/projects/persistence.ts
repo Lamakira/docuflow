@@ -43,6 +43,8 @@ export type CrmProjectListOptions = {
   dueTo?: Date;
   /** Only Projects with no due date. */
   dueNone?: boolean;
+  /** Add every user's tracked seconds to each row and let `sort: "budget"` use it. Owners and Administrators only. */
+  withTrackedTime?: boolean;
   /** Only the Projects this User may see as a Member: one they belong to, or are assigned when it has no Members. */
   visibleToUserId?: string;
   /** A register column; most recently updated first when unset. */
@@ -121,6 +123,8 @@ export interface ProjectsPersistence {
     options?: CrmProjectListOptions
   ): Promise<{ data: CrmProjectWithDetails[]; total: number; page: number; pageSize: number }>;
   getCrmProject(id: string): Promise<CrmProjectWithDetails | undefined>;
+  /** Sum of every user's Time Entries on the Project. */
+  getCrmProjectTrackedSeconds(crmProjectId: string): Promise<number>;
   getCrmProjectByProjectId(projectId: string): Promise<CrmProject | undefined>;
   createCrmProject(crmProject: InsertCrmProject): Promise<CrmProject>;
   createCrmProjectWithBase(

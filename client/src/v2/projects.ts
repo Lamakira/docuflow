@@ -668,7 +668,9 @@ export function readProjectBudget(
 /** Budget used: the Project's tracked time over its budget (F44). The v1 typed `actualHours` is not read. */
 export function projectBudgetPercent(project: SavedBudget & { trackedSeconds?: number | null }): number | null {
   const budgeted = budgetedHoursTotal(project);
-  return budgeted > 0 ? Math.round(((project.trackedSeconds ?? 0) / 3600 / budgeted) * 100) : null;
+  // Only Owners and Administrators are sent the tracked total; without it the meter is unknown, not 0%.
+  if (project.trackedSeconds == null) return null;
+  return budgeted > 0 ? Math.round((project.trackedSeconds / 3600 / budgeted) * 100) : null;
 }
 
 export function budgetLabel(project: SavedBudget | null | undefined): string {

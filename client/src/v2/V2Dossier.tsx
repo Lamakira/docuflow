@@ -147,7 +147,7 @@ function toDossierProject(project: CrmProjectWithDetails): DossierProject {
     projectType: project.projectType,
     budgetedHours: project.budgetedHours,
     budgetedMinutes: project.budgetedMinutes,
-    trackedSeconds: project.trackedSeconds ?? 0,
+    trackedSeconds: project.trackedSeconds,
     updatedAt: project.updatedAt,
     startDate: project.startDate,
     dueDate: project.dueDate,
@@ -1634,14 +1634,16 @@ function DossierOverview({
           </div>
           <div className="df-card-body-stack">
             <div className="df-mono df-meta">Consumed {dossier.budgetTime.consumedLabel}</div>
-            <span className="df-meter df-meter-lg">
-              {/* Per-instance: the fill width is this project's budget share. */}
-              <span
-                className="df-meter-fill"
-                data-tone={meterTone(dossier.budgetTime.percent)}
-                style={{ width: `${Math.min(100, dossier.budgetTime.percent ?? 0)}%` }}
-              />
-            </span>
+            {dossier.budgetTime.percent != null ? (
+              <span className="df-meter df-meter-lg">
+                {/* Per-instance: the fill width is this project's budget share. */}
+                <span
+                  className="df-meter-fill"
+                  data-tone={meterTone(dossier.budgetTime.percent)}
+                  style={{ width: `${Math.min(100, dossier.budgetTime.percent)}%` }}
+                />
+              </span>
+            ) : null}
             <div className="df-spread">
               <span className="df-mono df-meta">
                 {dossier.budgetTime.percent == null ? "—" : `${dossier.budgetTime.percent}% used`}
