@@ -665,9 +665,10 @@ export function readProjectBudget(
   return { budget: savedBudget({ budgetedHours: Number(hoursText || 0), budgetedMinutes: Number(minutesText || 0) }), issue: null };
 }
 
-export function projectBudgetPercent(project: SavedBudget & { actualHours: number | null }): number | null {
+/** Budget used: the Project's tracked time over its budget (F44). The v1 typed `actualHours` is not read. */
+export function projectBudgetPercent(project: SavedBudget & { trackedSeconds?: number | null }): number | null {
   const budgeted = budgetedHoursTotal(project);
-  return budgeted > 0 ? Math.round(((project.actualHours ?? 0) / budgeted) * 100) : null;
+  return budgeted > 0 ? Math.round(((project.trackedSeconds ?? 0) / 3600 / budgeted) * 100) : null;
 }
 
 export function budgetLabel(project: SavedBudget | null | undefined): string {

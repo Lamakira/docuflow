@@ -48,7 +48,7 @@ function liveProject(): NonNullable<DossierInput["project"]> {
     projectStatus: "active",
     projectType: "one_time",
     budgetedHours: 120,
-    actualHours: 74,
+    trackedSeconds: 74 * 3600,
     updatedAt: new Date(2026, 8, 8, 12, 41, 0),
     project: { id: "doc-1", name: "Ledger rebuild" },
     client: {
@@ -219,7 +219,9 @@ describe("Project Dossier Overview from live Workspace records (#173)", () => {
     expect(dossier.identity?.lead?.self).toBe(true);
     expect(dossier.identity?.team.map((member) => member.name)).toEqual(["Sam Lee", "Pat Ng"]);
     expect(dossier.stats.budgetPercent).toBe(62);
-    expect(dossier.stats.trackedMtd).toBe("71.7 h");
+    // F44: the header gives the total tracked against the budget.
+    expect(dossier.stats.tracked).toBe("74.0 h");
+    expect(dossier.stats.trackedSub).toBe("of 120.0 h budget");
     expect(dossier.stats.showFinance).toBe(false);
     expect(dossier.nextActions.openCount).toBe(1);
     expect(dossier.nextActions.blockedCount).toBe(0);
@@ -229,7 +231,9 @@ describe("Project Dossier Overview from live Workspace records (#173)", () => {
       done: false,
       flag: "TIMER RUNNING",
     });
-    expect(dossier.nextActions.rows[1].done).toBe(true);
+    // F49: Next actions holds open Tasks only; the done one stays on the Tasks tab.
+    expect(dossier.nextActions.rows).toHaveLength(1);
+    expect(dossier.tasks.rows[1].done).toBe(true);
     expect(dossier.dailyUpdate.kind).toBe("record");
     expect(dossier.dailyUpdate.prose).toContain("Imported the remaining vendor batches.");
     expect(dossier.dailyUpdate.blocker).toBeTruthy();

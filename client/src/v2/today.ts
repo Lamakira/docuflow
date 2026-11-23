@@ -7,7 +7,8 @@ export type TodayProject = {
   projectType: string | null;
   budgetedHours: number | null;
   budgetedMinutes?: number | null;
-  actualHours: number | null;
+  /** Seconds of every Time Entry on the Project: what its budget is consumed by (F44). */
+  trackedSeconds?: number | null;
   project?: { id: string; name: string } | null;
   client?: { name: string } | null;
   assignee?: { firstName?: string | null; lastName?: string | null; email?: string | null } | null;
@@ -340,7 +341,7 @@ function composeProjects(input: TodayInput): ActiveProjectRow[] {
     .sort((a, b) => (month.get(b.id) ?? 0) - (month.get(a.id) ?? 0))
     .map((project) => {
       const budgeted = budgetedHoursTotal(project);
-      const actual = project.actualHours ?? 0;
+      const actual = (project.trackedSeconds ?? 0) / 3600;
       const client = project.client?.name || null;
       const kind = kindLabel(project);
       return {

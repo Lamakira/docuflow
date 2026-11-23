@@ -711,6 +711,8 @@ export type CrmProjectWithDetails = CrmProject & {
   members?: ProjectMemberWithUser[];
   latestNote?: CrmProjectNoteWithCreator;
   tags?: CrmTag[];
+  /** Seconds of every Time Entry on the Project, all Members (F44). What a budget is consumed by. */
+  trackedSeconds?: number;
 };
 
 // CRM Project Stage History table - tracks status changes over time

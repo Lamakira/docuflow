@@ -86,7 +86,7 @@ describe("Today mobile pattern (#175)", () => {
             projectStatus: "active",
             projectType: "one_time",
             budgetedHours: 50,
-            actualHours: 31,
+            trackedSeconds: 31 * 3600,
             project: { id: "doc-1", name: "Ledger rebuild" },
             client: { name: "Harbor Co" },
             assignee: null,

@@ -56,7 +56,7 @@ import {
   opportunityFieldsIssue,
   type OpportunityFieldsState,
 } from "@shared/opportunityFields";
-import { projectHasOpportunity } from "@shared/projectLifecycle";
+import { isDeliveryProject, projectHasOpportunity } from "@shared/projectLifecycle";
 import {
   assertScreenshotProject,
   assertScreenshotProjectCapacity,
@@ -1903,7 +1903,11 @@ Instructions:
       // Create a new project with same settings but new name
       const newName = `${sourceProject.project?.name || "Project"} (Copy)`;
       
-      const { project, crmProject } = await storage.createCrmProjectWithBase(
+      // Delivery work copies to a Planned Project; a sale starts over at `lead`.
+      const sourceType = sourceProject.projectType || "one_time";
+      const copyIsDelivery = isDeliveryProject(sourceProject);
+
+      const { project, crmProject: created } = await storage.createCrmProjectWithBase(
         {
           name: newName,
           description: sourceProject.project?.description || null,
@@ -1912,8 +1916,8 @@ Instructions:
         },
         {
           clientId: sourceProject.clientId || null,
-          status: "lead", // Reset to initial status
-          projectType: sourceProject.projectType || "one_time",
+          status: copyIsDelivery ? "won_not_started" : "lead",
+          projectType: sourceType,
           assigneeId: sourceProject.assigneeId || null,
           startDate: null, // Reset dates
           dueDate: null,
@@ -1927,6 +1931,9 @@ Instructions:
         }
       );
       
+      // Creation drops the type; set it as New Project does. Internal drops the Opportunity.
+      const crmProject = (await storage.updateCrmProject(created.id, { projectType: sourceType })) ?? created;
+
       // Copy custom field values if they exist
       const customFieldValues = await storage.getCrmProjectCustomFields(req.params.id);
       if (customFieldValues && customFieldValues.length > 0) {

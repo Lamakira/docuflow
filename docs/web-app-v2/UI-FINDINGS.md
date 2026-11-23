@@ -1081,3 +1081,192 @@ F35.
   real row is On hold.
 
 - **Fixed:** 2026-11-20. New Project describes an Internal Project and says a Client Project comes from a won Opportunity; the three cells use type-scale classes; Status sorts by the lifecycle (Planned to Archived, unknown last); Budget used sorts by hours and minutes; the Status filter leaves out ON HOLD.
+
+---
+
+The eight entries below come from one full UI review of the Project Dossier
+(`/projects/:id` and its tabs: Overview, Tasks, Time, Activity, Updates, Notes,
+Reminders, Documentation, Files, Settings) on 2026-11-23. The app ran locally
+on the seeded DocuFlow Workspace, mostly on Ledger migration (3 Tasks, 10 Time
+Entries, 4 Daily Updates, 1 Project Document), Inventory rollout (the only
+seeded row with status history) and Fleet telemetry audit (an open sale).
+Nothing was written. The real Workspace's shape comes from the cutover
+rehearsal copy (`docuflow_rehearsal`): 88 delivery Projects; 111 Tasks on 40
+of them (110 open, 1 archived, none done or described); 464 Time Entries
+(3,502 h) on 35; 16,441 screenshots on 32; 128 notes; no Daily Update and no
+Reminder; 263 status-history rows on 72. Read from code only: Clone Project's
+write, a Read-only Workspace, mobile, dark mode.
+
+## F44 — Budget used never counts tracked time
+
+- **Status:** closed — fixed 2026-11-23
+- **Found:** 2026-11-23, Ledger migration's header, Overview and Settings, then measured on the rehearsal copy
+- **Where:** `client/src/v2/dossier.ts:928-930` (Settings' Consumed) and `:1047`, `:1201-1206` (Overview's Budget & time), all reading `project.actualHours`; `server/modules/postgresStorage.ts:998` (the register's Budget used sort reads the same column)
+- **Severity:** misleading
+
+Every budget meter reads `actual_hours`, a number v1 let people type by hand
+on the Project page (`client/src/pages/CrmProjectPage.tsx:1435`). v2 has no
+field for it and never adds tracked time to it. Ledger migration has 25 h
+tracked (20.5 h this month) against an 80 h budget, and the header says
+`Budget 0%`, the Overview `Consumed 0.0 h / 80.0 h · 0% used`, and Settings
+`0.0 h of 80 h · 0% used` (seen). On the real Workspace, 22 Projects have a
+budget. One has 220.4 h tracked on a 40 h budget and reads 0%. Another has 14.1 h
+on 10 h, and a third 7.5 h on 10 h; both read 0%. Four others show a typed
+figure with nothing tracked. The Projects register's
+Budget used column draws the same 0%.
+
+No screen gives a Project's total tracked time either:
+- the header pairs `Tracked MTD 20.5 h` with `of 80.0 h plan`, so this month
+  reads as if it were the whole budget;
+- Filed under this Project prints the month's hours as `20.5 H TIME`.
+
+It would take one consumed figure, the sum of the Project's Time Entries,
+shared by every meter (header, Overview, Settings, register), plus a
+decision on what happens to the typed v1 figures.
+
+- **Fixed:** 2026-11-23. Every budget meter (header, Overview, Settings, the Projects register and its Budget used sort, Today's Active Projects) reads the Project's tracked time: the server adds `trackedSeconds`, the sum of every Member's Time Entries, to the Project and to each register row. The typed v1 figure is no longer read (decided 2026-11-23: tracked time only). The header reads `Tracked 25.0 h · of 80.0 h budget`. Seen on Ledger migration: `Budget 31%`, `Consumed 25.0 h / 80.0 h`. Over the rehearsal copy through the real list and detail functions: 220.4 h on the 40 h budget, which now sorts first by Budget used (551%).
+
+## F45 — Status history prints raw codes and sales stages
+
+- **Status:** closed — fixed 2026-11-23
+- **Found:** 2026-11-23, Inventory rollout's Overview, then counted on the rehearsal copy
+- **Where:** `client/src/v2/dossier.ts:968-970` (`lifecycleLabel` upper-cases the stored value), `:987-1010` (`composeHistory`: every row, no filter, no cap)
+- **Severity:** misleading
+
+The Overview's Status history shows each stored code upper-cased instead of
+its Project Status. Inventory rollout reads `WON IN REVIEW → WON IN PROGRESS`
+in pills styled like the header's `ACTIVE` (seen). The real history is worse:
+- 37 of the 263 rows on delivery Projects are sales moves, so a Project
+  Dossier lists `LEAD → PROPOSAL SENT`;
+- 26 rows move between two codes that are both In review
+  (`WON IN REVIEW PM → WON IN REVIEW CLIENT`);
+- 58 rows go to or from the v1 code `WON`;
+- the legacy typo `IN NEGOCIATION` appears as written.
+
+The card lists every row with no cap, up to 25 for one Project. It would take
+the history to speak in Project Status (Planned to Archived), drop sales moves
+(the Opportunity record keeps them), collapse a move that does not change the
+Project Status, and cap the card with a way to the rest.
+
+- **Fixed:** 2026-11-23. Status history speaks in Project Status with the header's labels and colours, leaves sales moves to the Opportunity record, drops a move that keeps the same Project Status, and shows the 5 latest changes with `Show all N` (tests built from the measured codes: `lead → proposal_sent`, `won_in_review_pm → won_in_review_client`, `won → won_in_progress`, `in_negociation → won`). Seen on Inventory rollout: `IN REVIEW → ACTIVE`.
+
+## F46 — Clone Project makes an Opportunity at Lead
+
+- **Status:** closed — fixed 2026-11-23
+- **Found:** 2026-11-23, from code (no clone was made)
+- **Where:** `client/src/v2/V2Dossier.tsx:737-748` (`cloneProject`: toast "Project duplicated", then the copy's Settings), `server/routes.ts:1894-1946` (the copy gets `status: "lead"` at `:1915`)
+- **Severity:** misleading, and it writes the wrong record
+
+Clone Project posts to the v1 clone route. That route resets the copy to
+`lead`, so cloning a Client Project creates a sale at Lead, not a Project.
+After F37 the copy is absent from the Projects register and board and sits on
+the Opportunities pipeline, while the toast says "Project duplicated" and the
+app opens the copy's Settings as a Project Dossier. Cloning an Internal
+Project gives an Internal row at `lead`, which reads Planned. This is F38's
+mistake on another path. It would take the copy to start as a Planned
+Project (`won_not_started`) of the source's type.
+
+- **Fixed:** 2026-11-23. Cloning delivery work makes a Planned Project (`won_not_started`) of the source's type, an Internal copy without an Opportunity row; cloning a sale still makes a sale at Lead (tested through the real route on the test database).
+
+## F47 — An open or lost sale opens as a Project Dossier
+
+- **Status:** closed — fixed 2026-11-23
+- **Found:** 2026-11-23, `/projects/demo-crm-fleet` (an Opportunity at In negotiation)
+- **Where:** `client/src/v2/V2Dossier.tsx:268` (`V2DossierPage` renders any `crm_projects` row), `client/src/v2/dossier.ts:1081-1110` (identity)
+- **Severity:** misleading
+
+F37 took sales off the Projects screens, but their Dossier URL still opens a
+full Project Dossier. Fleet telemetry audit, a sale at In negotiation, reads
+`PLANNED` and offers New Task, Start Timer, Daily Updates, Documentation and a
+Budget, with Projects lit in the rail (seen). Clone (F46), an old v1 link or a
+bookmark leads there. The real Workspace holds 34 such rows. It would take the
+Dossier to send a sale to its Opportunity record, as F32 did on the Client
+record.
+
+- **Fixed:** 2026-11-23. A Dossier URL for a row that is not delivery work replaces itself with the Opportunity record. Seen: `/projects/demo-crm-fleet` opens `/opportunities/demo-crm-fleet`.
+
+## F48 — Activity's count is the page size, not the total
+
+- **Status:** closed — fixed 2026-11-23
+- **Found:** 2026-11-23, from code, then counted on the rehearsal copy (no seeded Project has evidence)
+- **Where:** `client/src/v2/V2Dossier.tsx:379-387` (8 screenshots off the Activity tab, 50 on it), `client/src/v2/dossier.ts:1061-1062` (the tab count is the length of what was fetched), `server/routes.ts:4867` (the route returns `total`, unused)
+- **Severity:** misleading
+
+The Activity tab counts the screenshots it fetched: `Activity 8` on every
+other tab and `Activity 50` on its own, whatever the Project holds. The route
+returns the true `total`, and the Dossier ignores it. The tab shows the 50
+most recent with no way past them and no link to the Activity page. On the
+real Workspace, 26 of the 32 Projects with evidence have more than 50
+screenshots. The largest has 3,598 and would read `Activity 8`. It would take the count from `total`, and a link
+from the tab to the Activity page filtered to the Project.
+
+- **Fixed:** 2026-11-23. The Activity tab counts the route's `total`; when the Project holds more than the tiles shown, `See all N in Activity` opens the Activity gallery filtered to the Project over All time (from code and tests; no seeded Project has evidence).
+
+## F49 — A Task can be created and ticked, never renamed or removed
+
+- **Status:** closed — fixed 2026-11-23
+- **Found:** 2026-11-23, Ledger migration's Tasks tab and Overview
+- **Where:** `client/src/v2/V2Dossier.tsx:1694-1762` (`DossierTasks`: checkbox, status, Start Timer), `:465` and `:477` (the only Task writes: status, create), against `server/routes.ts:4034` (`PATCH /api/tasks/:id`) and `:4052` (`DELETE`), and v1's `client/src/pages/TimeTrackingProjectsPage.tsx:87`, `:96`
+- **Severity:** degrading, a v1 capability lost
+
+A Task's name is plain text: no rename, no description, no removal, although
+the server has both routes and v1's Time Tracking projects page used them
+(seen, and from code). A Task created with a typo keeps it. A Task created by
+mistake can only be archived through the status select, and every timer
+picker still offers it.
+
+The Overview's Next actions also lists the done Task first, struck through,
+under a count of `2 to do · 0 blocked`, while the tab reads `Tasks 3` (seen).
+
+On the real Workspace, 111 Tasks across 40 Projects are all open, none done or
+described. It would take rename in place (and the description, if Tasks are
+to keep one), Next actions holding open Tasks only, and removal with the
+modal pass.
+
+- **Fixed:** 2026-11-23. A Task's name renames in place on the Tasks tab (Enter or leaving the field saves, Escape keeps the name; seen: renamed, then restored). Next actions lists open Tasks only, and says so when every Task is done. Removal waits for the modal pass.
+
+## F50 — The Client card counts Completed Projects as active, and links nowhere
+
+- **Status:** closed — fixed 2026-11-23
+- **Found:** 2026-11-23, Ledger migration's and Fleet telemetry audit's Overview, then counted on the dev database
+- **Where:** `client/src/v2/V2Dossier.tsx:120` (`LIVE_PROJECT_STATUSES` holds Completed), `:400-403` (every row of the Workspace fetched to count), `:841-843`, `client/src/v2/dossier.ts:1114-1131`
+- **Severity:** misleading
+
+The Client card says `Caldera Health · 18 active projects`. Caldera Health has
+5 Active and 3 In review Projects; the other 10 are Completed (seen, counted
+on the dev database). To count, the Dossier loads up to 500 rows of the
+Workspace. The Client's name is plain text both in the header and in the
+card, so there is no way from a Project to its Client record. F32 gave the
+Client record its Projects; this is the way back. It would take Active and In
+review only (or "18 Projects"), counted by the server, with the name linking
+to `/clients/:id`.
+
+- **Fixed:** 2026-11-23. The card counts the Client's Active and In review Projects through the server (`projectStatus=active,in_review`, one row fetched). Seen: `Caldera Health · 8 active projects`. The Client's name links to its record in the header and the card.
+
+## F51 — Dossier polish: counts, copy, controls
+
+- **Status:** closed — fixed 2026-11-23
+- **Found:** 2026-11-23, the Dossier on the seeded Workspace (seen unless marked)
+
+- Project Documents' chip reads `1 docs` and `0 docs`
+  (`client/src/v2/V2Dossier.tsx:1606`).
+- Files has an `Upload File` button in its head while its empty state says
+  Files come from notes and offers `Attach a File to a note`
+  (`client/src/v2/dossier.ts:787`). The tab count leaves the uploaded files
+  out while the card counts them (`dossier.ts:1070-1071`; from code).
+- The Updates tab drops its count when there are none, while every other tab
+  shows `0`.
+- Filed under this Project repeats the tab counts and closes on "Every record
+  above resolves to this Project in this Workspace" (`V2Dossier.tsx:1685`),
+  which is implementation talk.
+- `Save name` is always lit, even unchanged, while `Save budget` waits for a
+  change.
+- The Time tab has no total, and its `STOPPED` chip is drawn as a bordered box
+  that reads like an input.
+- The breadcrumb ends on the tab (`Projects / Overview`, `Projects /
+  Settings`) instead of the Project, and the search field moves sideways as
+  that last crumb changes length (shell-wide).
+- The demo seed gives Ledger migration the same Daily Update on two days, and
+  another one twice.
+
+- **Fixed:** 2026-11-23. `1 doc`; the Files tab counts uploaded Files too, and with Documentation on its empty state offers `Upload File`; Updates shows `0`; Filed under this Project is gone; `Save name` waits for a change; the Time tab ends on a Total and its status is plain text; the breadcrumb ends on the Project's name, as records do, in a crumb of fixed width so the search field holds still; the demo seed no longer repeats a Daily Update. Seen on Ledger migration.

@@ -705,7 +705,8 @@ function fullBreadcrumbFor(
     return [
       { label: workspace, href: "/" },
       { label: "Projects", href: "/projects" },
-      { label: DOSSIER_TAB_LABEL[match.tab] },
+      // The Project's name, as Opportunity and Client records do; the tab while it loads (F51).
+      { label: recordLabel || DOSSIER_TAB_LABEL[match.tab] },
     ];
   }
   if (match.kind === "projects" || match.kind === "legacy-project") {

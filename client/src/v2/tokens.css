@@ -377,10 +377,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* A fixed width, so the search field beside it holds still while the last
+   crumb (a record's name) changes length; that crumb ellipsizes (F51). */
 .df-crumb {
   display: flex;
   align-items: center;
   gap: var(--df-space-2);
+  flex: none;
+  width: 18rem;
+  min-width: 0;
+  overflow: hidden;
   font-family: var(--df-font-data);
   font-variant-numeric: tabular-nums;
   font-weight: 400;
@@ -393,6 +399,19 @@
   display: flex;
   align-items: center;
   gap: var(--df-space-2);
+  flex: none;
+}
+
+.df-crumb > span:last-child {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.df-crumb > span:last-child > :last-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .df-rail {
@@ -4417,6 +4436,26 @@ button.df-activity-row {
   font-size: var(--df-text-3);
 }
 
+/* A Task's name renames in place (F49); the title span carries the type. */
+.df-v2 button.df-task-rename-trigger {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: text;
+}
+
+.df-v2 button.df-task-rename-trigger:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--df-placeholder);
+}
+
+/* The field is the Tasks table's rename field, across the title's width. */
+.df-task-title > .df-task-rename {
+  width: 100%;
+}
+
 /* `.df-v2 button:not(.df-btn)` resets font and colour and outranks a single
    class, so the badge names its element. The tick is an icon centred on a grid,
    never a glyph riding the text baseline. */
@@ -4823,6 +4862,37 @@ button.df-activity-row {
   font-family: var(--df-font-display);
   font-weight: 700;
   font-size: var(--df-text-4);
+}
+
+/* The Client's name leads to its Client record, in the card and the header (F50).
+   `.df-v2 a` inherits colour and outranks `.df-meta`, so the header link names it. */
+.df-v2 a.df-dossier-client-link {
+  color: var(--df-archive-slate);
+}
+
+a.df-client-name:hover,
+a.df-dossier-client-link:hover {
+  text-decoration: underline;
+}
+
+/* A Dossier card's "Show all N" or "See all N in Activity" (F45, F48). */
+.df-dossier-card-more {
+  display: flex;
+  justify-content: center;
+  padding: var(--df-space-2) var(--df-space-4);
+}
+
+/* A Time Entry's status is plain meta text, not a bordered chip (F51). */
+.df-time-entry-status {
+  letter-spacing: 0.04em;
+}
+
+.df-time-total {
+  border-top: 1px solid var(--df-divider);
+}
+
+.df-time-total:hover {
+  background: transparent;
 }
 
 .df-filed {

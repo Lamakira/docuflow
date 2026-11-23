@@ -927,7 +927,8 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(crmProjects.status, options.status));
     }
     if (options?.projectStatus) {
-      conditions.push(eq(crmProjects.projectStatus, options.projectStatus));
+      const statuses = options.projectStatus.split(",").map((value) => value.trim()).filter(Boolean);
+      if (statuses.length > 0) conditions.push(inArray(crmProjects.projectStatus, statuses));
     }
     if (options?.clientId) {
       conditions.push(eq(crmProjects.clientId, options.clientId));
@@ -987,6 +988,9 @@ export class DatabaseStorage implements IStorage {
 
     // Get paginated data. A sorted column leads; recency and id keep pages stable under ties.
     const direction = options?.dir === "desc" ? sql`desc nulls last` : sql`asc nulls last`;
+    // Every Time Entry of the Project, every user: what the budget meter counts.
+    const trackedSecondsSql = sql<number>`coalesce((select sum(${timeEntries.duration}) from ${timeEntries}
+      where ${timeEntries.crmProjectId} = "crm_projects"."id" and ${inWorkspace(timeEntries)}), 0)::int`;
     const sortExpression = {
       name: sql`lower((select ${projects.name} from ${projects} where ${projects.id} = ${crmProjects.projectId}))`,
       // The lifecycle, not the alphabet; an unknown status sorts after archived.
@@ -995,7 +999,7 @@ export class DatabaseStorage implements IStorage {
         when 'in_review' then 3 when 'completed' then 4 when 'archived' then 5 else 6 end`,
       // BUDGET USED: hours and minutes, as the meter counts them; no budget sorts last either way.
       budget: sql`case when coalesce(${crmProjects.budgetedHours}, 0) + coalesce(${crmProjects.budgetedMinutes}, 0) / 60.0 > 0
-        then coalesce(${crmProjects.actualHours}, 0)::float
+        then ${trackedSecondsSql}::float / 3600.0
           / (coalesce(${crmProjects.budgetedHours}, 0) + coalesce(${crmProjects.budgetedMinutes}, 0) / 60.0) end`,
       created: sql`${crmProjects.createdAt}`,
       // DUE: no due date sorts last either way.
@@ -1005,12 +1009,13 @@ export class DatabaseStorage implements IStorage {
       ? [sql`${sortExpression[options.sort]} ${direction}`, desc(crmProjects.updatedAt), asc(crmProjects.id)]
       : [desc(crmProjects.updatedAt), asc(crmProjects.id)];
     const crmProjectRows = await db
-      .select()
+      .select({ crmProject: crmProjects, trackedSeconds: trackedSecondsSql })
       .from(crmProjects)
       .where(and(...conditions))
       .orderBy(...order)
       .limit(pageSize)
-      .offset(offset);
+      .offset(offset)
+      .then((rows) => rows.map((row) => ({ ...row.crmProject, trackedSeconds: Number(row.trackedSeconds) })));
 
     // Get all related data
     const projectMap = new Map(allProjects.map((p) => [p.id, p]));
@@ -1168,7 +1173,12 @@ export class DatabaseStorage implements IStorage {
 
     const members = await this.getProjectMembers(crmProject.id);
 
-    return { ...crmProject, project, client, assignee, members };
+    const [tracked] = await db
+      .select({ seconds: sql<number>`coalesce(sum(${timeEntries.duration}), 0)::int` })
+      .from(timeEntries)
+      .where(and(eq(timeEntries.crmProjectId, crmProject.id), inWorkspace(timeEntries)));
+
+    return { ...crmProject, project, client, assignee, members, trackedSeconds: Number(tracked?.seconds ?? 0) };
   }
 
   async getCrmProjectByProjectId(projectId: string): Promise<CrmProject | undefined> {

@@ -15,6 +15,7 @@ import {
   type DossierInput,
 } from "../../client/src/v2/dossier";
 import { timezoneSuggestions } from "../../client/src/v2/administration";
+import { projectStatusColor } from "../../client/src/v2/palette";
 import { composeLibrary, folderPath, type LibraryInput } from "../../client/src/v2/library";
 import { composeProjectRegister, type ProjectRegisterInput } from "../../client/src/v2/projects";
 
@@ -61,7 +62,7 @@ function liveProject(): NonNullable<DossierInput["project"]> {
     projectStatus: "active",
     projectType: "one_time",
     budgetedHours: 120,
-    actualHours: 74,
+    trackedSeconds: 74 * 3600,
     updatedAt: new Date(2026, 8, 20, 9, 0, 0),
     project: { id: "doc-1", name: "Ledger rebuild" },
     client: { id: "cli-1", name: "Harbor Co", contacts: [] },
@@ -115,12 +116,13 @@ describe("Status history says how long each Project Status held (#260, C)", () =
 
     expect(dossier.history.empty).toBe(false);
     expect(dossier.history.rows).toEqual([
+      // Spoken in Project Status, as the header chip is (F45).
       {
         id: "h-2",
-        from: "WON NOT STARTED",
-        fromColor: "#6366f1",
-        to: "WON IN PROGRESS",
-        toColor: "#14b8a6",
+        from: "PLANNED",
+        fromColor: projectStatusColor("planned"),
+        to: "ACTIVE",
+        toColor: projectStatusColor("active"),
         when: "20 Sep",
         who: "Pat Ng",
         held: "3 d so far",
@@ -129,8 +131,8 @@ describe("Status history says how long each Project Status held (#260, C)", () =
         id: "h-1",
         from: null,
         fromColor: null,
-        to: "WON NOT STARTED",
-        toColor: "#6366f1",
+        to: "PLANNED",
+        toColor: projectStatusColor("planned"),
         when: "13 Sep",
         who: "—",
         held: "7 d",
@@ -149,8 +151,8 @@ describe("Status history says how long each Project Status held (#260, C)", () =
       emptyInput({
         project: liveProject(),
         stageHistory: [
-          { id: "old", fromStatus: null, toStatus: "lead", changedAt: new Date(2026, 8, 23, 9, 0, 0) },
-          { id: "new", fromStatus: "lead", toStatus: "won", changedAt: new Date(2026, 8, 23, 11, 30, 0) },
+          { id: "old", fromStatus: null, toStatus: "won_not_started", changedAt: new Date(2026, 8, 23, 9, 0, 0) },
+          { id: "new", fromStatus: "won_not_started", toStatus: "won_in_progress", changedAt: new Date(2026, 8, 23, 11, 30, 0) },
         ],
       }),
     );

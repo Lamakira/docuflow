@@ -21,7 +21,7 @@ function input(project: Partial<NonNullable<DossierInput["project"]>>): DossierI
       projectStatus: "active",
       projectType: "one_time",
       budgetedHours: null,
-      actualHours: null,
+      trackedSeconds: null,
       project: { id: "p", name: "Ledger" },
       client: { id: "c1", name: "Acme" },
       ...project,
