@@ -349,4 +349,43 @@ describe("Dossier review (F44-F51)", () => {
       expect(last).toMatch(/white-space:\s*nowrap/);
     });
   });
+
+  describe("Overview empty states", () => {
+    it("says every Task is done when only done Tasks exist, and offers a New Task", () => {
+      const dossier = composeDossier(input({ tasks: [{ id: "t1", name: "Ship", status: "done" }] }));
+      expect(dossier.nextActions.empty).toBe(true);
+      expect(dossier.nextActions.emptyState).toEqual({
+        title: "Every Task is done",
+        copy: "Done Tasks stay on the Tasks tab. Add the next step when there is one.",
+        action: { kind: "compose", label: "New Task" },
+      });
+    });
+
+    it("reuses the no-Task empty state when the Project has no Task at all", () => {
+      const dossier = composeDossier(input());
+      expect(dossier.nextActions.emptyState).toEqual(dossier.tasks.emptyState);
+      expect(dossier.nextActions.emptyState.title).toBe("No Tasks yet");
+      expect(dossier.nextActions.emptyState.action).toEqual({ kind: "compose", label: "Create the first Task" });
+    });
+
+    it("gives the Status history its own title and copy", () => {
+      const dossier = composeDossier(input());
+      expect(dossier.history.emptyState).toEqual({
+        title: "No Status changes yet",
+        copy: "Each move between Planned, Active, In review, Completed and Archived lands here: who made it, when, and how long the Project held each status.",
+      });
+    });
+
+    it("renders every empty Overview card through DossierEmptyStateView", () => {
+      for (const testId of [
+        "v2-dossier-overview-tasks-empty",
+        "v2-dossier-overview-update-empty",
+        "v2-dossier-overview-evidence-empty",
+        "v2-dossier-overview-documents-empty",
+        "v2-dossier-status-history-empty",
+      ]) {
+        expect(dossierSource).toMatch(new RegExp(`<DossierEmptyStateView[^>]*testId="${testId}"`));
+      }
+    });
+  });
 });

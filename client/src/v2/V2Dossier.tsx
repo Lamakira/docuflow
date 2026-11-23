@@ -1512,9 +1512,15 @@ function renderDossierTab(props: {
 function DossierOverview({
   dossier,
   onComplete,
+  onNewTask,
+  onStartTimer,
+  onNewDocument,
 }: {
   dossier: DossierModel;
   onComplete: (id: string, status: string) => void;
+  onNewTask: () => void;
+  onStartTimer: () => void;
+  onNewDocument: () => void;
 }) {
   // The card shows the latest changes; the rest open in place (F45).
   const [historyExpanded, setHistoryExpanded] = useState(false);
@@ -1531,7 +1537,12 @@ function DossierOverview({
             </span>
           </div>
           {dossier.nextActions.empty ? (
-            <p className="df-empty">{dossier.nextActions.emptyCopy}</p>
+            <DossierEmptyStateView
+              state={dossier.nextActions.emptyState}
+              icon="tasks"
+              testId="v2-dossier-overview-tasks-empty"
+              onCompose={onNewTask}
+            />
           ) : (
             dossier.nextActions.rows.map((row) => (
               <div key={row.id} className="df-task-row" data-done={row.done ? "true" : "false"}>
@@ -1570,7 +1581,11 @@ function DossierOverview({
           {dossier.dailyUpdate.kind === "refusal" ? (
             <p className="df-refusal">{dossier.dailyUpdate.copy}</p>
           ) : dossier.dailyUpdate.kind === "empty" ? (
-            <p className="df-empty">{dossier.dailyUpdate.copy}</p>
+            <DossierEmptyStateView
+              state={dossier.updates.emptyState}
+              icon="updates"
+              testId="v2-dossier-overview-update-empty"
+            />
           ) : (
             <div className="df-update-body">
               {dossier.dailyUpdate.prose ? <p className="df-prose">{dossier.dailyUpdate.prose}</p> : null}
@@ -1591,17 +1606,24 @@ function DossierOverview({
             <h2 className="df-card-title">Recent Activity Evidence</h2>
           </div>
           {dossier.evidence.empty ? (
-            <p className="df-empty">{dossier.evidence.emptyCopy}</p>
+            <DossierEmptyStateView
+              state={dossier.evidence.emptyState}
+              icon="activity"
+              testId="v2-dossier-overview-evidence-empty"
+              onStartTimer={onStartTimer}
+            />
           ) : (
-            <div className="df-evidence-grid">
-              {dossier.evidence.tiles.map((tile) => (
-                <EvidenceTile key={tile.id} tile={tile} />
-              ))}
-            </div>
+            <>
+              <div className="df-evidence-grid">
+                {dossier.evidence.tiles.map((tile) => (
+                  <EvidenceTile key={tile.id} tile={tile} />
+                ))}
+              </div>
+              <p className="df-empty" data-edge="end">
+                {dossier.evidence.footnote}
+              </p>
+            </>
           )}
-          <p className="df-empty" data-edge="end">
-            {dossier.evidence.footnote}
-          </p>
         </section>
       </div>
 
@@ -1642,7 +1664,12 @@ function DossierOverview({
             <span className="df-count-chip">{dossier.documents.countLabel}</span>
           </div>
           {dossier.documents.empty ? (
-            <p className="df-empty">{dossier.documents.emptyCopy}</p>
+            <DossierEmptyStateView
+              state={dossier.documents.emptyState}
+              icon="documents"
+              testId="v2-dossier-overview-documents-empty"
+              onNewDocument={onNewDocument}
+            />
           ) : (
             dossier.documents.rows.map((row) => (
               <Link key={row.id} href={row.href} className="df-doc-row">
@@ -1658,7 +1685,11 @@ function DossierOverview({
             <h2 className="df-card-title">Status history</h2>
           </div>
           {dossier.history.empty ? (
-            <p className="df-empty">{dossier.history.emptyCopy}</p>
+            <DossierEmptyStateView
+              state={{ ...dossier.history.emptyState, action: null }}
+              icon="activity"
+              testId="v2-dossier-status-history-empty"
+            />
           ) : (
             historyRows.map((row) => (
               <div key={row.id} className="df-history-row">

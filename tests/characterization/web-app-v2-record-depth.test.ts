@@ -145,6 +145,10 @@ describe("Status history says how long each Project Status held (#260, C)", () =
       rows: [],
       empty: true,
       emptyCopy: "No Project Status changes recorded for this Project yet.",
+      emptyState: {
+        title: "No Status changes yet",
+        copy: "Each move between Planned, Active, In review, Completed and Archived lands here: who made it, when, and how long the Project held each status.",
+      },
     });
 
     const shuffled = composeDossier(

@@ -312,6 +312,7 @@ export type DossierModel = {
     rows: DossierTaskRow[];
     empty: boolean;
     emptyCopy: string;
+    emptyState: DossierEmptyState;
   };
   tasks: {
     /** Every Task not archived, done ones included; Next actions holds the open ones only (F49). */
@@ -405,6 +406,7 @@ export type DossierModel = {
     }>;
     empty: boolean;
     emptyCopy: string;
+    emptyState: { title: string; copy: string };
   };
   tags: {
     vocabulary: Array<DossierTag & { attached: boolean; deleteConsequence: string }>;
@@ -674,6 +676,18 @@ function composeNextActions(taskRows: DossierTaskRow[]): DossierModel["nextActio
     rows,
     empty: rows.length === 0,
     emptyCopy: taskRows.length > 0 ? "Every Task on this Project is done." : "No Tasks on this Project yet.",
+    emptyState:
+      taskRows.length > 0
+        ? {
+            title: "Every Task is done",
+            copy: "Done Tasks stay on the Tasks tab. Add the next step when there is one.",
+            action: { kind: "compose", label: "New Task" },
+          }
+        : {
+            title: "No Tasks yet",
+            copy: "Tasks are the steps of this Project. Each one carries its own status and timer, so tracked time lands on the right step.",
+            action: { kind: "compose", label: "Create the first Task" },
+          },
   };
 }
 
@@ -1056,6 +1070,10 @@ function composeHistory(input: DossierInput): DossierModel["history"] {
     rows,
     empty: rows.length === 0,
     emptyCopy: "No Project Status changes recorded for this Project yet.",
+    emptyState: {
+      title: "No Status changes yet",
+      copy: "Each move between Planned, Active, In review, Completed and Archived lands here: who made it, when, and how long the Project held each status.",
+    },
   };
 }
 
