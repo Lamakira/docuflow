@@ -709,12 +709,12 @@ export function V2AdministrationPage() {
               <div className="df-admin-fact">
                 <Avatar className="df-admin-fact-avatar">
                   <AvatarFallback className="df-admin-fact-avatar-fallback">
-                    {page.workspace.owner?.initials ?? "—"}
+                    {page.workspace.owner?.initials ?? "-"}
                   </AvatarFallback>
                 </Avatar>
                 <div className="df-admin-fact-text">
                   <span className="df-admin-fact-label">Owner</span>
-                  <span className="df-admin-fact-value">{page.workspace.owner?.name ?? "—"}</span>
+                  <span className="df-admin-fact-value">{page.workspace.owner?.name ?? "-"}</span>
                 </div>
               </div>
               {page.workspace.members ? (
@@ -1040,7 +1040,7 @@ export function V2AdministrationPage() {
                         <div className="df-row-title">{row.name}</div>
                         <div className="df-mono df-meta">
                           {row.status}
-                          {row.capabilities !== "—" ? ` · ${row.capabilities}` : ""}
+                          {row.capabilities !== "-" ? ` · ${row.capabilities}` : ""}
                         </div>
                       </span>
                       <AccountActions

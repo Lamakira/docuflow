@@ -82,7 +82,7 @@ export class WorkspaceSuccessorError extends Error {
 export class WorkspaceHasMembersError extends Error {
   readonly statusCode = 409;
   constructor() {
-    super("Transfer this Workspace — other Members still hold a Membership in it");
+    super("Transfer this Workspace: other Members still hold a Membership in it");
     this.name = "WorkspaceHasMembersError";
   }
 }

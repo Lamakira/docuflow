@@ -79,7 +79,7 @@ const FEATURE_ROUTES: FeatureRoute[] = [
     path: /^\/api\/(documents|company-documents|company-document-folders|document-attachments|document-images|audio|transcripts|embeddings)(\/|$)/,
   },
   { feature: "knowledge", mode: "write", path: /^\/api\/projects\/[^/]+\/(documents|files)(\/|$)/ },
-  { feature: "knowledge", mode: "write", path: /^\/api\/crm\/projects\/[^/]+\/documentation$/ },
+  { feature: "knowledge", mode: "write", path: /^\/api\/crm\/projects\/[^/]+\/(documentation|link-documentation)$/ },
   { feature: "crm", mode: "write", path: /^\/api\/crm\/(clients|contacts|tags)(\/|$)/ },
   { feature: "crm", mode: "write", path: /^\/api\/crm\/projects\/[^/]+\/(tags|lost)(\/|$)/ },
   { feature: "crm", mode: "write", path: /^\/api\/admin\/(fields|system-lists)(\/|$)/ },

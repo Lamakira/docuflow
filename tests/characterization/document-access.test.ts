@@ -236,6 +236,7 @@ describe("Project Files (#278)", () => {
     const member = await registerUser(app);
     const { project, crmProject } = await createCrmProject(admin.agent, {
       name: "Harbor fit-out",
+      status: "won_in_progress",
       documentationEnabled: true,
     });
 

@@ -25,12 +25,13 @@ import type {
   CrmProjectWithDetails,
   SafeUser,
 } from "@shared/schema";
-import { opportunityStageFromCombined } from "@shared/projectLifecycle";
+import { isDeliveryProject, opportunityStageFromCombined } from "@shared/projectLifecycle";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { motionForSurface } from "./motion";
 import { isStandingRefusal, notify } from "./notify";
 import { matchV2Route } from "./presentation";
+import { projectFilesPath } from "./projectDocumentation";
 import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
@@ -42,6 +43,7 @@ import {
   canChangeOpportunityStage,
   combinedStatusForStage,
   TERMINAL_PREVIEW,
+  composeOpportunityDocuments,
   composeOpportunityForm,
   composeOpportunityHistory,
   composeOpportunityNotes,
@@ -69,7 +71,9 @@ import {
   type ListOption,
   type LostDraft,
   type OpportunityCard,
+  type OpportunityDocument,
   type OpportunityDraft,
+  type OpportunityFile,
   type OpportunityOutcome,
   type OpportunityRecordModel,
   type OpportunityPipelineRowInput,
@@ -710,6 +714,74 @@ function StageHistoryCard({ opportunityId, stages }: { opportunityId: string; st
   );
 }
 
+/** A list this reader may not reach is an empty one; a failure is not. */
+async function loadSaleList<T>(path: string): Promise<T[]> {
+  const res = await fetch(path, { credentials: "include" });
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to fetch Documents");
+  return res.json();
+}
+
+/** The sale's pages and Files, when it has any (F61). Nothing is created here. */
+function OpportunityDocumentsCard({ opportunityId, projectId }: { opportunityId: string; projectId: string }) {
+  const documents = useQuery<OpportunityDocument[]>({
+    queryKey: ["/api/projects", projectId, "documents"],
+    staleTime: 0,
+    queryFn: () => loadSaleList<OpportunityDocument>(`/api/projects/${projectId}/documents`),
+  });
+  const files = useQuery<OpportunityFile[]>({
+    queryKey: [projectFilesPath(projectId)],
+    staleTime: 0,
+    queryFn: () => loadSaleList<OpportunityFile>(projectFilesPath(projectId)),
+  });
+  const rows = composeOpportunityDocuments({
+    opportunityId,
+    projectId,
+    documents: documents.data ?? [],
+    files: files.data ?? [],
+  });
+  if (rows.length === 0) return null;
+  return (
+    <section className="df-card" data-testid="v2-opportunity-documents">
+      <div className="df-card-head">
+        <h2 className="df-card-title">Documents</h2>
+        <span className="df-count-chip">{rows.length}</span>
+      </div>
+      {documents.isError || files.isError ? (
+        <div className="df-card-body-stack" role="status" data-testid="v2-opportunity-documents-failed">
+          <p className="df-card-sub">Documents could not be refreshed.</p>
+          <span className="df-cluster">
+            <Button
+              variant="outline"
+              type="button"
+              className="df-btn"
+              onClick={() => {
+                if (documents.isError) void documents.refetch();
+                if (files.isError) void files.refetch();
+              }}
+            >
+              Try again
+            </Button>
+          </span>
+        </div>
+      ) : null}
+      {rows.map((row) => (
+        <Link
+          key={`${row.kind}-${row.id}`}
+          href={row.href}
+          className="df-doc-row"
+          data-testid={`v2-opportunity-${row.kind}-${row.id}`}
+          // Per-instance: the indent is this page's depth.
+          style={row.depth > 0 ? { paddingLeft: `calc(var(--df-space-4) * ${row.depth + 1})` } : undefined}
+        >
+          <span className="df-row-title">{row.title}</span>
+          <span className="df-mono df-meta">{row.date}</span>
+        </Link>
+      ))}
+    </section>
+  );
+}
+
 type NoteComposer = { mode: "new" } | { mode: "edit"; id: string };
 
 /** A thread of dated notes, written and edited in a dialog, as the Dossier's Notes tab. */
@@ -1195,6 +1267,10 @@ function OpportunityRecord({ row }: { row: CrmProjectWithDetails }) {
           </section>
 
           <StageHistoryCard opportunityId={row.id} stages={lists.stages} />
+          {/* A won one keeps its Documents in its Project Dossier. */}
+          {row.project?.id && !isDeliveryProject(row) ? (
+            <OpportunityDocumentsCard opportunityId={row.id} projectId={row.project.id} />
+          ) : null}
         </div>
       </div>
 

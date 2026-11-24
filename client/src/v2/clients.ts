@@ -82,12 +82,12 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 function statusLabel(status: string | null): string {
-  if (!status) return "—";
+  if (!status) return "-";
   return STATUS_LABEL[status] ?? status.replace(/_/g, " ").toUpperCase();
 }
 
 function sourceLabel(source: string | null): string {
-  if (!source) return "—";
+  if (!source) return "-";
   return SOURCE_LABEL[source] ?? capitalize(source.replace(/_/g, " "));
 }
 
@@ -102,7 +102,7 @@ export function composeClientRegister(input: ClientRegisterInput): ClientRegiste
     .map((client) => ({
       id: client.id,
       name: client.name || "Untitled Client",
-      company: client.company || "—",
+      company: client.company || "-",
       status: statusLabel(client.status),
       statusColor: clientStatusColor(client.status),
       source: sourceLabel(client.source),
@@ -378,7 +378,7 @@ function identityFrom(client: ClientIdentitySeed): ClientRecordIdentity {
     title: client.name || "Untitled Client",
     status: statusLabel(client.status),
     statusColor: clientStatusColor(client.status),
-    company: client.company || "—",
+    company: client.company || "-",
     email: client.email ?? null,
     source: sourceLabel(client.source),
     sourceValue: client.source || null,
@@ -522,8 +522,8 @@ function clientDetails(
 ): Array<{ label: string; value: string; wide?: true }> {
   const rows: Array<{ label: string; value: string; wide?: true }> = [
     { label: "Company", value: identity.company },
-    { label: "Email", value: identity.email ?? "—" },
-    { label: "Phone", value: identity.phone ?? "—" },
+    { label: "Email", value: identity.email ?? "-" },
+    { label: "Phone", value: identity.phone ?? "-" },
     { label: "Source", value: identity.source },
   ];
   if (identity.fiverrUsername) {
@@ -531,7 +531,7 @@ function clientDetails(
   }
   // Notes belong in the same block: a separate paragraph below stacked two
   // gutters and left a band of empty card between them.
-  rows.push({ label: "Notes", value: notes?.trim() || "—", wide: true });
+  rows.push({ label: "Notes", value: notes?.trim() || "-", wide: true });
   return rows;
 }
 

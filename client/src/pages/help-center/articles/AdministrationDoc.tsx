@@ -55,25 +55,25 @@ export function AdministrationDoc() {
         </DocP>
         <DocList>
           <DocLi>
-            <DocStrong>screenshotsEnabled</DocStrong> — master switch for periodic capture when the
+            <DocStrong>screenshotsEnabled</DocStrong>: master switch for periodic capture when the
             agent implements capture.
           </DocLi>
           <DocLi>
-            <DocStrong>captureIntervalMinMin / captureIntervalMaxMin</DocStrong> — bounds (in
+            <DocStrong>captureIntervalMinMin / captureIntervalMaxMin</DocStrong>: bounds (in
             minutes) between which the agent picks capture timing; minimum is constrained (for example at least a few
             minutes), maximum capped (for example up to a quarter hour) per the admin form validation.
           </DocLi>
           <DocLi>
             <DocStrong>activeHoursEnabled</DocStrong> with{" "}
             <DocStrong>activeHoursStart</DocStrong> and{" "}
-            <DocStrong>activeHoursEnd</DocStrong> — when enabled, restricts capture to a daily time
+            <DocStrong>activeHoursEnd</DocStrong>: when enabled, restricts capture to a daily time
             window using 24-hour <DocCode>HH:mm</DocCode> values.
           </DocLi>
         </DocList>
         <HelpScreenshot
           slotId="admin-screenshot-capture-card"
           caption="Administration: screenshot capture policy card."
-          expectedLabel="Admin web — Screenshot capture card with enable switch and min/max interval fields."
+          expectedLabel="Admin web: Screenshot capture card with enable switch and min/max interval fields."
         />
       </DocSection>
 
@@ -84,27 +84,27 @@ export function AdministrationDoc() {
         </DocP>
         <DocList>
           <DocLi>
-            <DocStrong>idlePromptEnabled</DocStrong> — whether the Member is asked before the idle
+            <DocStrong>idlePromptEnabled</DocStrong>: whether the Member is asked before the idle
             pause. When off, the Timer still pauses at the timeout, without asking.
           </DocLi>
           <DocLi>
-            <DocStrong>idleTimeoutMinutes</DocStrong> — minutes without qualifying activity before the
+            <DocStrong>idleTimeoutMinutes</DocStrong>: minutes without qualifying activity before the
             Timer pauses (allowed range in the admin form: 1–60).
           </DocLi>
           <DocLi>
-            <DocStrong>idleCountdownSeconds</DocStrong> — how long the idle prompt counts down before
+            <DocStrong>idleCountdownSeconds</DocStrong>: how long the idle prompt counts down before
             the Timer pauses with no answer (allowed range in the admin form: 15–120 seconds).
           </DocLi>
         </DocList>
         <HelpScreenshot
           slotId="admin-idle-behaviour-card"
           caption="Administration: idle behaviour policy card."
-          expectedLabel="Admin web — Idle behaviour card with enable switch, timeout, and countdown fields."
+          expectedLabel="Admin web: Idle behaviour card with enable switch, timeout, and countdown fields."
         />
         <DocP>
           Saving uses <DocCode>PATCH /api/admin/org-settings</DocCode> with
           the <DocCode>screenshotPolicy</DocCode> payload. The UI states that
-          policy is pushed to connected agents on the next heartbeat — plan communication to users accordingly.
+          policy is pushed to connected agents on the next heartbeat: plan communication to users accordingly.
         </DocP>
       </DocSection>
 
@@ -114,7 +114,7 @@ export function AdministrationDoc() {
           <DocLi>Whether idle prompts appear and how aggressive the timeout and countdown are.</DocLi>
           <DocLi>
             Other Administration pages (users, CRM modules, analytics) change who can log in, what metadata is required
-            on CRM objects, and what admins see in dashboards — outside the narrow timer policy above, refer to your
+            on CRM objects, and what admins see in dashboards; outside the narrow timer policy above, refer to your
             internal admin runbooks until those areas have dedicated Help Center depth.
           </DocLi>
         </DocList>

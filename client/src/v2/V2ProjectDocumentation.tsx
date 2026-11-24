@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Search, Upload } from "lucide-react";
-import type { CrmClient, Document, Project, SafeUser } from "@shared/schema";
+import { ArrowUpRight, FolderInput, Plus, Search, Upload } from "lucide-react";
+import type { CrmClient, Document, Project } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { canManageAdministration } from "./administration";
 import { chromeRefusal } from "./chrome";
 import { isStandingRefusal, notify } from "./notify";
 import {
@@ -12,6 +13,7 @@ import {
   documentationFilterLabels,
   documentationFilterWords,
   documentationRegisterPath,
+  offeredProject,
   projectFilesPath,
   readDocumentationFilters,
   writeDocumentationFilters,
@@ -19,12 +21,16 @@ import {
   type DocumentationSetting,
   type ProjectDocumentationFilters,
 } from "./projectDocumentation";
+import type { LibraryPerson, LibraryRow } from "./library";
 import { composePaging } from "./paging";
+import { projectHref } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { PROJECT_DOCUMENTATION_OPEN_KEY, readLibraryOpenState, writeLibraryOpenState, type LibraryOpenState } from "./presentation";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { useV2Chrome } from "./V2Shell";
+import { V2EmptyState } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
+import { V2LinkDocumentationDialog } from "./V2LinkDocumentationDialog";
 import { V2UploadDialog, fileTitle, storeUpload } from "./V2UploadDialog";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { V2RegisterPager } from "./V2RegisterPager";
@@ -39,22 +45,31 @@ import { SkeletonLibrary, V2PageSkeleton } from "./V2Skeleton";
 type DocumentationPage = {
   data: Array<{
     project: Project;
+    crmProjectId: string;
+    clientName: string | null;
+    isDocumentationOnly: boolean;
+    owner: LibraryPerson | null;
     documentationEnabled: boolean;
-    documents: Array<Pick<Document, "id" | "title" | "projectId" | "parentId" | "createdById" | "createdAt" | "updatedAt">>;
+    documents: Array<
+      Pick<Document, "id" | "title" | "projectId" | "parentId" | "createdAt" | "updatedAt"> & { createdBy: LibraryPerson | null }
+    >;
     files?: Array<{
       id: string;
       name: string;
       projectId: string;
-      uploadedById: string | null;
+      createdBy: LibraryPerson | null;
       createdAt: string | null;
       updatedAt: string | null;
     }>;
   }>;
   total: number;
-  projects: Array<{ id: string; name: string; documentationEnabled: boolean }>;
+  projects: Array<{ id: string; name: string; documentationEnabled: boolean; isDocumentationOnly: boolean }>;
 };
 
 type LibraryPayload = { capabilityMiss: boolean; page: DocumentationPage | null };
+
+const MAX_PROJECT_NAME = 255;
+const MAX_DOCUMENT_NAME = 500;
 
 const SEARCH_SETTLE_MS = 250;
 
@@ -93,10 +108,20 @@ export function V2ProjectDocumentationPage() {
   const [name, setName] = useState("");
   const [targetProjectId, setTargetProjectId] = useState<string>(V2_SELECT_NONE);
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
+  const [linkSource, setLinkSource] = useState<{
+    crmProjectId: string;
+    name: string;
+    documents: number;
+    files: number;
+  } | null>(null);
 
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const readOnly = current?.condition === "Read-only";
+  const readOnlyRefusal = readOnly
+    ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" })
+    : null;
+  const canManage = canManageAdministration(current?.workspaceRole ?? "");
 
   function setFilters(next: ProjectDocumentationFilters) {
     navigate(`/project-documentation${writeDocumentationFilters(search, next)}`, { replace: true });
@@ -111,12 +136,23 @@ export function V2ProjectDocumentationPage() {
   }, [filterQuery]);
 
   const registerPath = documentationRegisterPath(filters);
-  const { data, isLoading } = useQuery<LibraryPayload>({
+  // Every visit re-reads; the cached list shows while it does. A page that fails
+  // has no data, so another filter's rows never stand in for its answer (F63).
+  const { data, isLoading, isError, refetch } = useQuery<LibraryPayload>({
     queryKey: ["/api/projects/documentable", "register-page", registerPath],
     placeholderData: keepPreviousData,
     queryFn: () => loadDocumentationPage(registerPath),
+    staleTime: 0,
   });
-  const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
+  // A refresh that fails keeps the cached list on screen and says so once.
+  useEffect(() => {
+    if (isError && data) {
+      notify.error(null, {
+        fallback: "Project Documentation could not be refreshed.",
+        id: "v2-project-documentation-refresh-failed",
+      });
+    }
+  }, [isError, data]);
   const { data: clients = [] } = useQuery<CrmClient[]>({ queryKey: ["/api/crm/clients"] });
   const ownerName = useWorkspaceOwnerName();
 
@@ -156,6 +192,9 @@ export function V2ProjectDocumentationPage() {
     documentationEnabled: entry.documentationEnabled,
     visible: true,
     updatedAt: entry.project.updatedAt,
+    clientName: entry.clientName,
+    isDocumentationOnly: entry.isDocumentationOnly,
+    owner: entry.owner,
   }));
   const library = composeProjectDocumentation({
     now,
@@ -170,9 +209,7 @@ export function V2ProjectDocumentationPage() {
       parentId: document.parentId,
       updatedAt: document.updatedAt,
       createdAt: document.createdAt,
-      createdBy: document.createdById
-        ? users.find((member) => member.id === document.createdById) ?? null
-        : null,
+      createdBy: document.createdBy,
     })),
     files: (page?.data ?? []).flatMap((entry) => entry.files ?? []).map((file) => ({
       id: file.id,
@@ -180,7 +217,7 @@ export function V2ProjectDocumentationPage() {
       projectId: file.projectId,
       updatedAt: file.updatedAt,
       createdAt: file.createdAt,
-      createdBy: file.uploadedById ? users.find((member) => member.id === file.uploadedById) ?? null : null,
+      createdBy: file.createdBy,
     })),
     expandedProjectIds,
     selectedProjectId,
@@ -190,19 +227,18 @@ export function V2ProjectDocumentationPage() {
   });
   const folderMotion = useFolderExpandMotion(filterQuery);
 
+  const offeredProjects = choices
+    .filter((project) => project.documentationEnabled)
+    .map((project) => ({ value: project.id, label: project.name || "Untitled Project" }));
   const projectOptions = [
     { value: V2_SELECT_NONE, label: "Choose a Project" },
-    ...choices
-      .filter((project) => project.documentationEnabled)
-      .map((project) => ({ value: project.id, label: project.name || "Untitled Project" })),
+    ...offeredProjects,
   ];
-  const selectedDocumentProjectId = targetProjectId === V2_SELECT_NONE ? null : targetProjectId;
+  const selectedDocumentProjectId = offeredProject(offeredProjects, targetProjectId);
 
   function refuseWrite(errorMessage?: string) {
-    if (readOnly) {
-      setWriteRefusal(
-        chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }),
-      );
+    if (readOnlyRefusal) {
+      setWriteRefusal(readOnlyRefusal);
       return true;
     }
     if (errorMessage && !isStandingRefusal(errorMessage) && !/select a project/i.test(errorMessage)) {
@@ -264,7 +300,7 @@ export function V2ProjectDocumentationPage() {
     },
   });
 
-  // The control creates a row in `projects`, and the screen says so (#245, F4).
+  // The control creates a Project, and the screen says so (#245, F4).
   const createProject = useMutation({
     mutationFn: (projectName: string) =>
       apiRequest("POST", "/api/crm/projects", {
@@ -272,9 +308,14 @@ export function V2ProjectDocumentationPage() {
         documentationEnabled: true,
         isDocumentationOnly: true,
       }),
-    onSuccess: () => {
+    onSuccess: (created: { project?: { id: string } }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"] });
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
+      const createdId = created?.project?.id;
+      if (createdId) {
+        setExpandedProjectIds((currentIds) => [...currentIds, createdId]);
+        setSelectedProjectId(createdId);
+      }
       setCreateMode(null);
       setName("");
       setWriteRefusal(null);
@@ -295,10 +336,10 @@ export function V2ProjectDocumentationPage() {
     );
   }
 
-  function openCreate(mode: "document" | "project" | "upload") {
+  function openCreate(mode: "document" | "project" | "upload", projectId: string | null = selectedProjectId) {
     setName("");
     setWriteRefusal(null);
-    setTargetProjectId(selectedProjectId ?? V2_SELECT_NONE);
+    setTargetProjectId(offeredProject(offeredProjects, projectId) ?? V2_SELECT_NONE);
     setCreateMode(mode);
   }
 
@@ -316,6 +357,88 @@ export function V2ProjectDocumentationPage() {
     }
   }
 
+  // What an open Project offers above its Documents, an empty one included (F65).
+  function projectActions(row: LibraryRow) {
+    const entry = page?.data.find((candidate) => candidate.project.id === row.id);
+    if (!entry) return null;
+    const documents = entry.documents.length;
+    const files = entry.files?.length ?? 0;
+    const href = projectHref(entry.crmProjectId);
+    return (
+      <div className="df-library-folder-actions" data-testid={`v2-project-actions-${row.id}`}>
+        <Button asChild variant="outline" className="df-btn">
+          <Link href={entry.documentationEnabled ? `${href}/documents` : href}>
+            <ArrowUpRight strokeWidth={1.6} aria-hidden />
+            Open project
+          </Link>
+        </Button>
+        {entry.documentationEnabled ? (
+          <Button variant="outline" type="button" onClick={() => openCreate("document", row.id)} className="df-btn">
+            <Plus strokeWidth={1.6} aria-hidden />
+            New Document
+          </Button>
+        ) : null}
+        {entry.isDocumentationOnly && canManage ? (
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => setLinkSource({ crmProjectId: entry.crmProjectId, name: row.name, documents, files })}
+            className="df-btn"
+          >
+            <FolderInput strokeWidth={1.6} aria-hidden />
+            Link to a Project
+          </Button>
+        ) : null}
+        {documents + files === 0 ? <span className="df-meta">No Project Documents yet.</span> : null}
+      </div>
+    );
+  }
+
+  const filterBar = (
+    <div className="df-filter-bar">
+      <label className="df-filter-input">
+        <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
+        <input
+          type="search"
+          value={filterQuery}
+          onChange={(event) => setFilterQuery(event.target.value)}
+          placeholder="Search this library"
+          aria-label="Search this library"
+        />
+      </label>
+      {projectChipOptions.length === 0 && filters.project === "all" ? null : (
+        <V2FilterSelect
+          label="Project"
+          ariaLabel="Filter by Project"
+          value={filters.project}
+          active={filters.project !== "all"}
+          options={[{ value: "all", label: "All" }, ...projectChipOptions]}
+          onChange={(project) => setFilters({ ...filters, project, page: 1 })}
+        />
+      )}
+      {clientOptions.length === 0 ? null : (
+        <V2FilterSelect
+          label="Client"
+          ariaLabel="Filter by Client"
+          value={filters.client}
+          active={filters.client !== "all"}
+          options={[{ value: "all", label: "All" }, ...clientOptions]}
+          onChange={(client) => setFilters({ ...filters, client, page: 1 })}
+        />
+      )}
+      <V2FilterSelect
+        label="Documentation"
+        ariaLabel="Filter by documentation"
+        value={filters.documentation}
+        active={filters.documentation !== "enabled"}
+        options={DOCUMENTATION_OPTIONS}
+        onChange={(documentation) =>
+          setFilters({ ...filters, documentation: documentation as DocumentationSetting, project: "all", page: 1 })
+        }
+      />
+    </div>
+  );
+
   if (isLoading) {
     return (
       <V2PageSkeleton
@@ -324,8 +447,33 @@ export function V2ProjectDocumentationPage() {
         frame="library"
         status="Loading Project Documentation."
       >
-        <SkeletonLibrary />
+        <SkeletonLibrary accessHeading="Client" />
       </V2PageSkeleton>
+    );
+  }
+
+  if (isError && !data) {
+    return (
+      <div className="df-page" data-testid="v2-project-documentation">
+        <header className="df-today-head">
+          <div style={{ minWidth: 0 }}>
+            <h1 className="df-title">Project Documentation</h1>
+          </div>
+        </header>
+        {/* A filter whose page failed can still be changed or cleared. */}
+        {activeFilters.length > 0 ? filterBar : null}
+        <V2EmptyState
+          icon="documents"
+          title="Project Documentation could not be loaded."
+          copy="Something went wrong while loading it. Try again."
+          testId="v2-project-documentation-load-failed"
+          action={
+            <Button variant="default" type="button" className="df-btn" onClick={() => refetch()}>
+              Try again
+            </Button>
+          }
+        />
+      </div>
     );
   }
 
@@ -358,10 +506,10 @@ export function V2ProjectDocumentationPage() {
           onOpenChange={(open) => {
             if (!open) setCreateMode(null);
           }}
-          title={createMode === "project" ? "New Project" : "New Document"}
+          title={createMode === "project" ? "New documentation Project" : "New Document"}
           description={
             createMode === "project"
-              ? "A documentation-only Project: a row in Projects that holds Project Documents and never enters the pipeline."
+              ? "Holds Project Documents on their own, outside Projects. You can link it to a Project later."
               : "A Project Document belongs to one Project and opens in the editor once created."
           }
           submitLabel={createMode === "project" ? "Create Project" : "Create Document"}
@@ -377,6 +525,7 @@ export function V2ProjectDocumentationPage() {
               type="text"
               value={name}
               autoFocus
+              maxLength={createMode === "project" ? MAX_PROJECT_NAME : MAX_DOCUMENT_NAME}
               onChange={(event) => setName(event.target.value)}
               placeholder={createMode === "project" ? "Project name" : "Document name"}
               aria-label={createMode === "project" ? "Project name" : "Document name"}
@@ -422,53 +571,14 @@ export function V2ProjectDocumentationPage() {
         </V2UploadDialog>
         {writeRefusal && !createMode ? <p className="df-refusal">{writeRefusal}</p> : null}
 
-        <div className="df-filter-bar">
-          <label className="df-filter-input">
-            <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
-            <input
-              type="search"
-              value={filterQuery}
-              onChange={(event) => setFilterQuery(event.target.value)}
-              placeholder="Search this library"
-              aria-label="Search this library"
-            />
-          </label>
-          {projectChipOptions.length === 0 && filters.project === "all" ? null : (
-            <V2FilterSelect
-              label="Project"
-              ariaLabel="Filter by Project"
-              value={filters.project}
-              active={filters.project !== "all"}
-              options={[{ value: "all", label: "All" }, ...projectChipOptions]}
-              onChange={(project) => setFilters({ ...filters, project, page: 1 })}
-            />
-          )}
-          {clientOptions.length === 0 ? null : (
-            <V2FilterSelect
-              label="Client"
-              ariaLabel="Filter by Client"
-              value={filters.client}
-              active={filters.client !== "all"}
-              options={[{ value: "all", label: "All" }, ...clientOptions]}
-              onChange={(client) => setFilters({ ...filters, client, page: 1 })}
-            />
-          )}
-          <V2FilterSelect
-            label="Documentation"
-            ariaLabel="Filter by documentation"
-            value={filters.documentation}
-            active={filters.documentation !== "enabled"}
-            options={DOCUMENTATION_OPTIONS}
-            onChange={(documentation) =>
-              setFilters({ ...filters, documentation: documentation as DocumentationSetting, project: "all", page: 1 })
-            }
-          />
-        </div>
+        {filterBar}
 
         <V2LibraryRegister
           library={library}
           testId="v2-project-documentation-register"
-          personHeading="Last editor"
+          accessHeading="Client"
+          plainAccess
+          folderActions={projectActions}
           instantExpand={folderMotion.instantExpand}
           onFolderClick={onFolderClick}
           emptyAction={
@@ -514,6 +624,16 @@ export function V2ProjectDocumentationPage() {
           }
         />
       </div>
+      {linkSource ? (
+        <V2LinkDocumentationDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setLinkSource(null);
+          }}
+          source={linkSource}
+          readOnlyRefusal={readOnlyRefusal}
+        />
+      ) : null}
     </div>
   );
 }

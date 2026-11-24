@@ -83,15 +83,10 @@ describe("Project Dossier Documentation (#307)", () => {
   });
 
   it("sends an old /document link to the page's place in its Project Dossier", () => {
-    const projects = [
-      { id: "crm-1", project: { id: "doc-project-1" } },
-      { id: "crm-2", project: { id: "doc-project-2" } },
-    ];
-
-    expect(projectDocumentDossierHref({ id: "page-9", projectId: "doc-project-2" }, projects)).toBe(
-      "/projects/crm-2/documents/page-9",
-    );
-    expect(projectDocumentDossierHref({ id: "page-9", projectId: "doc-project-3" }, projects)).toBeNull();
+    // The owner comes from its own route now, not from a list of Projects cut at 500 (F60).
+    const owner = { id: "crm-2", projectType: "one_time", status: "won_in_progress" };
+    expect(projectDocumentDossierHref({ id: "page-9" }, owner)).toBe("/projects/crm-2/documents/page-9");
+    expect(projectDocumentDossierHref({ id: "page-9" }, null)).toBeNull();
   });
 
   it("hides the page tree, as v1's sidebar did, so the open page takes the whole width", () => {

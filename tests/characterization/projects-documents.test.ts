@@ -164,7 +164,7 @@ describe("projects and documents (characterization)", () => {
 
     const invalid = await user.agent.post(`/api/projects/${project.id}/documents`).send({});
     expect(invalid.status).toBe(400);
-    expect(invalid.body.message).toBe("Invalid data");
+    expect(invalid.body.message).toBe("Document title must be 1 to 500 characters");
   });
 
   it("returns a document with its creator inlined", async () => {

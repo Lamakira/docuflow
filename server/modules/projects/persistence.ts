@@ -1,6 +1,7 @@
 import type { ProjectWriter } from "../writers";
 import type {
   Document,
+  DocumentPerson,
   Project,
   InsertProject,
   CrmProject,
@@ -59,7 +60,7 @@ export type CrmProjectSort = (typeof CRM_PROJECT_SORTS)[number];
 export type ProjectDocumentationListOptions = {
   page: number;
   pageSize: number;
-  /** A Project name, or the title of one of its Documents. */
+  /** A Project name, the title of one of its Documents, or the name of one of its Files. */
   search?: string;
   /** The `projects` id. */
   projectId?: string;
@@ -73,7 +74,7 @@ export type ProjectDocumentationListOptions = {
 export type ProjectDocumentationDocument = Pick<
   Document,
   "id" | "title" | "projectId" | "parentId" | "position" | "createdById" | "createdAt" | "updatedAt"
->;
+> & { createdBy: DocumentPerson | null };
 
 /** A Project File as the register lists it (#278): no bytes, no object key. */
 export type ProjectDocumentationFile = {
@@ -86,13 +87,17 @@ export type ProjectDocumentationFile = {
   uploadedById: string;
   createdAt: Date | null;
   updatedAt: Date | null;
+  createdBy: DocumentPerson | null;
 };
 
 export type ProjectDocumentationEntry = {
   project: Project;
   crmProjectId: string;
   clientId: string | null;
+  clientName: string | null;
+  owner: DocumentPerson | null;
   documentationEnabled: boolean;
+  isDocumentationOnly: boolean;
   documents: ProjectDocumentationDocument[];
   files: ProjectDocumentationFile[];
 };
@@ -102,8 +107,8 @@ export type ProjectDocumentationPage = {
   total: number;
   page: number;
   pageSize: number;
-  /** Every Project the reader may see, whatever the filters, for the PROJECT chip and the New Document picker. */
-  projects: Array<{ id: string; name: string; documentationEnabled: boolean }>;
+  /** Every delivery or documentation-only Project the reader may see, whatever the filters, for the PROJECT chip and the New Document picker. */
+  projects: Array<{ id: string; name: string; documentationEnabled: boolean; isDocumentationOnly: boolean }>;
 };
 
 export interface ProjectsPersistence {
@@ -133,7 +138,8 @@ export interface ProjectsPersistence {
   ): Promise<{ project: Project; crmProject: CrmProject }>;
   updateCrmProject(id: string, data: Partial<InsertCrmProject>): Promise<CrmProject | undefined>;
   deleteCrmProject(id: string): Promise<void>;
-  toggleDocumentation(crmProjectId: string, enabled: boolean): Promise<CrmProject | undefined>;
+  /** The pages made when documentation is turned on are `userId`'s. */
+  toggleDocumentation(crmProjectId: string, enabled: boolean, userId: string): Promise<CrmProject | undefined>;
   getDocumentationEnabledProjects(userId?: string, scope?: ProjectDocumentScope): Promise<Project[]>;
   getProjectDocumentationPage(options: ProjectDocumentationListOptions): Promise<ProjectDocumentationPage>;
 

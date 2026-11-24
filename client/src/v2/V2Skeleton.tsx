@@ -152,14 +152,14 @@ export function SkeletonRegister({
 }
 
 /** Workspace Documents and Project Documentation share one register. */
-export function SkeletonLibrary({ rows = 6 }: { rows?: number }) {
+export function SkeletonLibrary({ rows = 6, accessHeading = "Access" }: { rows?: number; accessHeading?: string }) {
   return (
     <section className="df-card">
       <div className="df-library-head">
         <span>Name / path</span>
         <span>Type</span>
-        <span>Access</span>
-        <span>Last editor</span>
+        <span>{accessHeading}</span>
+        <span>Added by</span>
         <span style={{ textAlign: "right" }}>Updated</span>
       </div>
       {Array.from({ length: rows }, (_, row) => (

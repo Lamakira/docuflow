@@ -313,7 +313,7 @@ export function administrationWriteRefusal(input: AdministrationWriteRefusal): s
 }
 
 function capabilityLabel(capabilityIds: string[]): string {
-  if (capabilityIds.length === 0) return "—";
+  if (capabilityIds.length === 0) return "-";
   return capabilityIds.map((id) => CAPABILITY_LABELS.get(id) ?? id).join(" · ");
 }
 
@@ -369,7 +369,7 @@ function billingTerm(pin: BillingInput): { label: string; value: string } {
   if (pin.periodEndsAt) {
     return { label: "Renews", value: formatFullDate(pin.periodEndsAt) };
   }
-  return { label: "Renews", value: "—" };
+  return { label: "Renews", value: "-" };
 }
 
 /** Why the Plan stands as it does; the first state that applies wins. */
@@ -417,7 +417,7 @@ function composeBilling(input: AdministrationInput): BillingModel {
   if (!pin) {
     return {
       available: false,
-      plan: "—",
+      plan: "-",
       condition: input.condition === "Trial" || input.condition === "Past due" || input.condition === "Read-only"
         ? input.condition
         : null,
@@ -1020,7 +1020,7 @@ function recordedTimeSentence(input: {
 }
 
 function formatPercent(value: number | null): string {
-  if (value == null || Number.isNaN(value)) return "—";
+  if (value == null || Number.isNaN(value)) return "-";
   return `${Math.round(value)}%`;
 }
 
@@ -1032,7 +1032,7 @@ function platformLabel(device: AnalyticsDeviceInput): string {
   const parts = [device.os?.trim(), device.clientVersion?.trim()].filter(
     (part): part is string => Boolean(part),
   );
-  return parts.length > 0 ? parts.join(" · ") : "—";
+  return parts.length > 0 ? parts.join(" · ") : "-";
 }
 
 function toIsoOrNull(value: string | Date | null): string | null {
@@ -1535,7 +1535,7 @@ export function composeTrackingPolicyEditor(input: TrackingPolicyInput): Trackin
     timezones: {
       rows: input.draftTimezones,
       empty: input.draftTimezones.length === 0,
-      emptyCopy: "No timezone curated — each Member's browser timezone is used.",
+      emptyCopy: "No timezone curated: each Member's browser timezone is used.",
       dirty: timezonesDirty,
       canSave: !readOnly && timezonesDirty,
     },

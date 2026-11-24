@@ -108,7 +108,7 @@ export function composeFirstWorkspace(input: {
     error,
     trialNote: "It starts on a Trial with every capability. No card, nothing locked.",
     invitationNote:
-      "Expecting an Invitation instead? Open the link you were sent — accepting it gives you a Membership, and you do not need a Workspace of your own.",
+      "Expecting an Invitation instead? Open the link you were sent: accepting it gives you a Membership, and you do not need a Workspace of your own.",
     motion: input.status === "created" ? "standard" : "none",
   };
 }

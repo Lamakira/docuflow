@@ -120,7 +120,7 @@ function projectLabel(entry: TimeEntryRowInput): string {
 }
 
 function taskLabel(entry: TimeEntryRowInput): string {
-  return entry.task?.name?.trim() || entry.description?.trim() || "—";
+  return entry.task?.name?.trim() || entry.description?.trim() || "-";
 }
 
 export function timeEntriesPath(filters: TimeEntriesFilter = {}): string {

@@ -280,7 +280,7 @@ describe("register rows line up with the head (#278 follow-up)", () => {
   });
 
   it("marks the selected row without moving its columns", () => {
-    const selected = rule('.df-library-row[data-expanded="true"],\n.df-library-row[data-selected="true"]');
+    const selected = rule('.df-library-row[data-selected="true"]');
     expect(selected).toMatch(/box-shadow:\s*inset\s+2px\s+0\s+0/);
     expect(selected).not.toMatch(/border-left|padding/);
   });

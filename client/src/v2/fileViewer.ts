@@ -436,6 +436,7 @@ function fileMeta(input: FileViewerInput, family: FileFamily): string {
 
 function backLabelFor(href: string): string {
   if (href.startsWith("/projects/")) return "Project";
+  if (href.startsWith("/opportunities/")) return "Opportunity";
   if (href.startsWith("/project-documentation")) return "Project Documentation";
   if (href.startsWith("/documents")) return "Workspace Documents";
   return "Today";

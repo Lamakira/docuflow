@@ -140,7 +140,7 @@ describe("People from Memberships (#192)", () => {
         initials: "PN",
         email: "pat@example.com",
         workspaceRole: "MEMBER",
-        capabilities: "—",
+        capabilities: "-",
         status: "ACTIVE",
         canSignIn: true,
         consumesSeat: true,

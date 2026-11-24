@@ -18,9 +18,9 @@ describe("the Project Documentation register page (#275)", () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const acme = await createClient(user.agent, { name: "Acme" });
-    const site = await createCrmProject(user.agent, { name: "Acme site", clientId: acme.id, documentationEnabled: true });
-    const handbook = await createCrmProject(user.agent, { name: "Handbook", documentationEnabled: true });
-    const plain = await createCrmProject(user.agent, { name: "No docs" });
+    const site = await createCrmProject(user.agent, { name: "Acme site", status: "won_in_progress", clientId: acme.id, documentationEnabled: true });
+    const handbook = await createCrmProject(user.agent, { name: "Handbook", status: "won_in_progress", documentationEnabled: true });
+    const plain = await createCrmProject(user.agent, { name: "No docs", status: "won_in_progress" });
     await createDocument(user.agent, site.project.id, { title: "Runbook" });
     await createDocument(user.agent, site.project.id, { title: "Hand-off notes" });
     const names = async (query: Record<string, string>) =>
@@ -72,8 +72,8 @@ describe("the Project Documentation register page (#275)", () => {
     await setWorkspaceRole(admin.id, "administrator");
     const member = await registerUser(app);
     await setWorkspaceRole(member.id, "member");
-    await createCrmProject(admin.agent, { name: "Admin only", documentationEnabled: true });
-    await createCrmProject(admin.agent, { name: "Shared", documentationEnabled: true, memberIds: [member.id] });
+    await createCrmProject(admin.agent, { name: "Admin only", status: "won_in_progress", documentationEnabled: true });
+    await createCrmProject(admin.agent, { name: "Shared", status: "won_in_progress", documentationEnabled: true, memberIds: [member.id] });
 
     const visible = await member.agent.get("/api/projects/documentable").query({ page: 1, scope: "visible" });
     expect(visible.body.total).toBe(1);

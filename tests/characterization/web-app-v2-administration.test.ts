@@ -603,7 +603,7 @@ describe("Administration from operator routes (#193)", () => {
       {
         id: "sa-2",
         name: "Retired",
-        capabilities: "—",
+        capabilities: "-",
         status: "REVOKED",
         rotate: false,
         revoke: false,
@@ -1276,8 +1276,8 @@ describe("Administration analytics (#212)", () => {
 
     expect(page.kind).toBe("ready");
     if (page.kind !== "ready") return;
-    expect(page.coverage.summary[0]).toEqual({ label: "Coverage", value: "—" });
-    expect(page.coverage.rows[0].coverage).toBe("—");
+    expect(page.coverage.summary[0]).toEqual({ label: "Coverage", value: "-" });
+    expect(page.coverage.rows[0].coverage).toBe("-");
   });
 
   it("reports recorded Activity Evidence totals, never a score or a Member ranking", () => {

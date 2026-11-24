@@ -51,24 +51,24 @@ export function GettingStartedDoc() {
         <DocP>The primary navigation is the rail on the left (on narrow screens, open it as a drawer from the menu button in the top app bar).</DocP>
         <DocList>
           <DocLi>
-            <DocStrong>Company Documents</DocStrong> — organisation-level files and viewers.
+            <DocStrong>Company Documents</DocStrong>: organisation-level files and viewers.
           </DocLi>
           <DocLi>
-            <DocStrong>Project Management</DocStrong> — CRM: clients, projects, pipeline.
+            <DocStrong>Project Management</DocStrong>: CRM: clients, projects, pipeline.
           </DocLi>
           <DocLi>
-            <DocStrong>Documentation</DocStrong> — documents attached to documentable projects.
+            <DocStrong>Documentation</DocStrong>: documents attached to documentable projects.
           </DocLi>
           <DocLi>
-            <DocStrong>Time Tracking</DocStrong> — entries, dashboard, projects &amp; tasks,
+            <DocStrong>Time Tracking</DocStrong>: entries, dashboard, projects &amp; tasks,
             devices, desktop download, and (if enabled) screencasts.
           </DocLi>
           <DocLi>
-            <DocStrong>Administration</DocStrong> — visible only when your account role is{" "}
+            <DocStrong>Administration</DocStrong>: visible only when your account role is{" "}
             <DocCode>admin</DocCode>.
           </DocLi>
           <DocLi>
-            <DocStrong>Help Center</DocStrong> — this documentation (
+            <DocStrong>Help Center</DocStrong>: this documentation (
             <DocCode>/help-center</DocCode>).
           </DocLi>
         </DocList>
@@ -89,7 +89,7 @@ export function GettingStartedDoc() {
         </DocP>
         <DocP>
           Click the control to open the popover: depending on your organisation&apos;s configuration you may start a
-          timer from the web (project + task when tasks are required) or see instructions to use the desktop agent — see{" "}
+          timer from the web (project + task when tasks are required) or see instructions to use the desktop agent; see{" "}
           <DocStrong>Time Tracking</DocStrong> in this Help Center.
         </DocP>
         <HelpScreenshot

@@ -240,7 +240,7 @@ export function V2DevicesPage() {
                     <span style={{ minWidth: 0, flex: 1 }}>
                       <div className="df-row-title">{row.name}</div>
                       <div className="df-mono df-meta">
-                        {row.os ?? "—"} · {row.status}
+                        {row.os ?? "-"} · {row.status}
                         {row.version ? ` · ${row.version}` : ""} · {row.lastSeen}
                       </div>
                     </span>
@@ -256,9 +256,9 @@ export function V2DevicesPage() {
                   <>
                     <span>
                       <div className="df-row-title">{row.name}</div>
-                      <div className="df-mono df-meta">{row.version ?? "—"}</div>
+                      <div className="df-mono df-meta">{row.version ?? "-"}</div>
                     </span>
-                    <span className="df-mono df-meta">{row.os ?? "—"}</span>
+                    <span className="df-mono df-meta">{row.os ?? "-"}</span>
                     <span className="df-status" data-status={row.status} data-tone={statusTone(row.status)}>
                       {row.status}
                     </span>

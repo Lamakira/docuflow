@@ -506,7 +506,7 @@ describe("Project Dossier remaining tabs from live records (#188)", () => {
       ["Status", "ACTIVE"],
       ["Start", "01 Aug"],
       ["Due", "30 Oct"],
-      ["Last change", "—"],
+      ["Last change", "-"],
     ]);
     // START and DUE are set right there, with the date picker (#307).
     expect(dossier.settings.lifecycle.rows.map((row) => row.date ?? null)).toEqual([null, "startDate", "dueDate", null]);

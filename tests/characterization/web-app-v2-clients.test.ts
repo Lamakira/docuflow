@@ -123,7 +123,7 @@ describe("a Client Source wears one mark everywhere v2 shows it", () => {
     } as ClientRegisterInput);
     expect(register.rows.map((row) => [row.source, row.sourceValue])).toEqual([
       ["Fiverr", "fiverr"],
-      ["—", null],
+      ["-", null],
     ]);
   });
 
@@ -217,7 +217,7 @@ describe("Client editor shows what it saved (#213)", () => {
       { label: "Source", value: "Direct" },
       // Notes join the same block: a separate paragraph below stacked two
       // gutters and left a band of empty card between them.
-      { label: "Notes", value: "—", wide: true },
+      { label: "Notes", value: "-", wide: true },
     ]);
   });
 
@@ -679,7 +679,7 @@ describe("Clients register: when each Client was created (#307)", () => {
       filterQuery: "",
       selectedId: null,
     });
-    expect(register.rows.map((row) => row.created)).toEqual(["29 Sep 2026", "—"]);
+    expect(register.rows.map((row) => row.created)).toEqual(["29 Sep 2026", "-"]);
     expect(CLIENT_SORTS).toContain("created");
     expect(clientsSource).toMatch(/clientColumn\.accessor\("created", \{\s*header: "Created"/);
   });

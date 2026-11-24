@@ -116,7 +116,7 @@ export function FigureGrid({
 }
 
 export function StripeLink({ href, children }: { href: string | null; children: ReactNode }) {
-  if (!href) return <span className="df-mono df-meta">—</span>;
+  if (!href) return <span className="df-mono df-meta">-</span>;
   return (
     <a href={href} target="_blank" rel="noreferrer" className="df-cta">
       {children}

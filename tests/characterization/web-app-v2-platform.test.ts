@@ -207,7 +207,7 @@ describe("what the console offers on one User (#266)", () => {
   it("carries last sign-in and joined on every row, with no side panel", () => {
     const directory = composePlatformDirectory(input());
     expect(directory.columns).toEqual(["USER", "ROLE", "STATUS", "LAST SIGN-IN", "JOINED"]);
-    expect(directory.rows.map((row) => row.lastSignIn)).toEqual(["—", "—", "—", "—"]);
+    expect(directory.rows.map((row) => row.lastSignIn)).toEqual(["-", "-", "-", "-"]);
     expect(directory.rows.every((row) => row.actions.length > 0 || row.note)).toBe(true);
   });
 });

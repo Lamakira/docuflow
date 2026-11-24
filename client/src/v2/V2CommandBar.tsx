@@ -13,9 +13,17 @@ import {
 import { BellIcon, SearchIcon, SparkleIcon } from "./icons";
 import { V2TimerChip } from "./V2TimerChip";
 import { composeSearch, selectCommandPanel, chromeRefusal, type SearchModel } from "./chrome";
-import { documentQueryKey, loadDocument, type LoadedDocument } from "./documentEditor";
+import {
+  documentOwnerKey,
+  documentQueryKey,
+  isSaleDocumentOwner,
+  loadDocument,
+  loadDocumentOwner,
+  type DocumentOwner,
+  type LoadedDocument,
+} from "./documentEditor";
 import { motionForSurface } from "./motion";
-import { type V2CommandPanel, breadcrumbFor, matchV2Route } from "./presentation";
+import { type V2CommandPanel, type V2RecordRoot, breadcrumbFor, matchV2Route } from "./presentation";
 import { projectVisibleTo } from "./projects";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
@@ -23,6 +31,33 @@ import { Button } from "@/components/ui/button";
 const SEARCH_MOTION = motionForSurface("search-overlay").enterExit;
 
 type Panel = V2CommandPanel | null;
+
+/**
+ * Where the open record files when its path cannot say (F60, F61). Reads what
+ * the record's page loaded; runs nothing itself.
+ */
+export function useRecordRoot(location: string): V2RecordRoot | null {
+  const route = matchV2Route(location);
+  const dossierId = route.kind === "dossier" ? route.projectId : "";
+  const documentId = route.kind === "document-editor" && route.source === "project" ? route.documentId : "";
+  const { data: project } = useQuery<CrmProjectWithDetails | null>({
+    queryKey: ["/api/crm/projects", dossierId],
+    enabled: false,
+  });
+  const { data: document } = useQuery<LoadedDocument>({
+    queryKey: documentQueryKey("project", documentId),
+    queryFn: () => loadDocument("project", documentId),
+    enabled: false,
+  });
+  const ownedProjectId = document?.record?.projectId ?? "";
+  const { data: owner } = useQuery<DocumentOwner | null>({
+    queryKey: documentOwnerKey(ownedProjectId),
+    queryFn: () => loadDocumentOwner(ownedProjectId),
+    enabled: false,
+  });
+  if (project?.isDocumentationOnly) return "project-documentation";
+  return isSaleDocumentOwner(owner) ? "opportunities" : null;
+}
 
 type V2CommandBarProps = {
   workspaceName: string;
@@ -64,6 +99,12 @@ export function V2CommandBar({
     queryFn: () => loadDocument("workspace", documentId),
     enabled: false,
   });
+  const projectDocumentId = route.kind === "document-editor" && route.source === "project" ? route.documentId : "";
+  const { data: projectDocumentRecord } = useQuery<LoadedDocument>({
+    queryKey: documentQueryKey("project", projectDocumentId),
+    queryFn: () => loadDocument("project", projectDocumentId),
+    enabled: false,
+  });
   const recordLabel =
     route.kind === "opportunity-record"
       ? opportunityRecord?.project?.name?.trim() || undefined
@@ -72,9 +113,9 @@ export function V2CommandBar({
         : route.kind === "client-record"
           ? clientRecord?.name?.trim() || undefined
           : route.kind === "document-editor"
-            ? documentRecord?.record?.name?.trim() || undefined
+            ? (documentRecord ?? projectDocumentRecord)?.record?.name?.trim() || undefined
             : undefined;
-  const crumbs = breadcrumbFor(location, workspaceName, recordLabel);
+  const crumbs = breadcrumbFor(location, workspaceName, recordLabel, useRecordRoot(location));
   const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {

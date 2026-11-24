@@ -982,7 +982,7 @@ export function V2ClientRecordPage() {
                       data-wide={row.wide ? "true" : "false"}
                     >
                       <span className="df-record-field-label">{row.label}</span>
-                      <span className="df-record-field-value" data-empty={row.value === "—" ? "true" : "false"}>
+                      <span className="df-record-field-value" data-empty={row.value === "-" ? "true" : "false"}>
                         {row.label === "Source" && sourceIcon(record.identity?.sourceValue) ? (
                           <span className="df-source-cell">
                             <SourceMark value={record.identity?.sourceValue} />
@@ -1064,7 +1064,7 @@ export function V2ClientRecordPage() {
                             {contact.primary ? <span className="df-flag">PRIMARY</span> : null}
                           </div>
                           <div className="df-mono df-meta">
-                            {[contact.role, contact.email, contact.phone].filter(Boolean).join(" · ") || "—"}
+                            {[contact.role, contact.email, contact.phone].filter(Boolean).join(" · ") || "-"}
                           </div>
                         </span>
                       </span>
@@ -1094,10 +1094,10 @@ export function V2ClientRecordPage() {
                           ) : null}
                         </span>
                       </span>
-                      <span className="df-mono df-meta">{contact.phone ?? "—"}</span>
+                      <span className="df-mono df-meta">{contact.phone ?? "-"}</span>
                       {/* A role is free text, not a state from a closed set, so
                           it is read as text; PRIMARY is a boolean, so it is a flag. */}
-                      <span className="df-contact-role">{contact.role ?? "—"}</span>
+                      <span className="df-contact-role">{contact.role ?? "-"}</span>
                       <span className="df-contact-badges">
                         {contact.primary ? <span className="df-flag">PRIMARY</span> : null}
                         {editContactButton(contact)}

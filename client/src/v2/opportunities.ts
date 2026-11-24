@@ -15,6 +15,10 @@ import { builtInList, workspaceListOptions } from "@shared/pipelineLists";
 import { chromeRefusal } from "./chrome";
 import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { clientHref } from "./clients";
+import { buildPageTree, type PageTreeNode } from "../lib/pageTree";
+import { formatFullDate } from "./dates";
+import { projectFileHref } from "./fileViewer";
+import { projectDocumentHref } from "./library";
 import { formatDayStamp, formatSpan, formatWhen, noteName, parseDate } from "./dossier";
 import { readProjectBudget } from "./projects";
 import { stageColor, stagePill } from "./stageColor";
@@ -784,7 +788,7 @@ export function composeOpportunityHistory(
     .sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
   const rows = moves.map(({ change, at }, index) => {
     const next = index > 0 ? moves[index - 1].at : null;
-    const held = at ? formatSpan((next ?? now).getTime() - at.getTime()) : "—";
+    const held = at ? formatSpan((next ?? now).getTime() - at.getTime()) : "-";
     const from = change.fromStatus ? describe(change.fromStatus) : null;
     const to = describe(change.toStatus);
     return {
@@ -796,7 +800,7 @@ export function composeOpportunityHistory(
       toColor: to.color,
       toInk: to.ink,
       when: at ? formatDayStamp(at) : "",
-      who: change.changedBy ? memberName(change.changedBy) : "—",
+      who: change.changedBy ? memberName(change.changedBy) : "-",
       held: next || !at ? held : `${held} so far`,
     };
   });
@@ -861,4 +865,69 @@ export function opportunityLostPath(id: string): string {
 
 export function opportunityStageHistoryPath(id: string): string {
   return `/api/crm/projects/${id}/stage-history`;
+}
+
+export type OpportunityDocument = {
+  id: string;
+  title: string;
+  parentId: string | null;
+  position: number;
+  updatedAt?: Date | string | null;
+};
+
+export type OpportunityFile = {
+  id: string;
+  name: string;
+  updatedAt?: Date | string | null;
+  createdAt?: Date | string | null;
+};
+
+export type OpportunityDocumentRow = {
+  id: string;
+  kind: "document" | "file";
+  title: string;
+  /** How many pages it is filed under. */
+  depth: number;
+  date: string;
+  href: string;
+};
+
+/** A sale's pages, each under its parent, then its Files (F61). */
+export function composeOpportunityDocuments(input: {
+  opportunityId: string;
+  projectId: string;
+  documents: OpportunityDocument[];
+  files: OpportunityFile[];
+}): OpportunityDocumentRow[] {
+  const rows: OpportunityDocumentRow[] = [];
+  const addPages = (pages: PageTreeNode<OpportunityDocument>[], depth: number) => {
+    for (const page of pages) {
+      rows.push({
+        id: page.id,
+        kind: "document",
+        title: page.title,
+        depth,
+        date: formatFullDate(page.updatedAt),
+        href: projectDocumentHref(page.id),
+      });
+      addPages(page.children, depth + 1);
+    }
+  };
+  addPages(buildPageTree(input.documents), 0);
+  for (const file of input.files) {
+    rows.push({
+      id: file.id,
+      kind: "file",
+      title: file.name,
+      depth: 0,
+      date: formatFullDate(file.updatedAt ?? file.createdAt),
+      href: projectFileHref({
+        projectId: input.projectId,
+        id: file.id,
+        name: file.name,
+        back: opportunityHref(input.opportunityId),
+      }),
+    });
+  }
+  return rows;
 }

@@ -170,7 +170,7 @@ export async function sendInvitationEmail(input: {
     const result = await client.emails.send({
       from: fromEmail,
       to: input.toEmail,
-      subject: `DocuFlow — Invitation to ${input.workspaceName}`,
+      subject: `DocuFlow - Invitation to ${input.workspaceName}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #333;">Invitation</h1>
@@ -262,7 +262,7 @@ export async function sendWelcomeEmail(
   const workspaceName = escapeHtml(input.workspaceName);
   return sendBillingEmail({
     toEmail: input.toEmail,
-    subject: `DocuFlow — Your Trial of ${input.workspaceName} has started`,
+    subject: `DocuFlow - Your Trial of ${input.workspaceName} has started`,
     body: `
       <h1 style="color: #333;">Welcome to DocuFlow</h1>
       <p>Hello ${escapeHtml(input.recipientName)},</p>
@@ -283,8 +283,8 @@ export async function sendTrialEndingEmail(
     toEmail: input.toEmail,
     subject:
       input.stage === "three-days"
-        ? `DocuFlow — Your Trial of ${input.workspaceName} ends in 3 days`
-        : `DocuFlow — Last day of your Trial of ${input.workspaceName}`,
+        ? `DocuFlow - Your Trial of ${input.workspaceName} ends in 3 days`
+        : `DocuFlow - Last day of your Trial of ${input.workspaceName}`,
     body: `
       <h1 style="color: #333;">Your Trial is ending</h1>
       <p>Hello ${escapeHtml(input.recipientName)},</p>
@@ -306,7 +306,7 @@ export async function sendPaymentFailedEmail(
     : `<p>That was the last attempt. ${readOnly}</p>`;
   return sendBillingEmail({
     toEmail: input.toEmail,
-    subject: `DocuFlow — Payment failed for ${input.workspaceName}`,
+    subject: `DocuFlow - Payment failed for ${input.workspaceName}`,
     body: `
       <h1 style="color: #333;">Payment failed</h1>
       <p>Hello ${escapeHtml(input.recipientName)},</p>
@@ -336,7 +336,7 @@ export async function sendReadOnlyEmail(
   const workspaceName = escapeHtml(input.workspaceName);
   return sendBillingEmail({
     toEmail: input.toEmail,
-    subject: `DocuFlow — ${input.workspaceName} is now read-only`,
+    subject: `DocuFlow - ${input.workspaceName} is now read-only`,
     body: `
       <h1 style="color: #333;">Your Workspace is read-only</h1>
       <p>Hello ${escapeHtml(input.recipientName)},</p>
@@ -385,7 +385,7 @@ export async function sendSupportAnswerEmail(input: {
 }): Promise<{ success: boolean; error?: string }> {
   return sendSupportEmail({
     toEmail: input.toEmail,
-    subject: "DocuFlow — An answer to your Support Request",
+    subject: "DocuFlow - An answer to your Support Request",
     body: `
       <h1 style="color: #333;">An answer to your Support Request</h1>
       <p>Hello ${escapeHtml(input.recipientName)},</p>
@@ -402,7 +402,7 @@ export async function sendSupportStatusEmail(input: {
 }): Promise<{ success: boolean; error?: string }> {
   return sendSupportEmail({
     toEmail: input.toEmail,
-    subject: `DocuFlow — Your Support Request is now ${input.statusLabel}`,
+    subject: `DocuFlow - Your Support Request is now ${input.statusLabel}`,
     body: `
       <h1 style="color: #333;">Support Request update</h1>
       <p>Hello ${escapeHtml(input.recipientName)},</p>

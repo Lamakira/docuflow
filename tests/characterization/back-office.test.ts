@@ -496,7 +496,7 @@ describe("back office billing actions", () => {
     await tickTrialScheduler();
     await runBillingJobs();
     expect(emailsTo(owner.email).map((mail) => mail.subject)).toEqual([
-      "DocuFlow — Your Trial of DocuFlow ends in 3 days",
+      "DocuFlow - Your Trial of DocuFlow ends in 3 days",
     ]);
     expect((await pinOf()).billingState).toBe("Trialing");
 
@@ -508,7 +508,7 @@ describe("back office billing actions", () => {
     const transition = (await auditActions()).find((event) => event.action === "billing.state_transition");
     expect(transition?.payload).toMatchObject({ from: "Trialing", to: "ReadOnly", reason: "offer_expired" });
     const ended = emailsTo(owner.email).at(-1);
-    expect(ended?.subject).toBe("DocuFlow — DocuFlow is now read-only");
+    expect(ended?.subject).toBe("DocuFlow - DocuFlow is now read-only");
     expect(ended?.html).toContain("The Plan offered to <strong>DocuFlow</strong> has ended");
     const list = await staff.agent.get("/api/platform/workspaces");
     expect(list.body.find((row: { id: string }) => row.id === SEEDED).status).toBe("read_only");
@@ -722,7 +722,7 @@ describe("payments and disputes", () => {
       stripeUrl: "https://dashboard.stripe.com/test/invoices/in_failed",
     });
     expect(emailsTo(owner.email).map((mail) => mail.subject)).toEqual([
-      "DocuFlow — Payment failed for DocuFlow",
+      "DocuFlow - Payment failed for DocuFlow",
     ]);
     // Neither event changed the billing state.
     expect((await pinOf()).billingState).toBe("Active");
@@ -804,7 +804,7 @@ describe("Support Requests", () => {
 
     const mail = emailsTo(member.email);
     expect(mail).toHaveLength(1);
-    expect(mail[0].subject).toBe("DocuFlow — An answer to your Support Request");
+    expect(mail[0].subject).toBe("DocuFlow - An answer to your Support Request");
     expect(mail[0].html).toContain("We corrected &lt;b&gt;the invoice&lt;/b&gt;.");
 
     const detail = await staff.agent.get(`/api/platform/support-requests/${sent.body.id}`);
@@ -886,7 +886,7 @@ describe("Support Requests", () => {
     expect(notices).toEqual([{ userId: member.id, message: "Your Support Request is now in progress." }]);
     const mail = emailsTo(member.email);
     expect(mail).toHaveLength(1);
-    expect(mail[0].subject).toBe("DocuFlow — Your Support Request is now in progress");
+    expect(mail[0].subject).toBe("DocuFlow - Your Support Request is now in progress");
     expect(mail[0].html).not.toContain("Our invoice is wrong");
 
     // Nothing changed, so nothing is audited or sent.

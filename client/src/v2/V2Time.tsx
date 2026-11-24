@@ -653,7 +653,7 @@ function TimeStatsPane() {
               {page.figures.map((figure) => (
                 <div key={figure.label} className="df-stat">
                   <div className="df-mono df-meta">{figure.label}</div>
-                  <div className="df-stat-value">{isLoading ? "—" : figure.value}</div>
+                  <div className="df-stat-value">{isLoading ? "-" : figure.value}</div>
                   <div className="df-mono df-meta">{figure.meta}</div>
                 </div>
               ))}

@@ -207,14 +207,14 @@ function composeRow(user: PlatformUser, input: PlatformDirectoryInput): Platform
   return {
     id: user.id,
     name: memberName(user),
-    email: user.email ?? "—",
+    email: user.email ?? "-",
     role: user.superAdmin ? "SUPERADMIN" : user.role === "admin" ? "PLATFORM ADMIN" : "USER",
     status: user.isArchived ? "ARCHIVED" : "ACTIVE",
     archived: user.isArchived,
     superAdmin: user.superAdmin,
     self,
-    lastSignIn: formatWhen(user.lastLoginAt, input.now) || "—",
-    joined: formatWhen(user.createdAt, input.now) || "—",
+    lastSignIn: formatWhen(user.lastLoginAt, input.now) || "-",
+    joined: formatWhen(user.createdAt, input.now) || "-",
     actions,
     note: actions.length === 0 ? "Only the SuperAdmin can change the SuperAdmin." : null,
   };

@@ -36,3 +36,9 @@ the test that enforces it.
   Why: the name four times over (sidebar, breadcrumb, title, subtitle) adds nothing and crowds the head.
   Check: `tests/characterization/web-app-v2-design-rules.test.ts`, and the breadcrumb case in `tests/characterization/web-app-v2-opportunities.test.ts`.
   <!-- 2026-11-19: "le fait qu'il y ait "Opportunities" 3 fois la ici, je n'aime pas"; then chose: breadcrumb and subtitle, on every page -->
+
+- **No em dash anywhere the app shows text: screens, dialogs, empty states, help articles, emails. Write a comma, a colon, a semicolon, brackets or a new sentence; where a dash is really needed, use a hyphen (`-`).**
+  An empty value in a list or a record shows `-`. Code comments and operator messages (logs, configuration) are not text the app shows. v1 screens stay as they are.
+  Why: the owner's choice; no reason given.
+  Check: `tests/characterization/web-app-v2-design-rules.test.ts`.
+  <!-- 2026-11-24: ""Project Documents in DocuFlow — visible to Members assigned to that Project." mets ça dans les règles du projet. Pas de tiret cadratin dans toute l'app. Utilise les tirets - si nécessaire" -->

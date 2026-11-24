@@ -36,7 +36,7 @@ export function useFolderExpandMotion(filterQuery: string) {
 }
 
 
-function LibraryRowBody({ row }: { row: LibraryRow }) {
+function LibraryRowBody({ row, plainAccess }: { row: LibraryRow; plainAccess: boolean }) {
   return (
     <>
       <span className="df-cluster-start">
@@ -61,9 +61,13 @@ function LibraryRowBody({ row }: { row: LibraryRow }) {
         </span>
       </span>
       <span className="df-mono df-meta">{row.type}</span>
-      <span>
-        <span className="df-status">{row.access}</span>
-      </span>
+      {plainAccess ? (
+        <span className="df-library-text">{row.access}</span>
+      ) : (
+        <span>
+          <span className="df-status">{row.access}</span>
+        </span>
+      )}
       <span style={{ fontWeight: 500, fontSize: 13.5 }}>{row.editor}</span>
       <span className="df-mono" style={{ fontSize: 12, textAlign: "right" }}>
         {row.updated}
@@ -72,7 +76,7 @@ function LibraryRowBody({ row }: { row: LibraryRow }) {
   );
 }
 
-function DocumentRow({ row }: { row: LibraryRow }) {
+function DocumentRow({ row, plainAccess }: { row: LibraryRow; plainAccess: boolean }) {
   return (
     <Link
       href={row.href ?? "/documents"}
@@ -81,7 +85,7 @@ function DocumentRow({ row }: { row: LibraryRow }) {
       data-depth={Math.min(row.depth, MAX_INDENT)}
       data-testid={`v2-document-row-${row.id}`}
     >
-      <LibraryRowBody row={row} />
+      <LibraryRowBody row={row} plainAccess={plainAccess} />
     </Link>
   );
 }
@@ -90,12 +94,16 @@ function LibraryGroupRows({
   group,
   instantExpand,
   onFolderClick,
+  plainAccess,
+  folderActions,
 }: {
   group: LibraryGroup;
   instantExpand: boolean;
   onFolderClick: (folderId: string) => void;
+  plainAccess: boolean;
+  folderActions?: (folder: LibraryRow) => ReactNode;
 }) {
-  if (group.kind === "item") return <DocumentRow row={group.row} />;
+  if (group.kind === "item") return <DocumentRow row={group.row} plainAccess={plainAccess} />;
   const open = group.folder.expanded === true;
   return (
     <div>
@@ -109,7 +117,7 @@ function LibraryGroupRows({
         aria-expanded={open}
         onClick={() => onFolderClick(group.folder.id)}
       >
-        <LibraryRowBody row={group.folder} />
+        <LibraryRowBody row={group.folder} plainAccess={plainAccess} />
       </button>
       <div
         className="df-accordion"
@@ -117,12 +125,15 @@ function LibraryGroupRows({
         data-motion={instantExpand ? "instant" : "standard"}
       >
         <div className="df-accordion-inner">
+          {open ? folderActions?.(group.folder) : null}
           {group.children.map((child) => (
             <LibraryGroupRows
               key={child.kind === "folder" ? child.folder.id : child.row.id}
               group={child}
               instantExpand={instantExpand}
               onFolderClick={onFolderClick}
+              plainAccess={plainAccess}
+              folderActions={folderActions}
             />
           ))}
         </div>
@@ -139,7 +150,9 @@ export function V2LibraryRegister({
   emptyAction,
   createActions,
   footer,
-  personHeading = "Added by",
+  accessHeading = "Access",
+  plainAccess = false,
+  folderActions,
 }: {
   library: LibraryModel;
   testId: string;
@@ -151,8 +164,12 @@ export function V2LibraryRegister({
   createActions?: ReactNode;
   /** Replaces the item count, such as a pager. */
   footer?: ReactNode;
-  /** The person column's heading: who added the item, unless a register says otherwise. */
-  personHeading?: string;
+  /** The third column's heading, where a register says something other than who may open a row. */
+  accessHeading?: string;
+  /** Draws the third column as plain text instead of a chip. */
+  plainAccess?: boolean;
+  /** Drawn at the top of an open Folder's rows, such as the actions on it. */
+  folderActions?: (folder: LibraryRow) => ReactNode;
 }) {
   const groups = groupLibraryRows(library.rows);
 
@@ -162,8 +179,8 @@ export function V2LibraryRegister({
         <div className="df-library-head">
           <span>Name / path</span>
           <span>Type</span>
-          <span>Access</span>
-          <span>{personHeading}</span>
+          <span>{accessHeading}</span>
+          <span>Added by</span>
           <span style={{ textAlign: "right" }}>Updated</span>
         </div>
       )}
@@ -193,6 +210,8 @@ export function V2LibraryRegister({
             group={group}
             instantExpand={instantExpand}
             onFolderClick={onFolderClick}
+            plainAccess={plainAccess}
+            folderActions={folderActions}
           />
         ))
       )}

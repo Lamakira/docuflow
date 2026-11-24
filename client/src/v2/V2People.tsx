@@ -429,7 +429,7 @@ export function V2PeoplePage() {
                     <div className="df-row-title">{row.name}</div>
                     <div className="df-mono df-meta">
                       {row.workspaceRole} · {statusLabel(row.status)}
-                      {row.capabilities !== "—" ? ` · ${row.capabilities}` : ""}
+                      {row.capabilities !== "-" ? ` · ${row.capabilities}` : ""}
                     </div>
                   </span>
                   <PeopleRowMenu {...rowMenuProps(row)} />

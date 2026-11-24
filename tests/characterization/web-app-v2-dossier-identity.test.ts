@@ -89,7 +89,7 @@ describe("Dossier Settings identity (F39)", () => {
     const dossier = composeDossier(input({ projectType: "internal", client: null }));
     expect(dossier.identity?.kindLabel).toBe("INTERNAL");
     expect(dossier.settings.identity).toEqual([
-      { label: "Client", value: "None — Internal Project" },
+      { label: "Client", value: "None - Internal Project" },
       { label: "Kind", value: "INTERNAL", chip: true },
     ]);
   });

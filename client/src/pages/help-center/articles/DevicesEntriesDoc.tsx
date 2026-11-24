@@ -13,7 +13,7 @@ export function DevicesEntriesDoc() {
     <DocArticle>
       <DocSection title="Entries (Time Tracking → Time Entries)">
         <DocP>
-          Entries are the chronological log of time sessions — start time, end time, project, task, and optional notes.
+          Entries are the chronological log of time sessions: start time, end time, project, task, and optional notes.
           Use filters to isolate a user, project, or date range. Export or copy values when reconciling with invoices.
         </DocP>
         <DocList>
@@ -29,15 +29,15 @@ export function DevicesEntriesDoc() {
         </DocP>
         <DocH3>Interpreting status</DocH3>
         <DocList>
-          <DocLi><DocStrong>Online / recent heartbeat</DocStrong> — agent is syncing normally.</DocLi>
-          <DocLi><DocStrong>Stale</DocStrong> — user may be offline or the agent is not running.</DocLi>
+          <DocLi><DocStrong>Online / recent heartbeat</DocStrong>: agent is syncing normally.</DocLi>
+          <DocLi><DocStrong>Stale</DocStrong>: user may be offline or the agent is not running.</DocLi>
         </DocList>
       </DocSection>
 
       <DocSection title="Screencasts">
         <DocP>
           When the screencasts feature flag is enabled, this area surfaces captured segments tied to tracked time. Use it
-          for coaching or dispute resolution — always follow privacy rules defined by your organisation.
+          for coaching or dispute resolution; always follow privacy rules defined by your organisation.
         </DocP>
       </DocSection>
 

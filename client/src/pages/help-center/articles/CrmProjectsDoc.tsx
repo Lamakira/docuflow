@@ -13,7 +13,7 @@ export function CrmProjectsDoc() {
     <DocArticle>
       <DocSection title="Projects in Project Management">
         <DocP>
-          Projects represent billable or trackable units of work — often a client engagement, internal initiative, or
+          Projects represent billable or trackable units of work, often a client engagement, internal initiative, or
           deliverable. Open <DocStrong>Projects</DocStrong> from the rail, then use the pipeline or list views
           your team adopted.
         </DocP>
@@ -40,7 +40,7 @@ export function CrmProjectsDoc() {
       <DocSection title="Naming and hygiene">
         <DocList>
           <DocLi>
-            Prefer <DocStrong>clear, unique project names</DocStrong> — avoid “Misc” or duplicate “Client A” without a
+            Prefer <DocStrong>clear, unique project names</DocStrong>: avoid “Misc” or duplicate “Client A” without a
             qualifier.
           </DocLi>
           <DocLi>Align task names with how you describe work in timesheet descriptions to simplify audits.</DocLi>

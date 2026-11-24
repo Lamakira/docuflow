@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { Pencil, PanelLeft, PanelLeftClose, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
+import { Link2, Pencil, PanelLeft, PanelLeftClose, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -68,6 +68,7 @@ import { memberName, projectHref } from "./today";
 import { formatFileSize, projectFileHref } from "./fileViewer";
 import { clientHref } from "./clients";
 import { projectFilesPath } from "./projectDocumentation";
+import { V2LinkDocumentationDialog } from "./V2LinkDocumentationDialog";
 import { V2UploadDialog, fileTitle, storeUpload } from "./V2UploadDialog";
 
 /** What `GET /api/projects/:projectId/files` answers (#278). */
@@ -152,6 +153,7 @@ function toDossierProject(project: CrmProjectWithDetails): DossierProject {
     startDate: project.startDate,
     dueDate: project.dueDate,
     documentationEnabled: project.documentationEnabled,
+    isDocumentationOnly: project.isDocumentationOnly,
     project: project.project
       ? { id: project.project.id, name: project.project.name, description: project.project.description ?? null }
       : null,
@@ -267,6 +269,11 @@ function filesFromNotes(notes: CrmProjectNoteWithCreator[]) {
   });
 }
 
+/** Project Documentation lists this Project's name and pages (F63). */
+function staleDocumentation() {
+  queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"] });
+}
+
 export function V2DossierPage() {
   const [location] = useLocation();
   const match = matchV2Route(location);
@@ -299,6 +306,7 @@ export function V2DossierPage() {
   const [creatingDocument, setCreatingDocument] = useState(false);
   const [creatingTask, setCreatingTask] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [linkingDocumentation, setLinkingDocumentation] = useState(false);
   const [documentName, setDocumentName] = useState("");
   const [creatingNote, setCreatingNote] = useState(false);
   const [creatingReminder, setCreatingReminder] = useState(false);
@@ -434,8 +442,8 @@ export function V2DossierPage() {
     queryKey: [tagsPath()],
     queryFn: () => apiRequest("GET", tagsPath()),
   });
-  // A sale is not a Project: its Dossier URL opens the Opportunity record (F47).
-  const redirect = project ? dossierRedirect(project) : null;
+  // A sale is not a Project: its Dossier URL opens the Opportunity record, or its Document (F47, F61).
+  const redirect = project ? dossierRedirect(project, { tab, documentId: openDocumentId }) : null;
   useEffect(() => {
     if (redirect) navigate(redirect, { replace: true });
   }, [redirect, navigate]);
@@ -525,6 +533,7 @@ export function V2DossierPage() {
       if (data.clientId !== undefined || data.projectType !== undefined) {
         queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
       }
+      if (data.projectName !== undefined) staleDocumentation();
       setWriteRefusal(null);
       notify.success(
         data.projectName !== undefined
@@ -609,9 +618,10 @@ export function V2DossierPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects"] });
       invalidateProject();
       queryClient.invalidateQueries({ queryKey: ["/api/crm/projects/all-kanban"] });
+      staleDocumentation();
       setWriteRefusal(null);
       notify.success("Project deleted");
-      navigate("/projects");
+      navigate(project?.isDocumentationOnly ? "/project-documentation" : "/projects");
     },
     onError: (error: Error) => refuseWrite(error.message),
   });
@@ -828,7 +838,7 @@ export function V2DossierPage() {
 
   function invalidateDocuments() {
     queryClient.invalidateQueries({ queryKey: ["/api/projects", projectRecordId, "documents"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"] });
+    staleDocumentation();
   }
 
   async function attachNoteFiles(files: FileList | null) {
@@ -1063,7 +1073,7 @@ export function V2DossierPage() {
                 </div>
                 <div className="df-dossier-title-row">
                   <h1 className="df-record-title">{dossier.identity.title}</h1>
-                  {dossier.identity.statusMovable ? (
+                  {dossier.documentationOnly ? null : dossier.identity.statusMovable ? (
                     <span className="df-dossier-status-control" data-swatch="" style={swatchStyle(dossier.identity.statusColor)}>
                       <V2FilterSelect
                         label=""
@@ -1122,7 +1132,7 @@ export function V2DossierPage() {
               </>
             )}
           </div>
-          {dossier.identity ? (
+          {dossier.identity && !dossier.documentationOnly ? (
             <div className="df-dossier-stats">
               <div className="df-dossier-budget" data-testid="v2-dossier-budget">
                 <div className="df-dossier-budget-line">
@@ -1157,6 +1167,21 @@ export function V2DossierPage() {
                 <Button variant="default" type="button" onClick={onNewTask} className="df-btn">
                   <Plus strokeWidth={1.6} aria-hidden />
                   New Task
+                </Button>
+              </div>
+            </div>
+          ) : dossier.documentationOnly && dossier.settings.canDelete ? (
+            <div className="df-dossier-stats">
+              <div className="df-dossier-actions">
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="df-btn"
+                  onClick={() => setLinkingDocumentation(true)}
+                  data-testid="v2-dossier-link-documentation"
+                >
+                  <Link2 strokeWidth={1.6} aria-hidden />
+                  Link to a Project
                 </Button>
               </div>
             </div>
@@ -1228,6 +1253,7 @@ export function V2DossierPage() {
           <input
             type="text"
             value={documentName}
+            maxLength={500}
             autoFocus
             onChange={(event) => setDocumentName(event.target.value)}
             placeholder="Document name"
@@ -1235,6 +1261,24 @@ export function V2DossierPage() {
           />
         </label>
       </V2FormDialog>
+
+      {dossier.documentationOnly && dossier.settings.canDelete ? (
+        <V2LinkDocumentationDialog
+          open={linkingDocumentation}
+          onOpenChange={setLinkingDocumentation}
+          source={{
+            crmProjectId: projectId,
+            name: project?.project?.name ?? "",
+            documents: documents.length,
+            files: projectFiles.length,
+          }}
+          readOnlyRefusal={
+            readOnly ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }) : null
+          }
+          // Nothing is left in this Project: Back must not return to it.
+          onLinked={(targetCrmId) => navigate(`${projectHref(targetCrmId)}/documents`, { replace: true })}
+        />
+      ) : null}
 
       <V2UploadDialog
         open={uploadingFiles}
@@ -1651,7 +1695,7 @@ function DossierOverview({
             ) : null}
             <div className="df-spread">
               <span className="df-mono df-meta">
-                {dossier.budgetTime.percent == null ? "—" : `${dossier.budgetTime.percent}% used`}
+                {dossier.budgetTime.percent == null ? "-" : `${dossier.budgetTime.percent}% used`}
               </span>
             </div>
             <div className="df-kv">
@@ -1660,7 +1704,7 @@ function DossierOverview({
             </div>
             <div className="df-kv">
               <span>Unapproved</span>
-              <span>{dossier.budgetTime.unapproved ?? "—"}</span>
+              <span>{dossier.budgetTime.unapproved ?? "-"}</span>
             </div>
           </div>
         </section>
@@ -2384,7 +2428,11 @@ function DossierDocumentation({
             pageHref={(id) => dossierDocumentHref(projectId, id)}
             afterDeleteHref={`${projectHref(projectId)}/documents`}
             report={{
-              success: (message) => notify.success(message),
+              // The tree's own writes answer here: Project Documentation lists its pages.
+              success: (message) => {
+                staleDocumentation();
+                notify.success(message);
+              },
               failure: (message) => notify.error(message),
             }}
           />
@@ -2642,7 +2690,7 @@ function DossierSettings({
   /** The saved name: `Save name` waits for a change, as `Save budget` does (F51). */
   documentProjectName: string;
 }) {
-  const { settings } = dossier;
+  const { settings, documentationOnly } = dossier;
   const assigned = new Set(settings.members.map((member) => member.id));
   const available = users.filter((member) => !assigned.has(member.id));
   const budgetForm = composeBudgetForm(budgetDraft, settings.budget.saved);
@@ -2650,12 +2698,18 @@ function DossierSettings({
     <div className="df-settings-stack">
       <SettingsCard
         title="Identity"
-        sub="What this Project is called, who it is for, and the Tags it is filed under."
+        sub={
+          documentationOnly
+            ? "What this Project is called in Project Documentation."
+            : "What this Project is called, who it is for, and the Tags it is filed under."
+        }
         testId="v2-dossier-settings-identity"
         action={
-          <Button variant="outline" type="button" onClick={onClone} disabled={clonePending} className="df-btn">
-            {clonePending ? "Cloning…" : "Clone Project"}
-          </Button>
+          documentationOnly ? null : (
+            <Button variant="outline" type="button" onClick={onClone} disabled={clonePending} className="df-btn">
+              {clonePending ? "Cloning…" : "Clone Project"}
+            </Button>
+          )
         }
       >
         <div className="df-settings-grid">
@@ -2681,111 +2735,119 @@ function DossierSettings({
               </Button>
             </span>
           </form>
-          {settings.identity.map((row) => (
-            <SettingRow key={row.label} row={row} onPick={onPickIdentity} />
-          ))}
-          <div className="df-settings-row" data-testid="v2-dossier-tags">
-            <span className="df-settings-label">Tags</span>
-            <div className="df-settings-value df-settings-list">
-              {dossier.tags.emptyCopy ? <p className="df-empty df-flush">{dossier.tags.emptyCopy}</p> : null}
-              {dossier.tags.vocabulary.map((tag) => (
-                <TagRow
-                  key={tag.id}
-                  tag={tag}
-                  onSetAttached={onSetTagAttached}
-                  onEdit={onEditTag}
-                  onDelete={onDeleteTag}
-                />
+          {documentationOnly ? null : (
+            <>
+              {settings.identity.map((row) => (
+                <SettingRow key={row.label} row={row} onPick={onPickIdentity} />
               ))}
-              <form className="df-settings-inline" onSubmit={onCreateTag}>
-                <input
-                  type="text"
-                  value={tagName}
-                  onChange={(event) => setTagName(event.target.value)}
-                  placeholder="New Tag"
-                  aria-label="New Tag name"
-                />
-                <Button variant="outline" type="submit" disabled={!tagName.trim()} className="df-btn">
-                  Create Tag
-                </Button>
-              </form>
-            </div>
-          </div>
-        </div>
-      </SettingsCard>
-
-      <SettingsCard title="Lifecycle" sub={settings.lifecycle.note} testId="v2-dossier-settings-lifecycle">
-        <div className="df-settings-grid">
-          {settings.lifecycle.rows.map((row) => {
-            const field = row.date;
-            if (!field) return <SettingRow key={row.label} row={row} />;
-            // START and DUE are set here (#307); a pick saves at once.
-            return (
-              <div key={row.label} className="df-settings-row">
-                <span className="df-settings-label">{row.label}</span>
-                <span className="df-settings-value">
-                  <V2DateField
-                    value={settings.dates[field]}
-                    onChange={(day) => onSaveDate(field, day)}
-                    ariaLabel={field === "startDate" ? "Start date" : "Due date"}
-                    testId={`v2-dossier-settings-${field}`}
-                  />
-                </span>
+              <div className="df-settings-row" data-testid="v2-dossier-tags">
+                <span className="df-settings-label">Tags</span>
+                <div className="df-settings-value df-settings-list">
+                  {dossier.tags.emptyCopy ? <p className="df-empty df-flush">{dossier.tags.emptyCopy}</p> : null}
+                  {dossier.tags.vocabulary.map((tag) => (
+                    <TagRow
+                      key={tag.id}
+                      tag={tag}
+                      onSetAttached={onSetTagAttached}
+                      onEdit={onEditTag}
+                      onDelete={onDeleteTag}
+                    />
+                  ))}
+                  <form className="df-settings-inline" onSubmit={onCreateTag}>
+                    <input
+                      type="text"
+                      value={tagName}
+                      onChange={(event) => setTagName(event.target.value)}
+                      placeholder="New Tag"
+                      aria-label="New Tag name"
+                    />
+                    <Button variant="outline" type="submit" disabled={!tagName.trim()} className="df-btn">
+                      Create Tag
+                    </Button>
+                  </form>
+                </div>
               </div>
-            );
-          })}
+            </>
+          )}
         </div>
       </SettingsCard>
 
-      <SettingsCard
-        title="Budget"
-        sub="The time this Project is planned to take. The budget meters on the header and the Overview read it."
-        testId="v2-dossier-settings-budget"
-      >
-        <form onSubmit={onSaveBudget}>
-          <div className="df-settings-grid">
-            <div className="df-settings-row">
-              <span className="df-settings-label">Budget</span>
-              <span className="df-settings-value df-settings-inline">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  step={1}
-                  className="df-settings-number"
-                  value={budgetDraft.hours}
-                  onChange={(event) => setBudgetDraft({ ...budgetDraft, hours: event.target.value })}
-                  placeholder="0"
-                  aria-label="Budget hours"
-                />
-                <span className="df-settings-unit">h</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={59}
-                  step={1}
-                  className="df-settings-number"
-                  value={budgetDraft.minutes}
-                  onChange={(event) => setBudgetDraft({ ...budgetDraft, minutes: event.target.value })}
-                  placeholder="0"
-                  aria-label="Budget minutes"
-                />
-                <span className="df-settings-unit">min</span>
-              </span>
+      {documentationOnly ? null : (
+        <>
+          <SettingsCard title="Lifecycle" sub={settings.lifecycle.note} testId="v2-dossier-settings-lifecycle">
+            <div className="df-settings-grid">
+              {settings.lifecycle.rows.map((row) => {
+                const field = row.date;
+                if (!field) return <SettingRow key={row.label} row={row} />;
+                // START and DUE are set here (#307); a pick saves at once.
+                return (
+                  <div key={row.label} className="df-settings-row">
+                    <span className="df-settings-label">{row.label}</span>
+                    <span className="df-settings-value">
+                      <V2DateField
+                        value={settings.dates[field]}
+                        onChange={(day) => onSaveDate(field, day)}
+                        ariaLabel={field === "startDate" ? "Start date" : "Due date"}
+                        testId={`v2-dossier-settings-${field}`}
+                      />
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-            <SettingRow row={{ label: "Consumed", value: settings.budget.consumed }} />
-          </div>
-          <div className="df-form-actions">
-            <p className={budgetForm.issue ? "df-form-note df-refusal-inline" : "df-form-note"} role="status">
-              {budgetForm.note}
-            </p>
-            <Button variant="default" type="submit" disabled={!budgetForm.canSave || budgetPending} className="df-btn">
-              {budgetPending ? "Saving…" : "Save budget"}
-            </Button>
-          </div>
-        </form>
-      </SettingsCard>
+          </SettingsCard>
+
+          <SettingsCard
+            title="Budget"
+            sub="The time this Project is planned to take. The budget meters on the header and the Overview read it."
+            testId="v2-dossier-settings-budget"
+          >
+            <form onSubmit={onSaveBudget}>
+              <div className="df-settings-grid">
+                <div className="df-settings-row">
+                  <span className="df-settings-label">Budget</span>
+                  <span className="df-settings-value df-settings-inline">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      step={1}
+                      className="df-settings-number"
+                      value={budgetDraft.hours}
+                      onChange={(event) => setBudgetDraft({ ...budgetDraft, hours: event.target.value })}
+                      placeholder="0"
+                      aria-label="Budget hours"
+                    />
+                    <span className="df-settings-unit">h</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={59}
+                      step={1}
+                      className="df-settings-number"
+                      value={budgetDraft.minutes}
+                      onChange={(event) => setBudgetDraft({ ...budgetDraft, minutes: event.target.value })}
+                      placeholder="0"
+                      aria-label="Budget minutes"
+                    />
+                    <span className="df-settings-unit">min</span>
+                  </span>
+                </div>
+                <SettingRow row={{ label: "Consumed", value: settings.budget.consumed }} />
+              </div>
+              <div className="df-form-actions">
+                <p className={budgetForm.issue ? "df-form-note df-refusal-inline" : "df-form-note"} role="status">
+                  {budgetForm.note}
+                </p>
+                <Button variant="default" type="submit" disabled={!budgetForm.canSave || budgetPending} className="df-btn">
+                  {budgetPending ? "Saving…" : "Save budget"}
+                </Button>
+              </div>
+            </form>
+          </SettingsCard>
+        </>
+      )}
 
       <SettingsCard
         title="Team"

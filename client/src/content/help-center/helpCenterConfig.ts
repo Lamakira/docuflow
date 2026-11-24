@@ -68,7 +68,7 @@ export const HELP_HUB_ITEMS: HelpHubItem[] = [
   {
     slug: "administration",
     title: "Administration",
-    subtitle: "Policies, users, and settings — including admin-only areas.",
+    subtitle: "Policies, users, and settings, including admin-only areas.",
     icon: Shield,
   },
   {

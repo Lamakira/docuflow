@@ -163,7 +163,7 @@ describe("Welcome", () => {
 
     const mail = emailsTo(owner.email);
     expect(mail).toHaveLength(1);
-    expect(mail[0].subject).toBe("DocuFlow — Your Trial of Keystone has started");
+    expect(mail[0].subject).toBe("DocuFlow - Your Trial of Keystone has started");
     expect(mail[0].html).toContain("14-day Trial");
     expect(mail[0].html).toContain("October 15, 2026");
     expect(mail[0].html).toContain("http://localhost:5000/devices");
@@ -194,7 +194,7 @@ describe("Trial ending", () => {
 
     const mail = emailsTo(owner.email);
     expect(mail).toHaveLength(1);
-    expect(mail[0].subject).toBe("DocuFlow — Your Trial of Keystone ends in 3 days");
+    expect(mail[0].subject).toBe("DocuFlow - Your Trial of Keystone ends in 3 days");
     expect(mail[0].html).toContain("October 15, 2026");
     expect(mail[0].html).toContain("read-only");
     expect(mail[0].html).toContain("http://localhost:5000/administration/billing");
@@ -213,8 +213,8 @@ describe("Trial ending", () => {
     await runBillingJobs();
 
     expect(emailsTo(owner.email).map((mail) => mail.subject)).toEqual([
-      "DocuFlow — Your Trial of Keystone ends in 3 days",
-      "DocuFlow — Last day of your Trial of Keystone",
+      "DocuFlow - Your Trial of Keystone ends in 3 days",
+      "DocuFlow - Last day of your Trial of Keystone",
     ]);
     expect(await notificationsOf(owner.id)).toHaveLength(2);
   });
@@ -247,7 +247,7 @@ describe("Trial ending", () => {
 
     expect(await billingStateOf(workspaceId)).toBe("ReadOnly");
     const mail = emailsTo(owner.email);
-    expect(mail.map((sent) => sent.subject)).toEqual(["DocuFlow — Keystone is now read-only"]);
+    expect(mail.map((sent) => sent.subject)).toEqual(["DocuFlow - Keystone is now read-only"]);
     expect(mail[0].html).toContain("Your Trial of <strong>Keystone</strong> has ended.");
     expect(mail[0].html).toContain("keeps viewing and exporting its data");
     expect(mail[0].html).toContain("http://localhost:5000/administration/billing");
@@ -284,7 +284,7 @@ describe("Read-only", () => {
 
     expect(await billingStateOf(workspaceId)).toBe("ReadOnly");
     const mail = emailsTo(owner.email);
-    expect(mail.map((sent) => sent.subject)).toEqual(["DocuFlow — Keystone is now read-only"]);
+    expect(mail.map((sent) => sent.subject)).toEqual(["DocuFlow - Keystone is now read-only"]);
     expect(mail[0].html).toContain("The Subscription for <strong>Keystone</strong> has ended.");
     const notices = await notificationsOf(owner.id);
     expect(notices.map((notice) => notice.type)).toEqual(["billing_read_only"]);
@@ -307,7 +307,7 @@ describe("Read-only", () => {
     });
 
     const mail = emailsTo(owner.email);
-    expect(mail.map((sent) => sent.subject)).toEqual(["DocuFlow — Keystone is now read-only"]);
+    expect(mail.map((sent) => sent.subject)).toEqual(["DocuFlow - Keystone is now read-only"]);
     expect(mail[0].html).toContain("We could not collect payment for <strong>Keystone</strong>.");
   });
 
@@ -325,7 +325,7 @@ describe("Read-only", () => {
     await runBillingJobs();
 
     const mail = emailsTo(owner.email);
-    expect(mail.map((sent) => sent.subject)).toEqual(["DocuFlow — Keystone is now read-only"]);
+    expect(mail.map((sent) => sent.subject)).toEqual(["DocuFlow - Keystone is now read-only"]);
     expect(mail[0].html).toContain("The Subscription for <strong>Keystone</strong> has ended.");
   });
 
@@ -342,7 +342,7 @@ describe("Read-only", () => {
     await runBillingJobs();
 
     const mail = emailsTo(owner.email);
-    expect(mail.map((sent) => sent.subject)).toEqual(["DocuFlow — Keystone is now read-only"]);
+    expect(mail.map((sent) => sent.subject)).toEqual(["DocuFlow - Keystone is now read-only"]);
     expect(mail[0].html).toContain("We could not collect payment for <strong>Keystone</strong>.");
     expect(await notificationsOf(owner.id)).toHaveLength(1);
   });
@@ -387,8 +387,8 @@ describe("Payment failed", () => {
 
     const mail = emailsTo(owner.email);
     expect(mail.map((sent) => sent.subject)).toEqual([
-      "DocuFlow — Payment failed for Keystone",
-      "DocuFlow — Payment failed for Keystone",
+      "DocuFlow - Payment failed for Keystone",
+      "DocuFlow - Payment failed for Keystone",
     ]);
     expect(mail[0].html).toContain("We will try again on <strong>October 4, 2026</strong>.");
     expect(mail[1].html).toContain("We will try again on <strong>October 8, 2026</strong>.");

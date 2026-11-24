@@ -311,7 +311,7 @@ function toDate(value: string | null | undefined): Date | null {
 /** `5 OCT 2026`, or a dash when there is no date. */
 export function dayLabel(value: string | null | undefined): string {
   const date = toDate(value);
-  if (!date) return "—";
+  if (!date) return "-";
   return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
@@ -322,13 +322,13 @@ function clock(date: Date): string {
 /** `5 OCT 2026, 14:30`. */
 export function dateTimeLabel(value: string | null | undefined): string {
   const date = toDate(value);
-  if (!date) return "—";
+  if (!date) return "-";
   return `${dayLabel(value)}, ${clock(date)}`;
 }
 
 /** Minor units in their own currency; never converted. */
 export function formatMoney(amountMinor: number | null, currency: string | null): string {
-  if (amountMinor == null || !currency) return "—";
+  if (amountMinor == null || !currency) return "-";
   try {
     const formatter = new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() });
     const digits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
@@ -404,7 +404,7 @@ function seatsLabel(row: PlatformWorkspaceRow): string {
 function endsLabel(row: PlatformWorkspaceRow): string {
   const trialLike = row.status === "trial" || row.status === "offered";
   const end = trialLike ? row.trialEndsAt : row.periodEndsAt;
-  if (!end) return "—";
+  if (!end) return "-";
   return row.cancelAtPeriodEnd ? `${dayLabel(end)} · cancels` : dayLabel(end);
 }
 
@@ -463,7 +463,7 @@ export function composeWorkspaceRegister(input: {
     members: plural(row.memberCount, "member", "members"),
     ends: endsLabel(row),
     created: dayLabel(row.createdAt),
-    lastActivity: formatWhen(row.lastActivityAt, input.now) || "—",
+    lastActivity: formatWhen(row.lastActivityAt, input.now) || "-",
   }));
   const narrowed = needle !== "" || input.status !== "all" || input.plan !== ALL_PLANS;
   return {
@@ -507,7 +507,7 @@ export function composeSubscriptions(rows: PlatformWorkspaceRow[]): Subscription
       name: row.name,
       owner: ownerLine(row.owner),
       plan: row.planLabel ?? "No Plan",
-      interval: row.billingInterval ? INTERVAL_LABEL[row.billingInterval] : "—",
+      interval: row.billingInterval ? INTERVAL_LABEL[row.billingInterval] : "-",
       seats: seatsLabel(row),
       state: statusLabel(row.status),
       ends: endsLabel(row),
@@ -670,7 +670,7 @@ export function composeWorkspacePage(detail: PlatformWorkspaceDetail, now: Date)
     ? `${formatMoney(sub.unitAmountMinor, sub.currency)} per seat${
         detail.billingInterval ? ` per ${detail.billingInterval === "annual" ? "year" : "month"}` : ""
       }`
-    : "—";
+    : "-";
   const stripeLinks: Array<{ label: string; href: string }> = [];
   if (sub.stripeCustomerUrl) stripeLinks.push({ label: "Stripe customer", href: sub.stripeCustomerUrl });
   if (sub.stripeSubscriptionUrl) stripeLinks.push({ label: "Stripe subscription", href: sub.stripeSubscriptionUrl });
@@ -684,12 +684,12 @@ export function composeWorkspacePage(detail: PlatformWorkspaceDetail, now: Date)
       { label: "OWNER", value: ownerLine(detail.owner) },
       { label: "MEMBERS", value: plural(detail.memberCount, "member", "members") },
       { label: "CREATED", value: dayLabel(detail.createdAt) },
-      { label: "LAST ACTIVITY", value: formatWhen(detail.lastActivityAt, now) || "—" },
+      { label: "LAST ACTIVITY", value: formatWhen(detail.lastActivityAt, now) || "-" },
     ],
     subscription: {
       figures: [
         { label: "PLAN", value: detail.planLabel ?? "No Plan" },
-        { label: "INTERVAL", value: detail.billingInterval ? INTERVAL_LABEL[detail.billingInterval] : "—" },
+        { label: "INTERVAL", value: detail.billingInterval ? INTERVAL_LABEL[detail.billingInterval] : "-" },
         { label: "BILLABLE SEATS", value: seatsLabel(detail) },
         { label: "STATE", value: statusLabel(detail.status) },
         { label: "TRIAL END", value: dayLabel(detail.trialEndsAt) },
@@ -841,7 +841,7 @@ function supportRequestRow(row: PlatformSupportRequestRow, now: Date): SupportRe
     status: row.status,
     statusLabel: SUPPORT_STATUS_LABEL[row.status],
     assignee: row.assignedStaff ? (row.assignedStaff.email ?? "Platform Staff") : "Unassigned",
-    when: formatWhen(row.createdAt, now) || "—",
+    when: formatWhen(row.createdAt, now) || "-",
   };
 }
 
