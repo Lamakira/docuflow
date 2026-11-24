@@ -17,7 +17,7 @@ import {
   storagePort,
   verifyUploadGrant,
 } from "./objectStorage";
-import { ObjectPermission } from "./objectAcl";
+import { ObjectPermission, workspaceDocumentOf } from "./objectAcl";
 import { contextFromUser, runWithWorkspaceContext } from "./workspaceContext";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
@@ -115,7 +115,7 @@ import {
   loadAccessGraph,
   visibleWorkspaceDocuments,
 } from "./modules/knowledge/documentAccess";
-import { canChangeAccess } from "@shared/documentAccess";
+import { canChangeAccess, keepsClosedFolders } from "@shared/documentAccess";
 import { registerKnowledgeRoutes } from "./modules/knowledge/http";
 import {
   syncDocumentVideoTranscripts,
@@ -3032,6 +3032,10 @@ Instructions:
         if (folderId && !canSeeFolder(graph, viewer, folderId)) {
           return res.status(400).json({ message: "The Folder does not exist in this Workspace" });
         }
+        // An owner may change the item's own level, never what its Folders demand.
+        if (!viewer.administrator && !keepsClosedFolders(graph.folders, existing.folderId, folderId)) {
+          return res.status(403).json({ message: "Only an Administrator can move this item out of a Folder with limited access" });
+        }
       }
       
       const document = await storage.updateCompanyDocument(
@@ -4939,6 +4943,11 @@ Instructions:
       } catch {
         return res.status(400).json({ message: "Invalid storageKey" });
       }
+      // A capture carries no policy. One that has a policy is a File or a
+      // Document's object, which this row would open outside its own access.
+      if (normalizedPath.startsWith("/objects/") && (await objectStorageService.findAclPolicy(normalizedPath))) {
+        return res.status(400).json({ message: "Invalid storageKey" });
+      }
 
       const screenshot = await ingestActivityScreenshot({
         jobs: createActivityJobsPort(),
@@ -5028,6 +5037,13 @@ Instructions:
       const objectStorageService = new ObjectStorageService();
       assertObjectInActiveWorkspace(screenshot.storageKey);
       const objectFile = await objectStorageService.getObjectEntityFile(screenshot.storageKey);
+      // Tied to a Document after the capture was registered: Document Access decides, not this row.
+      if (
+        workspaceDocumentOf(await objectStorageService.findAclPolicy(screenshot.storageKey)) !== null &&
+        !(await objectStorageService.canAccessObjectEntity({ objectFile, userId }))
+      ) {
+        return res.status(404).json({ message: "Screenshot file not found" });
+      }
       objectStorageService.downloadObject(objectFile, res);
     } catch (error) {
       console.error("Error serving screenshot:", error);

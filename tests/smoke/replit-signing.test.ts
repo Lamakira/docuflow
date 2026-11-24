@@ -62,3 +62,31 @@ describe("ReplitStoragePort signing through the sidecar", () => {
     expect(port(true).supportsSignedUrls).toBe(true);
   });
 });
+
+describe("ReplitStoragePort policies", () => {
+  const ok = <T>(value: T) => ({ ok: true as const, value });
+  const failed = { ok: false as const, error: { message: "storage is down" } };
+
+  function withClient(client: { exists: unknown; downloadAsText?: unknown }) {
+    const built = port(false);
+    (built as unknown as { clients: Map<string, unknown> }).clients.set(ref.bucketName, {
+      exists: async () => client.exists,
+      downloadAsText: async () => client.downloadAsText,
+    });
+    return built;
+  }
+
+  it("answers no policy only when there is none", async () => {
+    const policy = { owner: "u1", visibility: "private" };
+    expect(await withClient({ exists: ok(false) }).getAclPolicy(ref)).toBeNull();
+    expect(
+      await withClient({ exists: ok(true), downloadAsText: ok(JSON.stringify(policy)) }).getAclPolicy(ref),
+    ).toEqual(policy);
+  });
+
+  it("fails rather than call an unreadable policy absent, so it is never replaced (F56)", async () => {
+    await expect(withClient({ exists: failed }).getAclPolicy(ref)).rejects.toThrow(/storage is down/);
+    await expect(withClient({ exists: ok(true), downloadAsText: failed }).getAclPolicy(ref)).rejects.toThrow(/storage is down/);
+    await expect(withClient({ exists: ok(true), downloadAsText: ok("{") }).getAclPolicy(ref)).rejects.toThrow();
+  });
+});

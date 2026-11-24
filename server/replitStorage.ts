@@ -177,17 +177,13 @@ export class ReplitStoragePort implements StoragePort {
 
     // An object written before this provider, or by a path that does not set a
     // policy, simply has no sibling. That is "no policy", not a failure —
-    // `canAccessObject` already treats a null policy as deny.
+    // `canAccessObject` already treats a null policy as deny. A failed read is
+    // not "no policy": a caller about to write one would replace it.
     const present = await client.exists(aclRef.objectName);
-    if (!present.ok || !present.value) return null;
+    if (!unwrap(present, `getAclPolicy(${ref.objectName})`)) return null;
 
     const result = await client.downloadAsText(aclRef.objectName);
-    if (!result.ok) return null;
-    try {
-      return JSON.parse(result.value) as ObjectAclPolicy;
-    } catch {
-      return null;
-    }
+    return JSON.parse(unwrap(result, `getAclPolicy(${ref.objectName})`)) as ObjectAclPolicy;
   }
 
   async setAclPolicy(ref: StoredObjectRef, policy: ObjectAclPolicy): Promise<void> {

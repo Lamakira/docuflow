@@ -156,6 +156,22 @@ export function canChangeAccess(viewer: AccessViewer, ownerId: string | null | u
   return viewer.administrator || (Boolean(ownerId) && ownerId === viewer.userId);
 }
 
+/**
+ * Whether a move stays inside every Folder that limits access today. Leaving
+ * one opens the item to readers its Folders refuse, which only an
+ * Administrator may do.
+ */
+export function keepsClosedFolders(
+  folders: ReadonlyMap<string, AccessFolder>,
+  from: string | null | undefined,
+  to: string | null | undefined,
+): boolean {
+  const destination = new Set(folderChain(folders, to).map((folder) => folder.id));
+  return folderChain(folders, from)
+    .filter((folder) => normalizeAccessLevel(folder.access) !== ACCESS_EVERYONE)
+    .every((folder) => destination.has(folder.id));
+}
+
 export type AccessChange = { level: AccessLevel; memberIds: string[] };
 
 /**

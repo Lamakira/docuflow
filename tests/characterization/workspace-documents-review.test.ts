@@ -320,6 +320,38 @@ describe("move and rename (F54)", () => {
     expect((await colleague.agent.get(path)).status).toBe(200);
   });
 
+  it("lets only an Administrator take an item out of a Folder that limits access", async () => {
+    const app = await makeApp();
+    const admin = await registerAdmin(app);
+    const author = await registerUser(app);
+    const named = await registerUser(app);
+    const outsider = await registerUser(app);
+    const closed = await createFolder(admin.agent, { name: "Closed" });
+    const open = await createFolder(admin.agent, { name: "Open" });
+    const inside = (await admin.agent.post("/api/company-document-folders").send({ name: "Inside", parentId: closed.id })).body;
+    const elsewhere = await createFolder(admin.agent, { name: "Elsewhere" });
+    for (const [folder, memberIds] of [[closed, [author.id, named.id]], [elsewhere, [author.id, outsider.id]]] as const) {
+      await admin.agent.put(`/api/company-document-folders/${folder.id}/access`).send({ level: "restricted", memberIds });
+    }
+    const { id } = await write(author, "Payroll", closed.id);
+    const path = `/api/company-documents/${id}`;
+
+    for (const folderId of [null, open.id, elsewhere.id]) {
+      const res = await author.agent.patch(path).send({ folderId });
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ message: "Only an Administrator can move this item out of a Folder with limited access" });
+    }
+    expect((await outsider.agent.get(path)).status).toBe(404);
+
+    // Deeper inside the same Folder opens nothing, and neither does coming back to it.
+    expect((await author.agent.patch(path).send({ folderId: inside.id })).status).toBe(200);
+    expect((await author.agent.patch(path).send({ folderId: closed.id })).status).toBe(200);
+    expect((await outsider.agent.get(path)).status).toBe(404);
+
+    expect((await admin.agent.patch(path).send({ folderId: open.id })).status).toBe(200);
+    expect((await outsider.agent.get(path)).status).toBe(200);
+  });
+
   it("keeps the index when the Folder a Document left is deleted", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);

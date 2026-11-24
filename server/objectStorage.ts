@@ -272,6 +272,12 @@ export class ObjectStorageService {
     });
   }
 
+  /** The policy of an object, or null when it has none or nothing is stored there yet. */
+  async findAclPolicy(rawPath: string): Promise<ObjectAclPolicy | null> {
+    const ref = objectRefFromEntityPath(this.normalizeObjectEntityPath(rawPath));
+    return (await storagePort.exists(ref)) ? storagePort.getAclPolicy(ref) : null;
+  }
+
   async canAccessObjectEntity({
     userId,
     objectFile,
