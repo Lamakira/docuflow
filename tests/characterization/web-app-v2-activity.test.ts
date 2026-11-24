@@ -8,6 +8,7 @@ import {
   activityEvidencePath,
   composeActivity,
   trackingPolicyPath,
+  type ActivityEvidenceInput,
   type ActivityInput,
 } from "../../client/src/v2/activity";
 import { DEFAULT_SCREENSHOT_POLICY } from "../../shared/schema";
@@ -44,10 +45,24 @@ function emptyActivity(overrides: Partial<ActivityInput> = {}): ActivityInput {
     requestedUserId: null,
     expandedId: null,
     policy: DEFAULT_SCREENSHOT_POLICY,
-    projects: [],
-    entries: [],
-    users: [],
     evidence: [],
+    ...overrides,
+  };
+}
+
+/** One row as GET /api/time-tracking/screenshots answers it: the names come with the capture. */
+function shot(id: string, overrides: Partial<ActivityEvidenceInput> = {}): ActivityEvidenceInput {
+  return {
+    id,
+    capturedAt: new Date(2026, 8, 10, 10, 0, 0),
+    userId: "me",
+    crmProjectId: "prj-1",
+    timeEntryId: "te-1",
+    source: "device",
+    user: null,
+    projectName: null,
+    clientName: null,
+    taskName: null,
     ...overrides,
   };
 }
@@ -89,35 +104,26 @@ describe("Activity from Activity Evidence (#191)", () => {
   });
 
   it("lists allowed Activity Evidence with Project, Task, and capture source provenance", () => {
+    const sam = { id: "me", firstName: "Sam", lastName: "Lee", email: "sam@example.com" };
     const page = composeActivity(
       emptyActivity({
         expandedId: "ev-1",
-        projects: [
-          {
-            id: "prj-1",
-            project: { name: "Harbour rebuild" },
-            client: { name: "Harbour Shipping" },
-          },
-        ],
-        entries: [{ id: "te-1", task: { name: "Reconcile import" } }],
-        users: [{ id: "me", firstName: "Sam", lastName: "Lee", email: "sam@example.com" }],
         evidence: [
-          {
-            id: "ev-1",
+          shot("ev-1", {
             capturedAt: new Date(2026, 8, 10, 9, 12, 0),
-            userId: "me",
-            crmProjectId: "prj-1",
-            timeEntryId: "te-1",
-            storageKey: "agent-screenshots/ev-1.webp",
-          },
-          {
-            id: "ev-2",
+            user: sam,
+            projectName: "Harbour rebuild",
+            clientName: "Harbour Shipping",
+            taskName: "Reconcile import",
+          }),
+          shot("ev-2", {
             capturedAt: new Date(2026, 8, 9, 14, 30, 0),
-            userId: "me",
-            crmProjectId: "prj-1",
-            timeEntryId: "te-1",
-            storageKey: "/objects/web-capture.png",
-          },
+            user: sam,
+            projectName: "Harbour rebuild",
+            clientName: "Harbour Shipping",
+            taskName: "Reconcile import",
+            source: "web",
+          }),
         ],
       }),
     );
@@ -135,7 +141,7 @@ describe("Activity from Activity Evidence (#191)", () => {
     });
     expect(page.rows[1]).toMatchObject({
       id: "ev-2",
-      when: "Yesterday",
+      when: "Yesterday, 14:30",
       source: "Web session",
       expanded: false,
     });
@@ -145,12 +151,12 @@ describe("Activity from Activity Evidence (#191)", () => {
   it("shows Tracking Policy capture rules without scores", () => {
     const page = composeActivity(emptyActivity());
     expect(page.policyLines).toEqual([
-      { label: "Capture", value: "Every 3–5 min" },
+      { label: "Capture", value: "Every 3-5 min" },
       { label: "Hours", value: "Any hours" },
       { label: "Idle", value: "Pause after 10 min, asked first" },
       { label: "Low activity", value: "Below 10 % keyboard and mouse" },
     ]);
-    expect(page.policyFootnote.toLowerCase()).toContain("tracking policy");
+    expect(page.policyFootnote?.toLowerCase()).toContain("tracking policy");
     expect(JSON.stringify(page.policyLines).toLowerCase()).not.toContain("productivity");
   });
 
@@ -167,43 +173,26 @@ describe("Activity from Activity Evidence (#191)", () => {
       }),
     );
     expect(page.policyLines).toEqual([
-      { label: "Capture", value: "Every 3–5 min" },
-      { label: "Hours", value: "22:00–06:00, computer clock" },
+      { label: "Capture", value: "Every 3-5 min" },
+      { label: "Hours", value: "22:00-06:00, computer clock" },
       { label: "Idle", value: "Pause after 10 min, without asking" },
       { label: "Low activity", value: "Below 10 % keyboard and mouse" },
     ]);
   });
 
-  it("an Owner reviewing the Workspace sees every Member's evidence", () => {
+  it("an Owner reviewing the Workspace sees every Member's evidence, and is told nothing about whose", () => {
     const page = composeActivity(
       emptyActivity({
         canReview: true,
-        users: [
-          { id: "me", firstName: "Sam", lastName: "Lee", email: "sam@example.com" },
-          { id: "other", firstName: "Pat", lastName: "Ng", email: "pat@example.com" },
-        ],
         evidence: [
-          {
-            id: "mine",
-            capturedAt: new Date(2026, 8, 10, 10, 0, 0),
-            userId: "me",
-            crmProjectId: "prj-1",
-            timeEntryId: "te-1",
-            storageKey: "shot-me",
-          },
-          {
-            id: "theirs",
-            capturedAt: new Date(2026, 8, 10, 11, 0, 0),
-            userId: "other",
-            crmProjectId: "prj-1",
-            timeEntryId: "te-2",
-            storageKey: "shot-them",
-          },
+          shot("mine", { capturedAt: new Date(2026, 8, 10, 10, 0, 0) }),
+          shot("theirs", { capturedAt: new Date(2026, 8, 10, 11, 0, 0), userId: "other" }),
         ],
       }),
     );
     expect(page.rows.map((row) => row.id)).toEqual(["mine", "theirs"]);
     expect(page.refusal).toBeNull();
+    expect(page.policyFootnote).toBeNull();
   });
 
   it("Members without review Capability see only their own evidence and refusals name the Capability", () => {
@@ -211,27 +200,9 @@ describe("Activity from Activity Evidence (#191)", () => {
       emptyActivity({
         canReview: false,
         requestedUserId: "other",
-        users: [
-          { id: "me", firstName: "Sam", lastName: "Lee", email: "sam@example.com" },
-          { id: "other", firstName: "Pat", lastName: "Ng", email: "pat@example.com" },
-        ],
         evidence: [
-          {
-            id: "mine",
-            capturedAt: new Date(2026, 8, 10, 10, 0, 0),
-            userId: "me",
-            crmProjectId: "prj-1",
-            timeEntryId: "te-1",
-            storageKey: "shot-me",
-          },
-          {
-            id: "theirs",
-            capturedAt: new Date(2026, 8, 10, 11, 0, 0),
-            userId: "other",
-            crmProjectId: "prj-1",
-            timeEntryId: "te-2",
-            storageKey: "shot-them",
-          },
+          shot("mine", { capturedAt: new Date(2026, 8, 10, 10, 0, 0) }),
+          shot("theirs", { capturedAt: new Date(2026, 8, 10, 11, 0, 0), userId: "other" }),
         ],
       }),
     );
@@ -241,6 +212,9 @@ describe("Activity from Activity Evidence (#191)", () => {
       "You do not have the Review Activity Evidence Capability. Sam Lee (Owner) can grant it.",
     );
     expect(page.refusal?.toLowerCase()).not.toContain("permission denied");
+    expect(page.policyFootnote).toBe(
+      "You can inspect your own Activity Evidence. Capture follows the Tracking Policy applied to you.",
+    );
   });
 
   it("asks the BFF for screenshots and Tracking Policy it already supports", () => {
@@ -267,13 +241,19 @@ describe("Activity from Activity Evidence (#191)", () => {
     expect(pageSource).toContain("canManageAdministration");
     expect(pageSource).not.toMatch(/user\?\.role === ["']admin["']/);
     expect(pageSource).not.toMatch(/productivity/i);
-    expect(pageSource).toContain("Open");
   });
 
-  it("keeps Open on the stacked Activity Evidence row", () => {
+  it("shows a chevron, not the words Open and Close, on both row layouts", () => {
     const stacked = pageSource.match(/layout\.stackedRegister \? \(([\s\S]*?)\) : \(/)?.[1] ?? "";
     expect(stacked).toContain("df-project-mobile");
-    expect(stacked).toContain("Open");
+    expect(stacked).toContain("df-row-chevron");
+    expect(pageSource.match(/<ChevronDown className="df-row-chevron"/g)).toHaveLength(2);
+    expect(pageSource).not.toMatch(/row\.expanded \? "Close" : "Open"/);
+    expect(pageSource).toContain("aria-expanded={row.expanded}");
+    expect(pageSource).toContain("aria-controls={`v2-activity-detail-${row.id}`}");
+    // A closed detail is out of the tab order and the reading order.
+    expect(rule('.df-activity-expand[data-motion="standard"]')).toMatch(/visibility:\s*hidden/);
+    expect(rule('.df-activity-expand[data-motion="standard"][data-open="true"]')).toMatch(/visibility:\s*visible/);
   });
 });
 

@@ -11,6 +11,7 @@ export {
   upsertScreenshotPolicy,
 } from "./policy";
 export type { DeliveredTrackingPolicy } from "./policy";
+export { DUPLICATE_CAPTURE_REASON } from "./duplicates";
 export {
   createAgentActivityEvents,
   createTimeEntryScreenshot,

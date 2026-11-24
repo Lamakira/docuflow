@@ -21,9 +21,11 @@ import {
 } from "../../client/src/v2/tasks";
 import {
   activityTabs,
+  activityPaging,
   canDeleteCapture,
-  CAPTURE_DELETE_ALLOWLIST,
+  pickCapture,
   screenshotPath,
+  stepViewer,
   composeActivityGallery,
   evidenceDateRange,
   evidenceFileName,
@@ -83,12 +85,8 @@ function emptyGallery(overrides: Partial<ActivityGalleryInput> = {}): ActivityGa
     similarOnly: false,
     selectedIds: [],
     expandedId: null,
-    page: 1,
-    pageSize: 50,
     total: 0,
-    projects: [],
-    entries: [],
-    users: [],
+    offset: 0,
     evidence: [],
     ...overrides,
   };
@@ -343,37 +341,23 @@ describe("Activity Evidence gallery (#214)", () => {
   });
 
   it("groups captures by the hour they were taken and names their provenance", () => {
+    const named = {
+      userId: "u-1",
+      crmProjectId: "prj-1",
+      timeEntryId: "te-1",
+      user: { id: "u-1", firstName: "Sam", lastName: "Lee", email: "sam@example.com" },
+      projectName: "Harbour rebuild",
+      clientName: "Harbour Shipping",
+      taskName: "Reconcile import",
+    };
     const page = composeActivityGallery(
       emptyGallery({
         canReview: true,
-        projects: [{ id: "prj-1", project: { name: "Harbour rebuild" }, client: { name: "Harbour Shipping" } }],
-        entries: [{ id: "te-1", taskId: "t-1", task: { name: "Reconcile import" } }],
-        users: [{ id: "u-1", firstName: "Sam", lastName: "Lee", email: "sam@example.com" }],
+        total: 3,
         evidence: [
-          {
-            id: "s-1",
-            capturedAt: new Date(2026, 8, 10, 9, 15, 0),
-            userId: "u-1",
-            crmProjectId: "prj-1",
-            timeEntryId: "te-1",
-            storageKey: "agent-screenshots/s-1.png",
-          },
-          {
-            id: "s-2",
-            capturedAt: new Date(2026, 8, 10, 9, 45, 0),
-            userId: "u-1",
-            crmProjectId: "prj-1",
-            timeEntryId: "te-1",
-            storageKey: "agent-screenshots/s-2.png",
-          },
-          {
-            id: "s-3",
-            capturedAt: new Date(2026, 8, 10, 11, 5, 0),
-            userId: "u-1",
-            crmProjectId: "prj-1",
-            timeEntryId: "te-1",
-            storageKey: "web/s-3.png",
-          },
+          { id: "s-1", capturedAt: new Date(2026, 8, 10, 9, 15, 0), source: "device", ...named },
+          { id: "s-2", capturedAt: new Date(2026, 8, 10, 9, 45, 0), source: "device", ...named },
+          { id: "s-3", capturedAt: new Date(2026, 8, 10, 11, 5, 0), source: "web", ...named },
         ],
       }),
     );
@@ -400,7 +384,7 @@ describe("Activity Evidence gallery (#214)", () => {
       userId: "me",
       crmProjectId: "prj-1",
       timeEntryId: `te-${id}`,
-      storageKey: `agent-screenshots/${id}.png`,
+      source: "device",
       ...overrides,
     });
     const evidence = [
@@ -459,7 +443,7 @@ describe("Activity Evidence gallery (#214)", () => {
         userId: "me",
         crmProjectId: "prj-1",
         timeEntryId: "te-1",
-        storageKey: "agent-screenshots/s-1.png",
+        source: "device",
       },
     ];
     const none = composeActivityGallery(emptyGallery({ evidence }));
@@ -485,7 +469,7 @@ describe("Activity Evidence gallery (#214)", () => {
             userId: "me",
             crmProjectId: "prj-1",
             timeEntryId: "te-1",
-            storageKey: "agent-screenshots/mine.png",
+            source: "device",
           },
           {
             id: "theirs",
@@ -493,7 +477,7 @@ describe("Activity Evidence gallery (#214)", () => {
             userId: "someone-else",
             crmProjectId: "prj-1",
             timeEntryId: "te-2",
-            storageKey: "agent-screenshots/theirs.png",
+            source: "device",
           },
         ],
       }),
@@ -537,30 +521,22 @@ describe("Activity Evidence gallery (#214)", () => {
   });
 
   it("says how much of the capture set it is showing instead of silently truncating", () => {
-    const evidence = Array.from({ length: 50 }, (_, index) => ({
-      id: `s-${index}`,
-      capturedAt: new Date(2026, 8, 10, 9, 0, index),
-      userId: "me",
-      crmProjectId: "prj-1",
-      timeEntryId: "te-1",
-      storageKey: "agent-screenshots/s.png",
-    }));
+    const first = activityPaging({ page: 1, pageSize: 50, total: 214 });
+    expect(first.label).toBe("1-50 of 214 captures");
+    expect(first.hasPrevious).toBe(false);
+    expect(first.hasNext).toBe(true);
+    expect(first.pageCount).toBe(5);
 
-    const first = composeActivityGallery(emptyGallery({ evidence, total: 214, page: 1, pageSize: 50 }));
-    expect(first.paging.label).toBe("Showing 1–50 of 214 captures");
-    expect(first.paging.hasPrevious).toBe(false);
-    expect(first.paging.hasNext).toBe(true);
-    expect(first.paging.pageCount).toBe(5);
-
-    const last = composeActivityGallery(emptyGallery({ evidence, total: 214, page: 5, pageSize: 50 }));
-    expect(last.paging.label).toBe("Showing 201–214 of 214 captures");
-    expect(last.paging.hasNext).toBe(false);
-    expect(last.paging.hasPrevious).toBe(true);
+    const last = activityPaging({ page: 5, pageSize: 50, total: 214 });
+    expect(last.label).toBe("201-214 of 214 captures");
+    expect(last.hasNext).toBe(false);
+    expect(last.hasPrevious).toBe(true);
 
     // One page of captures needs no paging chrome at all.
-    const single = composeActivityGallery(emptyGallery({ evidence, total: 50, page: 1, pageSize: 50 }));
-    expect(single.paging.pageCount).toBe(1);
-    expect(single.paging.hasNext).toBe(false);
+    const single = activityPaging({ page: 1, pageSize: 50, total: 50 });
+    expect(single.pageCount).toBe(1);
+    expect(single.label).toBe("50 captures");
+    expect(single.hasNext).toBe(false);
   });
 
   it("opens one capture at full size without leaving the gallery", () => {
@@ -571,7 +547,7 @@ describe("Activity Evidence gallery (#214)", () => {
         userId: "me",
         crmProjectId: "prj-1",
         timeEntryId: "te-1",
-        storageKey: "agent-screenshots/s-1.png",
+        source: "device",
       },
     ];
     const closed = composeActivityGallery(emptyGallery({ evidence }));
@@ -612,23 +588,57 @@ describe("Activity Evidence gallery (#214)", () => {
     expect(rule(".df-gallery-when")).toMatch(/white-space:\s*nowrap/);
   });
 
-  it("stops Previous and Next at the first and last capture of the page", () => {
+  it("stops Previous and Next at the first and last capture of the page, and counts over the total", () => {
     const shot = (id: string, hour: number, minute: number) => ({
       id,
       capturedAt: new Date(2026, 8, 10, hour, minute, 0),
       userId: "me",
       crmProjectId: "prj-1",
       timeEntryId: "te-1",
-      storageKey: `agent-screenshots/${id}.png`,
+      source: "device" as const,
     });
     const evidence = [shot("a", 9, 0), shot("b", 9, 30), shot("c", 10, 0)];
     // Newest hour first, forward in time inside an hour: c, a, b.
-    const view = (expandedId: string) => composeActivityGallery(emptyGallery({ evidence, expandedId })).viewer;
+    const view = (expandedId: string, offset = 0, total = 3) =>
+      composeActivityGallery(emptyGallery({ evidence, expandedId, offset, total })).viewer;
 
     expect(view("c")).toMatchObject({ position: "1 of 3", previousId: null, nextId: "a" });
     expect(view("a")).toMatchObject({ position: "2 of 3", previousId: "c", nextId: "b" });
     expect(view("b")).toMatchObject({ position: "3 of 3", previousId: "a", nextId: null });
     expect(view("missing")).toBeNull();
+    // The position is over the whole set: the 51st of 107 is the first of page 2.
+    expect(view("c", 50, 107)?.position).toBe("51 of 107");
+  });
+
+  it("steps across a page edge: the next page opens on its first capture, the previous on its last", () => {
+    const edge = { previousId: null, nextId: null };
+    expect(stepViewer({ previousId: "c", nextId: "a" }, "next", { page: 1, pageCount: 3 })).toEqual({ openId: "a" });
+    expect(stepViewer({ previousId: "c", nextId: "a" }, "previous", { page: 1, pageCount: 3 })).toEqual({ openId: "c" });
+    expect(stepViewer(edge, "next", { page: 1, pageCount: 3 })).toEqual({ page: 2, pick: "first" });
+    expect(stepViewer(edge, "previous", { page: 2, pageCount: 3 })).toEqual({ page: 1, pick: "last" });
+    expect(stepViewer(edge, "next", { page: 3, pageCount: 3 })).toBeNull();
+    expect(stepViewer(edge, "previous", { page: 1, pageCount: 3 })).toBeNull();
+
+    const tile = (id: string) => ({ id }) as never;
+    const groups = [
+      { key: "k2", hourLabel: "10:00", dateLabel: "", tiles: [tile("c")] },
+      { key: "k1", hourLabel: "09:00", dateLabel: "", tiles: [tile("a"), tile("b")] },
+    ];
+    expect(pickCapture(groups, "first")).toBe("c");
+    expect(pickCapture(groups, "last")).toBe("b");
+    expect(pickCapture([], "first")).toBeNull();
+  });
+
+  it("keeps the viewer open while the other page loads, with Previous and Next waiting", () => {
+    const viewer = activitySource.slice(activitySource.indexOf("function CaptureViewer"));
+    expect(viewer).toContain("const previousEnabled = canStep.previous && !stepping;");
+    expect(viewer).toContain("const nextEnabled = canStep.next && !stepping;");
+    expect(viewer).toContain("disabled={!previousEnabled}");
+    expect(viewer).toContain("disabled={!nextEnabled}");
+    // The landing capture is read while rendering, so the dialog never sees a null viewer between pages.
+    expect(activitySource).toContain("expandedId: landed ?? expandedCaptureId");
+    // A page step does not close it; a filter change does.
+    expect(activitySource).toMatch(/\/\/ A page step keeps the viewer open[\s\S]*?setExpandedCaptureId\(null\);/);
   });
 
   it("never scores or ranks Members from a capture's activity", () => {
@@ -641,7 +651,7 @@ describe("Activity Evidence gallery (#214)", () => {
             userId: "me",
             crmProjectId: "prj-1",
             timeEntryId: "te-1",
-            storageKey: "agent-screenshots/s-idle.png",
+            source: "device",
             keyboardActivityPercent: 1,
             mouseActivityPercent: 2,
           },
@@ -903,20 +913,18 @@ function rule(selector: string): string {
 }
 
 describe("Deleting a capture from the viewer", () => {
-  const [allowed] = CAPTURE_DELETE_ALLOWLIST;
-
-  it("offers Delete to an allowlisted Administrator only", () => {
-    expect(canDeleteCapture({ canReview: true, email: allowed })).toBe(true);
-    expect(canDeleteCapture({ canReview: true, email: `  ${allowed.toUpperCase()} ` })).toBe(true);
-    expect(canDeleteCapture({ canReview: true, email: "other@example.com" })).toBe(false);
-    expect(canDeleteCapture({ canReview: false, email: allowed })).toBe(false);
-    expect(canDeleteCapture({ canReview: true, email: null })).toBe(false);
-    expect(canDeleteCapture({ canReview: true, email: undefined })).toBe(false);
+  it("offers Delete to whoever may review Activity Evidence, with no address list", () => {
+    expect(canDeleteCapture({ canReview: true })).toBe(true);
+    expect(canDeleteCapture({ canReview: false })).toBe(false);
+    expect(activitySource).not.toContain("ALLOWLIST");
+    expect(activitySource).not.toContain("currentUserEmail");
+    expect(read("client/src/v2/activity.ts")).not.toContain("ALLOWLIST");
+    expect(read("client/src/v2/activity.ts")).not.toMatch(/@[a-z-]+\.(ca|com)/);
   });
 
   it("carries the decision on the gallery model", () => {
-    expect(composeActivityGallery(emptyGallery({ canReview: true, currentUserEmail: allowed })).canDelete).toBe(true);
-    expect(composeActivityGallery(emptyGallery({ canReview: true, currentUserEmail: "x@example.com" })).canDelete).toBe(false);
+    expect(composeActivityGallery(emptyGallery({ canReview: true })).canDelete).toBe(true);
+    expect(composeActivityGallery(emptyGallery({ canReview: false })).canDelete).toBe(false);
   });
 
   it("addresses the screenshot by its encoded id", () => {

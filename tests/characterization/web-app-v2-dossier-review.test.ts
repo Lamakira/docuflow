@@ -12,6 +12,7 @@ import {
 import { projectStatusColor } from "../../client/src/v2/palette";
 import { breadcrumbFor } from "../../client/src/v2/presentation";
 import { projectBudgetPercent } from "../../client/src/v2/projects";
+import { readActivityFilters } from "../../client/src/v2/activity";
 
 /**
  * The Dossier review (F44-F51, 2026-11-23). Seams: composeDossier and the
@@ -23,7 +24,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 const dossierSource = read("client/src/v2/V2Dossier.tsx");
 const commandBarSource = read("client/src/v2/V2CommandBar.tsx");
-const activitySource = read("client/src/v2/V2Activity.tsx");
 const css = read("client/src/v2/tokens.css").replace(/\/\*[\s\S]*?\*\//g, "");
 
 function rule(selector: string): string {
@@ -219,7 +219,7 @@ describe("Dossier review (F44-F51)", () => {
       expect(tabCount(dossier, "activity")).toBe("3598");
       expect(dossier.evidence.total).toBe(3598);
       expect(dossier.evidence.tiles).toHaveLength(8);
-      expect(dossier.evidence.allHref).toBe("/activity/gallery?crmProjectId=prj-live");
+      expect(dossier.evidence.allHref).toBe("/activity/gallery?range=all&project=prj-live");
       expect(dossierSource).toContain("See all {dossier.evidence.total} in Activity");
       expect(dossierSource).toContain('<span className="df-count-chip">{dossier.evidence.total}</span>');
     });
@@ -231,9 +231,9 @@ describe("Dossier review (F44-F51)", () => {
       expect(composeDossier(input({ screenshots: shots.slice(0, 3), screenshotTotal: 3 })).evidence.allHref).toBeNull();
     });
 
-    it("reads total from the screenshot page and Activity opens on the crmProjectId filter", () => {
+    it("reads total from the screenshot page and Activity reads an old crmProjectId link as the Project over All time", () => {
       expect(dossierSource).toContain('screenshotTotal: typeof screenshotPage?.total === "number" ? screenshotPage.total : null');
-      expect(activitySource).toContain('new URLSearchParams(search).get("crmProjectId") || "all"');
+      expect(readActivityFilters("?crmProjectId=prj-live")).toMatchObject({ project: "prj-live", range: "all" });
     });
   });
 

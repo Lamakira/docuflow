@@ -17,8 +17,8 @@ import type { TestUser } from "../helpers/auth";
  *  - `storageKey` is normalized but never validated against storage, so a row
  *    can point at an object that does not exist; the failure only shows when
  *    someone asks for the image.
- *  - `crmProjectId` in the metadata post is taken on trust — it is not checked
- *    against the time entry it belongs to.
+ *  - `crmProjectId` in the metadata post is accepted and ignored: the capture's
+ *    Project is its Time Entry's.
  *  - Listing caps `limit` at 100 and enriches every row with its entry's
  *    duration and idle time.
  *  - Deleting is a tombstone, not a delete: the row stays and the image route
@@ -94,9 +94,8 @@ describe("time-tracking screenshots (characterization)", () => {
     const app = await makeApp();
     const { user, crmProjectId, entry } = await runningEntry(app);
 
-    const { created, uploadedUrl } = await captureScreenshot(user, entry.id, crmProjectId, {
-      capturedAt: "2026-05-01T12:00:00.000Z",
-    });
+    const capturedAt = new Date(Date.now() + 1234).toISOString();
+    const { created, uploadedUrl } = await captureScreenshot(user, entry.id, crmProjectId, { capturedAt });
     expect(created.status).toBe(200);
     expect(created.body).toMatchObject({
       timeEntryId: entry.id,
@@ -106,7 +105,7 @@ describe("time-tracking screenshots (characterization)", () => {
       storageKey: objectPathFor(uploadedUrl),
       deletedAt: null,
     });
-    expect(created.body.capturedAt).toBe("2026-05-01T12:00:00.000Z");
+    expect(created.body.capturedAt).toBe(capturedAt);
 
     const image = await user.agent
       .get(`/api/time-tracking/screenshots/${created.body.id}/image`)
@@ -120,7 +119,7 @@ describe("time-tracking screenshots (characterization)", () => {
       .send({ timeEntryId: entry.id });
     expect(missingFields.status).toBe(400);
     expect(missingFields.body).toEqual({
-      message: "timeEntryId, crmProjectId, and storageKey are required",
+      message: "timeEntryId and storageKey are required",
     });
   });
 

@@ -141,6 +141,7 @@ import {
   createDocumentWithDerivedJobs,
   updateDocumentWithDerivedJobs,
 } from "./documentJobs";
+import { isStoredObjectNamed } from "./modules/activity/evidence";
 import {
   createActivityJobsPort,
   ingestActivityScreenshot,
@@ -2687,9 +2688,7 @@ Instructions:
   // Get all users for assignee dropdown / screenshots filter
   app.get("/api/users", isAuthenticated, async (req: any, res) => {
     try {
-      const requestingUserId = getUserId(req)!;
-      const requestingUser = await storage.getUser(requestingUserId);
-      const includeArchived = requestingUser?.role === "admin" && req.query.includeArchived === "true";
+      const includeArchived = req.query.includeArchived === "true" && (await canManageAdministration());
       const users = await storage.getWorkspaceUsers({ includeArchived });
       res.json(users);
     } catch (error) {
@@ -5004,16 +5003,31 @@ Instructions:
     }
   });
 
+  const CAPTURE_CLOCK_SKEW_MS = 5 * 60_000;
+
+  /** When a web capture was taken, now unless told, or what is wrong with what was sent. */
+  const captureInstant = (sent: unknown, entry: { startTime: Date; endTime: Date | null }): Date | string => {
+    const at = sent === undefined || sent === null ? new Date() : new Date(typeof sent === "string" ? sent : NaN);
+    const time = at.getTime();
+    if (Number.isNaN(time)) return "capturedAt is not a valid date";
+    if (time > Date.now() + CAPTURE_CLOCK_SKEW_MS) return "capturedAt is in the future";
+    if (time < entry.startTime.getTime() - CAPTURE_CLOCK_SKEW_MS) return "capturedAt is before the Time Entry's start";
+    if (entry.endTime && time > entry.endTime.getTime() + CAPTURE_CLOCK_SKEW_MS) {
+      return "capturedAt is after the Time Entry's end";
+    }
+    return at;
+  };
+
   app.post("/api/time-tracking/screenshots", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const { timeEntryId, crmProjectId, storageKey, capturedAt } = req.body;
+      const { timeEntryId, storageKey, capturedAt } = req.body;
 
-      if (!timeEntryId || !crmProjectId || !storageKey) {
-        return res.status(400).json({ message: "timeEntryId, crmProjectId, and storageKey are required" });
+      if (typeof timeEntryId !== "string" || !timeEntryId || !storageKey) {
+        return res.status(400).json({ message: "timeEntryId and storageKey are required" });
       }
 
-      const entry = await storage.getTimeEntry(timeEntryId);
+      const entry = timeEntryId.includes("\0") ? undefined : await storage.getTimeEntry(timeEntryId);
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });
       }
@@ -5027,6 +5041,12 @@ Instructions:
         throw error;
       }
 
+      const takenAt = captureInstant(capturedAt, entry);
+      if (typeof takenAt === "string") return res.status(400).json({ message: takenAt });
+
+      if (typeof storageKey !== "string" || storageKey.includes("\0")) {
+        return res.status(400).json({ message: "Invalid storageKey" });
+      }
       const objectStorageService = new ObjectStorageService();
       let normalizedPath: string;
       try {
@@ -5041,14 +5061,18 @@ Instructions:
         return res.status(400).json({ message: "Invalid storageKey" });
       }
 
+      if (await isStoredObjectNamed(normalizedPath)) {
+        return res.status(400).json({ message: "Invalid storageKey" });
+      }
+
       const screenshot = await ingestActivityScreenshot({
         jobs: createActivityJobsPort(),
         screenshot: {
           timeEntryId,
           userId,
-          crmProjectId,
+          crmProjectId: entry.crmProjectId,
           storageKey: normalizedPath,
-          capturedAt: capturedAt ? new Date(capturedAt) : new Date(),
+          capturedAt: takenAt,
         },
       });
 
@@ -5063,15 +5087,27 @@ Instructions:
     try {
       const userId = getUserId(req)!;
 
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = parseInt(req.query.offset as string) || 0;
+      for (const key of ["limit", "offset"]) {
+        const value = req.query[key];
+        if (value && !(/^\d+$/.test(value) && Number.isSafeInteger(Number(value)))) {
+          return res.status(400).json({ message: `${key} must be a whole number from 0` });
+        }
+      }
+      const limit = Math.min(Number(req.query.limit ?? 0) || 50, 100);
+      const offset = Number(req.query.offset ?? 0);
+      for (const key of ["timeEntryId", "crmProjectId", "userId"]) {
+        const value = req.query[key];
+        if (value && (typeof value !== "string" || value.includes("\0"))) {
+          return res.status(400).json({ message: `${key} is not a valid id` });
+        }
+      }
+      const period = timePeriodQuery(req.query);
+      if (typeof period === "string") return res.status(400).json({ message: period });
 
-      const filters: ScreenshotListOptions = { limit, offset };
+      const filters: ScreenshotListOptions = { limit, offset, ...period };
 
       if (req.query.timeEntryId) filters.timeEntryId = req.query.timeEntryId;
       if (req.query.crmProjectId) filters.crmProjectId = req.query.crmProjectId;
-      if (req.query.startDate) filters.startDate = new Date(req.query.startDate as string);
-      if (req.query.endDate) filters.endDate = new Date(req.query.endDate as string);
 
       if (!(await canManageAdministration())) {
         filters.userId = userId;
@@ -5088,19 +5124,7 @@ Instructions:
 
       const { data, total, counts } = await storage.getTimeEntryScreenshots(filters);
 
-      // Enrich each screenshot with its time entry's duration/idleTime for activity filtering
-      const uniqueEntryIds = [...new Set(data.map((s) => s.timeEntryId))];
-      const entryRows = await storage.getTimeEntriesByIds(uniqueEntryIds);
-      const entryMap: Record<string, { duration: number; idleTime: number }> = {};
-      for (const e of entryRows) entryMap[e.id] = { duration: e.duration, idleTime: e.idleTime };
-
-      const enriched = data.map((s) => ({
-        ...s,
-        entryDuration: entryMap[s.timeEntryId]?.duration ?? null,
-        entryIdleTime: entryMap[s.timeEntryId]?.idleTime ?? null,
-      }));
-
-      res.json({ data: enriched, total, limit, offset, lowActivityThresholdPercent, counts });
+      res.json({ data, total, limit, offset, lowActivityThresholdPercent, counts });
     } catch (error) {
       console.error("Error fetching screenshots:", error);
       res.status(500).json({ message: "Failed to fetch screenshots" });
@@ -5111,7 +5135,9 @@ Instructions:
     try {
       const userId = getUserId(req)!;
 
-      const screenshot = await storage.getTimeEntryScreenshotById(req.params.id);
+      const screenshot = req.params.id.includes("\0")
+        ? undefined
+        : await storage.getTimeEntryScreenshotById(req.params.id);
 
       if (!screenshot) {
         return res.status(404).json({ message: "Screenshot not found" });
@@ -5154,6 +5180,9 @@ Instructions:
       const userId = getUserId(req)!;
       if (!(await canManageAdministration())) {
         return res.status(403).json({ message: "Admin only" });
+      }
+      if (req.params.id.includes("\0")) {
+        return res.status(404).json({ message: "Screenshot not found" });
       }
 
       const { reason } = req.body ?? {};

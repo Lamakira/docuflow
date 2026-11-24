@@ -1314,7 +1314,7 @@ export function composeDossier(input: DossierInput): DossierModel {
       total: evidenceTotal,
       allHref:
         project && evidenceTotal > screenshots.length
-          ? `${activityTabHref("gallery")}?${new URLSearchParams({ crmProjectId: project.id })}`
+          ? `${activityTabHref("gallery")}?${new URLSearchParams({ range: "all", project: project.id })}`
           : null,
       empty: screenshots.length === 0,
       emptyCopy: "No Activity Evidence for this Project you can access.",

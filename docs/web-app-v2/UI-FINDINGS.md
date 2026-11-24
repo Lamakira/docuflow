@@ -1680,3 +1680,138 @@ show only after one's own change or a return to the tab (from code).
 - The Timer's refusal says `Time Tracking → Projects & Tasks`, with no link.
 
 - **Fixed:** 2026-11-24. All but one. Stop is the main button, Pause an outline; the Task clears with its Project after Stop; the status is plain text; a filter is drawn active only when it narrows (or widens) the default; sizes follow the registers; the Task route refuses an empty name and an unknown status; the refusal carries a link. Left alone: who may delete a Task.
+
+## F75 - One capture is stored up to eleven times
+
+- **Status:** closed - fixed 2026-11-24, script to run in production
+- **Found:** 2026-11-24, the real captures counted on the rehearsal copy
+- **Where:** `server/modules/activity/evidenceJobs.ts:75-130` (`findPendingSlot`, `commitActivityScreenshot`); older agents (`SyncWorker.triggerSync`, before 04273f8)
+- **Severity:** wrong figures
+
+2,532 captures of the real Workspace exist 2 to 11 times: same Member, same
+Time Entry, same instant, same image. Of 16,346 rows, 4,029 are such copies,
+over all 7 Members and every month. Half of the sets were stored within a second, so
+two uploads of one capture ran at once. The agent no longer overlaps its
+uploads (04273f8, from code), but the export's Devices ran 0.1.x, and the server
+only refuses a second row while the first is still empty: once its image is
+in, the same capture is taken again. Gallery, counts, Low activity and
+Analytics (from code) count them all. It would take a server that keeps one row per
+capture and image, and a decision on the copies already stored.
+
+- **Fixed:** 2026-11-24. A commit that repeats a stored capture (same Time Entry, instant and image, live or deleted) is hidden at once under its own reason, two uploads at the same moment leave one row, and no count of deleted captures includes copies. `npm run db:hide:duplicate-captures` hides the stored ones (dry run by default, `--undo` restores): **to run in production after publishing**. On the rehearsal copy the dry run finds 2,532 sets and 4,029 copies; applied, 12,317 captures stay, 0 sets are left and Low activity reads 2,629 (before: 3,664), in 1.4 s; undone, the table is identical. Analytics follows through the captures it already leaves out.
+
+## F76 - The Evidence list stops at 50 and says 50
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, 107 test captures on one day
+- **Where:** `client/src/v2/V2Activity.tsx` (`filters` without limit or page, the count chip, the gallery title), `client/src/v2/activity.ts` (`countCopy`)
+- **Severity:** hides records
+
+Evidence shows the 50 latest and nothing after them, with no pager; the chip
+reads `50` (seen, 107 that day). On the real Workspace 83 of the 103 days hold
+more than 50. The Gallery has a pager at its foot, but its chip and title also
+read `50 captures`, `Select all` takes the page only, and the viewer stops at
+`50 of 50`. The list asks for all 50 images at full size while every row is closed
+(seen: 50 of 50 requested). It would take the total, the registers' pager on both tabs,
+and an image read when its row opens.
+
+- **Fixed:** 2026-11-24. Both tabs end with the registers' pager, page and size in the address; the chip and title read the whole count (seen: `207 captures`, `51-100 of 207 captures`). A row asks for its image when it opens (seen: 0 before). The viewer reads `50 of 207` and steps to the next page and back (seen). `Select this page`.
+
+## F77 - Filters that answer something else
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, the Gallery on the dev Workspace
+- **Where:** `client/src/v2/V2Activity.tsx` (`setProjectFilter`, `setUserFilter`, the Date filter), `client/src/v2/activity.ts:363-384` (`evidenceDateRange`), `server/routes.ts:2689-2693`
+- **Severity:** misleading
+
+- On page 2, choosing a Project with 19 captures says `No Activity Evidence
+  match these filters` (seen): the page stays 2. Same for Member (from code).
+- `A day` and `Custom span` with no date typed show every capture (seen: 127
+  instead of 107); the code says they ask for nothing. A span that ends before
+  it starts is not told (from code).
+- `Include archived members` asks for the platform `admin` role, as F54's
+  delete did: a Workspace Owner's list never gains anyone (from code).
+- `Clear filters` drops the range back to Today, in an empty list too.
+- The Project filter lists all rows, sales included, in no order, with no
+  search, as F71 (seen).
+- Range, Project, Member and page are not in the address: lost on reload (from
+  code), as F73.
+
+- **Fixed:** 2026-11-24. Every filter change goes back to page 1 and a page past the end moves to the last (seen). `A day` and `Custom span` ask nothing until they are chosen, and say so (`A day` seen; the end before the start by tests). Include archived members follows the Workspace Role. Clear filters keeps the range. The Project filter is the searchable picker, by Client and name (seen). The filters are in the address, and the Dossier's old links still open (seen).
+
+## F78 - Captures do not say when, nor for which Task
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, test captures over two days
+- **Where:** `client/src/v2/activity.ts:127-135` (`formatWhen`), `client/src/v2/V2Activity.tsx` (`entriesUrl`)
+- **Severity:** misleading
+
+Any capture before today reads `Yesterday` or `17 Nov`, with no time, in the
+list, under the tile and in the viewer (seen): the captures of a past day
+cannot be told apart. On Today, the captures of a Time Entry started before
+midnight show no Task (seen): the page reads the entries that start in the
+range. On the real Workspace 4,085 captures are taken on another day than
+their entry's start (UTC). Project and Member names come from lists of their
+own; one missing from them reads `Untitled Project` or `Member` (from code).
+It would take the time always, and the Task, Project and Member with each
+capture, from the server.
+
+- **Fixed:** 2026-11-24. The time is always given (seen: `Yesterday, 23:58`). Task, Project, Client and Member come with each capture: on the rehearsal copy all 16,346 have all of them. The read takes 12 to 111 ms there.
+
+## F79 - A failed load, image or download says nothing useful
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, the routes answering 500 and images that cannot be read
+- **Where:** `client/src/v2/V2Activity.tsx:77-90` (`saveCapture`), `:328-340`, the `img` tags; `client/src/lib/queryClient.ts` (`staleTime: Infinity`)
+- **Severity:** misleading
+
+A failed load replaces the page, tabs and filters included, with one line and
+no Try again (seen). A download that fails says nothing (seen); in a batch the
+others go on and nothing is told. An image that cannot be read shows the browser's
+broken icon (seen). Leaving and coming back reads nothing new (seen: 0
+requests), so captures of the last hours need a reload. Turning a page swaps the
+whole screen for its skeleton and loses the keyboard focus (seen). `Today` is
+fixed when the page opens (from code).
+
+- **Fixed:** 2026-11-24. A failed load keeps the page and offers Try again (seen). A failed download says so (seen; the batch by tests). An image that cannot be read says `Image unavailable` (seen). Coming back reads again (seen). A page turn keeps the list and the focus (seen).
+
+## F80 - The capture routes trust what they are sent
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, `server/routes.ts:5007-5200` read and called
+- **Where:** `server/routes.ts:5007-5060` (`POST`), `:5062-5100` (list), `:5110`, `:5152`
+- **Severity:** weak check
+
+A web session that registers a capture sends its Project and its time, and the
+server keeps both unread: a Project other than its Time Entry's, a date in 2031
+(from code). It may also name any stored object without an access policy,
+another Member's capture included, and then read it as its own; it must know
+its random name, which only Owners and Administrators are sent. The list answers 500 to a date it cannot read, a
+negative offset or a NUL id (seen); the image and delete routes answer 500 to a
+NUL id (seen). Each row carries its storage key and content hash, which the
+page does not need beyond its source. The web capture that uses the POST is v1's.
+
+- **Fixed:** 2026-11-24. The Project is the Time Entry's; the date must be in it, within 5 minutes; an object already named by a capture, a File or a Document is refused. Unreadable dates, negative paging and NUL ids answer 400 or 404. The rows no longer carry the storage key; they keep the content hash, which v1's Identical filter reads. Left: the check for an object already named looks in the Active Workspace.
+
+## F81 - Activity polish
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, the dev Workspace (seen unless marked)
+
+- `Today`, the default, is drawn as an active filter; a range, Project or
+  Member that narrows the list is not.
+- Tracking Policy takes the top third of both tabs; its labels and values sit at opposite
+  edges of a 1,200 px card. So do the rows' details and the viewer's.
+- `You can inspect Activity Evidence allowed in this Workspace.` tells an Owner
+  nothing.
+- The count chip has no word. `Download 0 captures` is drawn as the main button.
+- `TO` is in capitals beside `From`; the ranges use a long dash (`1–50`) where the
+  other screens use a hyphen.
+- Checkboxes and dates are the browser's own, not shadcn's.
+- Names and columns use other text sizes than the other registers (F74).
+- `Open` has no reason to be a word on every row; the list has no row lines.
+- Deleting a capture is offered to one email address, written in the page's
+  code (decided 2026-10-30, "for now"); the server allows every Owner and
+  Administrator. Whom to offer it to is the owner's to say.
+
+- **Fixed:** 2026-11-24. All of it (seen in light and dark). Every Owner and Administrator can delete a capture (accepted 2026-11-24), behind the same confirmation; the viewer no longer opens with the focus on that button (seen). Left: inside an hour captures read forward while pages go back in time, so Next can go from 00:58 to 00:00.

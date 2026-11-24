@@ -970,12 +970,34 @@ button.df-attention-row {
 
 .df-activity-register .df-register-head,
 .df-activity-register .df-register-row {
-  grid-template-columns: 0.55fr 1.4fr 1fr 0.8fr 0.9fr 0.55fr;
+  grid-template-columns: 1.1fr 1.4fr 1fr 0.8fr 0.7fr var(--df-space-5);
+}
+
+/* The row's rule sits on its wrapper: the button is its only child, so :last-child would drop it. */
+.df-activity-item {
+  border-bottom: 1px solid var(--df-divider-light);
+}
+
+.df-activity-item:last-child {
+  border-bottom: 0;
+}
+
+.df-row-chevron {
+  width: 16px;
+  height: 16px;
+  justify-self: end;
+  color: var(--df-archive-slate);
+  transition: transform var(--duration-ui) var(--ease-out);
+}
+
+button.df-activity-row[aria-expanded="true"] .df-row-chevron {
+  transform: rotate(180deg);
 }
 
 button.df-activity-row {
   width: 100%;
   border: 0;
+  border-radius: 0;
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -994,6 +1016,70 @@ button.df-activity-row {
   padding: var(--df-space-4) var(--df-space-5);
 }
 
+/* The four policy facts side by side, wrapping on a narrow width. */
+.df-policy-lineup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--df-space-3) var(--df-space-6);
+  margin: 0;
+}
+
+/* A label directly above its value, not at the opposite edge of the row. */
+.df-detail-pair {
+  display: flex;
+  flex-direction: column;
+  gap: var(--df-space-1);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--df-text-2);
+}
+
+.df-detail-pair > :first-child {
+  margin: 0;
+  color: var(--df-archive-slate);
+}
+
+.df-detail-pair > :last-child {
+  margin: 0;
+  color: var(--df-case-ink);
+  overflow-wrap: anywhere;
+}
+
+.df-detail-pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--df-space-3) var(--df-space-6);
+}
+
+.df-date-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--df-space-2);
+}
+
+/* An image that cannot be read keeps its frame and says so quietly. */
+.df-capture-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-2);
+  background: var(--df-cold-stock);
+  color: var(--df-archive-slate);
+  font-size: var(--df-text-2);
+}
+
+.df-activity-detail .df-capture-missing {
+  height: 240px;
+  aspect-ratio: auto;
+}
+
+.df-capture-viewer-frame .df-capture-missing {
+  width: min(100%, 640px);
+}
+
 /* Who may read what, under the facts and on their left edge; outranks .df-policy-hint's margin. */
 .df-activity-policy .df-activity-policy-note {
   margin-top: var(--df-space-2);
@@ -1004,13 +1090,20 @@ button.df-activity-row {
   grid-template-rows: 0fr;
   opacity: 1;
   transform: none;
+  visibility: hidden;
   transition:
     grid-template-rows var(--duration-ui) var(--ease-out),
-    opacity var(--duration-ui) var(--ease-out);
+    opacity var(--duration-ui) var(--ease-out),
+    visibility 0s linear var(--duration-ui);
 }
 
 .df-activity-expand[data-motion="standard"][data-open="true"] {
   grid-template-rows: 1fr;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--duration-ui) var(--ease-out),
+    opacity var(--duration-ui) var(--ease-out),
+    visibility 0s;
 }
 
 /* A Contact row reads like a person (#213): identity, then the reachable
@@ -1148,6 +1241,10 @@ button.df-activity-row {
   transition: none;
 }
 
+.df-activity-expand[data-motion="instant"]:not([data-open="true"]) {
+  display: none;
+}
+
 .df-activity-expand-inner {
   min-height: 0;
   overflow: hidden;
@@ -1156,7 +1253,7 @@ button.df-activity-row {
 .df-activity-detail {
   display: grid;
   gap: var(--df-space-2);
-  padding: 0 var(--df-space-5) var(--df-space-4);
+  padding: var(--df-space-3) var(--df-space-5) var(--df-space-4);
 }
 
 .df-activity-detail img {
@@ -3941,6 +4038,15 @@ button.df-activity-row {
   align-items: center;
 }
 
+/* The chip's own text size, not the form row's. */
+.df-gallery-filter .df-checkbox-row {
+  font-size: inherit;
+}
+
+.df-gallery-filter .df-checkbox-row[data-disabled="true"] {
+  cursor: not-allowed;
+}
+
 .df-gallery-group {
   display: flex;
   flex-direction: column;
@@ -4149,16 +4255,6 @@ button.df-activity-row {
 .df-gallery-similar {
   font-size: var(--df-text-2);
   color: var(--df-archive-slate);
-}
-
-.df-gallery-paging {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--df-space-3);
-  flex-wrap: wrap;
-  padding: var(--df-space-3) var(--df-space-5) var(--df-space-4);
-  border-top: 1px solid var(--df-divider-light);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -6144,11 +6240,6 @@ a.df-dossier-client-link:hover {
 .df-v2[data-chrome="mobile"] .df-gallery-grid {
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   padding: var(--df-space-3) var(--df-space-3) var(--df-space-4);
-}
-
-.df-v2[data-chrome="mobile"] .df-gallery-paging {
-  padding-left: var(--df-space-3);
-  padding-right: var(--df-space-3);
 }
 
 .df-v2[data-chrome="mobile"] .df-table-cell,

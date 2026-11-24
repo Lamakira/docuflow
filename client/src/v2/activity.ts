@@ -24,38 +24,38 @@ import {
   hasActivityData,
   isLowActivityCapture,
 } from "@shared/activityEvidence";
-import { MONTHS, formatFullDate } from "./dates";
+import { MONTHS, dateToDay, dayToDate, formatFullDate } from "./dates";
+import { composePaging, DEFAULT_REGISTER_PAGE_SIZE, readPage, readPageSize, writePaging } from "./paging";
 
 export const REVIEW_ACTIVITY_EVIDENCE_CAPABILITY = "Review Activity Evidence";
-
-export type ActivityEvidenceInput = {
-  id: string;
-  capturedAt: Date | string | null;
-  userId: string;
-  crmProjectId: string;
-  timeEntryId: string;
-  storageKey: string;
-  deletedAt?: Date | string | null;
-};
-
-export type ActivityProjectInput = {
-  id: string;
-  project?: { name?: string | null } | null;
-  client?: { name?: string | null } | null;
-};
-
-export type ActivityEntryInput = {
-  id: string;
-  taskId?: string | null;
-  task?: { name?: string | null } | null;
-  description?: string | null;
-};
 
 export type ActivityPerson = {
   id: string;
   firstName?: string | null;
   lastName?: string | null;
   email?: string | null;
+  profileImageUrl?: string | null;
+};
+
+/** One row of GET /api/time-tracking/screenshots: the names come with the capture. */
+export type ActivityEvidenceInput = {
+  id: string;
+  capturedAt: Date | string | null;
+  userId: string;
+  crmProjectId: string;
+  timeEntryId: string;
+  source: "device" | "web";
+  user: ActivityPerson | null;
+  projectName: string | null;
+  clientName: string | null;
+  taskName: string | null;
+  keyboardActivityPercent?: number | null;
+  mouseActivityPercent?: number | null;
+  keyboardCount?: number | null;
+  mouseCount?: number | null;
+  similarToPrevious?: boolean;
+  entryDuration?: number | null;
+  entryIdleTime?: number | null;
 };
 
 export type ActivityInput = {
@@ -66,11 +66,8 @@ export type ActivityInput = {
   requestedUserId: string | null;
   expandedId: string | null;
   policy: ScreenshotPolicy | null;
-  projects: ActivityProjectInput[];
-  entries: ActivityEntryInput[];
-  users: ActivityPerson[];
   evidence: ActivityEvidenceInput[];
-  /** Whether the Project or Member filter narrows the stream (the date range is not one). */
+  /** Whether a Project, Member, Low activity or Similar filter narrows the stream (the date range is not one). */
   facetsActive?: boolean;
   /** Whether the reader may see any Activity Evidence in any period; `null` while unknown. */
   everRecorded?: boolean | null;
@@ -94,7 +91,8 @@ export type ActivityModel = {
   emptyState: EmptyModel | null;
   refusal: string | null;
   policyLines: ActivityPolicyLine[];
-  policyFootnote: string;
+  /** Said to Members only; an Owner or Administrator reads everything, so there is nothing to explain. */
+  policyFootnote: string | null;
   rows: ActivityRow[];
   pagePrimary: "case-ink";
 };
@@ -127,23 +125,26 @@ function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+/** Always with the time, so two captures of a past day can be told apart (F78). */
 function formatWhen(capturedAt: Date | string | null, now: Date): string {
   const value = parseDate(capturedAt);
   if (!value) return "";
-  if (sameDay(value, now)) return formatClock(value);
+  const clock = formatClock(value);
+  if (sameDay(value, now)) return clock;
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (sameDay(value, yesterday)) return "Yesterday";
-  return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
+  if (sameDay(value, yesterday)) return `Yesterday, ${clock}`;
+  const date = `${value.getDate()} ${MONTHS[value.getMonth()]}`;
+  return value.getFullYear() === now.getFullYear() ? `${date}, ${clock}` : `${date} ${value.getFullYear()}, ${clock}`;
 }
 
-function projectLabel(project: ActivityProjectInput | undefined): string {
-  const projectName = project?.project?.name?.trim() || "Untitled Project";
-  const clientName = project?.client?.name?.trim();
+function projectLabel(shot: Pick<ActivityEvidenceInput, "projectName" | "clientName">): string {
+  const projectName = shot.projectName?.trim() || "Untitled Project";
+  const clientName = shot.clientName?.trim();
   return clientName ? `${clientName} · ${projectName}` : projectName;
 }
 
-function captureSource(storageKey: string): string {
-  return storageKey.includes("agent-screenshots") ? "Desktop Device" : "Web session";
+function captureSource(source: ActivityEvidenceInput["source"]): string {
+  return source === "device" ? "Desktop Device" : "Web session";
 }
 
 export function activityEvidencePath(filters: ActivityEvidenceFilter = {}): string {
@@ -169,10 +170,10 @@ export function composeTrackingPolicy(policy: ScreenshotPolicy | null): Activity
     return [{ label: "Tracking policy", value: "Not loaded." }];
   }
   const capture = policy.screenshotsEnabled
-    ? `Every ${policy.captureIntervalMinMin}–${policy.captureIntervalMaxMin} min`
+    ? `Every ${policy.captureIntervalMinMin}-${policy.captureIntervalMaxMin} min`
     : "Off";
   const hours = policy.activeHoursEnabled
-    ? `${policy.activeHoursStart}–${policy.activeHoursEnd}, computer clock`
+    ? `${policy.activeHoursStart}-${policy.activeHoursEnd}, computer clock`
     : "Any hours";
   const idle = policy.idlePromptEnabled
     ? `Pause after ${policy.idleTimeoutMinutes} min, asked first`
@@ -202,37 +203,13 @@ export type EvidenceProvenance = {
   imageSrc: string;
 };
 
-type EvidenceLookup = {
-  projectsById: Map<string, ActivityProjectInput>;
-  entriesById: Map<string, ActivityEntryInput>;
-  usersById: Map<string, ActivityPerson>;
-};
-
-function evidenceLookup(input: {
-  projects: ActivityProjectInput[];
-  entries: ActivityEntryInput[];
-  users: ActivityPerson[];
-}): EvidenceLookup {
-  return {
-    projectsById: new Map(input.projects.map((project) => [project.id, project])),
-    entriesById: new Map(input.entries.map((entry) => [entry.id, entry])),
-    usersById: new Map(input.users.map((user) => [user.id, user])),
-  };
-}
-
-function evidenceProvenance(
-  shot: ActivityEvidenceInput,
-  lookup: EvidenceLookup,
-  now: Date,
-): EvidenceProvenance {
-  const entry = lookup.entriesById.get(shot.timeEntryId);
-  const user = lookup.usersById.get(shot.userId);
+function evidenceProvenance(shot: ActivityEvidenceInput, now: Date): EvidenceProvenance {
   return {
     when: formatWhen(shot.capturedAt, now),
-    who: user ? memberName(user) : "Member",
-    project: projectLabel(lookup.projectsById.get(shot.crmProjectId)),
-    task: entry?.task?.name?.trim() || entry?.description?.trim() || "-",
-    source: captureSource(shot.storageKey),
+    who: shot.user ? memberName(shot.user) : "Member",
+    project: projectLabel(shot),
+    task: shot.taskName?.trim() || "-",
+    source: captureSource(shot.source),
     imageSrc: `/api/time-tracking/screenshots/${shot.id}/image`,
   };
 }
@@ -242,11 +219,7 @@ function allowedEvidence<T extends ActivityEvidenceInput>(
   evidence: T[],
   opts: { canReview: boolean; currentUserId: string },
 ): T[] {
-  return evidence.filter((shot) => {
-    if (shot.deletedAt) return false;
-    if (opts.canReview) return true;
-    return shot.userId === opts.currentUserId;
-  });
+  return evidence.filter((shot) => opts.canReview || shot.userId === opts.currentUserId);
 }
 
 /**
@@ -313,12 +286,11 @@ export function composeActivity(input: ActivityInput): ActivityModel {
         })
       : null;
 
-  const lookup = evidenceLookup(input);
   const visible = allowedEvidence(input.evidence, input);
 
   const rows = visible.map((shot) => ({
     id: shot.id,
-    ...evidenceProvenance(shot, lookup, input.now),
+    ...evidenceProvenance(shot, input.now),
     expanded: input.expandedId === shot.id,
   }));
 
@@ -329,7 +301,7 @@ export function composeActivity(input: ActivityInput): ActivityModel {
     refusal,
     policyLines: composeTrackingPolicy(input.policy),
     policyFootnote: input.canReview
-      ? "You can inspect Activity Evidence allowed in this Workspace."
+      ? null
       : "You can inspect your own Activity Evidence. Capture follows the Tracking Policy applied to you.",
     rows,
     pagePrimary: "case-ink",
@@ -397,6 +369,131 @@ export function evidenceDateRange(
   return timePeriodRange(mode as TimePeriod, now);
 }
 
+/** Why a day or span cannot be asked yet; `null` when the range can be read. */
+export function evidenceRangeProblem(
+  mode: EvidenceDateMode,
+  typed: { day?: string | null; from?: string | null; to?: string | null },
+): string | null {
+  if (mode === "day") return typed.day ? null : "Choose a day.";
+  if (mode !== "custom") return null;
+  if (!typed.from || !typed.to) return "Choose both dates.";
+  return typed.to < typed.from ? "The end date is before the start date." : null;
+}
+
+/* ---------------------------------------------------------------------------
+ * The filters, in the address (F77). Defaults are left out; an unknown value
+ * reads as its default. Old links carry `crmProjectId` and mean All time.
+ * ------------------------------------------------------------------------ */
+
+export type ActivityFilters = {
+  range: EvidenceDateMode;
+  day: string;
+  from: string;
+  to: string;
+  project: string;
+  member: string;
+  low: boolean;
+  similar: boolean;
+  archived: boolean;
+  page: number;
+  pageSize: number;
+};
+
+export const ACTIVITY_FILTERS_DEFAULT: ActivityFilters = {
+  range: "today",
+  day: "",
+  from: "",
+  to: "",
+  project: "all",
+  member: "all",
+  low: false,
+  similar: false,
+  archived: false,
+  page: 1,
+  pageSize: DEFAULT_REGISTER_PAGE_SIZE,
+};
+
+function readDay(params: URLSearchParams, name: string): string {
+  const value = params.get(name) ?? "";
+  const date = dayToDate(value);
+  // 2026-13-40 would roll over into a real date; only a day that reads back as itself counts.
+  return date && dateToDay(date) === value ? value : "";
+}
+
+export function readActivityFilters(search: string): ActivityFilters {
+  const params = new URLSearchParams(search);
+  const legacyProject = params.get("crmProjectId")?.trim() || "";
+  const asked = params.get("range") ?? "";
+  const range = (EVIDENCE_DATE_MODES as readonly string[]).includes(asked)
+    ? (asked as EvidenceDateMode)
+    : legacyProject
+      ? "all"
+      : ACTIVITY_FILTERS_DEFAULT.range;
+  return {
+    range,
+    day: readDay(params, "day"),
+    from: readDay(params, "from"),
+    to: readDay(params, "to"),
+    project: params.get("project")?.trim() || legacyProject || "all",
+    member: params.get("member")?.trim() || "all",
+    low: params.get("low") === "1",
+    similar: params.get("similar") === "1",
+    archived: params.get("archived") === "1",
+    page: readPage(params),
+    pageSize: readPageSize(params),
+  };
+}
+
+export function writeActivityFilters(search: string, filters: ActivityFilters): string {
+  const params = new URLSearchParams(search);
+  params.delete("crmProjectId");
+  const set = (name: string, value: string, fallback: string) => {
+    if (value !== fallback) params.set(name, value);
+    else params.delete(name);
+  };
+  set("range", filters.range, ACTIVITY_FILTERS_DEFAULT.range);
+  set("day", filters.range === "day" ? filters.day : "", "");
+  set("from", filters.range === "custom" ? filters.from : "", "");
+  set("to", filters.range === "custom" ? filters.to : "", "");
+  set("project", filters.project, "all");
+  set("member", filters.member, "all");
+  for (const name of ["low", "similar", "archived"] as const) {
+    if (filters[name]) params.set(name, "1");
+    else params.delete(name);
+  }
+  writePaging(params, filters.page, filters.pageSize);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+/** Whether a Project, Member, Low activity, Similar or archived filter is set (the range is not one). */
+export function hasActivityFacets(filters: ActivityFilters): boolean {
+  return (
+    filters.project !== "all" || filters.member !== "all" || filters.low || filters.similar || filters.archived
+  );
+}
+
+/** Clear filters keeps the range and goes back to the first page. */
+export function clearActivityFacets(filters: ActivityFilters): ActivityFilters {
+  return { ...filters, project: "all", member: "all", low: false, similar: false, archived: false, page: 1 };
+}
+
+/** The foot of both tabs: the registers' pager, with a hyphen in its range. */
+export function activityPaging(input: { page: number; pageSize: number; total: number }) {
+  const paging = composePaging({ ...input, noun: { one: "capture", many: "captures" } });
+  return { ...paging, label: paging.label.replace("\u2013", "-") };
+}
+
+/** What a batch download says when some captures failed; `null` when all of them came. */
+export function batchFailureCopy(failed: number, total: number): string | null {
+  return failed > 0 ? `${failed} of ${total} captures could not be downloaded` : null;
+}
+
+/** "107 captures", "1 capture": the whole set, not the page. */
+export function captureCountCopy(total: number): string {
+  return total === 1 ? "1 capture" : `${total} captures`;
+}
+
 export function activityTabs(active: ActivityTabId): ActivityTab[] {
   return ACTIVITY_TAB_IDS.map((id) => ({
     id,
@@ -406,26 +503,11 @@ export function activityTabs(active: ActivityTabId): ActivityTab[] {
   }));
 }
 
-export type GalleryEvidenceInput = ActivityEvidenceInput & {
-  keyboardActivityPercent?: number | null;
-  mouseActivityPercent?: number | null;
-  keyboardCount?: number | null;
-  mouseCount?: number | null;
-  perceptualHash?: string | null;
-  similarToPrevious?: boolean;
-};
+export type GalleryEvidenceInput = ActivityEvidenceInput;
 
-/**
- * Who sees Delete on a capture. Removing a capture is an Administration act
- * (the BFF refuses a Member). For now it is offered to one Administrator only;
- * widening it to every Owner and Administrator is removing the allowlist check.
- */
-export const CAPTURE_DELETE_ALLOWLIST: readonly string[] = ["said.arikama-chabi@techma.ca"];
-
-export function canDeleteCapture(input: { canReview: boolean; email: string | null | undefined }): boolean {
-  if (!input.canReview) return false;
-  const email = input.email?.trim().toLowerCase();
-  return Boolean(email) && CAPTURE_DELETE_ALLOWLIST.includes(email as string);
+/** Removing a capture is an Administration act: whoever may review Activity Evidence may delete it. */
+export function canDeleteCapture(input: { canReview: boolean }): boolean {
+  return input.canReview;
 }
 
 export function screenshotPath(id: string): string {
@@ -436,7 +518,6 @@ export type ActivityGalleryInput = {
   now: Date;
   currentUserId: string;
   canReview: boolean;
-  currentUserEmail?: string | null;
   lowActivityOnly: boolean;
   similarOnly: boolean;
   /** The Workspace's threshold, as the server judged with it. */
@@ -445,15 +526,11 @@ export type ActivityGalleryInput = {
   counts?: { lowActivity: number; similar: number };
   selectedIds: string[];
   expandedId: string | null;
-  /** Server paging over the capture set, so a long day is never silently cut. */
-  page: number;
-  pageSize: number;
+  /** The whole capture set, and how many captures come before this page. */
   total: number;
-  projects: ActivityProjectInput[];
-  entries: ActivityEntryInput[];
-  users: ActivityPerson[];
+  offset: number;
   evidence: GalleryEvidenceInput[];
-  /** Whether the Project or Member filter narrows the gallery (the date range is not one). */
+  /** Whether a Project, Member, Low activity or Similar filter narrows the gallery (the date range is not one). */
   facetsActive?: boolean;
   /** Whether the reader may see any Activity Evidence in any period; `null` while unknown. */
   everRecorded?: boolean | null;
@@ -491,14 +568,6 @@ export type GalleryGroup = {
   tiles: GalleryTile[];
 };
 
-export type GalleryPaging = {
-  page: number;
-  pageCount: number;
-  label: string;
-  hasPrevious: boolean;
-  hasNext: boolean;
-};
-
 /** The capture open in the full-screen viewer, with its neighbours in display order. */
 export type GalleryViewer = {
   tile: GalleryTile;
@@ -509,7 +578,9 @@ export type GalleryViewer = {
 
 export type ActivityGalleryModel = {
   groups: GalleryGroup[];
+  /** Captures on this page. */
   count: number;
+  /** The whole set, with its word. */
   countCopy: string;
   lowActivityCount: number;
   similarCount: number;
@@ -517,7 +588,6 @@ export type ActivityGalleryModel = {
   canBatch: boolean;
   canDelete: boolean;
   batchLabel: string;
-  paging: GalleryPaging;
   viewer: GalleryViewer | null;
   empty: boolean;
   emptyState: EmptyModel | null;
@@ -548,8 +618,27 @@ export function evidenceFileName(capturedAt: Date | string | null): string {
   return `activity-evidence-${day}_${clock}.png`;
 }
 
+/** Where Previous or Next goes: a capture on this page, or the first or last of a neighbouring page. */
+export type ViewerStep = { openId: string } | { page: number; pick: "first" | "last" } | null;
+
+export function stepViewer(
+  viewer: Pick<GalleryViewer, "previousId" | "nextId">,
+  direction: "previous" | "next",
+  paging: { page: number; pageCount: number },
+): ViewerStep {
+  const id = direction === "next" ? viewer.nextId : viewer.previousId;
+  if (id) return { openId: id };
+  if (direction === "next") return paging.page < paging.pageCount ? { page: paging.page + 1, pick: "first" } : null;
+  return paging.page > 1 ? { page: paging.page - 1, pick: "last" } : null;
+}
+
+/** The capture a page turn lands on, in display order (newest hour first). */
+export function pickCapture(groups: GalleryGroup[], pick: "first" | "last"): string | null {
+  const ids = groups.flatMap((group) => group.tiles.map((tile) => tile.id));
+  return (pick === "first" ? ids[0] : ids[ids.length - 1]) ?? null;
+}
+
 export function composeActivityGallery(input: ActivityGalleryInput): ActivityGalleryModel {
-  const lookup = evidenceLookup(input);
   const selected = new Set(input.selectedIds);
   const visible = allowedEvidence(input.evidence, input);
   const filtered = Boolean(input.facetsActive) || input.lowActivityOnly || input.similarOnly;
@@ -576,7 +665,7 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
     }
     group.tiles.push({
       id: shot.id,
-      ...evidenceProvenance(shot, lookup, input.now),
+      ...evidenceProvenance(shot, input.now),
       fileName: evidenceFileName(shot.capturedAt),
       selected: selected.has(shot.id),
       expanded: input.expandedId === shot.id,
@@ -593,12 +682,13 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
   const viewerIndex = input.expandedId
     ? displayOrder.findIndex((tile) => tile.id === input.expandedId)
     : -1;
+  const total = Math.max(0, input.total);
   const viewer: GalleryViewer | null =
     viewerIndex < 0
       ? null
       : {
           tile: displayOrder[viewerIndex],
-          position: `${viewerIndex + 1} of ${displayOrder.length}`,
+          position: `${Math.max(0, input.offset) + viewerIndex + 1} of ${total}`,
           previousId: displayOrder[viewerIndex - 1]?.id ?? null,
           nextId: displayOrder[viewerIndex + 1]?.id ?? null,
         };
@@ -606,34 +696,17 @@ export function composeActivityGallery(input: ActivityGalleryInput): ActivityGal
   const count = shown.length;
   const selectedCount = shown.filter((shot) => selected.has(shot.id)).length;
 
-  const pageSize = Math.max(1, input.pageSize);
-  const total = Math.max(0, input.total);
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const page = Math.min(Math.max(1, input.page), pageCount);
-  const firstOnPage = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const lastOnPage = Math.min(page * pageSize, total);
-
   return {
     groups: ordered,
     count,
-    countCopy: count === 1 ? "1 capture" : `${count} captures`,
+    countCopy: captureCountCopy(total),
     lowActivityCount: input.counts?.lowActivity ?? 0,
     similarCount: input.counts?.similar ?? 0,
     selectedCount,
     canBatch: selectedCount > 0,
-    canDelete: canDeleteCapture({ canReview: input.canReview, email: input.currentUserEmail }),
+    canDelete: canDeleteCapture({ canReview: input.canReview }),
     batchLabel:
       selectedCount === 1 ? "Download 1 capture" : `Download ${selectedCount} captures`,
-    paging: {
-      page,
-      pageCount,
-      label:
-        total === 0
-          ? "No capture to page through"
-          : `Showing ${firstOnPage}–${lastOnPage} of ${total} captures`,
-      hasPrevious: page > 1,
-      hasNext: page < pageCount,
-    },
     viewer,
     empty: count === 0,
     emptyState: evidenceEmptyState(count === 0, filtered, input.everRecorded ?? null, input.range),

@@ -6,6 +6,7 @@ import {
   SEEDED_WORKSPACE_ID,
   companyDocuments,
   memberships,
+  timeEntryScreenshots,
 } from "../../shared/schema";
 import { db } from "../../server/db";
 import { runWithWorkspaceContext, stampWorkspace } from "../../server/workspaceContext";
@@ -231,8 +232,9 @@ describe("agent screenshots across Workspaces (#297)", () => {
     expect(slot.status).toBe(200);
     const put = await device.request.put(slot.body.uploadURL).set("Content-Type", "image/png").send(PNG_1X1);
     expect(put.status).toBe(200);
-    const list = await user.agent.get("/api/time-tracking/screenshots");
-    return { id: slot.body.screenshotId as string, storageKey: list.body.data[0].storageKey as string, entry, crmProject };
+    const id = slot.body.screenshotId as string;
+    const [stored] = await ownerDb.select().from(timeEntryScreenshots).where(eq(timeEntryScreenshots.id, id));
+    return { id, storageKey: stored.storageKey, entry, crmProject };
   }
 
   it("keys a new screenshot under its Workspace and keeps it there", async () => {
