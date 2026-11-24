@@ -6,7 +6,6 @@ import type { CompanyDocument, CrmProjectWithDetails } from "@shared/schema";
 import { BlockEditor } from "@/components/editor/BlockEditor";
 import { apiRequest, queryClient, throwIfResNotOk } from "@/lib/queryClient";
 import { useDebouncedCallback } from "@/hooks/useDebounce";
-import { useAuth } from "@/hooks/useAuth";
 import { chromeRefusal } from "./chrome";
 import { isStandingRefusal, notify } from "./notify";
 import { composeFileViewer } from "./fileViewer";
@@ -16,11 +15,15 @@ import {
   documentBack,
   documentMetaLine,
   documentNameMissing,
+  documentOwnerKey,
   documentQueryKey,
   documentVersion,
+  isSaleDocumentOwner,
   loadDocument,
+  loadDocumentOwner,
   mergeDocumentRecord,
   projectDocumentDossierHref,
+  projectDocumentMetaLine,
   toDocumentRecord,
   trackDocumentSave,
   DocumentSaveQueue,
@@ -28,6 +31,8 @@ import {
   DOCUMENT_CONFLICT_COPY,
   type DocumentEditorRecord,
   type DocumentEditorSource,
+  type DocumentOpportunity,
+  type DocumentOwner,
   type DocumentSaveAnswer,
   type DocumentSaveRequest,
   type LoadedDocument,
@@ -39,7 +44,6 @@ import { SkeletonBar, SkeletonLines } from "./V2Skeleton";
 import { V2EmptyState } from "./V2EmptyState";
 import { V2ManageAccessDialog } from "./V2ManageAccessDialog";
 import { V2MoveDocumentDialog } from "./V2MoveDocumentDialog";
-import { projectVisibleTo } from "./projects";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
 
@@ -74,6 +78,11 @@ function staleRegister(refetchType: "active" | "none") {
   queryClient.invalidateQueries({ queryKey: ["/api/company-documents"], refetchType });
 }
 
+/** Project Documentation lists a Project Document's name and time (F63). */
+function staleDocumentation(refetchType: "active" | "none") {
+  queryClient.invalidateQueries({ queryKey: ["/api/projects/documentable"], refetchType });
+}
+
 /** Stores a File in the slot a route gives. */
 async function storeObject(slotPath: string, file: File, contentType: string): Promise<string> {
   const slot = (await apiRequest("POST", slotPath)) as { uploadURL: string; objectPath?: string };
@@ -91,13 +100,24 @@ async function tieObject(documentId: string, objectPath: string): Promise<string
   return tied.objectPath;
 }
 
-const ASSIGNMENT_PROJECTS_KEY = ["/api/crm/projects", "document-assignment"];
-
-async function loadAssignmentProjects(): Promise<CrmProjectWithDetails[]> {
-  const res = await fetch("/api/crm/projects?pageSize=500", { credentials: "include" });
-  if (!res.ok) throw new Error("Failed to fetch Projects");
-  const body = (await res.json()) as { data?: CrmProjectWithDetails[] };
-  return body.data ?? [];
+/** Read again on every opening: a sale won elsewhere is delivery work now. */
+function useDocumentOwner(projectId: string | null) {
+  return useQuery<DocumentOwner | null>({
+    queryKey: documentOwnerKey(projectId ?? ""),
+    enabled: Boolean(projectId),
+    staleTime: 0,
+    queryFn: async () => {
+      const owner = await loadDocumentOwner(projectId!);
+      // The Dossier sends a sale back here, so a row it holds from before must not disagree.
+      if (owner) {
+        const { status, projectType, isDocumentationOnly } = owner;
+        queryClient.setQueryData<CrmProjectWithDetails | null>(["/api/crm/projects", owner.id], (row) =>
+          row ? ({ ...row, status, projectType, isDocumentationOnly } as CrmProjectWithDetails) : row,
+        );
+      }
+      return owner;
+    },
+  });
 }
 
 /** The Document routes. A Project Document opens in its Project Dossier since #307. */
@@ -116,8 +136,8 @@ export function V2DocumentPage() {
 
 /**
  * An old `/document/:id` link moves to the page's place in its Project
- * Dossier. A page no known Project owns stays here, where the editor says why
- * it cannot open.
+ * Dossier. A sale's Document stays here (F61), and so does one no CRM Project
+ * owns. Who may read it is the server's answer alone (F60).
  */
 function ProjectDocumentRedirect({ documentId }: { documentId: string }) {
   const { data, isLoading, isError, refetch } = useQuery<LoadedDocument>({
@@ -126,28 +146,24 @@ function ProjectDocumentRedirect({ documentId }: { documentId: string }) {
   });
   const projectId = data?.record?.projectId ?? null;
   const {
-    data: projects,
-    isLoading: projectsLoading,
-    isError: projectsFailed,
-    refetch: refetchProjects,
-  } = useQuery<CrmProjectWithDetails[]>({
-    queryKey: ASSIGNMENT_PROJECTS_KEY,
-    enabled: Boolean(projectId),
-    queryFn: loadAssignmentProjects,
-  });
-  const href =
-    data?.record && projectId && projects
-      ? projectDocumentDossierHref({ id: data.record.id, projectId }, projects)
-      : null;
+    data: owner,
+    isFetchedAfterMount: ownerFetched,
+    isLoading: ownerLoading,
+    isError: ownerFailed,
+    refetch: refetchOwner,
+  } = useDocumentOwner(projectId);
+  const href = data?.record && ownerFetched ? projectDocumentDossierHref(data.record, owner) : null;
 
   if (href) return <Redirect to={href} />;
-  if (isLoading || (projectId && projectsLoading)) return <EditorLoading embedded={false} {...documentBack("project")} />;
-  if ((isError && !data) || (projectsFailed && !projects)) {
+  if (isLoading || (projectId && (!ownerFetched || ownerLoading))) {
+    return <EditorLoading embedded={false} {...documentBack("project")} />;
+  }
+  if ((isError && !data) || (ownerFailed && owner === undefined)) {
     return (
       <DocumentLoadFailed
         embedded={false}
         {...documentBack("project")}
-        onRetry={() => (isError ? refetch() : refetchProjects())}
+        onRetry={() => (isError ? refetch() : refetchOwner())}
       />
     );
   }
@@ -241,7 +257,6 @@ export function V2DocumentEditor({
   embedded?: boolean;
   projectName?: string;
 }) {
-  const { user } = useAuth();
   const { memberships } = useV2Chrome();
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
   const workspaceName = current?.workspaceName ?? "this Workspace";
@@ -267,43 +282,28 @@ export function V2DocumentEditor({
     staleTime: 0,
     queryFn: () => loadDocument(source, documentId),
   });
-  const {
-    data: projects = [],
-    isLoading: projectsLoading,
-    isError: projectsFailed,
-    refetch: refetchProjects,
-  } = useQuery<CrmProjectWithDetails[]>({
-    queryKey: ASSIGNMENT_PROJECTS_KEY,
-    enabled: source === "project" && Boolean(data?.record?.projectId),
-    queryFn: loadAssignmentProjects,
+  // In a Dossier the owner is on screen already; on its own page it decides the way back.
+  const { data: owner } = useDocumentOwner(source === "project" && !embedded ? data?.record?.projectId ?? null : null);
+  const saleId = isSaleDocumentOwner(owner) ? owner.id : "";
+  const { data: sale } = useQuery<CrmProjectWithDetails | null>({
+    queryKey: ["/api/crm/projects", saleId],
+    enabled: Boolean(saleId),
+    queryFn: async () => {
+      const res = await fetch(`/api/crm/projects/${saleId}`, { credentials: "include" });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("Failed to fetch Opportunity");
+      return res.json();
+    },
   });
+  const opportunity: DocumentOpportunity | null = saleId
+    ? { id: saleId, name: sale?.project?.name?.trim() || null }
+    : null;
 
   const queue = queueRef.current;
   const saveState = queue?.state ?? "idle";
   const opened = Boolean(queue && data?.record);
   const waiting = !opened && (!isFetchedAfterMount || isFetching);
   const loadFailed = !opened && !waiting && isError;
-
-  const assigned =
-    source !== "project"
-      ? true
-      : Boolean(
-          data?.record?.projectId &&
-            projects.some((project) => {
-              if (project.project?.id !== data.record?.projectId) return false;
-              const memberIds = (project.members ?? [])
-                .map((row) => row.userId || row.user?.id)
-                .filter((id): id is string => Boolean(id));
-              return projectVisibleTo({
-                role: current?.workspaceRole?.toLowerCase() || null,
-                userId: user?.id ?? "",
-                memberIds,
-                assigneeId: project.assigneeId ?? project.assignee?.id ?? null,
-                opportunityOwnerId: project.opportunityOwnerId ?? null,
-              });
-            }),
-        );
-  const assignmentPending = source === "project" && Boolean(data?.record) && projectsLoading;
 
   const refuseReadOnly = () => {
     setWriteRefusal(chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }));
@@ -331,6 +331,7 @@ export function V2DocumentEditor({
           staleRegister(renamed ? "active" : "none");
           return;
         }
+        staleDocumentation(renamed ? "active" : "none");
         // The page tree beside the editor lists the new title too.
         if (record.projectId) {
           queryClient.invalidateQueries({ queryKey: ["/api/projects", record.projectId, "documents"] });
@@ -370,15 +371,12 @@ export function V2DocumentEditor({
 
   const editor = composeDocumentEditor({
     source,
-    document: assigned ? data?.record ?? null : null,
-    missing:
-      data?.missing === true ||
-      assigned === false ||
-      (!waiting && !assignmentPending && !data?.record && !data?.forbidden),
+    document: data?.record ?? null,
+    missing: data?.missing === true || (!waiting && !data?.record && !data?.forbidden),
     forbidden: data?.forbidden === true,
     ownerName,
     saveState,
-    assigned,
+    opportunity,
   });
 
   const requestSave = () => {
@@ -611,17 +609,10 @@ export function V2DocumentEditor({
     window.setTimeout(() => window.print(), 100);
   };
 
-  if (waiting || assignmentPending) return <EditorLoading embedded={embedded} {...documentBack(source)} />;
+  const back = documentBack(source, opportunity);
+  if (waiting) return <EditorLoading embedded={embedded} {...back} />;
 
-  if (loadFailed || (source === "project" && data?.record && projectsFailed && projects.length === 0)) {
-    return (
-      <DocumentLoadFailed
-        embedded={embedded}
-        {...documentBack(source)}
-        onRetry={() => (loadFailed ? refetch() : refetchProjects())}
-      />
-    );
-  }
+  if (loadFailed) return <DocumentLoadFailed embedded={embedded} {...back} onRetry={() => refetch()} />;
 
   if (editor.missing) {
     return (
@@ -646,7 +637,12 @@ export function V2DocumentEditor({
     );
   }
 
-  const meta = source === "workspace" && data?.record ? documentMetaLine(data.record, new Date()) : "";
+  const meta =
+    !data?.record || (source === "project" && embedded)
+      ? ""
+      : source === "project"
+        ? projectDocumentMetaLine(data.record, opportunity, new Date())
+        : documentMetaLine(data.record, new Date());
   const description = data?.record?.description?.trim() || "";
 
   // An uploaded File is Knowledge, not a page to edit: it opens in the viewer (#216).

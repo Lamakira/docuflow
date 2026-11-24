@@ -2,7 +2,7 @@ import { config } from "./config";
 import { db } from "./db";
 import { videoTranscripts, documents, projects, documentEmbeddings } from "@shared/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
-import { generateEmbeddings, chunkText } from "./embeddings";
+import { generateEmbeddings, chunkText, syncDocumentProject } from "./embeddings";
 import crypto from "crypto";
 import { extractLoomTranscript, extractFathomTranscript } from "./browser-transcript";
 import { stampWorkspace, requireWorkspaceContext } from "./workspaceContext";
@@ -233,6 +233,9 @@ async function createTranscriptEmbeddings(
       )
     `);
   }
+
+  // The Document may have moved while its video was being read.
+  await syncDocumentProject(documentId);
 }
 
 async function deleteTranscriptEmbeddings(transcriptId: string, documentId: string): Promise<void> {
@@ -303,6 +306,7 @@ export async function syncDocumentVideoTranscripts(
           ownerId,
           status: "pending",
         })).returning();
+        await syncDocumentProject(documentId);
         
         const processing = processTranscript(inserted.id, video.provider, video.videoId, documentId, projectId, ownerId, projectName, documentTitle, breadcrumbs);
         if (options.awaitProcessing) {

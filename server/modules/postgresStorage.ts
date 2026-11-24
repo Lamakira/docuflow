@@ -210,6 +210,28 @@ function crmProjectVisibleTo(viewer: string) {
   );
 }
 
+/** Delivery work only: no Opportunity, or a won one (`isDeliveryProject`). Documentation-only rows are the caller's to take or leave. */
+function crmProjectIsDelivery() {
+  return or(
+    eq(crmProjects.projectType, "internal"),
+    eq(crmProjects.status, "documented"),
+    inArray(crmProjects.status, [...WON_STATUSES]),
+  );
+}
+
+/** The date Project Documentation shows: its latest Document or listed File, else the Project's own. */
+function projectDocumentationActivity() {
+  return sql`coalesce(
+    greatest(
+      (select max(coalesce(${documents.updatedAt}, ${documents.createdAt})) from ${documents}
+        where ${documents.projectId} = ${projects.id} and ${inWorkspace(documents)}),
+      (select max(coalesce(${files.updatedAt}, ${files.createdAt})) from ${files}
+        where ${files.projectId} = ${projects.id} and ${files.scanStatus} = 'available' and ${inWorkspace(files)})
+    ),
+    ${projects.updatedAt}
+  )`;
+}
+
 /** The columns of a `DocumentPerson`, so no read of the library selects a whole User. */
 const documentPersonColumns = {
   id: users.id,
@@ -455,7 +477,7 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(documents)
       .where(and(eq(documents.projectId, projectId), inWorkspace(documents)))
-      .orderBy(documents.position);
+      .orderBy(asc(documents.position), asc(documents.createdAt), asc(documents.id));
   }
 
   async getDocument(id: string): Promise<Document | undefined> {
@@ -949,14 +971,7 @@ export class DatabaseStorage implements IStorage {
     ];
 
     if (options?.deliveryOnly) {
-      // Delivery work only: no Opportunity, or a won one (`isDeliveryProject`).
-      conditions.push(
-        or(
-          eq(crmProjects.projectType, "internal"),
-          eq(crmProjects.status, "documented"),
-          inArray(crmProjects.status, [...WON_STATUSES]),
-        ),
-      );
+      conditions.push(crmProjectIsDelivery());
     }
     if (options?.status) {
       conditions.push(eq(crmProjects.status, options.status));
@@ -1402,7 +1417,7 @@ export class DatabaseStorage implements IStorage {
     return { project, crmProject };
   }
 
-  async toggleDocumentation(crmProjectId: string, enabled: boolean): Promise<CrmProject | undefined> {
+  async toggleDocumentation(crmProjectId: string, enabled: boolean, userId: string): Promise<CrmProject | undefined> {
     // Get the CRM project to find the associated project
     const crmProject = await db.query.crmProjects.findFirst({
       where: eq(crmProjects.id, crmProjectId),
@@ -1562,6 +1577,7 @@ export class DatabaseStorage implements IStorage {
             parentId: null,
             title: tmpl.title,
             content: tmpl.content,
+            createdById: userId,
           });
         }
       }
@@ -1590,7 +1606,11 @@ export class DatabaseStorage implements IStorage {
 
   async getProjectDocumentationPage(options: ProjectDocumentationListOptions): Promise<ProjectDocumentationPage> {
     const { page, pageSize } = options;
-    const scope: any[] = [inWorkspace(projects), inWorkspace(crmProjects)];
+    const scope: any[] = [
+      inWorkspace(projects),
+      inWorkspace(crmProjects),
+      or(eq(crmProjects.isDocumentationOnly, 1), crmProjectIsDelivery()),
+    ];
     if (options.visibleToUserId) {
       scope.push(crmProjectVisibleTo(options.visibleToUserId));
     }
@@ -1613,6 +1633,13 @@ export class DatabaseStorage implements IStorage {
               .from(documents)
               .where(and(ilike(documents.title, pattern), inWorkspace(documents))),
           ),
+          inArray(
+            projects.id,
+            db
+              .select({ id: files.projectId })
+              .from(files)
+              .where(and(ilike(files.name, pattern), eq(files.scanStatus, "available"), inWorkspace(files))),
+          ),
         ),
       );
     }
@@ -1623,15 +1650,22 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(crmProjects, eq(projects.id, crmProjects.projectId))
       .where(and(...conditions));
     const rows = await db
-      .select()
+      .select({
+        project: projects,
+        crmProject: crmProjects,
+        clientName: crmClients.name,
+        owner: documentPersonColumns,
+      })
       .from(projects)
       .innerJoin(crmProjects, eq(projects.id, crmProjects.projectId))
+      .leftJoin(crmClients, and(eq(crmClients.id, crmProjects.clientId), inWorkspace(crmClients)))
+      .leftJoin(users, eq(users.id, projects.ownerId))
       .where(and(...conditions))
-      .orderBy(desc(projects.updatedAt), asc(projects.id))
+      .orderBy(desc(projectDocumentationActivity()), asc(projects.id))
       .limit(pageSize)
       .offset((page - 1) * pageSize);
 
-    const ids = rows.map((row) => row.projects.id);
+    const ids = rows.map((row) => row.project.id);
     const docs = ids.length
       ? await db
           .select({
@@ -1643,10 +1677,12 @@ export class DatabaseStorage implements IStorage {
             createdById: documents.createdById,
             createdAt: documents.createdAt,
             updatedAt: documents.updatedAt,
+            createdBy: documentPersonColumns,
           })
           .from(documents)
+          .leftJoin(users, eq(users.id, documents.createdById))
           .where(and(inArray(documents.projectId, ids), inWorkspace(documents)))
-          .orderBy(asc(documents.position), asc(documents.id))
+          .orderBy(asc(documents.position), asc(documents.createdAt), asc(documents.id))
       : [];
     const docsByProject = new Map<string, typeof docs>();
     for (const doc of docs) {
@@ -1663,7 +1699,12 @@ export class DatabaseStorage implements IStorage {
     }
 
     const choices = await db
-      .select({ id: projects.id, name: projects.name, documentationEnabled: crmProjects.documentationEnabled })
+      .select({
+        id: projects.id,
+        name: projects.name,
+        documentationEnabled: crmProjects.documentationEnabled,
+        isDocumentationOnly: crmProjects.isDocumentationOnly,
+      })
       .from(projects)
       .innerJoin(crmProjects, eq(projects.id, crmProjects.projectId))
       .where(and(...scope))
@@ -1671,17 +1712,24 @@ export class DatabaseStorage implements IStorage {
 
     return {
       data: rows.map((row) => ({
-        project: row.projects,
-        crmProjectId: row.crm_projects.id,
-        clientId: row.crm_projects.clientId,
-        documentationEnabled: row.crm_projects.documentationEnabled === 1,
-        documents: docsByProject.get(row.projects.id) ?? [],
-        files: filesByProject.get(row.projects.id) ?? [],
+        project: row.project,
+        crmProjectId: row.crmProject.id,
+        clientId: row.crmProject.clientId,
+        clientName: row.clientName,
+        owner: row.owner,
+        documentationEnabled: row.crmProject.documentationEnabled === 1,
+        isDocumentationOnly: row.crmProject.isDocumentationOnly === 1,
+        documents: docsByProject.get(row.project.id) ?? [],
+        files: filesByProject.get(row.project.id) ?? [],
       })),
       total: Number(countResult?.count ?? 0),
       page,
       pageSize,
-      projects: choices.map((choice) => ({ ...choice, documentationEnabled: choice.documentationEnabled === 1 })),
+      projects: choices.map((choice) => ({
+        ...choice,
+        documentationEnabled: choice.documentationEnabled === 1,
+        isDocumentationOnly: choice.isDocumentationOnly === 1,
+      })),
     };
   }
 
@@ -2059,8 +2107,10 @@ export class DatabaseStorage implements IStorage {
         uploadedById: files.uploadedById,
         createdAt: files.createdAt,
         updatedAt: files.updatedAt,
+        createdBy: documentPersonColumns,
       })
       .from(files)
+      .leftJoin(users, eq(users.id, files.uploadedById))
       .where(and(inArray(files.projectId, projectIds), eq(files.scanStatus, "available"), inWorkspace(files)))
       .orderBy(desc(files.createdAt), asc(files.id));
     return rows.map((row) => ({ ...row, projectId: row.projectId! }));

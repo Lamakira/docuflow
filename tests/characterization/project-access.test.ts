@@ -186,7 +186,7 @@ describe("Project access follows Project Assignment (#310)", () => {
     const app = await makeApp();
     const lead = await registerUser(app);
     const outsider = await registerUser(app);
-    const created = await createCrmProject(lead.agent, { name: "Harbor" });
+    const created = await createCrmProject(lead.agent, { name: "Harbor", status: "won_in_progress" });
     const enabled = await lead.agent
       .patch(`/api/crm/projects/${created.crmProject.id}/documentation`)
       .send({ enabled: true });

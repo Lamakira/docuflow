@@ -5189,10 +5189,27 @@ a.df-dossier-client-link:hover {
 }
 
 /* An inset rule rather than a border, so the columns do not move. */
-.df-library-row[data-expanded="true"],
 .df-library-row[data-selected="true"] {
   background: var(--df-cold-stock);
   box-shadow: inset 2px 0 0 var(--df-case-ink);
+}
+
+.df-library-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--df-text-2);
+}
+
+/* The actions on an open Project, in line with the names of the items under it. */
+.df-library-folder-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--df-space-2);
+  padding: var(--df-space-3) var(--df-space-4) var(--df-space-3) calc(var(--df-space-4) + var(--df-space-6));
+  border-bottom: 1px solid var(--df-divider-light);
 }
 
 /* A Folder can sit inside a Folder at any depth; the indent stops at four.
@@ -5310,6 +5327,32 @@ a.df-dossier-client-link:hover {
   padding: 0 var(--df-space-6) var(--df-space-8);
   transition: none;
   animation: none;
+}
+
+/* The page's own scrollbar (DESIGN.md): no arrows, no track, a thin thumb while the pointer is over it. */
+.df-editor::-webkit-scrollbar {
+  width: 8px;
+}
+
+.df-editor::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.df-editor::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.df-editor::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.df-editor:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent);
 }
 
 .df-editor input,
@@ -7202,6 +7245,78 @@ a.df-dossier-client-link:hover {
 .df-v2.df-timezone-picker {
   width: 280px;
   padding: var(--df-space-1);
+}
+
+/* Choosing a Project to link to: the trigger spans the dialog like its other fields. */
+.df-v2 button.df-project-picker-trigger {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.df-project-picker-trigger > span,
+.df-project-picker-option > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.df-v2.df-project-picker {
+  width: var(--radix-popover-trigger-width);
+  padding: var(--df-space-1);
+}
+
+/* The list's own scrollbar (DESIGN.md): no arrows, no track, a thin thumb. */
+.df-project-picker [cmdk-list] {
+  scrollbar-gutter: stable;
+}
+
+.df-project-picker [cmdk-list]::-webkit-scrollbar {
+  width: 8px;
+}
+
+.df-project-picker [cmdk-list]::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.df-project-picker [cmdk-list]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.df-project-picker [cmdk-list]::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.df-project-picker:hover [cmdk-list]::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .df-project-picker [cmdk-list] {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--df-archive-slate) 35%, transparent) transparent;
+  }
+}
+
+/* The caret and the row's rule carry the search field's focus, as in the command palette. */
+.df-v2.df-project-picker [cmdk-input]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.df-v2.df-project-picker [cmdk-input-wrapper]:has([cmdk-input]:focus-visible) {
+  box-shadow: inset 0 -2px 0 var(--df-amber);
+}
+
+.df-project-picker-option {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 /* Date pickers (#307): the shadcn Calendar in a v2 popover, one or two months wide. */

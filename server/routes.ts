@@ -40,6 +40,7 @@ import {
 } from "./modules/workspace/http";
 import { registerBillingRoutes } from "./modules/billing/http";
 import { canAccessCrmProject, canAccessProject, visibleProjectScope } from "./modules/projects/access";
+import { LinkDocumentationError, linkDocumentation } from "./modules/projects/linkDocumentation";
 import { CRM_PROJECT_SORTS } from "./modules/projects/persistence";
 import { CRM_CLIENT_SORTS, type OptionRenameColumn } from "./modules/clients-sales/persistence";
 import {
@@ -203,6 +204,22 @@ const documentNameSchema = z
 function invalidName(error: z.ZodError) {
   const name = error.errors.find((issue) => issue.path[0] === "name");
   return { message: name?.message ?? "Invalid data", errors: error.errors };
+}
+
+const pageTitleProblem = "Document title must be 1 to 500 characters";
+const pageTitleSchema = z
+  .string({ required_error: pageTitleProblem, invalid_type_error: pageTitleProblem })
+  .trim()
+  .min(1, pageTitleProblem)
+  .max(500, pageTitleProblem);
+
+/** A saved title may be empty: v1 saves one while it is retyped. */
+const savedPageTitleSchema = z.string().trim().max(500, "Document title must be 500 characters or fewer");
+
+/** A refused Project Document write, in the words of its title when that is what is wrong. */
+function invalidTitle(error: z.ZodError) {
+  const title = error.errors.find((issue) => issue.path[0] === "title");
+  return { message: title?.message ?? "Invalid data", errors: error.errors };
 }
 
 /** The `updatedAt` a save was made from (F52). */
@@ -452,7 +469,7 @@ export async function registerRoutes(
       }
 
       const createSchema = z.object({
-        title: z.string().min(1),
+        title: pageTitleSchema,
         parentId: z.string().nullable().optional(),
         content: z.any().optional(),
         icon: z.string().optional(),
@@ -461,7 +478,7 @@ export async function registerRoutes(
       const parsed = createSchema.safeParse(req.body);
 
       if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+        return res.status(400).json(invalidTitle(parsed.error));
       }
 
       const document = await createDocumentWithDerivedJobs({
@@ -551,7 +568,7 @@ export async function registerRoutes(
       }
 
       const updateSchema = z.object({
-        title: z.string().optional(),
+        title: savedPageTitleSchema.optional(),
         content: z.any().optional(),
         icon: z.string().nullable().optional(),
         parentId: z.string().nullable().optional(),
@@ -562,7 +579,7 @@ export async function registerRoutes(
       const parsed = updateSchema.safeParse(req.body);
 
       if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+        return res.status(400).json(invalidTitle(parsed.error));
       }
 
       const { expectedUpdatedAt, ...data } = parsed.data;
@@ -2024,11 +2041,31 @@ Instructions:
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
       
-      const updated = await storage.toggleDocumentation(req.params.id, parsed.data.enabled);
+      const updated = await storage.toggleDocumentation(req.params.id, parsed.data.enabled, userId);
       res.json(updated);
     } catch (error) {
       console.error("Error toggling documentation:", error);
       res.status(500).json({ message: "Failed to toggle documentation" });
+    }
+  });
+
+  // Move a documentation-only Project's Documents and Files to the Project they belong to.
+  app.post("/api/crm/projects/:id/link-documentation", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!(await canManageAdministration())) {
+        return res.status(403).json({ message: "Only an Owner or an Administrator can link a Project's documentation" });
+      }
+      const parsed = z.object({ targetId: z.string().min(1) }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      }
+      res.json(await linkDocumentation(req.params.id, parsed.data.targetId, getUserId(req)!));
+    } catch (error) {
+      if (error instanceof LinkDocumentationError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
+      console.error("Error linking documentation:", error);
+      res.status(500).json({ message: "Failed to link documentation" });
     }
   });
 

@@ -165,7 +165,7 @@ describe("Opportunity record (#213)", () => {
   it("names the record in the breadcrumb from the page's cache entry", () => {
     expect(commandBarSource).toContain('queryKey: ["/api/crm/projects", opportunityId]');
     expect(commandBarSource).toContain("enabled: false");
-    expect(commandBarSource).toContain("breadcrumbFor(location, workspaceName, recordLabel)");
+    expect(commandBarSource).toContain("breadcrumbFor(location, workspaceName, recordLabel, ");
   });
 
   it("wears the stage as the pipeline's filled pill and keeps Edit in place while editing", () => {

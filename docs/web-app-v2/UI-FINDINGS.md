@@ -1415,3 +1415,128 @@ keep out (seen in the answer). The register uses the name. It would take
   to show its name (from code).
 
 - **Fixed:** 2026-11-24. `Added by` in the column and the filter (Project Documentation keeps `Last editor`, whose rows it does not fit); dates carry their year when it is not this one; the page head spans the page, so opening a Folder no longer moves New Document; Folder names are 1 to 255 characters, trimmed, with a plain message; the address drops `?new=1` when the dialog closes; descriptions show in the Folder preview and on the Document; one request without the texts.
+
+## F60 — A Document in a documentation-only Project answers "Document not found"
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, Project Documentation on the dev Workspace
+- **Where:** `client/src/v2/V2Document.tsx` (`loadAssignmentProjects`, `ProjectDocumentRedirect`, `assigned`), `server/modules/postgresStorage.ts:945-947`
+- **Severity:** blocks a task
+
+`New project` makes a documentation-only Project. A Document added to it opens
+on `Document not found`, for its Owner too (seen). The page looks for the
+Document's Project in `/api/crm/projects`, which always leaves
+documentation-only Projects out. That list is also cut at 500 rows.
+
+The Project itself is nowhere else: not in Projects (seen: 0 results), and the
+register offers no way to open, rename or archive it. Its Dossier opens by
+address only, and reads `CLIENT PROJECT`, `PLANNED`, with a timer. No real
+Project is documentation-only yet. It would take the Document's Project from
+its own route (`/api/crm/projects/by-project/:id`), and a Dossier that says
+what it is.
+
+- **Fixed:** 2026-11-24. A Project Document opens for whoever the server lets read it; its Project comes from its own route. Seen on an existing documentation-only Project and on a new one. Its Dossier reads DOCUMENTATION and keeps Documentation, Files and Settings (rename, team, documentation, delete); the register's open row leads to it. Owners and Administrators can also link it to a delivery Project: its Documents and Files move there, with what is indexed from them, and it is left with documentation off (seen on the dev Workspace; the owner asked for it on 2026-11-24). Search still leaves these Documents out: for the Search review.
+
+## F61 — The Documents of a sale are listed as a Project's and cannot be opened
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, a demo sale with documentation on (restored after)
+- **Where:** `server/modules/postgresStorage.ts:1591-1640` (`getProjectDocumentationPage`), `client/src/v2/dossier.ts:1103` (`dossierRedirect`)
+- **Severity:** blocks a task
+
+The register lists every row with documentation on, sales included, as a
+`Project`. Opening one of its Documents follows the Project Dossier address,
+which F47 sends to the Opportunity record; that record shows no Documents
+(seen). On the real Workspace, 3 sales hold 9 Documents that v2 cannot open
+(1 in follow-up, 2 lost). The sales are also offered as the Project of a new
+Document or File. F37 made Projects list delivery work only. It would take the
+same rule here for creating, and a decision on what exists: show the
+Documents on the Opportunity record, or open the page outside the Dossier.
+
+- **Fixed:** 2026-11-24, as the owner chose: the register lists delivery work and documentation-only Projects, and a sale's Documents show on its Opportunity record and open from there, editable, with the way back to it. Seen on a demo sale. On the rehearsal copy the register answers 76 Projects and 228 pages, the 3 sales and their 9 pages left out.
+
+## F62 — A search that finds a Project opens it empty, and Files are never found
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, Project Documentation on the dev Workspace
+- **Where:** `client/src/v2/projectDocumentation.ts:117-123`; `server/modules/postgresStorage.ts:1605-1619`
+- **Severity:** misleading
+
+Searching `atlas` finds Atlas warehouse rollout, `2 items`. Opening it shows
+nothing: its pages are filtered by the word that named the Project (seen). The
+server searches Project names and page titles, never File names (from code).
+On the real Workspace every documented Project has the same three page names,
+so a page search answers 77 to 79 Projects. It would take all of a Project's
+items when the Project's own name matches, and Files in the search.
+
+- **Fixed:** 2026-11-24. A Project found by its name lists everything it holds (seen); File names are searched (tests).
+
+## F63 — A failed load reads as no documentation, and the list goes stale
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, the documentation route answering 500, then a rename
+- **Where:** `client/src/v2/V2ProjectDocumentation.tsx:115-119`; `client/src/v2/V2Document.tsx` (`onSaved`)
+- **Severity:** misleading
+
+When the list cannot be loaded, the page says `No Project Documents yet` and
+offers to add the first one (seen), as F53 did. A page renamed in the Dossier
+keeps its old name here until a reload (seen: stored as `WMS notes renamed`,
+listed as `WMS integration notes`), and so does anything another Member
+changes, as F55 did.
+
+- **Fixed:** 2026-11-24. A failed load says so and offers Try again; the list is read again on every visit and after a page is renamed, added or removed. By tests and from code, after the same fix on Workspace Documents was seen.
+
+## F64 — New Document takes a Project its own list does not offer
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, the Disabled filter on the dev Workspace
+- **Where:** `client/src/v2/V2ProjectDocumentation.tsx:198-203`, `:300-304`
+- **Severity:** misleading
+
+With a Project whose documentation is off selected in the list, New Document
+opens with an empty Project field and Create Document lit (seen; not
+submitted). It would create the page in that Project, where the register's
+default view does not list it (from code). It would take the selected Project
+only when it is one of the choices.
+
+- **Fixed:** 2026-11-24. New Document and Upload File take the selected Project only when their own list offers it. By tests; the preselection seen.
+
+## F65 — Project Documentation polish
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, the dev Workspace (seen unless marked)
+
+- `Last editor` is who created the latest page. 183 of the 238 real pages have
+  no creator (the three made when documentation is turned on), so the column
+  mostly reads `—` (counted).
+- `Access` says `Assigned` on every row: the column carries no information.
+- Rows are ordered by the Project's last change while `Updated` shows the
+  latest page's: 76 of the 79 real Projects stand out of the order shown
+  (counted).
+- Every opened Project is drawn as selected, so several look chosen at once.
+- A Project row only opens its list: nothing leads to the Project.
+- New Project is described as "a row in Projects that holds Project Documents
+  and never enters the pipeline", which is implementation talk, and not true
+  of the Projects page.
+- A page title over 500 characters answers 500; a title of spaces is accepted
+  (both by the route).
+- The page under a page is listed flat, without its parent (from code; no real
+  page has one).
+- Two pages at the same position come in another order here than in the
+  Dossier's tree.
+- Dates carry no year here, unlike on Workspace Documents since F59 (from code;
+  no real page dates from another year).
+
+- **Fixed:** 2026-11-24. `Added by` (the page's creator, the Project's owner), `Client` instead of `Access`, one selected row at a time, rows ordered by the date shown (0 of the 76 real Projects out of order, through the real function), an open row with Open project and New Document, pages under their parent and in the Dossier's order, titles of 1 to 500 characters, years, and plain copy in New project. The three pages made with documentation carry who turned it on; the 180 older ones of the listed Projects stay without an author.
+
+## F66 — Turning documentation on writes TECHMA's own templates into any Workspace
+
+- **Status:** open — a decision for the owner
+- **Found:** 2026-11-24, a demo Project with documentation turned on
+- **Where:** `server/modules/postgresStorage.ts` (`toggleDocumentation`, the Resources, Requirements and Deliverables pages)
+- **Severity:** wrong for customers
+
+Every Project gets three pages when its documentation is turned on. The
+Requirements page reads `Prepared By: TECHMA Inc.` and
+`Platforms: [Zoho CRM, Creator, API, etc.]` (seen), whoever the Workspace
+belongs to. It would take neutral pages, or the Workspace's own, or none.

@@ -118,6 +118,7 @@ export type LibraryRow = {
    * calling one a folder sent both an operator and an investigation astray.
    */
   type: "Folder" | "Project" | "Document" | "File";
+  /** The Access level; a Project's Client in Project Documentation, where children leave it empty. */
   access: string;
   editor: string;
   updated: string;
@@ -609,7 +610,7 @@ function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function formatWhen(updatedAt: Date | string | null, now: Date): string {
+export function formatWhen(updatedAt: Date | string | null, now: Date): string {
   const value = parseDate(updatedAt);
   if (!value) return "";
   if (sameDay(value, now)) return formatClock(value);

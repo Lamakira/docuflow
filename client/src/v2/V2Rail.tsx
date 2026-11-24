@@ -33,6 +33,7 @@ import {
 } from "./presentation";
 import { workspaceSwitcher, type MembershipOption, type MembershipsResponse } from "./workspace";
 import { planGateFor, useEntitlements } from "./plan";
+import { useRecordRoot } from "./V2CommandBar";
 
 type V2RailProps = {
   collapsed: boolean;
@@ -61,7 +62,7 @@ export function V2Rail({
   const { user } = useAuth();
   const { theme } = useTheme();
   const account = composeAccountMenu({ theme, platformAdmin: isPlatformAdmin(user) });
-  const activeId = navIdForPath(location);
+  const activeId = navIdForPath(location, useRecordRoot(location));
   const initials = workspaceInitials(workspaceName);
   const displayName =
     user?.firstName && user?.lastName

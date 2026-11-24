@@ -201,7 +201,7 @@ describe("Dossier review (F44-F51)", () => {
     });
 
     it("replaces the URL once the row loads and draws only the loading shell meanwhile", () => {
-      expect(dossierSource).toContain("const redirect = project ? dossierRedirect(project) : null;");
+      expect(dossierSource).toContain("const redirect = project ? dossierRedirect(project, { tab, documentId: openDocumentId }) : null;");
       expect(dossierSource).toContain("navigate(redirect, { replace: true })");
       expect(dossierSource).toContain("if (projectLoading || redirect) {");
     });

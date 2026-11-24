@@ -633,8 +633,12 @@ export const V2_FOOTER_NAV: V2NavItem[] = [
   { id: "help", label: "Help Center", href: "/help" },
 ];
 
-export function navIdForPath(path: string): V2NavId | null {
+/** Where a record files when its path alone cannot say: a sale's Document (F61), a documentation-only Dossier (F60). */
+export type V2RecordRoot = "opportunities" | "project-documentation";
+
+export function navIdForPath(path: string, recordRoot?: V2RecordRoot | null): V2NavId | null {
   const match = matchV2Route(path);
+  if (recordRoot && (match.kind === "dossier" || match.kind === "document-editor")) return recordRoot;
   if (match.kind === "today" || match.kind === "auth-redirect") return "today";
   if (match.kind === "documents") return "documents";
   if (match.kind === "project-documentation") return "project-documentation";
@@ -666,8 +670,9 @@ export function breadcrumbFor(
   path: string,
   workspaceName: string,
   recordLabel?: string,
+  recordRoot?: V2RecordRoot | null,
 ): Array<{ label: string; href?: string }> {
-  const crumbs = fullBreadcrumbFor(path, workspaceName, recordLabel);
+  const crumbs = fullBreadcrumbFor(path, workspaceName, recordLabel, recordRoot);
   // A top-level page keeps only its parent crumb, now the current one: its title
   // (and its sidebar item, when it has one) already names the page. The File
   // viewer keeps "File": its title is the File's name, not the word.
@@ -680,6 +685,7 @@ function fullBreadcrumbFor(
   path: string,
   workspaceName: string,
   recordLabel?: string,
+  recordRoot?: V2RecordRoot | null,
 ): Array<{ label: string; href?: string }> {
   const match = matchV2Route(path);
   const workspace = workspaceName;
@@ -704,7 +710,9 @@ function fullBreadcrumbFor(
   if (match.kind === "dossier") {
     return [
       { label: workspace, href: "/" },
-      { label: "Projects", href: "/projects" },
+      recordRoot === "project-documentation"
+        ? { label: "Project Documentation", href: "/project-documentation" }
+        : { label: "Projects", href: "/projects" },
       // The Project's name, as Opportunity and Client records do; the tab while it loads (F51).
       { label: recordLabel || DOSSIER_TAB_LABEL[match.tab] },
     ];
@@ -731,8 +739,10 @@ function fullBreadcrumbFor(
     if (match.source === "project") {
       return [
         { label: workspace, href: "/" },
-        { label: "Project Documentation", href: "/project-documentation" },
-        { label: "Document" },
+        recordRoot === "opportunities"
+          ? { label: "Opportunities", href: "/opportunities" }
+          : { label: "Project Documentation", href: "/project-documentation" },
+        { label: recordLabel || "Document" },
       ];
     }
     return [

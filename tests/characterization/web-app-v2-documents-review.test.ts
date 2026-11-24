@@ -83,8 +83,8 @@ describe("register dates and people (F59)", () => {
     expect(documentsSource).toContain('label="Added by"');
     expect(documentsSource).toContain('ariaLabel="Filter by who added it"');
     expect(documentsSource).toContain("readLibraryFilters");
-    expect(registerSource).toContain('personHeading = "Added by"');
-    expect(registerSource).not.toContain("<span>Last editor</span>");
+    expect(registerSource).toContain("<span>Added by</span>");
+    expect(registerSource).not.toContain("Last editor");
   });
 });
 

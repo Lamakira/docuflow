@@ -1,24 +1,51 @@
 import { isReadableDocument } from "@shared/documentAccess";
+import { isDeliveryProject } from "@shared/projectLifecycle";
 import { chromeRefusal } from "./chrome";
 import { MONTHS } from "./dates";
 import { documentHref, folderChoices, type FolderChoice, type LibraryFolder, type LibraryPerson } from "./library";
+import { opportunityHref } from "./opportunities";
 import { dossierDocumentHref } from "./presentation";
 import { memberName } from "./today";
 
 export { projectDocumentHref } from "./library";
 
+/** The CRM Project that owns a Project Document's Project, as `by-project` answers it (F60). */
+export type DocumentOwner = {
+  id: string;
+  isDocumentationOnly?: number | null;
+  projectType?: string | null;
+  status?: string | null;
+};
+
 /**
  * Where an old `/document/:id` link to a Project Document opens now (#307):
- * the page's place in its Project Dossier, found through the CRM Project that
- * owns the page's Project. Null while no such Project is known.
+ * the page's place in its Project Dossier. Null for a sale's Document, which
+ * has no Dossier (F61), and while no owner is known.
  */
-export function projectDocumentDossierHref(
-  document: { id: string; projectId: string },
-  projects: Array<{ id: string; project?: { id: string } | null }>,
-): string | null {
-  const owner = projects.find((row) => row.project?.id === document.projectId);
-  return owner ? dossierDocumentHref(owner.id, document.id) : null;
+export function projectDocumentDossierHref(document: { id: string }, owner: DocumentOwner | null | undefined): string | null {
+  return owner && isDeliveryProject(owner) ? dossierDocumentHref(owner.id, document.id) : null;
 }
+
+/** The owner is a sale: its Documents open on their own page (F61). */
+export function isSaleDocumentOwner(owner: DocumentOwner | null | undefined): owner is DocumentOwner {
+  return Boolean(owner) && !isDeliveryProject(owner!);
+}
+
+/** Under the CRM Projects prefix, so winning a sale or any other Project write reads it again. */
+export function documentOwnerKey(projectId: string) {
+  return ["/api/crm/projects", "by-project", projectId];
+}
+
+/** Null when no CRM Project owns it: the Document still opens, since its own read already passed. */
+export async function loadDocumentOwner(projectId: string): Promise<DocumentOwner | null> {
+  const res = await fetch(`/api/crm/projects/by-project/${projectId}`, { credentials: "include" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch Project");
+  return res.json();
+}
+
+/** What a sale's Document says of its Opportunity; the name is null until it loads. */
+export type DocumentOpportunity = { id: string; name: string | null };
 
 export type DocumentEditorSource = "workspace" | "project";
 
@@ -52,6 +79,8 @@ export type DocumentEditorInput = {
   ownerName: string | null;
   saveState: DocumentEditorSaveState;
   assigned?: boolean;
+  /** The sale a Project Document belongs to (F61). */
+  opportunity?: DocumentOpportunity | null;
 };
 
 export type DocumentEditorMode = "missing" | "editor" | "viewer";
@@ -79,14 +108,18 @@ export function workspaceDocumentHref(id: string): string {
 }
 
 /** Where Back goes from a Document: known before any fetch, so the wait can show it. */
-export function documentBack(source: DocumentEditorSource): { backHref: string; backLabel: string } {
+export function documentBack(
+  source: DocumentEditorSource,
+  opportunity?: DocumentOpportunity | null,
+): { backHref: string; backLabel: string } {
+  if (opportunity) return { backHref: opportunityHref(opportunity.id), backLabel: opportunity.name || "Opportunity" };
   return source === "project"
     ? { backHref: "/project-documentation", backLabel: "Project Documentation" }
     : { backHref: "/documents", backLabel: "Workspace Documents" };
 }
 
 export function composeDocumentEditor(input: DocumentEditorInput): DocumentEditorModel {
-  const { backHref, backLabel } = documentBack(input.source);
+  const { backHref, backLabel } = documentBack(input.source, input.opportunity);
   const capability =
     input.source === "project" ? VIEW_PROJECT_DOCUMENTS_CAPABILITY : VIEW_WORKSPACE_DOCUMENTS_CAPABILITY;
 
@@ -167,10 +200,22 @@ const WORKSPACE_ROOT = "Workspace root";
 
 /** Where a Workspace Document is filed, who added it and when it last changed: the line beside Back (F58). */
 export function documentMetaLine(record: DocumentEditorRecord, now: Date): string {
-  const folder = record.folder?.name ?? (record.folderId ? "" : WORKSPACE_ROOT);
+  return placedMetaLine(record.folder?.name ?? (record.folderId ? "" : WORKSPACE_ROOT), record, now);
+}
+
+/** The same line for a Project Document on its own page, filed under its Opportunity (F61). */
+export function projectDocumentMetaLine(
+  record: DocumentEditorRecord,
+  opportunity: DocumentOpportunity | null,
+  now: Date,
+): string {
+  return placedMetaLine(opportunity?.name ?? "", record, now);
+}
+
+function placedMetaLine(place: string, record: DocumentEditorRecord, now: Date): string {
   const author = record.uploadedBy ? `Added by ${memberName(record.uploadedBy)}` : "";
   const updated = record.updatedAt ? shortDate(record.updatedAt, now) : "";
-  return [folder, author, updated ? `Updated ${updated}` : ""].filter(Boolean).join(" · ");
+  return [place, author, updated ? `Updated ${updated}` : ""].filter(Boolean).join(" · ");
 }
 
 function shortDate(value: Date | string, now: Date): string {
@@ -419,6 +464,7 @@ export function toDocumentRecord(source: DocumentEditorSource, row: Record<strin
       content: row.content,
       access: "workspace",
       projectId: row.projectId,
+      uploadedBy: row.createdBy,
       updatedAt: row.updatedAt,
     };
   }

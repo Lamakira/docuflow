@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { config } from "./config";
 import { db, type Db } from "./db";
 import { documentEmbeddings, documents, projects, companyDocumentEmbeddings, companyDocuments, companyDocumentFolders } from "@shared/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import crypto from "crypto";
 import { companyDocumentEmbeddingContent } from "./companyDocumentContent";
 import { inWorkspace, requireWorkspaceContext } from "./workspaceContext";
@@ -199,6 +199,53 @@ export async function updateDocumentEmbeddings(
       )
     `);
   }
+
+  // The Document may have moved while the chunks were being embedded.
+  await syncDocumentProject(documentId);
+}
+
+/**
+ * Points a Project Document's chunks and transcripts at the Project it is in
+ * now. Ask reads chunks by `project_id`, so a stale one answers the wrong
+ * Members. The share lock waits for a move that has not committed yet.
+ */
+export async function syncDocumentProject(documentId: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(eq(documents.id, documentId), inWorkspace(documents)))
+      .for("share");
+    await syncDocumentProjectRows(tx, sql`d.id = ${documentId}`);
+  });
+}
+
+/** `which` picks the Documents, as `d`; the caller holds their rows or is moving them. */
+export async function syncDocumentProjectRows(writer: Pick<Db, "execute">, which: SQL): Promise<void> {
+  const { workspaceId } = requireWorkspaceContext();
+  await writer.execute(sql`
+    UPDATE document_embeddings e
+       SET project_id = d.project_id,
+           metadata = COALESCE(e.metadata, '{}'::jsonb) || jsonb_build_object('projectName', p.name),
+           updated_at = now()
+      FROM documents d
+      JOIN projects p ON p.id = d.project_id
+     WHERE d.id = e.document_id
+       AND ${which}
+       AND d.workspace_id = ${workspaceId}
+       AND e.workspace_id = ${workspaceId}
+       AND e.project_id IS DISTINCT FROM d.project_id
+  `);
+  await writer.execute(sql`
+    UPDATE video_transcripts t
+       SET project_id = d.project_id, updated_at = now()
+      FROM documents d
+     WHERE d.id = t.document_id
+       AND ${which}
+       AND d.workspace_id = ${workspaceId}
+       AND t.workspace_id = ${workspaceId}
+       AND t.project_id IS DISTINCT FROM d.project_id
+  `);
 }
 
 export async function deleteDocumentEmbeddings(documentId: string): Promise<void> {

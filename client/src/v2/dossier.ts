@@ -5,6 +5,7 @@ import { projectStatusColor } from "./palette";
 import { isDeliveryProject, isWonStatus, projectStatusFromCombined } from "@shared/projectLifecycle";
 import { opportunityHref } from "./opportunities";
 import { clientHref } from "./clients";
+import { projectDocumentHref } from "./library";
 import {
   budgetLabel,
   projectBudgetDraft,
@@ -39,6 +40,8 @@ export type DossierProject = {
   startDate?: Date | string | null;
   dueDate?: Date | string | null;
   documentationEnabled?: number | null;
+  /** Holds documentation and nothing else: made from Project Documentation (F60). */
+  isDocumentationOnly?: number | null;
   project?: { id: string; name: string; description?: string | null } | null;
   client?: {
     id?: string;
@@ -254,6 +257,9 @@ export type DossierSettingPicker = {
   options: Array<{ value: string; label: string }>;
 };
 
+/** The tabs of a documentation-only Dossier. */
+const DOCUMENTATION_ONLY_TABS: readonly DossierTabId[] = ["documents", "files", "settings"];
+
 export const PROJECT_TYPE_CHOICES = [
   { value: "one_time", label: "One-time" },
   { value: "monthly", label: "Monthly" },
@@ -279,6 +285,8 @@ export type DossierTaskRow = {
 
 export type DossierModel = {
   missing: boolean;
+  /** No status, budget, Timer or Tasks, and three tabs (F60). */
+  documentationOnly: boolean;
   tab: DossierTabId;
   tabIsPlaceholder: boolean;
   identity: {
@@ -546,6 +554,7 @@ function hoursLabel(hours: number): string {
 }
 
 function kindLabel(project: DossierProject): string {
+  if (project.isDocumentationOnly) return "DOCUMENTATION";
   if (project.projectType === "internal") return "INTERNAL";
   if (project.projectType === "monthly") return "MONTHLY";
   if (project.projectType === "hourly_budget") return "HOURLY";
@@ -825,20 +834,33 @@ function composeFiles(input: DossierInput): DossierModel["files"] {
     count: files.length + (input.projectFileCount ?? 0),
     empty: files.length === 0,
     emptyCopy: "No Files on this Project you can access.",
-    // With Documentation on, the tab uploads Files itself, so its empty state says so (F51).
-    emptyState: input.project?.documentationEnabled
-      ? {
-          title: "No Files yet",
-          copy: "Upload a File here, or attach one to a note: both land on this tab.",
-          action: { kind: "compose", label: "Upload File" },
-        }
-      : {
-          title: "No Files yet",
-          copy: "Files attached to this Project's notes are gathered here, so the scope, the contract and the screenshots sit in one place.",
-          action: input.project
-            ? { kind: "link", label: "Attach a File to a note", href: `${projectHref(input.project.id)}/notes` }
-            : null,
-        },
+    // A documentation-only Project has no Notes tab to attach one from.
+    emptyState: input.project?.isDocumentationOnly
+      ? input.project.documentationEnabled
+        ? {
+            title: "No Files yet",
+            copy: "Upload the Files this documentation refers to: they land on this tab.",
+            action: { kind: "compose", label: "Upload File" },
+          }
+        : {
+            title: "No Files yet",
+            copy: "Files are uploaded here while Documentation is on. Turn it on in Settings to add the first one.",
+            action: { kind: "link", label: "Open Settings", href: `${projectHref(input.project.id)}/settings` },
+          }
+      : // With Documentation on, the tab uploads Files itself, so its empty state says so (F51).
+        input.project?.documentationEnabled
+        ? {
+            title: "No Files yet",
+            copy: "Upload a File here, or attach one to a note: both land on this tab.",
+            action: { kind: "compose", label: "Upload File" },
+          }
+        : {
+            title: "No Files yet",
+            copy: "Files attached to this Project's notes are gathered here, so the scope, the contract and the screenshots sit in one place.",
+            action: input.project
+              ? { kind: "link", label: "Attach a File to a note", href: `${projectHref(input.project.id)}/notes` }
+              : null,
+          },
   };
 }
 
@@ -1015,7 +1037,9 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
     documentationEnabled,
     documentation,
     canDelete: input.canDeleteProject === true,
-    deleteConsequence: `${name} and everything filed under it — its Tasks, Time Entries, Notes, Reminders and Project Documents — will be deleted for everyone in this Workspace. This cannot be undone.`,
+    deleteConsequence: project.isDocumentationOnly
+      ? `${name} and its Project Documents and Files will be deleted for everyone in this Workspace. This cannot be undone.`
+      : `${name} and everything filed under it — its Tasks, Time Entries, Notes, Reminders and Project Documents — will be deleted for everyone in this Workspace. This cannot be undone.`,
   };
 }
 
@@ -1097,16 +1121,26 @@ function composeTags(input: DossierInput): DossierModel["tags"] {
 }
 
 /**
- * Where a Dossier URL sends a row that is not a Project (F47): an open or lost
- * sale opens on its Opportunity record. Delivery work stays (null).
+ * Where a Dossier URL sends a row it does not open. A sale opens on its
+ * Opportunity record (F47), its Documents on their own page (F61). A
+ * documentation-only Project opens on Documentation (F60). Null stays.
  */
-export function dossierRedirect(project: {
-  id: string;
-  isDocumentationOnly?: number | null;
-  projectType?: string | null;
-  status?: string | null;
-}): string | null {
-  return isDeliveryProject(project) ? null : opportunityHref(project.id);
+export function dossierRedirect(
+  project: {
+    id: string;
+    isDocumentationOnly?: number | null;
+    projectType?: string | null;
+    status?: string | null;
+  },
+  open: { tab?: DossierTabId; documentId?: string | null } = {},
+): string | null {
+  if (!isDeliveryProject(project)) {
+    return open.documentId ? projectDocumentHref(open.documentId) : opportunityHref(project.id);
+  }
+  if (project.isDocumentationOnly && open.tab && !DOCUMENTATION_ONLY_TABS.includes(open.tab)) {
+    return `${projectHref(project.id)}/documents`;
+  }
+  return null;
 }
 
 /** The Activity tab's count: the Project's total, or what was loaded when the total is unknown (F48). */
@@ -1142,7 +1176,7 @@ export function composeDossier(input: DossierInput): DossierModel {
   const usersById = new Map(input.users.map((user) => [user.id, user]));
 
   const tabs: DossierTab[] = project
-    ? DOSSIER_TAB_IDS.map((id) => ({
+    ? DOSSIER_TAB_IDS.filter((id) => !project.isDocumentationOnly || DOCUMENTATION_ONLY_TABS.includes(id)).map((id) => ({
         id,
         label: DOSSIER_TAB_LABEL[id],
         href: id === "overview" ? projectHref(project.id) : `${projectHref(project.id)}/${id}`,
@@ -1201,7 +1235,7 @@ export function composeDossier(input: DossierInput): DossierModel {
         : null,
       team,
       updatedLabel: updatedAt ? `Updated ${formatWhen(updatedAt, input.now)}` : null,
-      tags: input.tags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
+      tags: (project.isDocumentationOnly ? [] : input.tags).map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
     };
   }
 
@@ -1230,6 +1264,7 @@ export function composeDossier(input: DossierInput): DossierModel {
 
   return {
     missing,
+    documentationOnly: Boolean(project?.isDocumentationOnly),
     tab: input.tab,
     tabIsPlaceholder: false,
     identity,

@@ -4,6 +4,7 @@ import { readPage, readPageSize, writePaging } from "./paging";
 import { memberName } from "./today";
 import {
   filteredFootLabel,
+  formatWhen,
   libraryEmptyState,
   projectDocumentHref,
   unfilteredFootLabel,
@@ -11,7 +12,6 @@ import {
   type LibraryPerson,
   type LibraryRow,
 } from "./library";
-import { MONTHS } from "./dates";
 
 export type ProjectDocumentationProject = {
   id: string;
@@ -20,6 +20,9 @@ export type ProjectDocumentationProject = {
   visible: boolean;
   documentationEnabled: boolean;
   updatedAt?: Date | string | null;
+  clientName?: string | null;
+  isDocumentationOnly?: boolean;
+  owner?: LibraryPerson | null;
 };
 
 export type ProjectDocumentationDocument = {
@@ -35,6 +38,17 @@ export type ProjectDocumentationDocument = {
 
 export function projectFilesPath(projectId: string): string {
   return `/api/projects/${encodeURIComponent(projectId)}/files`;
+}
+
+/** What linking a documentation-only Project to a delivery one does, said before it is done. */
+export function linkConsequence(input: { name: string; documents: number; files: number; target: string }): string {
+  const count = input.documents + input.files;
+  const left = `${input.name} is then left with documentation off. You can't undo this.`;
+  if (count === 0) return `${input.name} has no Documents or Files to move. ${left}`;
+  const moved =
+    count === 1 ? `The ${input.documents === 1 ? "Document" : "File"}` : `The ${count} Documents and Files`;
+  const readers = `Everyone who can see ${input.target} will see ${count === 1 ? "it" : "them"}.`;
+  return `${moved} in ${input.name} ${count === 1 ? "moves" : "move"} to ${input.target}'s Documentation. ${readers} ${left}`;
 }
 
 /** A File added to one Project (#278), listed with that Project's Documents. */
@@ -95,36 +109,30 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
     (document) => allowedProjectIds.has(document.projectId) && isVisibleDocument(document.access),
   );
   const visibleFiles = (input.files ?? []).filter((file) => allowedProjectIds.has(file.projectId));
-  const childrenByProject = new Map<string, ProjectDocumentationChild[]>();
-  const children: ProjectDocumentationChild[] = [
-    ...visibleDocs.map((document) => ({ kind: "document" as const, name: document.title, item: document })),
-    ...visibleFiles.map((file) => ({ kind: "file" as const, name: file.name, item: file })),
-  ];
-  for (const child of children) {
-    const list = childrenByProject.get(child.item.projectId) ?? [];
-    list.push(child);
-    childrenByProject.set(child.item.projectId, list);
-  }
+  const docsByProject = byProject(visibleDocs);
+  const filesByProject = byProject(visibleFiles);
 
   const rows: LibraryRow[] = [];
   for (const project of visibleProjects) {
-    const projectChildren = childrenByProject.get(project.documentProjectId) ?? [];
+    const projectDocs = docsByProject.get(project.documentProjectId) ?? [];
+    const projectFiles = filesByProject.get(project.documentProjectId) ?? [];
     const folderMatches = nameMatches(project.name, needle);
-    const matchingChildren = needle
-      ? projectChildren.filter((child) => nameMatches(child.name, needle))
-      : projectChildren;
-    if (needle && !folderMatches && matchingChildren.length === 0) continue;
+    const childMatches =
+      projectDocs.some((document) => nameMatches(document.title, needle)) ||
+      projectFiles.some((file) => nameMatches(file.name, needle));
+    if (needle && !folderMatches && !childMatches) continue;
 
-    const showChildren = expanded.has(project.id) || (Boolean(needle) && matchingChildren.length > 0);
+    // A Project found by its own name lists everything it holds (F62).
+    const childNeedle = folderMatches ? "" : needle;
+    const showChildren = expanded.has(project.id) || (Boolean(needle) && childMatches);
     rows.push(
-      projectRow(project, projectChildren.map((child) => child.item), showChildren, project.id === input.selectedProjectId, input.now),
+      projectRow(project, [...projectDocs, ...projectFiles], showChildren, project.id === input.selectedProjectId, input.now),
     );
-    for (const child of matchingChildren) {
-      rows.push(
-        child.kind === "file"
-          ? fileRow(child.item, project.name, input.now)
-          : documentRow(child.item, project.name, input.now),
-      );
+    for (const page of pageTree(projectDocs, childNeedle)) {
+      rows.push(documentRow(page.document, [project.name, ...page.trail], input.now));
+    }
+    for (const file of projectFiles) {
+      if (nameMatches(file.name, childNeedle)) rows.push(fileRow(file, project.name, input.now));
     }
   }
 
@@ -175,9 +183,50 @@ function nameMatches(name: string, needle: string): boolean {
   return name.toLowerCase().includes(needle);
 }
 
-type ProjectDocumentationChild =
-  | { kind: "document"; name: string; item: ProjectDocumentationDocument }
-  | { kind: "file"; name: string; item: ProjectDocumentationFile };
+function byProject<T extends { projectId: string }>(items: T[]): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const item of items) {
+    const list = grouped.get(item.projectId) ?? [];
+    list.push(item);
+    grouped.set(item.projectId, list);
+  }
+  return grouped;
+}
+
+type ProjectPage = { document: ProjectDocumentationDocument; trail: string[] };
+
+/**
+ * One Project's pages, each under its parent, siblings in the order received.
+ * A page whose parent is missing sits at the Project's root, and so does the
+ * first page of a cycle. A search keeps a match and the pages above it.
+ */
+function pageTree(documents: ProjectDocumentationDocument[], needle: string): ProjectPage[] {
+  const known = new Set(documents.map((document) => document.id));
+  const childrenOf = new Map<string, ProjectDocumentationDocument[]>();
+  const roots: ProjectDocumentationDocument[] = [];
+  for (const document of documents) {
+    const parentId =
+      document.parentId && document.parentId !== document.id && known.has(document.parentId) ? document.parentId : null;
+    if (!parentId) {
+      roots.push(document);
+      continue;
+    }
+    const list = childrenOf.get(parentId) ?? [];
+    list.push(document);
+    childrenOf.set(parentId, list);
+  }
+
+  const seen = new Set<string>();
+  function walk(document: ProjectDocumentationDocument, trail: string[]): ProjectPage[] {
+    if (seen.has(document.id)) return [];
+    seen.add(document.id);
+    const inside = [...trail, document.title];
+    const below = (childrenOf.get(document.id) ?? []).flatMap((child) => walk(child, inside));
+    return below.length > 0 || nameMatches(document.title, needle) ? [{ document, trail }, ...below] : below;
+  }
+  // Whatever the roots did not reach belongs to a cycle.
+  return [...roots, ...documents].flatMap((document) => walk(document, []));
+}
 
 type Dated = {
   updatedAt?: Date | string | null;
@@ -203,8 +252,8 @@ function projectRow(
     name: project.name,
     path: project.documentationEnabled ? `/ · ${itemLabel}` : `/ · ${itemLabel} · Documentation off`,
     type: "Project",
-    access: "Assigned",
-    editor: latest?.createdBy ? memberName(latest.createdBy) : "—",
+    access: project.isDocumentationOnly ? "Documentation only" : project.clientName || "Internal",
+    editor: project.owner ? memberName(project.owner) : "—",
     updated: formatWhen(latest?.updatedAt ?? latest?.createdAt ?? project.updatedAt ?? null, now),
     child: false,
     depth: 0,
@@ -213,18 +262,18 @@ function projectRow(
   };
 }
 
-function documentRow(document: ProjectDocumentationDocument, projectName: string, now: Date): LibraryRow {
+function documentRow(document: ProjectDocumentationDocument, trail: string[], now: Date): LibraryRow {
   return {
     id: document.id,
     kind: "document",
     name: document.title,
-    path: `${projectName} /`,
+    path: `${trail.join(" / ")} /`,
     type: "Document",
-    access: "Assigned",
+    access: "",
     editor: document.createdBy ? memberName(document.createdBy) : "—",
     updated: formatWhen(document.updatedAt ?? document.createdAt ?? null, now),
     child: true,
-    depth: 1,
+    depth: trail.length,
     href: projectDocumentHref(document.id),
   };
 }
@@ -236,7 +285,7 @@ function fileRow(file: ProjectDocumentationFile, projectName: string, now: Date)
     name: file.name,
     path: `${projectName} /`,
     type: "File",
-    access: "Assigned",
+    access: "",
     editor: file.createdBy ? memberName(file.createdBy) : "—",
     updated: formatWhen(file.updatedAt ?? file.createdAt ?? null, now),
     child: true,
@@ -256,21 +305,12 @@ function parseDate(value: Date | string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function formatClock(value: Date): string {
-  return `${value.getHours().toString().padStart(2, "0")}:${value.getMinutes().toString().padStart(2, "0")}`;
-}
-
-function sameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-
-function formatWhen(updatedAt: Date | string | null, now: Date): string {
-  const value = parseDate(updatedAt);
-  if (!value) return "";
-  if (sameDay(value, now)) return formatClock(value);
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (sameDay(value, yesterday)) return "Yesterday";
-  return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
+/** The Project a new item starts in: the one selected, only where the list offers it (F64). */
+export function offeredProject(
+  options: Array<{ value: string }>,
+  projectId: string | null,
+): string | null {
+  return options.find((option) => option.value === projectId)?.value ?? null;
 }
 
 export const DOCUMENTATION_OPTIONS = [
