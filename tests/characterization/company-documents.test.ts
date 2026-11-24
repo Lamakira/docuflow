@@ -11,8 +11,8 @@ import { fakeSignedUrl, objectMetadata, signedUrlCalls, signedUrlPattern } from 
  * live in them — native TipTap pages and uploaded files.
  *
  * Quirks frozen here:
- *  - Anyone authenticated can create or rename a folder or document; only
- *    admins can delete either.
+ *  - Anyone who sees a folder or document can rename it; only an Owner or an
+ *    Administrator of the Workspace can delete either (F54).
  *  - The upload flow is two-legged: the server issues a signed PUT URL and only
  *    hears about the file when the client posts the URL back as `storagePath`.
  *  - A `storagePath` pointing at nothing fails ACL tagging and surfaces as 500.
@@ -27,7 +27,7 @@ describe("company documents and folders (characterization)", () => {
     await resetDb();
   });
 
-  it("lets any user create and rename folders, but only admins delete them", async () => {
+  it("lets any user create and rename folders, but only Administrators delete them", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const member = await registerUser(app);
@@ -45,8 +45,14 @@ describe("company documents and folders (characterization)", () => {
     const list = await member.agent.get("/api/company-document-folders");
     expect(list.status).toBe(200);
     expect(list.body).toHaveLength(1);
-    // The creator is inlined as a raw user row.
-    expect(list.body[0].createdBy).toMatchObject({ id: member.id });
+    // The creator is inlined as a name, an email, and a picture (F57).
+    expect(list.body[0].createdBy).toEqual({
+      id: member.id,
+      email: member.email,
+      firstName: null,
+      lastName: null,
+      profileImageUrl: null,
+    });
 
     const single = await member.agent.get(`/api/company-document-folders/${created.body.id}`);
     expect(single.status).toBe(200);
@@ -62,7 +68,7 @@ describe("company documents and folders (characterization)", () => {
       `/api/company-document-folders/${created.body.id}`
     );
     expect(refusedDelete.status).toBe(403);
-    expect(refusedDelete.body).toEqual({ message: "Only admins can delete folders" });
+    expect(refusedDelete.body).toEqual({ message: "Only an Owner or an Administrator can delete folders" });
 
     const deleted = await admin.agent.delete(`/api/company-document-folders/${created.body.id}`);
     expect(deleted.status).toBe(204);
@@ -153,7 +159,7 @@ describe("company documents and folders (characterization)", () => {
 
     const invalid = await user.agent.post("/api/company-documents").send({ description: "no name" });
     expect(invalid.status).toBe(400);
-    expect(invalid.body.message).toBe("Invalid data");
+    expect(invalid.body.message).toBe("Document name must be 1 to 500 characters");
   });
 
   it("issues an upload URL and registers the uploaded file against it", async () => {
@@ -288,7 +294,7 @@ describe("company documents and folders (characterization)", () => {
     expect(downloaded.status).toBe(404);
   });
 
-  it("updates a document and refuses deletion to non-admins", async () => {
+  it("updates a document and refuses deletion to Members", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const member = await registerUser(app);
@@ -310,18 +316,19 @@ describe("company documents and folders (characterization)", () => {
 
     const refused = await member.agent.delete(`/api/company-documents/${created.body.id}`);
     expect(refused.status).toBe(403);
-    expect(refused.body).toEqual({ message: "Only admins can delete company documents" });
+    expect(refused.body).toEqual({ message: "Only an Owner or an Administrator can delete documents" });
 
     const deleted = await admin.agent.delete(`/api/company-documents/${created.body.id}`);
     expect(deleted.status).toBe(204);
     expect((await admin.agent.get(`/api/company-documents/${created.body.id}`)).status).toBe(404);
 
-    // Quirk: the admin guard runs before the existence check, so an unknown id
-    // is a 404 for an admin and a 403 for everyone else.
-    const unknownForAdmin = await admin.agent.delete(
-      "/api/company-documents/00000000-0000-0000-0000-000000000000"
-    );
-    expect(unknownForAdmin.status).toBe(404);
+    // Visibility is checked before the Role, so an unknown id is a 404 for everyone.
+    for (const user of [admin, member]) {
+      const unknown = await user.agent.delete(
+        "/api/company-documents/00000000-0000-0000-0000-000000000000"
+      );
+      expect(unknown.status).toBe(404);
+    }
   });
 
   it("searches documents and folders by name, returning both lists", async () => {

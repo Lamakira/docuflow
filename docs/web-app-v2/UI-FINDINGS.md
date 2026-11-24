@@ -1270,3 +1270,148 @@ to `/clients/:id`.
   another one twice.
 
 - **Fixed:** 2026-11-23. `1 doc`; the Files tab counts uploaded Files too, and with Documentation on its empty state offers `Upload File`; Updates shows `0`; Filed under this Project is gone; `Save name` waits for a change; the Time tab ends on a Total and its status is plain text; the breadcrumb ends on the Project's name, as records do, in a crumb of fixed width so the search field holds still; the demo seed no longer repeats a Daily Update. Seen on Ledger migration.
+
+## F52 — Editing a Document can erase someone else's changes
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, a Workspace Document on the dev Workspace
+- **Where:** `client/src/v2/V2Document.tsx:193-197`, `:225-235`, `:257-266`; `client/src/lib/queryClient.ts` (`staleTime: Infinity`); `server/routes.ts:2935` (no version check)
+- **Severity:** loses data
+
+A Document opened a second time is read from the browser's cache, never from
+the server, for as long as the cache keeps it. Seen: a Document was opened and
+left, its text was replaced from outside that page, and it was opened again
+from the register. It showed the old text, and typing one character saved the
+old text over the new one. Nothing said so. Every save sends the whole
+Document, and the server takes whichever comes last. Project Documents share
+this editor (from code, not tried).
+
+An empty title also stops every save. The server refuses the whole request
+(`Invalid data`), so the text typed meanwhile is not stored; the header stays
+at `Unsaved` (seen: the added word was not on the server). It would take a
+fresh read on opening, a save refused when the Document has changed since it
+was read, and an empty title that does not hold back the text.
+
+- **Fixed:** 2026-11-24. Opening a Document always reads the server first. A save carries the time of the version it was typed over (`expectedUpdatedAt`); if the Document changed since, nothing is written (409), the typed text stays, and the page offers Load their version or Keep mine. A rename, a move or an access change is not a conflict. Saves never overlap. A blank title no longer holds back the text: the name stays and the page says so. Project Documents share all of it. Seen: the same two-person sequence, now refused, and the first save of all 85 real rows whose time holds microseconds (tested through the real functions on the rehearsal copy).
+
+## F53 — A failed load reads as an empty library
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, with the documents routes answering 500
+- **Where:** `client/src/v2/V2Documents.tsx:203-222`, `:97-106`
+- **Severity:** misleading
+
+When the list cannot be loaded, the page says `No Workspace Documents yet`,
+offers to add the first one and counts `0 items · 0 folders` (seen). When one
+Folder's list fails, its Documents silently disappear and the rest is shown
+(from code). It would take the failed-load state with Try again, as F42 gave
+Projects.
+
+- **Fixed:** 2026-11-24. A failed load says so and offers Try again; a failed refresh keeps the list and says it once. One request answers the whole register, so a Folder can no longer go missing on its own. Seen.
+
+## F54 — Documents and Files can never be removed, and an Owner cannot delete a Folder
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, the register, the editor and the File viewer; routes read
+- **Where:** `client/src/v2/V2Documents.tsx`, `V2Document.tsx`, `V2FileViewer.tsx` (no such control); `server/routes.ts:2736-2756`, `:3128-3160`
+- **Severity:** blocks a task
+
+v2 has no way to delete a Document or a File, to rename a File, or to move
+either to another Folder. The delete route exists and v1 used it; no route
+moves an item.
+
+Deleting a Folder is offered to everyone, but the server only lets a platform
+`admin` do it (`user.role`, which no self-service Workspace sets), so a
+Workspace Owner is refused. That same check never asks whether the caller can
+see the Folder (both from code). On the real Workspace: 10 Documents and Files
+in 4 Folders. It would take the Workspace Role on both routes, the
+Document Access check on the Folder one, then rename and move. Deletion waits for the
+modal pass, as F49's does.
+
+- **Fixed:** 2026-11-24. Deleting a Folder or a Document is the Owner's and Administrators' (Workspace Role), checked after visibility; Delete folder shows only to them. A Document moves between Folders, and a File is renamed or moved, by whoever added it or an Administrator; the move is audited and its search index follows. Move seen on a Document; the rest by tests. A Delete control on Documents and Files waits for the modal pass.
+
+## F55 — The register keeps showing the old list
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, the dev Workspace
+- **Where:** `client/src/v2/V2Document.tsx:267-270`, `client/src/v2/V2Documents.tsx:203-206`
+- **Severity:** misleading
+
+Renaming a Document in the editor leaves its old name and time in the register
+until the page is reloaded (seen: saved as `Review check renamed`, listed as
+`Review check`). The editor refreshes the Document's own key, not the
+register's. Nothing another Member adds shows either until a reload (from
+code: the list is never read twice).
+
+- **Fixed:** 2026-11-24. A rename, a move or an upload refreshes the register, and every visit reads it again. Seen.
+
+## F56 — Images in a Workspace Document are refused, attachments are public
+
+- **Status:** fixed 2026-11-24, to check on a running storage
+- **Found:** 2026-11-24
+- **Where:** `client/src/v2/V2Document.tsx:337-350` (image stored with no access policy), `server/objectAcl.ts:73`; `V2Document.tsx:409-411`, `server/routes.ts:792` (`visibility: "public"`), `server/routes.ts:675`
+- **Severity:** broken image; access wider than shown
+
+An image added to a Workspace Document gets no access policy, and a file with
+none is refused to every reader, its author included. A File attached to a
+Document is made public: whoever has its link reads it without signing in,
+even when the Document is Restricted. No Document of the real Workspace holds
+an image or an attachment. It would take one rule for both: readable by those
+who can read the Document. To check on a running storage first.
+
+- **Fixed:** 2026-11-24, by tests on the fake storage; still to check on a running one. An image or a File added to a Workspace Document is read by whoever reads that Document, and no longer by having uploaded it; its link cannot be re-opened through another route. Files attached before keep their public link, as do audio notes (`/api/audio/upload`) and everything in Project Documents.
+
+## F57 — The library sends each person's full User row
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, the responses of both list routes
+- **Where:** `server/modules/postgresStorage.ts:1821-1849`, `:1874-1913`, `:1944-2001` (no `toSafeUser`)
+- **Severity:** exposes data to every Member
+
+Every Folder and Document carries its creator's whole row: email, platform
+role, last sign-in, and the identity provider's id that `SafeUser` exists to
+keep out (seen in the answer). The register uses the name. It would take
+`toSafeUser` at least, better the name and picture only.
+
+- **Fixed:** 2026-11-24. Folders and Documents carry the person's id, name, email and picture only, and so does the creator of a Project Document (`GET /api/documents/:id`), which had the same leak. Seen in the answer.
+
+## F58 — The Document page does not read as a document
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, a Workspace Document, light and dark
+- **Where:** `client/src/v2/V2Document.tsx:512-558`, `client/src/v2/presentation.ts`
+- **Severity:** reads badly
+
+- The title is drawn at body size above the toolbar, smaller than the headings
+  in the text, so `Security baseline` reads twice with the second one as the title.
+- Text runs the whole width of the window (about 1,200 px), with no measure.
+- Grey and white bands alternate behind the header, the title and the text;
+  the white page stops mid-screen.
+- The focus ring of the text is a thick line across the page.
+- The breadcrumb ends on `Document`, where records end on their name.
+- Folder, last change and author appear nowhere.
+- A missing Document is one grey line where other records have the designed
+  empty state.
+
+- **Fixed:** 2026-11-24. The title is the page title, text and toolbar share an 800 px column on one surface, the thick focus line is gone, the breadcrumb ends on the name, the header says the Folder, who added it and when it changed, and a missing Document has the designed empty state. Seen in light and dark, and in a Project's Documentation tab.
+
+## F59 — Workspace Documents polish
+
+- **Status:** closed — fixed 2026-11-24
+- **Found:** 2026-11-24, the dev Workspace (seen unless marked)
+
+- `Last editor` is whoever added the item; editing does not change it. The
+  filter calls the same person `Owner`.
+- Dates carry no year: two of the ten real items date from 2025 (counted).
+- Opening a Folder also opens its preview, which moves New Document 330 px
+  left under the pointer.
+- A Folder name over 255 characters answers `Failed to create folder`; a name
+  of spaces is accepted by the server (both seen).
+- `/documents?new=1` stays in the address after closing the dialog, so a
+  reload opens it again. `?folder=1` and `?upload=1` share that code.
+- A description is never shown; two of the ten real items have one (counted).
+- `Invalid data` is the only explanation for a refused save.
+- The list makes one request per Folder and loads every Document's full text
+  to show its name (from code).
+
+- **Fixed:** 2026-11-24. `Added by` in the column and the filter (Project Documentation keeps `Last editor`, whose rows it does not fit); dates carry their year when it is not this one; the page head spans the page, so opening a Folder no longer moves New Document; Folder names are 1 to 255 characters, trimmed, with a plain message; the address drops `?new=1` when the dialog closes; descriptions show in the Folder preview and on the Document; one request without the texts.

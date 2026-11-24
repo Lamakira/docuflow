@@ -42,6 +42,9 @@ export type FileViewerInput = {
   effectiveAccess?: string | null;
   objectPath?: string | null;
   backHref?: string | null;
+  /** Where a Workspace File is filed, who added it and when it changed (F58). */
+  filing?: string | null;
+  description?: string | null;
 };
 
 export type FileViewerModel = {
@@ -50,6 +53,8 @@ export type FileViewerModel = {
   /** The name the File is saved under, which is not always what it is called. */
   fileName: string | null;
   meta: string;
+  filing: string;
+  description: string;
   preview: FilePreviewKind;
   streamHref: string | null;
   downloadHref: string | null;
@@ -203,6 +208,8 @@ export function composeFileViewer(input: FileViewerInput): FileViewerModel {
       title: input.name,
       fileName: null,
       meta: "",
+      filing: "",
+      description: "",
       preview: "none",
       streamHref: null,
       downloadHref: null,
@@ -237,6 +244,8 @@ export function composeFileViewer(input: FileViewerInput): FileViewerModel {
     title: input.name,
     fileName: input.fileName ?? null,
     meta: fileMeta(input, family),
+    filing: input.filing ?? "",
+    description: input.description ?? "",
     preview,
     streamHref: origin,
     downloadHref,

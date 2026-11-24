@@ -9,7 +9,10 @@
  * wherever it came from: what a policy means.
  */
 
-export enum ObjectAccessGroupType {}
+export enum ObjectAccessGroupType {
+  /** Whoever reads the Workspace Document the object was placed in (F56). */
+  WORKSPACE_DOCUMENT = "workspace_document",
+}
 
 export interface ObjectAccessGroup {
   type: ObjectAccessGroupType;
@@ -51,10 +54,33 @@ abstract class BaseObjectAccessGroup implements ObjectAccessGroup {
   public abstract hasMember(userId: string): Promise<boolean>;
 }
 
+type WorkspaceDocumentReader = (userId: string, documentId: string) => Promise<boolean>;
+
+/** Registered by the Knowledge module, which this one must not import. Denies until it is. */
+let readsWorkspaceDocument: WorkspaceDocumentReader = async () => false;
+
+export function setWorkspaceDocumentReader(read: WorkspaceDocumentReader): void {
+  readsWorkspaceDocument = read;
+}
+
+class WorkspaceDocumentAccessGroup extends BaseObjectAccessGroup {
+  async hasMember(userId: string): Promise<boolean> {
+    return readsWorkspaceDocument(userId, this.id);
+  }
+}
+
+/** The Workspace Document an object was placed in, or null when it is tied to none. */
+export function workspaceDocumentOf(aclPolicy: ObjectAclPolicy | null): string | null {
+  const rule = aclPolicy?.aclRules?.find(({ group }) => group.type === ObjectAccessGroupType.WORKSPACE_DOCUMENT);
+  return rule ? rule.group.id : null;
+}
+
 function createObjectAccessGroup(
   group: ObjectAccessGroup
 ): BaseObjectAccessGroup {
   switch (group.type) {
+    case ObjectAccessGroupType.WORKSPACE_DOCUMENT:
+      return new WorkspaceDocumentAccessGroup(group.type, group.id);
     default:
       throw new Error(`Unknown access group type: ${group.type}`);
   }
@@ -85,7 +111,9 @@ export async function canAccessObject({
     return false;
   }
 
-  if (aclPolicy.owner === userId) {
+  // An object placed in a Document is read by the Document's readers; having
+  // uploaded it gives no more.
+  if (aclPolicy.owner === userId && workspaceDocumentOf(aclPolicy) === null) {
     return true;
   }
 

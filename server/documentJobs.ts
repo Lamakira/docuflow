@@ -69,15 +69,17 @@ export interface UpdateDocumentWithDerivedJobsInput {
   id: string;
   ownerId: string;
   data: Partial<InsertDocument>;
+  /** Save only over this version; undefined comes back, and nothing is enqueued, when it changed. */
+  expectedUpdatedAt?: Date;
   tx?: DocumentWriter & JobsWriter;
 }
 
 export async function updateDocumentWithDerivedJobs(
   input: UpdateDocumentWithDerivedJobsInput
 ): Promise<Document | undefined> {
-  const { jobs, id, ownerId, data, tx } = input;
+  const { jobs, id, ownerId, data, expectedUpdatedAt, tx } = input;
   const persist = async (writer: DocumentWriter & JobsWriter) => {
-    const updated = await storage.updateDocument(id, data, writer);
+    const updated = await storage.updateDocument(id, data, writer, { expectedUpdatedAt });
     if (!updated) return undefined;
     const target = { id: updated.id, ownerId, workspaceId: updated.workspaceId };
     if (data.title !== undefined || data.content !== undefined) {

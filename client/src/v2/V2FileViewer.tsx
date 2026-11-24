@@ -63,6 +63,16 @@ export function V2FileViewer({ viewer, actions }: { viewer: FileViewerModel; act
               {viewer.meta}
             </div>
           ) : null}
+          {viewer.filing ? (
+            <div className="df-editor-meta" data-testid="v2-file-filing">
+              {viewer.filing}
+            </div>
+          ) : null}
+          {viewer.description ? (
+            <div className="df-editor-description" title={viewer.description}>
+              {viewer.description}
+            </div>
+          ) : null}
         </div>
         {actions}
         {viewer.downloadHref ? (

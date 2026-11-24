@@ -34,7 +34,8 @@ import {
   type InheritedAccess,
 } from "@shared/documentAccess";
 import { db } from "../../db";
-import { activeMemberUserIds, inWorkspace, stampWorkspace } from "../../workspaceContext";
+import { setWorkspaceDocumentReader } from "../../objectAcl";
+import { activeMemberUserIds, currentWorkspaceContext, inWorkspace, stampWorkspace } from "../../workspaceContext";
 import { canManageAdministration } from "../../workspaceRole";
 
 export async function accessViewer(userId: string): Promise<AccessViewer> {
@@ -149,6 +150,7 @@ export function annotateFolder<T extends FolderLike & { access: string; createdB
     ...folder,
     effectiveAccess: effectiveAccessLevel(folder.access, folderInherited(graph, folder)),
     canManageAccess: canChangeAccess(viewer, folder.createdById),
+    canDelete: viewer.administrator,
   };
 }
 
@@ -275,6 +277,30 @@ export async function changeAccess(
     );
   });
 }
+
+/**
+ * Whether this User reads the Document in the Active Workspace, for the objects
+ * placed in it. The Workspace Role comes from the context's own Membership, so
+ * a context entered as anyone else answers no.
+ */
+async function readsWorkspaceDocument(userId: string, documentId: string): Promise<boolean> {
+  if (currentWorkspaceContext()?.userId !== userId) return false;
+  const [document] = await db
+    .select({
+      id: companyDocuments.id,
+      name: companyDocuments.name,
+      access: companyDocuments.access,
+      uploadedById: companyDocuments.uploadedById,
+      folderId: companyDocuments.folderId,
+    })
+    .from(companyDocuments)
+    .where(and(eq(companyDocuments.id, documentId), inWorkspace(companyDocuments)));
+  if (!document) return false;
+  const [viewer, graph] = await Promise.all([accessViewer(userId), loadAccessGraph()]);
+  return canSeeDocument(graph, viewer, document);
+}
+
+setWorkspaceDocumentReader(readsWorkspaceDocument);
 
 /** Every Workspace Document this reader may see, with the level that applies to it, for the answer paths. */
 export async function visibleWorkspaceDocuments(

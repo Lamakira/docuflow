@@ -738,7 +738,7 @@ function fullBreadcrumbFor(
     return [
       { label: workspace, href: "/" },
       { label: "Workspace Documents", href: "/documents" },
-      { label: "Document" },
+      { label: recordLabel || "Document" },
     ];
   }
   if (match.kind === "opportunities") {

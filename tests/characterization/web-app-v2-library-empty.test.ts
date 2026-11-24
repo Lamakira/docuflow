@@ -67,7 +67,7 @@ describe("Workspace Documents empty states", () => {
     );
     expect(library.emptyState?.kind).toBe("filters");
     expect(library.emptyState?.copy).toContain(
-      "Name: “zzz” · Type: File · Owner: Sam Lee · Updated: in the last 7 days",
+      "Name: “zzz” · Type: File · Added by: Sam Lee · Updated: in the last 7 days",
     );
   });
 

@@ -4967,6 +4967,22 @@ a.df-dossier-client-link:hover {
 /* When a preview opens, the register gives way so the aside always sits
    beside it, whole (#245, F2). No desktop floor: the page reflows at 200%
    zoom instead of scrolling sideways (#370, F23). */
+/* Workspace Documents: the head spans the page, so opening a Folder preview beside the register never moves it. */
+.df-library-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.df-library-page > .df-today-head {
+  padding: var(--df-space-5) var(--df-space-6) 0;
+}
+
+.df-library-page > .df-refusal {
+  margin: var(--df-space-4) var(--df-space-6) 0;
+}
+
 .df-library {
   display: flex;
   flex-wrap: nowrap;
@@ -5228,10 +5244,48 @@ a.df-dossier-client-link:hover {
 .df-editor-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--df-space-3);
   padding: var(--df-space-3) var(--df-space-6);
   border-bottom: 1px solid var(--df-divider);
   flex: none;
+}
+
+.df-editor-meta {
+  font-family: var(--df-font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+}
+
+.df-editor-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
+}
+
+.df-editor-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--df-space-3);
+  padding: var(--df-space-3) var(--df-space-6);
+  border-bottom: 1px solid var(--df-alert-line);
+  background: var(--df-alert-wash);
+  color: var(--df-alert-ink);
+  font-size: var(--df-text-3);
+  flex: none;
+}
+
+.df-editor-notice p {
+  margin: 0;
+}
+
+.df-save-hint {
+  font-size: var(--df-text-2);
+  color: var(--df-archive-slate);
 }
 
 .df-save-state {
@@ -5246,10 +5300,14 @@ a.df-dossier-client-link:hover {
   color: var(--df-signed-off);
 }
 
+.df-save-state[data-state="conflict"] {
+  color: var(--df-destructive);
+}
+
 .df-editor {
   flex: 1;
   overflow: auto;
-  padding: var(--df-space-5) var(--df-space-6) var(--df-space-8);
+  padding: 0 var(--df-space-6) var(--df-space-8);
   transition: none;
   animation: none;
 }
@@ -5259,6 +5317,87 @@ a.df-dossier-client-link:hover {
 .df-editor .ProseMirror {
   transition: none;
   animation: none;
+}
+
+/* The Document page (F58) fills the window under the command bar: its head and
+   toolbar stay, the text scrolls. The File viewer keeps the page's own scroll. */
+.df-workspace-content:has(> .df-editor-page:not(.df-file-viewer)) {
+  height: 100%;
+}
+
+/* BlockEditor is shared with v1, so its page is drawn from here: one surface,
+   one column for title, toolbar and text. */
+.df-v2 .df-editor [data-testid="block-editor"] {
+  max-width: 800px;
+  height: auto;
+  margin: 0 auto;
+}
+
+.df-v2 .df-editor [data-testid="block-editor"] > :has(> div > .ProseMirror) {
+  overflow: visible;
+}
+
+.df-v2 .df-editor [data-testid="editor-sticky-header"] {
+  margin: 0;
+  padding: 0;
+  background: var(--df-card-white);
+  border-color: var(--df-divider-light);
+}
+
+.df-v2 .df-editor input[data-testid="input-document-title"] {
+  padding: var(--df-space-6) 0 var(--df-space-2);
+  border-radius: 0;
+  font-family: var(--df-font-display);
+  font-weight: 800;
+  font-size: var(--df-text-6);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+}
+
+/* The caret says where typing goes; the title adds a thin underline. */
+.df-v2 .df-editor input[data-testid="input-document-title"]:focus-visible {
+  outline: none;
+  box-shadow: inset 0 -2px 0 var(--df-amber);
+}
+
+.df-v2 .df-editor .ProseMirror:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Headings in the text stay under the title. */
+.df-v2 .df-editor .ProseMirror h1 {
+  font-size: var(--df-text-5);
+  line-height: 1.3;
+}
+
+.df-v2 .df-editor .ProseMirror h2 {
+  font-size: var(--df-text-4);
+  line-height: 1.4;
+}
+
+.df-v2 .df-editor .ProseMirror h3 {
+  font-size: var(--df-text-3);
+  line-height: 1.5;
+}
+
+.df-v2 .df-editor .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+/* A phone has no room for a toolbar that wraps and stays: the whole page scrolls. */
+.df-v2[data-chrome="mobile"] .df-workspace-content:has(> .df-editor-page:not(.df-file-viewer)) {
+  height: auto;
+  min-height: 100%;
+}
+
+.df-v2[data-chrome="mobile"] .df-editor {
+  padding: 0 var(--df-space-4) var(--df-space-7);
+}
+
+.df-v2[data-chrome="mobile"] .df-editor [data-testid="editor-sticky-header"] {
+  position: static;
 }
 
 /* Documentation tab (#307): v1's page tree beside the open page. */
@@ -5325,8 +5464,13 @@ a.df-dossier-client-link:hover {
   .df-dossier-head,
   .df-tabs,
   .df-documentation-tree,
-  .df-editor-head {
+  .df-editor-head,
+  .df-editor-notice {
     display: none !important;
+  }
+
+  .df-workspace-content:has(> .df-editor-page) {
+    height: auto !important;
   }
 
   .df-documentation {
@@ -5454,9 +5598,18 @@ a.df-dossier-client-link:hover {
   min-width: 0;
   max-width: 40%;
   position: sticky;
-  top: 0;
+  top: var(--df-space-5);
   align-self: flex-start;
-  height: calc(100dvh - 62px);
+  /* Under the page head, so short of the viewport by both bars: its foot stays in view (F9). */
+  max-height: calc(100dvh - 190px);
+  margin: var(--df-space-5) var(--df-space-6) var(--df-space-5) 0;
+  border: 1px solid var(--df-divider);
+  border-radius: var(--df-radius-3);
+  box-shadow: none;
+}
+
+.df-folder-preview .df-prose + .df-meta {
+  margin-top: var(--df-space-4);
 }
 
 /* The heading stacks; the close button holds the top-right corner. */

@@ -2,9 +2,11 @@ import { Response } from "express";
 import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import { config } from "./config";
 import {
+  ObjectAccessGroupType,
   ObjectAclPolicy,
   ObjectPermission,
   canAccessObject,
+  workspaceDocumentOf,
 } from "./objectAcl";
 import type { StoragePort, StoredObjectRef } from "./storagePort";
 import { GcsStoragePort } from "./gcsStorage";
@@ -99,6 +101,15 @@ export class ObjectNotFoundError extends Error {
 export { SignedUrlsUnsupportedError } from "./storagePort";
 export type { StoredObjectRef } from "./storagePort";
 
+/** Another policy already decides who reads this object. */
+export class ObjectPolicyConflictError extends Error {
+  constructor() {
+    super("Object already has an access policy");
+    this.name = "ObjectPolicyConflictError";
+    Object.setPrototypeOf(this, ObjectPolicyConflictError.prototype);
+  }
+}
+
 export class ObjectStorageService {
   constructor() {}
 
@@ -132,7 +143,11 @@ export class ObjectStorageService {
       res.set({
         ...storedContentHeaders(metadata.contentType, res.getHeader("Content-Disposition")),
         ...(metadata.size === undefined ? {} : { "Content-Length": String(metadata.size) }),
-        "Cache-Control": `${isPublic ? "public" : "private"}, max-age=${cacheTtlSec}`,
+        // A Member who loses the Document loses its objects with it.
+        "Cache-Control":
+          !isPublic && workspaceDocumentOf(aclPolicy) !== null
+            ? "private, no-store"
+            : `${isPublic ? "public" : "private"}, max-age=${cacheTtlSec}`,
       });
 
       const stream = storagePort.createReadStream(ref);
@@ -229,8 +244,32 @@ export class ObjectStorageService {
 
     assertObjectInActiveWorkspace(normalizedPath);
     const ref = await this.getObjectEntityFile(normalizedPath);
+    const current = await storagePort.getAclPolicy(ref);
+    const boundTo = workspaceDocumentOf(current);
+    const bindTo = workspaceDocumentOf(aclPolicy);
+    // Whoever knows a Document object's path must not re-open it, and tying one
+    // to a Document must not take an object something else already uses.
+    if (current && (boundTo !== null || bindTo !== null)) {
+      if (boundTo !== bindTo || current.owner !== aclPolicy.owner) throw new ObjectPolicyConflictError();
+    }
     await storagePort.setAclPolicy(ref, aclPolicy);
     return normalizedPath;
+  }
+
+  /** Makes an uploaded object readable by whoever reads this Workspace Document (F56). */
+  async tieObjectToWorkspaceDocument(rawPath: string, documentId: string, userId: string): Promise<string> {
+    const normalizedPath = this.normalizeObjectEntityPath(rawPath);
+    if (!isWorkspaceFilePath(normalizedPath)) throw new ObjectNotFoundError();
+    return this.trySetObjectEntityAclPolicy(normalizedPath, {
+      owner: userId,
+      visibility: "private",
+      aclRules: [
+        {
+          group: { type: ObjectAccessGroupType.WORKSPACE_DOCUMENT, id: documentId },
+          permission: ObjectPermission.READ,
+        },
+      ],
+    });
   }
 
   async canAccessObjectEntity({
@@ -346,6 +385,11 @@ export function parseObjectPath(path: string): StoredObjectRef {
 function newWorkspaceFileKey(): string {
   const { workspaceId } = requireWorkspaceContext();
   return `ws/${workspaceId}/files/${randomUUID()}/${randomUUID()}`;
+}
+
+/** A key `newWorkspaceFileKey` mints: not a legacy key, and not an agent screenshot's. */
+function isWorkspaceFilePath(objectPath: string): boolean {
+  return /^\/objects\/ws\/[^/]+\/files\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/.test(objectPath);
 }
 
 /** The Workspace an ADR-0012 key belongs to, or null for a legacy key. */

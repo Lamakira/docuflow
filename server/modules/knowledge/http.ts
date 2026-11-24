@@ -11,7 +11,7 @@ import { ACCESS_LEVELS, type AccessLevel } from "@shared/documentAccess";
 import { isAuthenticated, getUserId } from "../../auth";
 import { db } from "../../db";
 import { storage } from "../../storage";
-import { ObjectNotFoundError, ObjectStorageService } from "../../objectStorage";
+import { ObjectNotFoundError, ObjectPolicyConflictError, ObjectStorageService } from "../../objectStorage";
 import { inWorkspace } from "../../workspaceContext";
 import { canAccessProject } from "../projects/access";
 import {
@@ -31,6 +31,8 @@ const accessChangeSchema = z.object({
   level: z.enum(ACCESS_LEVELS as [AccessLevel, ...AccessLevel[]]),
   memberIds: z.array(z.string().min(1)).max(500).default([]),
 });
+
+const documentObjectSchema = z.object({ objectPath: z.string().min(1) });
 
 const projectFileSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -106,6 +108,33 @@ export function registerKnowledgeRoutes(app: Express): void {
     } catch (error) {
       console.error("Error changing Document Access:", error);
       res.status(500).json({ message: "Failed to change access" });
+    }
+  });
+
+  // An image or attachment placed in a Document, uploaded through POST /api/objects/upload first.
+  app.put("/api/company-documents/:id/objects", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req)!;
+      if (!(await readDocumentAccess(userId, req.params.id))) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      const parsed = documentObjectSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+      }
+      const objectPath = await new ObjectStorageService().tieObjectToWorkspaceDocument(
+        parsed.data.objectPath,
+        req.params.id,
+        userId,
+      );
+      res.json({ objectPath });
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError) return res.status(404).json({ message: "Object not found" });
+      if (error instanceof ObjectPolicyConflictError) {
+        return res.status(409).json({ message: "This file is already used elsewhere" });
+      }
+      console.error("Error adding an object to a Document:", error);
+      res.status(500).json({ message: "Failed to add the file to the Document" });
     }
   });
 

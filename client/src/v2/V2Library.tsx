@@ -139,6 +139,7 @@ export function V2LibraryRegister({
   emptyAction,
   createActions,
   footer,
+  personHeading = "Added by",
 }: {
   library: LibraryModel;
   testId: string;
@@ -150,6 +151,8 @@ export function V2LibraryRegister({
   createActions?: ReactNode;
   /** Replaces the item count, such as a pager. */
   footer?: ReactNode;
+  /** The person column's heading: who added the item, unless a register says otherwise. */
+  personHeading?: string;
 }) {
   const groups = groupLibraryRows(library.rows);
 
@@ -160,7 +163,7 @@ export function V2LibraryRegister({
           <span>Name / path</span>
           <span>Type</span>
           <span>Access</span>
-          <span>Last editor</span>
+          <span>{personHeading}</span>
           <span style={{ textAlign: "right" }}>Updated</span>
         </div>
       )}

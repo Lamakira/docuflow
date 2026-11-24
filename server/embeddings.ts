@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { config } from "./config";
-import { db } from "./db";
+import { db, type Db } from "./db";
 import { documentEmbeddings, documents, projects, companyDocumentEmbeddings, companyDocuments, companyDocumentFolders } from "@shared/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import crypto from "crypto";
@@ -402,6 +402,31 @@ export async function updateCompanyDocumentEmbeddings(
       )
     `);
   }
+
+  // The Document may have moved while the chunks were being embedded.
+  await syncCompanyDocumentEmbeddingFolder(companyDocumentId);
+}
+
+/**
+ * Points a Document's chunks at the Folder it is in now. `folder_id` cascades
+ * on Folder delete, so a stale one would take the index with the old Folder.
+ */
+export async function syncCompanyDocumentEmbeddingFolder(
+  companyDocumentId: string,
+  writer: Pick<Db, "execute"> = db,
+): Promise<void> {
+  await writer.execute(sql`
+    UPDATE company_document_embeddings e
+       SET folder_id = d.folder_id,
+           metadata = COALESCE(e.metadata, '{}'::jsonb) || jsonb_build_object('folderName', COALESCE(f.name, 'Root')),
+           updated_at = now()
+      FROM company_documents d
+      LEFT JOIN company_document_folders f ON f.id = d.folder_id
+     WHERE d.id = e.company_document_id
+       AND d.id = ${companyDocumentId}
+       AND d.workspace_id = ${requireWorkspaceContext().workspaceId}
+       AND e.folder_id IS DISTINCT FROM d.folder_id
+  `);
 }
 
 export async function deleteCompanyDocumentEmbeddings(companyDocumentId: string): Promise<void> {

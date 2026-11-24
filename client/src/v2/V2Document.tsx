@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { Link, Redirect, useLocation } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { KeyRound } from "lucide-react";
-import type { CompanyDocumentWithUploader, CrmProjectWithDetails, DocumentWithCreator } from "@shared/schema";
+import { useQuery } from "@tanstack/react-query";
+import { FolderInput, KeyRound } from "lucide-react";
+import type { CompanyDocument, CrmProjectWithDetails } from "@shared/schema";
 import { BlockEditor } from "@/components/editor/BlockEditor";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, throwIfResNotOk } from "@/lib/queryClient";
 import { useDebouncedCallback } from "@/hooks/useDebounce";
 import { useAuth } from "@/hooks/useAuth";
 import { chromeRefusal } from "./chrome";
@@ -12,79 +12,90 @@ import { isStandingRefusal, notify } from "./notify";
 import { composeFileViewer } from "./fileViewer";
 import {
   composeDocumentEditor,
+  documentApiPath,
   documentBack,
+  documentMetaLine,
+  documentNameMissing,
+  documentQueryKey,
+  documentVersion,
+  loadDocument,
+  mergeDocumentRecord,
   projectDocumentDossierHref,
+  toDocumentRecord,
+  trackDocumentSave,
+  DocumentSaveQueue,
+  DOCUMENT_BLANK_NAME_COPY,
+  DOCUMENT_CONFLICT_COPY,
   type DocumentEditorRecord,
-  type DocumentEditorSaveState,
   type DocumentEditorSource,
+  type DocumentSaveAnswer,
+  type DocumentSaveRequest,
+  type LoadedDocument,
 } from "./documentEditor";
 import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { FileLoading, V2FileViewer } from "./V2FileViewer";
 import { SkeletonBar, SkeletonLines } from "./V2Skeleton";
+import { V2EmptyState } from "./V2EmptyState";
 import { V2ManageAccessDialog } from "./V2ManageAccessDialog";
+import { V2MoveDocumentDialog } from "./V2MoveDocumentDialog";
 import { projectVisibleTo } from "./projects";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
 
-const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
+const LEFT_UNSAVED_COPY =
+  "Your last changes to this Document were not saved: someone else changed it since you opened it.";
 
-type LoadedDocument = {
-  forbidden: boolean;
-  missing: boolean;
-  record: DocumentEditorRecord | null;
-};
-
-function toWorkspaceRecord(document: CompanyDocumentWithUploader): DocumentEditorRecord {
-  return {
-    id: document.id,
-    name: document.name,
-    content: document.content,
-    storagePath: document.storagePath,
-    fileName: document.fileName,
-    fileSize: document.fileSize,
-    mimeType: document.mimeType,
-    access: document.access,
-    effectiveAccess: document.effectiveAccess,
-    canManageAccess: document.canManageAccess,
-  };
-}
-
-function toProjectRecord(document: DocumentWithCreator): DocumentEditorRecord {
-  return {
-    id: document.id,
-    name: document.title,
-    content: document.content,
-    access: "workspace",
-    projectId: document.projectId,
-  };
-}
-
-async function loadDocument(source: DocumentEditorSource, documentId: string): Promise<LoadedDocument> {
-  const url = source === "project" ? `/api/documents/${documentId}` : `/api/company-documents/${documentId}`;
-  const res = await fetch(url, { credentials: "include" });
-  if (res.status === 401 || res.status === 403) {
-    return { forbidden: true, missing: false, record: null };
+async function saveDocument(
+  source: DocumentEditorSource,
+  documentId: string,
+  { name, ...request }: DocumentSaveRequest,
+): Promise<{ conflict: boolean; record: DocumentEditorRecord }> {
+  const named = name === undefined ? {} : source === "project" ? { title: name } : { name };
+  const res = await fetch(documentApiPath(source, documentId), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...named, ...request }),
+    credentials: "include",
+  });
+  if (res.status === 409) {
+    const body = await res.clone().json().catch(() => null);
+    if (body?.code === "document_changed" && body.current) {
+      return { conflict: true, record: toDocumentRecord(source, body.current) };
+    }
   }
-  if (res.status === 404) return { forbidden: false, missing: true, record: null };
-  if (!res.ok) throw new Error("Failed to fetch Document");
-  const body = await res.json();
-  return {
-    forbidden: false,
-    missing: false,
-    record: source === "project" ? toProjectRecord(body) : toWorkspaceRecord(body),
-  };
+  await throwIfResNotOk(res);
+  return { conflict: false, record: toDocumentRecord(source, await res.json()) };
 }
 
-function documentQueryKey(source: DocumentEditorSource, documentId: string) {
-  return [source === "project" ? "/api/documents" : "/api/company-documents", documentId, "v2-editor"];
+/** The register lists a Document's name, Folder and time: what it shows next must be read again (F55). */
+function staleRegister(refetchType: "active" | "none") {
+  queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"], refetchType });
+  queryClient.invalidateQueries({ queryKey: ["/api/company-documents"], refetchType });
+}
+
+/** Stores a File in the slot a route gives. */
+async function storeObject(slotPath: string, file: File, contentType: string): Promise<string> {
+  const slot = (await apiRequest("POST", slotPath)) as { uploadURL: string; objectPath?: string };
+  const uploaded = await fetch(slot.uploadURL, { method: "PUT", body: file, headers: { "Content-Type": contentType } });
+  if (!uploaded.ok) throw new Error(`Failed to upload ${file.name}`);
+  return slot.objectPath ?? slot.uploadURL;
+}
+
+/** Ties a stored object to the Document's readers (F56). */
+async function tieObject(documentId: string, objectPath: string): Promise<string> {
+  const tied = (await apiRequest("PUT", `/api/company-documents/${documentId}/objects`, { objectPath })) as {
+    objectPath: string;
+  };
+  staleRegister("none");
+  return tied.objectPath;
 }
 
 const ASSIGNMENT_PROJECTS_KEY = ["/api/crm/projects", "document-assignment"];
 
 async function loadAssignmentProjects(): Promise<CrmProjectWithDetails[]> {
   const res = await fetch("/api/crm/projects?pageSize=500", { credentials: "include" });
-  if (!res.ok) return [];
+  if (!res.ok) throw new Error("Failed to fetch Projects");
   const body = (await res.json()) as { data?: CrmProjectWithDetails[] };
   return body.data ?? [];
 }
@@ -100,7 +111,7 @@ export function V2DocumentPage() {
     return <Redirect to={source === "project" ? "/project-documentation" : "/documents"} />;
   }
   if (source === "project") return <ProjectDocumentRedirect documentId={documentId} />;
-  return <V2DocumentEditor source="workspace" documentId={documentId} />;
+  return <V2DocumentEditor key={documentId} source="workspace" documentId={documentId} />;
 }
 
 /**
@@ -109,12 +120,17 @@ export function V2DocumentPage() {
  * it cannot open.
  */
 function ProjectDocumentRedirect({ documentId }: { documentId: string }) {
-  const { data, isLoading } = useQuery<LoadedDocument>({
+  const { data, isLoading, isError, refetch } = useQuery<LoadedDocument>({
     queryKey: documentQueryKey("project", documentId),
     queryFn: () => loadDocument("project", documentId),
   });
   const projectId = data?.record?.projectId ?? null;
-  const { data: projects, isLoading: projectsLoading } = useQuery<CrmProjectWithDetails[]>({
+  const {
+    data: projects,
+    isLoading: projectsLoading,
+    isError: projectsFailed,
+    refetch: refetchProjects,
+  } = useQuery<CrmProjectWithDetails[]>({
     queryKey: ASSIGNMENT_PROJECTS_KEY,
     enabled: Boolean(projectId),
     queryFn: loadAssignmentProjects,
@@ -126,7 +142,16 @@ function ProjectDocumentRedirect({ documentId }: { documentId: string }) {
 
   if (href) return <Redirect to={href} />;
   if (isLoading || (projectId && projectsLoading)) return <EditorLoading embedded={false} {...documentBack("project")} />;
-  return <V2DocumentEditor source="project" documentId={documentId} />;
+  if ((isError && !data) || (projectsFailed && !projects)) {
+    return (
+      <DocumentLoadFailed
+        embedded={false}
+        {...documentBack("project")}
+        onRetry={() => (isError ? refetch() : refetchProjects())}
+      />
+    );
+  }
+  return <V2DocumentEditor key={documentId} source="project" documentId={documentId} />;
 }
 
 const LOADING_DOCUMENT_COPY = "Loading this Document…";
@@ -160,10 +185,50 @@ function EditorLoading({ embedded, backHref, backLabel }: { embedded: boolean; b
   );
 }
 
+function BackLink({ backHref, backLabel }: { backHref: string; backLabel: string }) {
+  return (
+    <Button asChild variant="outline" className="df-btn"><Link href={backHref}>
+      Back to {backLabel}
+    </Link></Button>
+  );
+}
+
+function DocumentLoadFailed({
+  embedded,
+  backHref,
+  backLabel,
+  onRetry,
+}: {
+  embedded: boolean;
+  backHref: string;
+  backLabel: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="df-editor-page" data-testid="v2-document-editor">
+      <V2EmptyState
+        icon="documents"
+        title="This Document could not be loaded."
+        copy={`Something went wrong while loading it. Try again${embedded ? "." : `, or go back to ${backLabel}.`}`}
+        testId="v2-document-load-failed"
+        action={
+          <span className="df-cluster">
+            <Button variant="default" type="button" className="df-btn" onClick={onRetry}>
+              Try again
+            </Button>
+            {embedded ? null : <BackLink backHref={backHref} backLabel={backLabel} />}
+          </span>
+        }
+      />
+    </div>
+  );
+}
+
 /**
  * One Document in the editor: on its own page, or `embedded` beside the page
  * tree in a Project Dossier (#307), where the tree replaces the way back and
- * Print prints the page as v1 did, titled "Project - Page".
+ * Print prints the page as v1 did, titled "Project - Page". Render it keyed by
+ * `documentId`: what it has yet to save belongs to one Document.
  */
 export function V2DocumentEditor({
   source,
@@ -182,24 +247,42 @@ export function V2DocumentEditor({
   const workspaceName = current?.workspaceName ?? "this Workspace";
   const readOnly = current?.condition === "Read-only";
 
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState<unknown>(null);
-  const [readyId, setReadyId] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<DocumentEditorSaveState>("idle");
+  const [, changed] = useReducer((count: number) => count + 1, 0);
+  // Set once the fresh read seeded the editor; until then nothing may be painted or saved (F52).
+  const queueRef = useRef<DocumentSaveQueue | null>(null);
+  const aliveRef = useRef(true);
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  // Remounts the editor on content that did not come from it.
+  const [seed, setSeed] = useState(0);
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [managingAccess, setManagingAccess] = useState(false);
+  const [moving, setMoving] = useState(false);
 
   const ownerName = useWorkspaceOwnerName();
-  const { data, isLoading } = useQuery<LoadedDocument>({
-    queryKey: documentQueryKey(source, documentId),
+  const queryKey = documentQueryKey(source, documentId);
+  const { data, isError, isFetching, isFetchedAfterMount, refetch } = useQuery<LoadedDocument>({
+    queryKey,
     enabled: Boolean(documentId),
+    staleTime: 0,
     queryFn: () => loadDocument(source, documentId),
   });
-  const { data: projects = [], isLoading: projectsLoading } = useQuery<CrmProjectWithDetails[]>({
+  const {
+    data: projects = [],
+    isLoading: projectsLoading,
+    isError: projectsFailed,
+    refetch: refetchProjects,
+  } = useQuery<CrmProjectWithDetails[]>({
     queryKey: ASSIGNMENT_PROJECTS_KEY,
     enabled: source === "project" && Boolean(data?.record?.projectId),
     queryFn: loadAssignmentProjects,
   });
+
+  const queue = queueRef.current;
+  const saveState = queue?.state ?? "idle";
+  const opened = Boolean(queue && data?.record);
+  const waiting = !opened && (!isFetchedAfterMount || isFetching);
+  const loadFailed = !opened && !waiting && isError;
 
   const assigned =
     source !== "project"
@@ -222,24 +305,68 @@ export function V2DocumentEditor({
         );
   const assignmentPending = source === "project" && Boolean(data?.record) && projectsLoading;
 
+  const refuseReadOnly = () => {
+    setWriteRefusal(chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }));
+  };
+
+  const mergeRecord = (next: DocumentEditorRecord) => {
+    queryClient.setQueryData<LoadedDocument>(queryKey, (loaded) =>
+      loaded?.record ? { ...loaded, record: mergeDocumentRecord(loaded.record, next) } : loaded,
+    );
+  };
+
+  const openQueue = (record: DocumentEditorRecord) =>
+    new DocumentSaveQueue(documentVersion(record), {
+      send: async (request: DocumentSaveRequest): Promise<DocumentSaveAnswer> => {
+        const answer = await saveDocument(source, documentId, request);
+        // A closed editor leaves the cache alone, so the next one opens on its own read.
+        if (aliveRef.current) mergeRecord(answer.record);
+        const version = documentVersion(answer.record);
+        return answer.conflict ? { kind: "conflict", current: version } : { kind: "saved", version };
+      },
+      onChange: changed,
+      onSaved: (_version, renamed) => {
+        setWriteRefusal(null);
+        if (source === "workspace") {
+          staleRegister(renamed ? "active" : "none");
+          return;
+        }
+        // The page tree beside the editor lists the new title too.
+        if (record.projectId) {
+          queryClient.invalidateQueries({ queryKey: ["/api/projects", record.projectId, "documents"] });
+        }
+      },
+      onConflict: () => {
+        if (!aliveRef.current) notify.error(LEFT_UNSAVED_COPY, { id: `v2-document-save-${documentId}` });
+      },
+      onError: (error) => {
+        if (aliveRef.current && readOnlyRef.current) {
+          refuseReadOnly();
+          return;
+        }
+        if (aliveRef.current && isStandingRefusal(error)) {
+          setWriteRefusal(chromeRefusal({ kind: "generic", message: error.message }));
+          return;
+        }
+        notify.error(error, { fallback: "Document could not be saved.", id: `v2-document-save-${documentId}` });
+      },
+    });
+
   useEffect(() => {
-    if (!data?.record) {
-      setReadyId(null);
+    if (!isFetchedAfterMount || !data) return;
+    if (!data.record) {
+      queueRef.current = null;
       return;
     }
-    setTitle(data.record.name);
-    setContent(data.record.content ?? EMPTY_DOC);
-    setSaveState("idle");
-    setWriteRefusal(null);
-    setReadyId(data.record.id);
-  }, [data?.record?.id]);
-
-  // A rename from the page tree (#307) reaches an editor with nothing unsaved,
-  // so the next save does not write the old title back.
-  useEffect(() => {
-    if (!data?.record || readyId !== data.record.id) return;
-    if (saveState === "idle" || saveState === "saved") setTitle(data.record.name);
-  }, [data?.record?.name]);
+    if (!queueRef.current) {
+      if (isError || isFetching) return;
+      queueRef.current = openQueue(data.record);
+      changed();
+      return;
+    }
+    // Access, a move, or a rename from the page tree (#307) reaches an open editor here.
+    if (queueRef.current.observe(documentVersion(data.record)) === "reseeded") setSeed((count) => count + 1);
+  }, [data, isFetchedAfterMount, isError, isFetching, saveState, queue?.dirty]);
 
   const editor = composeDocumentEditor({
     source,
@@ -247,73 +374,68 @@ export function V2DocumentEditor({
     missing:
       data?.missing === true ||
       assigned === false ||
-      (!isLoading && !assignmentPending && !data?.record && !data?.forbidden),
+      (!waiting && !assignmentPending && !data?.record && !data?.forbidden),
     forbidden: data?.forbidden === true,
     ownerName,
     saveState,
     assigned,
   });
 
-  const saveMutation = useMutation({
-    mutationFn: async (next: { title: string; content: unknown }) => {
-      if (source === "project") {
-        return apiRequest("PATCH", `/api/documents/${documentId}`, { title: next.title, content: next.content });
-      }
-      return apiRequest("PATCH", `/api/company-documents/${documentId}`, {
-        name: next.title,
-        content: next.content,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [source === "project" ? "/api/documents" : "/api/company-documents", documentId],
-      });
-      // The page tree beside the editor lists the new title too.
-      const pageProjectId = data?.record?.projectId;
-      if (source === "project" && pageProjectId) {
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", pageProjectId, "documents"] });
-      }
-      setSaveState("saved");
-      setWriteRefusal(null);
-    },
-    onError: (error: Error) => {
-      setSaveState("unsaved");
-      if (readOnly) {
-        setWriteRefusal(
-          chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }),
-        );
-        return;
-      }
-      if (isStandingRefusal(error)) {
-        setWriteRefusal(chromeRefusal({ kind: "generic", message: error.message }));
-        return;
-      }
-      notify.error(error, { fallback: "Document could not be saved.", id: `v2-document-save-${documentId}` });
-    },
-  });
-
-  const debouncedSave = useDebouncedCallback((nextTitle: string, nextContent: unknown) => {
+  const requestSave = () => {
+    const open = queueRef.current;
+    if (!open) return;
     if (readOnly) {
-      setWriteRefusal(
-        chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }),
-      );
-      setSaveState("unsaved");
+      refuseReadOnly();
       return;
     }
-    setSaveState("saving");
-    saveMutation.mutate({ title: nextTitle, content: nextContent });
-  }, 1500);
+    trackDocumentSave(documentId, open.save());
+  };
+  const debouncedSave = useDebouncedCallback(requestSave, 1500);
 
-  const handleTitleChange = (nextTitle: string) => {
-    setTitle(nextTitle);
-    setSaveState("unsaved");
-    debouncedSave(nextTitle, content ?? EMPTY_DOC);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      if (queueRef.current?.conflict) {
+        notify.error(LEFT_UNSAVED_COPY, { id: `v2-document-save-${documentId}` });
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (saveState !== "conflict") return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [saveState]);
+
+  const handleTitleChange = (title: string) => {
+    queueRef.current?.edit({ title });
+    debouncedSave();
   };
 
-  const handleContentChange = (nextContent: unknown) => {
-    setContent(nextContent);
-    setSaveState("unsaved");
-    debouncedSave(title, nextContent);
+  const handleContentChange = (content: unknown) => {
+    queueRef.current?.edit({ content });
+    debouncedSave();
+  };
+
+  const loadTheirs = () => {
+    queueRef.current?.loadTheirs();
+    setSeed((count) => count + 1);
+  };
+
+  const keepMine = () => {
+    if (readOnly) {
+      refuseReadOnly();
+      return;
+    }
+    const open = queueRef.current;
+    if (open) trackDocumentSave(documentId, open.keepMine());
+  };
+
+  const settleSaves = async () => {
+    debouncedSave.flush();
+    await queueRef.current?.settled;
   };
 
   const handleImageUpload = useCallback(async (): Promise<string | null> => {
@@ -334,21 +456,19 @@ export function V2DocumentEditor({
           return;
         }
         try {
-          const uploadPath = source === "project" ? "/api/objects/upload" : "/api/company-documents/upload-url";
-          const urlResponse = await apiRequest("POST", uploadPath);
-          const { uploadURL, objectPath } = urlResponse as { uploadURL: string; objectPath?: string };
-          await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
           if (source === "project") {
-            const updateResponse = (await apiRequest("PUT", "/api/document-images", {
-              imageURL: objectPath ?? uploadURL,
-            })) as { objectPath: string };
+            const imageURL = await storeObject("/api/objects/upload", file, file.type);
+            const stored = (await apiRequest("PUT", "/api/document-images", { imageURL })) as { objectPath: string };
             cleanup();
-            resolve(updateResponse.objectPath);
+            resolve(stored.objectPath);
             return;
           }
+          const path = await storeObject("/api/company-documents/upload-url", file, file.type);
+          const tied = await tieObject(documentId, path);
           cleanup();
-          resolve(objectPath ?? null);
-        } catch {
+          resolve(tied);
+        } catch (error) {
+          notify.error(error, { fallback: "Image could not be added." });
           cleanup();
           resolve(null);
         }
@@ -359,12 +479,13 @@ export function V2DocumentEditor({
       });
       input.click();
     });
-  }, [source]);
+  }, [source, documentId]);
 
   /**
    * The editor's attach control (#260). It was drawn on every v2 Document and
-   * did nothing (#249); it now stores the File the way v1's Document page did,
-   * as an object whose ACL `/api/document-attachments` sets.
+   * did nothing (#249); a Project Document stores the File the way v1's
+   * Document page did, as an object whose ACL `/api/document-attachments` sets;
+   * a Workspace Document's is tied to the Document's own readers (F56).
    */
   const handleDocumentUpload = useCallback(
     async (onProgress?: (progress: number) => void) => {
@@ -394,24 +515,17 @@ export function V2DocumentEditor({
             }
             const filetype = file.type || "application/octet-stream";
             try {
-              const slot = (await apiRequest("POST", "/api/objects/upload")) as {
-                uploadURL: string;
-                objectPath?: string;
-              };
               onProgress?.(0);
-              const uploaded = await fetch(slot.uploadURL, {
-                method: "PUT",
-                body: file,
-                headers: { "Content-Type": filetype },
-              });
-              if (!uploaded.ok) throw new Error(`Failed to upload ${file.name}`);
+              const path = await storeObject("/api/objects/upload", file, filetype);
               onProgress?.(100);
-              const attached = (await apiRequest("PUT", "/api/document-attachments", {
-                fileURL: slot.objectPath ?? slot.uploadURL,
-              })) as { objectPath: string };
+              const url =
+                source === "project"
+                  ? ((await apiRequest("PUT", "/api/document-attachments", { fileURL: path })) as { objectPath: string })
+                      .objectPath
+                  : await tieObject(documentId, path);
               setWriteRefusal(null);
               cleanup();
-              resolve({ url: attached.objectPath, filename: file.name, filesize: file.size, filetype });
+              resolve({ url, filename: file.name, filesize: file.size, filetype });
             } catch (error) {
               notify.error(error, { fallback: "File could not be attached." });
               cleanup();
@@ -426,12 +540,27 @@ export function V2DocumentEditor({
         },
       );
     },
-    [readOnly, workspaceName],
+    [source, documentId, readOnly, workspaceName],
   );
+
+  const readOnlyRefusal = readOnly
+    ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" })
+    : null;
+  const isFile = editor.mode === "viewer";
 
   const manageAccess =
     source === "workspace" && data?.record?.canManageAccess ? (
       <>
+        <Button
+          variant="outline"
+          type="button"
+          className="df-btn"
+          data-testid="v2-document-move"
+          onClick={() => setMoving(true)}
+        >
+          <FolderInput strokeWidth={1.6} aria-hidden />
+          {isFile ? "Rename or move" : "Move"}
+        </Button>
         <Button
           variant="outline"
           type="button"
@@ -448,9 +577,23 @@ export function V2DocumentEditor({
             id={documentId}
             open
             onOpenChange={setManagingAccess}
-            readOnlyRefusal={
-              readOnly ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }) : null
-            }
+            readOnlyRefusal={readOnlyRefusal}
+          />
+        ) : null}
+        {moving ? (
+          <V2MoveDocumentDialog
+            kind={isFile ? "file" : "document"}
+            id={documentId}
+            name={data.record.name}
+            folderId={data.record.folderId ?? null}
+            folderName={data.record.folder?.name ?? null}
+            onOpenChange={setMoving}
+            readOnlyRefusal={readOnlyRefusal}
+            beforeSave={settleSaves}
+            onSaved={(row: CompanyDocument, folder) => {
+              mergeRecord({ ...toDocumentRecord(source, row), folder });
+              staleRegister("active");
+            }}
           />
         ) : null}
       </>
@@ -458,7 +601,7 @@ export function V2DocumentEditor({
 
   const handlePrint = () => {
     const original = window.document.title;
-    window.document.title = [projectName, title.trim() || "Untitled"].filter(Boolean).join(" - ");
+    window.document.title = [projectName, queueRef.current?.draft.title.trim() || "Untitled"].filter(Boolean).join(" - ");
     const restore = () => {
       window.document.title = original;
       window.removeEventListener("afterprint", restore);
@@ -468,22 +611,43 @@ export function V2DocumentEditor({
     window.setTimeout(() => window.print(), 100);
   };
 
-  if (isLoading || assignmentPending) return <EditorLoading embedded={embedded} {...documentBack(source)} />;
+  if (waiting || assignmentPending) return <EditorLoading embedded={embedded} {...documentBack(source)} />;
+
+  if (loadFailed || (source === "project" && data?.record && projectsFailed && projects.length === 0)) {
+    return (
+      <DocumentLoadFailed
+        embedded={embedded}
+        {...documentBack(source)}
+        onRetry={() => (loadFailed ? refetch() : refetchProjects())}
+      />
+    );
+  }
 
   if (editor.missing) {
     return (
       <div className="df-editor-page" data-testid="v2-document-editor">
-        {embedded ? null : (
+        {editor.refusal && !embedded ? (
           <header className="df-editor-head">
-            <Button asChild variant="outline" className="df-btn"><Link href={editor.backHref}>
-              Back to {editor.backLabel}
-            </Link></Button>
+            <BackLink backHref={editor.backHref} backLabel={editor.backLabel} />
           </header>
+        ) : null}
+        {editor.refusal ? (
+          <p className="df-refusal">{editor.refusal}</p>
+        ) : (
+          <V2EmptyState
+            icon="documents"
+            title={editor.emptyTitle}
+            copy={editor.emptyCopy}
+            testId="v2-document-missing"
+            action={embedded ? undefined : <BackLink backHref={editor.backHref} backLabel={editor.backLabel} />}
+          />
         )}
-        {editor.refusal ? <p className="df-refusal">{editor.refusal}</p> : <p className="df-empty">{editor.emptyCopy}</p>}
       </div>
     );
   }
+
+  const meta = source === "workspace" && data?.record ? documentMetaLine(data.record, new Date()) : "";
+  const description = data?.record?.description?.trim() || "";
 
   // An uploaded File is Knowledge, not a page to edit: it opens in the viewer (#216).
   // Only a Workspace Document has the stream and conversion routes; anything
@@ -503,6 +667,8 @@ export function V2DocumentEditor({
           access: record?.access ?? null,
           effectiveAccess: record?.effectiveAccess ?? null,
           backHref: editor.backHref,
+          filing: meta,
+          description,
         })}
         actions={manageAccess}
       />
@@ -512,14 +678,27 @@ export function V2DocumentEditor({
   return (
     <div className="df-editor-page" data-testid="v2-document-editor">
       <header className="df-editor-head">
-        {embedded ? null : (
-          <Button asChild variant="outline" className="df-btn"><Link href={editor.backHref}>
-            Back to {editor.backLabel}
-          </Link></Button>
-        )}
+        {embedded ? null : <BackLink backHref={editor.backHref} backLabel={editor.backLabel} />}
+        {meta ? (
+          <div className="df-file-identity">
+            <div className="df-editor-meta" data-testid="v2-document-meta">
+              {meta}
+            </div>
+            {description ? (
+              <div className="df-editor-description" title={description}>
+                {description}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {editor.saveLabel ? (
           <span className="df-save-state" data-state={saveState} data-motion={saveState === "idle" ? "none" : "standard"}>
             {editor.saveLabel}
+          </span>
+        ) : null}
+        {queue && documentNameMissing(queue.draft.title, queue.storedName) ? (
+          <span className="df-save-hint" role="status">
+            {DOCUMENT_BLANK_NAME_COPY}
           </span>
         ) : null}
         {writeRefusal ? (
@@ -540,15 +719,28 @@ export function V2DocumentEditor({
           </Button>
         ) : null}
       </header>
+      {saveState === "conflict" ? (
+        <div className="df-editor-notice" role="alert" data-testid="v2-document-conflict">
+          <p>{DOCUMENT_CONFLICT_COPY}</p>
+          <span className="df-cluster">
+            <Button variant="outline" type="button" className="df-btn" onClick={loadTheirs}>
+              Load their version
+            </Button>
+            <Button variant="outline" type="button" className="df-btn" onClick={keepMine}>
+              Keep mine
+            </Button>
+          </span>
+        </div>
+      ) : null}
       <div className="df-editor">
-        {readyId === documentId && content ? (
+        {queue ? (
           <BlockEditor
-            key={documentId}
-            content={content}
+            key={`${documentId}-${seed}`}
+            content={queue.draft.content}
             onChange={handleContentChange}
             onImageUpload={handleImageUpload}
             onDocumentUpload={readOnly ? undefined : handleDocumentUpload}
-            title={title}
+            title={queue.draft.title}
             onTitleChange={handleTitleChange}
             titlePlaceholder="Untitled"
             editable={!readOnly}
