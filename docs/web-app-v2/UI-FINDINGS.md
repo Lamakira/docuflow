@@ -1698,7 +1698,7 @@ in, the same capture is taken again. Gallery, counts, Low activity and
 Analytics (from code) count them all. It would take a server that keeps one row per
 capture and image, and a decision on the copies already stored.
 
-- **Fixed:** 2026-11-24. A commit that repeats a stored capture (same Time Entry, instant and image, live or deleted) is hidden at once under its own reason, two uploads at the same moment leave one row, and no count of deleted captures includes copies. `npm run db:hide:duplicate-captures` hides the stored ones (dry run by default, `--undo` restores): **to run in production after publishing**. On the rehearsal copy the dry run finds 2,532 sets and 4,029 copies; applied, 12,317 captures stay, 0 sets are left and Low activity reads 2,629 (before: 3,664), in 1.4 s; undone, the table is identical. Analytics follows through the captures it already leaves out.
+- **Fixed:** 2026-11-24. A commit that repeats a stored capture (same Time Entry, instant and image, live or deleted) is hidden at once under its own reason, two uploads at the same moment leave one row, and no count of deleted captures includes copies. `npm run db:hide:duplicate-captures` hides the stored ones (dry run by default; `--undo` restores, except copies of a capture an Administrator deleted): **to run in production after publishing**. On the rehearsal copy the dry run finds 2,532 sets and 4,029 copies; applied, 12,317 captures stay, 0 sets are left and Low activity reads 2,629 (before: 3,664), in 1.4 s; undone, the table is identical. Analytics follows through the captures it already leaves out.
 
 ## F76 - The Evidence list stops at 50 and says 50
 
@@ -1791,7 +1791,7 @@ negative offset or a NUL id (seen); the image and delete routes answer 500 to a
 NUL id (seen). Each row carries its storage key and content hash, which the
 page does not need beyond its source. The web capture that uses the POST is v1's.
 
-- **Fixed:** 2026-11-24. The Project is the Time Entry's; the date must be in it, within 5 minutes; an object already named by a capture, a File or a Document is refused. Unreadable dates, negative paging and NUL ids answer 400 or 404. The rows no longer carry the storage key; they keep the content hash, which v1's Identical filter reads. Left: the check for an object already named looks in the Active Workspace.
+- **Fixed:** 2026-11-24. The Project is the Time Entry's; the date must be in it, within 5 minutes; only an upload handed to that Member, still open and not used yet, can become a capture, and once. Unreadable dates, negative paging and NUL ids answer 400 or 404. The rows no longer carry the storage key; they keep the content hash, which v1's Identical filter reads.
 
 ## F81 - Activity polish
 

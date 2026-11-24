@@ -141,7 +141,7 @@ import {
   createDocumentWithDerivedJobs,
   updateDocumentWithDerivedJobs,
 } from "./documentJobs";
-import { isStoredObjectNamed } from "./modules/activity/evidence";
+import { claimWebCaptureUpload, isStoredObjectNamed } from "./modules/activity/evidence";
 import {
   createActivityJobsPort,
   ingestActivityScreenshot,
@@ -4994,8 +4994,8 @@ Instructions:
         throw error;
       }
 
-      const objectStorageService = new ObjectStorageService();
-      const { uploadURL, objectPath } = await objectStorageService.getObjectEntityUpload();
+      // The slot is what the registration below claims.
+      const { uploadURL, objectPath } = await createKnowledgeObjectStorage().createUploadSlot(userId);
       res.json({ uploadURL, objectPath });
     } catch (error) {
       console.error("Error getting screenshot upload URL:", error);
@@ -5061,7 +5061,7 @@ Instructions:
         return res.status(400).json({ message: "Invalid storageKey" });
       }
 
-      if (await isStoredObjectNamed(normalizedPath)) {
+      if ((await isStoredObjectNamed(normalizedPath)) || !(await claimWebCaptureUpload(normalizedPath, userId))) {
         return res.status(400).json({ message: "Invalid storageKey" });
       }
 

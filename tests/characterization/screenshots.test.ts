@@ -127,14 +127,17 @@ describe("time-tracking screenshots (characterization)", () => {
     const app = await makeApp();
     const { user, crmProjectId, entry } = await runningEntry(app);
 
+    const issued = await user.agent
+      .post("/api/time-tracking/screenshots/upload-url")
+      .send({ timeEntryId: entry.id });
     const created = await user.agent.post("/api/time-tracking/screenshots").send({
       timeEntryId: entry.id,
       crmProjectId,
-      storageKey: "/objects/uploads/never-uploaded",
+      storageKey: issued.body.objectPath,
     });
     // Quirk: nothing verifies the object exists at write time.
     expect(created.status).toBe(200);
-    expect(created.body.storageKey).toBe("/objects/uploads/never-uploaded");
+    expect(created.body.storageKey).toBe(issued.body.objectPath);
 
     const image = await user.agent.get(`/api/time-tracking/screenshots/${created.body.id}/image`);
     expect(image.status).toBe(404);
@@ -168,9 +171,12 @@ describe("time-tracking screenshots (characterization)", () => {
       .send({ name: "F", fileName: "f.pdf", mimeType: "application/pdf", storagePath: file });
     expect((await register(objectPathFor(file))).status).toBe(400);
 
+    // Someone else's upload, tied to nothing yet: not theirs to register.
+    expect((await register(await upload())).status).toBe(400);
+
     // Registered first, tied after: the Document's access still decides.
-    const early = await upload();
-    const row = await register(early);
+    const { created: row, uploadedUrl } = await captureScreenshot(user, entry.id, crmProjectId);
+    const early = objectPathFor(uploadedUrl);
     expect(row.status).toBe(200);
     expect((await tie(early)).status).toBe(200);
     const image = () => user.agent.get(`/api/time-tracking/screenshots/${row.body.id}/image`);

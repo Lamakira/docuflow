@@ -268,13 +268,14 @@ describe("agent screenshots across Workspaces (#297)", () => {
     const key = `agent-screenshots/${randomUUID()}.webp`;
     putObject(`${process.env.PRIVATE_OBJECT_DIR!.slice(1)}/${key}`, PNG_1X1, { contentType: "image/webp" });
 
-    const registered = await a.agent.post("/api/time-tracking/screenshots").send({
-      timeEntryId: entry.id,
-      crmProjectId: crmProject.id,
-      storageKey: `/objects/${key}`,
-    });
-    expect(registered.status).toBe(200);
-    expect((await a.agent.get(`/api/time-tracking/screenshots/${registered.body.id}/image`)).status).toBe(200);
+    const row = { timeEntryId: entry.id, crmProjectId: crmProject.id, storageKey: `/objects/${key}` };
+    // A stored row is served; a legacy key names no upload of this User, so it cannot become a new one.
+    expect((await a.agent.post("/api/time-tracking/screenshots").send(row)).status).toBe(400);
+    const [stored] = await ownerDb
+      .insert(timeEntryScreenshots)
+      .values({ ...row, userId: a.id, workspaceId: SEEDED_WORKSPACE_ID })
+      .returning();
+    expect((await a.agent.get(`/api/time-tracking/screenshots/${stored.id}/image`)).status).toBe(200);
   });
 });
 

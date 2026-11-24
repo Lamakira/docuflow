@@ -4,7 +4,7 @@
  * Entry the evidence is attached to. Evidence is not turned into scores.
  */
 
-import { and, desc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
 import {
   agentActivityEvents,
   agentProcessedBatches,
@@ -12,6 +12,7 @@ import {
   crmClients,
   crmProjects,
   files,
+  objectUploadSlots,
   projects,
   tasks,
   timeEntries,
@@ -158,6 +159,28 @@ export async function isStoredObjectNamed(objectPath: string): Promise<boolean> 
     )
     .limit(1);
   return named !== undefined;
+}
+
+/**
+ * Uses up the upload this User was handed for a web capture: only a key minted
+ * for them, not expired and not used yet, can become a capture, and once. A key
+ * learned elsewhere never opens someone else's object, in any Workspace.
+ */
+export async function claimWebCaptureUpload(objectPath: string, userId: string): Promise<boolean> {
+  const claimed = await db
+    .update(objectUploadSlots)
+    .set({ finalizedAt: new Date() })
+    .where(
+      and(
+        inWorkspace(objectUploadSlots),
+        eq(objectUploadSlots.objectPath, objectPath),
+        eq(objectUploadSlots.createdById, userId),
+        isNull(objectUploadSlots.finalizedAt),
+        gt(objectUploadSlots.expiresAt, new Date())
+      )
+    )
+    .returning({ id: objectUploadSlots.id });
+  return claimed.length > 0;
 }
 
 export async function getTimeEntryScreenshots(options: ScreenshotListOptions): Promise<ScreenshotList> {

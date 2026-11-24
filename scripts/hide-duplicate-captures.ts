@@ -7,12 +7,13 @@
  *   npm run db:hide:duplicate-captures -- --undo
  *
  * A set is the uploaded captures of one Time Entry at one instant with one
- * image. The earliest live one stays and the others are tombstoned with the
- * reason `duplicate`; when an Administrator deleted any of the set, every live
+ * image. The earliest live one stays and the others are tombstoned with a
+ * reason of their own; when an Administrator deleted any of the set, every live
  * one is. No row and no stored image is removed.
  *
- * `--undo` restores the captures hidden as duplicates. The upload path hides
- * copies the same way, so undo also restores those; `--apply` hides them again.
+ * `--undo` restores the captures hidden as duplicates, except the copies of one
+ * an Administrator deleted. The upload path hides copies the same way, so undo
+ * also restores those; `--apply` hides them again.
  *
  * Needs the same environment as the server (`DATABASE_URL` for the app role). It
  * runs as the app role, one Workspace at a time inside that Workspace's context.

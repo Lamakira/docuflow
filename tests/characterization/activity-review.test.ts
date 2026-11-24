@@ -7,6 +7,7 @@ import {
   files,
   jobs,
   memberships,
+  objectUploadSlots,
   PARALLEL_WORKSPACE_ID,
   projects,
   SEEDED_WORKSPACE_ID,
@@ -28,6 +29,7 @@ const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 const INSTANT = "2026-03-10 09:30:00.123456";
 const NUL = "a\0b";
+const DUPLICATE = "system:duplicate-capture";
 const NUL_PATH = "/api/time-tracking/screenshots/a%00b";
 
 type Base = { userId: string; timeEntryId: string; crmProjectId: string; workspaceId?: string };
@@ -160,7 +162,7 @@ describe("one live row per capture and image, at upload (F75)", () => {
     await commit(first);
     const copy = await commit(second);
 
-    expect(copy).toMatchObject({ id: second, deletedBy: null, deleteReason: "duplicate", contentHash: HASH_A });
+    expect(copy).toMatchObject({ id: second, deletedBy: null, deleteReason: DUPLICATE, contentHash: HASH_A });
     expect(copy!.deletedAt).not.toBeNull();
     expect((await rowOf(second)).storageKey).toBe(`/objects/ws/seeded/agent-screenshots/${second}.webp`);
     expect(await liveIds()).toEqual([first]);
@@ -216,7 +218,7 @@ describe("one live row per capture and image, at upload (F75)", () => {
     expect((await admin.agent.delete(`/api/time-tracking/screenshots/${original}`)).status).toBe(200);
     const copy = await pending(base);
     await commit(copy);
-    expect(await rowOf(copy)).toMatchObject({ deleteReason: "duplicate", deletedBy: null });
+    expect(await rowOf(copy)).toMatchObject({ deleteReason: DUPLICATE, deletedBy: null });
     expect(await rowOf(original)).toMatchObject({ deleteReason: null, deletedBy: admin.id });
   });
 
@@ -324,7 +326,7 @@ describe("the copies already stored (F75)", () => {
     expect(await run({ apply: true, batchSize: 2 })).toMatchObject({ sets: 5, hidden: copies });
     expect((await liveIds()).sort()).toEqual([...keep].sort());
     const hidden = (await ownerDb.select().from(timeEntryScreenshots)).filter((r) => r.deletedAt !== null);
-    expect(hidden.every((r) => r.deleteReason === "duplicate" && r.deletedBy === null)).toBe(true);
+    expect(hidden.every((r) => r.deleteReason === DUPLICATE && r.deletedBy === null)).toBe(true);
 
     const after = await snapshot();
     expect(await run({ apply: true })).toMatchObject({ sets: 0, copies: 0, hidden: 0 });
@@ -341,7 +343,7 @@ describe("the copies already stored (F75)", () => {
   it("hides every live row of a set an Administrator deleted from, whatever the reason given", async () => {
     const { base, admin } = await setup();
     const tombstone = { deletedAt: "2026-03-11 08:00:00", deletedBy: admin.id };
-    for (const [n, reason] of [null, "private", "duplicate"].entries()) {
+    for (const [n, reason] of [null, "private", DUPLICATE].entries()) {
       const at = `2026-03-10 09:5${n}:00`;
       await plant(base, { at });
       await plant(base, { at, ...tombstone, reason });
@@ -355,12 +357,14 @@ describe("the copies already stored (F75)", () => {
     expect(await liveIds()).toEqual([]);
     const rows = await ownerDb.select().from(timeEntryScreenshots);
     expect(rows.filter((r) => r.deletedBy === admin.id)).toHaveLength(3);
-    expect(await run({ undo: true })).toMatchObject({ restored: 7 });
+    // Undo never brings back the image an Administrator removed.
+    expect(await run({ undo: true })).toMatchObject({ restored: 0 });
+    expect(await liveIds()).toEqual([]);
   });
 
   it("keeps the live row of a set whose earlier one the upload path hid", async () => {
     const { base } = await setup();
-    await plant(base, { createdAt: "2026-03-10 09:30:01", deletedAt: "2026-03-10 09:30:05", reason: "duplicate" });
+    await plant(base, { createdAt: "2026-03-10 09:30:01", deletedAt: "2026-03-10 09:30:05", reason: DUPLICATE });
     const live = await plant(base, { createdAt: "2026-03-10 09:30:02" });
     expect(await run({ apply: true })).toMatchObject({ sets: 0, hidden: 0 });
     expect(await liveIds()).toEqual([live]);
@@ -374,7 +378,7 @@ describe("the copies already stored (F75)", () => {
   it("counts no copy as a deletion, and every Administrator's", async () => {
     const { base, admin } = await setup();
     await plant(base);
-    for (let i = 0; i < 4; i++) await plant(base, { deletedAt: "2026-03-11 08:00:00", reason: "duplicate" });
+    for (let i = 0; i < 4; i++) await plant(base, { deletedAt: "2026-03-11 08:00:00", reason: DUPLICATE });
     await plant(base, { at: "2026-03-10 09:35:00", deletedAt: "2026-03-11 08:00:00", deletedBy: admin.id });
     await plant(base, { at: "2026-03-10 09:36:00", deletedAt: "2026-03-11 08:00:00", deletedBy: admin.id, reason: "private" });
 
@@ -527,8 +531,20 @@ describe("archived Members for an Owner (F77)", () => {
 });
 
 describe("registering a web capture (F80)", () => {
-  const register = (user: TestUser, body: Record<string, unknown>) =>
-    user.agent.post("/api/time-tracking/screenshots").send({ storageKey: `/objects/uploads/${randomUUID()}`, ...body });
+  /** An upload handed to a User, as upload-url records it. */
+  const mint = async (userId: string, values: { objectPath?: string; expiresAt?: Date; workspaceId?: string } = {}) => {
+    const objectPath = values.objectPath ?? `/objects/uploads/${randomUUID()}`;
+    await ownerDb.insert(objectUploadSlots).values({
+      createdById: userId,
+      expiresAt: new Date(Date.now() + 60_000),
+      workspaceId: SEEDED_WORKSPACE_ID,
+      ...values,
+      objectPath,
+    });
+    return objectPath;
+  };
+  const register = async (user: TestUser, body: Record<string, unknown>) =>
+    user.agent.post("/api/time-tracking/screenshots").send({ storageKey: await mint(user.id), ...body });
 
   it("takes the Project of the Time Entry", async () => {
     const { admin, member, base, crmProjectId } = await setup();
@@ -596,9 +612,42 @@ describe("registering a web capture (F80)", () => {
       expect(res.status, name).toBe(400);
       expect(res.body).toEqual({ message: "Invalid storageKey" });
     }
+    for (const name of ["live", "deleted", "file", "document", "fresh"]) await mint(member.id, { objectPath: key(name) });
+    for (const name of ["live", "deleted", "file", "document"]) expect((await send(key(name))).status, name).toBe(400);
     for (const bad of [`/objects/${NUL}`, 7, { a: 1 }]) expect((await send(bad)).status).toBe(400);
     expect((await send(key("fresh"))).status).toBe(200);
     expect((await send(key("fresh"))).status).toBe(400);
+  });
+
+  it("takes only an upload handed to this User, in this Workspace, still open, and once", async () => {
+    const { admin, member, base } = await setup();
+    await plantParallelWorkspace();
+    const send = (storageKey: string) =>
+      register(member, { timeEntryId: base.timeEntryId, storageKey, capturedAt: "2026-03-10T09:30:00Z" });
+    const refused = [
+      "/objects/agent-screenshots/never-minted.webp",
+      await mint(admin.id),
+      await mint(member.id, { expiresAt: new Date(Date.now() - 1000) }),
+      await mint(member.id, { workspaceId: PARALLEL_WORKSPACE_ID }),
+    ];
+    for (const storageKey of refused) {
+      const res = await send(storageKey);
+      expect(res.status, storageKey).toBe(400);
+      expect(res.body).toEqual({ message: "Invalid storageKey" });
+    }
+    const own = await mint(member.id);
+    const both = await Promise.all([send(own), send(own)]);
+    expect(both.map((res) => res.status).sort()).toEqual([200, 400]);
+  });
+
+  it("hands out an upload that can be registered", async () => {
+    const { app } = await setup();
+    const user = await registerUser(app);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
+    const task = await createTask(user.agent, crmProject.id);
+    const entry = await startTimer(user.agent, crmProject.id, task.id);
+    const issued = await user.agent.post("/api/time-tracking/screenshots/upload-url").send({ timeEntryId: entry.id });
+    expect((await register(user, { timeEntryId: entry.id, storageKey: issued.body.objectPath })).status).toBe(200);
   });
 
   it("answers 404 to a NUL Time Entry", async () => {

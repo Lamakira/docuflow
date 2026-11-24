@@ -10,7 +10,8 @@ import { timeEntryScreenshots } from "@shared/schema";
 import { db } from "../../db";
 import { inWorkspace, requireWorkspaceContext } from "../../workspaceContext";
 
-export const DUPLICATE_CAPTURE_REASON = "duplicate";
+/** Not a reason an Administrator would type: once they leave, `deleted_by` is null too. */
+export const DUPLICATE_CAPTURE_REASON = "system:duplicate-capture";
 
 /** Left out of every count of deleted captures. `delete_reason` may be null, hence IS DISTINCT FROM. */
 export function notDuplicateCapture(): SQL {
@@ -77,6 +78,7 @@ export async function hideDuplicateCaptures(options: { batchSize?: number } = {}
   }
 }
 
+/** A copy of a capture an Administrator deleted stays hidden: it is the same image. */
 export async function restoreDuplicateCaptures(): Promise<number> {
   const rows = await db
     .update(timeEntryScreenshots)
@@ -85,7 +87,15 @@ export async function restoreDuplicateCaptures(): Promise<number> {
       and(
         inWorkspace(timeEntryScreenshots),
         eq(timeEntryScreenshots.deleteReason, DUPLICATE_CAPTURE_REASON),
-        isNull(timeEntryScreenshots.deletedBy)
+        isNull(timeEntryScreenshots.deletedBy),
+        sql`NOT EXISTS (
+          SELECT 1 FROM time_entry_screenshots removed
+          WHERE removed.workspace_id = ${timeEntryScreenshots.workspaceId}
+            AND removed.time_entry_id = ${timeEntryScreenshots.timeEntryId}
+            AND removed.captured_at = ${timeEntryScreenshots.capturedAt}
+            AND removed.content_hash = ${timeEntryScreenshots.contentHash}
+            AND removed.deleted_at IS NOT NULL
+            AND (removed.delete_reason IS DISTINCT FROM ${DUPLICATE_CAPTURE_REASON} OR removed.deleted_by IS NOT NULL))`
       )
     )
     .returning({ id: timeEntryScreenshots.id });
