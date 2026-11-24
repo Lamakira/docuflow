@@ -301,7 +301,7 @@ export type DossierModel = {
     budgetPercent: number | null;
     /** Every Member's tracked time on the Project, all time (F44). */
     tracked: string;
-    /** `of <budget> budget` with a budget, otherwise the month's tracked time. */
+    /** Reads on from `tracked`: `of <budget> budget`, or the month's tracked time without a budget. */
     trackedSub: string;
     showFinance: false;
   };
@@ -1236,7 +1236,7 @@ export function composeDossier(input: DossierInput): DossierModel {
     stats: {
       budgetPercent,
       tracked: trackedTotal,
-      trackedSub: budgeted > 0 ? `of ${hoursLabel(budgeted)} budget` : `${trackedMtd} this month`,
+      trackedSub: budgeted > 0 ? `of ${hoursLabel(budgeted)} budget` : `tracked · ${trackedMtd} this month`,
       showFinance: false,
     },
     tabs,

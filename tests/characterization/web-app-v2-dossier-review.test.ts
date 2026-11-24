@@ -110,7 +110,10 @@ describe("Dossier review (F44-F51)", () => {
         unapproved: null,
       });
       expect(dossier.settings.budget.consumed).toBe("25.0 h of 80 h · 31% used");
-      expect(dossierSource).toContain('<div className="df-mono df-meta">Tracked</div>');
+      // One block in the header: the figure, its budget and its percent over a meter that has a size.
+      expect(dossierSource.match(/data-testid="v2-dossier-budget"/g)).toHaveLength(1);
+      expect(dossierSource).not.toContain('<div className="df-mono df-meta">Tracked</div>');
+      expect(read("client/src/v2/tokens.css")).toMatch(/\n\.df-meter \{[^}]*display:\s*block/);
       expect(dossierSource).not.toContain("Tracked MTD");
       expect(dossierSource).not.toContain("actualHours");
     });
@@ -128,14 +131,14 @@ describe("Dossier review (F44-F51)", () => {
       expect(dossier.settings.budget.consumed).toBe("—");
       const unbudgeted = composeDossier({ ...base, project: { ...rest, budgetedHours: null } });
       expect(unbudgeted.stats.tracked).toBe("—");
-      expect(unbudgeted.stats.trackedSub).toBe("20.5 h this month");
+      expect(unbudgeted.stats.trackedSub).toBe("tracked · 20.5 h this month");
     });
 
     it("without a budget, the consumed label is the total and the header sub-line the month", () => {
       const base = input();
       const dossier = composeDossier({ ...base, project: { ...base.project!, budgetedHours: null } });
       expect(dossier.stats.budgetPercent).toBeNull();
-      expect(dossier.stats.trackedSub).toBe("20.5 h this month");
+      expect(dossier.stats.trackedSub).toBe("tracked · 20.5 h this month");
       expect(dossier.budgetTime.consumedLabel).toBe("25.0 h");
       expect(dossier.settings.budget.consumed).toBe("No budget set");
     });

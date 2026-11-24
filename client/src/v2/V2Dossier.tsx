@@ -1124,13 +1124,23 @@ export function V2DossierPage() {
           </div>
           {dossier.identity ? (
             <div className="df-dossier-stats">
-              <div className="df-stat">
-                <div className="df-mono df-meta">Budget</div>
-                <div className="df-stat-value">
-                  {dossier.stats.budgetPercent == null ? "—" : `${dossier.stats.budgetPercent}%`}
+              <div className="df-dossier-budget" data-testid="v2-dossier-budget">
+                <div className="df-dossier-budget-line">
+                  <span>
+                    <span className="df-stat-value">{dossier.stats.tracked}</span>{" "}
+                    <span className="df-mono df-meta">{dossier.stats.trackedSub}</span>
+                  </span>
+                  {dossier.stats.budgetPercent != null ? (
+                    <span
+                      className="df-mono df-dossier-budget-percent"
+                      data-tone={meterTone(dossier.stats.budgetPercent)}
+                    >
+                      {dossier.stats.budgetPercent}%
+                    </span>
+                  ) : null}
                 </div>
                 {dossier.stats.budgetPercent != null ? (
-                  <span className="df-meter df-meter-wide">
+                  <span className="df-meter df-dossier-budget-meter" aria-hidden>
                     {/* Per-instance: the fill width is this project's budget share. */}
                     <span
                       className="df-meter-fill"
@@ -1139,11 +1149,6 @@ export function V2DossierPage() {
                     />
                   </span>
                 ) : null}
-              </div>
-              <div className="df-stat">
-                <div className="df-mono df-meta">Tracked</div>
-                <div className="df-stat-value">{dossier.stats.tracked}</div>
-                <div className="df-mono df-meta">{dossier.stats.trackedSub}</div>
               </div>
               <div className="df-dossier-actions">
                 <Button variant="outline" type="button" onClick={onStartTimer} className="df-btn">
