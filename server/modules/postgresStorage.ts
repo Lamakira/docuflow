@@ -927,7 +927,8 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(crmProjects.status, options.status));
     }
     if (options?.projectStatus) {
-      conditions.push(eq(crmProjects.projectStatus, options.projectStatus));
+      const statuses = options.projectStatus.split(",").map((value) => value.trim()).filter(Boolean);
+      if (statuses.length > 0) conditions.push(inArray(crmProjects.projectStatus, statuses));
     }
     if (options?.clientId) {
       conditions.push(eq(crmProjects.clientId, options.clientId));
@@ -987,6 +988,9 @@ export class DatabaseStorage implements IStorage {
 
     // Get paginated data. A sorted column leads; recency and id keep pages stable under ties.
     const direction = options?.dir === "desc" ? sql`desc nulls last` : sql`asc nulls last`;
+    // Every Time Entry of the Project, every user: what the budget meter counts.
+    const trackedSecondsSql = sql<number>`coalesce((select sum(${timeEntries.duration}) from ${timeEntries}
+      where ${timeEntries.crmProjectId} = "crm_projects"."id" and ${inWorkspace(timeEntries)}), 0)::int`;
     const sortExpression = {
       name: sql`lower((select ${projects.name} from ${projects} where ${projects.id} = ${crmProjects.projectId}))`,
       // The lifecycle, not the alphabet; an unknown status sorts after archived.
@@ -994,23 +998,27 @@ export class DatabaseStorage implements IStorage {
         when 'planned' then 0 when 'active' then 1 when 'on_hold' then 2
         when 'in_review' then 3 when 'completed' then 4 when 'archived' then 5 else 6 end`,
       // BUDGET USED: hours and minutes, as the meter counts them; no budget sorts last either way.
+      // Tracked time is every user's, so only a caller who may see it (`withTrackedTime`) may order by it.
       budget: sql`case when coalesce(${crmProjects.budgetedHours}, 0) + coalesce(${crmProjects.budgetedMinutes}, 0) / 60.0 > 0
-        then coalesce(${crmProjects.actualHours}, 0)::float
+        then ${trackedSecondsSql}::float / 3600.0
           / (coalesce(${crmProjects.budgetedHours}, 0) + coalesce(${crmProjects.budgetedMinutes}, 0) / 60.0) end`,
       created: sql`${crmProjects.createdAt}`,
       // DUE: no due date sorts last either way.
       due: sql`${crmProjects.dueDate}`,
     };
-    const order = options?.sort
-      ? [sql`${sortExpression[options.sort]} ${direction}`, desc(crmProjects.updatedAt), asc(crmProjects.id)]
+    const withTrackedTime = options?.withTrackedTime === true;
+    const sortKey = options?.sort === "budget" && !withTrackedTime ? undefined : options?.sort;
+    const order = sortKey
+      ? [sql`${sortExpression[sortKey]} ${direction}`, desc(crmProjects.updatedAt), asc(crmProjects.id)]
       : [desc(crmProjects.updatedAt), asc(crmProjects.id)];
     const crmProjectRows = await db
-      .select()
+      .select({ crmProject: crmProjects, trackedSeconds: withTrackedTime ? trackedSecondsSql : sql<number>`null` })
       .from(crmProjects)
       .where(and(...conditions))
       .orderBy(...order)
       .limit(pageSize)
-      .offset(offset);
+      .offset(offset)
+      .then((rows) => rows.map((row) => (withTrackedTime ? { ...row.crmProject, trackedSeconds: Number(row.trackedSeconds) } : row.crmProject)));
 
     // Get all related data
     const projectMap = new Map(allProjects.map((p) => [p.id, p]));
@@ -1169,6 +1177,15 @@ export class DatabaseStorage implements IStorage {
     const members = await this.getProjectMembers(crmProject.id);
 
     return { ...crmProject, project, client, assignee, members };
+  }
+
+  /** Every Time Entry of the Project, every user: Owners and Administrators only may be shown it. */
+  async getCrmProjectTrackedSeconds(crmProjectId: string): Promise<number> {
+    const [tracked] = await db
+      .select({ seconds: sql<number>`coalesce(sum(${timeEntries.duration}), 0)::int` })
+      .from(timeEntries)
+      .where(and(eq(timeEntries.crmProjectId, crmProjectId), inWorkspace(timeEntries)));
+    return Number(tracked?.seconds ?? 0);
   }
 
   async getCrmProjectByProjectId(projectId: string): Promise<CrmProject | undefined> {

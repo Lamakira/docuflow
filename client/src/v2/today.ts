@@ -7,7 +7,8 @@ export type TodayProject = {
   projectType: string | null;
   budgetedHours: number | null;
   budgetedMinutes?: number | null;
-  actualHours: number | null;
+  /** Seconds of every Time Entry on the Project: what its budget is consumed by (F44). */
+  trackedSeconds?: number | null;
   project?: { id: string; name: string } | null;
   client?: { name: string } | null;
   assignee?: { firstName?: string | null; lastName?: string | null; email?: string | null } | null;
@@ -340,7 +341,6 @@ function composeProjects(input: TodayInput): ActiveProjectRow[] {
     .sort((a, b) => (month.get(b.id) ?? 0) - (month.get(a.id) ?? 0))
     .map((project) => {
       const budgeted = budgetedHoursTotal(project);
-      const actual = project.actualHours ?? 0;
       const client = project.client?.name || null;
       const kind = kindLabel(project);
       return {
@@ -352,7 +352,7 @@ function composeProjects(input: TodayInput): ActiveProjectRow[] {
         status: PROJECT_STATUS_LABEL[project.projectStatus] ?? project.projectStatus.replace(/_/g, " ").toUpperCase(),
         statusColor: projectStatusColor(project.projectStatus),
         lead: project.assignee ? memberName(project.assignee) : null,
-        budgetPercent: budgeted > 0 ? Math.round((actual / budgeted) * 100) : null,
+        budgetPercent: budgeted > 0 && project.trackedSeconds != null ? Math.round((project.trackedSeconds / 3600 / budgeted) * 100) : null,
         trackedMtd: formatHours(month.get(project.id) ?? 0),
         href: projectHref(project.id),
       };

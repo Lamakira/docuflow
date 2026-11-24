@@ -1,7 +1,10 @@
 import { dossierFileDestination } from "./fileViewer";
 import { budgetedHoursTotal, formatHours, memberInitials, memberName, projectHref } from "./today";
-import { DOSSIER_TAB_IDS, DOSSIER_TAB_LABEL, dossierDocumentHref, type DossierTabId } from "./presentation";
-import { lifecycleColor, projectStatusColor } from "./palette";
+import { DOSSIER_TAB_IDS, DOSSIER_TAB_LABEL, activityTabHref, dossierDocumentHref, type DossierTabId } from "./presentation";
+import { projectStatusColor } from "./palette";
+import { isDeliveryProject, isWonStatus, projectStatusFromCombined } from "@shared/projectLifecycle";
+import { opportunityHref } from "./opportunities";
+import { clientHref } from "./clients";
 import {
   budgetLabel,
   projectBudgetDraft,
@@ -30,7 +33,8 @@ export type DossierProject = {
   projectType: string | null;
   budgetedHours: number | null;
   budgetedMinutes?: number | null;
-  actualHours: number | null;
+  /** Seconds of every Member's Time Entries on the Project: what the budget is consumed by (F44). */
+  trackedSeconds?: number | null;
   updatedAt?: Date | string | null;
   startDate?: Date | string | null;
   dueDate?: Date | string | null;
@@ -180,6 +184,8 @@ export type DossierInput = {
   ownerName: string | null;
   monthSeconds: number;
   screenshots: DossierScreenshot[];
+  /** How many screenshots the Project holds; `screenshots` is only the page fetched (F48). */
+  screenshotTotal?: number | null;
   users: Array<DossierPerson & { id: string }>;
   trackingTaskId: string | null;
   /** The reader's Timer is already running on this Project, with or without a Task. */
@@ -188,6 +194,8 @@ export type DossierInput = {
   timeEntries: DossierTimeEntry[];
   dailyUpdates: DossierDailyUpdate[];
   files: DossierFile[];
+  /** Files uploaded to the Project itself, listed on the Files tab beside the note Files (F51). */
+  projectFileCount?: number;
   reminders: DossierReminder[];
   notes: DossierNote[];
   stageHistory: DossierStageChange[];
@@ -275,6 +283,8 @@ export type DossierModel = {
   tabIsPlaceholder: boolean;
   identity: {
     clientLabel: string | null;
+    /** The Client record the label links to (F50). */
+    clientHref: string | null;
     kindLabel: string;
     title: string;
     status: string;
@@ -289,8 +299,10 @@ export type DossierModel = {
   } | null;
   stats: {
     budgetPercent: number | null;
-    trackedMtd: string;
-    planHours: string | null;
+    /** Every Member's tracked time on the Project, all time (F44). */
+    tracked: string;
+    /** Reads on from `tracked`: `of <budget> budget`, or the month's tracked time without a budget. */
+    trackedSub: string;
     showFinance: false;
   };
   tabs: DossierTab[];
@@ -300,8 +312,10 @@ export type DossierModel = {
     rows: DossierTaskRow[];
     empty: boolean;
     emptyCopy: string;
+    emptyState: DossierEmptyState;
   };
   tasks: {
+    /** Every Task not archived, done ones included; Next actions holds the open ones only (F49). */
     rows: DossierTaskRow[];
     empty: boolean;
     emptyCopy: string;
@@ -319,6 +333,8 @@ export type DossierModel = {
       duration: string;
       status: string;
     }>;
+    /** The listed entries summed, formatted like a row's duration (F51). */
+    total: string;
     empty: boolean;
     emptyCopy: string;
     emptyState: DossierEmptyState;
@@ -336,6 +352,8 @@ export type DossierModel = {
   };
   files: {
     rows: DossierFileRow[];
+    /** Note Files plus uploaded Project Files: the tab count and the card chip (F51). */
+    count: number;
     empty: boolean;
     emptyCopy: string;
     emptyState: DossierEmptyState;
@@ -388,6 +406,7 @@ export type DossierModel = {
     }>;
     empty: boolean;
     emptyCopy: string;
+    emptyState: { title: string; copy: string };
   };
   tags: {
     vocabulary: Array<DossierTag & { attached: boolean; deleteConsequence: string }>;
@@ -402,6 +421,10 @@ export type DossierModel = {
   };
   evidence: {
     tiles: Array<{ id: string; kind: "screenshot" | "idle"; caption: string }>;
+    /** Every screenshot on the Project, not the page fetched (F48). */
+    total: number;
+    /** The Activity page filtered to this Project, offered when there are more than the tiles. */
+    allHref: string | null;
     empty: boolean;
     emptyCopy: string;
     emptyState: DossierEmptyState;
@@ -421,6 +444,8 @@ export type DossierModel = {
       href: string;
     }>;
     count: number;
+    /** `1 doc` / `N docs` (F51). */
+    countLabel: string;
     empty: boolean;
     emptyCopy: string;
     emptyState: DossierEmptyState;
@@ -434,13 +459,13 @@ export type DossierModel = {
     selectPage: { title: string; copy: string; description: string | null } | null;
   };
   client: {
+    id: string | null;
     name: string;
     initials: string;
     meta: string;
     contacts: Array<{ name: string; role: string | null }>;
     empty: boolean;
   } | null;
-  filed: Array<{ label: string; value: string }>;
 };
 
 const PROJECT_STATUS_LABEL: Record<string, string> = {
@@ -624,9 +649,10 @@ function composeDailyUpdate(input: DossierInput): DossierModel["dailyUpdate"] {
   };
 }
 
-function composeNextActions(input: DossierInput): DossierModel["nextActions"] {
+/** Every Task not archived, done ones included: the Tasks tab and its count (F49). */
+function composeTaskRows(input: DossierInput): DossierTaskRow[] {
   const tasks = input.tasks.filter((task) => task.status !== "archived");
-  const rows = tasks.map((task) => {
+  return tasks.map((task) => {
     const done = task.status === "done";
     const doneAt = parseDate(task.updatedAt ?? task.createdAt ?? null);
     return {
@@ -639,12 +665,29 @@ function composeNextActions(input: DossierInput): DossierModel["nextActions"] {
       statusValue: task.status,
     };
   });
+}
+
+/** Next actions holds the open Tasks only; a done one stays on the Tasks tab (F49). */
+function composeNextActions(taskRows: DossierTaskRow[]): DossierModel["nextActions"] {
+  const rows = taskRows.filter((row) => !row.done);
   return {
-    openCount: rows.filter((row) => !row.done).length,
+    openCount: rows.length,
     blockedCount: 0,
     rows,
     empty: rows.length === 0,
-    emptyCopy: "No Tasks on this Project yet.",
+    emptyCopy: taskRows.length > 0 ? "Every Task on this Project is done." : "No Tasks on this Project yet.",
+    emptyState:
+      taskRows.length > 0
+        ? {
+            title: "Every Task is done",
+            copy: "Done Tasks stay on the Tasks tab. Add the next step when there is one.",
+            action: { kind: "compose", label: "New Task" },
+          }
+        : {
+            title: "No Tasks yet",
+            copy: "Tasks are the steps of this Project. Each one carries its own status and timer, so tracked time lands on the right step.",
+            action: { kind: "compose", label: "Create the first Task" },
+          },
   };
 }
 
@@ -679,6 +722,7 @@ function composeTime(input: DossierInput): DossierModel["time"] {
   });
   return {
     rows,
+    total: formatHours(input.timeEntries.reduce((sum, entry) => sum + (entry.duration ?? 0), 0)),
     empty: rows.length === 0,
     emptyCopy: "No Time Entries on this Project you can access.",
     emptyState: {
@@ -778,15 +822,23 @@ function composeFiles(input: DossierInput): DossierModel["files"] {
         target: destination.target,
       };
     }),
+    count: files.length + (input.projectFileCount ?? 0),
     empty: files.length === 0,
     emptyCopy: "No Files on this Project you can access.",
-    emptyState: {
-      title: "No Files yet",
-      copy: "Files attached to this Project's notes are gathered here, so the scope, the contract and the screenshots sit in one place.",
-      action: input.project
-        ? { kind: "link", label: "Attach a File to a note", href: `${projectHref(input.project.id)}/notes` }
-        : null,
-    },
+    // With Documentation on, the tab uploads Files itself, so its empty state says so (F51).
+    emptyState: input.project?.documentationEnabled
+      ? {
+          title: "No Files yet",
+          copy: "Upload a File here, or attach one to a note: both land on this tab.",
+          action: { kind: "compose", label: "Upload File" },
+        }
+      : {
+          title: "No Files yet",
+          copy: "Files attached to this Project's notes are gathered here, so the scope, the contract and the screenshots sit in one place.",
+          action: input.project
+            ? { kind: "link", label: "Attach a File to a note", href: `${projectHref(input.project.id)}/notes` }
+            : null,
+        },
   };
 }
 
@@ -927,7 +979,9 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
   const percent = projectBudgetPercent(project);
   const consumed =
     budgeted > 0
-      ? `${hoursLabel(project.actualHours ?? 0)} of ${budgetLabel(project)} · ${percent}% used`
+      ? project.trackedSeconds == null
+        ? "—"
+        : `${formatHours(project.trackedSeconds)} of ${budgetLabel(project)} · ${percent}% used`
       : "No budget set";
   const memberRows: DossierModel["settings"]["memberRows"] = [];
   const seen = new Set<string>();
@@ -965,8 +1019,9 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
   };
 }
 
-function lifecycleLabel(status: string): string {
-  return status.replace(/_/g, " ").toUpperCase();
+/** Delivery work: a won lifecycle or a documented row. A sale stage is the Opportunity's history (F45). */
+function isDeliveryStatus(status: string | null | undefined): status is string {
+  return Boolean(status) && (isWonStatus(status) || status === "documented");
 }
 
 export function formatSpan(ms: number): string {
@@ -979,24 +1034,35 @@ export function formatSpan(ms: number): string {
   return `${rest} min`;
 }
 
+/** The Overview's Status history card shows this many rows, then `Show all N` (F45). */
+export const DOSSIER_HISTORY_PREVIEW = 5;
+
 /**
  * Status history: the only record of how long anything took (#260). The route returns newest
  * first; the composer sorts anyway, because the span of each row is measured
- * to the change after it.
+ * to the change after it. It speaks in Project Status, as the header chip does
+ * (F45): sales moves are left to the Opportunity record, and a move that keeps
+ * the same Project Status is dropped before any span is measured.
  */
 function composeHistory(input: DossierInput): DossierModel["history"] {
   const changes = input.stageHistory
-    .map((change) => ({ change, at: parseDate(change.changedAt) }))
+    .filter((change) => isDeliveryStatus(change.toStatus))
+    .map((change) => {
+      const to = projectStatusFromCombined(change.toStatus);
+      const from = isDeliveryStatus(change.fromStatus) ? projectStatusFromCombined(change.fromStatus) : null;
+      return { change, from, to, at: parseDate(change.changedAt) };
+    })
+    .filter((row) => row.from !== row.to)
     .sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
-  const rows = changes.map(({ change, at }, index) => {
+  const rows = changes.map(({ change, from, to, at }, index) => {
     const next = index > 0 ? changes[index - 1].at : null;
     const held = at ? formatSpan((next ?? input.now).getTime() - at.getTime()) : "—";
     return {
       id: change.id,
-      from: change.fromStatus ? lifecycleLabel(change.fromStatus) : null,
-      fromColor: change.fromStatus ? lifecycleColor(change.fromStatus) : null,
-      to: lifecycleLabel(change.toStatus),
-      toColor: lifecycleColor(change.toStatus),
+      from: from ? statusLabel(from) : null,
+      fromColor: from ? projectStatusColor(from) : null,
+      to: statusLabel(to),
+      toColor: projectStatusColor(to),
       when: at ? formatDayStamp(at) : "",
       who: change.changedBy ? memberName(change.changedBy) : "—",
       held: next || !at ? held : `${held} so far`,
@@ -1006,6 +1072,10 @@ function composeHistory(input: DossierInput): DossierModel["history"] {
     rows,
     empty: rows.length === 0,
     emptyCopy: "No Project Status changes recorded for this Project yet.",
+    emptyState: {
+      title: "No Status changes yet",
+      copy: "Each move between Planned, Active, In review, Completed and Archived lands here: who made it, when, and how long the Project held each status.",
+    },
   };
 }
 
@@ -1026,11 +1096,30 @@ function composeTags(input: DossierInput): DossierModel["tags"] {
   };
 }
 
+/**
+ * Where a Dossier URL sends a row that is not a Project (F47): an open or lost
+ * sale opens on its Opportunity record. Delivery work stays (null).
+ */
+export function dossierRedirect(project: {
+  id: string;
+  isDocumentationOnly?: number | null;
+  projectType?: string | null;
+  status?: string | null;
+}): string | null {
+  return isDeliveryProject(project) ? null : opportunityHref(project.id);
+}
+
+/** The Activity tab's count: the Project's total, or what was loaded when the total is unknown (F48). */
+function screenshotCount(input: DossierInput, loaded: number): number {
+  return typeof input.screenshotTotal === "number" ? input.screenshotTotal : loaded;
+}
+
 export function composeDossier(input: DossierInput): DossierModel {
   const project = input.project;
   const missing = !project;
   const documents = visibleDocuments(input.documents);
-  const nextActions = composeNextActions(input);
+  const taskRows = composeTaskRows(input);
+  const nextActions = composeNextActions(taskRows);
   const time = composeTime(input);
   const updates = composeUpdates(input);
   const files = composeFiles(input);
@@ -1043,10 +1132,13 @@ export function composeDossier(input: DossierInput): DossierModel {
   const openDocument = openDocumentId ? documents.find((document) => document.id === openDocumentId) ?? null : null;
   const assignees = projectAssignees(project);
   const trackedMtd = formatHours(input.monthSeconds);
+  // Every user's tracked total reaches Owners and Administrators only; without it the value is unknown, not 0.
+  const trackedKnown = project?.trackedSeconds != null;
+  const trackedTotal = trackedKnown ? formatHours(project?.trackedSeconds ?? 0) : "—";
   const budgeted = project ? budgetedHoursTotal(project) : 0;
-  const actual = project?.actualHours ?? 0;
   const budgetPercent = project ? projectBudgetPercent(project) : null;
   const screenshots = input.screenshots.filter((shot) => !shot.deletedAt);
+  const evidenceTotal = screenshotCount(input, screenshots.length);
   const usersById = new Map(input.users.map((user) => [user.id, user]));
 
   const tabs: DossierTab[] = project
@@ -1056,19 +1148,19 @@ export function composeDossier(input: DossierInput): DossierModel {
         href: id === "overview" ? projectHref(project.id) : `${projectHref(project.id)}/${id}`,
         count:
           id === "tasks"
-            ? String(nextActions.rows.length)
+            ? String(taskRows.length)
             : id === "time"
               ? String(time.rows.length)
               : id === "activity"
-                ? String(screenshots.length)
+                ? String(evidenceTotal)
                 : id === "updates"
-                  ? updates.kind === "records"
-                    ? String(updates.rows.length)
-                    : null
+                  ? updates.kind === "refusal"
+                    ? null
+                    : String(updates.rows.length)
                   : id === "documents"
                     ? String(documents.length)
                     : id === "files"
-                      ? String(files.rows.length)
+                      ? String(files.count)
                       : id === "notes"
                         ? String(notes.rows.length)
                         : id === "reminders"
@@ -1092,6 +1184,7 @@ export function composeDossier(input: DossierInput): DossierModel {
     const updatedAt = parseDate(project.updatedAt ?? null);
     identity = {
       clientLabel: project.client?.name ?? null,
+      clientHref: project.client?.id ? clientHref(project.client.id) : null,
       kindLabel: kindLabel(project),
       title: project.project?.name || "Untitled Project",
       status: statusLabel(project.projectStatus),
@@ -1114,6 +1207,7 @@ export function composeDossier(input: DossierInput): DossierModel {
 
   const client = project?.client
     ? {
+        id: project.client.id ?? null,
         name: project.client.name,
         initials: project.client.name
           .trim()
@@ -1134,14 +1228,6 @@ export function composeDossier(input: DossierInput): DossierModel {
       }
     : null;
 
-  const filed: Array<{ label: string; value: string }> = [];
-  if (project) {
-    filed.push({ label: "Tasks", value: String(nextActions.rows.length) });
-    filed.push({ label: "Time", value: trackedMtd });
-    filed.push({ label: "Evidence", value: String(screenshots.length) });
-    filed.push({ label: "Docs", value: String(documents.length) });
-  }
-
   return {
     missing,
     tab: input.tab,
@@ -1149,16 +1235,16 @@ export function composeDossier(input: DossierInput): DossierModel {
     identity,
     stats: {
       budgetPercent,
-      trackedMtd,
-      planHours: budgeted > 0 ? hoursLabel(budgeted) : null,
+      tracked: trackedTotal,
+      trackedSub: budgeted > 0 ? `of ${hoursLabel(budgeted)} budget` : `tracked · ${trackedMtd} this month`,
       showFinance: false,
     },
     tabs,
     nextActions,
     tasks: {
-      rows: nextActions.rows,
-      empty: nextActions.empty,
-      emptyCopy: nextActions.emptyCopy,
+      rows: taskRows,
+      empty: taskRows.length === 0,
+      emptyCopy: "No Tasks on this Project yet.",
       emptyState: {
         title: "No Tasks yet",
         copy: "Tasks are the steps of this Project. Each one carries its own status and timer, so tracked time lands on the right step.",
@@ -1190,6 +1276,11 @@ export function composeDossier(input: DossierInput): DossierModel {
           caption: [when, who].filter(Boolean).join(" · "),
         };
       }),
+      total: evidenceTotal,
+      allHref:
+        project && evidenceTotal > screenshots.length
+          ? `${activityTabHref("gallery")}?${new URLSearchParams({ crmProjectId: project.id })}`
+          : null,
       empty: screenshots.length === 0,
       emptyCopy: "No Activity Evidence for this Project you can access.",
       emptyState: {
@@ -1201,7 +1292,7 @@ export function composeDossier(input: DossierInput): DossierModel {
     },
     budgetTime: {
       consumedLabel:
-        budgeted > 0 ? `${hoursLabel(actual)} / ${hoursLabel(budgeted)}` : trackedMtd,
+        budgeted > 0 && trackedKnown ? `${trackedTotal} / ${hoursLabel(budgeted)}` : trackedTotal,
       percent: budgetPercent,
       trackedThisMonth: trackedMtd,
       unapproved: null,
@@ -1214,6 +1305,7 @@ export function composeDossier(input: DossierInput): DossierModel {
         href: project ? dossierDocumentHref(project.id, document.id) : `/document/${document.id}`,
       })),
       count: documents.length,
+      countLabel: documents.length === 1 ? "1 doc" : `${documents.length} docs`,
       empty: documents.length === 0,
       emptyCopy: "No Project Documents you can access.",
       emptyState: settings.documentationEnabled
@@ -1239,6 +1331,5 @@ export function composeDossier(input: DossierInput): DossierModel {
           },
     },
     client,
-    filed,
   };
 }

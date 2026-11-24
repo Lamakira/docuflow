@@ -412,7 +412,8 @@ async function writeDailyUpdates(db: ScriptDb, cast: Cast): Promise<void> {
         userId,
         updateDate: day,
         status,
-        whatHappened: NOTES[(index + slot) % NOTES.length],
+        // Two people write each day, so the text steps by two: no Project reads the same Daily Update twice.
+        whatHappened: NOTES[(index * 2 + slot) % NOTES.length],
         whatWasDone: TASKS[key]?.[(index + slot) % (TASKS[key]?.length ?? 1)] ?? "Progressed the plan",
         nextSteps: "Confirm the window with the client and start the next slice.",
         blockageType: status === "blocked_client" ? "external" : null,

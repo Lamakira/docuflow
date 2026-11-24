@@ -56,7 +56,7 @@ import {
   opportunityFieldsIssue,
   type OpportunityFieldsState,
 } from "@shared/opportunityFields";
-import { projectHasOpportunity } from "@shared/projectLifecycle";
+import { isDeliveryProject, projectHasOpportunity } from "@shared/projectLifecycle";
 import {
   assertScreenshotProject,
   assertScreenshotProjectCapacity,
@@ -1655,7 +1655,7 @@ Instructions:
   app.get("/api/crm/projects/all", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000, ...(await visibleProjectScope(userId)) });
+      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000, ...(await visibleProjectScope(userId)), withTrackedTime: await canManageAdministration() });
       res.json(result);
     } catch (error) {
       console.error("Error fetching Projects:", error);
@@ -1668,7 +1668,7 @@ Instructions:
       const userId = getUserId(req)!;
       
       // Fetch all projects without pagination for kanban view
-      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000, ...(await visibleProjectScope(userId)) });
+      const result = await storage.getCrmProjects(userId, { page: 1, pageSize: 10000, ...(await visibleProjectScope(userId)), withTrackedTime: await canManageAdministration() });
       res.json(result);
     } catch (error) {
       console.error("Error fetching CRM projects for kanban:", error);
@@ -1711,6 +1711,7 @@ Instructions:
         dueTo: date("dueTo"),
         dueNone: text("due") === "none",
         visibleToUserId,
+        withTrackedTime: await canManageAdministration(),
         sort: CRM_PROJECT_SORTS.find((sort) => sort === text("sort")),
         dir: text("dir") === "desc" ? "desc" : "asc",
       });
@@ -1731,6 +1732,10 @@ Instructions:
         return res.status(404).json({ message: "CRM Project not found" });
       }
       
+      // Every user's tracked time is for Owners and Administrators only.
+      if (await canManageAdministration()) {
+        return res.json({ ...crmProject, trackedSeconds: await storage.getCrmProjectTrackedSeconds(crmProject.id) });
+      }
       res.json(crmProject);
     } catch (error) {
       console.error("Error fetching CRM project:", error);
@@ -1903,7 +1908,11 @@ Instructions:
       // Create a new project with same settings but new name
       const newName = `${sourceProject.project?.name || "Project"} (Copy)`;
       
-      const { project, crmProject } = await storage.createCrmProjectWithBase(
+      // Delivery work copies to a Planned Project; a sale starts over at `lead`.
+      const sourceType = sourceProject.projectType || "one_time";
+      const copyIsDelivery = isDeliveryProject(sourceProject);
+
+      const { project, crmProject: created } = await storage.createCrmProjectWithBase(
         {
           name: newName,
           description: sourceProject.project?.description || null,
@@ -1912,8 +1921,8 @@ Instructions:
         },
         {
           clientId: sourceProject.clientId || null,
-          status: "lead", // Reset to initial status
-          projectType: sourceProject.projectType || "one_time",
+          status: copyIsDelivery ? "won_not_started" : "lead",
+          projectType: sourceType,
           assigneeId: sourceProject.assigneeId || null,
           startDate: null, // Reset dates
           dueDate: null,
@@ -1927,6 +1936,9 @@ Instructions:
         }
       );
       
+      // Creation drops the type; set it as New Project does. Internal drops the Opportunity.
+      const crmProject = (await storage.updateCrmProject(created.id, { projectType: sourceType })) ?? created;
+
       // Copy custom field values if they exist
       const customFieldValues = await storage.getCrmProjectCustomFields(req.params.id);
       if (customFieldValues && customFieldValues.length > 0) {

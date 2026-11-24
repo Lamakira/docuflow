@@ -41,9 +41,14 @@ export function V2CommandBar({
   // the bar only reads them (enabled: false) and re-renders when the data lands.
   const route = matchV2Route(location);
   const opportunityId = route.kind === "opportunity-record" ? route.opportunityId : "";
+  const projectId = route.kind === "dossier" ? route.projectId : "";
   const clientId = route.kind === "client-record" ? route.clientId : "";
   const { data: opportunityRecord } = useQuery<CrmProjectWithDetails | null>({
     queryKey: ["/api/crm/projects", opportunityId],
+    enabled: false,
+  });
+  const { data: projectRecord } = useQuery<CrmProjectWithDetails | null>({
+    queryKey: ["/api/crm/projects", projectId],
     enabled: false,
   });
   const { data: clientRecord } = useQuery<CrmClient | null>({
@@ -53,9 +58,11 @@ export function V2CommandBar({
   const recordLabel =
     route.kind === "opportunity-record"
       ? opportunityRecord?.project?.name?.trim() || undefined
-      : route.kind === "client-record"
-        ? clientRecord?.name?.trim() || undefined
-        : undefined;
+      : route.kind === "dossier"
+        ? projectRecord?.project?.name?.trim() || undefined
+        : route.kind === "client-record"
+          ? clientRecord?.name?.trim() || undefined
+          : undefined;
   const crumbs = breadcrumbFor(location, workspaceName, recordLabel);
   const [searchOpen, setSearchOpen] = useState(false);
 

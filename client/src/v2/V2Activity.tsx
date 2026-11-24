@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import { Link, useParams } from "wouter";
+import { Link, useParams, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { notify } from "./notify";
@@ -124,12 +124,19 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   const { user } = useAuth();
   const { layout, memberships } = useV2Chrome();
 
+  // A Dossier's "See all N in Activity" opens here filtered to its Project, over
+  // All time, since its count is the Project's total (F48).
+  const search = useSearch();
   // The periods the Time stats offer, plus v1's named day and span (#214).
-  const [range, setRange] = useState<EvidenceDateMode>("today");
+  const [range, setRange] = useState<EvidenceDateMode>(() =>
+    new URLSearchParams(search).get("crmProjectId") ? "all" : "today",
+  );
   const [typedDay, setTypedDay] = useState("");
   const [typedFrom, setTypedFrom] = useState("");
   const [typedTo, setTypedTo] = useState("");
-  const [projectFilter, setProjectFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState(
+    () => new URLSearchParams(search).get("crmProjectId") || "all",
+  );
   const [userFilter, setUserFilter] = useState("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [lowActivityOnly, setLowActivityOnly] = useState(false);

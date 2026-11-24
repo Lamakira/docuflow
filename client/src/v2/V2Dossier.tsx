@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Pencil, PanelLeft, PanelLeftClose, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -24,6 +24,8 @@ import { chromeRefusal } from "./chrome";
 import {
   composeDossier,
   DOSSIER_FIELD,
+  DOSSIER_HISTORY_PREVIEW,
+  dossierRedirect,
   projectClonePath,
   projectDocumentationPath,
   projectMemberPath,
@@ -64,6 +66,7 @@ import { V2DateField } from "./V2DateField";
 import { TASK_STATUS_OPTIONS } from "./tasks";
 import { memberName, projectHref } from "./today";
 import { formatFileSize, projectFileHref } from "./fileViewer";
+import { clientHref } from "./clients";
 import { projectFilesPath } from "./projectDocumentation";
 import { V2UploadDialog, fileTitle, storeUpload } from "./V2UploadDialog";
 
@@ -117,7 +120,6 @@ async function uploadNoteAttachment(file: File): Promise<NoteAttachment> {
   return { url: publicPath, filename: file.name, filesize: file.size, filetype };
 }
 
-const LIVE_PROJECT_STATUSES = new Set(["active", "on_hold", "in_review", "completed"]);
 const TAB_MOTION = motionForSurface("dossier-tab-swap").enterExit;
 const FILE_OPEN_MOTION = motionForSurface("dossier-file-open").enterExit;
 function startOfMonth(value: Date): Date {
@@ -145,7 +147,7 @@ function toDossierProject(project: CrmProjectWithDetails): DossierProject {
     projectType: project.projectType,
     budgetedHours: project.budgetedHours,
     budgetedMinutes: project.budgetedMinutes,
-    actualHours: project.actualHours,
+    trackedSeconds: project.trackedSeconds,
     updatedAt: project.updatedAt,
     startDate: project.startDate,
     dueDate: project.dueDate,
@@ -377,7 +379,7 @@ export function V2DossierPage() {
   });
 
   const screenshotLimit = tab === "activity" ? 50 : 8;
-  const { data: screenshotPage } = useQuery<{ data: ScreenshotRow[] }>({
+  const { data: screenshotPage } = useQuery<{ data: ScreenshotRow[]; total?: number }>({
     queryKey: ["/api/time-tracking/screenshots", projectId, screenshotLimit],
     enabled: Boolean(projectId),
     queryFn: () =>
@@ -397,9 +399,16 @@ export function V2DossierPage() {
 
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
   const { data: clients = [] } = useQuery<CrmClient[]>({ queryKey: ["/api/crm/clients"] });
-  const { data: projectsResponse } = useQuery<ProjectsResponse>({
-    queryKey: ["/api/crm/projects", { pageSize: 500 }],
-    queryFn: () => fetch("/api/crm/projects?pageSize=500", { credentials: "include" }).then((res) => res.json()),
+  // The Client card counts the Client's Active and In review Projects; the server counts them (F50).
+  const clientId = project?.clientId ?? "";
+  const { data: clientProjects } = useQuery<ProjectsResponse>({
+    queryKey: ["/api/crm/projects", { clientId, kind: "delivery", projectStatus: "active,in_review" }],
+    enabled: Boolean(clientId),
+    queryFn: () =>
+      fetch(
+        `/api/crm/projects?${new URLSearchParams({ clientId, kind: "delivery", projectStatus: "active,in_review", pageSize: "1" })}`,
+        { credentials: "include" },
+      ).then((res) => res.json()),
   });
   const { data: notes = [] } = useQuery<CrmProjectNoteWithCreator[]>({
     queryKey: ["/api/crm/projects", projectId, "notes"],
@@ -425,6 +434,11 @@ export function V2DossierPage() {
     queryKey: [tagsPath()],
     queryFn: () => apiRequest("GET", tagsPath()),
   });
+  // A sale is not a Project: its Dossier URL opens the Opportunity record (F47).
+  const redirect = project ? dossierRedirect(project) : null;
+  useEffect(() => {
+    if (redirect) navigate(redirect, { replace: true });
+  }, [redirect, navigate]);
   useEffect(() => {
     setProjectName(project?.project?.name ?? "");
     setWriteRefusal(null);
@@ -466,6 +480,18 @@ export function V2DossierPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
       setWriteRefusal(null);
+    },
+    onError: (error: Error) => {
+      refuseWrite(error.message, "Manage Tasks");
+    },
+  });
+
+  const renameTask = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => apiRequest("PATCH", `/api/tasks/${id}`, { name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", projectId] });
+      setWriteRefusal(null);
+      notify.success("Task renamed");
     },
     onError: (error: Error) => {
       refuseWrite(error.message, "Manage Tasks");
@@ -837,10 +863,7 @@ export function V2DossierPage() {
     }
   }
 
-  const clientId = project?.clientId;
-  const clientActiveProjectCount = (projectsResponse?.data ?? []).filter(
-    (row) => row.clientId && row.clientId === clientId && LIVE_PROJECT_STATUSES.has(row.projectStatus),
-  ).length;
+  const clientActiveProjectCount = clientProjects?.total ?? 0;
 
   const input: DossierInput = {
     now,
@@ -856,6 +879,7 @@ export function V2DossierPage() {
     ownerName,
     monthSeconds: monthStats?.totalDuration ?? 0,
     screenshots: screenshotPage?.data ?? [],
+    screenshotTotal: typeof screenshotPage?.total === "number" ? screenshotPage.total : null,
     users: users.map((member) => ({
       id: member.id,
       firstName: member.firstName,
@@ -869,6 +893,7 @@ export function V2DossierPage() {
     timeEntries: (timeEntriesResponse?.data ?? []).map(toDossierTimeEntry),
     dailyUpdates: (dailyUpdates?.rows ?? []).map(toDossierDailyUpdate),
     files: filesFromNotes(notes),
+    projectFileCount: projectFiles.length,
     reminders,
     notes,
     stageHistory: stageHistory.map((change) => ({
@@ -996,7 +1021,7 @@ export function V2DossierPage() {
     return null;
   }
 
-  if (projectLoading) {
+  if (projectLoading || redirect) {
     return (
       <div data-testid="v2-dossier" aria-busy="true">
         <SkeletonRecordHead />
@@ -1027,7 +1052,11 @@ export function V2DossierPage() {
             {dossier.identity ? (
               <>
                 <div className="df-dossier-meta">
-                  {dossier.identity.clientLabel ? (
+                  {dossier.identity.clientLabel && dossier.identity.clientHref ? (
+                    <Link href={dossier.identity.clientHref} className="df-mono df-meta df-dossier-client-link">
+                      {dossier.identity.clientLabel}
+                    </Link>
+                  ) : dossier.identity.clientLabel ? (
                     <span className="df-mono df-meta">{dossier.identity.clientLabel}</span>
                   ) : null}
                   <span className="df-status">{dossier.identity.kindLabel}</span>
@@ -1095,13 +1124,23 @@ export function V2DossierPage() {
           </div>
           {dossier.identity ? (
             <div className="df-dossier-stats">
-              <div className="df-stat">
-                <div className="df-mono df-meta">Budget</div>
-                <div className="df-stat-value">
-                  {dossier.stats.budgetPercent == null ? "—" : `${dossier.stats.budgetPercent}%`}
+              <div className="df-dossier-budget" data-testid="v2-dossier-budget">
+                <div className="df-dossier-budget-line">
+                  <span>
+                    <span className="df-stat-value">{dossier.stats.tracked}</span>{" "}
+                    <span className="df-mono df-meta">{dossier.stats.trackedSub}</span>
+                  </span>
+                  {dossier.stats.budgetPercent != null ? (
+                    <span
+                      className="df-mono df-dossier-budget-percent"
+                      data-tone={meterTone(dossier.stats.budgetPercent)}
+                    >
+                      {dossier.stats.budgetPercent}%
+                    </span>
+                  ) : null}
                 </div>
                 {dossier.stats.budgetPercent != null ? (
-                  <span className="df-meter df-meter-wide">
+                  <span className="df-meter df-dossier-budget-meter" aria-hidden>
                     {/* Per-instance: the fill width is this project's budget share. */}
                     <span
                       className="df-meter-fill"
@@ -1109,13 +1148,6 @@ export function V2DossierPage() {
                       style={{ width: `${Math.min(100, dossier.stats.budgetPercent)}%` }}
                     />
                   </span>
-                ) : null}
-              </div>
-              <div className="df-stat">
-                <div className="df-mono df-meta">Tracked MTD</div>
-                <div className="df-stat-value">{dossier.stats.trackedMtd}</div>
-                {dossier.stats.planHours ? (
-                  <div className="df-mono df-meta">of {dossier.stats.planHours} plan</div>
                 ) : null}
               </div>
               <div className="df-dossier-actions">
@@ -1354,6 +1386,10 @@ export function V2DossierPage() {
                 if (refuseWrite()) return;
                 completeTask.mutate({ id, status });
               },
+              onRenameTask: (id, name) => {
+                if (refuseWrite()) return;
+                renameTask.mutate({ id, name });
+              },
               onStartTask: (taskId) => {
                 setSelectedProjectId(projectId);
                 handleStart(projectId, taskId);
@@ -1419,6 +1455,7 @@ function renderDossierTab(props: {
   dossier: DossierModel;
   onNewTask: () => void;
   onComplete: (id: string, status: string) => void;
+  onRenameTask: (id: string, name: string) => void;
   onStartTask: (taskId: string) => void;
   onStartTimer: () => void;
   onNewDocument: () => void;
@@ -1480,10 +1517,20 @@ function renderDossierTab(props: {
 function DossierOverview({
   dossier,
   onComplete,
+  onNewTask,
+  onStartTimer,
+  onNewDocument,
 }: {
   dossier: DossierModel;
   onComplete: (id: string, status: string) => void;
+  onNewTask: () => void;
+  onStartTimer: () => void;
+  onNewDocument: () => void;
 }) {
+  // The card shows the latest changes; the rest open in place (F45).
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const historyRows = historyExpanded ? dossier.history.rows : dossier.history.rows.slice(0, DOSSIER_HISTORY_PREVIEW);
+  const historyHidden = dossier.history.rows.length - historyRows.length;
   return (
     <div className="df-overview">
       <div className="df-stack">
@@ -1495,7 +1542,12 @@ function DossierOverview({
             </span>
           </div>
           {dossier.nextActions.empty ? (
-            <p className="df-empty">{dossier.nextActions.emptyCopy}</p>
+            <DossierEmptyStateView
+              state={dossier.nextActions.emptyState}
+              icon="tasks"
+              testId="v2-dossier-overview-tasks-empty"
+              onCompose={onNewTask}
+            />
           ) : (
             dossier.nextActions.rows.map((row) => (
               <div key={row.id} className="df-task-row" data-done={row.done ? "true" : "false"}>
@@ -1534,7 +1586,11 @@ function DossierOverview({
           {dossier.dailyUpdate.kind === "refusal" ? (
             <p className="df-refusal">{dossier.dailyUpdate.copy}</p>
           ) : dossier.dailyUpdate.kind === "empty" ? (
-            <p className="df-empty">{dossier.dailyUpdate.copy}</p>
+            <DossierEmptyStateView
+              state={dossier.updates.emptyState}
+              icon="updates"
+              testId="v2-dossier-overview-update-empty"
+            />
           ) : (
             <div className="df-update-body">
               {dossier.dailyUpdate.prose ? <p className="df-prose">{dossier.dailyUpdate.prose}</p> : null}
@@ -1555,17 +1611,24 @@ function DossierOverview({
             <h2 className="df-card-title">Recent Activity Evidence</h2>
           </div>
           {dossier.evidence.empty ? (
-            <p className="df-empty">{dossier.evidence.emptyCopy}</p>
+            <DossierEmptyStateView
+              state={dossier.evidence.emptyState}
+              icon="activity"
+              testId="v2-dossier-overview-evidence-empty"
+              onStartTimer={onStartTimer}
+            />
           ) : (
-            <div className="df-evidence-grid">
-              {dossier.evidence.tiles.map((tile) => (
-                <EvidenceTile key={tile.id} tile={tile} />
-              ))}
-            </div>
+            <>
+              <div className="df-evidence-grid">
+                {dossier.evidence.tiles.map((tile) => (
+                  <EvidenceTile key={tile.id} tile={tile} />
+                ))}
+              </div>
+              <p className="df-empty" data-edge="end">
+                {dossier.evidence.footnote}
+              </p>
+            </>
           )}
-          <p className="df-empty" data-edge="end">
-            {dossier.evidence.footnote}
-          </p>
         </section>
       </div>
 
@@ -1576,14 +1639,16 @@ function DossierOverview({
           </div>
           <div className="df-card-body-stack">
             <div className="df-mono df-meta">Consumed {dossier.budgetTime.consumedLabel}</div>
-            <span className="df-meter df-meter-lg">
-              {/* Per-instance: the fill width is this project's budget share. */}
-              <span
-                className="df-meter-fill"
-                data-tone={meterTone(dossier.budgetTime.percent)}
-                style={{ width: `${Math.min(100, dossier.budgetTime.percent ?? 0)}%` }}
-              />
-            </span>
+            {dossier.budgetTime.percent != null ? (
+              <span className="df-meter df-meter-lg">
+                {/* Per-instance: the fill width is this project's budget share. */}
+                <span
+                  className="df-meter-fill"
+                  data-tone={meterTone(dossier.budgetTime.percent)}
+                  style={{ width: `${Math.min(100, dossier.budgetTime.percent)}%` }}
+                />
+              </span>
+            ) : null}
             <div className="df-spread">
               <span className="df-mono df-meta">
                 {dossier.budgetTime.percent == null ? "—" : `${dossier.budgetTime.percent}% used`}
@@ -1603,10 +1668,15 @@ function DossierOverview({
         <section className="df-card">
           <div className="df-card-head">
             <h2 className="df-card-title">Project Documents</h2>
-            <span className="df-count-chip">{dossier.documents.count} docs</span>
+            <span className="df-count-chip">{dossier.documents.countLabel}</span>
           </div>
           {dossier.documents.empty ? (
-            <p className="df-empty">{dossier.documents.emptyCopy}</p>
+            <DossierEmptyStateView
+              state={dossier.documents.emptyState}
+              icon="documents"
+              testId="v2-dossier-overview-documents-empty"
+              onNewDocument={onNewDocument}
+            />
           ) : (
             dossier.documents.rows.map((row) => (
               <Link key={row.id} href={row.href} className="df-doc-row">
@@ -1622,9 +1692,13 @@ function DossierOverview({
             <h2 className="df-card-title">Status history</h2>
           </div>
           {dossier.history.empty ? (
-            <p className="df-empty">{dossier.history.emptyCopy}</p>
+            <DossierEmptyStateView
+              state={{ ...dossier.history.emptyState, action: null }}
+              icon="activity"
+              testId="v2-dossier-status-history-empty"
+            />
           ) : (
-            dossier.history.rows.map((row) => (
+            historyRows.map((row) => (
               <div key={row.id} className="df-history-row">
                 <div className="df-history-move">
                   {row.from && row.fromColor ? (
@@ -1641,6 +1715,19 @@ function DossierOverview({
               </div>
             ))
           )}
+          {historyHidden > 0 ? (
+            <div className="df-dossier-card-more">
+              <Button
+                variant="ghost"
+                type="button"
+                className="df-btn"
+                onClick={() => setHistoryExpanded(true)}
+                data-testid="v2-dossier-status-history-all"
+              >
+                Show all {dossier.history.rows.length}
+              </Button>
+            </div>
+          ) : null}
         </section>
 
         <section className="df-card">
@@ -1656,7 +1743,13 @@ function DossierOverview({
                   {dossier.client.initials}
                 </span>
                 <div>
-                  <div className="df-client-name">{dossier.client.name}</div>
+                  {dossier.client.id ? (
+                    <Link href={clientHref(dossier.client.id)} className="df-client-name">
+                      {dossier.client.name}
+                    </Link>
+                  ) : (
+                    <div className="df-client-name">{dossier.client.name}</div>
+                  )}
                   <div className="df-mono df-meta">{dossier.client.meta}</div>
                 </div>
               </div>
@@ -1670,23 +1763,67 @@ function DossierOverview({
           )}
         </section>
 
-        <section className="df-card">
-          <div className="df-card-head">
-            <h2 className="df-card-title">Filed under this Project</h2>
-          </div>
-          <div className="df-filed">
-            {dossier.filed.map((chip) => (
-              <span key={chip.label} className="df-filed-chip">
-                {chip.value} {chip.label}
-              </span>
-            ))}
-          </div>
-          {dossier.identity ? (
-            <p className="df-empty">Every record above resolves to this Project in this Workspace.</p>
-          ) : null}
-        </section>
       </div>
     </div>
+  );
+}
+
+/**
+ * A Task's name renames in place (F49): a click or Enter opens the field,
+ * Enter or leaving it saves, Escape keeps the old name.
+ */
+function TaskTitle({ id, title, onRename }: { id: string; title: string; onRename: (id: string, name: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  // Enter saves and closes; the blur that follows the close must not save again.
+  const settled = useRef(false);
+
+  function open() {
+    settled.current = false;
+    setDraft(title);
+    setEditing(true);
+  }
+
+  function finish(save: boolean) {
+    if (settled.current) return;
+    settled.current = true;
+    setEditing(false);
+    const name = draft.trim();
+    if (save && name && name !== title) onRename(id, name);
+  }
+
+  // The span carries the title's type; the button and the field inherit it.
+  if (editing) {
+    return (
+      <span className="df-task-title">
+        <input
+          type="text"
+          className="df-task-rename"
+          value={draft}
+          maxLength={255}
+          autoFocus
+          aria-label={`Rename ${title}`}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => finish(true)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              finish(true);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              finish(false);
+            }
+          }}
+        />
+      </span>
+    );
+  }
+  return (
+    <span className="df-task-title">
+      <button type="button" className="df-task-rename-trigger" onClick={open} aria-label={`Rename ${title}`}>
+        {title}
+      </button>
+    </span>
   );
 }
 
@@ -1695,11 +1832,13 @@ function DossierTasks({
   dossier,
   onNewTask,
   onComplete,
+  onRenameTask,
   onStartTask,
 }: {
   dossier: DossierModel;
   onNewTask: () => void;
   onComplete: (id: string, status: string) => void;
+  onRenameTask: (id: string, name: string) => void;
   onStartTask: (taskId: string) => void;
 }) {
   return (
@@ -1735,7 +1874,7 @@ function DossierTasks({
             >
               {row.done ? <TaskCheckIcon /> : null}
             </button>
-            <span className="df-task-title">{row.title}</span>
+            <TaskTitle id={row.id} title={row.title} onRename={onRenameTask} />
             <span className="df-task-controls">
               <V2FilterSelect
                 label=""
@@ -1840,10 +1979,19 @@ function DossierTime({ dossier, onStartTimer }: { dossier: DossierModel; onStart
             <span className="df-mono df-meta">{row.who}</span>
             <span className="df-mono df-meta">{row.when}</span>
             <span className="df-mono df-meta">{row.duration}</span>
-            <span className="df-status">{row.status}</span>
+            <span className="df-mono df-meta df-time-entry-status">{row.status}</span>
           </div>
         ))
       )}
+      {!dossier.time.empty ? (
+        <div className="df-register-row df-time-total" data-testid="v2-dossier-time-total">
+          <span className="df-row-title">Total</span>
+          <span />
+          <span />
+          <span className="df-mono df-meta">{dossier.time.total}</span>
+          <span />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1853,7 +2001,7 @@ function DossierActivity({ dossier, onStartTimer }: { dossier: DossierModel; onS
     <section className="df-card">
       <div className="df-card-head">
         <h2 className="df-card-title">Activity Evidence</h2>
-        <span className="df-count-chip">{dossier.evidence.tiles.length}</span>
+        <span className="df-count-chip">{dossier.evidence.total}</span>
       </div>
       {dossier.evidence.empty ? (
         <DossierEmptyStateView
@@ -1869,6 +2017,15 @@ function DossierActivity({ dossier, onStartTimer }: { dossier: DossierModel; onS
               <EvidenceTile key={tile.id} tile={tile} />
             ))}
           </div>
+          {dossier.evidence.allHref ? (
+            <div className="df-dossier-card-more">
+              <Button asChild variant="ghost" className="df-btn">
+                <Link href={dossier.evidence.allHref} data-testid="v2-dossier-activity-all">
+                  See all {dossier.evidence.total} in Activity
+                </Link>
+              </Button>
+            </div>
+          ) : null}
           <p className="df-empty" data-edge="end">
             {dossier.evidence.footnote}
           </p>
@@ -1883,9 +2040,9 @@ function DossierUpdates({ dossier }: { dossier: DossierModel }) {
     <section className="df-card">
       <div className="df-card-head">
         <h2 className="df-card-title">Daily Updates</h2>
-        {dossier.updates.kind === "records" ? (
+        {dossier.updates.kind === "refusal" ? null : (
           <span className="df-count-chip">{dossier.updates.rows.length}</span>
-        ) : null}
+        )}
       </div>
       {dossier.updates.kind === "refusal" ? (
         <p className="df-refusal">{dossier.updates.copy}</p>
@@ -2275,7 +2432,7 @@ function DossierFiles({
       <div className="df-card-head">
         <h2 className="df-card-title">Files</h2>
         <span className="df-cluster">
-          <span className="df-count-chip">{dossier.files.rows.length + projectFiles.length}</span>
+          <span className="df-count-chip">{dossier.files.count}</span>
           {dossier.documents.canCreate ? (
             <Button variant="outline" type="button" onClick={onUploadFile} className="df-btn">
               <Upload strokeWidth={1.6} aria-hidden />
@@ -2297,7 +2454,12 @@ function DossierFiles({
         </Link>
       ))}
       {dossier.files.empty && projectFiles.length === 0 ? (
-        <DossierEmptyStateView state={dossier.files.emptyState} icon="files" testId="v2-dossier-files-empty" />
+        <DossierEmptyStateView
+          state={dossier.files.emptyState}
+          icon="files"
+          testId="v2-dossier-files-empty"
+          onCompose={onUploadFile}
+        />
       ) : dossier.files.empty ? null : (
         dossier.files.rows.map((row) => {
           const body = (
@@ -2447,6 +2609,7 @@ function DossierSettings({
   onSaveDate,
   onDeleteProject,
   deletePending,
+  documentProjectName,
 }: {
   dossier: DossierModel;
   projectName: string;
@@ -2476,6 +2639,8 @@ function DossierSettings({
   onSaveDate: (field: keyof ProjectDatesDraft, day: string) => void;
   onDeleteProject: () => void;
   deletePending: boolean;
+  /** The saved name: `Save name` waits for a change, as `Save budget` does (F51). */
+  documentProjectName: string;
 }) {
   const { settings } = dossier;
   const assigned = new Set(settings.members.map((member) => member.id));
@@ -2506,7 +2671,12 @@ function DossierSettings({
                 onChange={(event) => setProjectName(event.target.value)}
                 aria-label="Project name"
               />
-              <Button variant="default" type="submit" disabled={!projectName.trim()} className="df-btn">
+              <Button
+                variant="default"
+                type="submit"
+                disabled={!projectName.trim() || projectName.trim() === documentProjectName}
+                className="df-btn"
+              >
                 Save name
               </Button>
             </span>

@@ -46,7 +46,7 @@ function input(overrides: Partial<DossierInput> = {}): DossierInput {
       projectType: "one_time",
       budgetedHours: 40,
       budgetedMinutes: 0,
-      actualHours: 30,
+      trackedSeconds: 30 * 3600,
       project: { id: "doc-1", name: "Onboarding" },
       client: { id: "cli-1", name: "Harbor Co" },
       documentationEnabled: 1,
@@ -144,16 +144,16 @@ describe("a Project's budget reads and writes hours and minutes (#277)", () => {
 
   it("the meters and figures read hours and minutes back", () => {
     expect(budgetedHoursTotal({ budgetedHours: 40, budgetedMinutes: 30 })).toBe(40.5);
-    expect(projectBudgetPercent({ budgetedHours: 40, budgetedMinutes: 0, actualHours: 30 })).toBe(75);
-    expect(projectBudgetPercent({ budgetedHours: null, budgetedMinutes: 0, actualHours: 30 })).toBeNull();
+    expect(projectBudgetPercent({ budgetedHours: 40, budgetedMinutes: 0, trackedSeconds: 30 * 3600 })).toBe(75);
+    expect(projectBudgetPercent({ budgetedHours: null, budgetedMinutes: 0, trackedSeconds: 30 * 3600 })).toBeNull();
 
     const base = input();
     const dossier = composeDossier({
       ...base,
-      project: { ...base.project!, budgetedHours: 0, budgetedMinutes: 30, actualHours: 0 },
+      project: { ...base.project!, budgetedHours: 0, budgetedMinutes: 30, trackedSeconds: 0 },
     });
     expect(dossier.stats.budgetPercent).toBe(0);
-    expect(dossier.stats.planHours).toBe("0.5 h");
+    expect(dossier.stats.trackedSub).toBe("of 0.5 h budget");
     expect(dossier.settings.budget.draft).toEqual({ hours: "0", minutes: "30" });
 
     const set = composeDossier(input({ tab: "settings" }));
@@ -248,7 +248,8 @@ describe("every Dossier tab empties into a designed empty state (#277)", () => {
     expect(dossier.reminders.emptyState.action).toEqual({ kind: "compose", label: "Add a Reminder" });
     expect(dossier.time.emptyState.action).toEqual({ kind: "start-timer", label: "Start Timer" });
     expect(dossier.evidence.emptyState.action).toEqual({ kind: "start-timer", label: "Start Timer" });
-    expect(dossier.files.emptyState.action).toMatchObject({ kind: "link", href: "/projects/prj-live/notes" });
+    // F51: with Documentation on, the Files tab uploads a File itself.
+    expect(dossier.files.emptyState.action).toEqual({ kind: "compose", label: "Upload File" });
     expect(dossier.documents.emptyState.action).toEqual({ kind: "new-document", label: "New Document" });
     expect(dossier.updates.emptyState.action).toEqual({
       kind: "link",

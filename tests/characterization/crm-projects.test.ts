@@ -11,6 +11,15 @@ import {
   projectDatesDraft,
 } from "../../client/src/v2/projects";
 
+// Time Entries go in through the owner connection: the sums are what is under test, not the timer.
+async function addTime(crmProjectId: string, userId: string, seconds: number): Promise<void> {
+  await getOwnerPool().query(
+    `INSERT INTO time_entries (user_id, crm_project_id, start_time, duration, status, workspace_id)
+     SELECT $1, id, now(), $3, 'stopped', workspace_id FROM crm_projects WHERE id = $2`,
+    [userId, crmProjectId, seconds],
+  );
+}
+
 /**
  * Characterization: CRM projects — the source of truth from which documentation
  * projects are created.
@@ -288,11 +297,14 @@ describe("CRM projects (characterization)", () => {
   it("sorts by name, Project Status, or budget used, before paging (#275)", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
+    await setWorkspaceRole(user.id, "owner"); // Tracked time is for Owners and Administrators.
     const bravo = await createCrmProject(user.agent, { name: "bravo", status: "won_in_progress", budgetedHours: 10 });
     const alpha = await createCrmProject(user.agent, { name: "Alpha", status: "won_completed", budgetedHours: 10 });
     await createCrmProject(user.agent, { name: "Charlie" });
-    await user.agent.patch(`/api/crm/projects/${bravo.crmProject.id}`).send({ actualHours: 9 });
-    await user.agent.patch(`/api/crm/projects/${alpha.crmProject.id}`).send({ actualHours: 2 });
+    await addTime(bravo.crmProject.id, user.id, 9 * 3600);
+    await addTime(alpha.crmProject.id, user.id, 2 * 3600);
+    // Alpha is the most recently updated row, which the unknown-sort fallback below reads.
+    await user.agent.patch(`/api/crm/projects/${alpha.crmProject.id}`).send({ comments: "latest" });
 
     const names = async (query: Record<string, string>) =>
       (await user.agent.get("/api/crm/projects").query({ pageSize: 50, ...query })).body.data.map(
@@ -341,6 +353,7 @@ describe("CRM projects (characterization)", () => {
   it("sorts Budget used by hours and minutes, as the meter counts them (F43)", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
+    await setWorkspaceRole(user.id, "owner"); // Tracked time is for Owners and Administrators.
     // 3 h over 4 h = 75 %; 3 h over 2 h 30 min = 120 %, though its whole hours alone read 150 %.
     const fourHours = await createCrmProject(user.agent, { name: "four", status: "won_in_progress", budgetedHours: 4 });
     const twoAndHalf = await createCrmProject(user.agent, {
@@ -357,9 +370,9 @@ describe("CRM projects (characterization)", () => {
     });
     await createCrmProject(user.agent, { name: "none", status: "won_in_progress" });
     for (const { crmProject } of [fourHours, twoAndHalf]) {
-      await user.agent.patch(`/api/crm/projects/${crmProject.id}`).send({ actualHours: 3 });
+      await addTime(crmProject.id, user.id, 3 * 3600);
     }
-    await user.agent.patch(`/api/crm/projects/${minutesOnly.crmProject.id}`).send({ actualHours: 1 });
+    await addTime(minutesOnly.crmProject.id, user.id, 3600);
     const names = async (dir: string) =>
       (await user.agent.get("/api/crm/projects").query({ pageSize: 50, sort: "budget", dir })).body.data.map(
         (p: { project: { name: string } }) => p.project.name,
@@ -717,11 +730,11 @@ describe("CRM projects (characterization)", () => {
     });
     expect(res.body.crmProject).toMatchObject({
       clientId: client.id,
-      // Same dropped-field quirk as on create: the source's type never survives.
+      // The source's type survives the copy (F46); create still drops it, so the source is one_time.
       projectType: "one_time",
       budgetedHours: 30,
-      // Reset on clone:
-      status: "lead",
+      // Delivery work copies to a Planned Project; dates and progress reset:
+      status: "won_not_started",
       startDate: null,
       dueDate: null,
       actualFinishDate: null,
@@ -739,6 +752,127 @@ describe("CRM projects (characterization)", () => {
     );
     expect(missing.status).toBe(404);
     expect(missing.body).toEqual({ message: "Source project not found" });
+  });
+
+  it("reports tracked seconds on the detail and the list, summed over every user (F44)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    await setWorkspaceRole(user.id, "owner"); // Tracked time is for Owners and Administrators.
+    const teammate = await registerUser(app);
+    const worked = await createCrmProject(user.agent, { name: "Worked" });
+    const idle = await createCrmProject(user.agent, { name: "Idle" });
+    await addTime(worked.crmProject.id, user.id, 600);
+    await addTime(worked.crmProject.id, teammate.id, 1500);
+
+    const detail = await user.agent.get(`/api/crm/projects/${worked.crmProject.id}`);
+    expect(detail.body.trackedSeconds).toBe(2100);
+    expect((await user.agent.get(`/api/crm/projects/${idle.crmProject.id}`)).body.trackedSeconds).toBe(0);
+
+    const list = await user.agent.get("/api/crm/projects").query({ pageSize: 50 });
+    const byId = new Map(list.body.data.map((p: { id: string; trackedSeconds: number }) => [p.id, p.trackedSeconds]));
+    expect(byId.get(worked.crmProject.id)).toBe(2100);
+    expect(byId.get(idle.crmProject.id)).toBe(0);
+  });
+
+  it("sends tracked seconds to Owners and Administrators only, and never orders a Member by them (F44)", async () => {
+    const app = await makeApp();
+    const owner = await registerUser(app);
+    await setWorkspaceRole(owner.id, "owner");
+    const member = await registerUser(app);
+    await setWorkspaceRole(member.id, "member");
+    const heavy = await createCrmProject(owner.agent, { name: "Heavy", budgetedHours: 10, memberIds: [owner.id, member.id] });
+    const light = await createCrmProject(owner.agent, { name: "Light", budgetedHours: 10, memberIds: [owner.id, member.id] });
+    await addTime(heavy.crmProject.id, owner.id, 8 * 3600);
+    await addTime(light.crmProject.id, owner.id, 3600);
+    // Light is the more recently changed, so the default order is Light, Heavy.
+    await getOwnerPool().query(`UPDATE crm_projects SET updated_at = now() + interval '1 minute' WHERE id = $1`, [light.crmProject.id]);
+
+    const detail = await member.agent.get(`/api/crm/projects/${heavy.crmProject.id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body).not.toHaveProperty("trackedSeconds");
+    const list = await member.agent.get("/api/crm/projects").query({ pageSize: 50 });
+    for (const row of list.body.data) expect(row).not.toHaveProperty("trackedSeconds");
+    for (const path of ["/api/crm/projects/all", "/api/crm/projects/all-kanban"]) {
+      for (const row of (await member.agent.get(path)).body.data) expect(row).not.toHaveProperty("trackedSeconds");
+    }
+
+    const names = async (agent: typeof member.agent, dir: string) =>
+      (await agent.get("/api/crm/projects").query({ pageSize: 50, sort: "budget", dir })).body.data.map(
+        (p: { project: { name: string } }) => p.project.name,
+      );
+    // Ascending by tracked time would be Light, Heavy; descending Heavy, Light. A Member gets the default order both ways.
+    expect(await names(member.agent, "asc")).toEqual(["Light", "Heavy"]);
+    expect(await names(member.agent, "desc")).toEqual(["Light", "Heavy"]);
+
+    expect((await owner.agent.get(`/api/crm/projects/${heavy.crmProject.id}`)).body.trackedSeconds).toBe(8 * 3600);
+    expect(await names(owner.agent, "desc")).toEqual(["Heavy", "Light"]);
+  });
+
+  it("sorts budget used by tracked time, ignoring actual hours (F44)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    await setWorkspaceRole(user.id, "owner"); // Tracked time is for Owners and Administrators.
+    const heavy = await createCrmProject(user.agent, { name: "Heavy", budgetedHours: 10, actualHours: 0 });
+    const light = await createCrmProject(user.agent, { name: "Light", budgetedHours: 10, actualHours: 0 });
+    const stale = await createCrmProject(user.agent, { name: "Stale", budgetedHours: 10, actualHours: 500 });
+    await addTime(heavy.crmProject.id, user.id, 8 * 3600);
+    await addTime(light.crmProject.id, user.id, 3600);
+
+    const names = async (dir: string) =>
+      (await user.agent.get("/api/crm/projects").query({ pageSize: 50, sort: "budget", dir })).body.data.map(
+        (p: { project: { name: string } }) => p.project.name,
+      );
+    expect(await names("asc")).toEqual(["Stale", "Light", "Heavy"]);
+    expect(await names("desc")).toEqual(["Heavy", "Light", "Stale"]);
+  });
+
+  it("filters by several Project Statuses at once (F45)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const make = (name: string, status: string) => createCrmProject(user.agent, { name, status, projectType: "internal" });
+    await make("active one", "won_in_progress");
+    await make("review one", "won_in_review");
+    await make("done one", "won_completed");
+    await make("planned one", "won_not_started");
+
+    const names = async (projectStatus: string) =>
+      (await user.agent.get("/api/crm/projects").query({ pageSize: 50, projectStatus })).body.data
+        .map((p: { project: { name: string } }) => p.project.name)
+        .sort();
+    expect(await names("active,in_review")).toEqual(["active one", "review one"]);
+    expect(await names("completed")).toEqual(["done one"]);
+  });
+
+  it("clones delivery work as a Planned Project and a sale as a lead (F46)", async () => {
+    const app = await makeApp();
+    const user = await registerUser(app);
+    const client = await createClient(user.agent);
+    const clone = async (id: string) => {
+      const res = await user.agent.post(`/api/crm/projects/${id}/clone`);
+      expect(res.status).toBe(201);
+      return res.body.crmProject;
+    };
+    const opportunityRows = async (id: string) =>
+      (await getOwnerPool().query(`SELECT id FROM opportunities WHERE crm_project_id = $1`, [id])).rows;
+
+    const won = await createCrmProject(user.agent, { name: "Won work", clientId: client.id, status: "won_in_progress" });
+    await user.agent.patch(`/api/crm/projects/${won.crmProject.id}`).send({ projectType: "monthly" });
+    const wonCopy = await clone(won.crmProject.id);
+    expect(wonCopy).toMatchObject({ status: "won_not_started", projectStatus: "planned", projectType: "monthly" });
+    expect(await opportunityRows(wonCopy.id)).toHaveLength(1);
+    const delivery = await user.agent.get("/api/crm/projects").query({ kind: "delivery", pageSize: 50 });
+    expect(delivery.body.data.map((p: { id: string }) => p.id)).toContain(wonCopy.id);
+
+    const internal = await createCrmProject(user.agent, { name: "Internal work", projectType: "internal" });
+    const internalCopy = await clone(internal.crmProject.id);
+    expect(internalCopy).toMatchObject({ projectType: "internal", projectStatus: "planned" });
+    expect(await opportunityRows(internalCopy.id)).toHaveLength(0);
+
+    for (const status of ["lead", "proposal_sent"]) {
+      const sale = await createCrmProject(user.agent, { name: `Sale ${status}`, clientId: client.id, status });
+      const copy = await clone(sale.crmProject.id);
+      expect(copy).toMatchObject({ status: "lead", projectType: "one_time" });
+    }
   });
 
   it("lets only the Owner and Administrators delete a Project, by either route", async () => {
