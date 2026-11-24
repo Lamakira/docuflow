@@ -164,7 +164,7 @@ describe("TYPE, OWNER, ACCESS, and UPDATED filter the register (#278)", () => {
 
   it("draws every filter as a V2FilterSelect chip with an action, and no decorative control", () => {
     const page = read("V2Documents.tsx");
-    for (const label of ["Type", "Owner", "Access", "Updated"]) {
+    for (const label of ["Type", "Added by", "Access", "Updated"]) {
       expect(page).toContain(`label="${label}"`);
     }
     expect(page).not.toMatch(/<span className="df-filter-chip"/);

@@ -20,6 +20,7 @@ export type LibraryPerson = {
 export type LibraryFolder = {
   id: string;
   name: string;
+  description?: string | null;
   /** The Folder this one sits in; null or unknown puts it at the Workspace root. */
   parentId?: string | null;
   createdAt?: Date | string | null;
@@ -29,6 +30,8 @@ export type LibraryFolder = {
   /** The level once the Folders above are counted, stamped by the route that checked it (#278). */
   effectiveAccess?: string | null;
   canManageAccess?: boolean;
+  /** Whether the reader may delete the Folder: an Owner or Administrator. */
+  canDelete?: boolean;
 };
 
 export type LibraryDocument = {
@@ -39,7 +42,6 @@ export type LibraryDocument = {
   /** The level once its Folders are counted, stamped by the route that checked it (#278). */
   effectiveAccess?: string | null;
   canManageAccess?: boolean;
-  content?: unknown;
   storagePath?: string | null;
   fileName?: string | null;
   uploadedById?: string | null;
@@ -50,8 +52,8 @@ export type LibraryDocument = {
 
 /**
  * What narrows the Workspace Documents register besides the name filter
- * (#278). `all` is no filter. OWNER is the Member who uploaded or created the
- * item; UPDATED is a window in days back from now.
+ * (#278). `all` is no filter. OWNER (shown as Added by) is the Member who uploaded or
+ * created the item; UPDATED is a window in days back from now.
  */
 export type LibraryFilters = {
   q: string;
@@ -135,6 +137,10 @@ export type LibraryPreview = {
   title: string;
   meta: string;
   accessCopy: string;
+  /** The Folder's own description, when it has one. */
+  description: string | null;
+  /** Whether this reader may delete the Folder; the server allows an Owner or Administrator only. */
+  canDelete: boolean;
   /** Whether this reader may open Manage access on the Folder: its owner or an Administrator. */
   canManageAccess: boolean;
 };
@@ -334,7 +340,7 @@ export function libraryFilterLabels(
   const labels: string[] = [];
   if (facets.type !== "all") labels.push(`Type: ${facets.type === "file" ? "File" : "Document"}`);
   if (facets.owner !== "all") {
-    labels.push(`Owner: ${owners.find((owner) => owner.value === facets.owner)?.label ?? "a Member"}`);
+    labels.push(`Added by: ${owners.find((owner) => owner.value === facets.owner)?.label ?? "a Member"}`);
   }
   if (facets.access !== "all") {
     const level =
@@ -516,7 +522,7 @@ function folderRow(
   now: Date,
 ): LibraryRow {
   const latestChild = [...children].sort((a, b) => timestamp(b) - timestamp(a))[0];
-  const editorPerson = latestChild?.uploadedBy ?? folder.createdBy ?? null;
+  const editorPerson = folder.createdBy ?? null;
   const updatedAt = latestChild
     ? (latestChild.updatedAt ?? latestChild.createdAt ?? folder.updatedAt)
     : folder.updatedAt ?? folder.createdAt;
@@ -569,6 +575,8 @@ function folderPreview(folder: LibraryFolder, children: LibraryDocument[], subfo
     title: folder.name,
     meta: `${itemLabel} · Folder`,
     accessCopy: FOLDER_ACCESS_COPY[itemAccess(folder)],
+    description: folder.description?.trim() || null,
+    canDelete: folder.canDelete === true,
     canManageAccess: folder.canManageAccess === true,
   };
 }
@@ -607,7 +615,8 @@ function formatWhen(updatedAt: Date | string | null, now: Date): string {
   if (sameDay(value, now)) return formatClock(value);
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
   if (sameDay(value, yesterday)) return "Yesterday";
-  return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
+  const day = `${value.getDate()} ${MONTHS[value.getMonth()]}`;
+  return value.getFullYear() === now.getFullYear() ? day : `${day} ${value.getFullYear()}`;
 }
 
 function librarySubhead(workspaceName: string): string {

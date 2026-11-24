@@ -17,7 +17,7 @@ import {
   storagePort,
   verifyUploadGrant,
 } from "./objectStorage";
-import { ObjectPermission } from "./objectAcl";
+import { ObjectPermission, workspaceDocumentOf } from "./objectAcl";
 import { contextFromUser, runWithWorkspaceContext } from "./workspaceContext";
 import { registerAgentRoutes } from "./agentRoutes";
 import { registerDownloadRoutes } from "./downloadRoutes";
@@ -86,7 +86,9 @@ import {
   crmProjectStatusValues,
   crmProjectTypeValues,
   isTrackingPolicyClockTime,
+  toDocumentPerson,
   toSafeUser,
+  type Document,
   type InsertCrmModule,
   type InsertCrmModuleField,
 } from "@shared/schema";
@@ -113,6 +115,7 @@ import {
   loadAccessGraph,
   visibleWorkspaceDocuments,
 } from "./modules/knowledge/documentAccess";
+import { canChangeAccess, keepsClosedFolders } from "@shared/documentAccess";
 import { registerKnowledgeRoutes } from "./modules/knowledge/http";
 import {
   syncDocumentVideoTranscripts,
@@ -180,6 +183,38 @@ function extractTextFromContent(content: any): string {
   
   traverse(content);
   return text.trim();
+}
+
+const folderNameProblem = "Folder name must be 1 to 255 characters";
+const folderNameSchema = z
+  .string({ required_error: folderNameProblem, invalid_type_error: folderNameProblem })
+  .trim()
+  .min(1, folderNameProblem)
+  .max(255, folderNameProblem);
+
+const documentNameProblem = "Document name must be 1 to 500 characters";
+const documentNameSchema = z
+  .string({ required_error: documentNameProblem, invalid_type_error: documentNameProblem })
+  .trim()
+  .min(1, documentNameProblem)
+  .max(500, documentNameProblem);
+
+/** A refused library write, in the words of its name when that is what is wrong. */
+function invalidName(error: z.ZodError) {
+  const name = error.errors.find((issue) => issue.path[0] === "name");
+  return { message: name?.message ?? "Invalid data", errors: error.errors };
+}
+
+/** The `updatedAt` a save was made from (F52). */
+const expectedUpdatedAtSchema = z
+  .string()
+  .datetime({ precision: 3 })
+  .transform((value) => new Date(value))
+  .optional();
+
+/** 409: someone saved since the reader opened it; nothing of theirs was written. */
+function documentChanged<T>(current: T) {
+  return { message: "This Document changed since you opened it", code: "document_changed", current };
 }
 
 /** Identifies web Timer Commands now that cookie `sessionID` is gone (#162). */
@@ -385,6 +420,12 @@ export async function registerRoutes(
     return document && (await canAccessProject(userId, document.projectId)) ? document : undefined;
   };
 
+  /** A Project Document as GET /api/documents/:id answers it. */
+  const documentWithCreator = async (document: Document) => {
+    const creator = document.createdById ? await storage.getUser(document.createdById) : null;
+    return { ...document, createdBy: creator && toDocumentPerson(creator) };
+  };
+
   app.get("/api/projects/:projectId/documents", isAuthenticated, async (req: any, res) => {
     try {
       const project = await accessibleProject(getUserId(req)!, req.params.projectId);
@@ -466,13 +507,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Get creator info if createdById is set
-      let createdBy = null;
-      if (document.createdById) {
-        createdBy = await storage.getUser(document.createdById);
-      }
-
-      res.json({ ...document, createdBy });
+      res.json(await documentWithCreator(document));
     } catch (error) {
       console.error("Error fetching document:", error);
       res.status(500).json({ message: "Failed to fetch document" });
@@ -521,6 +556,7 @@ export async function registerRoutes(
         icon: z.string().nullable().optional(),
         parentId: z.string().nullable().optional(),
         position: z.number().optional(),
+        expectedUpdatedAt: expectedUpdatedAtSchema,
       });
 
       const parsed = updateSchema.safeParse(req.body);
@@ -529,13 +565,20 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
       }
 
+      const { expectedUpdatedAt, ...data } = parsed.data;
       const updated = await updateDocumentWithDerivedJobs({
         jobs: createDocumentJobsPort(),
         id: req.params.id,
         ownerId: userId,
-        data: parsed.data,
+        data,
+        expectedUpdatedAt,
       });
-      
+      if (!updated) {
+        const current = expectedUpdatedAt && (await accessibleDocument(userId, req.params.id));
+        if (!current) return res.status(404).json({ message: "Document not found" });
+        return res.status(409).json(documentChanged(await documentWithCreator(current)));
+      }
+
       res.json(updated);
     } catch (error) {
       console.error("Error updating document:", error);
@@ -679,17 +722,21 @@ export async function registerRoutes(
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
       const isPublic = await objectStorageService.canAccessObjectEntity({ objectFile });
+      const decide = () =>
+        objectStorageService.canAccessObjectEntity({
+          objectFile,
+          userId: userId,
+          requestedPermission: ObjectPermission.READ,
+        });
+      let canAccess = isPublic;
       if (!isPublic && userId) {
         // Another Workspace's object is answered as absent, not as forbidden.
         const ctx = await contextFromUser(userId).catch(() => null);
         const owned = ctx && (await runWithWorkspaceContext(ctx, () => isObjectInActiveWorkspace(req.path)));
         if (!owned) return res.sendStatus(404);
+        // A Document's object is decided by Document Access, which reads the Active Workspace.
+        canAccess = await runWithWorkspaceContext(ctx, decide);
       }
-      const canAccess = await objectStorageService.canAccessObjectEntity({
-        objectFile,
-        userId: userId,
-        requestedPermission: ObjectPermission.READ,
-      });
       if (!canAccess) {
         return res.sendStatus(401);
       }
@@ -2670,14 +2717,14 @@ Instructions:
     try {
       const userId = getUserId(req)!;
       const createSchema = z.object({
-        name: z.string().min(1, "Folder name is required"),
+        name: folderNameSchema,
         description: z.string().optional(),
         parentId: z.string().min(1).nullable().optional(),
       });
       
       const parsed = createSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+        return res.status(400).json(invalidName(parsed.error));
       }
 
       const parentId = parsed.data.parentId ?? null;
@@ -2706,13 +2753,13 @@ Instructions:
   app.patch("/api/company-document-folders/:id", isAuthenticated, async (req: any, res) => {
     try {
       const updateSchema = z.object({
-        name: z.string().min(1, "Folder name is required").optional(),
+        name: folderNameSchema.optional(),
         description: z.string().optional().nullable(),
       });
       
       const parsed = updateSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+        return res.status(400).json(invalidName(parsed.error));
       }
 
       const { viewer, graph } = await documentAccessFor(req);
@@ -2735,12 +2782,12 @@ Instructions:
   // Delete folder
   app.delete("/api/company-document-folders/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = getUserId(req)!;
-      const user = await storage.getUser(userId);
-      
-      // Only admins can delete folders
-      if (user?.role !== 'admin') {
-        return res.status(403).json({ message: "Only admins can delete folders" });
+      const { viewer, graph } = await documentAccessFor(req);
+      if (!canSeeFolder(graph, viewer, req.params.id)) {
+        return res.status(404).json({ message: "Folder not found" });
+      }
+      if (!viewer.administrator) {
+        return res.status(403).json({ message: "Only an Owner or an Administrator can delete folders" });
       }
       
       const folder = await storage.deleteCompanyDocumentFolder(req.params.id);
@@ -2777,6 +2824,28 @@ Instructions:
     }
   });
   
+  // Every visible folder and document at once, without their text
+  app.get("/api/company-documents/register", isAuthenticated, async (req: any, res) => {
+    try {
+      const [{ viewer, graph }, folders, documents] = await Promise.all([
+        documentAccessFor(req),
+        storage.getCompanyDocumentFolders(),
+        storage.getCompanyDocumentRegister(),
+      ]);
+      res.json({
+        folders: folders
+          .filter((folder) => canSeeFolder(graph, viewer, folder.id))
+          .map((folder) => annotateFolder(graph, viewer, folder)),
+        documents: documents
+          .filter((document) => canSeeDocument(graph, viewer, document))
+          .map((document) => annotateDocument(graph, viewer, document)),
+      });
+    } catch (error) {
+      console.error("Error fetching the company document register:", error);
+      res.status(500).json({ message: "Failed to fetch company documents" });
+    }
+  });
+
   // Search company documents and folders
   app.get("/api/company-documents/search", isAuthenticated, async (req: any, res) => {
     try {
@@ -2832,7 +2901,7 @@ Instructions:
       const userId = getUserId(req)!;
       
       const createSchema = z.object({
-        name: z.string().min(1, "Name is required"),
+        name: documentNameSchema,
         description: z.string().optional(),
         content: z.any().optional(),
         fileName: z.string().optional(),
@@ -2844,7 +2913,7 @@ Instructions:
       
       const parsed = createSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+        return res.status(400).json(invalidName(parsed.error));
       }
 
       if (parsed.data.folderId) {
@@ -2935,23 +3004,49 @@ Instructions:
   app.patch("/api/company-documents/:id", isAuthenticated, async (req: any, res) => {
     try {
       const updateSchema = z.object({
-        name: z.string().min(1).optional(),
+        name: documentNameSchema.optional(),
         description: z.string().optional(),
         content: z.any().optional(),
+        folderId: z.string().min(1).nullable().optional(),
+        expectedUpdatedAt: expectedUpdatedAtSchema,
       });
       
       const parsed = updateSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid data", errors: parsed.error.errors });
+        return res.status(400).json(invalidName(parsed.error));
       }
 
-      if (!(await visibleCompanyDocument(req, req.params.id))) {
+      const existing = await storage.getCompanyDocument(req.params.id);
+      const { viewer, graph } = await documentAccessFor(req);
+      if (!existing || !canSeeDocument(graph, viewer, existing)) {
         return res.status(404).json({ message: "Document not found" });
       }
+
+      const { expectedUpdatedAt, folderId, ...data } = parsed.data;
+      const moving = folderId !== undefined && folderId !== existing.folderId;
+      if (moving) {
+        // A move can widen who reads the item, so it takes the right to change its access.
+        if (!canChangeAccess(viewer, existing.uploadedById)) {
+          return res.status(403).json({ message: "Only the owner of this item or an Administrator can move it" });
+        }
+        if (folderId && !canSeeFolder(graph, viewer, folderId)) {
+          return res.status(400).json({ message: "The Folder does not exist in this Workspace" });
+        }
+        // An owner may change the item's own level, never what its Folders demand.
+        if (!viewer.administrator && !keepsClosedFolders(graph.folders, existing.folderId, folderId)) {
+          return res.status(403).json({ message: "Only an Administrator can move this item out of a Folder with limited access" });
+        }
+      }
       
-      const document = await storage.updateCompanyDocument(req.params.id, parsed.data);
+      const document = await storage.updateCompanyDocument(
+        req.params.id,
+        moving ? { ...data, folderId } : data,
+        { expectedUpdatedAt, actorId: viewer.userId },
+      );
       if (!document) {
-        return res.status(404).json({ message: "Document not found" });
+        const current = expectedUpdatedAt && (await visibleCompanyDocument(req, req.params.id));
+        if (!current) return res.status(404).json({ message: "Document not found" });
+        return res.status(409).json(documentChanged(current));
       }
       
       // Both edits reach the index: the title is part of every chunk's text, so
@@ -2981,7 +3076,7 @@ Instructions:
         }
       }
       
-      res.json(document);
+      res.json(annotateDocument(graph, viewer, document));
     } catch (error) {
       console.error("Error updating company document:", error);
       res.status(500).json({ message: "Failed to update document" });
@@ -3128,18 +3223,13 @@ Instructions:
   // Delete company document
   app.delete("/api/company-documents/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = getUserId(req)!;
-      const user = await storage.getUser(userId);
-      
-      // Only admins can delete company documents
-      if (user?.role !== 'admin') {
-        return res.status(403).json({ message: "Only admins can delete company documents" });
-      }
-      
       const document = await visibleCompanyDocument(req, req.params.id);
       
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
+      }
+      if (!(await canManageAdministration())) {
+        return res.status(403).json({ message: "Only an Owner or an Administrator can delete documents" });
       }
 
       // Delete embeddings first
@@ -4853,6 +4943,11 @@ Instructions:
       } catch {
         return res.status(400).json({ message: "Invalid storageKey" });
       }
+      // A capture carries no policy. One that has a policy is a File or a
+      // Document's object, which this row would open outside its own access.
+      if (normalizedPath.startsWith("/objects/") && (await objectStorageService.findAclPolicy(normalizedPath))) {
+        return res.status(400).json({ message: "Invalid storageKey" });
+      }
 
       const screenshot = await ingestActivityScreenshot({
         jobs: createActivityJobsPort(),
@@ -4942,6 +5037,13 @@ Instructions:
       const objectStorageService = new ObjectStorageService();
       assertObjectInActiveWorkspace(screenshot.storageKey);
       const objectFile = await objectStorageService.getObjectEntityFile(screenshot.storageKey);
+      // Tied to a Document after the capture was registered: Document Access decides, not this row.
+      if (
+        workspaceDocumentOf(await objectStorageService.findAclPolicy(screenshot.storageKey)) !== null &&
+        !(await objectStorageService.canAccessObjectEntity({ objectFile, userId }))
+      ) {
+        return res.status(404).json({ message: "Screenshot file not found" });
+      }
       objectStorageService.downloadObject(objectFile, res);
     } catch (error) {
       console.error("Error serving screenshot:", error);

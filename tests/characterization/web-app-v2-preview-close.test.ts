@@ -58,7 +58,7 @@ describe("the preview header carries a close button", () => {
     it(`${page} closes by button, Escape and row, and returns focus to the row`, () => {
       const source = v2(page);
       expect(source).toMatch(/<V2PreviewHead[\s\S]*?onClose=\{/);
-      expect(source).toMatch(/className="df-library"[^>]*onKeyDown=\{/);
+      expect(source).toMatch(/className="df-library-page"[^>]*onKeyDown=\{/);
       expect(source).toMatch(/togglePreviewSelection\(current,/);
       expect(source).toMatch(/previewClosesOnKey\(/);
       expect(source).toMatch(/event\.currentTarget\.contains\(event\.target as Node\)/);

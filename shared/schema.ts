@@ -108,6 +108,13 @@ export function toSafeUser<
   return safe;
 }
 
+/** All a Workspace Document, File, or Folder says about who added it (F57). */
+export type DocumentPerson = Pick<User, "id" | "email" | "firstName" | "lastName" | "profileImageUrl">;
+
+export function toDocumentPerson({ id, email, firstName, lastName, profileImageUrl }: DocumentPerson): DocumentPerson {
+  return { id, email, firstName, lastName, profileImageUrl };
+}
+
 /**
  * Platform Staff (#300, ADR-0015). An operator principal from a dedicated
  * identity pool, not a User and not `users.role`. The subject is the staff
@@ -853,11 +860,13 @@ export type InsertCompanyDocumentFolder = z.infer<typeof insertCompanyDocumentFo
 
 // Company document folder with creator info
 export type CompanyDocumentFolderWithCreator = CompanyDocumentFolder & {
-  createdBy?: SafeUser;
+  createdBy?: DocumentPerson;
   /** The level that applies once every enclosing Folder is counted (#278). */
   effectiveAccess?: DocumentAccess;
   /** Whether the reader may change this Folder's access: its creator or an Administrator. */
   canManageAccess?: boolean;
+  /** Whether the reader may delete this Folder: an Owner or an Administrator. */
+  canDelete?: boolean;
 };
 
 // Company Documents table - company terms, policies, and other documents
@@ -907,13 +916,16 @@ export type InsertCompanyDocument = z.infer<typeof insertCompanyDocumentSchema>;
 
 // Company document with uploader info
 export type CompanyDocumentWithUploader = CompanyDocument & {
-  uploadedBy?: SafeUser;
+  uploadedBy?: DocumentPerson;
   folder?: CompanyDocumentFolder;
   /** The level that applies once every enclosing Folder is counted (#278). */
   effectiveAccess?: DocumentAccess;
   /** Whether the reader may change this item's access: its owner or an Administrator. */
   canManageAccess?: boolean;
 };
+
+/** A row of the Workspace Documents register: everything but the text. */
+export type CompanyDocumentRegisterRow = Omit<CompanyDocumentWithUploader, "content">;
 
 // Files — uploaded binaries. Native pages stay on company_documents / documents.
 // Combined HTTP still reads company_documents; legacy ids and object keys copy here.

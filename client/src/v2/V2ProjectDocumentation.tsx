@@ -468,6 +468,7 @@ export function V2ProjectDocumentationPage() {
         <V2LibraryRegister
           library={library}
           testId="v2-project-documentation-register"
+          personHeading="Last editor"
           instantExpand={folderMotion.instantExpand}
           onFolderClick={onFolderClick}
           emptyAction={

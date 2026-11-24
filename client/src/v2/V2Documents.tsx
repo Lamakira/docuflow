@@ -29,6 +29,7 @@ import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { WORKSPACE_LIBRARY_OPEN_KEY, readLibraryOpenState, writeLibraryOpenState, type LibraryOpenState } from "./presentation";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
+import { V2EmptyState } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2ManageAccessDialog } from "./V2ManageAccessDialog";
 import { V2UploadDialog, fileTitle, storeUpload } from "./V2UploadDialog";
@@ -49,11 +50,19 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SkeletonLibrary, V2PageSkeleton } from "./V2Skeleton";
 
+/** What the register route adds to a Folder: whether the reader may delete it. */
+type RegisterFolder = CompanyDocumentFolderWithCreator & { canDelete?: boolean };
+/** The register lists Documents without their full text. */
+type RegisterDocument = Omit<CompanyDocumentWithUploader, "content">;
+
 type LibraryPayload = {
   capabilityMiss: boolean;
-  folders: CompanyDocumentFolderWithCreator[];
-  documents: CompanyDocumentWithUploader[];
+  folders: RegisterFolder[];
+  documents: RegisterDocument[];
 };
+
+const MAX_FOLDER_NAME = 255;
+const MAX_DOCUMENT_NAME = 500;
 
 type CreateMode = "document" | "folder" | "upload" | null;
 
@@ -67,8 +76,10 @@ function restoredOpenState(): LibraryOpenState {
   }
 }
 
-function actionFromSearch(): CreateMode {
-  const params = new URLSearchParams(window.location.search);
+const CREATE_PARAMS = ["new", "folder", "upload"] as const;
+
+function actionFromSearch(search: string = window.location.search): CreateMode {
+  const params = new URLSearchParams(search);
   if (params.get("new") === "1") return "document";
   if (params.get("folder") === "1") return "folder";
   if (params.get("upload") === "1") return "upload";
@@ -79,46 +90,22 @@ async function readJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+// One route answers the whole register: Folders and Documents without their text.
 async function loadWorkspaceLibrary(): Promise<LibraryPayload> {
-  const foldersRes = await fetch("/api/company-document-folders", { credentials: "include" });
-  if (foldersRes.status === 401 || foldersRes.status === 403) {
+  const res = await fetch("/api/company-documents/register", { credentials: "include" });
+  if (res.status === 401 || res.status === 403) {
     return { capabilityMiss: true, folders: [], documents: [] };
   }
-  if (!foldersRes.ok) throw new Error("Failed to fetch Workspace Document folders");
-  const folders = await readJson<CompanyDocumentFolderWithCreator[]>(foldersRes);
-
-  const rootRes = await fetch("/api/company-documents", { credentials: "include" });
-  if (rootRes.status === 401 || rootRes.status === 403) {
-    return { capabilityMiss: true, folders: [], documents: [] };
-  }
-  if (!rootRes.ok) throw new Error("Failed to fetch Workspace Documents");
-  const root = await readJson<CompanyDocumentWithUploader[]>(rootRes);
-
-  const nested = await Promise.all(
-    folders.map(async (folder) => {
-      const res = await fetch(`/api/company-documents?folderId=${encodeURIComponent(folder.id)}`, {
-        credentials: "include",
-      });
-      if (res.status === 401 || res.status === 403) return null;
-      if (!res.ok) return [] as CompanyDocumentWithUploader[];
-      return readJson<CompanyDocumentWithUploader[]>(res);
-    }),
-  );
-  if (nested.some((item) => item === null)) {
-    return { capabilityMiss: true, folders: [], documents: [] };
-  }
-
-  return {
-    capabilityMiss: false,
-    folders,
-    documents: [...root, ...nested.flatMap((item) => item ?? [])],
-  };
+  if (!res.ok) throw new Error("Failed to fetch Workspace Documents");
+  const register = await readJson<{ folders: RegisterFolder[]; documents: RegisterDocument[] }>(res);
+  return { capabilityMiss: false, folders: register.folders, documents: register.documents };
 }
 
-function toFolder(folder: CompanyDocumentFolderWithCreator): LibraryFolder {
+function toFolder(folder: RegisterFolder): LibraryFolder {
   return {
     id: folder.id,
     name: folder.name,
+    description: folder.description,
     parentId: folder.parentId,
     createdAt: folder.createdAt,
     updatedAt: folder.updatedAt,
@@ -132,10 +119,11 @@ function toFolder(folder: CompanyDocumentFolderWithCreator): LibraryFolder {
     access: folder.access,
     effectiveAccess: folder.effectiveAccess,
     canManageAccess: folder.canManageAccess,
+    canDelete: folder.canDelete === true,
   };
 }
 
-function toDocument(document: CompanyDocumentWithUploader): LibraryDocument {
+function toDocument(document: RegisterDocument): LibraryDocument {
   return {
     id: document.id,
     name: document.name,
@@ -143,7 +131,6 @@ function toDocument(document: CompanyDocumentWithUploader): LibraryDocument {
     access: document.access,
     effectiveAccess: document.effectiveAccess,
     canManageAccess: document.canManageAccess,
-    content: document.content,
     storagePath: document.storagePath,
     fileName: document.fileName,
     uploadedById: document.uploadedById,
@@ -193,6 +180,22 @@ export function V2DocumentsPage() {
     navigate(`/documents${writeLibraryFilters(search, next)}`, { replace: true });
   }
 
+  // Opening the dialog from the address (?new=1, ?folder=1, ?upload=1) works each time the address says so.
+  useEffect(() => {
+    const mode = actionFromSearch(search);
+    if (mode) setCreateMode(mode);
+  }, [search]);
+
+  // Closing the dialog drops its param, so a reload does not open it again.
+  function closeCreate() {
+    setCreateMode(null);
+    const params = new URLSearchParams(search);
+    if (!CREATE_PARAMS.some((param) => params.has(param))) return;
+    for (const param of CREATE_PARAMS) params.delete(param);
+    const query = params.toString();
+    navigate(`/documents${query ? `?${query}` : ""}`, { replace: true });
+  }
+
   // The filter box answers each keystroke; the URL follows once typing settles.
   useEffect(() => {
     if (filterQuery === filters.q) return;
@@ -200,10 +203,18 @@ export function V2DocumentsPage() {
     return () => window.clearTimeout(timer);
   }, [filterQuery]);
 
-  const { data, isLoading } = useQuery<LibraryPayload>({
+  // Every visit re-reads; the cached list shows while it does (F55).
+  const { data, isLoading, isError, refetch } = useQuery<LibraryPayload>({
     queryKey: ["/api/company-document-folders", "workspace-library"],
     queryFn: loadWorkspaceLibrary,
+    staleTime: 0,
   });
+  // A refresh that fails keeps the cached list on screen and says so once.
+  useEffect(() => {
+    if (isError && data) {
+      notify.error(null, { fallback: "Workspace Documents could not be refreshed.", id: "v2-documents-refresh-failed" });
+    }
+  }, [isError, data]);
   const ownerName = useWorkspaceOwnerName();
 
   const documents = (data?.documents ?? []).map(toDocument);
@@ -259,7 +270,7 @@ export function V2DocumentsPage() {
     onSuccess: (created: { id?: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/company-documents"] });
-      setCreateMode(null);
+      closeCreate();
       setName("");
       setWriteRefusal(null);
       notify.success("Document created");
@@ -277,7 +288,7 @@ export function V2DocumentsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/company-document-folders"] });
       if (target) setExpandedFolderIds((current) => (current.includes(target) ? current : [...current, target]));
       if (created?.id) setSelectedFolderId(created.id);
-      setCreateMode(null);
+      closeCreate();
       setName("");
       setWriteRefusal(null);
       notify.success("Folder created");
@@ -421,250 +432,287 @@ export function V2DocumentsPage() {
     );
   }
 
-  return (
-    <div className="df-library" data-testid="v2-documents" onKeyDown={onLibraryKeyDown}>
-      <div className="df-library-main">
+  if (isError && !data) {
+    return (
+      <div className="df-page" data-testid="v2-documents">
         <header className="df-today-head">
           <div style={{ minWidth: 0 }}>
             <h1 className="df-title">Workspace Documents</h1>
-            <p className="df-subhead">{library.subhead}</p>
-          </div>
-          <div className="df-library-actions">
-            <Button variant="outline" type="button" onClick={() => openCreate("folder")} className="df-btn">
-              <Plus strokeWidth={1.6} aria-hidden />
-              New folder
-            </Button>
-            <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
-              <Upload strokeWidth={1.6} aria-hidden />
-              Upload File
-            </Button>
-            <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
-              <Plus strokeWidth={1.6} aria-hidden />
-              New Document
-            </Button>
           </div>
         </header>
-
-        <V2FormDialog
-          open={creating}
-          onOpenChange={(open) => {
-            if (!open) setCreateMode(null);
-          }}
-          title={createMode === "folder" ? "New Folder" : "New Document"}
-          description={
-            createMode === "folder"
-              ? "A Folder groups Workspace Documents and Files. It can sit at the root or inside any Folder."
-              : "A Workspace Document belongs to the Workspace, not to a single Project. It opens in the editor once created."
-          }
-          submitLabel={createMode === "folder" ? "Create Folder" : "Create Document"}
-          pending={createDocument.isPending || createFolder.isPending}
-          canSubmit={Boolean(name.trim())}
-          onSubmit={onCreate}
-          refusal={writeRefusal}
-          testId={createMode === "folder" ? "v2-documents-new-folder" : "v2-documents-new-document"}
-        >
-          <label className="df-daily-field">
-            Name
-            <input
-              type="text"
-              value={name}
-              autoFocus
-              onChange={(event) => setName(event.target.value)}
-              placeholder={createMode === "folder" ? "Folder name" : "Document name"}
-              aria-label={createMode === "folder" ? "Folder name" : "Document name"}
-            />
-          </label>
-          {destinationField}
-        </V2FormDialog>
-
-        <V2UploadDialog
-          open={createMode === "upload"}
-          onOpenChange={(open) => {
-            if (!open) setCreateMode(null);
-          }}
-          description="Files are stored in the Workspace and open in the viewer. Drop several at once; each becomes its own row."
-          upload={(file) => uploadFile.mutateAsync(file)}
-          pending={uploadFile.isPending}
-          beforeUpload={() => refuseWrite()}
-          refusal={writeRefusal}
-          testId="v2-documents-upload"
-        >
-          {destinationField}
-        </V2UploadDialog>
-        {writeRefusal && !createMode ? <p className="df-refusal">{writeRefusal}</p> : null}
-
-        <div className="df-filter-bar">
-          <label className="df-filter-input">
-            <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
-            <input
-              type="search"
-              value={filterQuery}
-              onChange={(event) => setFilterQuery(event.target.value)}
-              placeholder="Search this library"
-              aria-label="Search this library"
-            />
-          </label>
-          <V2FilterSelect
-            label="Type"
-            ariaLabel="Filter by type"
-            value={filters.type}
-            active={filters.type !== "all"}
-            options={LIBRARY_TYPE_OPTIONS}
-            onChange={(type) => setFilters({ ...filters, type: type as LibraryFilters["type"] })}
-          />
-          {ownerOptions.length === 0 && filters.owner === "all" ? null : (
-            <V2FilterSelect
-              label="Owner"
-              ariaLabel="Filter by owner"
-              value={filters.owner}
-              active={filters.owner !== "all"}
-              options={[{ value: "all", label: "Any" }, ...ownerOptions]}
-              onChange={(owner) => setFilters({ ...filters, owner })}
-            />
-          )}
-          <V2FilterSelect
-            label="Access"
-            ariaLabel="Filter by access"
-            value={filters.access}
-            active={filters.access !== "all"}
-            options={LIBRARY_ACCESS_OPTIONS}
-            onChange={(access) => setFilters({ ...filters, access: access as LibraryFilters["access"] })}
-          />
-          <V2FilterSelect
-            label="Updated"
-            ariaLabel="Filter by last update"
-            value={filters.updated}
-            active={filters.updated !== "all"}
-            options={LIBRARY_UPDATED_OPTIONS}
-            onChange={(updated) => setFilters({ ...filters, updated: updated as LibraryFilters["updated"] })}
-          />
-        </div>
-
-        <V2LibraryRegister
-          library={library}
-          testId="v2-documents-register"
-          instantExpand={folderMotion.instantExpand}
-          onFolderClick={onFolderClick}
-          emptyAction={
-            library.filtered ? (
-              <Button
-                variant="outline"
-                type="button"
-                className="df-btn"
-                onClick={() => {
-                  setFilterQuery("");
-                  setFilters(clearLibraryFilters());
-                }}
-              >
-                {library.emptyState?.kind === "search" ? "Clear search" : "Clear filters"}
-              </Button>
-            ) : null
-          }
-          createActions={
-            <>
-              <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
-                <Plus strokeWidth={1.6} aria-hidden />
-                New Document
-              </Button>
-              <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
-                <Upload strokeWidth={1.6} aria-hidden />
-                Upload File
-              </Button>
-              <Button variant="outline" type="button" onClick={() => openCreate("folder")} className="df-btn">
-                <Plus strokeWidth={1.6} aria-hidden />
-                New folder
-              </Button>
-            </>
+        <V2EmptyState
+          icon="documents"
+          title="Workspace Documents could not be loaded."
+          copy="Something went wrong while loading them. Try again."
+          testId="v2-documents-load-failed"
+          action={
+            <Button variant="default" type="button" className="df-btn" onClick={() => refetch()}>
+              Try again
+            </Button>
           }
         />
       </div>
+    );
+  }
 
-      {library.preview ? (
-        <aside className="df-panel df-folder-preview" data-testid="v2-folder-preview">
-          <V2PreviewHead
-            kicker="Folder preview"
-            title={library.preview.title}
-            meta={library.preview.meta}
-            onClose={closePreview}
+  return (
+    <div className="df-library-page" data-testid="v2-documents" onKeyDown={onLibraryKeyDown}>
+      <header className="df-today-head">
+        <div style={{ minWidth: 0 }}>
+          <h1 className="df-title">Workspace Documents</h1>
+          <p className="df-subhead">{library.subhead}</p>
+        </div>
+        <div className="df-library-actions">
+          <Button variant="outline" type="button" onClick={() => openCreate("folder")} className="df-btn">
+            <Plus strokeWidth={1.6} aria-hidden />
+            New folder
+          </Button>
+          <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+            <Upload strokeWidth={1.6} aria-hidden />
+            Upload File
+          </Button>
+          <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
+            <Plus strokeWidth={1.6} aria-hidden />
+            New Document
+          </Button>
+        </div>
+      </header>
+
+      <V2FormDialog
+        open={creating}
+        onOpenChange={(open) => {
+          if (!open) closeCreate();
+        }}
+        title={createMode === "folder" ? "New Folder" : "New Document"}
+        description={
+          createMode === "folder"
+            ? "A Folder groups Workspace Documents and Files. It can sit at the root or inside any Folder."
+            : "A Workspace Document belongs to the Workspace, not to a single Project. It opens in the editor once created."
+        }
+        submitLabel={createMode === "folder" ? "Create Folder" : "Create Document"}
+        pending={createDocument.isPending || createFolder.isPending}
+        canSubmit={Boolean(name.trim())}
+        onSubmit={onCreate}
+        refusal={writeRefusal}
+        testId={createMode === "folder" ? "v2-documents-new-folder" : "v2-documents-new-document"}
+      >
+        <label className="df-daily-field">
+          Name
+          <input
+            type="text"
+            value={name}
+            autoFocus
+            maxLength={createMode === "folder" ? MAX_FOLDER_NAME : MAX_DOCUMENT_NAME}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={createMode === "folder" ? "Folder name" : "Document name"}
+            aria-label={createMode === "folder" ? "Folder name" : "Document name"}
           />
-          <div className="df-panel-scroll">
-            <div className="df-mono df-meta">Access</div>
-            <p className="df-prose df-prose-follow" style={{ color: "var(--df-archive-slate)" }}>
-              {library.preview.accessCopy}
-            </p>
-            <form className="df-daily-form df-folder-rename" onSubmit={onRenameFolder}>
-              <label className="df-daily-field">
-                Name
-                <input
-                  type="text"
-                  value={folderName}
-                  onChange={(event) => setFolderName(event.target.value)}
-                  aria-label="Folder name"
-                />
-              </label>
-              <div className="df-form-actions">
-                <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="destructiveOutline"
-                      className="df-btn"
-                      disabled={deleteFolder.isPending}
-                      data-testid="v2-folder-delete"
-                    >
-                      <Trash2 strokeWidth={1.6} aria-hidden />
-                      Delete folder
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent className="df-v2 df-alert">
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete folder</AlertDialogTitle>
-                      <AlertDialogDescription>{library.preview.deleteConsequence}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel className="df-btn" autoFocus>
-                        Keep folder
-                      </AlertDialogCancel>
-                      <AlertDialogAction
-                        className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        data-testid="v2-folder-delete-confirm"
-                        onClick={onDeleteFolder}
-                      >
-                        <Trash2 strokeWidth={1.6} aria-hidden />
-                        Delete folder
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+        </label>
+        {destinationField}
+      </V2FormDialog>
+
+      <V2UploadDialog
+        open={createMode === "upload"}
+        onOpenChange={(open) => {
+          if (!open) closeCreate();
+        }}
+        description="Files are stored in the Workspace and open in the viewer. Drop several at once; each becomes its own row."
+        upload={(file) => uploadFile.mutateAsync(file)}
+        pending={uploadFile.isPending}
+        beforeUpload={() => refuseWrite()}
+        refusal={writeRefusal}
+        testId="v2-documents-upload"
+      >
+        {destinationField}
+      </V2UploadDialog>
+      {writeRefusal && !createMode ? <p className="df-refusal">{writeRefusal}</p> : null}
+
+      <div className="df-library">
+        <div className="df-library-main">
+          <div className="df-filter-bar">
+            <label className="df-filter-input">
+              <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
+              <input
+                type="search"
+                value={filterQuery}
+                onChange={(event) => setFilterQuery(event.target.value)}
+                placeholder="Search this library"
+                aria-label="Search this library"
+              />
+            </label>
+            <V2FilterSelect
+              label="Type"
+              ariaLabel="Filter by type"
+              value={filters.type}
+              active={filters.type !== "all"}
+              options={LIBRARY_TYPE_OPTIONS}
+              onChange={(type) => setFilters({ ...filters, type: type as LibraryFilters["type"] })}
+            />
+            {ownerOptions.length === 0 && filters.owner === "all" ? null : (
+              <V2FilterSelect
+                label="Added by"
+                ariaLabel="Filter by who added it"
+                value={filters.owner}
+                active={filters.owner !== "all"}
+                options={[{ value: "all", label: "Any" }, ...ownerOptions]}
+                onChange={(owner) => setFilters({ ...filters, owner })}
+              />
+            )}
+            <V2FilterSelect
+              label="Access"
+              ariaLabel="Filter by access"
+              value={filters.access}
+              active={filters.access !== "all"}
+              options={LIBRARY_ACCESS_OPTIONS}
+              onChange={(access) => setFilters({ ...filters, access: access as LibraryFilters["access"] })}
+            />
+            <V2FilterSelect
+              label="Updated"
+              ariaLabel="Filter by last update"
+              value={filters.updated}
+              active={filters.updated !== "all"}
+              options={LIBRARY_UPDATED_OPTIONS}
+              onChange={(updated) => setFilters({ ...filters, updated: updated as LibraryFilters["updated"] })}
+            />
+          </div>
+
+          <V2LibraryRegister
+            library={library}
+            testId="v2-documents-register"
+            instantExpand={folderMotion.instantExpand}
+            onFolderClick={onFolderClick}
+            emptyAction={
+              library.filtered ? (
                 <Button
                   variant="outline"
-                  type="submit"
-                  disabled={renameFolder.isPending || !folderName.trim() || folderName.trim() === library.preview.name}
+                  type="button"
                   className="df-btn"
+                  onClick={() => {
+                    setFilterQuery("");
+                    setFilters(clearLibraryFilters());
+                  }}
                 >
-                  <Pencil strokeWidth={1.6} aria-hidden />
-                  Rename
+                  {library.emptyState?.kind === "search" ? "Clear search" : "Clear filters"}
                 </Button>
-              </div>
-            </form>
-          </div>
-          {library.preview.canManageAccess ? (
-            <footer className="df-panel-foot">
-              <Button
-                variant="outline"
-                type="button"
-                style={{ flex: 1 }}
-                className="df-btn"
-                data-testid="v2-folder-manage-access"
-                onClick={() => setManagingFolderId(library.preview?.folderId ?? null)}
-              >
-                <KeyRound strokeWidth={1.6} aria-hidden />
-                Manage access
-              </Button>
-            </footer>
-          ) : null}
-        </aside>
-      ) : null}
+              ) : null
+            }
+            createActions={
+              <>
+                <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
+                  <Plus strokeWidth={1.6} aria-hidden />
+                  New Document
+                </Button>
+                <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+                  <Upload strokeWidth={1.6} aria-hidden />
+                  Upload File
+                </Button>
+                <Button variant="outline" type="button" onClick={() => openCreate("folder")} className="df-btn">
+                  <Plus strokeWidth={1.6} aria-hidden />
+                  New folder
+                </Button>
+              </>
+            }
+          />
+        </div>
+
+        {library.preview ? (
+          <aside className="df-panel df-folder-preview" data-testid="v2-folder-preview">
+            <V2PreviewHead
+              kicker="Folder preview"
+              title={library.preview.title}
+              meta={library.preview.meta}
+              onClose={closePreview}
+            />
+            <div className="df-panel-scroll">
+              {library.preview.description ? (
+                <>
+                  <div className="df-mono df-meta">Description</div>
+                  <p className="df-prose df-prose-follow" data-testid="v2-folder-description">
+                    {library.preview.description}
+                  </p>
+                </>
+              ) : null}
+              <div className="df-mono df-meta">Access</div>
+              <p className="df-prose df-prose-follow" style={{ color: "var(--df-archive-slate)" }}>
+                {library.preview.accessCopy}
+              </p>
+              <form className="df-daily-form df-folder-rename" onSubmit={onRenameFolder}>
+                <label className="df-daily-field">
+                  Name
+                  <input
+                    type="text"
+                    value={folderName}
+                    onChange={(event) => setFolderName(event.target.value)}
+                    maxLength={MAX_FOLDER_NAME}
+                    aria-label="Folder name"
+                  />
+                </label>
+                <div className="df-form-actions">
+                  {library.preview.canDelete ? (
+                    <AlertDialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="destructiveOutline"
+                          className="df-btn"
+                          disabled={deleteFolder.isPending}
+                          data-testid="v2-folder-delete"
+                        >
+                          <Trash2 strokeWidth={1.6} aria-hidden />
+                          Delete folder
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="df-v2 df-alert">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete folder</AlertDialogTitle>
+                          <AlertDialogDescription>{library.preview.deleteConsequence}</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="df-btn" autoFocus>
+                            Keep folder
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            className="df-btn bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            data-testid="v2-folder-delete-confirm"
+                            onClick={onDeleteFolder}
+                          >
+                            <Trash2 strokeWidth={1.6} aria-hidden />
+                            Delete folder
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  ) : null}
+                  <Button
+                    variant="outline"
+                    type="submit"
+                    disabled={renameFolder.isPending || !folderName.trim() || folderName.trim() === library.preview.name}
+                    className="df-btn"
+                  >
+                    <Pencil strokeWidth={1.6} aria-hidden />
+                    Rename
+                  </Button>
+                </div>
+              </form>
+            </div>
+            {library.preview.canManageAccess ? (
+              <footer className="df-panel-foot">
+                <Button
+                  variant="outline"
+                  type="button"
+                  style={{ flex: 1 }}
+                  className="df-btn"
+                  data-testid="v2-folder-manage-access"
+                  onClick={() => setManagingFolderId(library.preview?.folderId ?? null)}
+                >
+                  <KeyRound strokeWidth={1.6} aria-hidden />
+                  Manage access
+                </Button>
+              </footer>
+            ) : null}
+          </aside>
+        ) : null}
+      </div>
       {managingFolderId ? (
         <V2ManageAccessDialog
           kind="folder"

@@ -13,6 +13,7 @@ import {
 import { BellIcon, SearchIcon, SparkleIcon } from "./icons";
 import { V2TimerChip } from "./V2TimerChip";
 import { composeSearch, selectCommandPanel, chromeRefusal, type SearchModel } from "./chrome";
+import { documentQueryKey, loadDocument, type LoadedDocument } from "./documentEditor";
 import { motionForSurface } from "./motion";
 import { type V2CommandPanel, breadcrumbFor, matchV2Route } from "./presentation";
 import { projectVisibleTo } from "./projects";
@@ -55,6 +56,14 @@ export function V2CommandBar({
     queryKey: ["/api/crm/clients", clientId],
     enabled: false,
   });
+  const documentId = route.kind === "document-editor" && route.source === "workspace" ? route.documentId : "";
+  const { data: documentRecord } = useQuery<LoadedDocument>({
+    queryKey: documentQueryKey("workspace", documentId),
+    // Never run from here, but an observer's options become its query's: the default
+    // queryFn would answer the editor's own refetches with a URL that does not exist.
+    queryFn: () => loadDocument("workspace", documentId),
+    enabled: false,
+  });
   const recordLabel =
     route.kind === "opportunity-record"
       ? opportunityRecord?.project?.name?.trim() || undefined
@@ -62,7 +71,9 @@ export function V2CommandBar({
         ? projectRecord?.project?.name?.trim() || undefined
         : route.kind === "client-record"
           ? clientRecord?.name?.trim() || undefined
-          : undefined;
+          : route.kind === "document-editor"
+            ? documentRecord?.record?.name?.trim() || undefined
+            : undefined;
   const crumbs = breadcrumbFor(location, workspaceName, recordLabel);
   const [searchOpen, setSearchOpen] = useState(false);
 

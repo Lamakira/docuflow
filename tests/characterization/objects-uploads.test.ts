@@ -22,6 +22,7 @@ import { waitFor } from "../helpers/wait";
  *  - `PUT /api/document-images` and `/api/document-attachments` tag whatever the
  *    caller names as **public**, owned by the caller — with no check that the
  *    object was uploaded by them.
+ *    An object tied to a Workspace Document (F56) is the exception: it is refused.
  *  - These two routes report errors as `{ error }`, while most of the API uses
  *    `{ message }`.
  *  - `/objects/:path` authenticates optionally and answers a bare 401/404 with

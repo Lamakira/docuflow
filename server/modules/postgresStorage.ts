@@ -22,6 +22,7 @@ import {
   opportunities,
   companyDocuments,
   companyDocumentFolders,
+  auditEvents,
   files,
   notifications,
   audioRecordings,
@@ -75,6 +76,7 @@ import {
   type InsertKnowledgeFile,
   type FileScanStatus,
   type CompanyDocumentWithUploader,
+  type CompanyDocumentRegisterRow,
   type CompanyDocumentFolder,
   type InsertCompanyDocumentFolder,
   type CompanyDocumentFolderWithCreator,
@@ -130,7 +132,9 @@ import {
 } from "../workspaceLocators";
 import type { OptionRenameColumn } from "./clients-sales/persistence";
 
-import type { DocumentWriter, ProjectWriter } from "./writers";
+import type { DocumentWriter, FileWriter, ProjectWriter } from "./writers";
+import { syncCompanyDocumentEmbeddingFolder } from "../embeddings";
+import type { CompanyDocumentSaveOptions, SaveOptions } from "./knowledge/persistence";
 import type { IStorage } from "./index";
 import {
   isOpportunityTerminal,
@@ -164,7 +168,7 @@ import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import { assertSeatAvailable } from "./billing/seats";
 import type { ImportableUser } from "./identity/userImport";
-import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike, type AnyColumn } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike, getTableColumns, type AnyColumn, type SQL } from "drizzle-orm";
 import type {
   CrmProjectListOptions,
   ProjectDocumentScope,
@@ -204,6 +208,32 @@ function crmProjectVisibleTo(viewer: string) {
     ),
     eq(crmProjects.opportunityOwnerId, viewer),
   );
+}
+
+/** The columns of a `DocumentPerson`, so no read of the library selects a whole User. */
+const documentPersonColumns = {
+  id: users.id,
+  email: users.email,
+  firstName: users.firstName,
+  lastName: users.lastName,
+  profileImageUrl: users.profileImageUrl,
+};
+
+/**
+ * The row still carries the time its reader was given. A client holds
+ * milliseconds where `defaultNow()` stored microseconds. The column has no time
+ * zone and holds UTC digits, so the ISO text is compared rather than a Date.
+ */
+function unchangedSince(column: AnyColumn, expected: Date | undefined): SQL | undefined {
+  if (!expected) return undefined;
+  return sql`date_trunc('milliseconds', ${column}) = ${expected.toISOString()}::timestamp`;
+}
+
+/** A checked save always moves the time forward, so two in one millisecond cannot share a version. */
+function nextUpdatedAt(column: AnyColumn, expected: Date | undefined): Date | SQL {
+  const now = new Date();
+  if (!expected) return now;
+  return sql`greatest(${now.toISOString()}::timestamp, date_trunc('milliseconds', ${column}) + interval '1 millisecond')`;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -512,12 +542,17 @@ export class DatabaseStorage implements IStorage {
   async updateDocument(
     id: string,
     data: Partial<InsertDocument>,
-    writer: DocumentWriter = db
+    writer: DocumentWriter = db,
+    options: SaveOptions = {}
   ): Promise<Document | undefined> {
     const [updated] = await writer
       .update(documents)
-      .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(documents.id, id), inWorkspace(documents)))
+      .set({ ...data, updatedAt: nextUpdatedAt(documents.updatedAt, options.expectedUpdatedAt) })
+      .where(and(
+        eq(documents.id, id),
+        inWorkspace(documents),
+        unchangedSince(documents.updatedAt, options.expectedUpdatedAt),
+      ))
       .returning();
 
     if (updated) {
@@ -1818,34 +1853,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Company Document Folders
-  async getCompanyDocumentFolders(): Promise<CompanyDocumentFolderWithCreator[]> {
-    const folders = await db
-      .select()
+  private companyDocumentFolderRows(where?: SQL) {
+    return db
+      .select({ folder: companyDocumentFolders, createdBy: documentPersonColumns })
       .from(companyDocumentFolders)
-      .where(inWorkspace(companyDocumentFolders))
-      .orderBy(asc(companyDocumentFolders.name));
-    
-    const creatorIds = [...new Set(folders.map(f => f.createdById))];
-    const creatorsData = creatorIds.length > 0
-      ? await db.select().from(users).where(or(...creatorIds.map(id => eq(users.id, id))))
-      : [];
-    const creatorMap = new Map(creatorsData.map(u => [u.id, u]));
-    
-    return folders.map(folder => ({
-      ...folder,
-      createdBy: creatorMap.get(folder.createdById),
-    }));
+      .leftJoin(users, eq(users.id, companyDocumentFolders.createdById))
+      .where(and(where, inWorkspace(companyDocumentFolders)));
+  }
+
+  async getCompanyDocumentFolders(): Promise<CompanyDocumentFolderWithCreator[]> {
+    const rows = await this.companyDocumentFolderRows().orderBy(asc(companyDocumentFolders.name));
+    return rows.map(({ folder, createdBy }) => ({ ...folder, createdBy: createdBy ?? undefined }));
   }
 
   async getCompanyDocumentFolder(id: string): Promise<CompanyDocumentFolderWithCreator | undefined> {
-    const [folder] = await db
-      .select()
-      .from(companyDocumentFolders)
-      .where(and(eq(companyDocumentFolders.id, id), inWorkspace(companyDocumentFolders)));
-    if (!folder) return undefined;
-    
-    const [creator] = await db.select().from(users).where(eq(users.id, folder.createdById));
-    return { ...folder, createdBy: creator };
+    const [row] = await this.companyDocumentFolderRows(eq(companyDocumentFolders.id, id));
+    return row && { ...row.folder, createdBy: row.createdBy ?? undefined };
   }
 
   async createCompanyDocumentFolder(folder: InsertCompanyDocumentFolder): Promise<CompanyDocumentFolder> {
@@ -1871,36 +1894,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Company Documents
-  async getCompanyDocuments(folderId?: string): Promise<CompanyDocumentWithUploader[]> {
-    const docs = await db
-      .select()
+  private companyDocumentRows(where?: SQL) {
+    return db
+      .select({ document: companyDocuments, uploadedBy: documentPersonColumns })
       .from(companyDocuments)
-      .where(and(
-        folderId ? eq(companyDocuments.folderId, folderId) : isNull(companyDocuments.folderId),
-        inWorkspace(companyDocuments)
-      ))
+      .leftJoin(users, eq(users.id, companyDocuments.uploadedById))
+      .where(and(where, inWorkspace(companyDocuments)));
+  }
+
+  async getCompanyDocuments(folderId?: string): Promise<CompanyDocumentWithUploader[]> {
+    const rows = await this.companyDocumentRows(
+      folderId ? eq(companyDocuments.folderId, folderId) : isNull(companyDocuments.folderId),
+    ).orderBy(desc(companyDocuments.createdAt));
+    return rows.map(({ document, uploadedBy }) => ({ ...document, uploadedBy: uploadedBy ?? undefined }));
+  }
+
+  async getCompanyDocumentRegister(): Promise<CompanyDocumentRegisterRow[]> {
+    const { content: _content, ...columns } = getTableColumns(companyDocuments);
+    const rows = await db
+      .select({ document: columns, uploadedBy: documentPersonColumns })
+      .from(companyDocuments)
+      .leftJoin(users, eq(users.id, companyDocuments.uploadedById))
+      .where(inWorkspace(companyDocuments))
       .orderBy(desc(companyDocuments.createdAt));
-    
-    const uploaderIds = [...new Set(docs.map(d => d.uploadedById))];
-    const uploadersData = uploaderIds.length > 0
-      ? await db.select().from(users).where(or(...uploaderIds.map(id => eq(users.id, id))))
-      : [];
-    const uploaderMap = new Map(uploadersData.map(u => [u.id, u]));
-    
-    return docs.map(doc => ({
-      ...doc,
-      uploadedBy: uploaderMap.get(doc.uploadedById),
-    }));
+    return rows.map(({ document, uploadedBy }) => ({ ...document, uploadedBy: uploadedBy ?? undefined }));
   }
 
   async getCompanyDocument(id: string): Promise<CompanyDocumentWithUploader | undefined> {
-    const [doc] = await db
-      .select()
-      .from(companyDocuments)
-      .where(and(eq(companyDocuments.id, id), inWorkspace(companyDocuments)));
-    if (!doc) return undefined;
-    
-    const [uploader] = await db.select().from(users).where(eq(users.id, doc.uploadedById));
+    const [row] = await this.companyDocumentRows(eq(companyDocuments.id, id));
+    if (!row) return undefined;
+    const doc = row.document;
+
     let folder;
     if (doc.folderId) {
       const [f] = await db
@@ -1909,7 +1933,7 @@ export class DatabaseStorage implements IStorage {
         .where(and(eq(companyDocumentFolders.id, doc.folderId), inWorkspace(companyDocumentFolders)));
       folder = f;
     }
-    return { ...doc, uploadedBy: uploader, folder };
+    return { ...doc, uploadedBy: row.uploadedBy ?? undefined, folder };
   }
 
   async createCompanyDocument(doc: InsertCompanyDocument & { id?: string }): Promise<CompanyDocument> {
@@ -1918,16 +1942,39 @@ export class DatabaseStorage implements IStorage {
     return newDoc;
   }
 
-  async updateCompanyDocument(id: string, data: Partial<InsertCompanyDocument>): Promise<CompanyDocument | undefined> {
-    const [updated] = await db
-      .update(companyDocuments)
-      .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(companyDocuments.id, id), inWorkspace(companyDocuments)))
-      .returning();
-    if (updated) {
-      await this.syncFileForCompanyDocument(updated);
-    }
-    return updated;
+  async updateCompanyDocument(
+    id: string,
+    data: Partial<InsertCompanyDocument>,
+    options: CompanyDocumentSaveOptions = {},
+  ): Promise<CompanyDocument | undefined> {
+    const where = and(eq(companyDocuments.id, id), inWorkspace(companyDocuments));
+    return db.transaction(async (tx) => {
+      const [before] =
+        data.folderId === undefined
+          ? []
+          : await tx.select({ folderId: companyDocuments.folderId }).from(companyDocuments).where(where).for("update");
+      const [updated] = await tx
+        .update(companyDocuments)
+        .set({ ...data, updatedAt: nextUpdatedAt(companyDocuments.updatedAt, options.expectedUpdatedAt) })
+        .where(and(where, unchangedSince(companyDocuments.updatedAt, options.expectedUpdatedAt)))
+        .returning();
+      if (!updated) return undefined;
+      await this.syncFileForCompanyDocument(updated, tx);
+      if (before && before.folderId !== updated.folderId) {
+        await syncCompanyDocumentEmbeddingFolder(id, tx);
+        await tx.insert(auditEvents).values(
+          stampWorkspace({
+            actorKind: "user" as const,
+            actorId: options.actorId,
+            action: "document.moved",
+            resourceType: "company_documents",
+            resourceId: id,
+            payload: { from: before.folderId, to: updated.folderId },
+          }),
+        );
+      }
+      return updated;
+    });
   }
 
   async deleteCompanyDocument(id: string): Promise<CompanyDocument | undefined> {
@@ -1943,26 +1990,15 @@ export class DatabaseStorage implements IStorage {
 
   async searchCompanyDocuments(query: string): Promise<CompanyDocumentWithUploader[]> {
     const searchPattern = `%${query}%`;
-    const docs = await db
-      .select()
-      .from(companyDocuments)
-      .where(and(
-        or(
-          like(companyDocuments.name, searchPattern),
-          like(companyDocuments.description, searchPattern),
-          like(companyDocuments.fileName, searchPattern)
-        ),
-        inWorkspace(companyDocuments)
-      ))
-      .orderBy(desc(companyDocuments.createdAt));
-    
-    const uploaderIds = [...new Set(docs.map(d => d.uploadedById))];
-    const uploadersData = uploaderIds.length > 0
-      ? await db.select().from(users).where(or(...uploaderIds.map(id => eq(users.id, id))))
-      : [];
-    const uploaderMap = new Map(uploadersData.map(u => [u.id, u]));
-    
-    const folderIds = [...new Set(docs.filter(d => d.folderId).map(d => d.folderId!))];
+    const docs = await this.companyDocumentRows(
+      or(
+        like(companyDocuments.name, searchPattern),
+        like(companyDocuments.description, searchPattern),
+        like(companyDocuments.fileName, searchPattern)
+      ),
+    ).orderBy(desc(companyDocuments.createdAt));
+
+    const folderIds = [...new Set(docs.filter((d) => d.document.folderId).map((d) => d.document.folderId!))];
     const foldersData = folderIds.length > 0
       ? await db
           .select()
@@ -1974,35 +2010,22 @@ export class DatabaseStorage implements IStorage {
       : [];
     const folderMap = new Map(foldersData.map(f => [f.id, f]));
     
-    return docs.map(doc => ({
-      ...doc,
-      uploadedBy: uploaderMap.get(doc.uploadedById),
-      folder: doc.folderId ? folderMap.get(doc.folderId) : undefined,
+    return docs.map(({ document, uploadedBy }) => ({
+      ...document,
+      uploadedBy: uploadedBy ?? undefined,
+      folder: document.folderId ? folderMap.get(document.folderId) : undefined,
     }));
   }
 
   async searchCompanyDocumentFolders(query: string): Promise<CompanyDocumentFolderWithCreator[]> {
-    const searchPattern = `%${query}%`;
-    const folders = await db
-      .select()
-      .from(companyDocumentFolders)
-      .where(and(like(companyDocumentFolders.name, searchPattern), inWorkspace(companyDocumentFolders)))
-      .orderBy(desc(companyDocumentFolders.createdAt));
-    
-    const creatorIds = [...new Set(folders.map(f => f.createdById))];
-    const creatorsData = creatorIds.length > 0
-      ? await db.select().from(users).where(or(...creatorIds.map(id => eq(users.id, id))))
-      : [];
-    const creatorMap = new Map(creatorsData.map(u => [u.id, u]));
-    
-    return folders.map(folder => ({
-      ...folder,
-      createdBy: creatorMap.get(folder.createdById),
-    }));
+    const rows = await this.companyDocumentFolderRows(like(companyDocumentFolders.name, `%${query}%`)).orderBy(
+      desc(companyDocumentFolders.createdAt),
+    );
+    return rows.map(({ folder, createdBy }) => ({ ...folder, createdBy: createdBy ?? undefined }));
   }
 
-  async getFile(id: string): Promise<KnowledgeFile | undefined> {
-    const [row] = await db
+  async getFile(id: string, writer: FileWriter = db): Promise<KnowledgeFile | undefined> {
+    const [row] = await writer
       .select()
       .from(files)
       .where(and(eq(files.id, id), inWorkspace(files)));
@@ -2044,9 +2067,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createFile(
-    file: InsertKnowledgeFile & { id?: string; scanStatus?: FileScanStatus; hold?: boolean }
+    file: InsertKnowledgeFile & { id?: string; scanStatus?: FileScanStatus; hold?: boolean },
+    writer: FileWriter = db
   ): Promise<KnowledgeFile> {
-    const [row] = await db
+    const [row] = await writer
       .insert(files)
       .values(stampWorkspace({ ...file, access: DOCUMENT_ACCESS_WORKSPACE }))
       .returning();
@@ -2055,9 +2079,10 @@ export class DatabaseStorage implements IStorage {
 
   async updateFile(
     id: string,
-    data: Partial<InsertKnowledgeFile>
+    data: Partial<InsertKnowledgeFile>,
+    writer: FileWriter = db
   ): Promise<KnowledgeFile | undefined> {
-    const [updated] = await db
+    const [updated] = await writer
       .update(files)
       .set({ ...data, updatedAt: new Date() })
       .where(and(eq(files.id, id), inWorkspace(files)))
@@ -2065,8 +2090,8 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async deleteFile(id: string): Promise<KnowledgeFile | undefined> {
-    const [deleted] = await db
+  async deleteFile(id: string, writer: FileWriter = db): Promise<KnowledgeFile | undefined> {
+    const [deleted] = await writer
       .delete(files)
       .where(and(eq(files.id, id), inWorkspace(files)))
       .returning();
@@ -2085,12 +2110,12 @@ export class DatabaseStorage implements IStorage {
     return deleteIndexArtifacts(source);
   }
 
-  private async syncFileForCompanyDocument(doc: CompanyDocument): Promise<void> {
+  private async syncFileForCompanyDocument(doc: CompanyDocument, writer: FileWriter = db): Promise<void> {
     if (!isUploadedFile(doc) || !doc.storagePath) {
-      await this.deleteFile(doc.id);
+      await this.deleteFile(doc.id, writer);
       return;
     }
-    const existing = await this.getFile(doc.id);
+    const existing = await this.getFile(doc.id, writer);
     const fields: InsertKnowledgeFile = {
       name: doc.name,
       description: doc.description,
@@ -2102,10 +2127,10 @@ export class DatabaseStorage implements IStorage {
       uploadedById: doc.uploadedById,
     };
     if (existing) {
-      await this.updateFile(doc.id, fields);
+      await this.updateFile(doc.id, fields, writer);
       return;
     }
-    await this.createFile({ ...fields, id: doc.id });
+    await this.createFile({ ...fields, id: doc.id }, writer);
   }
 
   // CRM Project Notes

@@ -142,6 +142,44 @@ describe("time-tracking screenshots (characterization)", () => {
     expect(image.body).toEqual({ message: "Screenshot file not found" });
   });
 
+  it("never opens an object another access policy governs (F56)", async () => {
+    const app = await makeApp();
+    const { user, crmProjectId, entry } = await runningEntry(app);
+    const admin = await registerAdmin(app);
+    const document = await admin.agent.post("/api/company-documents").send({ name: "Guide", content: { type: "doc", content: [] } });
+    const upload = async () => {
+      const issued = await admin.agent.post("/api/objects/upload");
+      return objectPathFor(completeUpload(issued.body.uploadURL, "SECRET", "image/png"));
+    };
+    const tie = (objectPath: string) =>
+      admin.agent.put(`/api/company-documents/${document.body.id}/objects`).send({ objectPath });
+    const register = (storageKey: string) =>
+      user.agent.post("/api/time-tracking/screenshots").send({ timeEntryId: entry.id, crmProjectId, storageKey });
+
+    const tied = await upload();
+    expect((await tie(tied)).status).toBe(200);
+    const refused = await register(tied);
+    expect(refused.status).toBe(400);
+    expect(refused.body).toEqual({ message: "Invalid storageKey" });
+
+    const slot = await admin.agent.post("/api/company-documents/upload-url");
+    const file = completeUpload(slot.body.uploadURL, "SECRET", "application/pdf");
+    await admin.agent
+      .post("/api/company-documents")
+      .send({ name: "F", fileName: "f.pdf", mimeType: "application/pdf", storagePath: file });
+    expect((await register(objectPathFor(file))).status).toBe(400);
+
+    // Registered first, tied after: the Document's access still decides.
+    const early = await upload();
+    const row = await register(early);
+    expect(row.status).toBe(200);
+    expect((await tie(early)).status).toBe(200);
+    const image = () => user.agent.get(`/api/time-tracking/screenshots/${row.body.id}/image`);
+    expect((await image()).status).toBe(200);
+    await admin.agent.put(`/api/company-documents/${document.body.id}/access`).send({ level: "administrators" });
+    expect((await image()).status).toBe(404);
+  });
+
   it("lists screenshots with entry metrics, scoped to the caller unless they are an admin", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);

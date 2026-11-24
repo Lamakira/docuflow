@@ -7,6 +7,7 @@ import type {
   CompanyDocument,
   InsertCompanyDocument,
   CompanyDocumentWithUploader,
+  CompanyDocumentRegisterRow,
   CompanyDocumentFolder,
   InsertCompanyDocumentFolder,
   CompanyDocumentFolderWithCreator,
@@ -17,6 +18,16 @@ import type {
   InsertAudioRecording,
 } from "@shared/schema";
 
+export interface SaveOptions {
+  /** Save only over the version stamped with this time, to the millisecond (F52). */
+  expectedUpdatedAt?: Date;
+}
+
+export interface CompanyDocumentSaveOptions extends SaveOptions {
+  /** Who is saving, for the audit trail of a move. Required when `folderId` is saved. */
+  actorId?: string;
+}
+
 export interface KnowledgePersistence {
   getDocuments(projectId: string): Promise<Document[]>;
   getDocument(id: string): Promise<Document | undefined>;
@@ -26,7 +37,8 @@ export interface KnowledgePersistence {
   updateDocument(
     id: string,
     data: Partial<InsertDocument>,
-    writer?: DocumentWriter
+    writer?: DocumentWriter,
+    options?: SaveOptions
   ): Promise<Document | undefined>;
   deleteDocument(id: string): Promise<void>;
   duplicateDocument(id: string): Promise<Document | undefined>;
@@ -44,11 +56,14 @@ export interface KnowledgePersistence {
   deleteCompanyDocumentFolder(id: string): Promise<CompanyDocumentFolder | undefined>;
 
   getCompanyDocuments(folderId?: string): Promise<CompanyDocumentWithUploader[]>;
+  /** Every Workspace Document and File, in and out of Folders, newest first. */
+  getCompanyDocumentRegister(): Promise<CompanyDocumentRegisterRow[]>;
   getCompanyDocument(id: string): Promise<CompanyDocumentWithUploader | undefined>;
   createCompanyDocument(doc: InsertCompanyDocument & { id?: string }): Promise<CompanyDocument>;
   updateCompanyDocument(
     id: string,
-    data: Partial<InsertCompanyDocument>
+    data: Partial<InsertCompanyDocument>,
+    options?: CompanyDocumentSaveOptions
   ): Promise<CompanyDocument | undefined>;
   deleteCompanyDocument(id: string): Promise<CompanyDocument | undefined>;
   searchCompanyDocuments(query: string): Promise<CompanyDocumentWithUploader[]>;
