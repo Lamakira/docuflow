@@ -31,7 +31,7 @@ describe("time tracking (characterization)", () => {
   it("advertises that a task is required and enforces it on start", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
     const otherProject = await createCrmProject(user.agent);
     const task = await createTask(user.agent, crmProject.id);
     const foreignTask = await createTask(user.agent, otherProject.crmProject.id);
@@ -67,7 +67,7 @@ describe("time tracking (characterization)", () => {
   it("starts a timer, exposes it as active, and auto-stops it when another starts", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
     const first = await createTask(user.agent, crmProject.id, "First task");
     const second = await createTask(user.agent, crmProject.id, "Second task");
 
@@ -103,7 +103,7 @@ describe("time tracking (characterization)", () => {
   it("reports the Task's stopped time today on the active entry, as the agent does", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
     const worked = await createTask(user.agent, crmProject.id, "Worked task");
     const fresh = await createTask(user.agent, crmProject.id, "Fresh task");
 
@@ -124,7 +124,7 @@ describe("time tracking (characterization)", () => {
   it("attaches the task to each listed entry", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
     const task = await createTask(user.agent, crmProject.id, "Write the brief");
     const started = await startTimer(user.agent, crmProject.id, task.id);
     await user.agent.post(`/api/time-tracking/${started.id}/stop`);
@@ -137,7 +137,7 @@ describe("time tracking (characterization)", () => {
   it("walks an entry through pause, resume and stop, refusing out-of-order calls", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
     const task = await createTask(user.agent, crmProject.id);
     const entry = await startTimer(user.agent, crmProject.id, task.id);
 
@@ -184,7 +184,7 @@ describe("time tracking (characterization)", () => {
   it("discards the paused span as idle time only when asked", async () => {
     const app = await makeApp();
     const user = await registerUser(app);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
     const task = await createTask(user.agent, crmProject.id);
     const entry = await startTimer(user.agent, crmProject.id, task.id);
 
@@ -200,7 +200,7 @@ describe("time tracking (characterization)", () => {
     const app = await makeApp();
     const user = await registerUser(app);
     const stranger = await registerUser(app);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
     const task = await createTask(user.agent, crmProject.id);
     const entry = await startTimer(user.agent, crmProject.id, task.id);
 
@@ -221,7 +221,7 @@ describe("time tracking (characterization)", () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const member = await registerUser(app);
-    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [admin.id, member.id] });
+    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [admin.id, member.id], status: "won_in_progress" });
     const task = await createTask(admin.agent, crmProject.id);
 
     const adminEntry = await startTimer(admin.agent, crmProject.id, task.id);
@@ -260,7 +260,7 @@ describe("time tracking (characterization)", () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const member = await registerUser(app);
-    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [admin.id, member.id] });
+    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [admin.id, member.id], status: "won_in_progress" });
     const task = await createTask(admin.agent, crmProject.id);
 
     const empty = await member.agent.get("/api/time-tracking/entries").query({ limit: 1 });
@@ -283,7 +283,7 @@ describe("time tracking (characterization)", () => {
   it("summarises stopped entries into stats, grouped by project and user", async () => {
     const app = await makeApp();
     const user = await registerUser(app, { firstName: "Sam", lastName: "Stats" });
-    const { crmProject, project } = await createCrmProject(user.agent, { name: "Stats Project" });
+    const { crmProject, project } = await createCrmProject(user.agent, { name: "Stats Project", status: "won_in_progress" });
     const task = await createTask(user.agent, crmProject.id);
 
     const entry = await startTimer(user.agent, crmProject.id, task.id);
@@ -308,7 +308,7 @@ describe("time tracking (characterization)", () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const member = await registerUser(app);
-    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [admin.id, member.id] });
+    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [admin.id, member.id], status: "won_in_progress" });
     const task = await createTask(admin.agent, crmProject.id);
     const entry = await startTimer(member.agent, crmProject.id, task.id, "before");
 

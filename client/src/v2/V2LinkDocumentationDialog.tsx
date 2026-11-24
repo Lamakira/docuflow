@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { chromeRefusal } from "./chrome";
 import { isStandingRefusal, notify } from "./notify";
 import { linkConsequence } from "./projectDocumentation";
 import { V2FormDialog } from "./V2FormDialog";
+import { V2ProjectPicker } from "./V2ProjectPicker";
 
 type LinkTarget = { id: string; name: string; clientName: string | null };
 
@@ -69,13 +66,11 @@ export function V2LinkDocumentationDialog({
   onLinked?: (targetCrmId: string) => void;
 }) {
   const [targetId, setTargetId] = useState<string | null>(null);
-  const [choosing, setChoosing] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setTargetId(null);
-    setChoosing(false);
     setRefusal(null);
   }, [open, source.crmProjectId]);
 
@@ -137,58 +132,17 @@ export function V2LinkDocumentationDialog({
       <div className="df-daily-field">
         Project
         {/* Modal, or the Dialog's scroll lock keeps the wheel from the list. */}
-        <Popover modal open={choosing} onOpenChange={setChoosing}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              type="button"
-              className="df-btn df-project-picker-trigger"
-              role="combobox"
-              aria-expanded={choosing}
-              aria-label={target ? `Project: ${target.name}` : "Project"}
-              data-testid="v2-link-documentation-target"
-            >
-              <span>{target ? target.name : "Choose a Project"}</span>
-              <ChevronDown strokeWidth={1.6} aria-hidden />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="df-v2 df-select-content df-project-picker">
-            <Command
-              filter={(_value, search, keywords) =>
-                (keywords ?? []).join(" ").toLowerCase().includes(search.trim().toLowerCase()) ? 1 : 0
-              }
-            >
-              <CommandInput placeholder="Search Projects" aria-label="Search Projects" />
-              <CommandList>
-                <CommandEmpty>
-                  {isLoading
-                    ? "Loading Projects."
-                    : isError
-                      ? "The Projects could not be loaded."
-                      : "No Project matches."}
-                </CommandEmpty>
-                {targets.map((project) => (
-                  <CommandItem
-                    key={project.id}
-                    value={project.id}
-                    keywords={[project.name, project.clientName ?? ""]}
-                    className="df-select-item"
-                    onSelect={() => {
-                      setTargetId(project.id);
-                      setRefusal(null);
-                      setChoosing(false);
-                    }}
-                  >
-                    <span className="df-project-picker-option">
-                      <span>{project.name}</span>
-                      {project.clientName ? <span className="df-meta">{project.clientName}</span> : null}
-                    </span>
-                  </CommandItem>
-                ))}
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
+        <V2ProjectPicker
+          modal
+          options={targets.map((project) => ({ id: project.id, label: project.name, meta: project.clientName }))}
+          value={target?.id ?? ""}
+          onChange={(id) => {
+            setTargetId(id);
+            setRefusal(null);
+          }}
+          state={isLoading ? "loading" : isError ? "failed" : "ready"}
+          testId="v2-link-documentation-target"
+        />
       </div>
       {target ? (
         <p className="df-prose" data-testid="v2-link-documentation-consequence">

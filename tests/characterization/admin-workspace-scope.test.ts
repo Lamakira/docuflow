@@ -44,7 +44,7 @@ describe("operator reads stay inside the Active Workspace", () => {
     const app = await makeApp();
     const admin = await adminInTwoWorkspaces(app);
 
-    const project = await createCrmProject(admin.agent, { name: "Keystone" });
+    const project = await createCrmProject(admin.agent, { name: "Keystone", status: "won_in_progress" });
     const task = await createTask(admin.agent, project.crmProject.id);
     const timer = await startTimer(admin.agent, project.crmProject.id, task.id);
     await admin.agent.post(`/api/time-tracking/${timer.id}/stop`);
@@ -74,7 +74,7 @@ describe("operator reads stay inside the Active Workspace", () => {
     const app = await makeApp();
     const admin = await adminInTwoWorkspaces(app);
 
-    const project = await createCrmProject(admin.agent, { name: "Keystone" });
+    const project = await createCrmProject(admin.agent, { name: "Keystone", status: "won_in_progress" });
     const task = await createTask(admin.agent, project.crmProject.id);
     const timer = await startTimer(admin.agent, project.crmProject.id, task.id);
     await admin.agent.post(`/api/time-tracking/${timer.id}/stop`);

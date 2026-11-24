@@ -87,6 +87,7 @@ import {
   crmProjectStatusValues,
   crmProjectTypeValues,
   isTrackingPolicyClockTime,
+  taskStatusValues,
   toDocumentPerson,
   toSafeUser,
   type Document,
@@ -4130,6 +4131,15 @@ Instructions:
 
   // ========== TASKS ROUTES ==========
 
+  const TASK_NAME_MAX = 255;
+  const TASK_NAME_ISSUE = `Task name must be 1 to ${TASK_NAME_MAX} characters`;
+  const TASK_DESCRIPTION_ISSUE = "Task description must be text";
+  const isTaskName = (value: unknown): value is string => {
+    const length = typeof value === "string" ? value.trim().length : 0;
+    return length >= 1 && length <= TASK_NAME_MAX;
+  };
+  const isTaskDescription = (value: unknown): boolean => value == null || typeof value === "string";
+
   app.get("/api/tasks", isAuthenticated, async (req: any, res) => {
     try {
       const { crmProjectId, includeArchived } = req.query;
@@ -4151,9 +4161,11 @@ Instructions:
     try {
       const userId = getUserId(req)!;
       const { crmProjectId, name, description } = req.body;
-      if (!crmProjectId || !name?.trim()) {
+      if (typeof crmProjectId !== "string" || !crmProjectId || !name || (typeof name === "string" && !name.trim())) {
         return res.status(400).json({ message: "crmProjectId and name are required" });
       }
+      if (!isTaskName(name)) return res.status(400).json({ message: TASK_NAME_ISSUE });
+      if (!isTaskDescription(description)) return res.status(400).json({ message: TASK_DESCRIPTION_ISSUE });
       if (!(await canAccessCrmProject(userId, crmProjectId))) {
         return res.status(404).json({ message: "Project not found" });
       }
@@ -4177,6 +4189,11 @@ Instructions:
         return res.status(404).json({ message: "Task not found" });
       }
       const { name, description, status } = req.body;
+      if (name !== undefined && !isTaskName(name)) return res.status(400).json({ message: TASK_NAME_ISSUE });
+      if (!isTaskDescription(description)) return res.status(400).json({ message: TASK_DESCRIPTION_ISSUE });
+      if (status !== undefined && !(taskStatusValues as readonly unknown[]).includes(status)) {
+        return res.status(400).json({ message: `Task status must be one of ${taskStatusValues.join(", ")}` });
+      }
       const updated = await storage.updateTask(req.params.id, {
         ...(name !== undefined && { name: name.trim() }),
         ...(description !== undefined && { description: description?.trim() || null }),
@@ -4403,6 +4420,30 @@ Instructions:
   });
 
   // ========== TIME TRACKING ROUTES ==========
+
+  /** The period a time route is asked for, or what is wrong with it. */
+  const timePeriodQuery = (query: any): { startDate?: Date; endDate?: Date } | string => {
+    const period: { startDate?: Date; endDate?: Date } = {};
+    for (const key of ["startDate", "endDate"] as const) {
+      if (!query[key]) continue;
+      const date = new Date(typeof query[key] === "string" ? query[key] : NaN);
+      const year = date.getUTCFullYear();
+      // Also out: the years a Date holds and a Postgres timestamp literal does not.
+      if (!(year >= 1 && year <= 9999)) return `${key} is not a valid date`;
+      period[key] = date;
+    }
+    return period;
+  };
+
+  const timeEntriesPaging = (query: any): { page: number; pageSize: number } | string => {
+    const page = Number(query.page);
+    if (!Number.isSafeInteger(page) || page < 1) return "page must be a whole number from 1";
+    const pageSize = query.pageSize === undefined ? 50 : Number(query.pageSize);
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 200) {
+      return "pageSize must be a whole number from 1 to 200";
+    }
+    return { page, pageSize };
+  };
   
   // Get time entries with filters
   app.get("/api/time-tracking/entries", isAuthenticated, async (req: any, res) => {
@@ -4429,14 +4470,17 @@ Instructions:
       if (req.query.crmProjectId) {
         filters.crmProjectId = req.query.crmProjectId as string;
       }
-      if (req.query.startDate) {
-        filters.startDate = new Date(req.query.startDate as string);
-      }
-      if (req.query.endDate) {
-        filters.endDate = new Date(req.query.endDate as string);
-      }
+      const period = timePeriodQuery(req.query);
+      if (typeof period === "string") return res.status(400).json({ message: period });
+      Object.assign(filters, period);
       if (req.query.status) {
         filters.status = req.query.status as string;
+      }
+      if (req.query.page !== undefined) {
+        const paging = timeEntriesPaging(req.query);
+        if (typeof paging === "string") return res.status(400).json({ message: paging });
+        const result = await storage.getTimeEntriesPage({ ...filters, ...paging, includeActive: true });
+        return res.json({ ...result, ...paging });
       }
       // `limit=1` answers "has the reader any Time Entry at all" without loading them all.
       const limit = parseInt(req.query.limit as string);
@@ -4461,6 +4505,7 @@ Instructions:
         crmProjectId?: string;
         startDate?: Date;
         endDate?: Date;
+        includeActive?: boolean;
       } = {};
       
       // Non-admins can only see their own stats
@@ -4473,12 +4518,12 @@ Instructions:
       if (req.query.crmProjectId) {
         filters.crmProjectId = req.query.crmProjectId as string;
       }
-      if (req.query.startDate) {
-        filters.startDate = new Date(req.query.startDate as string);
-      }
-      if (req.query.endDate) {
-        filters.endDate = new Date(req.query.endDate as string);
-      }
+      const period = timePeriodQuery(req.query);
+      if (typeof period === "string") return res.status(400).json({ message: period });
+      Object.assign(filters, period);
+
+      // Asked for, not the default: the agent and v1 add their live entry themselves.
+      filters.includeActive = req.query.includeActive === "1";
       
       const stats = await storage.getTimeStats(filters);
       res.json(stats);
@@ -4536,6 +4581,15 @@ Instructions:
 
       if (!(await canAccessCrmProject(userId, crmProjectId))) {
         return res.status(404).json({ message: "Project not found" });
+      }
+
+      // New Timers run on Projects only (F71); one already running on a sale keeps its pause, resume and stop.
+      const crmProject = await storage.getCrmProject(crmProjectId);
+      if (crmProject?.isDocumentationOnly) {
+        return res.status(400).json({ message: "Time is tracked on Client and Internal Projects." });
+      }
+      if (!crmProject || !isDeliveryProject(crmProject)) {
+        return res.status(400).json({ message: "Time is tracked on Projects. Win this Opportunity first." });
       }
 
       if (!(taskId === null && !(await featureIncluded("projectManagement")))) {
@@ -4872,7 +4926,8 @@ Instructions:
   app.delete("/api/time-tracking/:id", isAuthenticated, async (req: any, res) => {
     try {
       const userId = getUserId(req)!;
-      const entry = await storage.getTimeEntry(req.params.id);
+      // Postgres refuses a NUL in text, so no entry has one in its id.
+      const entry = req.params.id.includes("\0") ? undefined : await storage.getTimeEntry(req.params.id);
       
       if (!entry) {
         return res.status(404).json({ message: "Time entry not found" });

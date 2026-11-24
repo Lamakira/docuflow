@@ -1,8 +1,10 @@
+import { useLocation } from "wouter";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
 import { PlayIcon, PauseIcon, StopIcon } from "./icons";
 import { timerChipCommands } from "./chrome";
 import { timerChipModel } from "./presentation";
 import { notify } from "./notify";
+import { isTimerProject, projectTasksHref } from "./time";
 
 export function V2TimerChip({
   variant = "chip",
@@ -11,6 +13,7 @@ export function V2TimerChip({
   variant?: "chip" | "strip";
   workspaceLabel?: string | null;
 }) {
+  const [, navigate] = useLocation();
   const {
     activeEntry,
     taskTodayDuration,
@@ -44,36 +47,37 @@ export function V2TimerChip({
   });
   const commands = timerChipCommands(model.appearance);
 
-  function onPrimary() {
+  async function onPrimary() {
     if (commands.primary === "pause") {
-      handlePause();
-      notify.success("Timer paused");
+      if (await handlePause()) notify.success("Timer paused");
       return;
     }
     if (commands.primary === "resume") {
-      handleResume();
-      notify.success("Timer resumed");
+      if (await handleResume()) notify.success("Timer resumed");
       return;
     }
-    if (taskStartBlockedReason === "no_project" || !selectedProjectId) {
+    // A Project kept from a Timer stopped elsewhere may be a sale, or gone.
+    const selected = projects.find((item) => item.id === selectedProjectId);
+    if (taskStartBlockedReason === "no_project" || !selectedProjectId || (selected && !isTimerProject(selected))) {
       notify.info("Choose a Project before starting the Timer.");
       return;
     }
     if (taskStartBlockedReason === "no_tasks") {
-      notify.info("Create a Task before starting the Timer.");
+      notify.info("This Project has no Task yet.", {
+        action: { label: "Add a Task", onClick: () => navigate(projectTasksHref(selectedProjectId)) },
+        duration: 8000,
+      });
       return;
     }
     if (taskStartBlockedReason === "no_task_selected" || taskStartBlockedReason === "loading") {
       notify.info("Choose a Task before starting the Timer.");
       return;
     }
-    handleStart();
-    notify.success("Timer started");
+    if (await handleStart()) notify.success("Timer started");
   }
 
-  function onStop() {
-    handleStop();
-    notify.success("Timer stopped");
+  async function onStop() {
+    if (await handleStop()) notify.success("Timer stopped");
   }
 
   const strip = variant === "strip";

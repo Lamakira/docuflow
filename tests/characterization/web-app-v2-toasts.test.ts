@@ -135,6 +135,12 @@ describe("the v2 Toaster", () => {
     expect(toasterSource).toContain('offset="var(--df-space-4)"');
   });
 
+  it("draws the toast's button in the toast's own ink, so Undo can be read on either theme", () => {
+    const button = css.match(/\.df-toaster \[data-sonner-toast\]\[data-styled="true"\]\.df-toast \[data-button\]\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(button).toMatch(/background:\s*transparent/);
+    expect(button).toMatch(/color:\s*inherit/);
+  });
+
   it("leaves v1's Radix toaster where it was", () => {
     const v1App = read("client/src/App.tsx");
     expect(v1App).toContain('from "@/components/ui/toaster"');

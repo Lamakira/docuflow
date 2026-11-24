@@ -124,7 +124,7 @@ describe("public /api/v1 catalogue (characterization)", () => {
     expect(replay.body).toEqual(first.body);
 
     await createCrmProject(admin.agent, { name: "Website" });
-    const { crmProject } = await createCrmProject(admin.agent, { name: "App" });
+    const { crmProject } = await createCrmProject(admin.agent, { name: "App", status: "won_in_progress" });
     const task = await createTask(admin.agent, crmProject.id);
     await startTimer(admin.agent, crmProject.id, task.id);
 

@@ -1569,7 +1569,7 @@ export type InsertTimerCommand = z.infer<typeof insertTimerCommandSchema>;
 
 // Time entry with user and project info for display
 export type TimeEntryWithDetails = TimeEntry & {
-  user?: SafeUser;
+  user?: DocumentPerson;
   crmProject?: CrmProject & {
     project?: Project;
     client?: CrmClient;

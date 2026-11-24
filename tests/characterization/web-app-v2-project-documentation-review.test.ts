@@ -226,8 +226,10 @@ describe("Link to a Project (F65)", () => {
 
   it("offers delivery Projects only, in a searchable shadcn list", () => {
     expect(dialogSource).toContain('kind: "delivery"');
-    expect(dialogSource).toContain('from "@/components/ui/command"');
-    expect(dialogSource).toContain("<Popover modal");
+    const pickerSource = read("client/src/v2/V2ProjectPicker.tsx");
+    expect(pickerSource).toContain('from "@/components/ui/command"');
+    expect(pickerSource).toContain("<Popover modal={modal}");
+    expect(dialogSource).toMatch(/<V2ProjectPicker\s+modal\s/);
     expect(dialogSource).toContain("project.id !== source.crmProjectId");
   });
 

@@ -64,6 +64,7 @@ import {
 } from "./projects";
 import { V2DateField } from "./V2DateField";
 import { TASK_STATUS_OPTIONS } from "./tasks";
+import { isTimerProject } from "./time";
 import { memberName, projectHref } from "./today";
 import { formatFileSize, projectFileHref } from "./fileViewer";
 import { clientHref } from "./clients";
@@ -283,7 +284,7 @@ export function V2DossierPage() {
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
   const { memberships } = useV2Chrome();
-  const { isRunning, activeEntry, handleStart, setSelectedProjectId } = useTimeTracker();
+  const { isRunning, activeEntry, handleStart, setSelectedProjectId, requiresTaskForStart } = useTimeTracker();
   const monthStart = useMemo(() => startOfMonth(now), [now]);
   const dayEnd = useMemo(() => endOfDay(now), [now]);
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
@@ -926,8 +927,18 @@ export function V2DossierPage() {
     setProjectStatus.mutate(next);
   }
 
+  /** A sale or a documentation-only Project takes no time, whatever its page still shows. */
+  const canTrackTime = Boolean(project && isTimerProject(project));
+
   function onStartTimer() {
-    if (!projectId) return;
+    if (!projectId || !canTrackTime) return;
+    if (requiresTaskForStart && !firstTodoTask) {
+      notify.info("This Project has no open Task to start. Add one first.", {
+        action: { label: "Add a Task", onClick: onNewTask },
+        duration: 8000,
+      });
+      return;
+    }
     setSelectedProjectId(projectId);
     handleStart(projectId, firstTodoTask?.id);
   }
@@ -1435,6 +1446,7 @@ export function V2DossierPage() {
                 renameTask.mutate({ id, name });
               },
               onStartTask: (taskId) => {
+                if (!canTrackTime) return;
                 setSelectedProjectId(projectId);
                 handleStart(projectId, taskId);
               },

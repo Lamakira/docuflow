@@ -2,17 +2,54 @@ import type { TimeEntry, InsertTimeEntry, TimeEntryWithDetails, TimerCommand } f
 import { applyTimerCommand, listTimerCommands, type ApplyTimerCommandInput, type ApplyTimerCommandResult } from "./commands";
 import { getAllowedTimezones, upsertAllowedTimezones } from "./schedule";
 
+export interface TimePortionOptions {
+  userId?: string;
+  crmProjectId?: string;
+  taskIds?: string[];
+  startDate?: Date;
+  endDate?: Date;
+  status?: string;
+  /** Running and paused entries too; stopped ones only when unset. */
+  includeActive?: boolean;
+}
+
+export interface TimePortionRow {
+  id: string;
+  userId: string;
+  userName: string;
+  crmProjectId: string;
+  projectName: string;
+  taskId: string | null;
+  taskName: string | null;
+  /** Inside the period. */
+  seconds: number;
+  idleSeconds: number;
+}
+
+export interface TimeEntryPageOptions extends TimePortionOptions {
+  page: number;
+  pageSize: number;
+}
+
+export interface TimeEntryPage {
+  data: Array<TimeEntryWithDetails & { secondsInPeriod: number }>;
+  total: number;
+  /** Inside the period, over every match and not the page alone. */
+  totals: { duration: number; idle: number };
+}
+
 export interface TimePersistence {
   getTimeEntries(options: {
     userId?: string;
     crmProjectId?: string;
     startDate?: Date;
     endDate?: Date;
-    endDateGte?: Date;
     status?: string;
     /** Newest first, cut to this many; omitted returns every match. */
     limit?: number;
   }): Promise<TimeEntryWithDetails[]>;
+  getTimeEntriesPage(options: TimeEntryPageOptions): Promise<TimeEntryPage>;
+  getTimePortions(options: TimePortionOptions): Promise<TimePortionRow[]>;
   getTimeEntry(id: string): Promise<TimeEntryWithDetails | undefined>;
   getTimeEntryByClientCommandId(clientCommandId: string): Promise<TimeEntry | undefined>;
   getActiveTimeEntry(userId: string): Promise<TimeEntry | undefined>;
@@ -26,6 +63,7 @@ export interface TimePersistence {
     crmProjectId?: string;
     startDate?: Date;
     endDate?: Date;
+    includeActive?: boolean;
   }): Promise<{
     totalDuration: number;
     totalIdleTime: number;

@@ -1161,7 +1161,7 @@ describe("Workspace content stays out of the back office", () => {
   it("returns no Project, Document or Time Entry text from the stats or the Workspace page", async () => {
     const { app, owner } = await seededOwner();
     const staff = await registerPlatformStaff(app);
-    const project = await createCrmProject(owner.agent, { name: "SECRET-project-name" });
+    const project = await createCrmProject(owner.agent, { name: "SECRET-project-name", status: "won_in_progress" });
     await createDocument(owner.agent, project.project.id, { title: "SECRET-document-title" });
     const task = await createTask(owner.agent, project.crmProject.id, "SECRET-task-name");
     await startTimer(owner.agent, project.crmProject.id, task.id, "SECRET-time-entry-note");

@@ -144,6 +144,7 @@ import {
   projectStatusFromCombined,
   WON_STATUSES,
 } from "@shared/projectLifecycle";
+import { STALE_THRESHOLD_MS, timeEntrySpan, timePortion } from "@shared/timePortion";
 import { isUploadedFile } from "@shared/documentFile";
 import { BUILT_IN_LISTS, defaultFieldOptions, type OptionRename } from "@shared/pipelineLists";
 import {
@@ -167,6 +168,7 @@ import {
 import { getScreenshotPolicy, upsertScreenshotPolicy } from "./activity/policy";
 import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
+import type { TimeEntryPage, TimeEntryPageOptions, TimePortionOptions, TimePortionRow } from "./time/persistence";
 import { assertSeatAvailable } from "./billing/seats";
 import type { ImportableUser } from "./identity/userImport";
 import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike, getTableColumns, type AnyColumn, type SQL } from "drizzle-orm";
@@ -250,6 +252,17 @@ const documentPersonColumns = {
 function unchangedSince(column: AnyColumn, expected: Date | undefined): SQL | undefined {
   if (!expected) return undefined;
   return sql`date_trunc('milliseconds', ${column}) = ${expected.toISOString()}::timestamp`;
+}
+
+/** `timeEntrySpan`'s end in SQL, for the overlap with a period. The two must agree. */
+function timeEntrySpanEnd(now: Date): SQL {
+  const at = sql`${now.toISOString()}::timestamp`;
+  const staleBefore = sql`${new Date(now.getTime() - STALE_THRESHOLD_MS).toISOString()}::timestamp`;
+  const impliedEnd = sql`${timeEntries.startTime} + greatest(0, coalesce(${timeEntries.duration}, 0)) * interval '1 second'`;
+  return sql`greatest(${timeEntries.startTime}, case ${timeEntries.status}
+    when 'running' then case when ${timeEntries.lastActivityAt} < ${staleBefore} then ${timeEntries.lastActivityAt} else ${at} end
+    when 'paused' then coalesce(${timeEntries.lastActivityAt}, ${impliedEnd})
+    else coalesce(${timeEntries.endTime}, ${impliedEnd}) end)`;
 }
 
 /** A checked save always moves the time forward, so two in one millisecond cannot share a version. */
@@ -2600,8 +2613,6 @@ export class DatabaseStorage implements IStorage {
     crmProjectId?: string;
     startDate?: Date;
     endDate?: Date;
-    /** Filter: endTime >= value. Use for overlap queries (e.g. cross-midnight entries). */
-    endDateGte?: Date;
     status?: string;
     /** Newest first, cut to this many; omitted returns every match. */
     limit?: number;
@@ -2618,101 +2629,130 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(timeEntries.status, options.status));
     }
     if (options.startDate) {
-      conditions.push(sql`${timeEntries.startTime} >= ${options.startDate}`);
+      conditions.push(gte(timeEntries.startTime, options.startDate));
     }
     if (options.endDate) {
-      conditions.push(sql`${timeEntries.startTime} <= ${options.endDate}`);
+      conditions.push(lte(timeEntries.startTime, options.endDate));
     }
-    if (options.endDateGte) {
-      conditions.push(sql`${timeEntries.endTime} >= ${options.endDateGte}`);
-    }
-    
-    const ordered = db
-      .select()
+
+    return this.selectTimeEntriesWithDetails(and(...conditions), options.limit);
+  }
+
+  /** Two queries whatever the number of rows: the entries joined, then their Tasks. */
+  private async selectTimeEntriesWithDetails(where: SQL | undefined, limit?: number): Promise<TimeEntryWithDetails[]> {
+    const joined = db
+      .select({
+        entry: timeEntries,
+        user: documentPersonColumns,
+        crmProject: crmProjects,
+        project: projects,
+        client: crmClients,
+      })
       .from(timeEntries)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(timeEntries.startTime));
-    const entries = options.limit ? await ordered.limit(options.limit) : await ordered;
-    
-    // Tasks in one query for the whole page
-    const taskIds = Array.from(new Set(entries.map((e) => e.taskId).filter((id): id is string => !!id)));
+      .leftJoin(users, eq(users.id, timeEntries.userId))
+      .leftJoin(crmProjects, and(eq(crmProjects.id, timeEntries.crmProjectId), inWorkspace(crmProjects)))
+      .leftJoin(projects, eq(projects.id, crmProjects.projectId))
+      .leftJoin(crmClients, eq(crmClients.id, crmProjects.clientId))
+      .where(where)
+      .orderBy(desc(timeEntries.startTime), asc(timeEntries.id));
+    const rows = limit ? await joined.limit(limit) : await joined;
+
+    const taskIds = Array.from(new Set(rows.map((row) => row.entry.taskId).filter((id): id is string => !!id)));
     const taskRows = taskIds.length > 0
       ? await db.select().from(tasks).where(and(inArray(tasks.id, taskIds), inWorkspace(tasks)))
       : [];
     const taskById = new Map(taskRows.map((t) => [t.id, t]));
 
-    // Fetch user and project details
-    const enrichedEntries: TimeEntryWithDetails[] = [];
-    for (const entry of entries) {
-      const [user] = await db.select().from(users).where(eq(users.id, entry.userId));
-      const [crmProject] = await db.select().from(crmProjects).where(and(eq(crmProjects.id, entry.crmProjectId), inWorkspace(crmProjects)));
-      
-      let projectDetails = undefined;
-      let clientDetails = undefined;
-      
-      if (crmProject) {
-        const [project] = await db.select().from(projects).where(eq(projects.id, crmProject.projectId));
-        projectDetails = project;
-        
-        if (crmProject.clientId) {
-          const [client] = await db.select().from(crmClients).where(eq(crmClients.id, crmProject.clientId));
-          clientDetails = client;
-        }
-      }
-      
-      const safeUser = toSafeUser(user || {});
-      
-      enrichedEntries.push({
-        ...entry,
-        user: user ? safeUser as SafeUser : undefined,
-        crmProject: crmProject ? {
-          ...crmProject,
-          project: projectDetails,
-          client: clientDetails,
-        } : undefined,
-        task: entry.taskId ? taskById.get(entry.taskId) : undefined,
-      });
+    return rows.map(({ entry, user, crmProject, project, client }) => ({
+      ...entry,
+      user: user ?? undefined,
+      crmProject: crmProject
+        ? { ...crmProject, project: project ?? undefined, client: client ?? undefined }
+        : undefined,
+      task: entry.taskId ? taskById.get(entry.taskId) : undefined,
+    }));
+  }
+
+  async getTimeEntriesPage(options: TimeEntryPageOptions): Promise<TimeEntryPage> {
+    const portions = await this.getTimePortions(options);
+    const shown = portions.slice((options.page - 1) * options.pageSize, options.page * options.pageSize);
+    const details = shown.length > 0
+      ? await this.selectTimeEntriesWithDetails(
+          and(inArray(timeEntries.id, shown.map((row) => row.id)), inWorkspace(timeEntries)),
+        )
+      : [];
+    const portionById = new Map(shown.map((row) => [row.id, row.seconds]));
+    return {
+      data: details.map((entry) => ({ ...entry, secondsInPeriod: portionById.get(entry.id) ?? 0 })),
+      total: portions.length,
+      totals: {
+        duration: portions.reduce((sum, row) => sum + row.seconds, 0),
+        idle: portions.reduce((sum, row) => sum + row.idleSeconds, 0),
+      },
+    };
+  }
+
+  /**
+   * The Time Entries touching a period, each with the part of it inside. Every
+   * figure of time in a period is summed from here. Stopped entries only,
+   * unless `includeActive`.
+   */
+  async getTimePortions(options: TimePortionOptions): Promise<TimePortionRow[]> {
+    const now = new Date();
+    const conditions = [inWorkspace(timeEntries)];
+    if (options.userId) conditions.push(eq(timeEntries.userId, options.userId));
+    if (options.crmProjectId) conditions.push(eq(timeEntries.crmProjectId, options.crmProjectId));
+    if (options.taskIds) conditions.push(inArray(timeEntries.taskId, options.taskIds));
+    if (options.status) conditions.push(eq(timeEntries.status, options.status));
+    if (!options.includeActive) conditions.push(eq(timeEntries.status, "stopped"));
+    if (options.endDate) conditions.push(lte(timeEntries.startTime, options.endDate));
+    if (options.startDate) {
+      conditions.push(sql`${timeEntrySpanEnd(now)} >= ${options.startDate.toISOString()}::timestamp`);
     }
-    
-    return enrichedEntries;
+
+    const rows = await db
+      .select({
+        id: timeEntries.id,
+        userId: timeEntries.userId,
+        crmProjectId: timeEntries.crmProjectId,
+        taskId: timeEntries.taskId,
+        startTime: timeEntries.startTime,
+        endTime: timeEntries.endTime,
+        duration: timeEntries.duration,
+        idleTime: timeEntries.idleTime,
+        status: timeEntries.status,
+        lastActivityAt: timeEntries.lastActivityAt,
+        projectName: projects.name,
+        taskName: tasks.name,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+      })
+      .from(timeEntries)
+      .leftJoin(users, eq(users.id, timeEntries.userId))
+      .leftJoin(crmProjects, and(eq(crmProjects.id, timeEntries.crmProjectId), inWorkspace(crmProjects)))
+      .leftJoin(projects, eq(projects.id, crmProjects.projectId))
+      .leftJoin(tasks, and(eq(tasks.id, timeEntries.taskId), inWorkspace(tasks)))
+      .where(and(...conditions))
+      .orderBy(desc(timeEntries.startTime), asc(timeEntries.id));
+
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      userName: row.email === null
+        ? "Unknown User"
+        : `${row.firstName || ""} ${row.lastName || ""}`.trim() || row.email,
+      crmProjectId: row.crmProjectId,
+      projectName: row.projectName || "Unknown Project",
+      taskId: row.taskId,
+      taskName: row.taskName,
+      ...timePortion(timeEntrySpan(row, now), { start: options.startDate, end: options.endDate }),
+    }));
   }
 
   async getTimeEntry(id: string): Promise<TimeEntryWithDetails | undefined> {
-    const [entry] = await db.select().from(timeEntries).where(and(eq(timeEntries.id, id), inWorkspace(timeEntries)));
-    if (!entry) return undefined;
-    
-    const [user] = await db.select().from(users).where(eq(users.id, entry.userId));
-    const [crmProject] = await db.select().from(crmProjects).where(and(eq(crmProjects.id, entry.crmProjectId), inWorkspace(crmProjects)));
-    
-    let projectDetails = undefined;
-    let clientDetails = undefined;
-    
-    if (crmProject) {
-      const [project] = await db.select().from(projects).where(eq(projects.id, crmProject.projectId));
-      projectDetails = project;
-      
-      if (crmProject.clientId) {
-        const [client] = await db.select().from(crmClients).where(eq(crmClients.id, crmProject.clientId));
-        clientDetails = client;
-      }
-    }
-    
-    const [task] = entry.taskId
-      ? await db.select().from(tasks).where(and(eq(tasks.id, entry.taskId), inWorkspace(tasks)))
-      : [];
-
-    const safeUser = toSafeUser(user || {});
-    
-    return {
-      ...entry,
-      user: user ? safeUser as SafeUser : undefined,
-      crmProject: crmProject ? {
-        ...crmProject,
-        project: projectDetails,
-        client: clientDetails,
-      } : undefined,
-      task,
-    };
+    const [entry] = await this.selectTimeEntriesWithDetails(and(eq(timeEntries.id, id), inWorkspace(timeEntries)));
+    return entry;
   }
 
   async getTimeEntryByClientCommandId(clientCommandId: string): Promise<TimeEntry | undefined> {
@@ -2793,7 +2833,8 @@ export class DatabaseStorage implements IStorage {
     userId?: string;
     crmProjectId?: string;
     startDate?: Date;
-    endDate?: Date
+    endDate?: Date;
+    includeActive?: boolean;
   }): Promise<{
     totalDuration: number;
     totalIdleTime: number;
@@ -2802,58 +2843,23 @@ export class DatabaseStorage implements IStorage {
     byProject: Array<{ crmProjectId: string; projectName: string; totalDuration: number }>;
     byUser: Array<{ userId: string; userName: string; totalDuration: number }>;
   }> {
-    // Use overlap filter: startTime <= endDate AND endTime >= startDate.
-    // This correctly includes cross-midnight entries (started before window, stopped within window).
-    const entries = await this.getTimeEntries({
-      userId: options.userId,
-      crmProjectId: options.crmProjectId,
-      endDate: options.endDate,           // startTime <= endDate
-      endDateGte: options.startDate,      // endTime   >= startDate
-      status: "stopped",
-    });
+    const entries = await this.getTimePortions(options);
+    const totalDuration = entries.reduce((sum, e) => sum + e.seconds, 0);
+    const totalIdleTime = entries.reduce((sum, e) => sum + e.idleSeconds, 0);
 
-    // For entries that started before the window (cross-midnight), attribute only the
-    // portion of entry.duration that falls within [startDate, endDate] using proportional
-    // estimation. For entries fully within the window, use entry.duration as-is.
-    const clamp = (e: { startTime: Date | string; endTime: Date | string | null; duration: number | null }): number => {
-      if (!options.startDate || !options.endDate || !e.endTime) return e.duration || 0;
-      const eStart = new Date(e.startTime).getTime();
-      const wStart = options.startDate.getTime();
-      if (eStart >= wStart) return e.duration || 0; // started within window — use as-is
-      const eEnd = new Date(e.endTime).getTime();
-      const wEnd = options.endDate.getTime();
-      const totalMs = eEnd - eStart;
-      if (totalMs <= 0) return 0;
-      const inWindowMs = Math.min(eEnd, wEnd) - wStart;
-      if (inWindowMs <= 0) return 0;
-      return Math.round((e.duration || 0) * inWindowMs / totalMs);
-    };
-
-    const totalDuration = entries.reduce((sum, e) => sum + clamp(e), 0);
-    const totalIdleTime = entries.reduce((sum, e) => sum + (e.idleTime || 0), 0);
-
-    // Group by project
     const projectMap = new Map<string, { projectName: string; totalDuration: number }>();
-    for (const entry of entries) {
-      const projectId = entry.crmProjectId;
-      const projectName = entry.crmProject?.project?.name || "Unknown Project";
-      const existing = projectMap.get(projectId) || { projectName, totalDuration: 0 };
-      existing.totalDuration += clamp(entry);
-      projectMap.set(projectId, existing);
-    }
-
-    // Group by user
     const userMap = new Map<string, { userName: string; totalDuration: number }>();
     for (const entry of entries) {
-      const userId = entry.userId;
-      const userName = entry.user ? `${entry.user.firstName || ""} ${entry.user.lastName || ""}`.trim() || entry.user.email : "Unknown User";
-      const existing = userMap.get(userId) || { userName, totalDuration: 0 };
-      existing.totalDuration += clamp(entry);
-      userMap.set(userId, existing);
+      const project = projectMap.get(entry.crmProjectId) || { projectName: entry.projectName, totalDuration: 0 };
+      project.totalDuration += entry.seconds;
+      projectMap.set(entry.crmProjectId, project);
+      const user = userMap.get(entry.userId) || { userName: entry.userName, totalDuration: 0 };
+      user.totalDuration += entry.seconds;
+      userMap.set(entry.userId, user);
     }
-    
+
     // Count live (non-deleted, non-pending) screenshots in the same window
-    const screenshotConditions = [];
+    const screenshotConditions = [inWorkspace(timeEntryScreenshots)];
     if (options.userId) screenshotConditions.push(eq(timeEntryScreenshots.userId, options.userId));
     if (options.startDate) screenshotConditions.push(gt(timeEntryScreenshots.capturedAt, options.startDate));
     if (options.endDate) screenshotConditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
@@ -2882,36 +2888,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTaskDurationToday(userId: string, taskId: string, start: Date, end: Date): Promise<number> {
-    const [row] = await db
-      .select({ total: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)` })
-      .from(timeEntries)
-      .where(and(
-        eq(timeEntries.userId, userId),
-        eq(timeEntries.taskId, taskId),
-        eq(timeEntries.status, "stopped"),
-        sql`${timeEntries.startTime} >= ${start}`,
-        sql`${timeEntries.startTime} <= ${end}`,
-      ));
-    return Number(row?.total ?? 0);
+    const durations = await this.getTasksDurationToday(userId, [taskId], start, end);
+    return durations[taskId] ?? 0;
   }
 
   async getTasksDurationToday(userId: string, taskIds: string[], start: Date, end: Date): Promise<Record<string, number>> {
     if (taskIds.length === 0) return {};
-    const rows = await db
-      .select({
-        taskId: timeEntries.taskId,
-        total: sql<number>`COALESCE(SUM(${timeEntries.duration}), 0)`,
-      })
-      .from(timeEntries)
-      .where(and(
-        eq(timeEntries.userId, userId),
-        inArray(timeEntries.taskId, taskIds),
-        eq(timeEntries.status, "stopped"),
-        sql`${timeEntries.startTime} >= ${start}`,
-        sql`${timeEntries.startTime} <= ${end}`,
-      ))
-      .groupBy(timeEntries.taskId);
-    return Object.fromEntries(rows.map((r) => [r.taskId, Number(r.total)]));
+    const rows = await this.getTimePortions({ userId, taskIds, startDate: start, endDate: end });
+    const durations: Record<string, number> = {};
+    for (const row of rows) durations[row.taskId!] = (durations[row.taskId!] ?? 0) + row.seconds;
+    return durations;
   }
 
   async getTimeEntriesByIds(ids: string[]): Promise<Array<{ id: string; duration: number; idleTime: number }>> {
