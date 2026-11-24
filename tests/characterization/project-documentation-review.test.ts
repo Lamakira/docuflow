@@ -238,6 +238,17 @@ describe("page titles and authors (F65)", () => {
       await rows("SELECT title, created_by_id FROM documents WHERE project_id = $1 ORDER BY position", [project.id]),
     ).toEqual(["Resources", "Requirements", "Deliverables"].map((title) => ({ title, created_by_id: admin.id })));
   });
+
+  it("starts documentation with pages that name no company or product (F66)", async () => {
+    const app = await makeApp();
+    const admin = await registerAdmin(app);
+    const { project, crmProject } = await createCrmProject(admin.agent, { status: "won_in_progress" });
+    await admin.agent.patch(`/api/crm/projects/${crmProject.id}/documentation`).send({ enabled: true });
+    const pages = await rows("SELECT title, content FROM documents WHERE project_id = $1", [project.id]);
+    expect(pages).toHaveLength(3);
+    const written = JSON.stringify(pages);
+    for (const named of [/techma/i, /zoho/i, /\bCRM\b/, /hourly/i, /credential|login/i]) expect(written).not.toMatch(named);
+  });
 });
 
 describe("a documentation-only Project's own record (F60)", () => {

@@ -135,6 +135,7 @@ import type { OptionRenameColumn } from "./clients-sales/persistence";
 import type { DocumentWriter, FileWriter, ProjectWriter } from "./writers";
 import { syncCompanyDocumentEmbeddingFolder } from "../embeddings";
 import type { CompanyDocumentSaveOptions, SaveOptions } from "./knowledge/persistence";
+import { DEFAULT_PROJECT_PAGES } from "./knowledge/defaultPages";
 import type { IStorage } from "./index";
 import {
   isOpportunityTerminal,
@@ -1439,144 +1440,12 @@ export class DatabaseStorage implements IStorage {
         .where(eq(documents.projectId, crmProject.projectId));
       
       if (existingDocs.length === 0) {
-        const defaultDocTemplates: { title: string; content: any }[] = [
-          {
-            title: "Resources",
-            content: {
-              type: "doc",
-              content: [
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Login Details" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "[Add login credentials information here]" }] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Conversations" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "[Add conversation references or summaries here]" }] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Recordings" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "[Add meeting or call recording links here]" }] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Files" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "[Add related documents or attachments here]" }] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Clients Notes" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "[Add client notes and remarks here]" }] },
-              ],
-            },
-          },
-          {
-            title: "Requirements",
-            content: {
-              type: "doc",
-              content: [
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Document Information" }] },
-                { type: "bulletList", content: [
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Client: [Client Name]" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Prepared By: TECHMA Inc." }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Date: [Insert Date]" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Project Title: [Enhancement / Fix / Integration Name]" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Platforms: [Zoho CRM, Creator, API, etc.]" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Engagement Type: Hourly / Small Fixed Scope" }] }] },
-                ] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Table of Contents" }] },
-                { type: "orderedList", attrs: { start: 1 }, content: [
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Overview" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Objectives" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Scope of Work" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Functional Changes" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Business Rules & Logic" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Constraints" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Acceptance Criteria" }] }] },
-                ] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "1. Overview" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Brief description of what this update addresses." }] },
-                { type: "heading", attrs: { level: 2, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Include:" }] },
-                { type: "bulletList", content: [
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Current issue or need" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Affected system/module" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Business impact" }] }] },
-                ] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "2. Objectives" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "What this update aims to achieve." }] },
-                { type: "heading", attrs: { level: 2, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Examples:" }] },
-                { type: "bulletList", content: [
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Improve upload behavior" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Fix incorrect logic" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Add missing automation" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Increase visibility in CRM" }] }] },
-                ] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "3. Scope of Work" }] },
-                { type: "heading", attrs: { level: 2, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Included" }] },
-                { type: "bulletList", content: [
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "[Feature / Fix 1]" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "[Feature / Fix 2]" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "[Enhancement 3]" }] }] },
-                ] },
-                { type: "heading", attrs: { level: 2, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Not Included" }] },
-                { type: "bulletList", content: [
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Major redesign" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "New modules" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Unrelated automation" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Third-party migrations" }] }] },
-                ] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "4. Functional Changes" }] },
-                { type: "heading", attrs: { level: 2, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "4.1 Change / Feature Name" }] },
-                { type: "heading", attrs: { level: 3, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Current Behavior:" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Describe how it works now." }] },
-                { type: "heading", attrs: { level: 3, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Required Behavior:" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Describe expected behavior after update." }] },
-                { type: "heading", attrs: { level: 3, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "System Impact:" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Where this change applies (Portal / CRM / API / UI)." }] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "5. Business Rules & Logic" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "If/then logic and validation rules." }] },
-                { type: "heading", attrs: { level: 2, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Examples:" }] },
-                { type: "bulletList", content: [
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "If field is empty \u2192 hide button" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "If deal is updated \u2192 redirect upload" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Updates must apply without user reinvite" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Logic must be dynamic (no hardcoding)" }] }] },
-                ] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "6. Constraints" }] },
-                { type: "bulletList", content: [
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Must not disrupt live users" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Must not require portal reinvite" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Must remain compatible with existing integrations" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "CRM remains system of record" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "(Add project-specific constraints as needed.)" }] }] },
-                ] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "7. Acceptance Criteria" }] },
-                { type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "The project will be considered complete when:" }] },
-                { type: "bulletList", content: [
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "All listed changes are implemented" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "No regression issues occur" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Existing users remain unaffected" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "Client confirms expected behavior" }] }] },
-                  { type: "listItem", content: [{ type: "paragraph", attrs: { textAlign: null }, content: [{ type: "text", text: "No manual workaround is required" }] }] },
-                ] },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "VIDEO" }] },
-              ],
-            },
-          },
-          {
-            title: "Deliverables",
-            content: {
-              type: "doc",
-              content: [
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }, { type: "underline" }], text: "Client" }] },
-                { type: "heading", attrs: { level: 2, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Text" }] },
-                { type: "paragraph", attrs: { textAlign: null } },
-                { type: "heading", attrs: { level: 2, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Video" }] },
-                { type: "paragraph", attrs: { textAlign: null } },
-                { type: "heading", attrs: { level: 1, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }, { type: "underline" }], text: "Internal" }] },
-                { type: "heading", attrs: { level: 2, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Text" }] },
-                { type: "paragraph", attrs: { textAlign: null } },
-                { type: "heading", attrs: { level: 2, textAlign: null }, content: [{ type: "text", marks: [{ type: "bold" }], text: "Video" }] },
-                { type: "paragraph", attrs: { textAlign: null } },
-              ],
-            },
-          },
-        ];
-
-        for (const tmpl of defaultDocTemplates) {
+        for (const page of DEFAULT_PROJECT_PAGES) {
           await this.createDocument({
             projectId: crmProject.projectId,
             parentId: null,
-            title: tmpl.title,
-            content: tmpl.content,
+            title: page.title,
+            content: page.content,
             createdById: userId,
           });
         }

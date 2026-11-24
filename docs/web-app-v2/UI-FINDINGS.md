@@ -1531,7 +1531,7 @@ only when it is one of the choices.
 
 ## F66 — Turning documentation on writes TECHMA's own templates into any Workspace
 
-- **Status:** open — a decision for the owner
+- **Status:** closed — fixed 2026-11-24
 - **Found:** 2026-11-24, a demo Project with documentation turned on
 - **Where:** `server/modules/postgresStorage.ts` (`toggleDocumentation`, the Resources, Requirements and Deliverables pages)
 - **Severity:** wrong for customers
@@ -1540,3 +1540,5 @@ Every Project gets three pages when its documentation is turned on. The
 Requirements page reads `Prepared By: TECHMA Inc.` and
 `Platforms: [Zoho CRM, Creator, API, etc.]` (seen), whoever the Workspace
 belongs to. It would take neutral pages, or the Workspace's own, or none.
+
+- **Fixed:** 2026-11-24, as the owner chose: the same three pages, with neutral text (`server/modules/knowledge/defaultPages.ts`). Resources no longer asks for login details. Pages made before keep their text.
