@@ -97,7 +97,7 @@ export function V2HelpPage() {
       <header className="df-today-head">
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Help Center</h1>
-          <p className="df-subhead">Articles for DocuFlow — time, projects, the desktop agent, and administration.</p>
+          <p className="df-subhead">Articles for DocuFlow: time, projects, the desktop agent, and administration.</p>
         </div>
       </header>
 

@@ -134,7 +134,7 @@ describe("Status history says how long each Project Status held (#260, C)", () =
         to: "PLANNED",
         toColor: projectStatusColor("planned"),
         when: "13 Sep",
-        who: "—",
+        who: "-",
         held: "7 d",
       },
     ]);

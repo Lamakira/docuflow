@@ -111,7 +111,7 @@ export function invitationRevokePath(id: string): string {
 }
 
 function capabilityLabel(capabilities: string[]): string {
-  if (capabilities.length === 0) return "—";
+  if (capabilities.length === 0) return "-";
   return capabilities.join(" · ");
 }
 
@@ -177,7 +177,7 @@ export function composePeople(input: PeopleInput): PeopleModel {
     initials: row.email.slice(0, 2).toUpperCase(),
     email: row.email,
     workspaceRole: row.workspaceRole,
-    capabilities: "—",
+    capabilities: "-",
     status: "INVITATION PENDING",
     canSignIn: false,
     consumesSeat: false,

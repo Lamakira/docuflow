@@ -16,30 +16,30 @@ export function FaqTroubleshootingDoc() {
         <DocH3>Web popover</DocH3>
         <DocList>
           <DocLi>
-            <DocStrong>No project or task selected</DocStrong> — when your workspace requires
+            <DocStrong>No project or task selected</DocStrong>: when your workspace requires
             tasks for time entries, Start stays disabled until you pick a CRM project and a task. If the project has no
             tasks, create one under <DocStrong>Time Tracking → Projects &amp; Tasks</DocStrong>.
           </DocLi>
           <DocLi>
-            <DocStrong>Archived task</DocStrong> — the server rejects starting on an archived task;
+            <DocStrong>Archived task</DocStrong>: the server rejects starting on an archived task;
             pick an active task.
           </DocLi>
           <DocLi>
-            <DocStrong>Network or session</DocStrong> — starting calls the authenticated API; a
+            <DocStrong>Network or session</DocStrong>: starting calls the authenticated API; a
             failed request shows an error toast with the server message. Sign in again if your session expired.
           </DocLi>
         </DocList>
         <DocH3>Desktop agent</DocH3>
         <DocList>
           <DocLi>
-            <DocStrong>Not signed in</DocStrong> — complete device login in the agent window.
+            <DocStrong>Not signed in</DocStrong>: complete device login in the agent window.
           </DocLi>
           <DocLi>
-            <DocStrong>Workspace requires a task</DocStrong> — the agent must start with a task id
+            <DocStrong>Workspace requires a task</DocStrong>: the agent must start with a task id
             when the server reports that tasks are required; use the task list, not project-only shortcuts.
           </DocLi>
           <DocLi>
-            <DocStrong>IPC rejection</DocStrong> — if start still fails, capture the error text from
+            <DocStrong>IPC rejection</DocStrong>: if start still fails, capture the error text from
             the agent; the queue may surface server validation errors after sync.
           </DocLi>
         </DocList>
@@ -51,7 +51,7 @@ export function FaqTroubleshootingDoc() {
           <DocStrong>does not</DocStrong> require per-task tracking (tasks feature not active for
           that database), the web timer popover does not expose a full web-only start flow and instead instructs you to
           start from the DocuFlow Desktop Agent after selecting project and task there. That message is intentional for
-          that configuration — it does not by itself mean the web app is broken.
+          that configuration; it does not by itself mean the web app is broken.
         </DocP>
         <DocP>
           When tasks <em>are</em> required, the web popover shows project and task selectors and Start when the selection
@@ -92,7 +92,7 @@ export function FaqTroubleshootingDoc() {
         <DocH3>Policy disabled</DocH3>
         <DocP>
           Your organisation may have <DocStrong>screenshotsEnabled</DocStrong> turned off in admin
-          policy — no new captures should be expected.
+          policy: no new captures should be expected.
         </DocP>
         <DocH3>Agent not running or not signed in</DocH3>
         <DocP>
@@ -102,7 +102,7 @@ export function FaqTroubleshootingDoc() {
         <DocH3>Active hours window</DocH3>
         <DocP>
           When <DocStrong>activeHoursEnabled</DocStrong> is on, captures only occur inside the
-          configured daily window — outside that window, gaps are expected. The window is read on
+          configured daily window; outside that window, gaps are expected. The window is read on
           each Member&apos;s computer clock, and a start later than the end (22:00–06:00) runs overnight.
         </DocP>
         <DocH3>OS permissions</DocH3>
@@ -111,7 +111,7 @@ export function FaqTroubleshootingDoc() {
         </DocP>
         <DocH3>Build-level disable</DocH3>
         <DocP>
-          Depending on build or environment configuration, screenshots may be disabled independently of org policy —
+          Depending on build or environment configuration, screenshots may be disabled independently of org policy;
           confirm with your administrator if captures never appear despite policy being on.
         </DocP>
         <HelpScreenshot

@@ -536,7 +536,7 @@ function folderRow(
     path: trail.length > 0 ? `${trail.join(" / ")} / · ${itemLabel}` : `/ · ${itemLabel}`,
     type: "Folder",
     access: sentenceCase(accessLevelLabel(itemAccess(folder))),
-    editor: editorPerson ? memberName(editorPerson) : "—",
+    editor: editorPerson ? memberName(editorPerson) : "-",
     updated: formatWhen(updatedAt ?? null, now),
     child: depth > 0,
     depth,
@@ -555,7 +555,7 @@ function itemRow(document: LibraryDocument, parentPath: string, depth: number, n
     path: child ? `${parentPath} /` : parentPath,
     type: kind === "file" ? "File" : "Document",
     access: sentenceCase(accessLevelLabel(itemAccess(document))),
-    editor: document.uploadedBy ? memberName(document.uploadedBy) : "—",
+    editor: document.uploadedBy ? memberName(document.uploadedBy) : "-",
     updated: formatWhen(document.updatedAt ?? document.createdAt ?? null, now),
     child,
     depth,
@@ -622,5 +622,5 @@ export function formatWhen(updatedAt: Date | string | null, now: Date): string {
 
 function librarySubhead(workspaceName: string): string {
   const name = workspaceName.trim() || "this Workspace";
-  return `Policies, profiles, benefits, and templates that belong to ${name} — not to a single Project.`;
+  return `Policies, profiles, benefits, and templates that belong to ${name}, not to a single Project.`;
 }

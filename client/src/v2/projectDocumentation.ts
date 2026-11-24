@@ -81,7 +81,7 @@ export type ProjectDocumentationInput = {
 const PROJECT_PARENTS = { singular: "project", plural: "projects" } as const;
 
 export function composeProjectDocumentation(input: ProjectDocumentationInput): LibraryModel {
-  const subhead = `Project Documents in ${input.workspaceName} — visible to Members assigned to that Project.`;
+  const subhead = `Project Documents in ${input.workspaceName}, visible to Members assigned to that Project.`;
   if (input.capabilityMiss) {
     return {
       subhead,
@@ -253,7 +253,7 @@ function projectRow(
     path: project.documentationEnabled ? `/ · ${itemLabel}` : `/ · ${itemLabel} · Documentation off`,
     type: "Project",
     access: project.isDocumentationOnly ? "Documentation only" : project.clientName || "Internal",
-    editor: project.owner ? memberName(project.owner) : "—",
+    editor: project.owner ? memberName(project.owner) : "-",
     updated: formatWhen(latest?.updatedAt ?? latest?.createdAt ?? project.updatedAt ?? null, now),
     child: false,
     depth: 0,
@@ -270,7 +270,7 @@ function documentRow(document: ProjectDocumentationDocument, trail: string[], no
     path: `${trail.join(" / ")} /`,
     type: "Document",
     access: "",
-    editor: document.createdBy ? memberName(document.createdBy) : "—",
+    editor: document.createdBy ? memberName(document.createdBy) : "-",
     updated: formatWhen(document.updatedAt ?? document.createdAt ?? null, now),
     child: true,
     depth: trail.length,
@@ -286,7 +286,7 @@ function fileRow(file: ProjectDocumentationFile, projectName: string, now: Date)
     path: `${projectName} /`,
     type: "File",
     access: "",
-    editor: file.createdBy ? memberName(file.createdBy) : "—",
+    editor: file.createdBy ? memberName(file.createdBy) : "-",
     updated: formatWhen(file.updatedAt ?? file.createdAt ?? null, now),
     child: true,
     depth: 1,
@@ -404,8 +404,8 @@ export function documentationFilterLabels(
 ): string[] {
   const labels: string[] = [];
   if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
-  if (filters.project !== "all") labels.push(`Project ${names.projects.get(filters.project) ?? "—"}`);
-  if (filters.client !== "all") labels.push(`Client ${names.clients.get(filters.client) ?? "—"}`);
+  if (filters.project !== "all") labels.push(`Project ${names.projects.get(filters.project) ?? "-"}`);
+  if (filters.client !== "all") labels.push(`Client ${names.clients.get(filters.client) ?? "-"}`);
   if (filters.documentation !== "enabled") {
     const label = DOCUMENTATION_OPTIONS.find((option) => option.value === filters.documentation)?.label;
     labels.push(`Documentation ${label}`);

@@ -294,7 +294,7 @@ function ProjectRegisterTable({
           header: "Budget used",
           cell: ({ row }) =>
             row.original.budgetPercent == null ? (
-              <span className="df-mono df-meta">—</span>
+              <span className="df-mono df-meta">-</span>
             ) : (
               <span className="df-meter-row">
                 <span className="df-meter">

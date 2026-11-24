@@ -1695,7 +1695,7 @@ function DossierOverview({
             ) : null}
             <div className="df-spread">
               <span className="df-mono df-meta">
-                {dossier.budgetTime.percent == null ? "—" : `${dossier.budgetTime.percent}% used`}
+                {dossier.budgetTime.percent == null ? "-" : `${dossier.budgetTime.percent}% used`}
               </span>
             </div>
             <div className="df-kv">
@@ -1704,7 +1704,7 @@ function DossierOverview({
             </div>
             <div className="df-kv">
               <span>Unapproved</span>
-              <span>{dossier.budgetTime.unapproved ?? "—"}</span>
+              <span>{dossier.budgetTime.unapproved ?? "-"}</span>
             </div>
           </div>
         </section>

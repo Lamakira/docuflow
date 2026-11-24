@@ -75,7 +75,7 @@ export function DesktopAppDoc() {
           When your organisation&apos;s admin enables the idle prompt and you remain inactive beyond the configured
           threshold while the timer runs, the agent shows an overlay: a countdown, and actions to indicate you are still
           working or taking a break. Keyboard or mouse activity outside the modal card may be treated as confirmation
-          you are still working, depending on current application behaviour — read the buttons on your build.
+          you are still working, depending on current application behaviour: read the buttons on your build.
         </DocP>
         <HelpScreenshot
           slotId="desktop-idle-warning-countdown"
@@ -88,7 +88,7 @@ export function DesktopAppDoc() {
         <DocP>
           If tracking is stopped from the idle flow, a follow-up state can show that tracking has stopped and offer a
           way to start again using your most recent project/task context when a task id is available. If no recent task
-          is available, the resume shortcut may not appear — start again from the picker.
+          is available, the resume shortcut may not appear; start again from the picker.
         </DocP>
         <HelpScreenshot
           slotId="desktop-post-stop-modal"
@@ -122,12 +122,12 @@ export function DesktopAppDoc() {
         <DocP>
           The server stores canonical time entries. The web app reads the same entries through the web session. The agent
           reads and writes through authenticated agent APIs. If you change timer state in one client, the other client
-          updates after its next sync or refetch — expect a short delay (roughly up to about a minute for agent-driven
+          updates after its next sync or refetch: expect a short delay (roughly up to about a minute for agent-driven
           updates, shorter for many web refreshes).
         </DocP>
         <DocP>
           Organisation policy (screenshots, idle timing) is delivered to the agent on heartbeat after an admin saves
-          changes in the web Administration area — not necessarily instant the moment Save is clicked.
+          changes in the web Administration area, not necessarily instant the moment Save is clicked.
         </DocP>
       </DocSection>
     </DocArticle>

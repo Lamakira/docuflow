@@ -116,8 +116,8 @@ describe("the columns (F65)", () => {
       projects: [project({ owner: { firstName: "Ada", lastName: "Lovelace" } })],
       documents: [{ ...page("d1", "Notes"), createdBy: { firstName: "Grace", lastName: "Hopper" } }, page("d2", "Plan")],
     });
-    expect(model.rows.map((row) => row.editor)).toEqual(["Ada Lovelace", "Grace Hopper", "—"]);
-    expect(compose().rows[0].editor).toBe("—");
+    expect(model.rows.map((row) => row.editor)).toEqual(["Ada Lovelace", "Grace Hopper", "-"]);
+    expect(compose().rows[0].editor).toBe("-");
     expect(pageSource).not.toContain("/api/users");
     expect(registerSource).toContain("<span>Added by</span>");
     expect(registerSource + pageSource).not.toContain("personHeading");

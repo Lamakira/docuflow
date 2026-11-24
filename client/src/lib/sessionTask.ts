@@ -54,7 +54,7 @@ const TASKS: Record<SessionTaskKey, { title: string; note: string }> = {
     // to name, and it grants nothing here. Clerk cannot grant Workspace
     // authority (ADR-0007), so saying so costs one line and saves a support
     // question.
-    note: "Your sign-in provider asks for this before the session starts. It is not a DocuFlow Workspace — you name that next, and it is the one that holds your work.",
+    note: "Your sign-in provider asks for this before the session starts. It is not a DocuFlow Workspace: you name that next, and it is the one that holds your work.",
   },
   "reset-password": {
     title: "Set a new password",

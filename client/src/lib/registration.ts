@@ -30,7 +30,7 @@ export type RegistrationModel = {
 };
 
 const UNEXPLAINED =
-  "DocuFlow could not finish setting your account up. Sign out and try again — nothing was charged and no Workspace was created.";
+  "DocuFlow could not finish setting your account up. Sign out and try again: nothing was charged and no Workspace was created.";
 
 export function composeRegistration(input: {
   status: RegistrationStatus;
@@ -39,7 +39,7 @@ export function composeRegistration(input: {
   if (input.status === "registering") {
     return {
       title: "Setting up your account",
-      copy: "A moment — then you name your first Workspace.",
+      copy: "A moment, then you name your first Workspace.",
       action: "none",
     };
   }

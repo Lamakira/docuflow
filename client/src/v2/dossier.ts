@@ -724,7 +724,7 @@ function composeTime(input: DossierInput): DossierModel["time"] {
       id: entry.id,
       when: formatWhen(entry.startTime, input.now),
       who: user ? memberName(user) : "Member",
-      task: (entry.taskId && tasksById.get(entry.taskId)) || "—",
+      task: (entry.taskId && tasksById.get(entry.taskId)) || "-",
       duration: formatHours(entry.duration),
       status: entry.status.replace(/_/g, " ").toUpperCase(),
     };
@@ -982,7 +982,7 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
   const identity: DossierSettingRow[] =
     project.projectType === "internal"
       ? [
-          { label: "Client", value: "None — Internal Project" },
+          { label: "Client", value: "None - Internal Project" },
           { label: "Kind", value: kindLabel(project), chip: true },
         ]
       : clientProjectIdentityRows(project, input.clients ?? []);
@@ -993,16 +993,16 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
       chip: true,
       swatch: projectStatusColor(project.projectStatus),
     },
-    { label: "Start", value: start ? formatDayStamp(start) : "—", date: "startDate" },
-    { label: "Due", value: due ? formatDayStamp(due) : "—", date: "dueDate" },
-    { label: "Last change", value: lastChange ? `${lastChange.when} · ${lastChange.who}` : "—" },
+    { label: "Start", value: start ? formatDayStamp(start) : "-", date: "startDate" },
+    { label: "Due", value: due ? formatDayStamp(due) : "-", date: "dueDate" },
+    { label: "Last change", value: lastChange ? `${lastChange.when} · ${lastChange.who}` : "-" },
   ];
   const budgeted = budgetedHoursTotal(project);
   const percent = projectBudgetPercent(project);
   const consumed =
     budgeted > 0
       ? project.trackedSeconds == null
-        ? "—"
+        ? "-"
         : `${formatHours(project.trackedSeconds)} of ${budgetLabel(project)} · ${percent}% used`
       : "No budget set";
   const memberRows: DossierModel["settings"]["memberRows"] = [];
@@ -1039,7 +1039,7 @@ function composeSettings(input: DossierInput, history: DossierModel["history"]):
     canDelete: input.canDeleteProject === true,
     deleteConsequence: project.isDocumentationOnly
       ? `${name} and its Project Documents and Files will be deleted for everyone in this Workspace. This cannot be undone.`
-      : `${name} and everything filed under it — its Tasks, Time Entries, Notes, Reminders and Project Documents — will be deleted for everyone in this Workspace. This cannot be undone.`,
+      : `${name} and everything filed under it (its Tasks, Time Entries, Notes, Reminders and Project Documents) will be deleted for everyone in this Workspace. This cannot be undone.`,
   };
 }
 
@@ -1080,7 +1080,7 @@ function composeHistory(input: DossierInput): DossierModel["history"] {
     .sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
   const rows = changes.map(({ change, from, to, at }, index) => {
     const next = index > 0 ? changes[index - 1].at : null;
-    const held = at ? formatSpan((next ?? input.now).getTime() - at.getTime()) : "—";
+    const held = at ? formatSpan((next ?? input.now).getTime() - at.getTime()) : "-";
     return {
       id: change.id,
       from: from ? statusLabel(from) : null,
@@ -1088,7 +1088,7 @@ function composeHistory(input: DossierInput): DossierModel["history"] {
       to: statusLabel(to),
       toColor: projectStatusColor(to),
       when: at ? formatDayStamp(at) : "",
-      who: change.changedBy ? memberName(change.changedBy) : "—",
+      who: change.changedBy ? memberName(change.changedBy) : "-",
       held: next || !at ? held : `${held} so far`,
     };
   });
@@ -1168,7 +1168,7 @@ export function composeDossier(input: DossierInput): DossierModel {
   const trackedMtd = formatHours(input.monthSeconds);
   // Every user's tracked total reaches Owners and Administrators only; without it the value is unknown, not 0.
   const trackedKnown = project?.trackedSeconds != null;
-  const trackedTotal = trackedKnown ? formatHours(project?.trackedSeconds ?? 0) : "—";
+  const trackedTotal = trackedKnown ? formatHours(project?.trackedSeconds ?? 0) : "-";
   const budgeted = project ? budgetedHoursTotal(project) : 0;
   const budgetPercent = project ? projectBudgetPercent(project) : null;
   const screenshots = input.screenshots.filter((shot) => !shot.deletedAt);

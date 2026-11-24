@@ -12,9 +12,9 @@ export function formatFullDate(
   value: Date | string | null | undefined,
   { dateOnly = false }: { dateOnly?: boolean } = {},
 ): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
   const day = dateOnly ? date.getUTCDate() : date.getDate();
   const month = dateOnly ? date.getUTCMonth() : date.getMonth();
   const year = dateOnly ? date.getUTCFullYear() : date.getFullYear();

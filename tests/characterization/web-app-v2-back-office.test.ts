@@ -464,7 +464,7 @@ describe("support access and the audit log", () => {
 
 describe("money", () => {
   it("formats minor units in their own currency", () => {
-    expect(formatMoney(null, "eur")).toBe("—");
+    expect(formatMoney(null, "eur")).toBe("-");
     expect(formatMoney(1050, "usd")).toMatch(/10[.,]50/);
     expect(formatMoney(1050, "eur")).not.toBe(formatMoney(1050, "usd"));
   });

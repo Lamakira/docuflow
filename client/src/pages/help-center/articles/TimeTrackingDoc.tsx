@@ -27,10 +27,10 @@ export function TimeTrackingDoc() {
         <DocH3>Entry points (web)</DocH3>
         <DocList>
           <DocLi>
-            <DocStrong>Top bar</DocStrong> — the timer chip opens the timer popover (wide layout).
+            <DocStrong>Top bar</DocStrong>: the timer chip opens the timer popover (wide layout).
           </DocLi>
           <DocLi>
-            <DocStrong>Timer strip</DocStrong> — on narrow screens, the same popover from the strip above the page.
+            <DocStrong>Timer strip</DocStrong>: on narrow screens, the same popover from the strip above the page.
           </DocLi>
           <DocLi>
             <DocStrong>Time Tracking → Time Entries</DocStrong> (
@@ -61,30 +61,30 @@ export function TimeTrackingDoc() {
         <DocP>
           When task-required mode is <em>not</em> active for your workspace, the current web popover does not offer a full
           web-only start flow and instead tells you to use the <DocStrong>desktop agent</DocStrong>{" "}
-          to start tracking — this is current application behaviour, not a connectivity error.
+          to start tracking; this is current application behaviour, not a connectivity error.
         </DocP>
       </DocSection>
 
       <DocSection title="Start, pause, resume, and stop (web popover)" sectionId="section-controls">
         <DocList>
           <DocLi>
-            <DocStrong>Start</DocStrong> — sends{" "}
+            <DocStrong>Start</DocStrong>: sends{" "}
             <DocCode>POST /api/time-tracking/start</DocCode> with the selected
             project (and task when required). The server stops any other active entry for your user before creating the
             new running entry. On success, the client refreshes active entry and related queries.
           </DocLi>
           <DocLi>
-            <DocStrong>Pause</DocStrong> — sends pause for the current entry id; the server moves
+            <DocStrong>Pause</DocStrong>: sends pause for the current entry id; the server moves
             the entry to <DocCode>paused</DocCode> and folds elapsed time
             since the last activity timestamp into <DocCode>duration</DocCode>.
           </DocLi>
           <DocLi>
-            <DocStrong>Resume</DocStrong> — sends resume for the <em>same</em> paused entry (current
+            <DocStrong>Resume</DocStrong>: sends resume for the <em>same</em> paused entry (current
             application behaviour: the web client resumes without discarding idle interval into work duration in that
             call). This is different from starting a brand-new entry.
           </DocLi>
           <DocLi>
-            <DocStrong>Stop</DocStrong> — finalises the entry (
+            <DocStrong>Stop</DocStrong>: finalises the entry (
             <DocCode>stopped</DocCode>, end time, duration) and clears the web
             client&apos;s local capture scheduling tied to that session.
           </DocLi>
@@ -100,7 +100,7 @@ export function TimeTrackingDoc() {
           <DocStrong>Ongoing while running:</DocStrong> the web app refetches the active entry on an
           interval (on the order of tens of seconds). While the timer is running, one browser tab may act as leader and
           send periodic <DocStrong>activity</DocStrong> heartbeats to keep server-side activity
-          timestamps fresh — another tab then follows the same server state when it refetches.
+          timestamps fresh: another tab then follows the same server state when it refetches.
         </DocP>
         <DocP>
           <DocStrong>Desktop agent:</DocStrong> if you also use the agent, its display catches up
@@ -119,7 +119,7 @@ export function TimeTrackingDoc() {
         <DocP>
           Current application behaviour: the value combines server-backed totals for stopped work on the current
           calendar day (fetched for your local midnight window from the agent) with time attributed to your active
-          sessions for that day in the agent. It can tick and adjust after sync or heartbeat — treat small transient
+          sessions for that day in the agent. It can tick and adjust after sync or heartbeat: treat small transient
           differences versus the web list as normal until both sides have refreshed.
         </DocP>
         <DocH3>This session (desktop)</DocH3>
@@ -140,7 +140,7 @@ export function TimeTrackingDoc() {
           <DocStrong>Desktop agent:</DocStrong> when your administrator enables the idle prompt,
           long inactivity while the timer runs can trigger a warning modal with a countdown, then optional break / resume
           actions. Exact retroactive adjustment on the time entry follows the agent&apos;s implementation when you
-          confirm — if you need second-by-second accounting text for compliance, confirm with your administrator.
+          confirm: if you need second-by-second accounting text for compliance, confirm with your administrator.
         </DocP>
         <HelpScreenshot
           slotId="time-tracking-idle-modal"
@@ -165,18 +165,18 @@ export function TimeTrackingDoc() {
         </DocP>
       </DocSection>
 
-      <DocSection title="Web vs desktop — who does what" sectionId="section-web-desktop">
+      <DocSection title="Web vs desktop: who does what" sectionId="section-web-desktop">
         <DocList>
           <DocLi>
-            <DocStrong>Server</DocStrong> — stores authoritative time entries and enforces start
+            <DocStrong>Server</DocStrong>: stores authoritative time entries and enforces start
             rules (for example task id validation when tasks are enabled).
           </DocLi>
           <DocLi>
-            <DocStrong>Web</DocStrong> — reads and updates the same entries through the web API;
+            <DocStrong>Web</DocStrong>: reads and updates the same entries through the web API;
             may start/pause/resume/stop when the UI allows; refetches on a timer and when the tab becomes visible again.
           </DocLi>
           <DocLi>
-            <DocStrong>Desktop</DocStrong> — optimistically updates local timer UI, queues
+            <DocStrong>Desktop</DocStrong>: optimistically updates local timer UI, queues
             commands to the server, receives organisation policy on heartbeat, and runs idle and screenshot workers when
             enabled.
           </DocLi>

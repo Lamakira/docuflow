@@ -431,7 +431,7 @@ describe("Projects register: created and due dates (#307)", () => {
     );
     expect(register.rows.map((project) => [project.created, project.due])).toEqual([
       ["29 Sep 2026", "15 Oct 2026"],
-      ["—", "—"],
+      ["-", "-"],
     ]);
     expect(PROJECT_SORTS).toEqual(expect.arrayContaining(["created", "due"]));
     expect(projectsSource).toMatch(/projectColumn\.accessor\("created", \{\s*header: "Created"/);
@@ -700,10 +700,10 @@ describe("Projects review (F37-F43)", () => {
       }),
     );
     expect(register.rows.map((row) => [row.clientLabel, row.kindLabel])).toEqual([
-      ["—", "Internal"],
-      ["—", "Client project"],
-      ["—", "Monthly"],
-      ["—", "Hourly"],
+      ["-", "Internal"],
+      ["-", "Client project"],
+      ["-", "Monthly"],
+      ["-", "Hourly"],
     ]);
   });
 

@@ -123,14 +123,14 @@ describe("Dossier review (F44-F51)", () => {
       const { trackedSeconds: _omitted, ...rest } = base.project!;
       const dossier = composeDossier({ ...base, project: rest });
       expect(dossier.stats.budgetPercent).toBeNull();
-      expect(dossier.stats.tracked).toBe("—");
+      expect(dossier.stats.tracked).toBe("-");
       expect(dossier.stats.trackedSub).toBe("of 80.0 h budget");
       expect(dossier.budgetTime.percent).toBeNull();
-      expect(dossier.budgetTime.consumedLabel).toBe("—");
+      expect(dossier.budgetTime.consumedLabel).toBe("-");
       expect(dossier.budgetTime.trackedThisMonth).toBe("20.5 h");
-      expect(dossier.settings.budget.consumed).toBe("—");
+      expect(dossier.settings.budget.consumed).toBe("-");
       const unbudgeted = composeDossier({ ...base, project: { ...rest, budgetedHours: null } });
-      expect(unbudgeted.stats.tracked).toBe("—");
+      expect(unbudgeted.stats.tracked).toBe("-");
       expect(unbudgeted.stats.trackedSub).toBe("tracked · 20.5 h this month");
     });
 
@@ -176,7 +176,7 @@ describe("Dossier review (F44-F51)", () => {
         ["signed", "1 d"],
       ]);
       const lastChange = dossier.settings.lifecycle.rows.find((row) => row.label === "Last change");
-      expect(lastChange?.value).toBe(`${dossier.history.rows[0].when} · —`);
+      expect(lastChange?.value).toBe(`${dossier.history.rows[0].when} · -`);
     });
 
     it("caps the Overview card at five rows with a Show all that expands in place", () => {

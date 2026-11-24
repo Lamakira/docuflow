@@ -17,14 +17,14 @@ export function ReleaseNotesDoc() {
         </DocP>
         <DocList>
           <DocLi>
-            <DocStrong>Time tracking &amp; idle</DocStrong> — ongoing refinements to idle prompts, Worked Today accuracy, and
+            <DocStrong>Time tracking &amp; idle</DocStrong>: ongoing refinements to idle prompts, Worked Today accuracy, and
             desktop/web parity.
           </DocLi>
           <DocLi>
-            <DocStrong>Desktop agent</DocStrong> — packaging, signing, and activity capture improvements per platform.
+            <DocStrong>Desktop agent</DocStrong>: packaging, signing, and activity capture improvements per platform.
           </DocLi>
           <DocLi>
-            <DocStrong>CRM &amp; documentation</DocStrong> — incremental UX polish and module field controls for admins.
+            <DocStrong>CRM &amp; documentation</DocStrong>: incremental UX polish and module field controls for admins.
           </DocLi>
         </DocList>
       </DocSection>

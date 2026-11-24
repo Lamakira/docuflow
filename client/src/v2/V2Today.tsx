@@ -144,7 +144,7 @@ function projectLabel(row: ActiveProjectRow): string {
 
 const emptyCell = (
   <span className="df-today-none" aria-hidden="true">
-    —
+    -
   </span>
 );
 

@@ -139,8 +139,8 @@ describe("F61: a sale's Documents", () => {
       files: [{ id: "f", name: "Contract", createdAt: new Date(2025, 5, 9, 12) }],
     });
     expect(rows.map((row) => [row.kind, row.title, row.depth, row.date])).toEqual([
-      ["document", "Scope", 0, "—"],
-      ["document", "In scope", 1, "—"],
+      ["document", "Scope", 0, "-"],
+      ["document", "In scope", 1, "-"],
       ["document", "Notes", 0, "29 Sep 2026"],
       ["file", "Contract", 0, "9 Jun 2025"],
     ]);

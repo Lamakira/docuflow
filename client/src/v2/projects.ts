@@ -286,9 +286,9 @@ export function projectFilterLabels(
   const labels: string[] = [];
   if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
   if (filters.status !== "all") labels.push(`Status ${optionLabel(PROJECT_STATUS_OPTIONS, filters.status)}`);
-  if (filters.client !== "all") labels.push(`Client ${names.clients.get(filters.client) ?? "—"}`);
-  if (filters.lead !== "all") labels.push(`Project manager ${names.leads.get(filters.lead) ?? "—"}`);
-  if (filters.tag !== "all") labels.push(`Tag ${names.tags.get(filters.tag) ?? "—"}`);
+  if (filters.client !== "all") labels.push(`Client ${names.clients.get(filters.client) ?? "-"}`);
+  if (filters.lead !== "all") labels.push(`Project manager ${names.leads.get(filters.lead) ?? "-"}`);
+  if (filters.tag !== "all") labels.push(`Tag ${names.tags.get(filters.tag) ?? "-"}`);
   if (filters.type !== "all") labels.push(`Type ${optionLabel(PROJECT_TYPE_OPTIONS, filters.type)}`);
   if (filters.due !== "all") labels.push(`Due ${optionLabel(PROJECT_DUE_OPTIONS, filters.due)}`);
   return labels;
@@ -319,11 +319,11 @@ export function composeProjectRegister(input: ProjectRegisterInput): ProjectRegi
     .map((project) => ({
       id: project.id,
       name: project.name || "Untitled Project",
-      clientLabel: project.clientName || "—",
+      clientLabel: project.clientName || "-",
       kindLabel: kindLabel(project),
       status: statusLabel(project.projectStatus),
       statusColor: projectStatusColor(project.projectStatus),
-      lead: project.leadName || "—",
+      lead: project.leadName || "-",
       budgetPercent: project.budgetPercent,
       trackedMtd: project.trackedMtd,
       created: formatFullDate(project.createdAt),

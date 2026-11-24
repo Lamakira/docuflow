@@ -229,7 +229,7 @@ const INSTALLER_PLATFORMS: InstallerPlatformCopy[] = [
     label: "Windows",
     requirement: "Windows 10 / 11 (x64)",
     artifact: ".exe",
-    note: "SmartScreen may prompt — choose More info, then Run anyway.",
+    note: "SmartScreen may prompt: choose More info, then Run anyway.",
   },
   {
     platform: "macos",

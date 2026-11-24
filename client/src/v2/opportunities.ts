@@ -788,7 +788,7 @@ export function composeOpportunityHistory(
     .sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
   const rows = moves.map(({ change, at }, index) => {
     const next = index > 0 ? moves[index - 1].at : null;
-    const held = at ? formatSpan((next ?? now).getTime() - at.getTime()) : "—";
+    const held = at ? formatSpan((next ?? now).getTime() - at.getTime()) : "-";
     const from = change.fromStatus ? describe(change.fromStatus) : null;
     const to = describe(change.toStatus);
     return {
@@ -800,7 +800,7 @@ export function composeOpportunityHistory(
       toColor: to.color,
       toInk: to.ink,
       when: at ? formatDayStamp(at) : "",
-      who: change.changedBy ? memberName(change.changedBy) : "—",
+      who: change.changedBy ? memberName(change.changedBy) : "-",
       held: next || !at ? held : `${held} so far`,
     };
   });

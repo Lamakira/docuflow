@@ -231,7 +231,7 @@ function evidenceProvenance(
     when: formatWhen(shot.capturedAt, now),
     who: user ? memberName(user) : "Member",
     project: projectLabel(lookup.projectsById.get(shot.crmProjectId)),
-    task: entry?.task?.name?.trim() || entry?.description?.trim() || "—",
+    task: entry?.task?.name?.trim() || entry?.description?.trim() || "-",
     source: captureSource(shot.storageKey),
     imageSrc: `/api/time-tracking/screenshots/${shot.id}/image`,
   };
