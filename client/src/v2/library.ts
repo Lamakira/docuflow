@@ -7,6 +7,7 @@ import {
   normalizeAccessLevel,
   type AccessLevel,
 } from "@shared/documentAccess";
+import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { memberName } from "./today";
 import { MONTHS } from "./dates";
 import { sentenceCase } from "./text";
@@ -149,7 +150,6 @@ export type LibraryPreview = {
 export type LibraryModel = {
   subhead: string;
   empty: boolean;
-  emptyCopy: string;
   refusal: string | null;
   rows: LibraryRow[];
   folderCount: number;
@@ -164,19 +164,9 @@ export type LibraryModel = {
   /** Empty because of a filter, so the register offers to clear it (#275). */
   filtered?: boolean;
   /** The designed empty state (#277) when there are no rows. */
-  emptyState?: LibraryEmptyState | null;
+  emptyState?: EmptyModel | null;
   /** The foot line; while filtered it says how many rows are shown of the whole. */
   footLabel?: string;
-};
-
-/**
- * Why a register is empty: nothing matches the name search, nothing matches
- * the filters, or there is nothing in it yet.
- */
-export type LibraryEmptyState = {
-  kind: "search" | "filters" | "none";
-  title: string;
-  copy: string;
 };
 
 export type LibraryGroup =
@@ -224,7 +214,6 @@ export function composeLibrary(input: LibraryInput): LibraryModel {
     return {
       subhead,
       empty: true,
-      emptyCopy: "",
       refusal,
       rows: [],
       folderCount: 0,
@@ -318,11 +307,6 @@ export function composeLibrary(input: LibraryInput): LibraryModel {
       : unfilteredFootLabel(itemCount, input.folders.length, FOLDER_PARENTS),
     subhead,
     empty,
-    emptyCopy: empty
-      ? narrowing
-        ? "No Workspace Documents match this filter."
-        : "No Workspace Documents in this Workspace yet."
-      : "",
     filtered: empty && narrowing,
     refusal: null,
     rows,
@@ -352,33 +336,20 @@ export function libraryFilterLabels(
   return labels;
 }
 
-/**
- * The search on its own names the text; any other filter names every filter,
- * the search among them.
- */
+/** A library register with no rows: filters or the search hid them, or there are none yet. */
 export function libraryEmptyState(input: {
   noun: string;
   search: string;
   filterLabels: string[];
   noneCopy: string;
-}): LibraryEmptyState {
-  const quoted = `“${input.search}”`;
-  if (input.filterLabels.length > 0) {
-    const labels = input.search ? [`Name: ${quoted}`, ...input.filterLabels] : input.filterLabels;
-    return {
-      kind: "filters",
-      title: `No ${input.noun} match these filters`,
-      copy: `Nothing here matches ${labels.join(" · ")}. Clear the filters to see everything you can open.`,
-    };
-  }
-  if (input.search) {
-    return {
-      kind: "search",
-      title: `No ${input.noun} match ${quoted}`,
-      copy: `Nothing here has ${quoted} in its name. Try another word, or clear the search.`,
-    };
-  }
-  return { kind: "none", title: `No ${input.noun} yet`, copy: input.noneCopy };
+}): EmptyModel | null {
+  return emptyModelOf(
+    emptyKindOf(true, input.filterLabels.length > 0 || Boolean(input.search)),
+    input.noun,
+    { title: `No ${input.noun} yet`, copy: input.noneCopy },
+    undefined,
+    { search: input.search, filters: input.filterLabels },
+  );
 }
 
 function parentLabel(count: number, noun: { singular: string; plural: string }): string {

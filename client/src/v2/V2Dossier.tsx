@@ -78,7 +78,7 @@ type ProjectFileRecord = { id: string; name: string; fileName: string; fileSize:
 type ProjectFileRow = { id: string; title: string; meta: string; href: string };
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
-import { V2EmptyState } from "./V2EmptyState";
+import { V2CompactEmpty, V2EmptyLine, V2EmptyState } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
@@ -1680,7 +1680,7 @@ function DossierOverview({
                   <EvidenceTile key={tile.id} tile={tile} />
                 ))}
               </div>
-              <p className="df-empty" data-edge="end">
+              <p className="df-note" data-edge="end">
                 {dossier.evidence.footnote}
               </p>
             </>
@@ -1791,7 +1791,7 @@ function DossierOverview({
             <h2 className="df-card-title">Client</h2>
           </div>
           {!dossier.client ? (
-            <p className="df-empty">This is an Internal Project.</p>
+            <V2CompactEmpty>This is an Internal Project.</V2CompactEmpty>
           ) : (
             <div className="df-card-body-stack">
               <div className="df-cluster">
@@ -2082,7 +2082,7 @@ function DossierActivity({ dossier, onStartTimer }: { dossier: DossierModel; onS
               </Button>
             </div>
           ) : null}
-          <p className="df-empty" data-edge="end">
+          <p className="df-note" data-edge="end">
             {dossier.evidence.footnote}
           </p>
         </>
@@ -2460,9 +2460,12 @@ function DossierDocumentation({
             projectName={documentProjectName}
           />
         ) : documents.missing ? (
-          <p className="df-empty" data-testid="v2-dossier-documentation-missing">
-            This page is not in this Project&apos;s documentation.
-          </p>
+          <V2EmptyState
+            icon="documents"
+            title="This page is not in this Project's documentation"
+            copy="It was moved or deleted. Choose another page."
+            testId="v2-dossier-documentation-missing"
+          />
         ) : documents.selectPage ? (
           <div className="df-documentation-select" data-testid="v2-dossier-documentation-select">
             <h2 className="df-card-title">{documents.selectPage.title}</h2>
@@ -2755,7 +2758,7 @@ function DossierSettings({
               <div className="df-settings-row" data-testid="v2-dossier-tags">
                 <span className="df-settings-label">Tags</span>
                 <div className="df-settings-value df-settings-list">
-                  {dossier.tags.emptyCopy ? <p className="df-empty df-flush">{dossier.tags.emptyCopy}</p> : null}
+                  {dossier.tags.emptyCopy ? <V2EmptyLine>{dossier.tags.emptyCopy}</V2EmptyLine> : null}
                   {dossier.tags.vocabulary.map((tag) => (
                     <TagRow
                       key={tag.id}
@@ -2886,7 +2889,7 @@ function DossierSettings({
             <span className="df-settings-label">Members</span>
             <div className="df-settings-value df-settings-list">
         {settings.memberRows.length === 0 ? (
-          <p className="df-empty df-flush">No Members assigned to this Project.</p>
+          <V2EmptyLine>No Members assigned to this Project.</V2EmptyLine>
         ) : (
           settings.memberRows.map((member) => (
             <div key={member.id} className="df-contact-row">

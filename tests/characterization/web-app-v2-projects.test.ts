@@ -395,7 +395,7 @@ describe("Projects board (#259)", () => {
     );
 
     expect(board.empty).toBe(true);
-    expect(board.emptyState?.copy).toBe("No Projects match your search.");
+    expect(board.emptyState?.title).toBe("No Projects match “nope”");
     expect(board.emptyState?.clearLabel).toBe("Clear search");
     expect(board.emptyState?.kind).toBe("filtered");
     expect(board.count).toBe(0);
@@ -599,7 +599,7 @@ describe("Projects review (F37-F43)", () => {
     const board = composeProjectBoard(
       emptyBoard({ projects: [boardRow({ id: "a", clientId: "c-1" })], filters: { ...NO_FILTERS, client: "c-9" }, now: NOW }),
     );
-    expect(board.emptyState).toMatchObject({ kind: "filtered", copy: "No Projects match these filters.", clearLabel: "Clear filters" });
+    expect(board.emptyState).toMatchObject({ kind: "filtered", title: "No Projects match these filters", clearLabel: "Clear filters" });
     expect(source).not.toMatch(/\{boardView \? null : \(\s*<>\s*<V2FilterSelect/);
     expect(source).toContain("PROJECT_STATUS_FILTER_OPTIONS");
   });
@@ -710,7 +710,7 @@ describe("Projects review (F37-F43)", () => {
   it("hides New Project where it cannot be used, and offers Try again on a failed load (F42)", () => {
     expect(source).toContain("const showNewProject = !readOnly && !emptyWorkspace;");
     expect(source).toContain('testId="v2-projects-load-failed"');
-    expect(source).toMatch(/onClick=\{\(\) => \(boardView \? refetchBoard\(\) : refetchRegister\(\)\)\}\s*>\s*Try again/);
+    expect(source).toMatch(/<V2LoadFailed[\s\S]*?onRetry=\{\(\) => \(boardView \? refetchBoard\(\) : refetchRegister\(\)\)\}/);
     expect(source).not.toContain("Projects in this Workspace could not be loaded.");
   });
 

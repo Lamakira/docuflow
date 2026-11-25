@@ -297,9 +297,9 @@ describe("every Dossier tab empties into a designed empty state (#277)", () => {
     const tabBodies = dossierSource.slice(dossierSource.indexOf("function DossierTasks("));
     for (const tab of TABS) {
       expect(dossierSource, tab).toContain(`state={dossier.${tab}.emptyState}`);
-      expect(tabBodies, tab).not.toContain(`<p className="df-empty">{dossier.${tab}.emptyCopy}</p>`);
+      expect(tabBodies, tab).not.toContain(`{dossier.${tab}.emptyCopy}</p>`);
     }
-    expect(tabBodies).not.toContain('<p className="df-empty">{dossier.updates.copy}</p>');
+    expect(tabBodies).not.toContain('<p className="df-note">{dossier.updates.copy}</p>');
     // The Tracking Policy footnote sits under Activity Evidence, not under the empty state.
     const activity = dossierSource.slice(
       dossierSource.indexOf("function DossierActivity("),
@@ -477,7 +477,7 @@ describe("the Project's person in charge is its Project Manager, never a Lead (#
     expect(dossierSource).toContain('sub="The Project Manager accountable for this Project, and the Members assigned to it."');
     expect(projectsSource).toContain('header: "Project manager"');
     expect(projectsSource).toContain('ariaLabel="Filter by Project Manager"');
-    expect(projectsModel).toContain("`Project manager ${names.leads.get(filters.lead)");
+    expect(projectsModel).toContain("`Project manager: ${names.leads.get(filters.lead)");
     expect(today).toContain("<span>Project manager</span>");
     for (const [name, source] of [["V2Dossier", dossierSource], ["V2Projects", projectsSource], ["V2Today", today]] as const) {
       expect(source, name).not.toMatch(/"LEAD"|>LEAD<|"Project lead"|"No lead"|Filter by Lead|leads this Project/);

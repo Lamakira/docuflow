@@ -7,7 +7,7 @@ import { readPage, readPageSize, writePaging } from "./paging";
 import { opportunityHref, stageLabel, type OpportunityStageOption } from "./opportunities";
 import { stageColor, stagePill } from "./stageColor";
 import { projectHref } from "./today";
-import { capitalize } from "./text";
+import { capitalize, sentenceCase } from "./text";
 import { opportunityStageFromCombined } from "@shared/projectLifecycle";
 
 /**
@@ -117,10 +117,16 @@ export function composeClientRegister(input: ClientRegisterInput): ClientRegiste
   const filtered = empty && (activeFilters.length > 0 || Boolean(needle));
   return {
     empty,
-    emptyState: emptyModelOf(emptyKindOf(empty, filtered), "Clients", {
-      title: "Add your first Client",
-      copy: "A Client is who the Projects are delivered for. Add one to start filing Projects and Opportunities under it.",
-    }),
+    emptyState: emptyModelOf(
+      emptyKindOf(empty, filtered),
+      "Clients",
+      {
+        title: "Add your first Client",
+        copy: "A Client is who the Projects are delivered for. Add one to start filing Projects and Opportunities under it.",
+      },
+      undefined,
+      { search: input.filterQuery, filters: activeFilters },
+    ),
     filtered,
     rows,
     count: rows.length,
@@ -245,9 +251,9 @@ export function clientFilterLabels(filters: ClientRegisterFilters): string[] {
     options.find((option) => option.value === value)?.label ?? value.toUpperCase();
   const labels: string[] = [];
   if (filters.q.trim()) labels.push(`“${filters.q.trim()}”`);
-  if (filters.status !== "all") labels.push(`Status ${optionLabel(CLIENT_STATUS_OPTIONS, filters.status)}`);
-  if (filters.source !== "all") labels.push(`Source ${optionLabel(CLIENT_SOURCE_OPTIONS, filters.source)}`);
-  if (filters.open !== "all") labels.push(`Open projects ${optionLabel(CLIENT_OPEN_OPTIONS, filters.open)}`);
+  if (filters.status !== "all") labels.push(`Status: ${sentenceCase(optionLabel(CLIENT_STATUS_OPTIONS, filters.status))}`);
+  if (filters.source !== "all") labels.push(`Source: ${optionLabel(CLIENT_SOURCE_OPTIONS, filters.source)}`);
+  if (filters.open !== "all") labels.push(`Open projects: ${optionLabel(CLIENT_OPEN_OPTIONS, filters.open)}`);
   return labels;
 }
 

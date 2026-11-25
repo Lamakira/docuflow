@@ -162,8 +162,8 @@ describe("a failed load (F63)", () => {
   it("says so, with Try again, no create action, and no count", () => {
     const start = pageSource.indexOf("if (isError && !data) {");
     const failed = pageSource.slice(start, pageSource.indexOf('<div className="df-library" data-testid', start));
-    expect(failed).toContain("Project Documentation could not be loaded.");
-    expect(failed).toContain("onClick={() => refetch()}");
+    expect(failed).toContain("Project Documentation could not be loaded");
+    expect(failed).toContain("onRetry={() => refetch()}");
     expect(failed).not.toMatch(/openCreate|V2RegisterPager|library\./);
   });
 

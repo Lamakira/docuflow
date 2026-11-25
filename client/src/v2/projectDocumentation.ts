@@ -86,7 +86,6 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
     return {
       subhead,
       empty: true,
-      emptyCopy: "",
       refusal: chromeRefusal({
         kind: "capability",
         capability: "View Project Documents",
@@ -156,13 +155,6 @@ export function composeProjectDocumentation(input: ProjectDocumentationInput): L
       : unfilteredFootLabel(itemCount, visibleProjects.length, PROJECT_PARENTS),
     subhead,
     empty,
-    emptyCopy: empty
-      ? activeFilters.length > 0
-        ? `No Projects match ${activeFilters.join(" · ")}.`
-        : needle
-          ? "No Project Documents match this filter."
-          : "No Project Documents you can access."
-      : "",
     filtered: empty && (activeFilters.length > 0 || Boolean(needle)),
     refusal: null,
     rows,

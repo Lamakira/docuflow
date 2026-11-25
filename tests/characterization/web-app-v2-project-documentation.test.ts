@@ -150,7 +150,7 @@ describe("Project Documentation library from live Project Documents (#189)", () 
 
     expect(library.empty).toBe(true);
     expect(library.rows).toEqual([]);
-    expect(library.emptyCopy.toLowerCase()).toContain("project document");
+    expect(library.emptyState?.title).toBe("No Project Documents yet");
     expect(library.refusal).toBeNull();
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
@@ -262,7 +262,7 @@ describe("Project Documentation library from live Project Documents (#189)", () 
     );
     expect(library.empty).toBe(true);
     expect(library.rows).toEqual([]);
-    expect(library.emptyCopy.toLowerCase()).toContain("filter");
+    expect(library.emptyState?.kind).toBe("filtered");
     expect(JSON.stringify(library)).not.toContain("Keystone");
   });
 });

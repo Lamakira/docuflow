@@ -28,7 +28,7 @@ import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { PROJECT_DOCUMENTATION_OPEN_KEY, readLibraryOpenState, writeLibraryOpenState, type LibraryOpenState } from "./presentation";
 import { V2LibraryRegister, useFolderExpandMotion } from "./V2Library";
 import { useV2Chrome } from "./V2Shell";
-import { V2EmptyState } from "./V2EmptyState";
+import { V2EmptyLine, V2LoadFailed } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2LinkDocumentationDialog } from "./V2LinkDocumentationDialog";
 import { V2UploadDialog, fileTitle, storeUpload } from "./V2UploadDialog";
@@ -389,7 +389,7 @@ export function V2ProjectDocumentationPage() {
             Link to a Project
           </Button>
         ) : null}
-        {documents + files === 0 ? <span className="df-meta">No Project Documents yet.</span> : null}
+        {documents + files === 0 ? <V2EmptyLine>No Project Documents yet.</V2EmptyLine> : null}
       </div>
     );
   }
@@ -462,16 +462,10 @@ export function V2ProjectDocumentationPage() {
         </header>
         {/* A filter whose page failed can still be changed or cleared. */}
         {activeFilters.length > 0 ? filterBar : null}
-        <V2EmptyState
-          icon="documents"
-          title="Project Documentation could not be loaded."
-          copy="Something went wrong while loading it. Try again."
+        <V2LoadFailed
+          title="Project Documentation could not be loaded"
+          onRetry={() => refetch()}
           testId="v2-project-documentation-load-failed"
-          action={
-            <Button variant="default" type="button" className="df-btn" onClick={() => refetch()}>
-              Try again
-            </Button>
-          }
         />
       </div>
     );
@@ -581,21 +575,10 @@ export function V2ProjectDocumentationPage() {
           folderActions={projectActions}
           instantExpand={folderMotion.instantExpand}
           onFolderClick={onFolderClick}
-          emptyAction={
-            library.filtered ? (
-              <Button
-                variant="outline"
-                type="button"
-                className="df-btn"
-                onClick={() => {
-                  setFilterQuery("");
-                  setFilters(clearDocumentationFilters(filters));
-                }}
-              >
-                {library.emptyState?.kind === "search" ? "Clear search" : "Clear filters"}
-              </Button>
-            ) : null
-          }
+          onClear={() => {
+            setFilterQuery("");
+            setFilters(clearDocumentationFilters(filters));
+          }}
           createActions={
             <>
               <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">

@@ -1815,3 +1815,30 @@ page does not need beyond its source. The web capture that uses the POST is v1's
   Administrator. Whom to offer it to is the owner's to say.
 
 - **Fixed:** 2026-11-24. All of it (seen in light and dark). Every Owner and Administrator can delete a capture (accepted 2026-11-24), behind the same confirmation; the viewer no longer opens with the focus on that button (seen). Left: inside an hour captures read forward while pages go back in time, so Next can go from 00:58 to 00:00.
+
+## F82 - Each screen draws its own empty and failed states
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the owner, on the Activity gallery in production
+- **Where:** `client/src/v2/V2EmptyState.tsx`, `emptyState.ts`, and 25 screens that used `df-empty`
+- **Severity:** reads badly
+
+A list its filters emptied showed a bare line and a button in the top left
+corner, under a `0 captures` head (seen). #325 had chosen that line, F12 replaced
+it for a Range only, and the two Document libraries drew their own. The class
+`df-empty` served empty lists, failed loads, waits and footnotes alike, so any
+screen could write another. Clients, Opportunities, People, Devices and the
+account page said a load failed with no Try again.
+
+- **Fixed:** 2026-11-25. One file draws them all, on one model: the filters or the search are named, and one action clears them; a failed load has its own icon and Try again everywhere; sections of a card keep one centred line. The count and column heads above an empty list go away. `df-empty` is gone, and a test fails on an empty or failed line written in a screen (proved on five home-made ones). Seen in light and dark and at 375 px on Activity; in light on Clients, Projects board, Opportunities, Time, Documents, Help, People, Devices, Analytics and a File. Not covered by the test: a list that renders nothing at all. Left as they are: a line inside a search list (the command bar, the Project picker, the timezones), the Opportunity record's `Documents could not be refreshed.` over its rows, Today's per-card `Couldn't load`, Analytics' `could not be read for this range`, and the platform console's refused queries.
+
+## F83 - Every browser tab says DocuFlow
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the owner, with several tabs open
+- **Where:** `client/index.html` (the only title)
+- **Severity:** reads badly
+
+Whatever the screen, the tab says `DocuFlow`.
+
+- **Fixed:** 2026-11-25. The tab names the screen first: `Gallery - Activity - DocuFlow`, `Payroll rollout - Settings - Projects - DocuFlow`, a File's name, the platform console's tab (seen; the console from tests). Sign-in, the Workspace chooser and an invitation keep `DocuFlow`.

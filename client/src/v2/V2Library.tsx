@@ -4,19 +4,11 @@ import { FileText, Folder } from "lucide-react";
 import {
   groupLibraryRows,
   unfilteredFootLabel,
-  type LibraryEmptyState,
   type LibraryGroup,
   type LibraryModel,
   type LibraryRow,
 } from "./library";
-import { V2EmptyState } from "./V2EmptyState";
-import type { EmptyStateIconId } from "./icons";
-
-const EMPTY_ICON: Record<LibraryEmptyState["kind"], EmptyStateIconId> = {
-  search: "search",
-  filters: "filters",
-  none: "documents",
-};
+import { V2RecordEmpty } from "./V2EmptyState";
 
 /** The indent stops at four Folders deep; the path still names every one. */
 const MAX_INDENT = 4;
@@ -147,7 +139,7 @@ export function V2LibraryRegister({
   testId,
   instantExpand,
   onFolderClick,
-  emptyAction,
+  onClear,
   createActions,
   footer,
   accessHeading = "Access",
@@ -158,8 +150,8 @@ export function V2LibraryRegister({
   testId: string;
   instantExpand: boolean;
   onFolderClick: (folderId: string) => void;
-  /** Offered under the empty copy, such as clearing the filters that emptied it. */
-  emptyAction?: ReactNode;
+  /** Clears the search and the filters that emptied it. */
+  onClear: () => void;
   /** Offered when the register has nothing in it yet: the actions that add the first item. */
   createActions?: ReactNode;
   /** Replaces the item count, such as a pager. */
@@ -187,22 +179,13 @@ export function V2LibraryRegister({
       {library.refusal ? (
         <p className="df-refusal">{library.refusal}</p>
       ) : library.empty && library.emptyState ? (
-        <V2EmptyState
-          icon={EMPTY_ICON[library.emptyState.kind]}
-          title={library.emptyState.title}
-          copy={library.emptyState.copy}
-          action={library.emptyState.kind === "none" ? createActions : emptyAction}
-          testId={`${testId}-empty`}
+        <V2RecordEmpty
+          model={library.emptyState}
+          icon="documents"
+          action={createActions}
+          onClear={onClear}
+          testIds={{ none: `${testId}-empty`, filtered: `${testId}-empty` }}
         />
-      ) : library.empty ? (
-        emptyAction ? (
-          <div className="df-empty-state">
-            <p className="df-empty">{library.emptyCopy}</p>
-            {emptyAction}
-          </div>
-        ) : (
-          <p className="df-empty">{library.emptyCopy}</p>
-        )
       ) : (
         groups.map((group) => (
           <LibraryGroupRows

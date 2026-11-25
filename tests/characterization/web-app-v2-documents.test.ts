@@ -58,7 +58,7 @@ describe("Workspace Documents register from live Workspace records (#174)", () =
     expect(library.empty).toBe(true);
     expect(library.rows).toEqual([]);
     expect(library.preview).toBeNull();
-    expect(library.emptyCopy.toLowerCase()).toContain("workspace document");
+    expect(library.emptyState?.title).toBe("No Workspace Documents yet");
     expect(library.refusal).toBeNull();
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
@@ -218,7 +218,7 @@ describe("Workspace Documents register from live Workspace records (#174)", () =
     );
     expect(library.empty).toBe(true);
     expect(library.rows).toEqual([]);
-    expect(library.emptyCopy.toLowerCase()).toContain("filter");
+    expect(library.emptyState?.kind).toBe("filtered");
     expect(JSON.stringify(library)).not.toContain("Keystone");
   });
 });

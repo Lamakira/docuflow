@@ -47,6 +47,7 @@ import { V2BackOfficeSubscriptions, V2BackOfficeWorkspaces } from "./V2BackOffic
 import { V2BackOfficeWorkspace } from "./V2BackOfficeWorkspace";
 import { SkeletonRows } from "./V2Skeleton";
 import { V2RowMenu } from "./V2RowMenu";
+import { V2CompactEmpty, V2EmptyLine } from "./V2EmptyState";
 
 /** v1's `/admin`, `/admin/create` and `/admin/user/:id` (#266). */
 export function V2LegacyAdminRedirect() {
@@ -192,7 +193,7 @@ function V2PlatformUsers() {
           ) : usersError ? (
             <QueryRefusal error={usersError} />
           ) : directory.empty ? (
-            <p className="df-empty">{directory.emptyCopy}</p>
+            <V2CompactEmpty>{directory.emptyCopy}</V2CompactEmpty>
           ) : (
             directory.rows.map((row) => (
               <div
@@ -301,9 +302,9 @@ function UserWorkspacesSheet({ user, onClose }: { user: { id: string; name: stri
           <SheetDescription>Each Workspace the User belongs to, and their Workspace Role in it.</SheetDescription>
         </SheetHeader>
         <div className="df-backoffice-lines">
-          {isLoading ? <p className="df-empty df-flush">Loading Workspaces…</p> : null}
+          {isLoading ? <p className="df-note df-flush">Loading Workspaces…</p> : null}
           {error ? <QueryRefusal error={error} flush /> : null}
-          {!isLoading && !error && list.empty ? <p className="df-empty df-flush">{list.emptyCopy}</p> : null}
+          {!isLoading && !error && list.empty ? <V2EmptyLine>{list.emptyCopy}</V2EmptyLine> : null}
           {list.rows.map((row) => (
             <div key={row.id} className="df-backoffice-line">
               <Link href={row.href} className="df-row-title" onClick={onClose}>

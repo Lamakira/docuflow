@@ -35,7 +35,7 @@ import { projectFilesPath } from "./projectDocumentation";
 import { memberName } from "./today";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
-import { V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
+import { V2EmptyState, V2LoadFailed, V2RecordEmpty } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, V2_SELECT_NONE, type V2SelectOption } from "./V2Select";
 import {
@@ -1329,24 +1329,17 @@ export function V2OpportunityRecordPage() {
     return (
       <div className="df-page" data-testid="v2-opportunity-record">
         {isError ? (
-          <V2EmptyState
-            icon="opportunities"
-            title="This Opportunity could not be loaded."
+          <V2LoadFailed
+            title="This Opportunity could not be loaded"
             copy="Something went wrong while loading it. Try again, or go back to the pipeline."
+            onRetry={() => refetch()}
+            action={back}
             testId="v2-opportunity-load-failed"
-            action={
-              <span className="df-cluster">
-                <Button variant="default" type="button" className="df-btn" onClick={() => refetch()}>
-                  Try again
-                </Button>
-                {back}
-              </span>
-            }
           />
         ) : (
           <V2EmptyState
             icon="opportunities"
-            title="This Opportunity is not in this Workspace, or it was deleted."
+            title="This Opportunity is not in this Workspace, or it was deleted"
             copy="Check the link, or find it on the pipeline."
             testId="v2-opportunity-missing"
             action={back}
@@ -1390,7 +1383,7 @@ export function V2OpportunitiesPage() {
     queryKey: ["/api/crm/clients"],
   });
   const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
-  const { data: projectsResponse, isLoading, isError } = useQuery<OpportunityRowsResponse>({
+  const { data: projectsResponse, isLoading, isError, refetch } = useQuery<OpportunityRowsResponse>({
     queryKey: ["/api/crm/projects", "register"],
     queryFn: loadOpportunityRows,
   });
@@ -1568,7 +1561,12 @@ export function V2OpportunitiesPage() {
             <h1 className="df-title">Opportunities</h1>
           </div>
         </header>
-        <p className="df-empty">Opportunities in this Workspace could not be loaded.</p>
+        <V2LoadFailed
+          title="Opportunities could not be loaded"
+          copy="Something went wrong while loading them. Try again."
+          onRetry={() => refetch()}
+          testId="v2-opportunities-load-failed"
+        />
       </div>
     );
   }

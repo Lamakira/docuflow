@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { composeAccountMenu } from "./chrome";
+import { V2PageTitle } from "./V2PageTitle";
 import { V2ThemeToggle } from "./V2ThemeToggle";
 import { V2UserAvatar } from "./V2UserAvatar";
 import { backOfficeTabs, composePlatformFrame, type BackOfficeTabId } from "./backOffice";
@@ -106,6 +107,7 @@ export function V2PlatformFrame({ activeTab, children }: { activeTab: BackOffice
       data-testid="v2-platform-frame"
       data-page-primary="case-ink"
     >
+      <V2PageTitle />
       <PlatformRail activeTab={activeTab} />
       <div className="df-platform-column">
         <header className="df-platform-topbar" data-testid="v2-platform-topbar">

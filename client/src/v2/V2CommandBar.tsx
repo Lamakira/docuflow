@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import type { CrmClient, CrmProjectWithDetails } from "@shared/schema";
+import type { CrmProjectWithDetails } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 import {
   CommandDialog,
@@ -13,17 +13,9 @@ import {
 import { BellIcon, SearchIcon, SparkleIcon } from "./icons";
 import { V2TimerChip } from "./V2TimerChip";
 import { composeSearch, selectCommandPanel, chromeRefusal, type SearchModel } from "./chrome";
-import {
-  documentOwnerKey,
-  documentQueryKey,
-  isSaleDocumentOwner,
-  loadDocument,
-  loadDocumentOwner,
-  type DocumentOwner,
-  type LoadedDocument,
-} from "./documentEditor";
 import { motionForSurface } from "./motion";
-import { type V2CommandPanel, type V2RecordRoot, breadcrumbFor, matchV2Route } from "./presentation";
+import { type V2CommandPanel, breadcrumbFor } from "./presentation";
+import { useRecordLabel, useRecordRoot } from "./useRecordLabel";
 import { projectVisibleTo } from "./projects";
 import { useV2Chrome } from "./V2Shell";
 import { Button } from "@/components/ui/button";
@@ -31,33 +23,6 @@ import { Button } from "@/components/ui/button";
 const SEARCH_MOTION = motionForSurface("search-overlay").enterExit;
 
 type Panel = V2CommandPanel | null;
-
-/**
- * Where the open record files when its path cannot say (F60, F61). Reads what
- * the record's page loaded; runs nothing itself.
- */
-export function useRecordRoot(location: string): V2RecordRoot | null {
-  const route = matchV2Route(location);
-  const dossierId = route.kind === "dossier" ? route.projectId : "";
-  const documentId = route.kind === "document-editor" && route.source === "project" ? route.documentId : "";
-  const { data: project } = useQuery<CrmProjectWithDetails | null>({
-    queryKey: ["/api/crm/projects", dossierId],
-    enabled: false,
-  });
-  const { data: document } = useQuery<LoadedDocument>({
-    queryKey: documentQueryKey("project", documentId),
-    queryFn: () => loadDocument("project", documentId),
-    enabled: false,
-  });
-  const ownedProjectId = document?.record?.projectId ?? "";
-  const { data: owner } = useQuery<DocumentOwner | null>({
-    queryKey: documentOwnerKey(ownedProjectId),
-    queryFn: () => loadDocumentOwner(ownedProjectId),
-    enabled: false,
-  });
-  if (project?.isDocumentationOnly) return "project-documentation";
-  return isSaleDocumentOwner(owner) ? "opportunities" : null;
-}
 
 type V2CommandBarProps = {
   workspaceName: string;
@@ -73,48 +38,7 @@ export function V2CommandBar({
   timerWorkspaceLabel = null,
 }: V2CommandBarProps) {
   const [location] = useLocation();
-  // A record's crumb is its name. The record page fills these cache entries;
-  // the bar only reads them (enabled: false) and re-renders when the data lands.
-  const route = matchV2Route(location);
-  const opportunityId = route.kind === "opportunity-record" ? route.opportunityId : "";
-  const projectId = route.kind === "dossier" ? route.projectId : "";
-  const clientId = route.kind === "client-record" ? route.clientId : "";
-  const { data: opportunityRecord } = useQuery<CrmProjectWithDetails | null>({
-    queryKey: ["/api/crm/projects", opportunityId],
-    enabled: false,
-  });
-  const { data: projectRecord } = useQuery<CrmProjectWithDetails | null>({
-    queryKey: ["/api/crm/projects", projectId],
-    enabled: false,
-  });
-  const { data: clientRecord } = useQuery<CrmClient | null>({
-    queryKey: ["/api/crm/clients", clientId],
-    enabled: false,
-  });
-  const documentId = route.kind === "document-editor" && route.source === "workspace" ? route.documentId : "";
-  const { data: documentRecord } = useQuery<LoadedDocument>({
-    queryKey: documentQueryKey("workspace", documentId),
-    // Never run from here, but an observer's options become its query's: the default
-    // queryFn would answer the editor's own refetches with a URL that does not exist.
-    queryFn: () => loadDocument("workspace", documentId),
-    enabled: false,
-  });
-  const projectDocumentId = route.kind === "document-editor" && route.source === "project" ? route.documentId : "";
-  const { data: projectDocumentRecord } = useQuery<LoadedDocument>({
-    queryKey: documentQueryKey("project", projectDocumentId),
-    queryFn: () => loadDocument("project", projectDocumentId),
-    enabled: false,
-  });
-  const recordLabel =
-    route.kind === "opportunity-record"
-      ? opportunityRecord?.project?.name?.trim() || undefined
-      : route.kind === "dossier"
-        ? projectRecord?.project?.name?.trim() || undefined
-        : route.kind === "client-record"
-          ? clientRecord?.name?.trim() || undefined
-          : route.kind === "document-editor"
-            ? (documentRecord ?? projectDocumentRecord)?.record?.name?.trim() || undefined
-            : undefined;
+  const recordLabel = useRecordLabel(location);
   const crumbs = breadcrumbFor(location, workspaceName, recordLabel, useRecordRoot(location));
   const [searchOpen, setSearchOpen] = useState(false);
 

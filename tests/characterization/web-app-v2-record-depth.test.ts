@@ -279,7 +279,7 @@ describe("Register reads and filters by Tag (#260, C)", () => {
 
     const none = composeProjectRegister(registerInput({ tagFilter: "t-9" }));
     expect(none.empty).toBe(true);
-    expect(none.emptyState?.copy).toBe("No Projects match these filters.");
+    expect(none.emptyState?.title).toBe("No Projects match these filters");
   });
 });
 

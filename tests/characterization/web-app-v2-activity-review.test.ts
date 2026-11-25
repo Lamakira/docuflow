@@ -214,12 +214,12 @@ describe("filters in the address (F77)", () => {
   });
 
   it("asks for nothing while a day or span is not chosen", () => {
-    expect(evidenceRangeProblem("day", {})).toBe("Choose a day.");
+    expect(evidenceRangeProblem("day", {})).toBe("Choose a day");
     expect(evidenceRangeProblem("day", { day: "2026-11-17" })).toBeNull();
-    expect(evidenceRangeProblem("custom", { from: "2026-11-01" })).toBe("Choose both dates.");
-    expect(evidenceRangeProblem("custom", { to: "2026-11-01" })).toBe("Choose both dates.");
+    expect(evidenceRangeProblem("custom", { from: "2026-11-01" })).toBe("Choose both dates");
+    expect(evidenceRangeProblem("custom", { to: "2026-11-01" })).toBe("Choose both dates");
     expect(evidenceRangeProblem("custom", { from: "2026-11-20", to: "2026-11-01" })).toBe(
-      "The end date is before the start date.",
+      "The end date is before the start date",
     );
     expect(evidenceRangeProblem("custom", { from: "2026-11-01", to: "2026-11-01" })).toBeNull();
     expect(evidenceRangeProblem("today", {})).toBeNull();
@@ -265,7 +265,7 @@ describe("a failed or slow load keeps the screen (F79)", () => {
 
   it("shows the same failed state as Time, inside the card, and says a failed refresh once", () => {
     expect(source).toContain('testId="v2-activity-load-failed"');
-    expect(source).toContain("Try again");
+    expect(source).toContain("<V2LoadFailed");
     expect(source).toContain("const loadFailed = isError && !data && !rangeProblem;");
     expect(source).toContain('useRefreshFailure(isError && Boolean(data), "Activity Evidence could not be refreshed.", "v2-activity-refresh-failed")');
   });

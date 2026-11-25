@@ -131,7 +131,7 @@ describe("TYPE, OWNER, ACCESS, and UPDATED filter the register (#278)", () => {
     const library = composeLibrary(input({ filters: { ...LIBRARY_FILTERS_DEFAULT, access: "administrators" } }));
     expect(library.rows).toEqual([]);
     expect(library.filtered).toBe(true);
-    expect(library.emptyCopy).toBe("No Workspace Documents match this filter.");
+    expect(library.emptyState).toMatchObject({ kind: "filtered", title: "No Workspace Documents match these filters" });
   });
 
   it("offers every owner of a listed item once, by name", () => {

@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/ThemeProvider";
 import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
+import { V2LoadFailed } from "./V2EmptyState";
 
 const GRACE_MOTION = motionForSurface("account-deletion-grace").enterExit;
 const CONFIRM_MOTION = motionForSurface("account-confirm-typing").enterExit;
@@ -89,7 +90,7 @@ export function V2AccountPage() {
   const mode = useAccountThemeMode();
   const profileRefusal = useProfileSync();
 
-  const { data, isLoading, isError } = useQuery<AccountDeletionState>({
+  const { data, isLoading, isError, refetch } = useQuery<AccountDeletionState>({
     queryKey: [accountDeletionPath()],
   });
 
@@ -167,7 +168,13 @@ export function V2AccountPage() {
       <h2 className="df-account-deletion-heading">{page.title}</h2>
       <p className="df-subhead">{page.lead}</p>
 
-      {isError ? <p className="df-empty">Your account could not be loaded.</p> : null}
+      {isError ? (
+        <V2LoadFailed
+          title="Your account could not be loaded"
+          onRetry={() => refetch()}
+          testId="v2-account-load-failed"
+        />
+      ) : null}
       {refusal ? <p className="df-refusal" data-testid="v2-account-refusal">{refusal}</p> : null}
 
       {page.precondition.rows.length > 0 ? (

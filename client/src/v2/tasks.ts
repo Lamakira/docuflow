@@ -128,7 +128,7 @@ export function composeProjectTasks(input: ProjectTasksInput): ProjectTasksModel
           : "Tasks hang from Projects. Create a Project, then add its Tasks here.",
       },
       undefined,
-      { searchOnly: true },
+      { search: input.search, searchOnly: true },
     ),
     noProjects: input.projects.length === 0 && !needle,
     selectedProjectName: selected ? fullProjectName(selected) : null,

@@ -781,7 +781,9 @@
   color: var(--df-archive-slate);
 }
 
-.df-empty {
+/* Muted text under or beside a control: a hint, a footnote, a wait. Never an empty
+   list or a failed load; those are V2EmptyState's. */
+.df-note {
   margin: 0;
   padding: var(--df-space-4);
   color: var(--df-archive-slate);
@@ -842,7 +844,7 @@
 }
 
 /* An inline link inside running copy keeps the copy's size. */
-.df-empty .df-cta {
+.df-note .df-cta {
   font-size: inherit;
 }
 
@@ -4784,6 +4786,10 @@ button.df-activity-row {
   padding: var(--df-space-4);
 }
 
+.df-rollcall .df-empty-line {
+  padding: var(--df-space-2) 0;
+}
+
 .df-chip-list {
   display: flex;
   flex-wrap: wrap;
@@ -5591,10 +5597,6 @@ a.df-dossier-client-link:hover {
   flex-direction: column;
 }
 
-.df-documentation-page > .df-empty {
-  padding: var(--df-space-6);
-}
-
 .df-documentation-select {
   margin: auto;
   max-width: 420px;
@@ -5666,20 +5668,16 @@ a.df-dossier-client-link:hover {
   gap: var(--df-space-2);
 }
 
-/* An empty register that a filter emptied: the sentence, then the way out. */
-.df-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding-bottom: var(--df-space-4);
+/* One line where a panel would not fit: a field, a settings row, a dialog, a sheet. */
+.df-empty-line {
+  margin: 0;
+  color: var(--df-archive-slate);
+  font-size: var(--df-text-3);
+  line-height: 1.55;
 }
 
-.df-empty-state > .df-btn {
-  margin-left: var(--df-space-4);
-}
-
-/* A record list with nothing in it yet (#277): what it holds, then the action
-   that adds the first one. Read, never animated in. */
+/* Every empty or failed region (V2EmptyState): what it says, then the way out.
+   Read, never animated in. */
 .df-empty-panel {
   display: flex;
   flex-direction: column;
@@ -5689,6 +5687,11 @@ a.df-dossier-client-link:hover {
   text-align: center;
   animation: none;
   transition: none;
+}
+
+/* A section inside a card that names it already. */
+.df-empty-panel[data-size="card"] {
+  padding: var(--df-space-6) var(--df-space-4);
 }
 
 .df-empty-panel-icon {
@@ -5711,19 +5714,22 @@ a.df-dossier-client-link:hover {
   background: var(--df-card-white);
 }
 
-.df-file-fallback .df-file-fallback-icon {
+.df-file-fallback .df-empty-panel-icon {
   width: 64px;
   height: 64px;
   color: var(--df-case-ink);
 }
 
-.df-file-fallback .df-file-fallback-icon svg {
+.df-file-fallback .df-empty-panel-icon svg {
   width: 32px;
   height: 32px;
 }
 
 .df-empty-panel-title {
   margin: 0;
+  max-width: 46ch;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
   font-family: var(--df-font-display);
   font-weight: 700;
   font-size: var(--df-text-4);
@@ -5733,6 +5739,8 @@ a.df-dossier-client-link:hover {
 .df-empty-panel-copy {
   margin: 0;
   max-width: 46ch;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
   font-size: var(--df-text-3);
   line-height: 1.55;
   color: var(--df-archive-slate);
@@ -7138,12 +7146,12 @@ a.df-dossier-client-link:hover {
   padding: 0;
 }
 
-.df-empty.df-flush,
+.df-note.df-flush,
 .df-refusal.df-flush {
   padding: 0;
 }
 
-.df-empty[data-edge="end"] {
+.df-note[data-edge="end"] {
   padding-top: 0;
 }
 
@@ -7166,10 +7174,6 @@ a.df-dossier-client-link:hover {
 
 .df-chip-follow {
   margin-top: var(--df-space-3);
-}
-
-.df-band-y {
-  padding: var(--df-space-3) 0;
 }
 
 .df-subhead-follow {
@@ -7569,7 +7573,7 @@ a.df-dossier-client-link:hover {
   padding-top: var(--df-space-2);
 }
 
-.df-settings-list > .df-empty {
+.df-settings-list > .df-empty-line {
   line-height: var(--df-control-h);
 }
 
@@ -8166,12 +8170,6 @@ a.df-dossier-client-link:hover {
   font-size: var(--df-text-2);
 }
 
-.df-chart-note {
-  margin: 0;
-  color: var(--df-archive-slate);
-  font-size: var(--df-text-3);
-}
-
 .df-chart-caption {
   margin: 0;
   color: var(--df-archive-slate);
@@ -8272,13 +8270,6 @@ a.df-dossier-client-link:hover {
   .df-distribution-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-}
-
-.df-card-note {
-  margin: 0;
-  padding: var(--df-space-4);
-  color: var(--df-archive-slate);
-  font-size: var(--df-text-3);
 }
 
 @media (max-width: 767px) {

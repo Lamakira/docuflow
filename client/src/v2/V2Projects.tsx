@@ -50,7 +50,7 @@ import { V2DateField } from "./V2DateField";
 import { composePaging } from "./paging";
 import { formatHours, memberName, mobileProjectMeta } from "./today";
 import { useV2Chrome } from "./V2Shell";
-import { V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
+import { V2LoadFailed, V2RecordEmpty } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect } from "./V2Select";
 import { V2RegisterPager } from "./V2RegisterPager";
@@ -524,11 +524,12 @@ export function V2ProjectsPage() {
     .filter((person) => !person.archived)
     .map((person) => ({ value: person.userId, label: memberName(person) }))
     .sort((a, b) => a.label.localeCompare(b.label));
-  const activeFilters = projectFilterLabels(filters, {
+  const filterNames = {
     clients: new Map(clientOptions.map((option) => [option.value, option.label])),
     leads: new Map(leadOptions.map((option) => [option.value, option.label])),
     tags: new Map(workspaceTags.map((tag) => [tag.id, tag.name])),
-  });
+  };
+  const activeFilters = projectFilterLabels(filters, filterNames);
   // The server already narrowed these rows; the composer only names what did it.
   const register = composeProjectRegister({
     projects: (projectsResponse?.data ?? []).map((project) =>
@@ -578,6 +579,7 @@ export function V2ProjectsPage() {
       };
     }),
     filterQuery,
+    activeFilters: projectFilterLabels({ ...filters, q: "" }, filterNames),
     changingId,
     filters,
     expandedColumns: expanded,
@@ -745,21 +747,11 @@ export function V2ProjectsPage() {
             <h1 className="df-title">Projects</h1>
           </div>
         </header>
-        <V2EmptyState
-          icon="projects"
-          title="Projects could not be loaded."
+        <V2LoadFailed
+          title="Projects could not be loaded"
           copy="Something went wrong while loading them. Try again."
+          onRetry={() => (boardView ? refetchBoard() : refetchRegister())}
           testId="v2-projects-load-failed"
-          action={
-            <Button
-              variant="default"
-              type="button"
-              className="df-btn"
-              onClick={() => (boardView ? refetchBoard() : refetchRegister())}
-            >
-              Try again
-            </Button>
-          }
         />
       </div>
     );

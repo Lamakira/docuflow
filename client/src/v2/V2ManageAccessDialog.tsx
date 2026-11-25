@@ -16,6 +16,7 @@ import { V2FormDialog } from "./V2FormDialog";
 import { isStandingRefusal, notify } from "./notify";
 import { V2FilterSelect } from "./V2Select";
 import type { AccessLevel } from "@shared/documentAccess";
+import { V2EmptyLine } from "./V2EmptyState";
 
 const WORKSPACE_MEMBERSHIPS_PATH = "/api/workspace/memberships";
 
@@ -121,7 +122,7 @@ export function V2ManageAccessDialog({
             <fieldset className="df-access-members" aria-label="Named Members">
               <legend className="df-mono df-meta">Named members</legend>
               {model.memberChoices.length === 0 ? (
-                <p className="df-empty">{model.membersEmptyCopy}</p>
+                <V2EmptyLine>{model.membersEmptyCopy}</V2EmptyLine>
               ) : (
                 model.memberChoices.map((choice) => (
                   <div className="df-checkbox-row" key={choice.userId}>
@@ -143,7 +144,7 @@ export function V2ManageAccessDialog({
           {model.hint ? <p className="df-mono df-meta">{model.hint}</p> : null}
         </>
       ) : (
-        <p className="df-empty">Loading access.</p>
+        <p className="df-note">Loading access.</p>
       )}
     </V2FormDialog>
   );

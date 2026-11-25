@@ -24,6 +24,7 @@ import {
 import { FigureGrid, QueryRefusal } from "./V2BackOfficeParts";
 import { V2FilterSelect } from "./V2Select";
 import { SkeletonBand } from "./V2Skeleton";
+import { V2CompactEmpty } from "./V2EmptyState";
 
 export function V2BackOfficeStats() {
   const [days, setDays] = useState<"7" | "30" | "90">("30");
@@ -105,7 +106,7 @@ export function V2BackOfficeStats() {
           ) : (
             <>
               {charts.mrr.length === 0 ? (
-                <p className="df-card-note">{charts.mrrEmptyCopy}</p>
+                <V2CompactEmpty>{charts.mrrEmptyCopy}</V2CompactEmpty>
               ) : (
                 <div className="df-figure-band df-stat-strip" data-size="stat" data-testid="v2-backoffice-mrr">
                   {/* One tile per currency: amounts in different currencies are never added. */}
@@ -156,7 +157,7 @@ export function V2BackOfficeStats() {
               ) : !distribution.entries ? (
                 <ChartSkeleton />
               ) : distribution.empty ? (
-                <p className="df-chart-note">{distribution.emptyCopy}</p>
+                <V2CompactEmpty>{distribution.emptyCopy}</V2CompactEmpty>
               ) : (
                 <DistributionChart entries={distribution.entries} />
               )}

@@ -41,7 +41,7 @@ import { matchV2Route } from "./presentation";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { FileLoading, V2FileViewer } from "./V2FileViewer";
 import { SkeletonBar, SkeletonLines } from "./V2Skeleton";
-import { V2EmptyState } from "./V2EmptyState";
+import { V2EmptyState, V2LoadFailed } from "./V2EmptyState";
 import { V2ManageAccessDialog } from "./V2ManageAccessDialog";
 import { V2MoveDocumentDialog } from "./V2MoveDocumentDialog";
 import { useV2Chrome } from "./V2Shell";
@@ -222,19 +222,12 @@ function DocumentLoadFailed({
 }) {
   return (
     <div className="df-editor-page" data-testid="v2-document-editor">
-      <V2EmptyState
-        icon="documents"
-        title="This Document could not be loaded."
+      <V2LoadFailed
+        title="This Document could not be loaded"
         copy={`Something went wrong while loading it. Try again${embedded ? "." : `, or go back to ${backLabel}.`}`}
+        onRetry={onRetry}
+        action={embedded ? undefined : <BackLink backHref={backHref} backLabel={backLabel} />}
         testId="v2-document-load-failed"
-        action={
-          <span className="df-cluster">
-            <Button variant="default" type="button" className="df-btn" onClick={onRetry}>
-              Try again
-            </Button>
-            {embedded ? null : <BackLink backHref={backHref} backLabel={backLabel} />}
-          </span>
-        }
       />
     </div>
   );

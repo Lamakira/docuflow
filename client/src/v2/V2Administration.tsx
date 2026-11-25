@@ -96,7 +96,7 @@ import {
 import { workspaceOwnerName } from "./workspace";
 import { V2SupportAccess } from "./V2SupportAccess";
 import { useV2Chrome } from "./V2Shell";
-import { V2EmptyState } from "./V2EmptyState";
+import { V2EmptyLine, V2EmptyState } from "./V2EmptyState";
 import { V2FormDialog } from "./V2FormDialog";
 import { AnalyticsRegister, readBehindAdministration } from "./V2Analytics";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
@@ -831,7 +831,7 @@ export function V2AdministrationPage() {
                 </div>
               </div>
             ) : (
-              <p className="df-empty">{page.billing.seats}</p>
+              <p className="df-note">{page.billing.seats}</p>
             )}
 
             {entitlements && page.billing.actions.some((action) => action.id === "checkout" || action.id === "plan") ? (
@@ -926,11 +926,11 @@ export function V2AdministrationPage() {
                 </Button>
               </div>
               <div className="df-daily-form">
-                <p className="df-empty df-flush">
+                <p className="df-note df-flush">
                   {page.secretOnce.label}
                 </p>
                 <code className="df-admin-secret">{page.secretOnce.plaintext}</code>
-                <p className="df-empty df-flush">
+                <p className="df-note df-flush">
                   {page.secretOnce.confirmation}
                 </p>
                 <Button variant="outline" type="button" onClick={() => copyToClipboard(page.secretOnce!.plaintext, "Secret copied")} className="df-btn">
@@ -1509,7 +1509,7 @@ export function V2AdministrationPage() {
                   </form>
                   {timezoneError ? <p className="df-refusal">{timezoneError}</p> : null}
                   {trackingPolicy.timezones.empty ? (
-                    <p className="df-empty">{trackingPolicy.timezones.emptyCopy}</p>
+                    <V2EmptyLine>{trackingPolicy.timezones.emptyCopy}</V2EmptyLine>
                   ) : (
                     trackingPolicy.timezones.rows.map((timezone) => (
                       <div

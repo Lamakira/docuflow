@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Link } from "wouter";
 import { SkeletonRows } from "./V2Skeleton";
 import { queryRefusalCopy, statusTone, type BackOfficeStatus } from "./backOffice";
+import { V2CompactEmpty } from "./V2EmptyState";
 
 /** The pill every back-office state wears. */
 export function StatusPill({ status, label }: { status: BackOfficeStatus | null; label: string }) {
@@ -66,7 +67,7 @@ export function BackOfficeRegister({
       ) : error ? (
         <QueryRefusal error={error} />
       ) : rows.length === 0 ? (
-        <p className="df-empty">{emptyCopy}</p>
+        <V2CompactEmpty>{emptyCopy}</V2CompactEmpty>
       ) : (
         rows.map((row) => {
           const cells = row.cells.map((cell, index) => <span key={index} style={{ minWidth: 0 }}>{cell}</span>);
