@@ -883,6 +883,55 @@ describe("Invitations say what happened (F89)", () => {
     expect(mail.html).toContain(until);
   });
 
+  it("brings back by Invitation only who the inviter could restore", async () => {
+    const app = await makeApp();
+    const owner = await owned(app);
+    const admin = await administrator(app);
+    const other = await administrator(app);
+    const member = await registerUser(app);
+    for (const user of [other, member]) expect((await owner.agent.post(await path(user.id, "/archive"))).status).toBe(200);
+
+    // An Administrator: not restored, and not invited back either, as anything.
+    expect((await admin.agent.post(await path(other.id, "/restore"))).status).toBe(403);
+    for (const role of ["ADMINISTRATOR", "MEMBER"]) {
+      const refused = await invite(admin, other.email, role);
+      expect(refused.status).toBe(403);
+      expect(refused.body).toEqual({ message: "Only the Owner can manage an Administrator" });
+    }
+    expect(emailsTo(other.email)).toHaveLength(0);
+
+    // A Member may be, and the Owner may invite the Administrator.
+    expect((await invite(admin, member.email)).status).toBe(201);
+    expect((await member.agent.post("/api/invitations/accept").send({ token: tokenOf(member.email) })).status).toBe(200);
+    const sent = await invite(owner, other.email, "ADMINISTRATOR");
+    expect(sent.status).toBe(201);
+    await ageInvitation(sent.body.id);
+    expect((await admin.agent.post(`/api/workspace/invitations/${sent.body.id}/resend`)).status).toBe(403);
+    expect((await other.agent.post("/api/invitations/accept").send({ token: tokenOf(other.email) })).status).toBe(200);
+  });
+
+  it("asks again at acceptance, the Membership and the inviter as they stand by then", async () => {
+    const app = await makeApp();
+    const owner = await owned(app);
+    const admin = await administrator(app);
+    const promoted = await registerUser(app);
+    const orphan = await registerUser(app);
+    for (const user of [promoted, orphan]) await owner.agent.post(await path(user.id, "/archive"));
+    for (const user of [promoted, orphan]) expect((await invite(admin, user.email)).status).toBe(201);
+
+    // Restored by the Owner, promoted, archived again: no longer the Administrator's to bring back.
+    await owner.agent.post(await path(promoted.id, "/restore"));
+    await owner.agent.patch(await path(promoted.id)).send({ workspaceRole: "ADMINISTRATOR" });
+    await owner.agent.post(await path(promoted.id, "/archive"));
+    const refused = await promoted.agent.post("/api/invitations/accept").send({ token: tokenOf(promoted.email) });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toEqual({ message: "This Invitation cannot bring your Membership back. Ask the Workspace's Owner." });
+    expect((await membershipOf(promoted.id)).archivedAt).not.toBeNull();
+
+    await owner.agent.patch(await path(admin.id)).send({ workspaceRole: "MEMBER" });
+    expect((await orphan.agent.post("/api/invitations/accept").send({ token: tokenOf(orphan.email) })).status).toBe(403);
+  });
+
   it("does not bring an archived account back by Invitation", async () => {
     const app = await makeApp();
     const owner = await owned(app);

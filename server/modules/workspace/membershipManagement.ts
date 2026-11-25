@@ -55,8 +55,11 @@ type ManagedMembership = {
 };
 
 /** The target, locked with the actor's own Membership, once this actor may act on it. */
-async function lockManaged(tx: Tx, membershipId: string): Promise<ManagedMembership> {
-  const actorId = requireWorkspaceContext().membershipId ?? "";
+export async function lockManaged(
+  tx: Tx,
+  membershipId: string,
+  actorId: string = requireWorkspaceContext().membershipId ?? "",
+): Promise<ManagedMembership> {
   // Roles are read apart: a row that changed while this waited for its lock
   // would no longer match a role joined before the wait.
   const rows = await tx

@@ -8,7 +8,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   invitations,
   memberships,
@@ -32,9 +32,11 @@ import { identityProvider } from "../identity";
 import { IdentityProviderError } from "../identity/identityProvider";
 import { bearerToken } from "../identity/webSession";
 import { membershipRoleLabel } from "./activeWorkspace";
+import { MembershipManagementError } from "../../workspaceRole";
 import {
   AccountArchivedError,
   isLookupKey,
+  lockManaged,
   recordMembershipEvent,
   type Tx,
 } from "./membershipManagement";
@@ -136,6 +138,14 @@ export class InvitationUnverifiedEmailError extends Error {
   }
 }
 
+export class InvitationCannotBringBackError extends Error {
+  readonly statusCode = 403;
+  constructor() {
+    super("This Invitation cannot bring your Membership back. Ask the Workspace's Owner.");
+    this.name = "InvitationCannotBringBackError";
+  }
+}
+
 export class InvitationJustSentError extends Error {
   readonly statusCode = 429;
   constructor() {
@@ -213,6 +223,18 @@ async function lockInvitation(tx: Tx, id: string) {
     .for("update");
   if (!row) throw new InvitationNotFoundError();
   return row;
+}
+
+/** An Invitation restores an Archived Membership, so it takes the same right as Restore. */
+async function assertMayBringBack(tx: Tx, email: string): Promise<void> {
+  const archived = await tx
+    .select({ id: memberships.id })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(
+      and(inWorkspace(memberships), isNotNull(memberships.archivedAt), sql`lower(${users.email}) = ${email}`),
+    );
+  for (const { id } of archived) await lockManaged(tx, id);
 }
 
 async function roleIdForLabel(reader: Pick<typeof db, "select">, label: string): Promise<string> {
@@ -311,6 +333,7 @@ export async function sendInvitation(
       )
       .limit(1);
     if (member) throw new InvitationDuplicateMembershipError();
+    await assertMayBringBack(tx, email);
 
     const [existing] = await tx
       .select()
@@ -367,9 +390,10 @@ export async function resendInvitation(actorUserId: string, id: string): Promise
       throw new InvitationJustSentError();
     }
     await assertSeatAvailable(tx);
+    await assertMayBringBack(tx, normalizeEmail(invitation.email));
     await tx
       .update(invitations)
-      .set({ token, expiresAt: new Date(Date.now() + INVITE_TTL_MS), updatedAt: new Date() })
+      .set({ token, invitedByUserId: actorUserId, expiresAt: new Date(Date.now() + INVITE_TTL_MS), updatedAt: new Date() })
       .where(eq(invitations.id, id));
     await recordMembershipEvent(tx, actorUserId, {
       action: "invitation.resent",
@@ -492,7 +516,7 @@ export async function acceptInvitation(input: {
 
       const user = await resolveInvitee(tx, providerSubjectId, invitation.email, verifiedEmail);
       if (user.isArchived) throw new AccountArchivedError();
-      const membershipId = await createOrRestoreMembership(tx, user.id, invitation.workspaceRoleId);
+      const membershipId = await createOrRestoreMembership(tx, user.id, invitation);
       await tx
         .update(users)
         .set({ activeWorkspaceId: invitation.workspaceId, updatedAt: new Date() })
@@ -636,14 +660,40 @@ async function resolveInvitee(
   return raced;
 }
 
-async function createOrRestoreMembership(tx: Tx, userId: string, workspaceRoleId: string): Promise<string> {
+/** The inviter may no longer restore this Membership, or never could. */
+async function assertInviterMayBringBack(tx: Tx, inviterUserId: string, membershipId: string): Promise<void> {
+  const [inviter] = await tx
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(and(inWorkspace(memberships), eq(memberships.userId, inviterUserId)))
+    .limit(1);
+  try {
+    await lockManaged(tx, membershipId, inviter?.id ?? "");
+  } catch (error) {
+    if (error instanceof MembershipManagementError) throw new InvitationCannotBringBackError();
+    throw error;
+  }
+}
+
+async function createOrRestoreMembership(
+  tx: Tx,
+  userId: string,
+  invitation: { workspaceRoleId: string; invitedByUserId: string },
+): Promise<string> {
+  const { workspaceRoleId, invitedByUserId } = invitation;
   const { workspaceId } = requireWorkspaceContext();
+  const [found] = await tx
+    .select({ id: memberships.id, archivedAt: memberships.archivedAt })
+    .from(memberships)
+    .where(and(eq(memberships.userId, userId), eq(memberships.workspaceId, workspaceId)));
+  if (found?.archivedAt) await assertInviterMayBringBack(tx, invitedByUserId, found.id);
   const [existing] = await tx
     .select({ id: memberships.id, archivedAt: memberships.archivedAt })
     .from(memberships)
     .where(and(eq(memberships.userId, userId), eq(memberships.workspaceId, workspaceId)))
     .for("update");
-  if (existing && existing.archivedAt == null) throw new InvitationDuplicateMembershipError();
+  // Archived while this waited for its lock counts as active: nothing was asked about it.
+  if (existing && !(found?.archivedAt && existing.archivedAt)) throw new InvitationDuplicateMembershipError();
   await assertSeatAvailable(tx);
   if (existing) {
     await tx

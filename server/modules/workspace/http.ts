@@ -45,6 +45,7 @@ import {
 import {
   InvitationAlreadyAcceptedError,
   InvitationAlreadyPendingError,
+  InvitationCannotBringBackError,
   InvitationDuplicateMembershipError,
   InvitationEmailMismatchError,
   InvitationExpiredError,
@@ -253,6 +254,7 @@ const INVITATION_REFUSALS = [
   InvitationEmailMismatchError,
   InvitationUnauthorizedError,
   InvitationUnverifiedEmailError,
+  InvitationCannotBringBackError,
   InvitationJustSentError,
   MembershipNotFoundError,
   MembershipManagementError,

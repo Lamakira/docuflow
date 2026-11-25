@@ -1928,7 +1928,7 @@ takes archiving and inviting again, which F84 blocks, or the database. Only
 ownership can be transferred, in Administration. Whether an Administrator may
 change another Administrator's role is the owner's to say.
 
-- **Fixed:** 2026-11-25. Member settings changes the Workspace role (Member, Administrator) and the Daily Updates access, in one save. An Administrator may promote a Member, and may not change an Administrator (as the owner accepted). Audit Events record roles, grants, archives, restores and Invitations.
+- **Fixed:** 2026-11-25. Member settings changes the Workspace role (Member, Administrator) and the Daily Updates access, in one save. An Administrator may promote a Member, and may not change an Administrator (as the owner accepted), nor bring one back by Invitation: sending, resending and accepting ask what Restore asks. Audit Events record roles, grants, archives, restores and Invitations.
 
 ## F89 - Invitations are said sent when they are not
 
