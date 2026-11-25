@@ -311,7 +311,7 @@ export function composeFigureBand(
       label: "Members",
       value: fromTime(() => String((productivity?.byUser ?? []).filter((row) => row.totalSeconds > 0).length)),
     },
-    { label: "Coverage", value: coverage ? formatPercent(coverage.summary.coveragePercent) : "-" },
+    { label: "Capture coverage", value: coverage ? formatPercent(coverage.summary.coveragePercent) : "-" },
   ];
 }
 
@@ -482,25 +482,33 @@ export function composeRecordedTime(productivity: AnalyticsProductivityInput): R
 /* ── Captures ──────────────────────────────────────────────────────────── */
 
 export type AnalyticsCaptures = {
+  /** Nobody tracked time and nothing was taken: one line says it for the whole card. */
+  empty: boolean;
+  /** Nothing was taken, so there is no hour to chart. */
+  noneTaken: boolean;
   figures: AnalyticsFigure[];
   line: string;
   rows: Array<{ id: string; name: string; href: string; tracked: string; captures: string; coverage: string }>;
 };
 
+/** What a capture is and where Expected comes from, said before any number. */
 export function captureLine(everyMinutes: number | null | undefined): string {
-  if (typeof everyMinutes !== "number") return "Captures are off in the Tracking Policy.";
+  const what = "Screenshots the desktop app takes while a Timer runs.";
+  if (typeof everyMinutes !== "number") return `${what} They are off in the Tracking Policy.`;
   const interval = everyMinutes === 1 ? "minute" : `${everyMinutes} minutes`;
-  return `One capture at least every ${interval}, from the Tracking Policy.`;
+  return `${what} Expected: one per ${interval} of tracked time, as the Tracking Policy asks.`;
 }
 
 /** Members in alphabetical order, as the server sends them: nobody is ranked. */
 export function composeCaptures(coverage: AnalyticsCoverageInput, range: AnalyticsRange): AnalyticsCaptures {
   const summary = coverage.summary;
   return {
+    empty: coverage.byUser.length === 0,
+    noneTaken: summary.totalScreenshots === 0,
     figures: [
-      { label: "Captures", value: formatCount(summary.totalScreenshots) },
+      { label: "Taken", value: formatCount(summary.totalScreenshots) },
       { label: "Expected", value: formatCount(summary.expectedScreenshots) },
-      { label: "Time Entries without a capture", value: formatCount(summary.entriesWithoutScreenshots) },
+      { label: "Time Entries without any", value: formatCount(summary.entriesWithoutScreenshots) },
       { label: "Deleted", value: formatCount(summary.deletedScreenshots) },
     ],
     line: captureLine(summary.captureEveryMinutes),

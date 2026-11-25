@@ -325,13 +325,13 @@ describe("The figure band and the warnings (F96)", () => {
       { label: "Idle", value: "1.2 h" },
       { label: "Time Entries", value: "6" },
       { label: "Members", value: "2" },
-      { label: "Coverage", value: "42%" },
+      { label: "Capture coverage", value: "42%" },
     ]);
   });
 
   it("shows '-' for a figure whose read is missing, never 0", () => {
     expect(composeFigureBand(undefined, COVERAGE).map((figure) => figure.value)).toEqual(["-", "-", "-", "-", "42%"]);
-    expect(composeFigureBand(PRODUCTIVITY, undefined).at(-1)).toEqual({ label: "Coverage", value: "-" });
+    expect(composeFigureBand(PRODUCTIVITY, undefined).at(-1)).toEqual({ label: "Capture coverage", value: "-" });
     expect(composeFigureBand(PRODUCTIVITY, { ...COVERAGE, summary: { ...COVERAGE.summary, coveragePercent: null } }).at(-1)?.value).toBe("-");
   });
 
@@ -378,15 +378,25 @@ describe("Captures and Devices (F94, F99)", () => {
   it("counts captures against what the Tracking Policy expects, and names the policy's interval", () => {
     const captures = composeCaptures(COVERAGE, RANGE);
     expect(captures.figures).toEqual([
-      { label: "Captures", value: "412" },
+      { label: "Taken", value: "412" },
       { label: "Expected", value: "980" },
-      { label: "Time Entries without a capture", value: "2" },
+      { label: "Time Entries without any", value: "2" },
       { label: "Deleted", value: "7" },
     ]);
-    expect(captures.line).toBe("One capture at least every 5 minutes, from the Tracking Policy.");
-    expect(captureLine(null)).toBe("Captures are off in the Tracking Policy.");
-    expect(captureLine(undefined)).toBe("Captures are off in the Tracking Policy.");
-    expect(captureLine(1)).toBe("One capture at least every minute, from the Tracking Policy.");
+    expect(captures.line).toBe(
+      "Screenshots the desktop app takes while a Timer runs. Expected: one per 5 minutes of tracked time, as the Tracking Policy asks.",
+    );
+    expect(captureLine(null)).toBe("Screenshots the desktop app takes while a Timer runs. They are off in the Tracking Policy.");
+    expect(captureLine(undefined)).toBe(captureLine(null));
+    expect(captureLine(1)).toContain("one per minute of tracked time");
+  });
+
+  it("says nothing was taken once, and charts no hour without a capture", () => {
+    const none = { ...COVERAGE, summary: { ...COVERAGE.summary, totalScreenshots: 0 } };
+    expect(composeCaptures(COVERAGE, RANGE)).toMatchObject({ empty: false, noneTaken: false });
+    expect(composeCaptures(none, RANGE)).toMatchObject({ empty: false, noneTaken: true });
+    expect(composeCaptures({ ...none, byUser: [] }, RANGE)).toMatchObject({ empty: true, noneTaken: true });
+    expect(analyticsSource).toContain("captures.noneTaken ? null : hourly.state");
   });
 
   it("lists Members in the order the server gives, with '412 of 980' and a coverage that can be unknown", () => {

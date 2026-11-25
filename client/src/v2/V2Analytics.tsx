@@ -269,12 +269,14 @@ export function V2AnalyticsPage() {
 /** A card of the page: dimmed while a new Range's figures arrive, with its layout untouched. */
 function AnalyticsCard({
   title,
+  sub,
   testId,
   id,
   refreshing = false,
   children,
 }: {
   title?: string;
+  sub?: string;
   testId: string;
   id?: string;
   refreshing?: boolean;
@@ -293,6 +295,7 @@ function AnalyticsCard({
         <div className="df-card-head">
           <div className="df-card-head-text">
             <h2 className="df-card-title">{title}</h2>
+            {sub ? <p className="df-card-sub">{sub}</p> : null}
           </div>
         </div>
       ) : null}
@@ -576,31 +579,37 @@ function CapturesCard({
   }
   const hours = hourly.data ? composeHourly(hourly.data) : null;
   return (
-    <AnalyticsCard title={title} testId="v2-analytics-captures" refreshing={read.refreshing || hourly.refreshing}>
-      <FigureBand figures={captures.figures} testId="v2-analytics-captures-figures" />
-      <p className="df-note">{captures.line}</p>
-      {captures.rows.length === 0 ? (
-        <V2CompactEmpty>No Members with tracked time in this range</V2CompactEmpty>
+    <AnalyticsCard
+      title={title}
+      sub={captures.line}
+      testId="v2-analytics-captures"
+      refreshing={read.refreshing || hourly.refreshing}
+    >
+      {captures.empty ? (
+        <V2CompactEmpty>No captures in this range</V2CompactEmpty>
       ) : (
-        <AnalyticsRegister
-          stacked={stacked}
-          numeric
-          head={["Member", "Tracked", "Captures", "Coverage"]}
-          rows={captures.rows.map((row) => ({
-            id: row.id,
-            cells: [
-              <NameCell key="n" href={row.href} name={row.name} testId={`v2-analytics-capture-link-${row.id}`} />,
-              row.tracked,
-              row.captures,
-              row.coverage,
-            ],
-          }))}
-          empty={false}
-          emptyCopy=""
-          testId="v2-analytics-capture-row"
-        />
+        <>
+          <FigureBand figures={captures.figures} testId="v2-analytics-captures-figures" />
+          <AnalyticsRegister
+            stacked={stacked}
+            numeric
+            head={["Member", "Tracked", "Taken of expected", "Coverage"]}
+            rows={captures.rows.map((row) => ({
+              id: row.id,
+              cells: [
+                <NameCell key="n" href={row.href} name={row.name} testId={`v2-analytics-capture-link-${row.id}`} />,
+                row.tracked,
+                row.captures,
+                row.coverage,
+              ],
+            }))}
+            empty={false}
+            emptyCopy=""
+            testId="v2-analytics-capture-row"
+          />
+        </>
       )}
-      {hourly.state === "failed" ? (
+      {captures.noneTaken ? null : hourly.state === "failed" ? (
         <V2LoadFailed title="Captures by hour could not be loaded" onRetry={hourly.retry} testId="v2-analytics-hourly-failed" />
       ) : hours && hourly.state === "ready" ? (
         <CapturesByHour hourly={hours} />
