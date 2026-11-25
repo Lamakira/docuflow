@@ -26,6 +26,7 @@ import { BreakGlassDialog, OperatorWorkspaceSheet } from "./V2BackOfficeAccess";
 import { V2FormDialog } from "./V2FormDialog";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { SkeletonBand, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 export function V2BackOfficeWorkspace({ workspaceId }: { workspaceId: string }) {
   const now = useMemo(() => new Date(), []);
@@ -102,26 +103,30 @@ export function V2BackOfficeWorkspace({ workspaceId }: { workspaceId: string }) 
 
   return (
     <div className="df-backoffice-section" data-testid="v2-backoffice-workspace">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
+      <V2PageHead
+        above={
           <Link href={BACK_OFFICE_HOME} className="df-ghost-link">
             Workspaces
           </Link>
-          <h1 className="df-title">{page.title}</h1>
-          <p className="df-subhead">
+        }
+        title={page.title}
+        subhead={
+          <>
             <StatusPill status={page.status} label={page.statusLabel} /> {page.subhead}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          type="button"
-          className="df-btn"
-          onClick={() => setBreakGlass(true)}
-          data-testid="v2-backoffice-break-glass-open"
-        >
-          {page.breakGlass.label}
-        </Button>
-      </header>
+          </>
+        }
+        actions={
+          <Button
+            variant="outline"
+            type="button"
+            className="df-btn"
+            onClick={() => setBreakGlass(true)}
+            data-testid="v2-backoffice-break-glass-open"
+          >
+            {page.breakGlass.label}
+          </Button>
+        }
+      />
 
       <section className="df-card" data-testid="v2-backoffice-workspace-facts">
         <FigureGrid figures={page.facts} />

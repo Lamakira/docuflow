@@ -36,6 +36,7 @@ import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { V2RegisterPager } from "./V2RegisterPager";
 import { Button } from "@/components/ui/button";
 import { SkeletonLibrary, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 /**
  * `/api/projects/documentable` pages Projects. Calling them folders here is
@@ -455,11 +456,7 @@ export function V2ProjectDocumentationPage() {
   if (isError && !data) {
     return (
       <div className="df-page" data-testid="v2-project-documentation">
-        <header className="df-today-head">
-          <div style={{ minWidth: 0 }}>
-            <h1 className="df-title">Project Documentation</h1>
-          </div>
-        </header>
+        <V2PageHead title="Project Documentation" />
         {/* A filter whose page failed can still be changed or cleared. */}
         {activeFilters.length > 0 ? filterBar : null}
         <V2LoadFailed
@@ -474,26 +471,26 @@ export function V2ProjectDocumentationPage() {
   return (
     <div className="df-library" data-testid="v2-project-documentation">
       <div className="df-library-main">
-        <header className="df-today-head">
-          <div style={{ minWidth: 0 }}>
-            <h1 className="df-title">Project Documentation</h1>
-            <p className="df-subhead">{library.subhead}</p>
-          </div>
-          <div className="df-library-actions">
-            <Button variant="outline" type="button" onClick={() => openCreate("project")} className="df-btn">
-              <Plus strokeWidth={1.6} aria-hidden />
-              New project
-            </Button>
-            <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
-              <Upload strokeWidth={1.6} aria-hidden />
-              Upload File
-            </Button>
-            <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
-              <Plus strokeWidth={1.6} aria-hidden />
-              New Document
-            </Button>
-          </div>
-        </header>
+        <V2PageHead
+          title="Project Documentation"
+          subhead={library.subhead}
+          actions={
+            <>
+              <Button variant="outline" type="button" onClick={() => openCreate("project")} className="df-btn">
+                <Plus strokeWidth={1.6} aria-hidden />
+                New project
+              </Button>
+              <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+                <Upload strokeWidth={1.6} aria-hidden />
+                Upload File
+              </Button>
+              <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
+                <Plus strokeWidth={1.6} aria-hidden />
+                New Document
+              </Button>
+            </>
+          }
+        />
 
         <V2FormDialog
           open={createMode === "document" || createMode === "project"}

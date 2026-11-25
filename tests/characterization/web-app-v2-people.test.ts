@@ -5,23 +5,26 @@ import { describe, expect, it } from "vitest";
 import { motionForSurface } from "../../client/src/v2/motion";
 import { breadcrumbFor, matchV2Route, navIdForPath } from "../../client/src/v2/presentation";
 import {
-  composeInvitationAccept,
-  composeInvitePreview,
+  composeInvitationPage,
   composePeople,
   invitationAcceptPath,
+  invitationAcceptRefusal,
+  invitationLookupPath,
   invitationPagePath,
+  invitationResendPath,
   invitationRevokePath,
+  membershipArchivePath,
   membershipProfilePath,
+  membershipRestorePath,
   myInvitationsPath,
-  peopleArchivePath,
-  peopleWriteRefusal,
   workspaceInvitationsPath,
   workspaceMembershipsPath,
   type PeopleInput,
 } from "../../client/src/v2/people";
 
 /**
- * People from Memberships (#192) and Invitations (#211).
+ * People from Memberships (#192) and Invitations (#211); the review's own cases
+ * are in web-app-v2-people-review.test.ts.
  * Seams: matchV2Route (flagged app chrome) and composePeople over `/api/*`.
  * Invitation HTTP is characterized in workspace-invitations.test.ts.
  * Do not assert hex.
@@ -42,7 +45,6 @@ const css = readFileSync(
 function emptyPeople(overrides: Partial<PeopleInput> = {}): PeopleInput {
   return {
     currentUserId: "me",
-    ownerName: "Sam Lee",
     condition: null,
     includeArchived: false,
     purchasedSeats: null,
@@ -72,15 +74,12 @@ describe("People from Memberships (#192)", () => {
     expect(page.rows).toEqual([]);
     expect(page.emptyState?.copy.toLowerCase()).toContain("membership");
     expect(page.pagePrimary).toBe("case-ink");
-    expect(page.seatCopy).toBe(
-      "Only accepted active Memberships consume a Billable Seat. 0 Invitations pending consume none.",
-    );
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
     }
   });
 
-  it("lists active Memberships with person, Workspace Role, and Capabilities the BFF returned", () => {
+  it("lists active Memberships with person, Workspace Role, and Access the BFF returned", () => {
     const page = composePeople(
       emptyPeople({
         purchasedSeats: 500,
@@ -91,9 +90,10 @@ describe("People from Memberships (#192)", () => {
             firstName: "Sam",
             lastName: "Lee",
             email: "sam@example.com",
-            workspaceRole: "Owner",
+            workspaceRole: "OWNER",
             capabilities: ["View daily updates", "Manage Webhook Endpoints"],
             archived: false,
+            manageable: false,
           },
           {
             membershipId: "m-member",
@@ -104,127 +104,51 @@ describe("People from Memberships (#192)", () => {
             workspaceRole: "MEMBER",
             capabilities: [],
             archived: false,
+            manageable: true,
           },
         ],
       }),
     );
 
     expect(page.empty).toBe(false);
-    expect(page.rows).toEqual([
-      {
-        kind: "membership",
-        membershipId: "m-owner",
-        invitationId: null,
-        userId: "me",
-        name: "Sam Lee",
-        initials: "SL",
-        email: "sam@example.com",
-        workspaceRole: "Owner",
-        capabilities: "View daily updates · Manage Webhook Endpoints",
-        status: "ACTIVE",
-        canSignIn: true,
-        consumesSeat: true,
-        hoursPerDay: 8,
-        canViewDailyUpdates: 0,
-        archiveAction: null,
-        revokeAction: false,
-        justAccepted: false,
-        self: true,
-      },
-      {
-        kind: "membership",
-        membershipId: "m-member",
-        invitationId: null,
-        userId: "pat",
-        name: "Pat Ng",
-        initials: "PN",
-        email: "pat@example.com",
-        workspaceRole: "MEMBER",
-        capabilities: "-",
-        status: "ACTIVE",
-        canSignIn: true,
-        consumesSeat: true,
-        hoursPerDay: 8,
-        canViewDailyUpdates: 0,
-        archiveAction: "archive",
-        revokeAction: false,
-        justAccepted: false,
-        self: false,
-      },
+    expect(page.rows.map((row) => [row.name, row.workspaceRole, row.access, row.status, row.self])).toEqual([
+      ["Sam Lee", "Owner", "Daily Updates", "Active", true],
+      ["Pat Ng", "Member", "-", "Active", false],
     ]);
-    expect(page.seatCopy).toBe(
-      "2 of 500 Billable Seats consumed. 0 Invitations pending consume none.",
-    );
+    expect(page.rows[0].actions).toEqual([]);
+    expect(page.rows[1].actions).toEqual(["settings", "archive"]);
     expect(JSON.stringify(page)).not.toContain("Keystone");
   });
 
-  it("does not present Archived Memberships as if they could still sign in", () => {
-    const hidden = composePeople(
-      emptyPeople({
-        memberships: [
-          {
-            membershipId: "m-active",
-            userId: "pat",
-            firstName: "Pat",
-            lastName: "Ng",
-            email: "pat@example.com",
-            workspaceRole: "MEMBER",
-            capabilities: [],
-            archived: false,
-          },
-          {
-            membershipId: "m-gone",
-            userId: "cid",
-            firstName: "Cid",
-            lastName: "Okeke",
-            email: "cid@example.com",
-            workspaceRole: "MEMBER",
-            capabilities: [],
-            archived: true,
-          },
-        ],
-      }),
-    );
-    expect(hidden.rows.map((row) => row.userId)).toEqual(["pat"]);
-
-    const shown = composePeople(
-      emptyPeople({
-        includeArchived: true,
-        memberships: [
-          {
-            membershipId: "m-gone",
-            userId: "cid",
-            firstName: "Cid",
-            lastName: "Okeke",
-            email: "cid@example.com",
-            workspaceRole: "MEMBER",
-            capabilities: [],
-            archived: true,
-          },
-        ],
-      }),
-    );
-    expect(shown.rows[0]).toMatchObject({
+  it("offers an Archived Membership only Restore, and never as one who can sign in", () => {
+    const row = {
+      membershipId: "m-gone",
       userId: "cid",
-      status: "ARCHIVED",
-      canSignIn: false,
-      consumesSeat: false,
-      archiveAction: "restore",
-    });
-    expect(shown.seatCopy).toBe(
-      "Only accepted active Memberships consume a Billable Seat. 0 Invitations pending consume none.",
-    );
+      firstName: "Cid",
+      lastName: "Okeke",
+      email: "cid@example.com",
+      workspaceRole: "MEMBER",
+      capabilities: [],
+      archived: true,
+      manageable: true,
+    };
+    expect(composePeople(emptyPeople({ memberships: [row] })).rows).toEqual([]);
+    const shown = composePeople(emptyPeople({ includeArchived: true, memberships: [row] }));
+    expect(shown.rows[0]).toMatchObject({ state: "archived", status: "Archived", actions: ["restore"] });
   });
 
-  it("asks the BFF for Memberships, Invitations, archive, and hours-per-day — not custom Workspace Roles", () => {
+  it("asks the BFF for Memberships, Invitations and the Membership's own archive, restore and settings", () => {
     expect(workspaceMembershipsPath()).toBe("/api/workspace/memberships");
     expect(workspaceMembershipsPath({ includeArchived: true })).toBe(
       "/api/workspace/memberships?includeArchived=true",
     );
-    expect(peopleArchivePath("user-2")).toBe("/api/admin/users/user-2/archive");
+    expect(membershipArchivePath("m-1")).toBe("/api/workspace/memberships/m-1/archive");
+    expect(membershipRestorePath("m-1")).toBe("/api/workspace/memberships/m-1/restore");
     expect(workspaceInvitationsPath()).toBe("/api/workspace/invitations");
     expect(invitationRevokePath("inv-1")).toBe("/api/workspace/invitations/inv-1/revoke");
+    expect(invitationResendPath("inv-1")).toBe("/api/workspace/invitations/inv-1/resend");
     expect(invitationAcceptPath()).toBe("/api/invitations/accept");
+    expect(invitationLookupPath()).toBe("/api/invitations/lookup");
     expect(membershipProfilePath("m-1")).toBe("/api/workspace/memberships/m-1");
 
     const pageSource = readFileSync(
@@ -233,131 +157,37 @@ describe("People from Memberships (#192)", () => {
     );
     expect(pageSource).toContain("workspaceInvitationsPath");
     expect(pageSource).toContain("invitationRevokePath");
-    expect(pageSource).toContain("Invitation pending");
-    expect(pageSource).toContain("Archive");
     expect(pageSource).toContain("df-project-mobile");
-    // A role or condition refusal hangs from the Invite control; a send refusal
-    // lands inside the invite dialog, under the fields (#245, F3, #249, #273).
-    expect(pageSource).toContain("V2RefusalPopover");
-    expect(pageSource).toContain('className="df-refusal-anchor"');
-    expect(pageSource).toContain('refusal={refusal?.id === "invite-send" ? refusal.message : null}');
+    // A send refusal lands inside the invite dialog, beside what was typed (#273, F91).
+    expect(pageSource).toContain('id="df-invite-problem" className="df-field-problem" role="alert"');
+    expect(pageSource).not.toContain("/api/admin/users");
     expect(pageSource).not.toContain("custom role");
     expect(pageSource).not.toContain("reset-password");
   });
 
-  it("refusal copy names the Workspace Role, Workspace condition, or seat capacity — never permission denied", () => {
-    expect(
-      peopleWriteRefusal({
-        kind: "workspace-role",
-        workspaceRole: "MEMBER",
-        ownerName: "Sam Lee",
-      }),
-    ).toBe(
-      "Inviting and managing People is open to the Owner and Administrators. " +
-        "Your Workspace Role is Member. Sam Lee (Owner) can change it.",
-    );
-    expect(
-      peopleWriteRefusal({
-        kind: "workspace-condition",
-        workspaceName: "Harbor Co",
-        condition: "Read-only",
-      }),
-    ).toBe("Harbor Co is read-only. Viewing, export, and recovery stay available.");
-    // A refusal that names the wall and not the way out leaves the reader to
-    // find the seat control on another screen by themselves (#245, F3).
-    expect(peopleWriteRefusal({ kind: "seat", purchased: 3 })).toBe(
-      "All 3 purchased seats are consumed. Add seats in Administration → Billing.",
-    );
-    expect(
-      peopleWriteRefusal({
-        kind: "error",
-        workspaceName: "Harbor Co",
-        workspaceRole: "MEMBER",
-        ownerName: "Sam Lee",
-        errorMessage: "Access denied",
-      }),
-    ).toBe(
-      "Inviting and managing People is open to the Owner and Administrators. " +
-        "Your Workspace Role is Member. Sam Lee (Owner) can change it.",
-    );
-    expect(
-      peopleWriteRefusal({
-        kind: "error",
-        workspaceName: "Harbor Co",
-        workspaceRole: "MEMBER",
-        ownerName: "Sam Lee",
-        errorMessage: "Billable Seat capacity is exhausted",
-        purchasedSeats: 3,
-      }),
-    ).toBe("All 3 purchased seats are consumed. Add seats in Administration → Billing.");
-    expect(
-      peopleWriteRefusal({
-        kind: "error",
-        workspaceName: "Harbor Co",
-        workspaceRole: "MEMBER",
-        ownerName: "Sam Lee",
-        errorMessage: "Workspace is read-only",
-      }),
-    ).toBe("Harbor Co is read-only. Viewing, export, and recovery stay available.");
-  });
-
-  it("lists pending Invitations separately from Memberships and previews the seat if accepted", () => {
-    const page = composePeople(
-      emptyPeople({
-        purchasedSeats: 8,
-        invitations: [{ id: "inv-1", email: "new@example.com", workspaceRole: "MEMBER" }],
-        memberships: [
-          {
-            membershipId: "m-owner",
-            userId: "me",
-            firstName: "Sam",
-            lastName: "Lee",
-            email: "sam@example.com",
-            workspaceRole: "Owner",
-            capabilities: [],
-            archived: false,
-            hoursPerDay: 7,
-            canViewDailyUpdates: 1,
-          },
-        ],
-      }),
-    );
-    expect(page.rows.map((row) => row.status)).toEqual(["ACTIVE", "INVITATION PENDING"]);
-    expect(page.rows[1]).toMatchObject({
-      kind: "invitation",
-      email: "new@example.com",
-      status: "INVITATION PENDING",
-      canSignIn: false,
-      consumesSeat: false,
-      revokeAction: true,
+  it("lists Invitations after the active Members, and filters Memberships and Invitations by name or email", () => {
+    const input = emptyPeople({
+      purchasedSeats: 8,
+      invitations: [
+        { id: "inv-1", email: "new@example.com", workspaceRole: "MEMBER", status: "pending", expiresAt: "2026-11-28T12:00:00Z", invitedBy: null },
+      ],
+      memberships: [
+        {
+          membershipId: "m-owner",
+          userId: "me",
+          firstName: "Sam",
+          lastName: "Lee",
+          email: "sam@example.com",
+          workspaceRole: "OWNER",
+          capabilities: [],
+          archived: false,
+        },
+      ],
     });
-    expect(page.seatCopy).toBe("1 of 8 Billable Seats consumed. 1 Invitation pending consumes none.");
-    expect(composeInvitePreview({ activeCount: 1, purchasedSeats: 8 })).toBe(
-      "1 of 8 Billable Seats consumed. This Invitation will consume 1 of 8 if accepted.",
-    );
-    expect(page.rows[0]).toMatchObject({ hoursPerDay: 7, canViewDailyUpdates: 1 });
-  });
-
-  it("filters Memberships and pending Invitations by name or email", () => {
-    const page = composePeople(
-      emptyPeople({
-        filterQuery: "new@",
-        invitations: [{ id: "inv-1", email: "new@example.com", workspaceRole: "MEMBER" }],
-        memberships: [
-          {
-            membershipId: "m-owner",
-            userId: "me",
-            firstName: "Sam",
-            lastName: "Lee",
-            email: "sam@example.com",
-            workspaceRole: "Owner",
-            capabilities: [],
-            archived: false,
-          },
-        ],
-      }),
-    );
-    expect(page.rows.map((row) => row.email)).toEqual(["new@example.com"]);
+    const page = composePeople(input);
+    expect(page.rows.map((row) => row.state)).toEqual(["active", "invited"]);
+    expect(page.rows[1]).toMatchObject({ kind: "invitation", email: "new@example.com", actions: ["resend", "revoke"] });
+    expect(composePeople({ ...input, filterQuery: "new@" }).rows.map((row) => row.email)).toEqual(["new@example.com"]);
   });
 });
 
@@ -382,32 +212,21 @@ describe("Invitation acceptance (#211, Flow 6)", () => {
     expect(rootApp).toContain("V2InvitationAcceptPage");
   });
 
-  it("tells the invitee they join a Membership and names revoked, expired, and already-accepted", () => {
-    const signedOut = composeInvitationAccept({ signedIn: false, status: "ready" });
-    expect(signedOut.action).toBe("sign-in");
-    expect(signedOut.copy.toLowerCase()).toContain("membership");
-    expect(signedOut.copy.toLowerCase()).toContain("does not create a workspace");
-
-    const ready = composeInvitationAccept({
-      signedIn: true,
-      status: "ready",
+  it("names revoked, expired, and already-accepted Invitations", () => {
+    const base = {
       workspaceName: "Harbour View",
-    });
-    expect(ready.action).toBe("accept");
-    expect(ready.copy).toContain("Harbour View");
-    expect(ready.copy.toLowerCase()).toContain("membership");
-    expect(ready.copy.toLowerCase()).toContain("does not create a workspace");
-
-    expect(composeInvitationAccept({ signedIn: true, status: "revoked" }).copy.toLowerCase()).toContain(
-      "revoked",
-    );
-    expect(composeInvitationAccept({ signedIn: true, status: "expired" }).copy.toLowerCase()).toContain(
-      "expired",
-    );
-    expect(composeInvitationAccept({ signedIn: true, status: "already" }).copy.toLowerCase()).toContain(
-      "already accepted",
-    );
-    expect(composeInvitationAccept({ signedIn: true, status: "accepted" }).action).toBe("today");
+      workspaceRole: "MEMBER",
+      invitedBy: "Sam Lee",
+      email: "pat@example.com",
+      expiresAt: "2026-11-28T12:00:00Z",
+    };
+    const at = (status: "pending" | "expired" | "revoked" | "accepted") =>
+      composeInvitationPage({ lookup: { ...base, status }, signedIn: true, signedInEmail: "pat@example.com" });
+    expect(at("revoked").copy.toLowerCase()).toContain("revoked");
+    expect(at("expired").copy).toBe("This Invitation expired. Ask Sam Lee to send it again.");
+    expect(at("accepted").action).toBe("open");
+    expect(at("pending").action).toBe("accept");
+    expect(invitationAcceptRefusal("Billable Seat capacity is exhausted", "Sam Lee")).toContain("Ask Sam Lee to add one");
   });
 });
 
@@ -446,9 +265,7 @@ describe("People Capability refusal and Invitation accept motion (#192, #211)", 
     expect(rule('.df-people-row-wrap[data-just-accepted="true"][data-motion="standard"]')).not.toMatch(
       /scale\(/,
     );
-    expect(rule(".df-people-filter input")).toMatch(/transition:\s*none/);
     expect(rule(".df-people-role")).toMatch(/animation:\s*none/);
-    expect(rule(".df-people-seats")).toMatch(/animation:\s*none/);
   });
 });
 
@@ -461,29 +278,27 @@ describe("the Members table reads like the other registers (#280)", () => {
   it("draws the desktop register with the shared shadcn table, one column per head", () => {
     expect(source).toContain('from "@/components/ui/table"');
     expect(source).toContain('<Table className="df-table" data-testid="v2-people-table">');
-    for (const column of ["member", "role", "capabilities", "status", "actions"]) {
+    for (const column of ["member", "role", "access", "status", "actions"]) {
       expect(source).toContain(`className="df-table-head" data-column="${column}"`);
       expect(source).toContain(`className="df-table-cell" data-column="${column}"`);
     }
     expect(source).not.toContain('className="df-register-head');
   });
 
-  it("puts every row's actions in one row menu, with the refusal hanging from it", () => {
+  it("puts every row's actions in one row menu", () => {
     expect(source).toContain("<V2RowMenu");
-    expect(source).toContain('label: "Revoke invitation"');
-    expect(source).toContain('label: "Member settings"');
-    expect(source).toMatch(/label: row\.archiveAction === "restore" \? "Restore" : "Archive"/);
+    for (const label of ["Revoke Invitation", "Resend Invitation", "Member settings", "Archive", "Restore"]) {
+      expect(source).toContain(`label: "${label}"`);
+    }
     expect(source).not.toContain("onBlur=");
     expect(source).not.toContain("Hours/day");
-    const menu = source.slice(source.indexOf("function PeopleRowMenu"));
-    expect(menu).toContain("<V2RefusalPopover");
   });
 
-  it("edits a Member's hours and Daily Updates access in a dialog", () => {
+  it("edits a Member's role and Daily Updates access in a dialog, never hours", () => {
     expect(source).toContain('testId="v2-people-settings-dialog"');
-    expect(source).toContain("Hours per day");
     expect(source).toContain("Can view Daily Updates");
-    expect(source).toContain('refusal={refusal?.id === "member-settings" ? refusal.message : null}');
+    expect(source).not.toContain("Hours per day");
+    expect(source).not.toContain("hoursPerDay");
   });
 });
 

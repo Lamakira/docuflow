@@ -114,6 +114,7 @@ import {
   type Entitlements,
   type PricedPlanKey,
 } from "./plan";
+import { V2PageHead } from "./V2PageHead";
 
 type WorkspaceMembershipsResponse = {
   memberships: Array<{
@@ -643,11 +644,7 @@ export function V2AdministrationPage() {
   if (page.kind === "refusal") {
     return (
       <div className="df-page" data-testid="v2-administration">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Administration</h1>
-          </div>
-        </header>
+        <V2PageHead title="Administration" />
         <p className="df-refusal" data-testid="v2-administration-refusal">
           {page.refusal}
         </p>
@@ -659,11 +656,7 @@ export function V2AdministrationPage() {
 
   return (
     <div className="df-page" data-testid="v2-administration">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Administration</h1>
-        </div>
-      </header>
+      <V2PageHead title="Administration" />
 
       {shownRefusal && !creatingAccount && !creatingEndpoint ? <p className="df-refusal">{shownRefusal}</p> : null}
 

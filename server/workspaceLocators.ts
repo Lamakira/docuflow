@@ -17,9 +17,11 @@ import { db } from "./db";
 
 type Row = Record<string, unknown>;
 
-async function call(fn: string, key: string): Promise<Row[]> {
+type Executor = Pick<typeof db, "execute">;
+
+async function call(fn: string, key: string, executor: Executor = db): Promise<Row[]> {
   // `fn` is one of the literals below, never caller input.
-  const result = await db.execute(sql`SELECT * FROM ${sql.raw(fn)}(${key})`);
+  const result = await executor.execute(sql`SELECT * FROM ${sql.raw(fn)}(${key})`);
   return result.rows as Row[];
 }
 
@@ -47,8 +49,8 @@ export interface LocatedMembership {
 }
 
 /** Every Membership of the User, archived included. */
-export async function membershipsForUser(userId: string): Promise<LocatedMembership[]> {
-  const rows = await call("app_memberships_for_user", userId);
+export async function membershipsForUser(userId: string, executor?: Executor): Promise<LocatedMembership[]> {
+  const rows = await call("app_memberships_for_user", userId, executor);
   return rows.map((row) => ({
     id: row.id as string,
     workspaceId: row.workspace_id as string,
@@ -112,9 +114,9 @@ export interface LocatedInvitation {
 }
 
 /**
- * Pending, unexpired Invitations addressed to exactly this email (the match is
- * an exact string comparison, as `listInvitationsForEmail` has always made
- * it). The function filters, so an accepted or expired Invitation's Workspace
+ * Pending, unexpired Invitations addressed to exactly this email. Invitations
+ * store their address lower-cased, so the caller lower-cases its own. The
+ * function filters, so an accepted or expired Invitation's Workspace
  * is never disclosed; the caller re-checks with the same rule.
  */
 export async function invitationsForEmail(email: string): Promise<LocatedInvitation[]> {

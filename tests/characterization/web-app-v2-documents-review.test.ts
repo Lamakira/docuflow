@@ -144,11 +144,11 @@ describe("the register page source (F53, F55, F59)", () => {
 
   it("puts the page header above the split so New Document does not move", () => {
     expect(documentsSource).toMatch(
-      /className="df-library-page" data-testid="v2-documents" onKeyDown=\{onLibraryKeyDown\}>\s*<header[\s\S]*?<\/header>[\s\S]*?<div className="df-library">\s*<div className="df-library-main">/,
+      /className="df-library-page" data-testid="v2-documents" onKeyDown=\{onLibraryKeyDown\}>\s*<V2PageHead\s[\s\S]*?<div className="df-library">\s*<div className="df-library-main">/,
     );
     const split = documentsSource.slice(documentsSource.indexOf('<div className="df-library">'));
     expect(split.indexOf("df-filter-bar")).toBeLessThan(split.indexOf("df-folder-preview"));
-    expect(documentsSource.slice(0, documentsSource.indexOf('<div className="df-library">'))).toContain('<header className="df-today-head">');
+    expect(documentsSource.slice(0, documentsSource.indexOf('<div className="df-library">'))).toContain("<V2PageHead");
   });
 
   it("does not map a Document's full text into the register", () => {

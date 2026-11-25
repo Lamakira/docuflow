@@ -35,6 +35,12 @@ the test that enforces it.
   Why: a taller head starts its column's content lower than the others ("Discovering call completed" did).
   <!-- 2026-11-19: "Regarde le décalage créé par l'en-tête de la colonne "Discovering call completed"" -->
 
+- **Every page's head is `client/src/v2/V2PageHead.tsx`: the title with its count or date beside it in a filled pill, the line about the page right under it, and the actions on the title's line, all as tall as a button.**
+  Never a bordered chip (it reads as a control) nor one beside a button, and never a note under the head for what the subhead says. One or two filters sit in the head, before the main button; a row of filters starts at three.
+  Why: on People the boxed `1 Member` was shorter than `Invite`, and the seats line stood apart from the title; each screen spaced its head its own way.
+  Check: `tests/characterization/web-app-v2-design-rules.test.ts`.
+  <!-- 2026-11-25: "la mention "1 member" est plus petit que le bouton "Invite" et la mention "1 of 500 Billable Seats used." est trop espacé du titre [...] il y a un manque de cohérence dans la gestion de l'espace ici"; then, of plain text: "la mention "1 member" n'est pas directement visible et pour l'input de recherche et la case à cocher [...] ils prennent une ligne entière à eux seul" -->
+
 ## Copy
 
 - **A page's name appears in the sidebar and in its title, nowhere else. A top-level page's breadcrumb stops at the Workspace. A subtitle exists only when it says something the title does not: never "<Page> in <Workspace>."**

@@ -19,6 +19,7 @@ import { useV2Chrome } from "./V2Shell";
 import { V2EmptyLine, V2RecordEmpty } from "./V2EmptyState";
 import { V2FilterSelect } from "./V2Select";
 import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 type TodayStatus = {
   submitted: TeamDailyUpdateMember[];
@@ -121,11 +122,7 @@ export function V2TeamDailyUpdatesPage() {
   if (page.kind === "refusal") {
     return (
       <div className="df-page" data-testid="v2-daily-updates">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Daily Updates</h1>
-          </div>
-        </header>
+        <V2PageHead title="Daily Updates" />
         <p className="df-refusal" data-testid="v2-daily-updates-refusal">
           {page.refusal}
         </p>
@@ -135,14 +132,7 @@ export function V2TeamDailyUpdatesPage() {
 
   return (
     <div className="df-page" data-testid="v2-daily-updates">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <div className="df-today-title-row">
-            <h1 className="df-title">Daily Updates</h1>
-            <span className="df-date-chip">{page.dateChip}</span>
-          </div>
-        </div>
-      </header>
+      <V2PageHead title="Daily Updates" chip={page.dateChip} />
 
       <section className="df-card">
         <div className="df-kpi-grid">

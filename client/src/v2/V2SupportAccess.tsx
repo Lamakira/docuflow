@@ -23,6 +23,7 @@ import {
   type SupportGrantView,
   type WorkspaceAssurance,
 } from "./supportAccess";
+import { V2PageHead } from "./V2PageHead";
 
 export function V2SupportAccess({ workspaceRole }: { workspaceRole: string }) {
   const { data: grants = [], isLoading: grantsLoading } = useQuery<SupportGrantView[]>({
@@ -192,12 +193,7 @@ export function WorkspaceSecondFactor() {
 
   return (
     <div className="df-page" data-testid="v2-workspace-second-factor">
-      <header className="df-today-head">
-        <div>
-          <h1 className="df-title">{page.title}</h1>
-          <p className="df-subhead">{page.note}</p>
-        </div>
-      </header>
+      <V2PageHead title={page.title} subhead={page.note} />
       <p className="df-support-note">This Workspace requires a second factor before you can use it. Add an authenticator app from your account, then continue.</p>
       {pending ? <TaskSetupMFA redirectUrlComplete={SESSION_TASK_COMPLETE_PATH} /> : null}
       <div className="df-form-actions">

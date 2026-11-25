@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, RequestHandler } from "express";
 import { z } from "zod";
 import { isAuthenticated, isIdentified, getUserId } from "../../auth";
 import {
@@ -48,20 +48,29 @@ import {
   InvitationDuplicateMembershipError,
   InvitationEmailMismatchError,
   InvitationExpiredError,
+  InvitationJustSentError,
   InvitationNotFoundError,
   InvitationRoleError,
   InvitationRevokedError,
   InvitationUnauthorizedError,
-  MembershipNotFoundError,
+  InvitationUnverifiedEmailError,
   acceptInvitation,
   listInvitationsForUser,
   listWorkspaceInvitations,
+  lookupInvitation,
+  resendInvitation,
   revokeInvitation,
   sendInvitation,
-  updateMembershipProfile,
 } from "./invitations";
+import {
+  AccountArchivedError,
+  MembershipNotFoundError,
+  archiveMembership,
+  restoreMembership,
+  updateMembership,
+} from "./membershipManagement";
 import { SeatExhaustedError } from "../billing/writeClassification";
-import { requireAdministration } from "../../workspaceRole";
+import { MembershipManagementError, requireAdministration } from "../../workspaceRole";
 
 const createBody = z.object({
   url: z.string().url(),
@@ -198,14 +207,21 @@ export function registerActiveWorkspaceRoutes(app: Express): void {
 }
 
 const sendBody = z.object({
-  email: z.string().email(),
+  email: z.string().max(254).email(),
   workspaceRole: z.string().min(1),
 });
 
-const profileBody = z.object({
-  hoursPerDay: z.number().int().min(1).max(24).optional(),
-  canViewDailyUpdates: z.union([z.literal(0), z.literal(1)]).optional(),
-});
+const membershipBody = z
+  .object({
+    workspaceRole: z.enum(["MEMBER", "ADMINISTRATOR"]).optional(),
+    canViewDailyUpdates: z.union([z.literal(0), z.literal(1)]).optional(),
+  })
+  .strict()
+  .refine((body) => body.workspaceRole !== undefined || body.canViewDailyUpdates !== undefined, {
+    message: "Nothing to change",
+  });
+
+const tokenBody = z.object({ token: z.string().min(1) });
 
 type Responder = { status: (code: number) => { json: (body: unknown) => void } };
 
@@ -236,7 +252,11 @@ const INVITATION_REFUSALS = [
   InvitationAlreadyAcceptedError,
   InvitationEmailMismatchError,
   InvitationUnauthorizedError,
+  InvitationUnverifiedEmailError,
+  InvitationJustSentError,
   MembershipNotFoundError,
+  MembershipManagementError,
+  AccountArchivedError,
   SeatExhaustedError,
 ] as const;
 
@@ -245,12 +265,13 @@ function invitationError(res: Responder, error: unknown): boolean {
 }
 
 /**
- * Invitation BFF (#211). Session cookies. Send/revoke: Owner or Administrator.
- * Accept is identity-session only — an invitee may have no Membership yet.
+ * Invitation and Membership BFF (#211). Session cookies. Every Workspace route
+ * here: Owner or Administrator. Accept is identity-session only — an invitee may
+ * have no Membership yet — and lookup needs no session, only the link's token.
  * Errors stay `{ message }`.
  */
 export function registerInvitationRoutes(app: Express): void {
-  app.get("/api/workspace/invitations", isAuthenticated, async (_req, res) => {
+  app.get("/api/workspace/invitations", isAuthenticated, requireAdministration, async (_req, res) => {
     res.json(await listWorkspaceInvitations());
   });
 
@@ -282,28 +303,51 @@ export function registerInvitationRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/workspace/invitations/:id/revoke", isAuthenticated, requireAdministration, async (req, res) => {
+  const onOne = (act: (actorUserId: string, id: string) => Promise<unknown>): RequestHandler => {
+    return async (req, res) => {
+      const userId = getUserId(req);
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      try {
+        res.json(await act(userId, req.params.id));
+      } catch (error) {
+        if (!invitationError(res, error)) throw error;
+      }
+    };
+  };
+  const managed = [isAuthenticated, requireAdministration];
+  app.post("/api/workspace/invitations/:id/resend", managed, onOne(resendInvitation));
+  app.post("/api/workspace/invitations/:id/revoke", managed, onOne(revokeInvitation));
+  app.post("/api/workspace/memberships/:id/archive", managed, onOne(archiveMembership));
+  app.post("/api/workspace/memberships/:id/restore", managed, onOne(restoreMembership));
+
+  app.patch("/api/workspace/memberships/:id", isAuthenticated, requireAdministration, async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const parsed = membershipBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });
+    }
     try {
-      res.json(await revokeInvitation(req.params.id));
+      res.json(await updateMembership(userId, req.params.id, parsed.data));
     } catch (error) {
       if (!invitationError(res, error)) throw error;
     }
   });
 
-  app.patch("/api/workspace/memberships/:id", isAuthenticated, requireAdministration, async (req, res) => {
-    const parsed = profileBody.safeParse(req.body);
+  app.post("/api/invitations/lookup", async (req, res) => {
+    const parsed = tokenBody.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });
     }
     try {
-      res.json(await updateMembershipProfile(req.params.id, parsed.data));
+      res.json(await lookupInvitation(parsed.data.token));
     } catch (error) {
       if (!invitationError(res, error)) throw error;
     }
   });
 
   app.post("/api/invitations/accept", async (req, res) => {
-    const parsed = z.object({ token: z.string().min(1) }).safeParse(req.body);
+    const parsed = tokenBody.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ message: parsed.error.errors[0]?.message ?? "Invalid request" });
     }

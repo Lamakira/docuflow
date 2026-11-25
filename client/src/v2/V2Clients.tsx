@@ -46,6 +46,7 @@ import { sourceIcon } from "./sourceIcons";
 import { V2RegisterPager } from "./V2RegisterPager";
 import { Button } from "@/components/ui/button";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 type ClientWithContacts = CrmClient & { contacts?: CrmContact[] };
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
@@ -406,11 +407,7 @@ export function V2ClientsPage() {
   if (isError) {
     return (
       <div className="df-page" data-testid="v2-clients">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Clients</h1>
-          </div>
-        </header>
+        <V2PageHead title="Clients" />
         <V2LoadFailed
           title="Clients could not be loaded"
           copy="Something went wrong while loading them. Try again."
@@ -423,11 +420,9 @@ export function V2ClientsPage() {
 
   return (
     <div className="df-page" data-testid="v2-clients">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Clients</h1>
-        </div>
-        <div className="df-library-actions">
+      <V2PageHead
+        title="Clients"
+        actions={
           <Button
             variant="default"
             type="button"
@@ -437,8 +432,8 @@ export function V2ClientsPage() {
             <Plus strokeWidth={1.6} aria-hidden />
             New Client
           </Button>
-        </div>
-      </header>
+        }
+      />
 
       <V2FormDialog
         open={creating}

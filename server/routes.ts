@@ -5,6 +5,8 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated, isIdentified, getUserId } from "./auth";
 import {
   canManageAdministration,
+  canViewDailyUpdates,
+  dailyUpdatesAccessOf,
   requireAdministration,
 } from "./workspaceRole";
 import { config } from "./config";
@@ -297,6 +299,7 @@ export async function registerRoutes(
       // property of this session, not of `users.role` (#300).
       res.json({
         ...toSafeUser(user),
+        canViewDailyUpdates: await dailyUpdatesAccessOf(user.id),
         platformStaff: (req as { platformStaffSession?: boolean }).platformStaffSession === true,
       });
     } catch (error) {
@@ -3300,14 +3303,8 @@ Instructions:
 
   // Administration reaches the daily-updates dashboard, and so does any
   // Membership granted the "view daily updates" Capability.
-  const canViewDailyUpdates = async (req: any, res: any, next: any) => {
-    const userId = getUserId(req);
-    if (!userId) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    if (await canManageAdministration()) return next();
-    const user = await storage.getUser(userId);
-    if (!user || user.canViewDailyUpdates !== 1) {
+  const requireDailyUpdates = async (_req: any, res: any, next: any) => {
+    if (!(await canViewDailyUpdates())) {
       return res.status(403).json({ message: "Access denied" });
     }
     next();
@@ -5288,7 +5285,7 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/daily-updates", isAuthenticated, canViewDailyUpdates, async (req, res) => {
+  app.get("/api/admin/daily-updates", isAuthenticated, requireDailyUpdates, async (req, res) => {
     try {
       const { startDate, endDate, userId, crmProjectId } = req.query;
       const updates = await storage.getProjectDailyUpdatesForAdmin({
@@ -5304,7 +5301,7 @@ Instructions:
     }
   });
 
-  app.get("/api/admin/daily-updates/kpis", isAuthenticated, canViewDailyUpdates, async (req, res) => {
+  app.get("/api/admin/daily-updates/kpis", isAuthenticated, requireDailyUpdates, async (req, res) => {
     try {
       const { startDate, endDate } = req.query;
       const updates = await storage.getProjectDailyUpdatesForAdmin({
@@ -5331,7 +5328,7 @@ Instructions:
   // Today's submission status: which active employees have (and have not)
   // submitted a daily update today, in the reminder timezone. Powers the
   // "Today" overview so admins/managers can see at a glance who forgot.
-  app.get("/api/admin/daily-updates/today-status", isAuthenticated, canViewDailyUpdates, async (_req, res) => {
+  app.get("/api/admin/daily-updates/today-status", isAuthenticated, requireDailyUpdates, async (_req, res) => {
     try {
       res.json(await todayDailyUpdateStatus(new Date()));
     } catch (error) {
@@ -5340,7 +5337,7 @@ Instructions:
     }
   });
 
-  app.post("/api/admin/daily-updates/remind", isAuthenticated, canViewDailyUpdates, async (_req, res) => {
+  app.post("/api/admin/daily-updates/remind", isAuthenticated, requireDailyUpdates, async (_req, res) => {
     try {
       res.json(await remindMissingDailyUpdates(new Date()));
     } catch (error) {

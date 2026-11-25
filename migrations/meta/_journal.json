@@ -309,6 +309,13 @@
       "when": 1792752538266,
       "tag": "0043_screenshot_fingerprint",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795612156691,
+      "tag": "0044_daily_updates_grants",
+      "breakpoints": true
     }
   ]
 }

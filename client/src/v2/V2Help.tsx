@@ -22,6 +22,7 @@ import { canManageAdministration } from "./administration";
 import { Button } from "@/components/ui/button";
 import { V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
 import { filteredEmptyModel } from "./emptyState";
+import { V2PageHead } from "./V2PageHead";
 
 const ARTICLE_MOTION = motionForSurface("help-article").enterExit;
 
@@ -37,11 +38,7 @@ export function V2HelpPage() {
   if (page.kind === "missing") {
     return (
       <div className="df-page" data-testid="v2-help">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Help Center</h1>
-          </div>
-        </header>
+        <V2PageHead title="Help Center" />
         <V2EmptyState
           icon="documents"
           title={page.emptyCopy}
@@ -59,15 +56,15 @@ export function V2HelpPage() {
     const Article = HELP_ARTICLE_COMPONENTS[page.slug];
     return (
       <div className="df-page" data-testid="v2-help">
-        <header className="df-today-head">
-          <div style={{ minWidth: 0 }}>
+        <V2PageHead
+          above={
             <Link href={page.backHref} className="df-ghost-link">
               Help Center
             </Link>
-            <h1 className="df-title">{page.title}</h1>
-            {page.subtitle ? <p className="df-subhead">{page.subtitle}</p> : null}
-          </div>
-        </header>
+          }
+          title={page.title}
+          subhead={page.subtitle}
+        />
 
         {page.toc.length > 0 ? (
           <nav className="df-card df-help-toc" aria-label="On this page">
@@ -101,12 +98,10 @@ export function V2HelpPage() {
 
   return (
     <div className="df-page" data-testid="v2-help">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Help Center</h1>
-          <p className="df-subhead">Articles for DocuFlow: time, projects, the desktop agent, and administration.</p>
-        </div>
-      </header>
+      <V2PageHead
+        title="Help Center"
+        subhead="Articles for DocuFlow: time, projects, the desktop agent, and administration."
+      />
 
       <label className="df-daily-field">
         Search topics

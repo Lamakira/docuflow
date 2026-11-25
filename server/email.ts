@@ -163,18 +163,25 @@ export async function sendInvitationEmail(input: {
   toEmail: string;
   workspaceName: string;
   workspaceRole: string;
+  inviterName: string | null;
+  expiresAt: Date;
   acceptUrl: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const { client, fromEmail } = getResendClient();
+    const workspaceName = escapeHtml(input.workspaceName);
+    const opening = input.inviterName
+      ? `<strong>${escapeHtml(input.inviterName)}</strong> invited you`
+      : "You have been invited";
     const result = await client.emails.send({
       from: fromEmail,
       to: input.toEmail,
-      subject: `DocuFlow - Invitation to ${input.workspaceName}`,
+      subject: `DocuFlow - Invitation to ${input.workspaceName.replace(/[\r\n]+/g, " ")}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h1 style="color: #333;">Invitation</h1>
-          <p>You have been invited to join <strong>${input.workspaceName}</strong> as ${input.workspaceRole}.</p>
+          <p>${opening} to join <strong>${workspaceName}</strong> as ${input.workspaceRole}.</p>
+          <p>You can accept until <strong>${dateInWords(input.expiresAt)}</strong>.</p>
           <p>This Invitation does not consume a Billable Seat until you accept.</p>
           <p>
             <a href="${input.acceptUrl}" style="display: inline-block; background-color: #E9A23B; color: #0F1524; font-weight: 600; padding: 12px 24px; text-decoration: none; border-radius: 6px;">

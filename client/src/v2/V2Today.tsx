@@ -36,6 +36,7 @@ import { V2RefusalPopover } from "./V2RefusalPopover";
 import { Button } from "@/components/ui/button";
 import { SkeletonLines, SkeletonRows, SkeletonSubhead } from "./V2Skeleton";
 import { V2CompactEmpty } from "./V2EmptyState";
+import { V2PageHead } from "./V2PageHead";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = {
@@ -320,15 +321,11 @@ export function V2TodayPage() {
   return (
     <div className="df-page df-today" data-testid="v2-today" aria-busy={anyLoading ? "true" : undefined}>
       <div className="df-today-body">
-      <header className="df-today-head">
-        <div className="df-today-headline">
-          <div className="df-today-title-row">
-            <h1 className="df-title">Today</h1>
-            <span className="df-date-chip">{today.dateChip}</span>
-          </div>
-          {attentionFailed ? null : attentionLoading ? <SkeletonSubhead /> : <p className="df-subhead">{today.subhead}</p>}
-        </div>
-      </header>
+      <V2PageHead
+        title="Today"
+        chip={today.dateChip}
+        subhead={attentionFailed ? null : attentionLoading ? <SkeletonSubhead /> : today.subhead}
+      />
       {anyLoading ? (
         <p className="df-sr-only" role="status">
           Loading Today for this Workspace.

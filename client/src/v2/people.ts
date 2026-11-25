@@ -1,16 +1,27 @@
 /**
- * People destination (#192, #211).
+ * People destination (#192, #211, F84, F88 to F91).
  * Novelty: accepting an Invitation is rare state indication (Membership
- * appears). Capability refusal opens from the control that failed.
+ * appears). A reader who may not change People is given no control to refuse.
  * Do not animate: register filter typing, role dropdown as decoration,
  * seat digits counting, the people list on load, hover on every avatar.
  */
 
 import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
-import { chromeRefusal } from "./chrome";
+import { MONTHS, formatFullDate } from "./dates";
+import { foldText } from "./text";
 import { memberInitials, memberName } from "./today";
 
 export const PEOPLE_INVITE_ROLES = ["MEMBER", "ADMINISTRATOR"] as const;
+export type PeopleInviteRole = (typeof PEOPLE_INVITE_ROLES)[number];
+
+/** The two roles a person can be given here, each with the one line saying what it allows. */
+export const PEOPLE_ROLE_CHOICES: { value: PeopleInviteRole; label: string; line: string }[] = [
+  { value: "MEMBER", label: "Member", line: "Works on their Projects. Cannot invite or manage people." },
+  { value: "ADMINISTRATOR", label: "Administrator", line: "Manages People, Analytics and Administration." },
+];
+
+/** How long the UI lets Undo stand after an archive. */
+export const ARCHIVE_UNDO_MS = 8000;
 
 export type PeopleMembershipInput = {
   membershipId: string;
@@ -21,29 +32,38 @@ export type PeopleMembershipInput = {
   workspaceRole: string;
   capabilities: string[];
   archived: boolean;
-  hoursPerDay?: number;
+  /** The grant on this Membership, 0 for everyone when the reader is a Member. */
   canViewDailyUpdates?: number;
+  /** Whether the reader may change, archive or restore this row; the server decides. */
+  manageable?: boolean;
 };
 
 export type PeopleInvitationInput = {
   id: string;
   email: string;
   workspaceRole: string;
+  status: "pending" | "expired";
+  expiresAt: string;
+  invitedBy: string | null;
 };
 
 export type PeopleInput = {
   currentUserId: string;
-  ownerName: string | null;
   condition: "Trial" | "Read-only" | "Past due" | null;
   includeArchived: boolean;
   purchasedSeats: number | null;
   memberships: PeopleMembershipInput[];
-  invitations?: PeopleInvitationInput[];
+  /** `null` when the list could not be read: no count, no rows, never `0 pending`. */
+  invitations?: PeopleInvitationInput[] | null;
   filterQuery?: string;
   justAcceptedMembershipId?: string | null;
-  /** Whether the reader may invite (an Owner or Administrator, Workspace not Read-only); omitted reads as yes. */
+  /** Whether the reader may change People (an Owner or Administrator, Workspace not Read-only); omitted reads as yes. */
   canInvite?: boolean;
+  /** Whether the reader is an Owner or Administrator, Read-only or not: the seat line is theirs. */
+  canManage?: boolean;
 };
+
+export type PeopleRowState = "active" | "archived" | "invited" | "expired";
 
 export type PeopleRow = {
   kind: "membership" | "invitation";
@@ -53,28 +73,54 @@ export type PeopleRow = {
   name: string;
   initials: string;
   email: string;
+  /** "Owner", "Administrator", "Member". */
   workspaceRole: string;
-  capabilities: string;
-  status: "ACTIVE" | "ARCHIVED" | "INVITATION PENDING";
-  canSignIn: boolean;
-  consumesSeat: boolean;
-  hoursPerDay: number | null;
-  canViewDailyUpdates: number | null;
-  archiveAction: "archive" | "restore" | null;
-  revokeAction: boolean;
+  /** The role as the server spells it, for the settings dialog. */
+  roleValue: string;
+  /** `Daily Updates`, or `-`. */
+  access: string;
+  state: PeopleRowState;
+  /** Plain text: `Active`, `Archived`, `Invited, expires 28 Nov`, `Invitation expired`. */
+  status: string;
+  /** The grant on the Membership, for the settings dialog. */
+  canViewDailyUpdates: number;
+  invitedBy: string | null;
+  /** The row menu's actions, empty for a reader who may not act on it. */
+  actions: ("settings" | "archive" | "restore" | "resend" | "revoke")[];
   justAccepted: boolean;
   self: boolean;
 };
 
 export type PeopleModel = {
-  seatCopy: string;
-  invitePreview: string;
+  /** `3 Members`: the active ones. */
+  chip: string;
+  activeCount: number;
+  /** The seat line, only for a manager who knows the seats. */
+  seatCopy: string | null;
   empty: boolean;
   /** Why the register shows nothing (#325); null while it has rows. */
   emptyState: EmptyModel | null;
   rows: PeopleRow[];
   pagePrimary: "case-ink";
 };
+
+export type PeopleFilters = { q: string; archived: boolean };
+
+export function readPeopleFilters(search: string): PeopleFilters {
+  const params = new URLSearchParams(search);
+  return { q: params.get("q") ?? "", archived: params.get("archived") === "1" };
+}
+
+/** The screen's query string, leaving defaults out so a plain screen stays `/people`. */
+export function writePeopleFilters(search: string, filters: PeopleFilters): string {
+  const params = new URLSearchParams(search);
+  if (filters.q.trim()) params.set("q", filters.q);
+  else params.delete("q");
+  if (filters.archived) params.set("archived", "1");
+  else params.delete("archived");
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
 
 export function workspaceMembershipsPath(opts: { includeArchived?: boolean } = {}): string {
   return opts.includeArchived
@@ -90,6 +136,10 @@ export function invitationAcceptPath(): string {
   return "/api/invitations/accept";
 }
 
+export function invitationLookupPath(): string {
+  return "/api/invitations/lookup";
+}
+
 export function invitationPagePath(token: string): string {
   return `/invitations/${encodeURIComponent(token)}`;
 }
@@ -102,105 +152,153 @@ export function membershipProfilePath(membershipId: string): string {
   return `/api/workspace/memberships/${membershipId}`;
 }
 
-export function peopleArchivePath(userId: string): string {
-  return `/api/admin/users/${userId}/archive`;
+export function membershipArchivePath(membershipId: string): string {
+  return `/api/workspace/memberships/${membershipId}/archive`;
+}
+
+export function membershipRestorePath(membershipId: string): string {
+  return `/api/workspace/memberships/${membershipId}/restore`;
 }
 
 export function invitationRevokePath(id: string): string {
   return `/api/workspace/invitations/${id}/revoke`;
 }
 
-function capabilityLabel(capabilities: string[]): string {
-  if (capabilities.length === 0) return "-";
-  return capabilities.join(" · ");
+export function invitationResendPath(id: string): string {
+  return `/api/workspace/invitations/${id}/resend`;
 }
 
-export function composeInvitePreview(input: {
-  activeCount: number;
-  purchasedSeats: number | null;
-}): string {
-  if (input.purchasedSeats == null) {
-    return "This Invitation consumes no Billable Seat until accepted.";
-  }
-  return `${input.activeCount} of ${input.purchasedSeats} Billable Seats consumed. This Invitation will consume 1 of ${input.purchasedSeats} if accepted.`;
+/** The queries a change to People makes stale. */
+export const PEOPLE_STALE_KEYS = [
+  "/api/workspace/memberships",
+  "/api/workspace/invitations",
+  "/api/users",
+  "/api/billing/subscription",
+] as const;
+
+/** `Owner`, `Administrator`, `Member`: the server's slug in sentence case. */
+export function roleLabel(role: string): string {
+  const lower = role.trim().toLowerCase();
+  return lower ? lower.charAt(0).toUpperCase() + lower.slice(1) : "Member";
 }
 
-function seatCopy(activeCount: number, pendingCount: number, purchasedSeats: number | null): string {
-  const pending =
-    pendingCount === 1 ? "1 Invitation pending consumes none." : `${pendingCount} Invitations pending consume none.`;
-  if (purchasedSeats == null) {
-    return `Only accepted active Memberships consume a Billable Seat. ${pending}`;
-  }
-  return `${activeCount} of ${purchasedSeats} Billable Seats consumed. ${pending}`;
+const ROLE_RANK: Record<string, number> = { OWNER: 0, ADMINISTRATOR: 1, MEMBER: 2 };
+
+function roleRank(role: string): number {
+  return ROLE_RANK[role.trim().toUpperCase()] ?? 3;
+}
+
+/** `28 Nov`, in the reader's time zone. */
+function shortDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getDate()} ${MONTHS[date.getMonth()]}`;
+}
+
+const DAILY_UPDATES_CAPABILITY = "view daily updates";
+
+function accessLabel(row: PeopleMembershipInput): string {
+  const capable = row.capabilities.some((name) => name.trim().toLowerCase() === DAILY_UPDATES_CAPABILITY);
+  return capable || row.canViewDailyUpdates === 1 ? "Daily Updates" : "-";
 }
 
 function matchesFilter(query: string, row: { name: string; email: string }): boolean {
-  if (!query) return true;
-  const needle = query.trim().toLowerCase();
-  return row.name.toLowerCase().includes(needle) || row.email.toLowerCase().includes(needle);
+  if (!query.trim()) return true;
+  const needle = foldText(query.trim());
+  return foldText(row.name).includes(needle) || foldText(row.email).includes(needle);
+}
+
+function byName(a: { name: string }, b: { name: string }): number {
+  return a.name.localeCompare(b.name);
+}
+
+function seatLine(activeCount: number, pendingCount: number, purchased: number): string {
+  const seats = purchased === 1 ? "Billable Seat" : "Billable Seats";
+  const pending = pendingCount > 0 ? ` ${pendingCount} ${pendingCount === 1 ? "Invitation" : "Invitations"} pending.` : "";
+  return `${activeCount} of ${purchased} ${seats} used.${pending}`;
+}
+
+/** The Invite dialog's line: an Invitation shows its seat impact before it is sent. */
+export function invitePreview(workspaceName: string, activeCount: number, purchasedSeats: number | null): string {
+  const join = `Send an Invitation to join ${workspaceName}.`;
+  if (purchasedSeats == null) return `${join} It takes a Billable Seat when accepted.`;
+  return `${join} ${activeCount} of ${purchasedSeats} Billable Seats used; it takes one when accepted.`;
 }
 
 export function composePeople(input: PeopleInput): PeopleModel {
   const invitations = input.invitations ?? [];
+  const canAct = input.canInvite ?? true;
   const visible = input.memberships.filter((row) => input.includeArchived || !row.archived);
   const membershipRows: PeopleRow[] = visible.map((row) => {
-    const self = row.userId === input.currentUserId;
     const archived = row.archived;
-    const name = memberName(row);
+    const manageable = canAct && row.manageable === true;
     return {
       kind: "membership" as const,
       membershipId: row.membershipId,
       invitationId: null,
       userId: row.userId,
-      name,
+      name: memberName(row),
       initials: memberInitials(row),
       email: row.email,
-      workspaceRole: row.workspaceRole,
-      capabilities: capabilityLabel(row.capabilities),
-      status: archived ? "ARCHIVED" : "ACTIVE",
-      canSignIn: !archived,
-      consumesSeat: !archived,
-      hoursPerDay: row.hoursPerDay ?? 8,
+      workspaceRole: roleLabel(row.workspaceRole),
+      roleValue: row.workspaceRole.trim().toUpperCase(),
+      access: accessLabel(row),
+      state: archived ? ("archived" as const) : ("active" as const),
+      status: archived ? "Archived" : "Active",
       canViewDailyUpdates: row.canViewDailyUpdates ?? 0,
-      archiveAction: self ? null : archived ? "restore" : "archive",
-      revokeAction: false,
+      invitedBy: null,
+      actions: !manageable ? [] : archived ? ["restore"] : ["settings", "archive"],
       justAccepted: row.membershipId === input.justAcceptedMembershipId,
-      self,
+      self: row.userId === input.currentUserId,
     };
   });
-  const invitationRows: PeopleRow[] = invitations.map((row) => ({
-    kind: "invitation" as const,
-    membershipId: row.id,
-    invitationId: row.id,
-    userId: row.id,
-    name: row.email,
-    initials: row.email.slice(0, 2).toUpperCase(),
-    email: row.email,
-    workspaceRole: row.workspaceRole,
-    capabilities: "-",
-    status: "INVITATION PENDING",
-    canSignIn: false,
-    consumesSeat: false,
-    hoursPerDay: null,
-    canViewDailyUpdates: null,
-    archiveAction: null,
-    revokeAction: true,
-    justAccepted: false,
-    self: false,
-  }));
+  const invitationRows: PeopleRow[] = invitations.map((row) => {
+    const expired = row.status === "expired";
+    return {
+      kind: "invitation" as const,
+      membershipId: row.id,
+      invitationId: row.id,
+      userId: row.id,
+      name: row.email,
+      initials: row.email.slice(0, 2).toUpperCase(),
+      email: row.email,
+      workspaceRole: roleLabel(row.workspaceRole),
+      roleValue: row.workspaceRole.trim().toUpperCase(),
+      access: "-",
+      state: expired ? ("expired" as const) : ("invited" as const),
+      status: expired ? "Invitation expired" : `Invited, expires ${shortDate(row.expiresAt)}`,
+      canViewDailyUpdates: 0,
+      invitedBy: row.invitedBy,
+      actions: canAct ? ["resend", "revoke"] : [],
+      justAccepted: false,
+      self: false,
+    };
+  });
+
+  // Active Members (Owner, Administrators, Members), then Invitations, then archived.
+  const active = membershipRows
+    .filter((row) => row.state === "active")
+    .sort((a, b) => roleRank(a.roleValue) - roleRank(b.roleValue) || byName(a, b));
+  const archivedRows = membershipRows.filter((row) => row.state === "archived").sort(byName);
   const query = input.filterQuery ?? "";
-  const rows = [...membershipRows, ...invitationRows].filter((row) => matchesFilter(query, row));
+  const rows = [...active, ...invitationRows, ...archivedRows].filter((row) => matchesFilter(query, row));
+
   const activeCount = input.memberships.filter((row) => !row.archived).length;
+  const pendingCount = invitations.filter((row) => row.status === "pending").length;
   const empty = rows.length === 0;
   return {
-    seatCopy: seatCopy(activeCount, invitations.length, input.purchasedSeats),
-    invitePreview: composeInvitePreview({ activeCount, purchasedSeats: input.purchasedSeats }),
+    activeCount,
+    chip: `${activeCount} ${activeCount === 1 ? "Member" : "Members"}`,
+    seatCopy:
+      input.canManage !== false && input.purchasedSeats != null
+        ? seatLine(activeCount, pendingCount, input.purchasedSeats)
+        : null,
     empty,
     // The invitation names Invite only to a reader who has it (#325).
     emptyState: emptyModelOf(
       emptyKindOf(empty, Boolean(query.trim())),
       "Members",
-      input.canInvite === false
+      canAct === false
         ? { title: "No Members yet", copy: "Memberships are the people who work in this Workspace." }
         : {
             title: "Invite your first Member",
@@ -214,129 +312,152 @@ export function composePeople(input: PeopleInput): PeopleModel {
   };
 }
 
-export type PeopleWriteRefusal =
-  | { kind: "workspace-role"; workspaceRole: string; ownerName?: string | null }
-  | { kind: "workspace-condition"; workspaceName: string; condition: "Read-only" | "Trial" | "Past due" }
-  | { kind: "seat"; purchased: number }
-  | {
-      kind: "error";
-      workspaceName: string;
-      workspaceRole: string;
-      ownerName?: string | null;
-      errorMessage: string;
-      purchasedSeats?: number | null;
-    };
+/** The Invite dialog's email check: the field's own `type="email"` lets `a@b` through. */
+export const INVITE_EMAIL_PROBLEM = "Enter a full email address, like name@company.com";
 
-export function peopleWriteRefusal(input: PeopleWriteRefusal): string {
-  if (input.kind === "workspace-role") {
-    // Inviting and re-roling authorize on the Workspace Role, as Administration
-    // does (#238) — there is no Capability row here either, so none is named.
-    return chromeRefusal({
-      kind: "workspace-role",
-      destination: "Inviting and managing People",
-      roles: "the Owner and Administrators",
-      workspaceRole: input.workspaceRole,
-      ownerName: input.ownerName,
-    });
-  }
-  if (input.kind === "workspace-condition") {
-    return chromeRefusal({
-      kind: "workspace-condition",
-      workspaceName: input.workspaceName,
-      condition: input.condition,
-    });
-  }
-  if (input.kind === "seat") {
-    return chromeRefusal({ kind: "seat", purchased: input.purchased });
-  }
-
-  const message = input.errorMessage;
-  if (/read-only/i.test(message)) {
-    return chromeRefusal({
-      kind: "workspace-condition",
-      workspaceName: input.workspaceName,
-      condition: "Read-only",
-    });
-  }
-  if (/seat/i.test(message)) {
-    return chromeRefusal({ kind: "seat", purchased: input.purchasedSeats ?? 0 });
-  }
-  if (/permission denied|not authorized|access denied|forbidden/i.test(message)) {
-    return peopleWriteRefusal({
-      kind: "workspace-role",
-      workspaceRole: input.workspaceRole,
-      ownerName: input.ownerName,
-    });
-  }
-  return chromeRefusal({ kind: "generic", message });
+export function inviteEmailProblem(email: string): string | null {
+  return /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(email.trim()) ? null : INVITE_EMAIL_PROBLEM;
 }
 
-export type InvitationAcceptStatus =
-  | "ready"
-  | "accepted"
-  | "revoked"
-  | "expired"
-  | "already"
-  | "mismatch"
-  | "unauthorized"
-  | "error";
+/** The settings dialog's one PATCH: only what changed, `null` when nothing did. */
+export function memberSettingsPatch(
+  row: { roleValue: string; canViewDailyUpdates: number },
+  draft: { workspaceRole: string; canViewDailyUpdates: boolean },
+): { workspaceRole?: PeopleInviteRole; canViewDailyUpdates?: 0 | 1 } | null {
+  const patch: { workspaceRole?: PeopleInviteRole; canViewDailyUpdates?: 0 | 1 } = {};
+  if (draft.workspaceRole !== row.roleValue && (PEOPLE_INVITE_ROLES as readonly string[]).includes(draft.workspaceRole)) {
+    patch.workspaceRole = draft.workspaceRole as PeopleInviteRole;
+  }
+  // The grant is a Member's: an Administrator reads Daily Updates by role.
+  const grant = draft.canViewDailyUpdates ? 1 : 0;
+  if (draft.workspaceRole === "MEMBER" && grant !== row.canViewDailyUpdates) patch.canViewDailyUpdates = grant;
+  return Object.keys(patch).length > 0 ? patch : null;
+}
 
-export function composeInvitationAccept(input: {
-  signedIn: boolean;
-  status: InvitationAcceptStatus;
-  workspaceName?: string;
-  message?: string;
-}): {
+/** What a failed change says: the server's words, the seat one naming Billing to those who can act on it. */
+export function peopleFailure(message: string, opts: { purchasedSeats: number | null; canManage: boolean }): string {
+  if (!/seat/i.test(message)) return message;
+  const all = opts.purchasedSeats ? `All ${opts.purchasedSeats} Billable Seats are in use.` : "All Billable Seats are in use.";
+  return opts.canManage
+    ? `${all} Add seats in Administration → Billing, then try again.`
+    : `${all} Ask an Administrator to add seats.`;
+}
+
+/** The toast after an Invitation is sent or sent again. */
+export function invitationSentNotice(
+  email: string,
+  emailSent: boolean,
+  again = false,
+): { kind: "success" | "info"; message: string } {
+  if (!emailSent) {
+    return {
+      kind: "info",
+      message: "The Invitation is saved, but its email could not be sent. Use Resend Invitation.",
+    };
+  }
+  return { kind: "success", message: again ? `Invitation sent again to ${email}` : `Invitation sent to ${email}` };
+}
+
+export type InvitationLookup = {
+  workspaceName: string;
+  workspaceRole: string;
+  invitedBy: string | null;
+  email: string;
+  status: "pending" | "expired" | "revoked" | "accepted";
+  expiresAt: string;
+};
+
+export type InvitationPageModel = {
   title: string;
   copy: string;
-  action: "sign-in" | "accept" | "today" | "none";
-} {
-  if (!input.signedIn || input.status === "unauthorized") {
+  /** Until when, for a pending Invitation. */
+  detail: string | null;
+  action: "sign-in" | "accept" | "switch" | "go" | "open" | "none";
+  actionLabel: string | null;
+};
+
+const INVITER_FALLBACK = "the person who invited you";
+
+/**
+ * What the Invitation page says and offers. `lookup` is `null` for a link that
+ * names no Invitation. `signedInEmail` is the identity's own address, when known.
+ */
+export function composeInvitationPage(input: {
+  lookup: InvitationLookup | null;
+  signedIn: boolean;
+  signedInEmail?: string | null;
+}): InvitationPageModel {
+  const { lookup } = input;
+  if (!lookup) {
     return {
-      title: "Accept Invitation",
-      copy: "Sign in or create an identity to accept this Invitation. You will gain a Membership. This does not create a Workspace.",
-      action: "sign-in",
+      title: "Invitation not found",
+      copy: "This link does not match an Invitation. Check the link, or ask for a new one.",
+      detail: null,
+      action: "go",
+      actionLabel: "Go to DocuFlow",
     };
   }
-  if (input.status === "ready") {
+  const inviter = lookup.invitedBy ?? INVITER_FALLBACK;
+  if (lookup.status === "expired") {
     return {
-      title: "Accept Invitation",
-      copy: input.workspaceName
-        ? `Accept to join ${input.workspaceName}. You will gain a Membership. This does not create a Workspace.`
-        : "Accept to join this Workspace. You will gain a Membership. This does not create a Workspace.",
-      action: "accept",
+      title: "Invitation expired",
+      copy: `This Invitation expired. Ask ${inviter} to send it again.`,
+      detail: null,
+      action: "go",
+      actionLabel: "Go to DocuFlow",
     };
   }
-  if (input.status === "accepted") {
+  if (lookup.status === "revoked") {
+    return {
+      title: "Invitation revoked",
+      copy: `This Invitation was revoked. Ask ${inviter} for a new one.`,
+      detail: null,
+      action: "go",
+      actionLabel: "Go to DocuFlow",
+    };
+  }
+  if (lookup.status === "accepted") {
     return {
       title: "Invitation accepted",
-      copy: "Your Membership is active. Continue to Today.",
-      action: "today",
-    };
-  }
-  if (input.status === "revoked") {
-    return { title: "Invitation revoked", copy: "This Invitation was revoked.", action: "none" };
-  }
-  if (input.status === "expired") {
-    return { title: "Invitation expired", copy: "This Invitation expired.", action: "none" };
-  }
-  if (input.status === "already") {
-    return {
-      title: "Invitation already accepted",
       copy: "This Invitation was already accepted.",
-      action: "today",
+      detail: null,
+      action: "open",
+      actionLabel: "Open DocuFlow",
     };
   }
-  if (input.status === "mismatch") {
+  const role = roleLabel(lookup.workspaceRole);
+  const title = `Join ${lookup.workspaceName}`;
+  const copy = lookup.invitedBy
+    ? `${lookup.invitedBy} invited ${lookup.email} to join as ${role}.`
+    : `You were invited to join as ${role}. The Invitation is for ${lookup.email}.`;
+  const detail = `The Invitation is open until ${formatFullDate(lookup.expiresAt)}.`;
+  if (!input.signedIn) return { title, copy, detail, action: "sign-in", actionLabel: null };
+  const own = input.signedInEmail?.trim().toLowerCase();
+  if (own && own !== lookup.email.trim().toLowerCase()) {
     return {
-      title: "Invitation",
-      copy: "This Invitation was sent to a different email.",
-      action: "none",
+      title,
+      copy: `This Invitation was sent to ${lookup.email}. You are signed in as ${input.signedInEmail!.trim()}.`,
+      detail: null,
+      action: "switch",
+      actionLabel: "Switch account",
     };
   }
-  return {
-    title: "Invitation",
-    copy: input.message ?? "This Invitation could not be accepted.",
-    action: "none",
-  };
+  return { title, copy, detail, action: "accept", actionLabel: "Accept Invitation" };
+}
+
+/** What a refused accept says, with the next step. */
+export function invitationAcceptRefusal(message: string, invitedBy: string | null): string {
+  if (/seat/i.test(message)) {
+    return `This Workspace has no free seat. Ask ${invitedBy ?? INVITER_FALLBACK} to add one, then open this link again.`;
+  }
+  if (/different email/i.test(message)) {
+    return "This Invitation was sent to a different email address. Switch to the invited one, then open this link again.";
+  }
+  if (/confirm your email/i.test(message)) {
+    return "Confirm your email address with your sign-in provider, then reload this page.";
+  }
+  if (/archived/i.test(message)) {
+    return "This account is archived. Contact DocuFlow support to restore it.";
+  }
+  return message;
 }

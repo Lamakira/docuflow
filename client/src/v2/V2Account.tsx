@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/ThemeProvider";
 import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 import { V2LoadFailed } from "./V2EmptyState";
+import { V2PageHead } from "./V2PageHead";
 
 const GRACE_MOTION = motionForSurface("account-deletion-grace").enterExit;
 const CONFIRM_MOTION = motionForSurface("account-confirm-typing").enterExit;
@@ -150,13 +151,11 @@ export function V2AccountPage() {
 
   return (
     <div className="df-page" data-testid="v2-account">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <div className="df-mono df-account-kicker">{ACCOUNT_PAGE.kicker}</div>
-          <h1 className="df-title">{ACCOUNT_PAGE.title}</h1>
-          <p className="df-subhead">{ACCOUNT_PAGE.lead}</p>
-        </div>
-      </header>
+      <V2PageHead
+        above={<div className="df-mono df-account-kicker">{ACCOUNT_PAGE.kicker}</div>}
+        title={ACCOUNT_PAGE.title}
+        subhead={ACCOUNT_PAGE.lead}
+      />
 
       {profileRefusal ? (
         <p className="df-refusal" data-testid="v2-account-profile-refusal">{profileRefusal}</p>

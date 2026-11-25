@@ -156,7 +156,9 @@ describe("floating surfaces are shadcn primitives (#249)", () => {
     const shell = source("client/src/v2/V2Shell.tsx");
 
     expect(refusalPopover).toContain('from "@/components/ui/popover"');
-    expect(people).toContain("V2RefusalPopover");
+    // People refuses through a toast or inside its dialogs: no one is shown a control they may not use.
+    expect(people).toContain("V2RowMenu");
+    expect(people).not.toContain("V2RefusalPopover");
     expect(today).toContain("V2RefusalPopover");
     expect(fileViewer).toContain("V2RefusalPopover");
     expect(rail).toContain('from "@/components/ui/dropdown-menu"');

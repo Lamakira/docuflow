@@ -125,8 +125,11 @@ function entitlementsFor(
   });
 }
 
-async function loadPin() {
-  const [row] = await db
+/** The caller's transaction, or the pool. */
+type EntitlementReader = { select: typeof db.select };
+
+async function loadPin(reader: EntitlementReader = db) {
+  const [row] = await reader
     .select()
     .from(workspaceBilling)
     .where(inWorkspace(workspaceBilling))
@@ -188,9 +191,9 @@ export async function getBillingProjection(): Promise<BillingProjection> {
 export type PlanStanding = { projection: BillingProjection; entitlements: Entitlements };
 
 /** The pin and what it entitles, read together so the two cannot disagree. */
-export async function planStanding(): Promise<PlanStanding> {
-  const pin = await loadPin();
-  const [override] = await db
+export async function planStanding(reader: EntitlementReader = db): Promise<PlanStanding> {
+  const pin = await loadPin(reader);
+  const [override] = await reader
     .select()
     .from(workspaceEntitlementOverrides)
     .where(inWorkspace(workspaceEntitlementOverrides))
@@ -198,8 +201,8 @@ export async function planStanding(): Promise<PlanStanding> {
   return { projection: billingProjectionOf(pin), entitlements: entitlementsFor(pin, override) };
 }
 
-export async function effectiveEntitlements(): Promise<Entitlements> {
-  return (await planStanding()).entitlements;
+export async function effectiveEntitlements(reader: EntitlementReader = db): Promise<Entitlements> {
+  return (await planStanding(reader)).entitlements;
 }
 
 export async function setEntitlementOverride(

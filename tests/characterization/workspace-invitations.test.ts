@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { invitations, PARALLEL_WORKSPACE_ID } from "../../shared/schema";
-import { issueClerkSession } from "../fakes/clerk";
 import { emailsTo } from "../fakes/resend";
 import { makeApp } from "../helpers/app";
-import { newAgent, registerUser, setWorkspaceRole, uniqueEmail } from "../helpers/auth";
+import { newAgent, registerUser, setWorkspaceRole, signUpAtProvider, uniqueEmail } from "../helpers/auth";
 import { resetDb, ownerDb } from "../helpers/db";
 import { addWorkspaceMembership, plantParallelWorkspace } from "../helpers/workspace";
 
@@ -161,7 +160,7 @@ describe("Workspace Invitations HTTP (#211)", () => {
     const token = emailsTo(email)[0]?.html.match(/\/invitations\/([a-f0-9]+)/i)?.[1];
     expect(token).toBeTruthy();
 
-    const newcomer = newAgent(app).set("Authorization", `Bearer ${issueClerkSession("user_invitee_fresh")}`);
+    const { agent: newcomer } = await signUpAtProvider(app, { email });
     const accepted = await newcomer.post("/api/invitations/accept").send({ token });
     expect(accepted.status).toBe(200);
     expect(accepted.body.workspaceId).toBe("seeded");
@@ -218,7 +217,7 @@ describe("Workspace Invitations HTTP (#211)", () => {
     expect(ownerRole.status).toBe(400);
   });
 
-  it("lets Owner edit hours-per-day and view-Daily-Updates on a Membership, and refuses a Member", async () => {
+  it("lets Owner edit view-Daily-Updates on a Membership, and refuses a Member", async () => {
     const app = await makeApp();
     const owner = await registerUser(app);
     await setWorkspaceRole(owner.id, "owner");
@@ -226,24 +225,19 @@ describe("Workspace Invitations HTTP (#211)", () => {
 
     const listed = await owner.agent.get("/api/workspace/memberships");
     const row = listed.body.memberships.find((item: { userId: string }) => item.userId === member.id);
-    expect(row).toMatchObject({
-      hoursPerDay: 8,
-      canViewDailyUpdates: 0,
-    });
+    expect(row).toMatchObject({ canViewDailyUpdates: 0 });
 
     const patched = await owner.agent.patch(`/api/workspace/memberships/${row.membershipId}`).send({
-      hoursPerDay: 6,
       canViewDailyUpdates: 1,
     });
     expect(patched.status).toBe(200);
     expect(patched.body).toMatchObject({
       membershipId: row.membershipId,
-      hoursPerDay: 6,
       canViewDailyUpdates: 1,
     });
 
     const asMember = await member.agent.patch(`/api/workspace/memberships/${row.membershipId}`).send({
-      hoursPerDay: 4,
+      canViewDailyUpdates: 1,
     });
     expect(asMember.status).toBe(403);
     expect(asMember.body).toEqual({ message: "Access denied" });

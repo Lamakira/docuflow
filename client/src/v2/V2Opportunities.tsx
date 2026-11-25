@@ -94,6 +94,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { SkeletonBoard, SkeletonRecordHead, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 type OpportunityRowsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type ModuleField = { slug: string; options: string[] | null };
@@ -1556,11 +1557,7 @@ export function V2OpportunitiesPage() {
   if (isError) {
     return (
       <div className="df-page" data-testid="v2-opportunities">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Opportunities</h1>
-          </div>
-        </header>
+        <V2PageHead title="Opportunities" />
         <V2LoadFailed
           title="Opportunities could not be loaded"
           copy="Something went wrong while loading them. Try again."
@@ -1573,36 +1570,36 @@ export function V2OpportunitiesPage() {
 
   return (
     <div className="df-page" data-testid="v2-opportunities">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Opportunities</h1>
-        </div>
-        {pipeline.emptyState?.kind !== "none" ? (
-          <div className="df-library-actions">
-            <label className="df-filter-input">
-              <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
-              <input
-                type="search"
-                value={filterQuery}
-                onChange={(event) => setFilterQuery(event.target.value)}
-                placeholder="Search Opportunities"
-                aria-label="Search Opportunities"
-              />
-            </label>
-            {readOnly ? null : (
-              <Button
-                variant="default"
-                type="button"
-                onClick={startCreate}
-                className="df-btn"
-              >
-                <Plus strokeWidth={1.6} aria-hidden />
-                New Opportunity
-              </Button>
-            )}
-          </div>
-        ) : null}
-      </header>
+      <V2PageHead
+        title="Opportunities"
+        actions={
+          pipeline.emptyState?.kind !== "none" ? (
+            <>
+              <label className="df-filter-input">
+                <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
+                <input
+                  type="search"
+                  value={filterQuery}
+                  onChange={(event) => setFilterQuery(event.target.value)}
+                  placeholder="Search Opportunities"
+                  aria-label="Search Opportunities"
+                />
+              </label>
+              {readOnly ? null : (
+                <Button
+                  variant="default"
+                  type="button"
+                  onClick={startCreate}
+                  className="df-btn"
+                >
+                  <Plus strokeWidth={1.6} aria-hidden />
+                  New Opportunity
+                </Button>
+              )}
+            </>
+          ) : null
+        }
+      />
 
       <V2FormDialog
         open={creating}

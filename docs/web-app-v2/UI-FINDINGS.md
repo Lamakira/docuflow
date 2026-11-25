@@ -1683,7 +1683,7 @@ show only after one's own change or a return to the tab (from code).
 
 ## F75 - One capture is stored up to eleven times
 
-- **Status:** closed - fixed 2026-11-24, script to run in production
+- **Status:** closed - fixed 2026-11-24; production done 2026-11-25 (4,058 copies hidden, 14,865 captures shown)
 - **Found:** 2026-11-24, the real captures counted on the rehearsal copy
 - **Where:** `server/modules/activity/evidenceJobs.ts:75-130` (`findPendingSlot`, `commitActivityScreenshot`); older agents (`SyncWorker.triggerSync`, before 04273f8)
 - **Severity:** wrong figures
@@ -1842,3 +1842,166 @@ account page said a load failed with no Try again.
 Whatever the screen, the tab says `DocuFlow`.
 
 - **Fixed:** 2026-11-25. The tab names the screen first: `Gallery - Activity - DocuFlow`, `Payroll rollout - Settings - Projects - DocuFlow`, a File's name, the platform console's tab (seen; the console from tests). Sign-in, the Workspace chooser and an invitation keep `DocuFlow`.
+
+## F84 - Archive acts on the whole account, through the platform's route
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, a Member archived on the dev Workspace; the routes run on a test database
+- **Where:** `client/src/v2/V2People.tsx` (`archive`), `server/routes.ts:3557` (`requirePlatformStaff`), `server/modules/postgresStorage.ts:1686-1740` (`archiveUser`)
+- **Severity:** loses access, or does nothing
+
+Archive and Restore call `/api/admin/users/:id/archive`, the platform
+directory's route. A Workspace Owner who is not Platform Staff gets 403 (run), so
+nobody in a customer's Workspace can archive a Member; where the console has its
+own sign-in the answer is 401 (from code).
+
+Platform Staff get more than they asked for. Archiving a Member of one Workspace
+archived the account, and the Workspace that Member owned (seen: both
+Memberships, one click, no confirmation, no Undo; the toast says `Membership
+archived`). Restore brings back every Membership, those another Workspace
+archived included (from code). A Member who is Platform Staff gets Archive in the
+row menu too (seen). It would take a Workspace route that archives one Membership,
+never the Owner's, for the Owner and Administrators.
+
+- **Fixed:** 2026-11-25. Archive and Restore act on one Membership of this Workspace, for the Owner, and for Administrators on Members; never the Owner, oneself, or (as an Administrator) an Administrator. One click archives, the toast offers Undo for 8 s (seen). Restore takes a seat and refuses an account the platform archived. The rule is re-read under lock. The platform's restore no longer brings back what a Workspace archived itself. Run on a clone of the real copy with the real functions: the account stays active.
+
+## F85 - Any identity can accept an Invitation, and takes the account
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, run on a test database
+- **Where:** `server/modules/workspace/invitations.ts:394-434` (`resolveInvitee`)
+- **Severity:** security
+
+The Invitation's address is compared with the account already linked to the
+identity, and with nothing when there is none. An identity with another email
+accepts an Invitation it was forwarded; when the invited address has an account
+not linked yet, that account becomes its own: signed in as it, with every
+Workspace it belongs to (run: 200, then signed in as the account). On the
+rehearsal copy all 13 accounts are unlinked; in production those who have signed
+in since are not (not counted). It needs the link, which goes to the invited
+address. It would take the identity's own verified email, compared first.
+
+- **Fixed:** 2026-11-25. The identity's own verified address must be the invited one, before anything is linked or created, whatever the case of the letters; the whole acceptance is one transaction. Not run against a real Clerk sign-in.
+
+## F86 - A Member's settings are the account's, across Workspaces
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, run on a test database
+- **Where:** `server/modules/workspace/invitations.ts:469-492`, `server/routes.ts:3303-3313`, `server/dailyUpdateReaders.ts:33`
+- **Severity:** security
+
+`Can view Daily Updates` and `Hours per day` are columns of the account, shown as
+`How X works in DocuFlow`. A Workspace's Administrator who grants Daily Updates
+grants them in every Workspace that Member belongs to: the other Workspace's
+Daily Updates answered 403 before and 200 after (run). The Capability table has
+the same permission per Membership, and no one writes it (0 rows on the
+rehearsal copy). It would take the grant on the Membership.
+
+Hours per day changes nothing in v2: only v1's Project page reads it (from code).
+
+- **Fixed:** 2026-11-25. The grant is on the Membership (`membership_capabilities`), in its own Workspace; every reader moved to it. Migration 0044 keeps what each Member had, once (run on a clone with eight accounts flagged: the five plain Members got it, the Owner and Administrators did not need it). Hours per day leaves People; v1 keeps its column. The platform console still sets every Membership of an account when its flag changes.
+
+## F87 - Accepting takes no seat
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, run on a test database
+- **Where:** `server/modules/workspace/invitations.ts:235`, `:436-460`
+- **Severity:** wrong limit
+
+The seat is checked when an Invitation is sent, against Members only, and not
+when it is accepted. With one seat left, three Invitations are sent and three
+accepted: 4 Members for 2 seats (run). It would take the check at acceptance, in
+the same transaction, and a refusal that says whom to ask.
+
+- **Fixed:** 2026-11-25. The seat is taken at acceptance and at restore, in the same transaction; two at once for the last seat leave one.
+
+## F88 - Nobody can change a Member's role
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, People, its routes and ADR-0026
+- **Where:** `client/src/v2/V2People.tsx`, `server/modules/workspace/http.ts:270-315`
+- **Severity:** missing
+
+ADR-0026 says the Workspace Role is People's to change, by the Owner or an
+Administrator. No screen and no route does it: making a Member an Administrator
+takes archiving and inviting again, which F84 blocks, or the database. Only
+ownership can be transferred, in Administration. Whether an Administrator may
+change another Administrator's role is the owner's to say.
+
+- **Fixed:** 2026-11-25. Member settings changes the Workspace role (Member, Administrator) and the Daily Updates access, in one save. An Administrator may promote a Member, and may not change an Administrator (as the owner accepted). Audit Events record roles, grants, archives, restores and Invitations.
+
+## F89 - Invitations are said sent when they are not
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the routes run, the list made to fail
+- **Where:** `server/modules/workspace/invitations.ts:162-176`, `:247-300`, `server/email.ts:162-195`, `client/src/v2/V2People.tsx:68-75`
+- **Severity:** misleading
+
+- The email's failure is not read: the toast says `Invitation sent`, and a second
+  try is refused for 14 days as already pending (from code).
+- There is no Resend, no expiry date and no inviter. An Invitation past its 14
+  days leaves the list without a word (seen).
+- A list that cannot be loaded shows none, and counts `0 Invitations pending`
+  (seen with the route made to answer 500: the pending row is gone).
+- The Workspace's name goes into the email's HTML as typed; a link or an image in
+  it reaches the invited person from DocuFlow's address (from code).
+- A Member whose address is stored with a capital letter can be invited again,
+  and then cannot accept (run; 1 account of 13 on the rehearsal copy, archived).
+- An archived account accepts, shows in People, and is missing from every other
+  list of Members (run).
+
+- **Fixed:** 2026-11-25. Send and Resend say when the email could not be sent; Resend gives a new link and 14 days, once a minute; an expired Invitation stays listed; the inviter and the date show; a failed list says so. What people typed is escaped in the email, which names the inviter and the date. Addresses are compared without their case; an archived account is refused. No real email was sent.
+
+## F90 - The Invitation page does not say to what
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, three links opened in the browser
+- **Where:** `client/src/v2/V2InvitationAccept.tsx`, `client/src/v2/people.ts` (`composeInvitationAccept`)
+- **Severity:** reads badly
+
+`Accept to join this Workspace. You will gain a Membership. This does not create
+a Workspace.`: no Workspace name, no role, no inviter, for someone who may not
+know DocuFlow. A link that names no Invitation offers Accept all the same, then
+says `Invitation not found`. With another account signed in, `This Invitation was
+sent to a different email.` is a dead end: no address, no way to switch account
+(all seen). Revoked, expired and not found have no way out either (from code).
+
+- **Fixed:** 2026-11-25. The page names the Workspace, the role, the inviter, the address and the date; a wrong account gets both addresses and Switch account; expired, revoked, accepted and not found each say so with a way out (wrong account, expired and not found seen).
+
+## F91 - People polish
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the dev Workspace (seen unless marked)
+
+- `Show archived` replaces the whole page by its skeleton, the box included.
+- Neither it nor the search is in the address. The box is the browser's own.
+- Capabilities reads `-` for a Member who can view Daily Updates, and the Owner's
+  settings show the box unticked beside `View daily updates`.
+- Invite sits among the filters, where other screens have theirs in the header. A
+  Member sees it as the main button, and gets a refusal.
+- Every row wears `ACTIVE` in a bordered box; an Archived Member looks the same.
+  `MEMBER`, `OWNER` and the role choices are in capitals.
+- A refused Invitation answers in a toast over the dialog, not beside the field;
+  two stack. `a@b` passes the field and is refused by the server.
+- `1 of 500 Billable Seats consumed. 0 Invitations pending consume none.` on every
+  visit, to Members too; the count chip has no word and counts Invitations.
+- An Invitation's row shows its address twice. On a phone the Members' addresses
+  are gone.
+- The Owner is wherever the alphabet puts them; Invitations are not marked off.
+- `GET /api/workspace/memberships` gives every Member the others' hours per day
+  and Daily Updates grant, which only the settings use.
+
+- **Fixed:** 2026-11-25. All of it (seen in light and dark, at 375 px, as Owner, Administrator and Member). What a Member was granted is sent to managers only.
+
+## F92 - Each screen spaces its head its own way
+
+- **Status:** closed - fixed 2026-11-25
+- **Found:** 2026-11-25, the owner, on People
+- **Where:** 32 heads in 22 files of `client/src/v2`
+- **Severity:** reads badly
+
+A boxed chip beside the title, at the far right, or beside a button it is shorter
+than; the line about the page under the title or in a note 20 px lower; the title
+off the buttons' line.
+
+- **Fixed:** 2026-11-25. One head (`V2PageHead`): the title's line is 34 px, as a button; the count or the date is a filled pill beside it; one or two filters sit in the head (People, the console's Users); the line about the page is right under it; 20 px to what follows. Measured on 18 pages; seen on People, Documents, Activity, Opportunities, Today and the console's Stats, and at 375 px on four, where the actions now wrap under the title (they covered it on Opportunities). A test refuses a head drawn elsewhere.

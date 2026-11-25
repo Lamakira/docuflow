@@ -12,7 +12,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 import {
   auditEvents,
   capabilities,
@@ -288,6 +288,20 @@ async function transferInContext(
 
   await runWithWorkspaceContext({ workspaceId }, () =>
     db.transaction(async (tx) => {
+      // Locked and read again: a Membership archived meanwhile (F84) must not
+      // become the Owner's.
+      const locked = await tx
+        .select()
+        .from(memberships)
+        .where(
+          and(eq(memberships.workspaceId, workspaceId), inArray(memberships.userId, [userId, successorUserId])),
+        )
+        .orderBy(asc(memberships.id))
+        .for("update");
+      const departing = locked.find((row) => row.userId === userId);
+      if (departing?.workspaceRoleId !== ownerRoleId) throw new WorkspaceNotOwnedError();
+      const standing = locked.find((row) => row.id === successor.id);
+      if (!standing || standing.archivedAt) throw new WorkspaceSuccessorError();
       await tx
         .update(memberships)
         .set({ workspaceRoleId: administratorRoleId, updatedAt: now })

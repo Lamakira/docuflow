@@ -18,18 +18,18 @@
  *
  *  - **The address must be a verified primary at the provider.** The `users`
  *    row is found by address in more places than this one — `listInvitationsForUser`
- *    matches on it, and `resolveInvitee` accepts a subject whose row carries the
- *    invited address. So a row written under an address nobody challenged is not
+ *    matches on it, and `resolveInvitee` accepts a linked subject whose row carries
+ *    the invited address. So a row written under an address nobody challenged is not
  *    a cosmetic error: register as `ada@acme.com` before anyone invites the real
  *    Ada, and the Invitation meant for her is offered to, and accepted by, whoever
  *    claimed it first. DocuFlow refuses to write the row instead.
  *  - **An address this DocuFlow already holds is refused, linked or not — unless
  *    DocuFlow itself invited it and the invitee accepted.** A sign-up is never
  *    adopted on a matching address, the way Invitation acceptance adopts one.
- *    Acceptance can: possession of the token sent to that address is proof of
- *    control over it. A sign-up is not — the provider reports an address this
- *    side never challenged — so adopting on a match would hand a stranger an
- *    existing User, its role included. A password-set invitation DocuFlow sent
+ *    Acceptance can, and not on the token alone, which can be forwarded: the
+ *    Invitation names the address, and the provider must say this subject holds
+ *    it, verified. A sign-up carries no such Invitation, so adopting on a match
+ *    would hand a stranger an existing User, its role included. A password-set invitation DocuFlow sent
  *    and the person accepted is that same proof, so an unlinked row (a User
  *    migrated from v1) is linked to the subject that redeemed it. A row already
  *    linked to another subject is never taken.
@@ -42,6 +42,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import type { RequestHandler } from "express";
 import { toSafeUser, users, type User } from "@shared/schema";
 import { db } from "../../db";
+import { dailyUpdatesAccessOf } from "../../workspaceRole";
 import { identityProvider } from "./index";
 import { IdentityProviderError, type ProviderIdentity } from "./identityProvider";
 import { bearerToken } from "./webSession";
@@ -224,7 +225,10 @@ export const selfServiceRegistrationRoute: RequestHandler = async (req, res) => 
       authorization: req.headers.authorization,
       resolvedUserId: (req as { identitySessionUserId?: string }).identitySessionUserId,
     });
-    res.status(outcome.created ? 201 : 200).json(toSafeUser(outcome.user));
+    res.status(outcome.created ? 201 : 200).json({
+      ...toSafeUser(outcome.user),
+      canViewDailyUpdates: await dailyUpdatesAccessOf(outcome.user.id),
+    });
   } catch (error) {
     if (
       error instanceof RegistrationUnauthorizedError ||

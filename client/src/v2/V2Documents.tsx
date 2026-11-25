@@ -49,6 +49,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { SkeletonLibrary, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 /** What the register route adds to a Folder: whether the reader may delete it. */
 type RegisterFolder = CompanyDocumentFolderWithCreator & { canDelete?: boolean };
@@ -435,11 +436,7 @@ export function V2DocumentsPage() {
   if (isError && !data) {
     return (
       <div className="df-page" data-testid="v2-documents">
-        <header className="df-today-head">
-          <div style={{ minWidth: 0 }}>
-            <h1 className="df-title">Workspace Documents</h1>
-          </div>
-        </header>
+        <V2PageHead title="Workspace Documents" />
         <V2LoadFailed
           title="Workspace Documents could not be loaded"
           copy="Something went wrong while loading them. Try again."
@@ -452,26 +449,26 @@ export function V2DocumentsPage() {
 
   return (
     <div className="df-library-page" data-testid="v2-documents" onKeyDown={onLibraryKeyDown}>
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Workspace Documents</h1>
-          <p className="df-subhead">{library.subhead}</p>
-        </div>
-        <div className="df-library-actions">
-          <Button variant="outline" type="button" onClick={() => openCreate("folder")} className="df-btn">
-            <Plus strokeWidth={1.6} aria-hidden />
-            New folder
-          </Button>
-          <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
-            <Upload strokeWidth={1.6} aria-hidden />
-            Upload File
-          </Button>
-          <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
-            <Plus strokeWidth={1.6} aria-hidden />
-            New Document
-          </Button>
-        </div>
-      </header>
+      <V2PageHead
+        title="Workspace Documents"
+        subhead={library.subhead}
+        actions={
+          <>
+            <Button variant="outline" type="button" onClick={() => openCreate("folder")} className="df-btn">
+              <Plus strokeWidth={1.6} aria-hidden />
+              New folder
+            </Button>
+            <Button variant="outline" type="button" onClick={() => openCreate("upload")} className="df-btn">
+              <Upload strokeWidth={1.6} aria-hidden />
+              Upload File
+            </Button>
+            <Button variant="default" type="button" onClick={() => openCreate("document")} className="df-btn">
+              <Plus strokeWidth={1.6} aria-hidden />
+              New Document
+            </Button>
+          </>
+        }
+      />
 
       <V2FormDialog
         open={creating}

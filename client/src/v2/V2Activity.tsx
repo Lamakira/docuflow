@@ -14,6 +14,7 @@ import { useToday } from "./useToday";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
+import { FilterCheck } from "./V2FilterCheck";
 import { V2ProjectPicker } from "./V2ProjectPicker";
 import { V2RegisterPager } from "./V2RegisterPager";
 import { V2DateField } from "./V2DateField";
@@ -72,6 +73,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 type ScreenshotsResponse = {
   data: ActivityEvidenceInput[];
@@ -464,12 +466,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
 
   return (
     <div className="df-page" data-testid="v2-activity">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Activity</h1>
-        </div>
-        {countChip ? <span className="df-count-chip">{countChip}</span> : null}
-      </header>
+      <V2PageHead title="Activity" chip={countChip} />
 
       <nav className="df-tabs" aria-label="Activity">
         {tabs.map((item) => (
@@ -726,36 +723,6 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           onWiden={onWiden}
         />
       )}
-    </div>
-  );
-}
-
-/** A narrowing filter drawn as a chip: the shadcn Checkbox with its label. */
-function FilterCheck({
-  id,
-  checked,
-  disabled,
-  label,
-  onChange,
-}: {
-  id: string;
-  checked: boolean;
-  disabled?: boolean;
-  label: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <div className="df-filter-chip df-gallery-filter" data-active={checked ? "true" : "false"}>
-      <div className="df-checkbox-row" data-disabled={disabled ? "true" : "false"}>
-        <Checkbox
-          id={id}
-          className="df-checkbox"
-          checked={checked}
-          disabled={disabled}
-          onCheckedChange={(next) => onChange(next === true)}
-        />
-        <label htmlFor={id}>{label}</label>
-      </div>
     </div>
   );
 }
