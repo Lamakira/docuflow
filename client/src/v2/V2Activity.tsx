@@ -1,39 +1,56 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
-import { Link, useParams, useSearch } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { Link, useLocation, useParams, useSearch } from "wouter";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { notify } from "./notify";
 import { useAuth } from "@/hooks/useAuth";
-import type { CrmProjectWithDetails, SafeUser, ScreenshotPolicy, TimeEntryWithDetails } from "@shared/schema";
+import type { CrmProjectWithDetails, SafeUser, ScreenshotPolicy } from "@shared/schema";
 import { canManageAdministration } from "./administration";
 import { motionForSurface } from "./motion";
 import { memberName } from "./today";
-import { timeEntriesPath } from "./time";
-import { ACTIVITY_TAB_IDS, type ActivityTabId } from "./presentation";
+import { filterProjectOptions, knownFilterId } from "./time";
+import { ACTIVITY_TAB_IDS, activityTabHref, type ActivityTabId } from "./presentation";
+import { useToday } from "./useToday";
 import { useWorkspaceOwnerName } from "./useWorkspaceOwner";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect } from "./V2Select";
+import { V2ProjectPicker } from "./V2ProjectPicker";
+import { V2RegisterPager } from "./V2RegisterPager";
+import { V2DateField } from "./V2DateField";
+import { V2CaptureImage } from "./V2CaptureImage";
+import { V2EmptyState } from "./V2EmptyState";
 import {
   activityEvidencePath,
+  activityPaging,
   activityTabs,
+  batchFailureCopy,
+  clearActivityFacets,
   composeActivity,
   composeActivityGallery,
-  screenshotPath,
+  captureCountCopy,
   evidenceDateLabel,
   evidenceDateRange,
+  evidenceRangeProblem,
+  hasActivityFacets,
+  pickCapture,
+  readActivityFilters,
+  screenshotPath,
+  stepViewer,
   trackingPolicyPath,
+  writeActivityFilters,
+  ACTIVITY_FILTERS_DEFAULT,
   EVIDENCE_DATE_MODES,
   widerEvidenceRange,
+  type ActivityEvidenceInput,
+  type ActivityFilters,
   type EvidenceDateMode,
-  type ActivityEntryInput,
-  type ActivityProjectInput,
-  type GalleryEvidenceInput,
   type GalleryTile,
   type TileActivity,
   type GalleryViewer,
 } from "./activity";
-import { Download, Trash2 } from "lucide-react";
+import { ChevronDown, Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
@@ -58,47 +75,42 @@ import { V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
 type ScreenshotsResponse = {
-  data: GalleryEvidenceInput[];
+  data: ActivityEvidenceInput[];
   total?: number;
+  limit?: number;
+  offset?: number;
   lowActivityThresholdPercent?: number;
   counts?: { lowActivity: number; similar: number };
 };
-type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
 type TrackingPolicyResponse = { screenshotPolicy: ScreenshotPolicy };
 
 const EXPAND_MOTION = motionForSurface("activity-evidence-expand").enterExit;
-/** The BFF caps a screenshot page at 100; 50 keeps a page readable. */
-const GALLERY_PAGE_SIZE = 50;
 
-function toProject(project: CrmProjectWithDetails): ActivityProjectInput {
-  return {
-    id: project.id,
-    project: project.project,
-    client: project.client,
-  };
+/** Saves one capture; `false` when it could not be read or saved. */
+async function saveCapture(tile: GalleryTile): Promise<boolean> {
+  try {
+    const res = await fetch(tile.imageSrc, { credentials: "include" });
+    if (!res.ok) return false;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = tile.fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-async function saveCapture(tile: GalleryTile): Promise<void> {
-  const res = await fetch(tile.imageSrc, { credentials: "include" });
-  if (!res.ok) return;
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = tile.fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function toEntry(entry: TimeEntryWithDetails): ActivityEntryInput {
-  return {
-    id: entry.id,
-    taskId: entry.taskId,
-    task: entry.task,
-    description: entry.description,
-  };
+/** A refresh that fails keeps what is on screen and says so once. */
+function useRefreshFailure(failed: boolean, message: string, id: string) {
+  useEffect(() => {
+    if (failed) notify.error(null, { fallback: message, id });
+  }, [failed, message, id]);
 }
 
 export function V2ActivityPage() {
@@ -119,81 +131,110 @@ function SetUpAgentAction() {
   );
 }
 
+function ActivityLoadFailed({ onRetry }: { onRetry: () => void }) {
+  return (
+    <V2EmptyState
+      icon="activity"
+      title="Activity Evidence could not be loaded."
+      copy="Something went wrong while loading it. Try again."
+      testId="v2-activity-load-failed"
+      action={
+        <Button variant="default" type="button" className="df-btn" onClick={onRetry}>
+          Try again
+        </Button>
+      }
+    />
+  );
+}
+
+/** The Projects the reader may see, on the Time tracker's own query. */
+function useActivityProjects() {
+  const query = useQuery<{ data: CrmProjectWithDetails[]; total?: number }>({
+    queryKey: ["/api/crm/projects", { pageSize: 500 }],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/projects?pageSize=500", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Projects");
+      return res.json();
+    },
+  });
+  // Another screen on this key may have cached a refusal's body.
+  const list = Array.isArray(query.data?.data) ? query.data.data : null;
+  const failed = query.isError || (query.isSuccess && list === null);
+  return {
+    list,
+    complete: list !== null && (query.data?.total ?? list.length) <= list.length,
+    state: list ? ("ready" as const) : failed ? ("failed" as const) : ("loading" as const),
+  };
+}
+
 function ActivityDestination({ tab }: { tab: ActivityTabId }) {
-  const now = useMemo(() => new Date(), []);
+  const now = useToday();
   const { user } = useAuth();
   const { layout, memberships } = useV2Chrome();
-
-  // A Dossier's "See all N in Activity" opens here filtered to its Project, over
-  // All time, since its count is the Project's total (F48).
   const search = useSearch();
-  // The periods the Time stats offer, plus v1's named day and span (#214).
-  const [range, setRange] = useState<EvidenceDateMode>(() =>
-    new URLSearchParams(search).get("crmProjectId") ? "all" : "today",
-  );
-  const [typedDay, setTypedDay] = useState("");
-  const [typedFrom, setTypedFrom] = useState("");
-  const [typedTo, setTypedTo] = useState("");
-  const [projectFilter, setProjectFilter] = useState(
-    () => new URLSearchParams(search).get("crmProjectId") || "all",
-  );
-  const [userFilter, setUserFilter] = useState("all");
+  const [, navigate] = useLocation();
+
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [lowActivityOnly, setLowActivityOnly] = useState(false);
-  const [similarOnly, setSimilarOnly] = useState(false);
+  // Rows opened at least once: their image is read then, and kept while the row closes.
+  const [openedRows, setOpenedRows] = useState<ReadonlySet<string>>(() => new Set());
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedCaptureId, setExpandedCaptureId] = useState<string | null>(null);
-  const [galleryPage, setGalleryPage] = useState(1);
-  const [includeArchivedUsers, setIncludeArchivedUsers] = useState(false);
+  // A viewer step across a page edge, waiting for the other page to arrive.
+  const [pendingStep, setPendingStep] = useState<{ page: number; pick: "first" | "last" } | null>(null);
   const [downloading, setDownloading] = useState(false);
 
+  const ready = memberships !== undefined;
   const current = memberships?.memberships.find((row) => row.workspaceId === memberships.activeWorkspaceId);
-  const canReview = canManageAdministration(current?.workspaceRole ?? "");
+  const canReview = ready && canManageAdministration(current?.workspaceRole ?? "");
 
-  const rangeDates = useMemo(
-    () => evidenceDateRange(range, now, { day: typedDay, from: typedFrom, to: typedTo }),
-    [now, range, typedDay, typedFrom, typedTo],
-  );
-
-  const requestedUserId = canReview && userFilter !== "all" ? userFilter : null;
-  const filters = {
-    startDate: rangeDates.startDate,
-    endDate: rangeDates.endDate,
-    crmProjectId: projectFilter === "all" ? null : projectFilter,
-    userId: requestedUserId,
-  };
-  const evidenceUrl = activityEvidencePath(
-    tab === "gallery"
-      ? {
-          ...filters,
-          limit: GALLERY_PAGE_SIZE,
-          offset: (galleryPage - 1) * GALLERY_PAGE_SIZE,
-          lowActivity: lowActivityOnly,
-          similar: similarOnly,
-        }
-      : filters,
-  );
-  const entriesUrl = timeEntriesPath({
-    startDate: rangeDates.startDate,
-    endDate: rangeDates.endDate,
-    crmProjectId: filters.crmProjectId,
-    userId: filters.userId,
-  });
-
-  const ownerName = useWorkspaceOwnerName();
-  const usersUrl = includeArchivedUsers ? "/api/users?includeArchived=true" : "/api/users";
-  const { data: users = [] } = useQuery<SafeUser[]>({
+  const activityProjects = useActivityProjects();
+  const asked = readActivityFilters(search);
+  const usersUrl = asked.archived && canReview ? "/api/users?includeArchived=true" : "/api/users";
+  const { data: users } = useQuery<SafeUser[]>({
     queryKey: ["/api/users", usersUrl],
+    enabled: canReview,
     queryFn: async () => {
       const res = await fetch(usersUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch Members");
       return res.json();
     },
   });
-  const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
-    queryKey: ["/api/crm/projects", { pageSize: 500 }],
-    queryFn: () => fetch("/api/crm/projects?pageSize=500").then((res) => res.json()),
+  const filters: ActivityFilters = {
+    ...asked,
+    project: knownFilterId(asked.project, activityProjects.complete ? activityProjects.list : null),
+    member: canReview ? knownFilterId(asked.member, users ?? null) : "all",
+    archived: canReview && asked.archived,
+  };
+
+  function setFilters(next: ActivityFilters, replace = false) {
+    navigate(`${activityTabHref(tab)}${writeActivityFilters(search, next)}`, { replace });
+  }
+
+  // An old link (`crmProjectId`) moves to the names the address uses now.
+  const legacy = new URLSearchParams(search).has("crmProjectId");
+  useEffect(() => {
+    if (legacy) setFilters(asked, true);
+  }, [legacy]);
+
+  const rangeProblem = evidenceRangeProblem(filters.range, filters);
+  const rangeDates = useMemo(
+    () => evidenceDateRange(filters.range, now, { day: filters.day, from: filters.from, to: filters.to }),
+    [now, filters.range, filters.day, filters.from, filters.to],
+  );
+
+  const requestedUserId = canReview && filters.member !== "all" ? filters.member : null;
+  const evidenceUrl = activityEvidencePath({
+    startDate: rangeDates.startDate,
+    endDate: rangeDates.endDate,
+    crmProjectId: filters.project === "all" ? null : filters.project,
+    userId: requestedUserId,
+    limit: filters.pageSize,
+    offset: (filters.page - 1) * filters.pageSize,
+    lowActivity: filters.low,
+    similar: filters.similar,
   });
+
+  const ownerName = useWorkspaceOwnerName();
   const { data: policyResponse } = useQuery<TrackingPolicyResponse>({
     queryKey: ["/api/time-tracking/tracking-policy"],
     queryFn: async () => {
@@ -202,30 +243,50 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
       return res.json();
     },
   });
-  const { data: evidenceResponse, isLoading, isError } = useQuery<ScreenshotsResponse>({
+
+  // Every visit re-reads, and a page turn or a filter keeps the page before it on screen
+  // until the next one arrives, instead of the skeleton.
+  const {
+    data: response,
+    isLoading,
+    isError,
+    isPlaceholderData,
+    refetch,
+  } = useQuery<ScreenshotsResponse>({
     queryKey: ["/api/time-tracking/screenshots", evidenceUrl],
+    enabled: ready && !rangeProblem,
+    placeholderData: keepPreviousData,
+    staleTime: 0,
     queryFn: async () => {
       const res = await fetch(evidenceUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch Activity Evidence");
       return res.json();
     },
   });
-  const { data: entriesResponse } = useQuery<TimeEntriesResponse>({
-    queryKey: ["/api/time-tracking/entries", entriesUrl],
-    queryFn: async () => {
-      const res = await fetch(entriesUrl, { credentials: "include" });
-      if (!res.ok) return { data: [] };
-      return res.json();
-    },
-  });
+  // A day or span still being chosen asks for nothing; what was read before it is not its answer.
+  const data = rangeProblem ? undefined : response;
+  useRefreshFailure(isError && Boolean(data), "Activity Evidence could not be refreshed.", "v2-activity-refresh-failed");
+  const loadFailed = isError && !data && !rangeProblem;
 
-  // Cheap "ever recorded" probe, asked only when the stream is empty: one piece
-  // of Evidence the reader may see, in any period (#325).
-  const probeEver = !isLoading && !isError && (evidenceResponse?.data ?? []).length === 0;
+  const rows = data?.data ?? [];
+  const total = data?.total ?? rows.length;
+  const paging = activityPaging({ page: filters.page, pageSize: filters.pageSize, total });
+  const offset = data?.offset ?? 0;
+
+  // A page past the end (a shared link, or captures deleted since) moves to the last one.
+  useEffect(() => {
+    if (!data || isPlaceholderData || total === 0 || filters.page <= paging.pageCount) return;
+    setFilters({ ...filters, page: paging.pageCount }, true);
+  }, [data, isPlaceholderData, total, filters.page, paging.pageCount]);
+
+  // Cheap "ever recorded" probe, asked only when nothing matches: one piece of
+  // Evidence the reader may see, in any period (#325).
+  const probeEver = Boolean(data) && !isPlaceholderData && !isError && total === 0;
   const everUrl = activityEvidencePath({ limit: 1 });
   const { data: everResponse } = useQuery<ScreenshotsResponse>({
     queryKey: ["/api/time-tracking/screenshots", everUrl],
     enabled: probeEver,
+    staleTime: 0,
     queryFn: async () => {
       const res = await fetch(everUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch Activity Evidence");
@@ -234,6 +295,7 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   });
   const everRecorded = everResponse ? everResponse.data.length > 0 : null;
 
+  const facetsActive = filters.project !== "all" || filters.member !== "all" || filters.low || filters.similar;
   const page = composeActivity({
     now,
     currentUserId: user?.id ?? "",
@@ -242,36 +304,43 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     requestedUserId,
     expandedId,
     policy: policyResponse?.screenshotPolicy ?? null,
-    projects: (projectsResponse?.data ?? []).map(toProject),
-    entries: (entriesResponse?.data ?? []).map(toEntry),
-    users,
-    evidence: evidenceResponse?.data ?? [],
-    facetsActive: projectFilter !== "all" || userFilter !== "all",
+    evidence: rows,
+    facetsActive,
     everRecorded,
-    range,
+    range: filters.range,
   });
 
-  const gallery = composeActivityGallery({
+  const galleryInput = {
     now,
     currentUserId: user?.id ?? "",
     canReview,
-    currentUserEmail: user?.email ?? null,
-    lowActivityOnly,
-    similarOnly,
-    lowActivityThresholdPercent: evidenceResponse?.lowActivityThresholdPercent,
-    counts: evidenceResponse?.counts,
+    lowActivityOnly: filters.low,
+    similarOnly: filters.similar,
+    lowActivityThresholdPercent: data?.lowActivityThresholdPercent,
+    counts: data?.counts,
     selectedIds,
-    expandedId: expandedCaptureId,
-    page: galleryPage,
-    pageSize: GALLERY_PAGE_SIZE,
-    total: evidenceResponse?.total ?? evidenceResponse?.data?.length ?? 0,
-    projects: (projectsResponse?.data ?? []).map(toProject),
-    entries: (entriesResponse?.data ?? []).map(toEntry),
-    users,
-    evidence: evidenceResponse?.data ?? [],
-    facetsActive: projectFilter !== "all" || userFilter !== "all",
+    total,
+    offset,
+    evidence: rows,
+    facetsActive,
     everRecorded,
-  });
+    range: filters.range,
+  };
+  // The capture a page step lands on is read while rendering, so the viewer never closes in between.
+  const landed =
+    pendingStep && !isPlaceholderData && data && filters.page === pendingStep.page
+      ? pickCapture(composeActivityGallery({ ...galleryInput, expandedId: null }).groups, pendingStep.pick)
+      : null;
+  const gallery = composeActivityGallery({ ...galleryInput, expandedId: landed ?? expandedCaptureId });
+
+  useEffect(() => {
+    if (!pendingStep || isPlaceholderData || !data || filters.page !== pendingStep.page) return;
+    setExpandedCaptureId(landed);
+    setPendingStep(null);
+  }, [pendingStep, isPlaceholderData, data, filters.page, landed]);
+  useEffect(() => {
+    if (pendingStep && isError) setPendingStep(null);
+  }, [pendingStep, isError]);
 
   const deleteCapture = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", screenshotPath(id)),
@@ -289,17 +358,23 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
 
   const refusal = page.refusal;
   const tabs = activityTabs(tab);
+  const carried = search ? `?${search}` : "";
 
   function onToggle(id: string) {
     setExpandedId((currentId) => (currentId === id ? null : id));
+    setOpenedRows((opened) => (opened.has(id) ? opened : new Set(opened).add(id)));
   }
 
   // A selection only means anything against the captures on screen: when the
-  // filters underneath it change, the old ids are no longer what the User picked.
+  // filters or the page underneath it change, the old ids are no longer what the User picked.
   useEffect(() => {
     setSelectedIds([]);
+  }, [filters.range, filters.day, filters.from, filters.to, filters.project, filters.member, filters.low, filters.similar, filters.page, filters.pageSize, tab]);
+  // A page step keeps the viewer open; a filter or tab change closes it.
+  useEffect(() => {
     setExpandedCaptureId(null);
-  }, [range, typedDay, typedFrom, typedTo, projectFilter, userFilter, lowActivityOnly, similarOnly, galleryPage, tab]);
+    setPendingStep(null);
+  }, [filters.range, filters.day, filters.from, filters.to, filters.project, filters.member, filters.low, filters.similar, filters.pageSize, tab]);
 
   function onSelect(id: string) {
     setSelectedIds((current) =>
@@ -312,43 +387,51 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     setSelectedIds((current) => (current.length === shown.length ? [] : shown));
   }
 
-  const widerRange = widerEvidenceRange(range);
-  const onWiden = widerRange
-    ? () => {
-        setRange(widerRange);
-        setGalleryPage(1);
-      }
-    : undefined;
+  const widerRange = widerEvidenceRange(filters.range);
+  const onWiden = widerRange ? () => setFilters({ ...filters, range: widerRange, page: 1 }) : undefined;
+  const onClearFilters = () => setFilters(clearActivityFacets(filters));
 
-  function onClearFilters() {
-    setRange("today");
-    setTypedDay("");
-    setTypedFrom("");
-    setTypedTo("");
-    setProjectFilter("all");
-    setUserFilter("all");
-    setLowActivityOnly(false);
-    setSimilarOnly(false);
-    setGalleryPage(1);
+  async function onSave(tile: GalleryTile) {
+    if (!(await saveCapture(tile))) notify.error(null, { fallback: "Could not download the capture" });
   }
 
   /**
    * Batch download saves each capture in turn. The BFF serves one capture per
-   * request, so there is no archive endpoint to invent here.
+   * request, so there is no archive endpoint to invent here. It goes on past a
+   * failure and says so once at the end.
    */
   async function onBatchDownload() {
     const tiles = gallery.groups.flatMap((group) => group.tiles).filter((tile) => tile.selected);
     setDownloading(true);
+    let failed = 0;
     try {
       for (const tile of tiles) {
-        await saveCapture(tile);
+        if (!(await saveCapture(tile))) failed += 1;
       }
     } finally {
       setDownloading(false);
     }
+    const message = batchFailureCopy(failed, tiles.length);
+    if (message) notify.error(null, { fallback: message });
   }
 
-  if (isLoading) {
+  const viewer = gallery.viewer;
+  const stepping = pendingStep !== null;
+  const stepTarget = (direction: "previous" | "next") =>
+    viewer ? stepViewer(viewer, direction, { page: filters.page, pageCount: paging.pageCount }) : null;
+  function onStep(direction: "previous" | "next") {
+    if (stepping) return;
+    const step = stepTarget(direction);
+    if (!step) return;
+    if ("openId" in step) {
+      setExpandedCaptureId(step.openId);
+      return;
+    }
+    setPendingStep(step);
+    setFilters({ ...filters, page: step.page });
+  }
+
+  if (!ready || isLoading) {
     return (
       <V2PageSkeleton title="Activity" hasSubhead={false} testId="v2-activity" status="Loading Activity for this Workspace.">
         <SkeletonSection title="Tracking Policy" lines={3} />
@@ -360,18 +443,23 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
     );
   }
 
-  if (isError) {
-    return (
-      <div className="df-page" data-testid="v2-activity">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Activity</h1>
-          </div>
-        </header>
-        <p className="df-empty">Activity Evidence in this Workspace could not be loaded.</p>
-      </div>
-    );
-  }
+  const pager = (
+    <V2RegisterPager
+      paging={paging}
+      ariaLabel="Captures pages"
+      onPage={(next) => setFilters({ ...filters, page: next })}
+      onPageSize={(pageSize) => setFilters({ ...filters, pageSize, page: 1 })}
+    />
+  );
+  const showPager = !loadFailed && !rangeProblem && total > 0;
+  const notice = loadFailed ? (
+    <ActivityLoadFailed onRetry={() => refetch()} />
+  ) : rangeProblem ? (
+    <p className="df-empty" data-testid="v2-activity-range-problem">
+      {rangeProblem}
+    </p>
+  ) : null;
+  const countChip = loadFailed || rangeProblem || !data ? null : captureCountCopy(total);
 
   return (
     <div className="df-page" data-testid="v2-activity">
@@ -379,16 +467,14 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
         <div style={{ minWidth: 0 }}>
           <h1 className="df-title">Activity</h1>
         </div>
-        <span className="df-count-chip">
-          {tab === "gallery" ? gallery.count : page.rows.length}
-        </span>
+        {countChip ? <span className="df-count-chip">{countChip}</span> : null}
       </header>
 
       <nav className="df-tabs" aria-label="Activity">
         {tabs.map((item) => (
           <Link
             key={item.id}
-            href={item.href}
+            href={`${item.href}${carried}`}
             className="df-tab"
             data-active={item.active ? "true" : "false"}
             data-testid={`v2-activity-tab-${item.id}`}
@@ -403,13 +489,17 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           <h2 className="df-card-title">Tracking Policy</h2>
         </div>
         <div className="df-activity-policy">
-          {page.policyLines.map((line) => (
-            <div key={line.label} className="df-kv">
-              <span>{line.label}</span>
-              <span className="df-mono">{line.value}</span>
-            </div>
-          ))}
-          <p className="df-policy-hint df-activity-policy-note">{page.policyFootnote}</p>
+          <dl className="df-policy-lineup">
+            {page.policyLines.map((line) => (
+              <div key={line.label} className="df-detail-pair">
+                <dt>{line.label}</dt>
+                <dd className="df-mono">{line.value}</dd>
+              </div>
+            ))}
+          </dl>
+          {page.policyFootnote ? (
+            <p className="df-policy-hint df-activity-policy-note">{page.policyFootnote}</p>
+          ) : null}
         </div>
       </section>
 
@@ -417,132 +507,115 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
         <V2FilterSelect
           label="Date"
           ariaLabel="Date"
-          value={range}
-          active={range === "today"}
-          onChange={(next) => {
-            setRange(next as EvidenceDateMode);
-            setGalleryPage(1);
-          }}
+          value={filters.range}
+          active={filters.range !== ACTIVITY_FILTERS_DEFAULT.range}
+          onChange={(next) => setFilters({ ...filters, range: next as EvidenceDateMode, page: 1 })}
           options={EVIDENCE_DATE_MODES.map((option) => ({
             value: option,
             label: evidenceDateLabel(option),
           }))}
         />
-        <V2FilterSelect
+        {filters.range === "day" ? (
+          <span className="df-date-filter">
+            <span className="df-meta">Day</span>
+            <V2DateField
+              value={filters.day}
+              ariaLabel="Day"
+              placeholder="Choose a day"
+              testId="v2-activity-day"
+              onChange={(day) => setFilters({ ...filters, day, page: 1 })}
+            />
+          </span>
+        ) : null}
+        {filters.range === "custom" ? (
+          <>
+            <span className="df-date-filter">
+              <span className="df-meta">From</span>
+              <V2DateField
+                value={filters.from}
+                ariaLabel="From"
+                placeholder="Choose a day"
+                max={filters.to || undefined}
+                testId="v2-activity-from"
+                onChange={(from) => setFilters({ ...filters, from, page: 1 })}
+              />
+            </span>
+            <span className="df-date-filter">
+              <span className="df-meta">To</span>
+              <V2DateField
+                value={filters.to}
+                ariaLabel="To"
+                placeholder="Choose a day"
+                min={filters.from || undefined}
+                testId="v2-activity-to"
+                onChange={(to) => setFilters({ ...filters, to, page: 1 })}
+              />
+            </span>
+          </>
+        ) : null}
+        <V2ProjectPicker
+          variant="chip"
           label="Project"
           ariaLabel="Filter by Project"
-          value={projectFilter}
-          onChange={setProjectFilter}
-          options={[
-            { value: "all", label: "All" },
-            ...(projectsResponse?.data ?? []).map((project) => ({
-              value: project.id,
-              label: project.project?.name || "Untitled Project",
-            })),
-          ]}
+          value={filters.project}
+          valueLabel="All"
+          active={filters.project !== "all"}
+          onChange={(project) => setFilters({ ...filters, project, page: 1 })}
+          options={[{ id: "all", label: "All", meta: null }, ...filterProjectOptions(activityProjects.list ?? [])]}
+          state={activityProjects.state}
+          testId="v2-activity-filter-project"
         />
         {canReview ? (
           <V2FilterSelect
             label="Member"
             ariaLabel="Filter by Member"
-            value={userFilter}
-            onChange={setUserFilter}
+            value={filters.member}
+            active={filters.member !== "all"}
+            onChange={(member) => setFilters({ ...filters, member, page: 1 })}
             options={[
               { value: "all", label: "All" },
-              ...users.map((member) => ({ value: member.id, label: memberName(member) })),
+              ...(users ?? []).map((member) => ({ value: member.id, label: memberName(member) })),
             ]}
           />
         ) : null}
-        {range === "day" ? (
-          <label className="df-filter-chip">
-            Day
-            <input
-              type="date"
-              value={typedDay}
-              aria-label="Day"
-              onChange={(event) => {
-                setTypedDay(event.target.value);
-                setGalleryPage(1);
-              }}
-            />
-          </label>
+        <FilterCheck
+          id="v2-activity-low"
+          checked={filters.low}
+          disabled={(data?.counts?.lowActivity ?? 0) === 0 && !filters.low}
+          label={`Low activity (${data?.counts?.lowActivity ?? 0})`}
+          onChange={(low) => setFilters({ ...filters, low, page: 1 })}
+        />
+        <FilterCheck
+          id="v2-activity-similar"
+          checked={filters.similar}
+          disabled={(data?.counts?.similar ?? 0) === 0 && !filters.similar}
+          label={`Similar (${data?.counts?.similar ?? 0})`}
+          onChange={(similar) => setFilters({ ...filters, similar, page: 1 })}
+        />
+        {canReview ? (
+          <FilterCheck
+            id="v2-activity-archived"
+            checked={filters.archived}
+            label="Include archived members"
+            onChange={(archived) => setFilters({ ...filters, archived, page: 1 })}
+          />
         ) : null}
-        {range === "custom" ? (
-          <>
-            <label className="df-filter-chip">
-              From
-              <input
-                type="date"
-                value={typedFrom}
-                aria-label="From"
-                onChange={(event) => {
-                  setTypedFrom(event.target.value);
-                  setGalleryPage(1);
-                }}
-              />
-            </label>
-            <label className="df-filter-chip">
-              TO
-              <input
-                type="date"
-                value={typedTo}
-                aria-label="To"
-                onChange={(event) => {
-                  setTypedTo(event.target.value);
-                  setGalleryPage(1);
-                }}
-              />
-            </label>
-          </>
-        ) : null}
-        {tab === "gallery" ? (
-          <>
-            <label className="df-filter-chip df-gallery-filter" data-active={lowActivityOnly ? "true" : "false"}>
-              <input
-                type="checkbox"
-                checked={lowActivityOnly}
-                disabled={gallery.lowActivityCount === 0 && !lowActivityOnly}
-                onChange={(event) => {
-                  setLowActivityOnly(event.target.checked);
-                  setGalleryPage(1);
-                }}
-              />
-              Low activity ({gallery.lowActivityCount})
-            </label>
-            <label className="df-filter-chip df-gallery-filter" data-active={similarOnly ? "true" : "false"}>
-              <input
-                type="checkbox"
-                checked={similarOnly}
-                disabled={gallery.similarCount === 0 && !similarOnly}
-                onChange={(event) => {
-                  setSimilarOnly(event.target.checked);
-                  setGalleryPage(1);
-                }}
-              />
-              Similar ({gallery.similarCount})
-            </label>
-            {canReview ? (
-              <label className="df-filter-chip df-gallery-filter" data-active={includeArchivedUsers ? "true" : "false"}>
-                <input
-                  type="checkbox"
-                  checked={includeArchivedUsers}
-                  onChange={(event) => setIncludeArchivedUsers(event.target.checked)}
-                />
-                Include archived members
-              </label>
-            ) : null}
-            <Button variant="outline" type="button" onClick={onClearFilters} className="df-btn">
-              Clear filters
-            </Button>
-          </>
+        {hasActivityFacets(filters) ? (
+          <Button variant="outline" type="button" onClick={onClearFilters} className="df-btn" data-testid="v2-activity-clear">
+            Clear filters
+          </Button>
         ) : null}
       </div>
 
       {refusal ? <p className="df-refusal">{refusal}</p> : null}
 
       {tab === "register" ? (
-      <section className="df-card df-activity-register df-activity-stream" data-testid="v2-activity-register">
-        {layout.stackedRegister ? null : (
+      <section
+        className="df-card df-activity-register df-activity-stream"
+        data-testid="v2-activity-register"
+        aria-busy={isPlaceholderData && !rangeProblem}
+      >
+        {layout.stackedRegister || notice ? null : (
           <div className="df-register-head df-desktop-only">
             <span>When</span>
             <span>Project</span>
@@ -552,7 +625,9 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
             <span />
           </div>
         )}
-        {page.emptyState ? (
+        {notice ? (
+          notice
+        ) : page.emptyState ? (
           <V2RecordEmpty
             model={page.emptyState}
             icon="activity"
@@ -562,11 +637,12 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
           />
         ) : (
           page.rows.map((row) => (
-            <div key={row.id}>
+            <div key={row.id} className="df-activity-item">
               <button
                 type="button"
                 className="df-register-row df-activity-row"
                 aria-expanded={row.expanded}
+                aria-controls={`v2-activity-detail-${row.id}`}
                 data-testid={`v2-activity-row-${row.id}`}
                 onClick={() => onToggle(row.id)}
               >
@@ -579,38 +655,41 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
                       </div>
                     </span>
                     <span className="df-mono df-meta">{row.who}</span>
-                    <span className="df-ghost-link">{row.expanded ? "Close" : "Open"}</span>
+                    <ChevronDown className="df-row-chevron" strokeWidth={1.6} aria-hidden />
                   </span>
                 ) : (
                   <>
                     <span className="df-mono df-meta">{row.when}</span>
                     <span className="df-row-title">{row.project}</span>
-                    <span className="df-mono df-meta">{row.task}</span>
-                    <span>{row.who}</span>
+                    <span className="df-time-task">{row.task}</span>
+                    <span className="df-time-person">{row.who}</span>
                     <span className="df-mono df-meta">{row.source}</span>
-                    <span className="df-ghost-link">{row.expanded ? "Close" : "Open"}</span>
+                    <ChevronDown className="df-row-chevron" strokeWidth={1.6} aria-hidden />
                   </>
                 )}
               </button>
               <div
+                id={`v2-activity-detail-${row.id}`}
                 className="df-activity-expand"
                 data-open={row.expanded ? "true" : "false"}
                 data-motion={EXPAND_MOTION}
               >
                 <div className="df-activity-expand-inner">
                   <div className="df-activity-detail">
-                    <img src={row.imageSrc} alt="" />
-                    <div className="df-kv">
-                      <span>Project</span>
-                      <span>{row.project}</span>
-                    </div>
-                    <div className="df-kv">
-                      <span>Task</span>
-                      <span>{row.task}</span>
-                    </div>
-                    <div className="df-kv">
-                      <span>Source</span>
-                      <span>{row.source}</span>
+                    {openedRows.has(row.id) ? <V2CaptureImage src={row.imageSrc} alt="" lazy /> : null}
+                    <div className="df-detail-pairs">
+                      <div className="df-detail-pair">
+                        <span>Project</span>
+                        <span>{row.project}</span>
+                      </div>
+                      <div className="df-detail-pair">
+                        <span>Task</span>
+                        <span>{row.task}</span>
+                      </div>
+                      <div className="df-detail-pair">
+                        <span>Source</span>
+                        <span>{row.source}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -618,21 +697,30 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
             </div>
           ))
         )}
+        {showPager ? pager : null}
       </section>
       ) : (
         <ActivityGallery
           gallery={gallery}
+          notice={notice}
+          busy={isPlaceholderData && !rangeProblem}
+          pager={showPager ? pager : null}
           downloading={downloading}
+          stepping={stepping}
+          canStep={{ previous: stepTarget("previous") !== null, next: stepTarget("next") !== null }}
           onSelect={onSelect}
           onSelectShown={onSelectShown}
           onBatchDownload={onBatchDownload}
           onOpen={(id) => setExpandedCaptureId(id)}
-          onClose={() => setExpandedCaptureId(null)}
-          onSave={saveCapture}
+          onStep={onStep}
+          onClose={() => {
+            setExpandedCaptureId(null);
+            setPendingStep(null);
+          }}
+          onSave={onSave}
           canDelete={gallery.canDelete}
           deleting={deleteCapture.isPending}
           onDelete={(tile) => deleteCapture.mutate(tile.id)}
-          onPage={(step) => setGalleryPage((current) => Math.max(1, current + step))}
           onClearFilters={onClearFilters}
           onWiden={onWiden}
         />
@@ -641,19 +729,56 @@ function ActivityDestination({ tab }: { tab: ActivityTabId }) {
   );
 }
 
+/** A narrowing filter drawn as a chip: the shadcn Checkbox with its label. */
+function FilterCheck({
+  id,
+  checked,
+  disabled,
+  label,
+  onChange,
+}: {
+  id: string;
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="df-filter-chip df-gallery-filter" data-active={checked ? "true" : "false"}>
+      <div className="df-checkbox-row" data-disabled={disabled ? "true" : "false"}>
+        <Checkbox
+          id={id}
+          className="df-checkbox"
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={(next) => onChange(next === true)}
+        />
+        <label htmlFor={id}>{label}</label>
+      </div>
+    </div>
+  );
+}
+
 type ActivityGalleryProps = {
   gallery: ReturnType<typeof composeActivityGallery>;
+  /** The failed or unreadable-range message that stands in for the captures. */
+  notice: ReactNode;
+  /** The next page is loading; the one on screen stays. */
+  busy: boolean;
+  pager: ReactNode;
   downloading: boolean;
+  stepping: boolean;
+  canStep: { previous: boolean; next: boolean };
   onSelect: (id: string) => void;
   onSelectShown: () => void;
   onBatchDownload: () => void;
   onOpen: (id: string) => void;
+  onStep: (direction: "previous" | "next") => void;
   onClose: () => void;
   onSave: (tile: GalleryTile) => void;
   canDelete: boolean;
   deleting: boolean;
   onDelete: (tile: GalleryTile) => void;
-  onPage: (step: number) => void;
   onClearFilters: () => void;
   onWiden?: () => void;
 };
@@ -664,40 +789,51 @@ type ActivityGalleryProps = {
  */
 function ActivityGallery({
   gallery,
+  notice,
+  busy,
+  pager,
   downloading,
+  stepping,
+  canStep,
   onSelect,
   onSelectShown,
   onBatchDownload,
   onOpen,
+  onStep,
   onClose,
   onSave,
   canDelete,
   deleting,
   onDelete,
-  onPage,
   onClearFilters,
   onWiden,
 }: ActivityGalleryProps) {
   // The thumbnail that opened the viewer, so closing returns focus to it.
   const openerId = useRef<string | null>(null);
   return (
-    <section className="df-card df-gallery" data-testid="v2-activity-gallery">
-      <div className="df-card-head">
-        <h2 className="df-card-title">{gallery.countCopy}</h2>
-        {/* Nothing to select or download in an empty gallery. */}
-        {gallery.count > 0 ? (
-          <span className="df-gallery-actions">
-            <Button variant="outline" type="button" onClick={onSelectShown} className="df-btn">
-              {gallery.selectedCount === gallery.count ? "Clear selection" : "Select all"}
-            </Button>
-            <Button variant="default" type="button" disabled={!gallery.canBatch || downloading} onClick={onBatchDownload} className="df-btn">
-              <Download strokeWidth={1.6} aria-hidden />
-              {downloading ? "Downloading…" : gallery.batchLabel}
-            </Button>
-          </span>
-        ) : null}
-      </div>
-      {gallery.emptyState ? (
+    <section className="df-card df-gallery" data-testid="v2-activity-gallery" aria-busy={busy}>
+      {notice ? null : (
+        <div className="df-card-head">
+          <h2 className="df-card-title">{gallery.countCopy}</h2>
+          {/* Nothing to select or download in an empty gallery. */}
+          {gallery.count > 0 ? (
+            <span className="df-gallery-actions">
+              <Button variant="outline" type="button" onClick={onSelectShown} className="df-btn">
+                {gallery.selectedCount === gallery.count ? "Clear selection" : "Select this page"}
+              </Button>
+              {gallery.canBatch ? (
+                <Button variant="default" type="button" disabled={downloading} onClick={onBatchDownload} className="df-btn">
+                  <Download strokeWidth={1.6} aria-hidden />
+                  {downloading ? "Downloading…" : gallery.batchLabel}
+                </Button>
+              ) : null}
+            </span>
+          ) : null}
+        </div>
+      )}
+      {notice ? (
+        notice
+      ) : gallery.emptyState ? (
         <V2RecordEmpty
           model={gallery.emptyState}
           icon="activity"
@@ -734,14 +870,14 @@ function ActivityGallery({
                       onOpen(tile.id);
                     }}
                   >
-                    <img src={tile.imageSrc} alt="" loading="lazy" />
+                    <V2CaptureImage src={tile.imageSrc} alt="" lazy />
                   </button>
                   <span className="df-gallery-meta">
-                    <input
-                      type="checkbox"
+                    <Checkbox
+                      className="df-checkbox"
                       checked={tile.selected}
                       aria-label={`Select the capture from ${tile.when}`}
-                      onChange={() => onSelect(tile.id)}
+                      onCheckedChange={() => onSelect(tile.id)}
                     />
                     <span className="df-mono df-meta df-gallery-when" title={`${tile.when} · ${tile.who}`}>
                       {tile.when} · {tile.who}
@@ -775,7 +911,9 @@ function ActivityGallery({
       )}
       <CaptureViewer
         viewer={gallery.viewer}
-        onOpen={onOpen}
+        stepping={stepping}
+        canStep={canStep}
+        onStep={onStep}
         onClose={onClose}
         onSave={onSave}
         canDelete={canDelete}
@@ -783,19 +921,7 @@ function ActivityGallery({
         onDelete={onDelete}
         openerId={openerId}
       />
-      {gallery.paging.pageCount > 1 ? (
-        <div className="df-gallery-paging">
-          <span className="df-mono df-meta">{gallery.paging.label}</span>
-          <span className="df-gallery-actions">
-            <Button variant="outline" type="button" disabled={!gallery.paging.hasPrevious} onClick={() => onPage(-1)} className="df-btn">
-              Previous
-            </Button>
-            <Button variant="outline" type="button" disabled={!gallery.paging.hasNext} onClick={() => onPage(1)} className="df-btn">
-              Next
-            </Button>
-          </span>
-        </div>
-      ) : null}
+      {pager}
     </section>
   );
 }
@@ -836,7 +962,10 @@ function ActivityFacts({ activity }: { activity: TileActivity }) {
 
 type CaptureViewerProps = {
   viewer: GalleryViewer | null;
-  onOpen: (id: string) => void;
+  /** The neighbouring page is loading: Previous and Next wait for it. */
+  stepping: boolean;
+  canStep: { previous: boolean; next: boolean };
+  onStep: (direction: "previous" | "next") => void;
   onClose: () => void;
   onSave: (tile: GalleryTile) => void;
   canDelete: boolean;
@@ -851,7 +980,9 @@ type CaptureViewerProps = {
  */
 function CaptureViewer({
   viewer,
-  onOpen,
+  stepping,
+  canStep,
+  onStep,
   onClose,
   onSave,
   canDelete,
@@ -860,20 +991,21 @@ function CaptureViewer({
   openerId,
 }: CaptureViewerProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const previousEnabled = canStep.previous && !stepping;
+  const nextEnabled = canStep.next && !stepping;
   // On the window, not the panel: stepping onto the last capture disables Next,
   // and the focus it held falls to the body, out of the panel's key events.
   useEffect(() => {
     if (!viewer || confirmingDelete) return;
-    const { previousId, nextId } = viewer;
     function onKey(event: KeyboardEvent) {
-      const target = event.key === "ArrowLeft" ? previousId : event.key === "ArrowRight" ? nextId : null;
-      if (!target) return;
+      const direction = event.key === "ArrowLeft" ? "previous" : event.key === "ArrowRight" ? "next" : null;
+      if (!direction || (direction === "previous" ? !previousEnabled : !nextEnabled)) return;
       event.preventDefault();
-      onOpen(target);
+      onStep(direction);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [viewer, onOpen, confirmingDelete]);
+  }, [viewer, onStep, confirmingDelete, previousEnabled, nextEnabled]);
 
   return (
     <Dialog
@@ -886,6 +1018,11 @@ function CaptureViewer({
         <DialogContent
           className="df-v2 df-alert df-capture-viewer"
           data-testid="v2-activity-capture-viewer"
+          // The first control is Delete capture: the panel takes the focus, not it.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            (event.currentTarget as HTMLElement).focus();
+          }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             if (!openerId.current) return;
@@ -900,30 +1037,30 @@ function CaptureViewer({
             <DialogDescription className="df-mono df-meta">{viewer.position}</DialogDescription>
           </DialogHeader>
           <div className="df-capture-viewer-frame">
-            <img src={viewer.tile.imageSrc} alt={`Capture from ${viewer.tile.when}`} />
+            <V2CaptureImage src={viewer.tile.imageSrc} alt={`Capture from ${viewer.tile.when}`} />
           </div>
           <div className="df-capture-viewer-meta">
-            <div className="df-kv">
+            <div className="df-detail-pair">
               <span>When</span>
               <span>{viewer.tile.when}</span>
             </div>
-            <div className="df-kv">
+            <div className="df-detail-pair">
               <span>Who</span>
               <span>{viewer.tile.who}</span>
             </div>
-            <div className="df-kv">
+            <div className="df-detail-pair">
               <span>Project</span>
               <span>{viewer.tile.project}</span>
             </div>
-            <div className="df-kv">
+            <div className="df-detail-pair">
               <span>Task</span>
               <span>{viewer.tile.task}</span>
             </div>
-            <div className="df-kv">
+            <div className="df-detail-pair">
               <span>Source</span>
               <span>{viewer.tile.source}</span>
             </div>
-            <div className="df-kv">
+            <div className="df-detail-pair">
               <span>Activity</span>
               <span>
                 {viewer.tile.activity.low ? "Low activity · " : ""}
@@ -931,7 +1068,7 @@ function CaptureViewer({
               </span>
             </div>
             {viewer.tile.similar ? (
-              <div className="df-kv">
+              <div className="df-detail-pair">
                 <span>Screen</span>
                 <span>{viewer.tile.similarCopy}</span>
               </div>
@@ -979,8 +1116,8 @@ function CaptureViewer({
               variant="outline"
               type="button"
               className="df-btn"
-              disabled={viewer.previousId === null}
-              onClick={() => viewer.previousId && onOpen(viewer.previousId)}
+              disabled={!previousEnabled}
+              onClick={() => onStep("previous")}
             >
               Previous
             </Button>
@@ -988,8 +1125,8 @@ function CaptureViewer({
               variant="outline"
               type="button"
               className="df-btn"
-              disabled={viewer.nextId === null}
-              onClick={() => viewer.nextId && onOpen(viewer.nextId)}
+              disabled={!nextEnabled}
+              onClick={() => onStep("next")}
             >
               Next
             </Button>

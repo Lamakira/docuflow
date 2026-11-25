@@ -6,6 +6,7 @@ import {
   SEEDED_WORKSPACE_ID,
   companyDocuments,
   memberships,
+  timeEntryScreenshots,
 } from "../../shared/schema";
 import { db } from "../../server/db";
 import { runWithWorkspaceContext, stampWorkspace } from "../../server/workspaceContext";
@@ -231,8 +232,9 @@ describe("agent screenshots across Workspaces (#297)", () => {
     expect(slot.status).toBe(200);
     const put = await device.request.put(slot.body.uploadURL).set("Content-Type", "image/png").send(PNG_1X1);
     expect(put.status).toBe(200);
-    const list = await user.agent.get("/api/time-tracking/screenshots");
-    return { id: slot.body.screenshotId as string, storageKey: list.body.data[0].storageKey as string, entry, crmProject };
+    const id = slot.body.screenshotId as string;
+    const [stored] = await ownerDb.select().from(timeEntryScreenshots).where(eq(timeEntryScreenshots.id, id));
+    return { id, storageKey: stored.storageKey, entry, crmProject };
   }
 
   it("keys a new screenshot under its Workspace and keeps it there", async () => {
@@ -266,13 +268,14 @@ describe("agent screenshots across Workspaces (#297)", () => {
     const key = `agent-screenshots/${randomUUID()}.webp`;
     putObject(`${process.env.PRIVATE_OBJECT_DIR!.slice(1)}/${key}`, PNG_1X1, { contentType: "image/webp" });
 
-    const registered = await a.agent.post("/api/time-tracking/screenshots").send({
-      timeEntryId: entry.id,
-      crmProjectId: crmProject.id,
-      storageKey: `/objects/${key}`,
-    });
-    expect(registered.status).toBe(200);
-    expect((await a.agent.get(`/api/time-tracking/screenshots/${registered.body.id}/image`)).status).toBe(200);
+    const row = { timeEntryId: entry.id, crmProjectId: crmProject.id, storageKey: `/objects/${key}` };
+    // A stored row is served; a legacy key names no upload of this User, so it cannot become a new one.
+    expect((await a.agent.post("/api/time-tracking/screenshots").send(row)).status).toBe(400);
+    const [stored] = await ownerDb
+      .insert(timeEntryScreenshots)
+      .values({ ...row, userId: a.id, workspaceId: SEEDED_WORKSPACE_ID })
+      .returning();
+    expect((await a.agent.get(`/api/time-tracking/screenshots/${stored.id}/image`)).status).toBe(200);
   });
 });
 

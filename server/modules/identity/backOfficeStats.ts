@@ -24,6 +24,7 @@ import {
 } from "@shared/schema";
 import { db } from "../../db";
 import { forWorkspaces, inWorkspace } from "../../workspaceContext";
+import { notDuplicateCapture } from "../activity/duplicates";
 import { hasPaidSubscription, isOfferedPlan } from "../billing";
 import { isDisputeOpen } from "./backOfficeWorkspaces";
 
@@ -170,6 +171,7 @@ async function figuresInContext(from: Date, to: Date): Promise<WorkspaceFigures>
     .where(
       and(
         inWorkspace(timeEntryScreenshots),
+        notDuplicateCapture(),
         gte(timeEntryScreenshots.createdAt, from),
         lte(timeEntryScreenshots.createdAt, to)
       )

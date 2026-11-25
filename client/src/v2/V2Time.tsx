@@ -10,10 +10,10 @@ import { canManageAdministration } from "./administration";
 import { chromeRefusal } from "./chrome";
 import { isStandingRefusal, notify } from "./notify";
 import { motionForSurface } from "./motion";
-import { dateToDay } from "./dates";
 import { composePaging } from "./paging";
 import { memberName } from "./today";
 import { TIME_TAB_IDS, timeTabHref, type TimeTabId } from "./presentation";
+import { useToday } from "./useToday";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { V2ProjectPicker } from "./V2ProjectPicker";
@@ -119,12 +119,6 @@ function useWorkspaceCondition() {
     readOnly: current?.condition === "Read-only",
     ready: memberships !== undefined,
   };
-}
-
-/** One instant per local day, so a page left open past midnight moves to the new one. */
-function useToday(): Date {
-  const day = dateToDay(new Date());
-  return useMemo(() => new Date(), [day]);
 }
 
 /** A refresh that fails keeps what is on screen and says so once. */

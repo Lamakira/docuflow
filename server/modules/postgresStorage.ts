@@ -165,13 +165,14 @@ import {
   type ScreenshotList,
   type ScreenshotListOptions,
 } from "./activity/evidence";
+import { notDuplicateCapture } from "./activity/duplicates";
 import { getScreenshotPolicy, upsertScreenshotPolicy } from "./activity/policy";
 import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import type { TimeEntryPage, TimeEntryPageOptions, TimePortionOptions, TimePortionRow } from "./time/persistence";
 import { assertSeatAvailable } from "./billing/seats";
 import type { ImportableUser } from "./identity/userImport";
-import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gt, gte, lt, lte, asc, count, inArray, ilike, getTableColumns, type AnyColumn, type SQL } from "drizzle-orm";
+import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gte, lt, lte, asc, count, inArray, ilike, getTableColumns, type AnyColumn, type SQL } from "drizzle-orm";
 import type {
   CrmProjectListOptions,
   ProjectDocumentScope,
@@ -2861,7 +2862,7 @@ export class DatabaseStorage implements IStorage {
     // Count live (non-deleted, non-pending) screenshots in the same window
     const screenshotConditions = [inWorkspace(timeEntryScreenshots)];
     if (options.userId) screenshotConditions.push(eq(timeEntryScreenshots.userId, options.userId));
-    if (options.startDate) screenshotConditions.push(gt(timeEntryScreenshots.capturedAt, options.startDate));
+    if (options.startDate) screenshotConditions.push(gte(timeEntryScreenshots.capturedAt, options.startDate));
     if (options.endDate) screenshotConditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
     screenshotConditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
     screenshotConditions.push(isNull(timeEntryScreenshots.deletedAt));
@@ -3627,6 +3628,7 @@ export class DatabaseStorage implements IStorage {
       sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
       sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`,
       sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
+      notDuplicateCapture(),
     ];
     if (userId) deletedConds.push(eq(timeEntryScreenshots.userId, userId));
     const [deletedResult] = await db.select({
@@ -3885,6 +3887,7 @@ export class DatabaseStorage implements IStorage {
         sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
         sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
         sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
+        notDuplicateCapture(),
       ));
 
     // ── 8. Org-level: stalled devices ────────────────────────────────────────
@@ -4101,6 +4104,7 @@ export class DatabaseStorage implements IStorage {
       sql`${timeEntryScreenshots.capturedAt} >= ${startDate}`,
       sql`${timeEntryScreenshots.capturedAt} <= ${endDate}`,
       sql`${timeEntryScreenshots.deletedAt} IS NOT NULL`,
+      notDuplicateCapture(),
     ];
     if (userId) deletedCondsCoverage.push(eq(timeEntryScreenshots.userId, userId));
     const [deletedShotCovRow] = await db.select({

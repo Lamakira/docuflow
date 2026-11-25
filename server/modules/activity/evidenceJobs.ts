@@ -7,7 +7,7 @@
  * or rankings.
  */
 
-import { db } from "../../db";
+import { db, type Db } from "../../db";
 import {
   createJobsPort,
   workspaceOfCause,
@@ -25,9 +25,11 @@ import {
   updateTimeEntryScreenshot,
   type ActivityWriter,
 } from "./evidence";
+import { DUPLICATE_CAPTURE_REASON } from "./duplicates";
 import { timeEntryScreenshots } from "@shared/schema";
 import type { InsertTimeEntryScreenshot, TimeEntryScreenshot } from "@shared/schema";
-import { and, eq, isNull, like } from "drizzle-orm";
+import { and, eq, isNull, like, ne, notLike, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 export const ACTIVITY_ATTRIBUTE_JOB = "activity.attribute-evidence";
 
@@ -45,7 +47,7 @@ export function createActivityJobsPort(): JobsPort {
   });
 }
 
-type ActivityJobsWriter = ActivityWriter & JobsWriter;
+type ActivityJobsWriter = ActivityWriter & JobsWriter & Pick<Db, "execute">;
 
 function isPendingStorageKey(storageKey: string): boolean {
   return storageKey.startsWith("pending-");
@@ -99,6 +101,43 @@ async function findPendingSlot(
   return row;
 }
 
+/**
+ * Whether the pending row `id` is about to become a copy of a capture already
+ * stored, live or deleted. A row already committed is never judged again, so
+ * sending the original twice does not hide it behind its own copy. The instant
+ * is compared in SQL: a JS Date drops its microseconds.
+ */
+async function isCopyOfStoredCapture(
+  id: string,
+  contentHash: string,
+  writer: ActivityJobsWriter,
+): Promise<boolean> {
+  // A statement of its own: the lookup below must see what the previous holder committed.
+  await writer.execute(sql`
+    SELECT pg_advisory_xact_lock(hashtext(
+      'activity-capture:' || time_entry_id || ':' || captured_at::text || ':' || ${contentHash}::text))
+    FROM time_entry_screenshots
+    WHERE id = ${id} AND workspace_id = ${requireWorkspaceContext().workspaceId}`);
+  const own = alias(timeEntryScreenshots, "own");
+  const [other] = await writer
+    .select({ id: timeEntryScreenshots.id })
+    .from(own)
+    .innerJoin(
+      timeEntryScreenshots,
+      and(
+        inWorkspace(timeEntryScreenshots),
+        eq(timeEntryScreenshots.timeEntryId, own.timeEntryId),
+        eq(timeEntryScreenshots.capturedAt, own.capturedAt),
+        eq(timeEntryScreenshots.contentHash, contentHash),
+        notLike(timeEntryScreenshots.storageKey, "pending-%"),
+        ne(timeEntryScreenshots.id, own.id),
+      ),
+    )
+    .where(and(eq(own.id, id), inWorkspace(own), like(own.storageKey, "pending-%")))
+    .limit(1);
+  return other !== undefined;
+}
+
 export async function ingestActivityScreenshot(input: {
   jobs: JobsPort;
   screenshot: InsertTimeEntryScreenshot;
@@ -114,6 +153,10 @@ export async function ingestActivityScreenshot(input: {
     // `commitActivityScreenshot` has replaced the key with committed bytes, the
     // row is evidence, and a later presign for the same instant is a new
     // capture rather than a licence to overwrite it.
+    if (isPendingStorageKey(input.screenshot.storageKey) && input.screenshot.capturedAt) {
+      const slot = `activity-slot:${input.screenshot.timeEntryId}:${input.screenshot.capturedAt.toISOString()}`;
+      await writer.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${slot}))`);
+    }
     const existing = await findPendingSlot(input.screenshot, writer);
     if (existing) return existing;
 
@@ -129,6 +172,15 @@ export async function ingestActivityScreenshot(input: {
   return db.transaction(persist);
 }
 
+async function hideAsDuplicate(id: string, writer: ActivityJobsWriter): Promise<TimeEntryScreenshot | undefined> {
+  const [row] = await writer
+    .update(timeEntryScreenshots)
+    .set({ deletedAt: new Date(), deletedBy: null, deleteReason: DUPLICATE_CAPTURE_REASON })
+    .where(and(eq(timeEntryScreenshots.id, id), inWorkspace(timeEntryScreenshots)))
+    .returning();
+  return row;
+}
+
 export async function commitActivityScreenshot(input: {
   jobs: JobsPort;
   id: string;
@@ -138,12 +190,18 @@ export async function commitActivityScreenshot(input: {
   tx?: ActivityJobsWriter;
 }): Promise<TimeEntryScreenshot | undefined> {
   const persist = async (writer: ActivityJobsWriter) => {
+    const copy =
+      !isPendingStorageKey(input.storageKey) &&
+      input.contentHash !== undefined &&
+      (await isCopyOfStoredCapture(input.id, input.contentHash, writer));
     const row = await updateTimeEntryScreenshot(
       input.id,
       { storageKey: input.storageKey, contentHash: input.contentHash, perceptualHash: input.perceptualHash },
       writer
     );
     if (!row) return undefined;
+    if (copy && row.deletedAt === null) return hideAsDuplicate(row.id, writer);
+    if (row.deletedAt !== null && row.deletedBy === null && row.deleteReason === DUPLICATE_CAPTURE_REASON) return row;
     if (!isPendingStorageKey(row.storageKey)) {
       await enqueueScreenshotAttribution(input.jobs, row, writer);
     }

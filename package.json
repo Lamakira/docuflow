@@ -32,6 +32,7 @@
     "db:backfill:crm-links": "tsx --env-file-if-exists=.env scripts/backfill-crm-links.ts",
     "db:backfill:legacy-statuses": "tsx --env-file-if-exists=.env scripts/backfill-legacy-statuses.ts",
     "db:backfill:screenshot-fingerprints": "tsx --env-file-if-exists=.env scripts/backfill-screenshot-fingerprints.ts",
+    "db:hide:duplicate-captures": "tsx --env-file-if-exists=.env scripts/hide-duplicate-captures.ts",
     "billing:assign-plan": "tsx --env-file-if-exists=.env scripts/assign-plan.ts",
     "identity:import:users": "tsx --env-file-if-exists=.env scripts/identity-import-users.ts",
     "identity:invite:password-set": "tsx --env-file-if-exists=.env scripts/identity-password-set-invites.ts",

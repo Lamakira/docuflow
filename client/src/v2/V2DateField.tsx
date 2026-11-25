@@ -15,14 +15,24 @@ export function V2DateField({
   onChange,
   ariaLabel,
   testId,
+  placeholder = "Not set",
+  min,
+  max,
 }: {
   value: string;
   onChange: (day: string) => void;
   ariaLabel: string;
   testId?: string;
+  /** What the button reads while no day is chosen. */
+  placeholder?: string;
+  /** The earliest and latest day that can be chosen, as `YYYY-MM-DD`. */
+  min?: string;
+  max?: string;
 }) {
   const [open, setOpen] = useState(false);
   const selected = dayToDate(value);
+  const earliest = min ? dayToDate(min) : undefined;
+  const latest = max ? dayToDate(max) : undefined;
 
   function choose(day: string) {
     onChange(day);
@@ -40,7 +50,7 @@ export function V2DateField({
           data-testid={testId}
         >
           <CalendarDays aria-hidden="true" />
-          <span>{value ? formatFullDate(value, { dateOnly: true }) : "Not set"}</span>
+          <span>{value ? formatFullDate(value, { dateOnly: true }) : placeholder}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="df-v2 df-select-content df-date-picker">
@@ -50,6 +60,7 @@ export function V2DateField({
           required
           selected={selected}
           defaultMonth={selected}
+          disabled={[...(earliest ? [{ before: earliest }] : []), ...(latest ? [{ after: latest }] : [])]}
           onSelect={(date) => {
             if (date) choose(dateToDay(date));
           }}

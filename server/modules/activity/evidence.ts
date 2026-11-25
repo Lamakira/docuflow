@@ -4,12 +4,21 @@
  * Entry the evidence is attached to. Evidence is not turned into scores.
  */
 
-import { and, desc, eq, gt, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gt, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
 import {
   agentActivityEvents,
   agentProcessedBatches,
+  companyDocuments,
+  crmClients,
+  crmProjects,
+  files,
+  objectUploadSlots,
+  projects,
+  tasks,
   timeEntries,
   timeEntryScreenshots,
+  users,
+  type DocumentPerson,
   type InsertTimeEntryScreenshot,
   type TimeEntryScreenshot,
 } from "@shared/schema";
@@ -64,9 +73,30 @@ export type ScreenshotListOptions = {
   similarOnly?: boolean;
 };
 
-export type ListedScreenshot = TimeEntryScreenshot & {
+export type ListedScreenshot = Pick<
+  TimeEntryScreenshot,
+  | "id"
+  | "userId"
+  | "timeEntryId"
+  | "crmProjectId"
+  | "capturedAt"
+  | "keyboardActivityPercent"
+  | "mouseActivityPercent"
+  | "keyboardCount"
+  | "mouseCount"
+  /** v1's Identical filter reads it. */
+  | "contentHash"
+> & {
   /** Within SIMILAR_MAX_HAMMING_DISTANCE of the same Member's previous live capture. */
   similarToPrevious: boolean;
+  entryDuration: number;
+  entryIdleTime: number;
+  source: "device" | "web";
+  user: DocumentPerson | null;
+  projectName: string | null;
+  clientName: string | null;
+  /** The Task's name, else the Time Entry's description. */
+  taskName: string | null;
 };
 
 export type ScreenshotList = {
@@ -112,12 +142,53 @@ export function similarToPreviousPredicate(): SQL {
   ), false) AND ${timeEntryScreenshots.perceptualHash} ~ ${hex}`;
 }
 
+/** Whether a capture, a File or a Document of this Workspace already names the object. */
+export async function isStoredObjectNamed(objectPath: string): Promise<boolean> {
+  const [named] = await db
+    .select({ id: timeEntryScreenshots.id })
+    .from(timeEntryScreenshots)
+    .where(and(inWorkspace(timeEntryScreenshots), eq(timeEntryScreenshots.storageKey, objectPath)))
+    .union(
+      db.select({ id: files.id }).from(files).where(and(inWorkspace(files), eq(files.storagePath, objectPath)))
+    )
+    .union(
+      db
+        .select({ id: companyDocuments.id })
+        .from(companyDocuments)
+        .where(and(inWorkspace(companyDocuments), eq(companyDocuments.storagePath, objectPath)))
+    )
+    .limit(1);
+  return named !== undefined;
+}
+
+/**
+ * Uses up the upload this User was handed for a web capture: only a key minted
+ * for them, not expired and not used yet, can become a capture, and once. A key
+ * learned elsewhere never opens someone else's object, in any Workspace.
+ */
+export async function claimWebCaptureUpload(objectPath: string, userId: string): Promise<boolean> {
+  const claimed = await db
+    .update(objectUploadSlots)
+    .set({ finalizedAt: new Date() })
+    .where(
+      and(
+        inWorkspace(objectUploadSlots),
+        eq(objectUploadSlots.objectPath, objectPath),
+        eq(objectUploadSlots.createdById, userId),
+        isNull(objectUploadSlots.finalizedAt),
+        gt(objectUploadSlots.expiresAt, new Date())
+      )
+    )
+    .returning({ id: objectUploadSlots.id });
+  return claimed.length > 0;
+}
+
 export async function getTimeEntryScreenshots(options: ScreenshotListOptions): Promise<ScreenshotList> {
   const conditions = [inWorkspace(timeEntryScreenshots)];
   if (options.timeEntryId) conditions.push(eq(timeEntryScreenshots.timeEntryId, options.timeEntryId));
   if (options.userId) conditions.push(eq(timeEntryScreenshots.userId, options.userId));
   if (options.crmProjectId) conditions.push(eq(timeEntryScreenshots.crmProjectId, options.crmProjectId));
-  if (options.startDate) conditions.push(gt(timeEntryScreenshots.capturedAt, options.startDate));
+  if (options.startDate) conditions.push(gte(timeEntryScreenshots.capturedAt, options.startDate));
   if (options.endDate) conditions.push(lte(timeEntryScreenshots.capturedAt, options.endDate));
   conditions.push(sql`${timeEntryScreenshots.storageKey} NOT LIKE 'pending-%'`);
   conditions.push(isNull(timeEntryScreenshots.deletedAt));
@@ -135,10 +206,41 @@ export async function getTimeEntryScreenshots(options: ScreenshotListOptions): P
 
   const [data, totalResult, countsResult] = await Promise.all([
     db
-      .select({ row: timeEntryScreenshots, similarToPrevious: sql<boolean>`(${similar})` })
+      .select({
+        id: timeEntryScreenshots.id,
+        userId: timeEntryScreenshots.userId,
+        timeEntryId: timeEntryScreenshots.timeEntryId,
+        crmProjectId: timeEntryScreenshots.crmProjectId,
+        capturedAt: timeEntryScreenshots.capturedAt,
+        keyboardActivityPercent: timeEntryScreenshots.keyboardActivityPercent,
+        mouseActivityPercent: timeEntryScreenshots.mouseActivityPercent,
+        keyboardCount: timeEntryScreenshots.keyboardCount,
+        mouseCount: timeEntryScreenshots.mouseCount,
+        contentHash: timeEntryScreenshots.contentHash,
+        similarToPrevious: sql<boolean>`(${similar})`,
+        entryDuration: sql<number>`coalesce(${timeEntries.duration}, 0)`,
+        entryIdleTime: sql<number>`coalesce(${timeEntries.idleTime}, 0)`,
+        source: sql<"device" | "web">`case when ${timeEntryScreenshots.storageKey} like '%agent-screenshots%' then 'device' else 'web' end`,
+        user: {
+          id: users.id,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+        },
+        projectName: projects.name,
+        clientName: crmClients.name,
+        taskName: sql<string | null>`coalesce(${tasks.name}, nullif(btrim(${timeEntries.description}), ''))`,
+      })
       .from(timeEntryScreenshots)
+      .leftJoin(timeEntries, and(eq(timeEntries.id, timeEntryScreenshots.timeEntryId), inWorkspace(timeEntries)))
+      .leftJoin(tasks, and(eq(tasks.id, timeEntries.taskId), inWorkspace(tasks)))
+      .leftJoin(crmProjects, and(eq(crmProjects.id, timeEntryScreenshots.crmProjectId), inWorkspace(crmProjects)))
+      .leftJoin(projects, and(eq(projects.id, crmProjects.projectId), inWorkspace(projects)))
+      .leftJoin(crmClients, and(eq(crmClients.id, crmProjects.clientId), inWorkspace(crmClients)))
+      .leftJoin(users, eq(users.id, timeEntryScreenshots.userId))
       .where(where)
-      .orderBy(desc(timeEntryScreenshots.capturedAt))
+      .orderBy(desc(timeEntryScreenshots.capturedAt), desc(timeEntryScreenshots.id))
       .limit(limit)
       .offset(offset),
     db
@@ -155,7 +257,7 @@ export async function getTimeEntryScreenshots(options: ScreenshotListOptions): P
   ]);
 
   return {
-    data: data.map(({ row, similarToPrevious }) => ({ ...row, similarToPrevious: similarToPrevious === true })),
+    data: data.map((row) => ({ ...row, similarToPrevious: row.similarToPrevious === true })),
     total: totalResult[0]?.count ?? 0,
     counts: {
       lowActivity: countsResult[0]?.lowActivity ?? 0,
