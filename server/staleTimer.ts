@@ -8,6 +8,7 @@
  * pause time.
  */
 
+import { STALE_THRESHOLD_MS } from "@shared/timePortion";
 import type { Job, JobTypeDeclaration, JobsPort } from "./jobs";
 import { workspaceOfCause } from "./jobs";
 import { logError, logInfo, logStaleSession } from "./logger";
@@ -24,7 +25,7 @@ export const STALE_TIMER_JOB_TYPE: JobTypeDeclaration = {
   concurrencyClass: "domain-consequence",
 };
 
-export const STALE_THRESHOLD_MS = 10 * 60 * 1000;
+export { STALE_THRESHOLD_MS };
 export const STALE_CHECK_WINDOW_MS = 2 * 60 * 1000;
 
 export const PAUSED_EXPIRY_MS = 12 * 60 * 60 * 1000;

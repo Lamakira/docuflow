@@ -872,44 +872,15 @@ export function registerAgentRoutes(app: Express): void {
       const startDate = req.query.start ? new Date(req.query.start as string) : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
       const endDate   = req.query.end   ? new Date(req.query.end   as string) : (() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; })();
 
-      const entries = await storage.getTimeEntries({
-        userId,
-        endDate,
-        endDateGte: startDate,
-        status: "stopped",
-      });
-
-      // Clamp cross-midnight entries proportionally (same as getTimeStats)
-      const clamp = (e: { startTime: Date | string; endTime: Date | string | null; duration: number | null }): number => {
-        if (!e.endTime) return e.duration || 0;
-        const eStart = new Date(e.startTime).getTime();
-        const wStart = startDate.getTime();
-        if (eStart >= wStart) return e.duration || 0;
-        const eEnd = new Date(e.endTime).getTime();
-        const totalMs = eEnd - eStart;
-        if (totalMs <= 0) return 0;
-        const inWindowMs = Math.min(eEnd, endDate.getTime()) - wStart;
-        if (inWindowMs <= 0) return 0;
-        return Math.round((e.duration || 0) * inWindowMs / totalMs);
-      };
-
-      // Batch-fetch task names for all unique taskIds
-      const taskIds = [...new Set(entries.map(e => e.taskId).filter(Boolean) as string[])];
-      const taskNames = new Map<string, string>();
-      await Promise.all(taskIds.map(async (id) => {
-        const t = await storage.getTask(id);
-        if (t) taskNames.set(id, t.name);
-      }));
+      const entries = await storage.getTimePortions({ userId, startDate, endDate });
 
       // Group by (crmProjectId, taskId)
       type Row = { projectName: string; taskId: string | null; taskName: string | null; stoppedSeconds: number };
       const map = new Map<string, Row>();
-      for (const entry of entries) {
-        const key = `${entry.crmProjectId}::${entry.taskId ?? ""}`;
-        const projectName = (entry as any).crmProject?.project?.name || "Unknown Project";
-        const taskName = entry.taskId ? (taskNames.get(entry.taskId) ?? null) : null;
-        const existing = map.get(key) ?? { projectName, taskId: entry.taskId ?? null, taskName, stoppedSeconds: 0 };
-        existing.stoppedSeconds += clamp(entry);
+      for (const { crmProjectId, projectName, taskId, taskName, seconds } of entries) {
+        const key = `${crmProjectId}::${taskId ?? ""}`;
+        const existing = map.get(key) ?? { projectName, taskId, taskName, stoppedSeconds: 0 };
+        existing.stoppedSeconds += seconds;
         map.set(key, existing);
       }
 
@@ -987,11 +958,11 @@ export function registerAgentRoutes(app: Express): void {
     res.json({ requiresTask: await featureIncluded("projectManagement") });
   });
 
-  /** Agent: list CRM projects (for timer start dropdown) */
+  /** Agent: list the Projects a Timer may start on (for timer start dropdown): no open or lost sale (F71) */
   app.get("/api/agent/projects", isAgentAuthenticated as any, async (req: AgentAuthRequest, res) => {
     try {
       const userId = req.agentUserId!;
-      const result = await storage.getCrmProjects(userId, { pageSize: 100, ...(await visibleProjectScope(userId)) });
+      const result = await storage.getCrmProjects(userId, { pageSize: 100, deliveryOnly: true, ...(await visibleProjectScope(userId)) });
       // Return simplified list for agent UI
       const projects = result.data.map((p: any) => ({
         id: p.id,
@@ -1013,14 +984,14 @@ export function registerAgentRoutes(app: Express): void {
       if (!name || typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ message: "Project name is required" });
       }
-      const light = !(await featureIncluded("crm"));
+      // Timers run on Projects only (F71), so this is never a sale. Creation keeps
+      // its default Project type; the update makes it Internal and drops the
+      // Opportunity creation made for the default type.
       const { crmProject: created } = await storage.createCrmProjectWithBase(
         { name: name.trim(), description: null, icon: null, ownerId: userId },
-        light ? { status: "won_in_progress" } : undefined,
+        { status: "won_in_progress" },
       );
-      const crmProject = light
-        ? ((await storage.updateCrmProject(created.id, { projectType: "internal" })) ?? created)
-        : created;
+      const crmProject = (await storage.updateCrmProject(created.id, { projectType: "internal" })) ?? created;
       res.status(201).json({
         id: crmProject.id,
         name: name.trim(),
@@ -1050,6 +1021,8 @@ export function registerAgentRoutes(app: Express): void {
         return res.status(404).json({ message: "Project not found" });
       }
 
+      // Not refused on a sale, unlike the web (F71): a start made offline before
+      // the rule must not lose its time.
       if (taskId || (await featureIncluded("projectManagement"))) {
         if (!taskId) {
           return res.status(400).json({ message: "taskId is required" });

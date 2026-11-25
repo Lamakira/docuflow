@@ -50,7 +50,7 @@ describe("desktop agent ingestion (characterization)", () => {
   async function trackingUser(app: Awaited<ReturnType<typeof makeApp>>) {
     const user = await registerUser(app);
     const device = await loginDevice(app, user);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
     const task = await createTask(user.agent, crmProject.id);
     return { user, device, crmProjectId: crmProject.id, taskId: task.id };
   }
@@ -262,7 +262,7 @@ describe("desktop agent ingestion (characterization)", () => {
   it("accrues time on any running entry it is pointed at, including someone else's", async () => {
     const app = await makeApp();
     const owner = await registerUser(app);
-    const { crmProject } = await createCrmProject(owner.agent);
+    const { crmProject } = await createCrmProject(owner.agent, { status: "won_in_progress" });
     const task = await createTask(owner.agent, crmProject.id);
     const foreignEntry = await startTimer(owner.agent, crmProject.id, task.id);
 

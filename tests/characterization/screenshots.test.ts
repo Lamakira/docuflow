@@ -31,7 +31,7 @@ describe("time-tracking screenshots (characterization)", () => {
 
   async function runningEntry(app: Awaited<ReturnType<typeof makeApp>>) {
     const user = await registerUser(app);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
     const task = await createTask(user.agent, crmProject.id);
     const entry = await startTimer(user.agent, crmProject.id, task.id);
     return { user, crmProjectId: crmProject.id, entry };

@@ -52,6 +52,12 @@ type NotifyOptions = {
   action?: { label: string; onClick: () => void };
   /** How long it stays, in ms; a toast with an action needs time to be reached. */
   duration?: number;
+  /** A line under the message. */
+  description?: string;
+  /** Called when the time runs out. Undo's own click calls neither this nor `onDismiss`. */
+  onAutoClose?: () => void;
+  /** Called when the toast is closed early, by hand or by `notify.dismiss`. */
+  onDismiss?: () => void;
 };
 
 export const notify = {
@@ -66,7 +72,10 @@ export const notify = {
   },
   /** A refusal with its reason under it, e.g. why the timer cannot start yet. */
   refused(title: string, reason: string, options: NotifyOptions = {}) {
-    toast.error(title, { ...options, description: reason });
+    toast.error(title, { ...options, description: errorMessage(reason) });
+  },
+  dismiss(id: string) {
+    toast.dismiss(id);
   },
 };
 

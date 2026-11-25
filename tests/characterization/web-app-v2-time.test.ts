@@ -98,7 +98,7 @@ describe("Time Tracking from live Time Entries (#190)", () => {
     expect(page.rows).toEqual([]);
     expect(page.emptyState?.copy.toLowerCase()).toContain("time entries");
     expect(page.emptyState?.kind).toBe("none");
-    expect(page.workdayHours).toBe("0.0 h");
+    expect(page.workdayHours).toBe("You today 0.0 h");
     expect(page.pagePrimary).toBe("case-ink");
     for (const name of SAMPLE_NAMES) {
       expect(blob).not.toContain(name);
@@ -141,7 +141,7 @@ describe("Time Tracking from live Time Entries (#190)", () => {
     );
 
     expect(page.empty).toBe(false);
-    expect(page.workdayHours).toBe("2.0 h");
+    expect(page.workdayHours).toBe("You today 2.0 h");
     expect(page.pagePrimary).toBe("case-ink");
     expect(page.rows[0]).toMatchObject({
       id: "te-run",
@@ -154,7 +154,7 @@ describe("Time Tracking from live Time Entries (#190)", () => {
     });
     expect(page.rows[1]).toMatchObject({
       id: "te-stop",
-      when: "Yesterday",
+      when: "Yesterday, 14:30",
       status: "STOPPED",
       duration: "00:30:00",
       holdsAmber: false,

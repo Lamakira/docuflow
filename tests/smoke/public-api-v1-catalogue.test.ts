@@ -329,7 +329,7 @@ describe("public /api/v1 catalogue — Time Entries", () => {
   it("lists and gets Time Entries in its Workspace", async () => {
     const app = await makeApp();
     const { admin, agent } = await serviceAccountAgent(app, [TIME_ENTRIES_READ_CAPABILITY_ID]);
-    const { crmProject } = await createCrmProject(admin.agent, { name: "Billable" });
+    const { crmProject } = await createCrmProject(admin.agent, { name: "Billable", status: "won_in_progress" });
     const task = await createTask(admin.agent, crmProject.id);
     const entry = await startTimer(admin.agent, crmProject.id, task.id, "Kickoff");
 

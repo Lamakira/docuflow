@@ -317,7 +317,7 @@ describe("desktop agent Timer across Workspaces under docuflow_app (#323)", () =
     const app = await makeApp();
     const user = await memberInTwoWorkspaces(app);
     const device = await loginDevice(app, user);
-    const { crmProject } = await createCrmProject(user.agent, { name: "Northwind" });
+    const { crmProject } = await createCrmProject(user.agent, { name: "Northwind", status: "won_in_progress" });
     const task = await createTask(user.agent, crmProject.id);
     const timer = await startTimer(user.agent, crmProject.id, task.id);
 

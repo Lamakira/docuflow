@@ -218,7 +218,7 @@ describe("agent screenshots across Workspaces (#297)", () => {
 
   async function capture(app: Awaited<ReturnType<typeof makeApp>>, user: TestUser) {
     const device = await loginDevice(app, user);
-    const { crmProject } = await createCrmProject(user.agent);
+    const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
     const task = await createTask(user.agent, crmProject.id);
     const entry = await startTimer(user.agent, crmProject.id, task.id);
     const slot = await device.request.post("/api/agent/screenshots/presign").send({
@@ -246,7 +246,7 @@ describe("agent screenshots across Workspaces (#297)", () => {
     expect((await a.agent.get(`/api/time-tracking/screenshots/${shot.id}/image`)).status).toBe(404);
     expect((await a.agent.get(shot.storageKey)).status).toBe(404);
 
-    const { crmProject } = await createCrmProject(a.agent);
+    const { crmProject } = await createCrmProject(a.agent, { status: "won_in_progress" });
     const task = await createTask(a.agent, crmProject.id);
     const entry = await startTimer(a.agent, crmProject.id, task.id);
     const registered = await a.agent.post("/api/time-tracking/screenshots").send({
@@ -260,7 +260,7 @@ describe("agent screenshots across Workspaces (#297)", () => {
   it("still serves a legacy agent-screenshots key", async () => {
     const app = await makeApp();
     const a = await registerUser(app);
-    const { crmProject } = await createCrmProject(a.agent);
+    const { crmProject } = await createCrmProject(a.agent, { status: "won_in_progress" });
     const task = await createTask(a.agent, crmProject.id);
     const entry = await startTimer(a.agent, crmProject.id, task.id);
     const key = `agent-screenshots/${randomUUID()}.webp`;

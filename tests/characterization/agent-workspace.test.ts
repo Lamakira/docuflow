@@ -79,12 +79,12 @@ describe("desktop agent workspace (characterization)", () => {
     expect(empty.status).toBe(200);
     expect(empty.body).toEqual({ data: [] });
 
-    const { crmProject } = await createCrmProject(user.agent, { name: "Agent Visible" });
-    const theirs = await createCrmProject(stranger.agent, { name: "Someone Else's" });
+    const { crmProject } = await createCrmProject(user.agent, { name: "Agent Visible", status: "won_in_progress" });
+    const theirs = await createCrmProject(stranger.agent, { name: "Someone Else's", status: "won_in_progress" });
 
     const listed = await device.request.get("/api/agent/projects");
     expect(listed.body.data).toEqual([
-      { id: crmProject.id, name: "Agent Visible", status: "lead" },
+      { id: crmProject.id, name: "Agent Visible", status: "won_in_progress" },
     ]);
 
     const tasks = await device.request
@@ -111,9 +111,9 @@ describe("desktop agent workspace (characterization)", () => {
     expect(created.body).toEqual({
       id: expect.any(String),
       name: "Started From The Desktop",
-      // A new CRM project starts in the "lead" stage; the route's `?? "active"`
+      // An Internal, active Project and never a sale (F71); the route's `?? "active"`
       // fallback is dead code, since the row always has a status.
-      status: "lead",
+      status: "won_in_progress",
     });
 
     // One workspace, two doors: the SPA's CRM list has it, owned by the caller.

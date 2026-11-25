@@ -67,7 +67,7 @@ async function plantEntryIn(workspaceId: string, userId: string) {
 
 async function member(app: Awaited<ReturnType<typeof makeApp>>) {
   const user = await registerUser(app);
-  const { crmProject } = await createCrmProject(user.agent);
+  const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
   const task = await createTask(user.agent, crmProject.id);
   const entry = await startTimer(user.agent, crmProject.id, task.id);
   return { user, base: { userId: user.id, entryId: entry.id as string, crmProjectId: crmProject.id as string } };

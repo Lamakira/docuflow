@@ -91,7 +91,7 @@ describe("admin analytics (characterization)", () => {
   it("counts a running entry in the overview and leaves it out of the export", async () => {
     const app = await makeApp();
     const admin = await registerAdmin(app, { firstName: "Ada", lastName: "Admin" });
-    const { crmProject } = await createCrmProject(admin.agent, { name: "Analytics Project" });
+    const { crmProject } = await createCrmProject(admin.agent, { name: "Analytics Project", status: "won_in_progress" });
     const task = await createTask(admin.agent, crmProject.id, "Analysis");
 
     const stopped = await startTimer(admin.agent, crmProject.id, task.id, 'said "hello"');
@@ -128,7 +128,7 @@ describe("admin analytics (characterization)", () => {
     const app = await makeApp();
     const admin = await registerAdmin(app);
     const member = await registerUser(app);
-    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [admin.id, member.id] });
+    const { crmProject } = await createCrmProject(admin.agent, { memberIds: [admin.id, member.id], status: "won_in_progress" });
     const task = await createTask(admin.agent, crmProject.id);
     const entry = await startTimer(member.agent, crmProject.id, task.id);
     await member.agent.post(`/api/time-tracking/${entry.id}/stop`);

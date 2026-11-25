@@ -100,11 +100,13 @@ export function composeProjectTasks(input: ProjectTasksInput): ProjectTasksModel
   const matching = input.projects.filter(
     (project) => !needle || fullProjectName(project).toLowerCase().includes(needle),
   );
-  const projects = matching.map((project) => ({
-    id: project.id,
-    name: projectName(project),
-    selected: project.id === input.selectedProjectId,
-  }));
+  const projects = matching
+    .map((project) => ({
+      id: project.id,
+      name: fullProjectName(project),
+      selected: project.id === input.selectedProjectId,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const selected = input.projects.find((project) => project.id === input.selectedProjectId) ?? null;
   const tasks = input.selectedProjectId
@@ -159,7 +161,8 @@ function projectName(project: ProjectTaskProject): string {
   return project.project?.name?.trim() || "Untitled Project";
 }
 
-function fullProjectName(project: ProjectTaskProject): string {
+/** "Client · Project", or the Project alone when it has no Client. */
+export function fullProjectName(project: ProjectTaskProject): string {
   const client = project.client?.name?.trim();
   return client ? `${client} · ${projectName(project)}` : projectName(project);
 }

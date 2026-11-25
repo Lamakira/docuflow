@@ -15,11 +15,18 @@ import { emptyKindOf, emptyModelOf, type EmptyModel } from "./emptyState";
 import { formatElapsedClock, timeTabHref, TIME_TAB_IDS, type TimeTabId } from "./presentation";
 import { formatHours, memberName } from "./today";
 import { MONTHS } from "./dates";
+import { DEFAULT_REGISTER_PAGE_SIZE, readPage, readPageSize, writePaging } from "./paging";
+import { fullProjectName, type ProjectTaskProject } from "./tasks";
+import { isDeliveryProject, projectHasOpportunity } from "@shared/projectLifecycle";
 
 export type TimeEntryRowInput = {
   id: string;
   startTime: Date | string;
+  endTime?: Date | string | null;
+  lastActivityAt?: Date | string | null;
   duration: number | null;
+  /** The seconds of it inside the register's period, as the server cut them. */
+  secondsInPeriod?: number;
   status: string;
   userId: string;
   crmProjectId: string;
@@ -42,6 +49,10 @@ export type TimeTrackingInput = {
   activeEntryId: string | null;
   entries: TimeEntryRowInput[];
   workdaySeconds: number;
+  /** Seconds since the register was read, for the running row's part of the period. */
+  liveSeconds?: number;
+  /** Where the register's period starts; null or omitted for all time. */
+  periodStart?: Date | null;
   /** The Range filter; the register opens on `today`. Omitted reads as the whole Workspace. */
   range?: "today" | "week" | "all";
   /** Whether the Project, Status or Member filter narrows the register. */
@@ -61,6 +72,8 @@ export type TimeTrackingRow = {
   project: string;
   task: string;
   duration: string;
+  /** "2h 10m in this period", when only part of the entry is inside it. */
+  inPeriod: string | null;
   status: string;
   running: boolean;
   holdsAmber: false;
@@ -68,6 +81,7 @@ export type TimeTrackingRow = {
 };
 
 export type TimeTrackingModel = {
+  /** The reader's own day, whatever the filters: "You today 2.5 h". */
   workdayHours: string;
   empty: boolean;
   /** Why the register shows nothing (#325); null while it has rows. */
@@ -88,6 +102,9 @@ export type TimeEntriesFilter = {
   userId?: string | null;
   /** Newest first, cut to this many; `1` answers "is there any" without loading the list. */
   limit?: number | null;
+  /** With a page the server answers one page, the total and the period's totals. */
+  page?: number | null;
+  pageSize?: number | null;
 };
 
 function parseDate(value: Date | string | null | undefined): Date | null {
@@ -104,13 +121,200 @@ function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function formatWhen(startTime: Date | string, now: Date): string {
-  const value = parseDate(startTime);
-  if (!value) return "";
-  if (sameDay(value, now)) return formatClock(value);
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (sameDay(value, yesterday)) return "Yesterday";
-  return `${value.getDate()} ${MONTHS[value.getMonth()]}`;
+function dayNumber(value: Date): number {
+  return Math.round(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) / 86_400_000);
+}
+
+/** Local time: "09:00 - 12:30" today, the day before it otherwise, and how many days later it ended. */
+export function formatEntryWhen(
+  entry: Pick<TimeEntryRowInput, "startTime" | "endTime" | "lastActivityAt" | "status">,
+  now: Date,
+): string {
+  const start = parseDate(entry.startTime);
+  if (!start) return "";
+  let day = "";
+  if (!sameDay(start, now)) {
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    if (sameDay(start, yesterday)) day = "Yesterday, ";
+    else {
+      const year = start.getFullYear() === now.getFullYear() ? "" : ` ${start.getFullYear()}`;
+      day = `${start.getDate()} ${MONTHS[start.getMonth()]}${year}, `;
+    }
+  }
+  if (entry.status === "running") return `${day}${formatClock(start)} - now`;
+  // A paused entry holds time up to where it was paused.
+  const end = parseDate(entry.endTime) ?? (entry.status === "paused" ? parseDate(entry.lastActivityAt) : null);
+  if (!end) return `${day}${formatClock(start)}`;
+  const days = dayNumber(end) - dayNumber(start);
+  const later = days > 0 ? ` +${days} ${days === 1 ? "day" : "days"}` : "";
+  return `${day}${formatClock(start)} - ${formatClock(end)}${later}`;
+}
+
+/** The part of an entry inside the period, when it is only a part. The running one ticks on from the read. */
+function inPeriodLabel(entry: TimeEntryRowInput, input: TimeTrackingInput): string | null {
+  if (entry.secondsInPeriod === undefined) return null;
+  const running = entry.status === "running";
+  const start = parseDate(entry.startTime);
+  const partial = running
+    ? Boolean(input.periodStart && start && start < input.periodStart)
+    : entry.secondsInPeriod < (entry.duration ?? 0);
+  if (!partial) return null;
+  return `${formatSpan(entry.secondsInPeriod + (running ? (input.liveSeconds ?? 0) : 0))} in this period`;
+}
+
+/**
+ * The seconds a figure misses since it was read, while the Timer runs; it
+ * already holds the rest. Never more than the entry holds: a Timer started
+ * elsewhere may be younger than the read.
+ */
+export function secondsSinceRead(readAt: number, nowMs: number, running: boolean, entrySeconds: number): number {
+  if (!running || !readAt) return 0;
+  return Math.min(Math.max(0, Math.floor((nowMs - readAt) / 1000)), Math.max(0, entrySeconds));
+}
+
+/* ---------------------------------------------------------------------------
+ * Which Projects take time (F71).
+ * ------------------------------------------------------------------------ */
+
+type TimerProject = ProjectTaskProject & {
+  isDocumentationOnly?: number | null;
+  projectType?: string | null;
+  status?: string | null;
+};
+
+/** Time goes on delivery work; the server refuses a sale and a documentation-only Project. */
+export function isTimerProject(project: TimerProject): boolean {
+  return isDeliveryProject(project) && !project.isDocumentationOnly;
+}
+
+/** The Projects the Timer and Projects & Tasks offer, by "Client · Project". */
+export function timerProjects<T extends TimerProject>(projects: T[]): T[] {
+  return projects
+    .filter(isTimerProject)
+    .sort((a, b) => fullProjectName(a).localeCompare(fullProjectName(b)));
+}
+
+export type TimeProjectOption = { id: string; label: string; meta: string | null };
+
+export function timerProjectOptions(projects: TimerProject[]): TimeProjectOption[] {
+  return timerProjects(projects).map((project) => ({ id: project.id, label: fullProjectName(project), meta: null }));
+}
+
+/** Every Project that may hold entries: time already on a sale stays findable. */
+export function filterProjectOptions(projects: TimerProject[]): TimeProjectOption[] {
+  return projects
+    .map((project) => ({
+      id: project.id,
+      label: fullProjectName(project),
+      meta: projectHasOpportunity(project) && !isDeliveryProject(project) ? "Opportunity" : null,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+export function projectTasksHref(crmProjectId: string): string {
+  return `${timeTabHref("projects")}?${new URLSearchParams({ project: crmProjectId })}`;
+}
+
+/* ---------------------------------------------------------------------------
+ * The filters, in the address (F73). Defaults are left out; an unknown value
+ * reads as its default.
+ * ------------------------------------------------------------------------ */
+
+export type TimeRange = "today" | "week" | "all";
+
+export type TimeFilters = {
+  range: TimeRange;
+  project: string;
+  status: string;
+  member: string;
+  page: number;
+  pageSize: number;
+};
+
+export const TIME_RANGE_OPTIONS: Array<{ value: TimeRange; label: string }> = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "This week" },
+  { value: "all", label: "All" },
+];
+
+export const TIME_STATUS_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "running", label: "Running" },
+  { value: "paused", label: "Paused" },
+  { value: "stopped", label: "Stopped" },
+];
+
+export const TIME_FILTERS_DEFAULT: TimeFilters = {
+  range: "today",
+  project: "all",
+  status: "all",
+  member: "all",
+  page: 1,
+  pageSize: DEFAULT_REGISTER_PAGE_SIZE,
+};
+
+function queryOf(params: URLSearchParams): string {
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export function readTimeFilters(search: string): TimeFilters {
+  const params = new URLSearchParams(search);
+  const known = <T extends string>(name: string, options: Array<{ value: T }>, fallback: T): T =>
+    options.find((option) => option.value === params.get(name))?.value ?? fallback;
+  return {
+    range: known("range", TIME_RANGE_OPTIONS, TIME_FILTERS_DEFAULT.range),
+    project: params.get("project")?.trim() || "all",
+    status: known("status", TIME_STATUS_OPTIONS, "all"),
+    member: params.get("member")?.trim() || "all",
+    page: readPage(params),
+    pageSize: readPageSize(params),
+  };
+}
+
+export function writeTimeFilters(search: string, filters: TimeFilters): string {
+  const params = new URLSearchParams(search);
+  for (const name of ["range", "project", "status", "member"] as const) {
+    if (filters[name] !== TIME_FILTERS_DEFAULT[name]) params.set(name, filters[name]);
+    else params.delete(name);
+  }
+  writePaging(params, filters.page, filters.pageSize);
+  return queryOf(params);
+}
+
+/** A Project or Member id the loaded list does not hold reads as All; an unknown list (`null`) keeps it. */
+export function knownFilterId(id: string, known: Array<{ id: string }> | null): string {
+  if (id === "all" || known === null) return id;
+  return known.some((row) => row.id === id) ? id : "all";
+}
+
+export function readTimePeriod(search: string): TimePeriod {
+  const value = new URLSearchParams(search).get("period");
+  return (TIME_PERIODS as readonly string[]).includes(value ?? "") ? (value as TimePeriod) : "week";
+}
+
+export function writeTimePeriod(search: string, period: TimePeriod): string {
+  const params = new URLSearchParams(search);
+  if (period === "week") params.delete("period");
+  else params.set("period", period);
+  return queryOf(params);
+}
+
+export function readChosenProject(search: string): string | null {
+  return new URLSearchParams(search).get("project")?.trim() || null;
+}
+
+export function writeChosenProject(search: string, id: string): string {
+  const params = new URLSearchParams(search);
+  params.set("project", id);
+  return queryOf(params);
+}
+
+const RANGE_WORDS: Record<TimeRange, string> = { today: "today", week: "this week", all: "in all" };
+
+/** What the register's foot says after its count: "3h 20m this week". */
+export function rangeTotalLabel(seconds: number, range: TimeRange): string {
+  return `${formatSpan(seconds)} ${RANGE_WORDS[range]}`;
 }
 
 function projectLabel(entry: TimeEntryRowInput): string {
@@ -131,18 +335,23 @@ export function timeEntriesPath(filters: TimeEntriesFilter = {}): string {
   if (filters.status) params.set("status", filters.status);
   if (filters.userId) params.set("userId", filters.userId);
   if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.page) {
+    params.set("page", String(filters.page));
+    params.set("pageSize", String(filters.pageSize ?? DEFAULT_REGISTER_PAGE_SIZE));
+  }
   const query = params.toString();
   return query ? `/api/time-tracking/entries?${query}` : "/api/time-tracking/entries";
 }
 
-export function timeStatsPath(filters: Omit<TimeEntriesFilter, "status"> = {}): string {
+/** The stats of a period, the running or paused Time Entry in them (F67). */
+export function timeStatsPath(filters: Omit<TimeEntriesFilter, "status" | "limit" | "page" | "pageSize"> = {}): string {
   const params = new URLSearchParams();
   if (filters.startDate) params.set("startDate", filters.startDate.toISOString());
   if (filters.endDate) params.set("endDate", filters.endDate.toISOString());
   if (filters.crmProjectId) params.set("crmProjectId", filters.crmProjectId);
   if (filters.userId) params.set("userId", filters.userId);
-  const query = params.toString();
-  return query ? `/api/time-tracking/stats?${query}` : "/api/time-tracking/stats";
+  params.set("includeActive", "1");
+  return `/api/time-tracking/stats?${params.toString()}`;
 }
 
 /** The Range one step wider than this one; `null` when it is already the widest. */
@@ -169,11 +378,12 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
       entry.status === "stopped" && (input.isAdmin || entry.userId === input.currentUserId);
     return {
       id: entry.id,
-      when: formatWhen(entry.startTime, input.now),
+      when: formatEntryWhen(entry, input.now),
       who: entry.user ? memberName(entry.user) : "Member",
       project: projectLabel(entry),
       task: taskLabel(entry),
       duration: formatElapsedClock(seconds),
+      inPeriod: inPeriodLabel(entry, input),
       status: entry.status.replace(/_/g, " ").toUpperCase(),
       running,
       holdsAmber: false as const,
@@ -187,7 +397,7 @@ export function composeTimeTracking(input: TimeTrackingInput): TimeTrackingModel
   const window = input.range === "today" ? "today" : input.range === "week" ? "this week" : null;
   const widenLabel = input.range ? widenTimeLabel(input.range) : null;
   return {
-    workdayHours: formatHours(input.workdaySeconds),
+    workdayHours: `You today ${formatHours(input.workdaySeconds)}`,
     empty,
     emptyState: emptyModelOf(
       emptyKindOf(empty, Boolean(input.facetsActive), window !== null, input.everRecorded ?? null),

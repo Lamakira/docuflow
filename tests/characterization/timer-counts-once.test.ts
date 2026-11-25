@@ -37,7 +37,7 @@ async function waitForLockWaiters(
 }
 
 async function trackable(user: TestUser) {
-  const { crmProject } = await createCrmProject(user.agent);
+  const { crmProject } = await createCrmProject(user.agent, { status: "won_in_progress" });
   const task = await createTask(user.agent, crmProject.id);
   return { crmProjectId: crmProject.id, taskId: task.id };
 }

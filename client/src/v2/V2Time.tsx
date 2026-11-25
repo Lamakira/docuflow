@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link, useLocation, useParams, useSearch } from "wouter";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTimeTracker } from "@/contexts/TimeTrackerContext";
@@ -10,13 +10,18 @@ import { canManageAdministration } from "./administration";
 import { chromeRefusal } from "./chrome";
 import { isStandingRefusal, notify } from "./notify";
 import { motionForSurface } from "./motion";
+import { dateToDay } from "./dates";
+import { composePaging } from "./paging";
 import { memberName } from "./today";
-import { TIME_TAB_IDS, type TimeTabId } from "./presentation";
+import { TIME_TAB_IDS, timeTabHref, type TimeTabId } from "./presentation";
 import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
+import { V2ProjectPicker } from "./V2ProjectPicker";
+import { V2RegisterPager } from "./V2RegisterPager";
 import { V2TaskTable } from "./V2TaskTable";
 import {
   composeProjectTasks,
+  fullProjectName,
   taskPath,
   tasksPath,
   type ProjectTask,
@@ -24,29 +29,58 @@ import {
 import {
   composeTimeStats,
   composeTimeTracking,
+  filterProjectOptions,
+  isTimerProject,
+  knownFilterId,
+  projectTasksHref,
+  rangeTotalLabel,
+  readChosenProject,
+  readTimeFilters,
+  readTimePeriod,
+  secondsSinceRead,
   timeEntriesPath,
   timePeriodLabel,
   timePeriodRange,
   timeStatsPath,
+  timerProjectOptions,
+  timerProjects,
   timeTabs,
   endOfDayLocal as endOfDay,
   startOfDayLocal as startOfDay,
+  TIME_FILTERS_DEFAULT,
   TIME_PERIODS,
+  TIME_RANGE_OPTIONS,
+  TIME_STATUS_OPTIONS,
   widerTimeRange,
+  writeChosenProject,
+  writeTimeFilters,
+  writeTimePeriod,
   type TimeEntryRowInput,
+  type TimeFilters,
   type TimePeriod,
   type TimeStatsResponse,
 } from "./time";
+import { TimeRemovals } from "./timeRemovals";
 import { Button } from "@/components/ui/button";
 import { V2CompactEmpty, V2EmptyState, V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
 
-type TimeEntriesResponse = { data: TimeEntryWithDetails[] };
+type TimeEntry = TimeEntryWithDetails & { secondsInPeriod?: number };
+type TimeEntriesResponse = {
+  data: TimeEntry[];
+  total?: number;
+  totals?: { duration: number; idle: number };
+};
+type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type TimeStats = { totalDuration: number };
 type TasksResponse = { data: ProjectTask[] };
 
 const ENTRY_MOTION = motionForSurface("time-entry").enterExit;
 const STATS_MOTION = motionForSurface("time-stats-period").enterExit;
+/** How long a removed row stays drawn while it fades; the removal itself waits on nothing here. */
+const LEAVE_MS = 200;
+const UNDO_MS = 6000;
+const REREAD_MS = 60_000;
 
 function startOfWeek(value: Date): Date {
   const start = startOfDay(value);
@@ -56,10 +90,13 @@ function startOfWeek(value: Date): Date {
   return start;
 }
 
-function toRow(entry: TimeEntryWithDetails): TimeEntryRowInput {
+function toRow(entry: TimeEntry): TimeEntryRowInput {
   return {
     id: entry.id,
     startTime: entry.startTime,
+    endTime: entry.endTime,
+    lastActivityAt: entry.lastActivityAt,
+    secondsInPeriod: entry.secondsInPeriod,
     duration: entry.duration,
     status: entry.status,
     userId: entry.userId,
@@ -82,6 +119,63 @@ function useWorkspaceCondition() {
     readOnly: current?.condition === "Read-only",
     ready: memberships !== undefined,
   };
+}
+
+/** One instant per local day, so a page left open past midnight moves to the new one. */
+function useToday(): Date {
+  const day = dateToDay(new Date());
+  return useMemo(() => new Date(), [day]);
+}
+
+/** A refresh that fails keeps what is on screen and says so once. */
+function useRefreshFailure(failed: boolean, message: string, id: string) {
+  useEffect(() => {
+    if (failed) notify.error(null, { fallback: message, id });
+  }, [failed, message, id]);
+}
+
+/** The Projects the reader may see, on the Time tracker's own query. */
+function useTimeProjects() {
+  const query = useQuery<ProjectsResponse>({
+    queryKey: ["/api/crm/projects", { pageSize: 500 }],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/projects?pageSize=500", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Projects");
+      return res.json();
+    },
+  });
+  // Another screen on this key may have cached a refusal's body.
+  const list = Array.isArray(query.data?.data) ? query.data.data : null;
+  const failed = query.isError || (query.isSuccess && list === null);
+  return {
+    list,
+    /** Every Project is in the list, so an id outside it is unknown. */
+    complete: list !== null && (query.data?.total ?? list.length) <= list.length,
+    failed,
+    state: list ? ("ready" as const) : failed ? ("failed" as const) : ("loading" as const),
+    refetch: query.refetch,
+  };
+}
+
+function LoadFailed({ title, icon, onRetry, testId }: {
+  title: string;
+  icon: "time" | "projects" | "tasks";
+  onRetry: () => void;
+  testId: string;
+}) {
+  return (
+    <V2EmptyState
+      icon={icon}
+      title={title}
+      copy="Something went wrong while loading them. Try again."
+      testId={testId}
+      action={
+        <Button variant="default" type="button" className="df-btn" onClick={onRetry}>
+          Try again
+        </Button>
+      }
+    />
+  );
 }
 
 export function V2TimePage() {
@@ -115,7 +209,9 @@ export function V2TimePage() {
 }
 
 function TimeEntriesPane() {
-  const now = useMemo(() => new Date(), []);
+  const now = useToday();
+  const search = useSearch();
+  const [, navigate] = useLocation();
   const { user } = useAuth();
   const { layout } = useV2Chrome();
   const { workspaceName, workspaceRole, readOnly, ready } = useWorkspaceCondition();
@@ -133,19 +229,33 @@ function TimeEntriesPane() {
     displayDuration,
     activeEntry,
     taskStartBlockedReason,
+    startMutationPending,
+    pauseMutationPending,
+    resumeMutationPending,
+    stopMutationPending,
     handleStart,
     handlePause,
     handleResume,
     handleStop,
   } = useTimeTracker();
 
-  const [range, setRange] = useState<"today" | "week" | "all">("today");
-  const [projectFilter, setProjectFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [userFilter, setUserFilter] = useState("all");
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
   const [leavingIds, setLeavingIds] = useState<string[]>([]);
   const knownIds = useRef<Set<string> | null>(null);
+
+  const timeProjects = useTimeProjects();
+  const { data: users } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
+  const asked = readTimeFilters(search);
+  const filters: TimeFilters = {
+    ...asked,
+    project: knownFilterId(asked.project, timeProjects.complete ? timeProjects.list : null),
+    member: canManage ? knownFilterId(asked.member, users ?? null) : "all",
+  };
+  const { range } = filters;
+
+  function setFilters(next: TimeFilters) {
+    navigate(`${timeTabHref("entries")}${writeTimeFilters(search, next)}`, { replace: true });
+  }
 
   const rangeDates = useMemo(() => {
     if (range === "all") return { startDate: null, endDate: null };
@@ -153,42 +263,119 @@ function TimeEntriesPane() {
     return { startDate: startOfDay(now), endDate: endOfDay(now) };
   }, [now, range]);
 
-  const filters = {
+  const entriesUrl = timeEntriesPath({
     startDate: rangeDates.startDate,
     endDate: rangeDates.endDate,
-    crmProjectId: projectFilter === "all" ? null : projectFilter,
-    status: statusFilter === "all" ? null : statusFilter,
-    userId: canManage && userFilter !== "all" ? userFilter : null,
-  };
-  const entriesUrl = timeEntriesPath(filters);
-  // The Workday chip counts today, whatever range the register is filtered to.
+    crmProjectId: filters.project === "all" ? null : filters.project,
+    status: filters.status === "all" ? null : filters.status,
+    userId: filters.member === "all" ? null : filters.member,
+    page: filters.page,
+    pageSize: filters.pageSize,
+  });
+  // The chip counts the reader's own day, whatever the register is filtered to.
   const statsUrl = timeStatsPath({
     startDate: startOfDay(now),
     endDate: endOfDay(now),
-    userId: filters.userId,
+    userId: user?.id ?? null,
   });
 
-  const { data: users = [] } = useQuery<SafeUser[]>({ queryKey: ["/api/users"] });
-  const { data: entriesResponse, isLoading, isError } = useQuery<TimeEntriesResponse>({
+  // Every visit re-reads; the cached rows show while it does, and a filter's
+  // first read keeps the rows before it rather than the skeleton.
+  const {
+    data: entriesResponse,
+    dataUpdatedAt: entriesReadAt,
+    isLoading,
+    isError,
+    isPlaceholderData,
+    refetch,
+  } = useQuery<TimeEntriesResponse>({
     queryKey: ["/api/time-tracking/entries", entriesUrl],
+    enabled: ready,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const res = await fetch(entriesUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch Time Entries");
       return res.json();
     },
+    staleTime: 0,
+    refetchInterval: isRunning ? REREAD_MS : false,
   });
-  const { data: stats } = useQuery<TimeStats>({
+  const { data: stats, dataUpdatedAt: statsReadAt } = useQuery<TimeStats>({
     queryKey: ["/api/time-tracking/stats", statsUrl],
+    enabled: Boolean(user?.id),
     queryFn: async () => {
       const res = await fetch(statsUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch Time stats");
       return res.json();
     },
+    staleTime: 0,
+    refetchInterval: isRunning ? REREAD_MS : false,
   });
+  useRefreshFailure(isError && Boolean(entriesResponse), "Time Entries could not be refreshed.", "v2-time-refresh-failed");
+
+  // A Timer started, paused or stopped elsewhere reaches this tab by the active
+  // entry alone: the figures read before it are read again.
+  const activeState = `${activeEntry?.id ?? ""}:${activeEntry?.status ?? ""}`;
+  const seenState = useRef(activeState);
+  useEffect(() => {
+    if (seenState.current === activeState) return;
+    seenState.current = activeState;
+    queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/entries"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/stats"] });
+  }, [activeState]);
+
+  const [, redraw] = useState(0);
+  const [removals] = useState(
+    () =>
+      new TimeRemovals({
+        send: (id) => apiRequest("DELETE", `/api/time-tracking/${id}`),
+        show: ({ key }, { undo, end }) =>
+          notify.success("Time Entry removed", {
+            id: key,
+            description: "Its Activity Evidence goes with it.",
+            duration: UNDO_MS,
+            action: { label: "Undo", onClick: undo },
+            onAutoClose: end,
+            onDismiss: end,
+          }),
+        hide: notify.dismiss,
+        onSent: () => {
+          queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/entries"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/stats"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/screenshots"] });
+        },
+        onFailed: (id, error) => notify.error(error, { fallback: "Time Entry could not be removed.", id: `v2-time-removal-failed-${id}` }),
+        onChange: () => redraw((count) => count + 1),
+      }),
+  );
+  // Leaving the page sends what is pending; a closed tab sends nothing.
+  useEffect(() => () => removals.flush(), [removals]);
+
+  const serverRows = entriesResponse?.data ?? [];
+  const shownRows = serverRows.filter((entry) => !removals.isHidden(entry.id) || leavingIds.includes(entry.id));
+  const hiddenRows = serverRows.filter((entry) => removals.isHidden(entry.id));
+  const total = Math.max(0, (entriesResponse?.total ?? serverRows.length) - hiddenRows.length);
+  const totalSeconds = Math.max(
+    0,
+    (entriesResponse?.totals?.duration ?? 0) -
+      hiddenRows.reduce((sum, entry) => sum + (entry.secondsInPeriod ?? entry.duration ?? 0), 0),
+  );
+  const paging = composePaging({
+    page: filters.page,
+    pageSize: filters.pageSize,
+    total,
+    noun: { one: "entry", many: "entries" },
+  });
+
+  // A shared link past the last page lands on the last one instead of nothing.
+  useEffect(() => {
+    if (!entriesResponse || isPlaceholderData || filters.page <= paging.pageCount) return;
+    setFilters({ ...filters, page: paging.pageCount });
+  }, [entriesResponse, isPlaceholderData, filters.page, paging.pageCount]);
 
   // Cheap "ever recorded" probe, asked only when the register is empty: the
   // newest one Time Entry the reader may see, in any period (#325).
-  const probeEver = !isLoading && !isError && (entriesResponse?.data ?? []).length === 0;
+  const probeEver = ready && !isLoading && !isError && serverRows.length === 0;
   const { data: everResponse } = useQuery<TimeEntriesResponse>({
     queryKey: ["/api/time-tracking/entries", "ever"],
     enabled: probeEver,
@@ -198,11 +385,11 @@ function TimeEntriesPane() {
       return res.json();
     },
   });
-  // The Timer's Project list, shared with the Time tracker's own query.
-  const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
-    queryKey: ["/api/crm/projects", { pageSize: 500 }],
-    queryFn: () => fetch("/api/crm/projects?pageSize=500").then((res) => res.json()),
-  });
+  const offered = useMemo(() => timerProjectOptions(timeProjects.list ?? []), [timeProjects.list]);
+  const filterOptions = useMemo(
+    () => [{ id: "all", label: "All", meta: null }, ...filterProjectOptions(timeProjects.list ?? [])],
+    [timeProjects.list],
+  );
 
   const page = composeTimeTracking({
     now,
@@ -211,16 +398,18 @@ function TimeEntriesPane() {
     isRunning,
     displayDuration,
     activeEntryId: activeEntry?.id ?? null,
-    entries: (entriesResponse?.data ?? []).map(toRow),
-    workdaySeconds: stats?.totalDuration ?? 0,
+    entries: shownRows.map(toRow),
+    workdaySeconds: (stats?.totalDuration ?? 0) + secondsSinceRead(statsReadAt, Date.now(), isRunning, displayDuration),
+    liveSeconds: secondsSinceRead(entriesReadAt, Date.now(), isRunning, displayDuration),
+    periodStart: rangeDates.startDate,
     range,
     everRecorded: everResponse ? everResponse.data.length > 0 : null,
-    hasProjects: projectsResponse ? projectsResponse.data.length > 0 : true,
+    hasProjects: timeProjects.list ? offered.length > 0 : true,
     canCreateProject: !readOnly,
-    facetsActive: projectFilter !== "all" || statusFilter !== "all" || (canManage && userFilter !== "all"),
+    facetsActive: filters.project !== "all" || filters.status !== "all" || filters.member !== "all",
   });
 
-  if (!isLoading && !isError && knownIds.current === null) {
+  if (entriesResponse && knownIds.current === null) {
     knownIds.current = new Set(page.rows.map((row) => row.id));
   }
 
@@ -229,26 +418,15 @@ function TimeEntriesPane() {
     for (const row of page.rows) knownIds.current.add(row.id);
   }, [page.rows]);
 
+  const loadFailed = isError && !entriesResponse;
   const busy = hasActiveEntry;
-  const startBlocked = Boolean(taskStartBlockedReason);
-
-  const deleteEntry = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/time-tracking/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/entries"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/stats"] });
-      setWriteRefusal(null);
-      notify.success("Time Entry deleted");
-    },
-    onError: (error: Error) => {
-      if (!readOnly && !isStandingRefusal(error)) return notify.error(error);
-      setWriteRefusal(
-        readOnly
-          ? chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" })
-          : chromeRefusal({ kind: "generic", message: error.message }),
-      );
-    },
-  });
+  // Idle, a Project kept from a Timer stopped elsewhere may be a sale: the Timer does not offer it.
+  const kept = projects.find((project) => project.id === selectedProjectId);
+  const timerProjectId = busy || !kept || isTimerProject(kept) ? selectedProjectId : "";
+  const keptName = kept ? fullProjectName(kept) : undefined;
+  const startBlocked = Boolean(taskStartBlockedReason) || !timerProjectId;
+  const noTask = !busy && Boolean(timerProjectId) && taskStartBlockedReason === "no_tasks";
+  const pending = startMutationPending || pauseMutationPending || resumeMutationPending || stopMutationPending;
 
   function refuseWrite() {
     setWriteRefusal(chromeRefusal({ kind: "workspace-condition", workspaceName, condition: "Read-only" }));
@@ -259,18 +437,11 @@ function TimeEntriesPane() {
       refuseWrite();
       return;
     }
-    if (ENTRY_MOTION === "instant" || leavingIds.includes(id)) {
-      deleteEntry.mutate(id);
-      return;
-    }
-    setLeavingIds((current) => (current.includes(id) ? current : [...current, id]));
-  }
-
-  function onRowGone(id: string) {
-    if (!leavingIds.includes(id)) return;
-    deleteEntry.mutate(id, {
-      onSettled: () => setLeavingIds((current) => current.filter((rowId) => rowId !== id)),
-    });
+    if (removals.isHidden(id)) return;
+    setWriteRefusal(null);
+    removals.remove(id);
+    setLeavingIds((current) => [...current, id]);
+    window.setTimeout(() => setLeavingIds((current) => current.filter((rowId) => rowId !== id)), LEAVE_MS);
   }
 
   function onPrimary() {
@@ -278,23 +449,17 @@ function TimeEntriesPane() {
       refuseWrite();
       return;
     }
-    if (isRunning) {
-      handlePause();
-      return;
-    }
-    if (isPaused) {
-      handleResume();
-      return;
-    }
-    handleStart();
+    if (busy) handleStop();
+    else handleStart();
   }
 
-  function onStop() {
+  function onPauseResume() {
     if (readOnly) {
       refuseWrite();
       return;
     }
-    handleStop();
+    if (isRunning) handlePause();
+    else handleResume();
   }
 
   if (!ready || isLoading) {
@@ -306,19 +471,6 @@ function TimeEntriesPane() {
           heads={["When", "Project", "Task", "Who", "Status", "Duration"]}
         />
       </V2PageSkeleton>
-    );
-  }
-
-  if (isError) {
-    return (
-      <>
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Time Tracking</h1>
-          </div>
-        </header>
-        <p className="df-empty">Time Entries in this Workspace could not be loaded.</p>
-      </>
     );
   }
 
@@ -337,27 +489,26 @@ function TimeEntriesPane() {
           <span className="df-mono df-meta">{isRunning ? "RUNNING" : isPaused ? "PAUSED" : "IDLE"}</span>
         </div>
         <div className="df-toolbar" data-align="start">
-          <V2FilterSelect
+          <V2ProjectPicker
+            variant="chip"
             label="Project"
-            ariaLabel="Project"
-            value={selectedProjectId || V2_SELECT_NONE}
+            value={timerProjectId}
+            valueLabel={busy ? (keptName ?? "This Project") : "Choose a Project"}
             disabled={readOnly || busy}
-            onChange={(next) => setSelectedProjectId(next === V2_SELECT_NONE ? "" : next)}
-            options={[
-              { value: V2_SELECT_NONE, label: "Choose a Project" },
-              ...projects.map((project) => ({
-                value: project.id,
-                label: project.client?.name
-                  ? `${project.client.name} · ${project.project?.name || "Untitled Project"}`
-                  : project.project?.name || "Untitled Project",
-              })),
-            ]}
+            onChange={(next) => {
+              if (next === selectedProjectId) return;
+              setSelectedProjectId(next);
+              setSelectedTaskId("");
+            }}
+            options={offered}
+            state={timeProjects.state}
+            testId="v2-time-timer-project"
           />
           <V2FilterSelect
             label="Task"
             ariaLabel="Task"
             value={selectedTaskId || V2_SELECT_NONE}
-            disabled={readOnly || busy || !selectedProjectId}
+            disabled={readOnly || busy || !timerProjectId}
             onChange={(next) => setSelectedTaskId(next === V2_SELECT_NONE ? "" : next)}
             options={[
               { value: V2_SELECT_NONE, label: "Choose a Task" },
@@ -366,15 +517,25 @@ function TimeEntriesPane() {
                 .map((task) => ({ value: task.id, label: task.name })),
             ]}
           />
-          <Button variant="default" type="button" data-primary={page.pagePrimary} disabled={readOnly || (!busy && startBlocked)} onClick={onPrimary} className="df-btn">
-            {isRunning ? "Pause" : isPaused ? "Resume" : "Start"}
+          <Button variant="default" type="button" data-primary={page.pagePrimary} disabled={readOnly || pending || (!busy && startBlocked)} onClick={onPrimary} className="df-btn">
+            {busy ? "Stop" : "Start"}
           </Button>
-          {hasActiveEntry ? (
-            <Button variant="default" type="button" disabled={readOnly} onClick={onStop} className="df-btn">
-              Stop
+          {busy ? (
+            <Button variant="outline" type="button" disabled={readOnly || pending} onClick={onPauseResume} className="df-btn">
+              {isRunning ? "Pause" : "Resume"}
             </Button>
           ) : null}
         </div>
+        {noTask ? (
+          <p className="df-empty" data-testid="v2-time-timer-no-task">
+            This Project has no Task yet.{" "}
+            {readOnly ? null : (
+              <Link href={projectTasksHref(timerProjectId)} className="df-cta">
+                Add a Task
+              </Link>
+            )}
+          </p>
+        ) : null}
         {page.timerHint ? (
           <p className="df-empty" data-testid="v2-time-timer-hint">
             {page.timerHint.href ? (
@@ -396,48 +557,40 @@ function TimeEntriesPane() {
           label="Range"
           ariaLabel="Range"
           value={range}
-          active={range === "today"}
-          onChange={(next) => setRange(next as typeof range)}
-          options={[
-            { value: "today", label: "Today" },
-            { value: "week", label: "This week" },
-            { value: "all", label: "All" },
-          ]}
+          active={range !== TIME_FILTERS_DEFAULT.range}
+          onChange={(next) => setFilters({ ...filters, range: next as TimeFilters["range"], page: 1 })}
+          options={TIME_RANGE_OPTIONS}
         />
-        <V2FilterSelect
+        <V2ProjectPicker
+          variant="chip"
           label="Project"
           ariaLabel="Filter by Project"
-          value={projectFilter}
-          onChange={setProjectFilter}
-          options={[
-            { value: "all", label: "All" },
-            ...projects.map((project) => ({
-              value: project.id,
-              label: project.project?.name || "Untitled Project",
-            })),
-          ]}
+          value={filters.project}
+          valueLabel="All"
+          active={filters.project !== "all"}
+          onChange={(project) => setFilters({ ...filters, project, page: 1 })}
+          options={filterOptions}
+          state={timeProjects.state}
+          testId="v2-time-filter-project"
         />
         <V2FilterSelect
           label="Status"
           ariaLabel="Filter by status"
-          value={statusFilter}
-          onChange={setStatusFilter}
-          options={[
-            { value: "all", label: "All" },
-            { value: "running", label: "Running" },
-            { value: "paused", label: "Paused" },
-            { value: "stopped", label: "Stopped" },
-          ]}
+          value={filters.status}
+          active={filters.status !== "all"}
+          onChange={(status) => setFilters({ ...filters, status, page: 1 })}
+          options={TIME_STATUS_OPTIONS}
         />
         {canManage ? (
           <V2FilterSelect
             label="Member"
             ariaLabel="Filter by Member"
-            value={userFilter}
-            onChange={setUserFilter}
+            value={filters.member}
+            active={filters.member !== "all"}
+            onChange={(member) => setFilters({ ...filters, member, page: 1 })}
             options={[
               { value: "all", label: "All" },
-              ...users.map((member) => ({ value: member.id, label: memberName(member) })),
+              ...(users ?? []).map((member) => ({ value: member.id, label: memberName(member) })),
             ]}
           />
         ) : null}
@@ -446,7 +599,7 @@ function TimeEntriesPane() {
       {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}
 
       <section className="df-card df-time-register" data-testid="v2-time-register">
-        {layout.stackedRegister ? null : (
+        {layout.stackedRegister || loadFailed ? null : (
           <div className="df-register-head df-desktop-only">
             <span>When</span>
             <span>Project</span>
@@ -457,7 +610,14 @@ function TimeEntriesPane() {
             <span />
           </div>
         )}
-        {page.emptyState ? (
+        {loadFailed ? (
+          <LoadFailed
+            title="Time Entries could not be loaded."
+            icon="time"
+            onRetry={() => refetch()}
+            testId="v2-time-load-failed"
+          />
+        ) : page.emptyState ? (
           <V2RecordEmpty
             model={page.emptyState}
             icon="time"
@@ -468,32 +628,27 @@ function TimeEntriesPane() {
                 </Button>
               ) : undefined
             }
-            onClear={() => {
-              setProjectFilter("all");
-              setStatusFilter("all");
-              setUserFilter("all");
-            }}
-            onWiden={widerTimeRange(range) ? () => setRange(widerTimeRange(range)!) : undefined}
+            onClear={() => setFilters({ ...filters, project: "all", status: "all", member: "all", page: 1 })}
+            onWiden={
+              widerTimeRange(range) ? () => setFilters({ ...filters, range: widerTimeRange(range)!, page: 1 }) : undefined
+            }
             testIds={{ none: "v2-time-register-empty", filtered: "v2-time-register-filtered", range: "v2-time-register-range" }}
           />
         ) : (
-          page.rows.map((row) => (
+          page.rows.map((row) => {
+            const leaving = removals.isHidden(row.id);
+            return (
             <div
               key={row.id}
               className="df-register-row df-time-row"
               data-amber={row.holdsAmber ? "true" : "false"}
               data-motion={
-                leavingIds.includes(row.id) || (knownIds.current !== null && !knownIds.current.has(row.id))
+                leaving || (knownIds.current !== null && !knownIds.current.has(row.id))
                   ? ENTRY_MOTION
                   : "none"
               }
-              data-state={leavingIds.includes(row.id) ? "leaving" : "in"}
+              data-state={leaving ? "leaving" : "in"}
               data-testid={`v2-time-row-${row.id}`}
-              onTransitionEnd={(event) => {
-                if (event.target !== event.currentTarget) return;
-                if (event.propertyName !== "opacity" && event.propertyName !== "transform") return;
-                onRowGone(row.id);
-              }}
             >
               {layout.stackedRegister ? (
                 <span className="df-project-mobile">
@@ -503,7 +658,10 @@ function TimeEntriesPane() {
                       {row.when} · {row.task} · {row.status}
                     </div>
                   </span>
-                  <span className="df-mono df-time-clock">{row.duration}</span>
+                  <span className="df-time-duration">
+                    <span className="df-mono df-time-clock">{row.duration}</span>
+                    {row.inPeriod ? <span className="df-meta">{row.inPeriod}</span> : null}
+                  </span>
                   {row.canDelete ? (
                     <Button variant="outline" type="button" onClick={() => onDelete(row.id)} className="df-btn">
                       <Trash2 strokeWidth={1.6} aria-hidden />
@@ -515,11 +673,12 @@ function TimeEntriesPane() {
                 <>
                   <span className="df-mono df-meta">{row.when}</span>
                   <span className="df-row-title">{row.project}</span>
-                  <span className="df-mono df-meta">{row.task}</span>
-                  <span>{row.who}</span>
-                  <span className="df-status">{row.status}</span>
-                  <span className="df-mono df-time-clock" style={{ textAlign: "right" }}>
-                    {row.duration}
+                  <span className="df-time-task">{row.task}</span>
+                  <span className="df-time-person">{row.who}</span>
+                  <span className="df-mono df-meta df-time-entry-status">{row.status}</span>
+                  <span className="df-time-duration">
+                    <span className="df-mono df-time-clock">{row.duration}</span>
+                    {row.inPeriod ? <span className="df-meta">{row.inPeriod}</span> : null}
                   </span>
                   <span style={{ textAlign: "right" }}>
                     {row.canDelete ? (
@@ -532,7 +691,16 @@ function TimeEntriesPane() {
                 </>
               )}
             </div>
-          ))
+            );
+          })
+        )}
+        {loadFailed || page.empty ? null : (
+          <V2RegisterPager
+            paging={{ ...paging, label: `${paging.label} · ${rangeTotalLabel(totalSeconds, range)}` }}
+            ariaLabel="Time Entries pages"
+            onPage={(next) => setFilters({ ...filters, page: next })}
+            onPageSize={(pageSize) => setFilters({ ...filters, pageSize, page: 1 })}
+          />
         )}
       </section>
     </>
@@ -545,9 +713,11 @@ function TimeEntriesPane() {
  * on opacity so the numbers do not jump, and the bars never parade in.
  */
 function TimeStatsPane() {
-  const now = useMemo(() => new Date(), []);
+  const now = useToday();
+  const search = useSearch();
+  const [, navigate] = useLocation();
   const { workspaceName, workspaceRole, readOnly, ready } = useWorkspaceCondition();
-  const [period, setPeriod] = useState<TimePeriod>("week");
+  const period = readTimePeriod(search);
 
   const canSeeEveryone = canManageAdministration(workspaceRole);
   const periodRange = useMemo(() => timePeriodRange(period, now), [period, now]);
@@ -556,14 +726,16 @@ function TimeStatsPane() {
     endDate: periodRange.endDate,
   });
 
-  const { data, isLoading, isError } = useQuery<TimeStatsResponse>({
+  const { data, isLoading, isError, refetch } = useQuery<TimeStatsResponse>({
     queryKey: ["/api/time-tracking/stats", statsUrl],
     queryFn: async () => {
       const res = await fetch(statsUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch Time stats");
       return res.json();
     },
+    staleTime: 0,
   });
+  useRefreshFailure(isError && Boolean(data), "Time stats could not be refreshed.", "v2-time-stats-refresh-failed");
 
   // Same probe as Time Entries (shared cache key): asked only when the period
   // shows no Time Entry, to tell a never-used Workspace from an empty period.
@@ -577,10 +749,7 @@ function TimeStatsPane() {
       return res.json();
     },
   });
-  const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
-    queryKey: ["/api/crm/projects", { pageSize: 500 }],
-    queryFn: () => fetch("/api/crm/projects?pageSize=500").then((res) => res.json()),
-  });
+  const timeProjects = useTimeProjects();
 
   const page = composeTimeStats({
     period,
@@ -588,7 +757,7 @@ function TimeStatsPane() {
     canSeeEveryone,
     stats: data ?? null,
     everRecorded: everResponse ? everResponse.data.length > 0 : null,
-    hasProjects: projectsResponse ? projectsResponse.data.length > 0 : true,
+    hasProjects: timeProjects.list ? timerProjects(timeProjects.list).length > 0 : true,
     canCreateProject: !readOnly,
   });
 
@@ -613,7 +782,9 @@ function TimeStatsPane() {
           label="Period"
           ariaLabel="Period"
           value={period}
-          onChange={(next) => setPeriod(next as TimePeriod)}
+          onChange={(next) =>
+            navigate(`${timeTabHref("stats")}${writeTimePeriod(search, next as TimePeriod)}`, { replace: true })
+          }
           options={TIME_PERIODS.map((option) => ({
             value: option,
             label: timePeriodLabel(option),
@@ -622,8 +793,13 @@ function TimeStatsPane() {
         />
       </header>
 
-      {isError ? (
-        <p className="df-empty">Time stats for this Workspace could not be loaded.</p>
+      {isError && !data ? (
+        <LoadFailed
+          title="Time stats could not be loaded."
+          icon="time"
+          onRetry={() => refetch()}
+          testId="v2-time-stats-load-failed"
+        />
       ) : page.neverRecorded ? (
         <V2EmptyState
           icon="time"
@@ -721,21 +897,34 @@ function TimeStatsPane() {
  */
 function ProjectTasksPane() {
   const { workspaceName, readOnly } = useWorkspaceCondition();
+  const query = useSearch();
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [taskName, setTaskName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [writeRefusal, setWriteRefusal] = useState<string | null>(null);
 
-  const { data: projectsResponse, isLoading: projectsLoading } = useQuery<{ data: CrmProjectWithDetails[] }>({
-    queryKey: ["/api/crm/projects", { pageSize: 500 }],
-    queryFn: () => fetch("/api/crm/projects?pageSize=500", { credentials: "include" }).then((res) => res.json()),
-  });
+  const timeProjects = useTimeProjects();
+  const projects = useMemo(() => timerProjects(timeProjects.list ?? []), [timeProjects.list]);
+  const projectsLoading = timeProjects.state === "loading";
+  const projectsFailed = timeProjects.state === "failed";
+  const chosenId = readChosenProject(query);
+  const selectedProjectId = projects.some((project) => project.id === chosenId) ? chosenId : null;
+  useRefreshFailure(
+    timeProjects.failed && timeProjects.list !== null,
+    "Projects could not be refreshed.",
+    "v2-time-projects-refresh-failed",
+  );
 
   const tasksUrl = selectedProjectId ? tasksPath(selectedProjectId, { includeArchived: true }) : null;
-  const { data: tasksResponse, isLoading: tasksLoading } = useQuery<TasksResponse>({
+  const {
+    data: tasksResponse,
+    isLoading: tasksLoading,
+    isError: tasksError,
+    refetch: refetchTasks,
+  } = useQuery<TasksResponse>({
     queryKey: ["/api/tasks", tasksUrl],
     enabled: Boolean(tasksUrl),
     queryFn: async () => {
@@ -743,14 +932,16 @@ function ProjectTasksPane() {
       if (!res.ok) throw new Error("Failed to fetch Tasks");
       return res.json();
     },
+    staleTime: 0,
   });
+  useRefreshFailure(tasksError && Boolean(tasksResponse), "Tasks could not be refreshed.", "v2-time-tasks-refresh-failed");
 
   const page = composeProjectTasks({
     workspaceName,
     readOnly,
     search,
     selectedProjectId,
-    projects: projectsResponse?.data ?? [],
+    projects,
     tasks: tasksResponse?.data ?? [],
   });
 
@@ -843,6 +1034,20 @@ function ProjectTasksPane() {
     </header>
   );
 
+  if (projectsFailed) {
+    return (
+      <>
+        {header}
+        <LoadFailed
+          title="Projects could not be loaded."
+          icon="projects"
+          onRetry={() => timeProjects.refetch()}
+          testId="v2-time-projects-load-failed"
+        />
+      </>
+    );
+  }
+
   // No Project at all: one full-width state instead of two panes (#325).
   if (!projectsLoading && page.noProjects && page.projectsEmptyState) {
     return (
@@ -913,7 +1118,7 @@ function ProjectTasksPane() {
                   data-selected={project.selected ? "true" : "false"}
                   data-testid={`v2-time-project-${project.id}`}
                   onClick={() => {
-                    setSelectedProjectId(project.id);
+                    navigate(`${timeTabHref("projects")}${writeChosenProject(query, project.id)}`, { replace: true });
                     setEditingId(null);
                     setConfirmDeleteId(null);
                   }}
@@ -954,6 +1159,14 @@ function ProjectTasksPane() {
                 </Button>
               </div>
 
+              {tasksError && !tasksResponse ? (
+                <LoadFailed
+                  title="Tasks could not be loaded."
+                  icon="tasks"
+                  onRetry={() => refetchTasks()}
+                  testId="v2-time-tasks-load-failed"
+                />
+              ) : (
               <V2TaskTable
                 rows={page.rows}
                 canWrite={page.canWrite}
@@ -973,6 +1186,7 @@ function ProjectTasksPane() {
                 onDelete={onDelete}
                 onCancelDelete={() => setConfirmDeleteId(null)}
               />
+              )}
             </>
           )}
         </section>

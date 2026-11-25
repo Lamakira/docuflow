@@ -43,10 +43,11 @@ interface TimeTrackerActions {
   setSelectedProjectId: (id: string) => void;
   setSelectedTaskId: (id: string) => void;
   setDescription: (desc: string) => void;
-  handleStart: (projectId?: string, taskId?: string) => void;
-  handlePause: () => void;
-  handleResume: () => void;
-  handleStop: () => void;
+  // Each answers whether the server took it; a failure is already reported.
+  handleStart: (projectId?: string, taskId?: string) => Promise<boolean>;
+  handlePause: () => Promise<boolean>;
+  handleResume: () => Promise<boolean>;
+  handleStop: () => Promise<boolean>;
   handleToggleCapture: () => void;
 }
 
@@ -64,7 +65,7 @@ export function useTimeTracker() {
 
 const HEARTBEAT_INTERVAL_SECONDS = 60;
 
-/** How the timer reports a refused start: v1's toast unless the host passes its own. */
+/** How the timer reports a refused or failed command: v1's toast unless the host passes its own. */
 export type TimeTrackerReport = { failure: (title: string, description: string) => void };
 
 export function TimeTrackerProvider({ children, report }: { children: ReactNode; report?: TimeTrackerReport }) {
@@ -97,7 +98,12 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
 
   const { data: projectsResponse } = useQuery<{ data: CrmProjectWithDetails[] }>({
     queryKey: ["/api/crm/projects", { pageSize: 500 }],
-    queryFn: () => fetch("/api/crm/projects?pageSize=500").then(r => r.json()),
+    // A refusal must not be cached as a list: the screens sharing this key could not tell.
+    queryFn: () =>
+      fetch("/api/crm/projects?pageSize=500").then((r) => {
+        if (!r.ok) throw new Error("Failed to fetch Projects");
+        return r.json();
+      }),
   });
 
   const projects = projectsResponse?.data || [];
@@ -109,10 +115,11 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
   });
   const requiresTaskForStart = capabilities?.requiresTask ?? false;
 
+  /** Resolves once the active entry is read again, so a command stays pending until the screen shows it. */
   const invalidateAll = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/active"] });
     queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/entries"] });
     queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/stats"] });
+    return queryClient.invalidateQueries({ queryKey: ["/api/time-tracking/active"] });
   }, []);
 
   const { data: tasksResponse, isLoading: isTasksListLoading } = useQuery<{ data: Task[] }>({
@@ -141,9 +148,9 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
       return apiRequest("POST", "/api/time-tracking/start", data);
     },
     onSuccess: () => {
-      invalidateAll();
       setDescription("");
       setSelectedTaskId("");
+      return invalidateAll();
     },
     onError: (err: unknown) => {
       const message = err instanceof Error ? err.message : "Failed to start timer";
@@ -151,11 +158,17 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
     },
   });
 
+  function reportFailure(command: "pause" | "resume" | "stop", err: unknown) {
+    const message = err instanceof Error && err.message ? err.message : `Failed to ${command} timer`;
+    notify.failure(`Could not ${command} the timer`, message);
+  }
+
   const pauseMutation = useMutation({
     mutationFn: async (id: string) => {
       return apiRequest("POST", `/api/time-tracking/${id}/pause`);
     },
     onSuccess: () => invalidateAll(),
+    onError: (err: unknown) => reportFailure("pause", err),
   });
 
   const resumeMutation = useMutation({
@@ -163,6 +176,7 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
       return apiRequest("POST", `/api/time-tracking/${data.id}/resume`, { discardIdleTime: data.discardIdleTime });
     },
     onSuccess: () => invalidateAll(),
+    onError: (err: unknown) => reportFailure("resume", err),
   });
 
   const stopMutation = useMutation({
@@ -170,11 +184,28 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
       return apiRequest("POST", `/api/time-tracking/${id}/stop`);
     },
     onSuccess: () => {
-      invalidateAll();
       setSelectedProjectId("");
+      setSelectedTaskId("");
       screenCaptureRef.current?.stop();
+      return invalidateAll();
     },
+    onError: (err: unknown) => reportFailure("stop", err),
   });
+
+  // One command at a time. A ref, because `isPending` is stale within one tick.
+  const commandRef = useRef(false);
+  const runCommand = useCallback(async (command: () => Promise<unknown>): Promise<boolean> => {
+    if (commandRef.current) return false;
+    commandRef.current = true;
+    try {
+      await command();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      commandRef.current = false;
+    }
+  }, []);
 
   const activityMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -337,32 +368,37 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
   }, [isRunning, activeEntry?.id, activeEntry?.crmProjectId]);
 
   // ─── Actions ───
-  const handleStart = useCallback((projectId?: string, taskId?: string) => {
+  const handleStart = useCallback(async (projectId?: string, taskId?: string) => {
     const pid = projectId || selectedProjectId;
-    const tid = taskId || selectedTaskId;
+    // What is chosen in the Timer is about its own Project, not one named by the caller.
+    const inTimer = pid === selectedProjectId;
+    const tid = taskId || (inTimer ? selectedTaskId : "");
     if (!pid) {
       notify.failure("Select a project", "Choose a project before starting the timer.");
-      return;
+      return false;
     }
     if (requiresTaskForStart) {
-      if (taskStartBlockedReason === "loading") return;
-      if (taskStartBlockedReason === "no_tasks") {
+      const blocked = inTimer && !taskId ? taskStartBlockedReason : null;
+      if (blocked === "loading") return false;
+      if (blocked === "no_tasks") {
         notify.failure(
           "Create a task first",
           "This project has no tasks yet. Add a task in Time Tracking → Projects & Tasks before starting the timer.",
         );
-        return;
+        return false;
       }
-      if (taskStartBlockedReason === "no_task_selected" || !tid) {
+      if (blocked === "no_task_selected" || !tid) {
         notify.failure("Select a task to start tracking", "Pick a task for this project, then start the timer.");
-        return;
+        return false;
       }
     }
-    startMutation.mutate({
-      crmProjectId: pid,
-      taskId: requiresTaskForStart ? tid : tid || undefined,
-      description: description || undefined,
-    });
+    return runCommand(() =>
+      startMutation.mutateAsync({
+        crmProjectId: pid,
+        taskId: requiresTaskForStart ? tid : tid || undefined,
+        description: description || undefined,
+      }),
+    );
   }, [
     selectedProjectId,
     selectedTaskId,
@@ -371,25 +407,23 @@ export function TimeTrackerProvider({ children, report }: { children: ReactNode;
     requiresTaskForStart,
     taskStartBlockedReason,
     notify,
+    runCommand,
   ]);
 
-  const handlePause = useCallback(() => {
-    if (activeEntry) {
-      pauseMutation.mutate(activeEntry.id);
-    }
-  }, [activeEntry, pauseMutation]);
+  const handlePause = useCallback(async () => {
+    if (!activeEntry) return false;
+    return runCommand(() => pauseMutation.mutateAsync(activeEntry.id));
+  }, [activeEntry, pauseMutation, runCommand]);
 
-  const handleResume = useCallback(() => {
-    if (activeEntry) {
-      resumeMutation.mutate({ id: activeEntry.id, discardIdleTime: false });
-    }
-  }, [activeEntry, resumeMutation]);
+  const handleResume = useCallback(async () => {
+    if (!activeEntry) return false;
+    return runCommand(() => resumeMutation.mutateAsync({ id: activeEntry.id, discardIdleTime: false }));
+  }, [activeEntry, resumeMutation, runCommand]);
 
-  const handleStop = useCallback(() => {
-    if (activeEntry) {
-      stopMutation.mutate(activeEntry.id);
-    }
-  }, [activeEntry, stopMutation]);
+  const handleStop = useCallback(async () => {
+    if (!activeEntry) return false;
+    return runCommand(() => stopMutation.mutateAsync(activeEntry.id));
+  }, [activeEntry, stopMutation, runCommand]);
 
   const handleToggleCapture = useCallback(() => {
     const service = screenCaptureRef.current;

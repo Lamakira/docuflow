@@ -191,7 +191,7 @@ describe("Active Workspace HTTP (#183)", () => {
   it("keeps a Timer started in Workspace A labelled as A after switching to B", async () => {
     const app = await makeApp();
     const user = await memberInTwoWorkspaces(app);
-    const { crmProject } = await createCrmProject(user.agent, { name: "Northwind" });
+    const { crmProject } = await createCrmProject(user.agent, { name: "Northwind", status: "won_in_progress" });
     const task = await createTask(user.agent, crmProject.id);
     const timer = await startTimer(user.agent, crmProject.id, task.id);
 

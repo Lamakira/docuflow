@@ -1542,3 +1542,141 @@ Requirements page reads `Prepared By: TECHMA Inc.` and
 belongs to. It would take neutral pages, or the Workspace's own, or none.
 
 - **Fixed:** 2026-11-24, as the owner chose: the same three pages, with neutral text (`server/modules/knowledge/defaultPages.ts`). Resources no longer asks for login details. Pages made before keep their text.
+
+## F67 - Time past midnight is counted twice, and a running Timer not at all
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, `getTimeStats` read, then run day by day on the rehearsal copy
+- **Where:** `server/modules/postgresStorage.ts:2792-2850`
+- **Severity:** wrong figures
+
+A Time Entry that starts before the period is cut to the part inside it; one
+that starts inside and ends after is counted whole. An entry from 22:00 to
+02:00 gives its whole length to the first day and half of it again to the
+second. Idle time and the number of entries are never cut. On the real
+Workspace, 171 of 464 entries cross midnight: the days add up to 4,792 h where
+the entries hold 3,112 h (measured with the real function, UTC days).
+
+Only stopped entries count, so the Workday chip stays at `0.0 h` while a Timer
+runs, and the register, which takes entries by their start, lists others than
+the chip counts. The desktop agent's figures read the same function (from
+code). It would take one rule for what falls inside a period, applied to every
+figure, with the running entry in it.
+
+- **Fixed:** 2026-11-24. One rule (`shared/timePortion.ts`) gives the part of an entry inside a period, idle time included, for every total, with the running or paused entry in it. Run on the rehearsal copy with the real function, in UTC and Africa/Porto-Novo: the days add up to 3,112 h, the total 3,112 h (before: 4,792 h), idle 21.6 h both ways; the register's total agrees with the stats on 9 of 9 periods. An entry silent for more than 10 minutes stops counting at its last activity in the totals; its Timer still shows the whole, and Stop credits it. The desktop agent's `worked-today` and `today-breakdown` still answer 500 on a malformed window: left alone.
+
+## F68 - One click deletes a Time Entry and its captures, twice
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, an entry made for the review and removed
+- **Where:** `client/src/v2/V2Time.tsx:281-300`, `:492-496`; `client/src/v2/tokens.css:935-953`; `shared/schema.ts` (`time_entry_screenshots.time_entry_id`, cascade)
+- **Severity:** loses data
+
+`Remove` deletes the entry at once: no confirmation, no Undo (seen). Its
+Activity Evidence goes with it; on the real Workspace 262 entries hold 62
+captures on average. An Owner or Administrator has the button on every
+Member's entries.
+
+The deletion is sent when the row has faded, and the row has two transitions
+(opacity and transform), so it is sent twice: `Time Entry deleted` shows twice
+(seen). When no transition runs it would never be sent, with the row already
+faded (from code). It would take Undo, or a confirmation that says the captures
+go too, and one request.
+
+- **Fixed:** 2026-11-24. Remove takes the row away and says `Time Entry removed. Its Activity Evidence goes with it.` with Undo; the deletion is sent once, when the toast closes or the reader leaves (`client/src/v2/timeRemovals.ts`). Seen: Undo sends nothing and the row comes back; without it, one DELETE. Found while checking it: the Undo button of every v2 toast was green on near-black; it now takes the toast's ink (seen, both themes).
+
+## F69 - Pause, Resume and Stop fail in silence
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, the stop route made to answer 500
+- **Where:** `client/src/contexts/TimeTrackerContext.tsx` (`pauseMutation`, `resumeMutation`, `stopMutation`: no `onError`)
+- **Severity:** misleading
+
+With the server refusing, Stop does nothing and says nothing: no toast, and the
+Timer keeps running (seen). A start that fails does say so. It would take the
+same report on the other three.
+
+- **Fixed:** 2026-11-24. Pause, Resume and Stop report a failure as Start does. Seen with the stop call made to fail: `Could not stop the timer`, the Timer keeps running, and Stop then works.
+
+## F70 - The register and the stats ask thousands of questions
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, measured on the rehearsal copy
+- **Where:** `server/modules/postgresStorage.ts:2598-2678`, `:2807`
+- **Severity:** slow
+
+Each entry is completed by its own queries for its user, Project and Client.
+`All` on the real Workspace runs 6,428 queries for 464 entries, takes 4.2 s and
+answers 1.3 MB; the stats read the same rows, at 3.8 s. The register has no
+paging. Each row carries its Member's whole account: role, last sign-in, hours
+per day. It would take joins, sums in SQL, a page, and the person's name only.
+
+- **Fixed:** 2026-11-24. Joined reads, sums in SQL, and pages of 25, 50 or 100. On the rehearsal copy all 464 entries take 8 queries (before: 6,428), a page 12 queries and 113 KB (before: 1.3 MB). Each row carries five fields of its Member.
+
+## F71 - The Timer offers sales, in no order, with no search
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, the Timer and Projects & Tasks on the dev Workspace
+- **Where:** `client/src/contexts/TimeTrackerContext.tsx` (`/api/crm/projects?pageSize=500`), `client/src/v2/V2Time.tsx:332-348`, `:732-735`, `client/src/v2/tasks.ts`
+- **Severity:** misleading
+
+The Timer, the Project filter and Projects & Tasks list every row: on the dev
+Workspace 110, of which 37 are sales (counted), open and lost ones together, in
+the order of their last change, in a list with no search (seen). On the real
+Workspace 3 sales hold 40 entries and 156 h. Projects & Tasks shows Project
+names without their Client. 52 of the real delivery Projects have no open Task,
+and the Timer gives no way to add one. It would take delivery Projects, by
+name, with a search, and a link to add a Task. Whether time on a sale is
+wanted is the owner's to say.
+
+- **Fixed:** 2026-11-24. As the owner chose, Projects only. The Timer, and Projects & Tasks, list delivery Projects by Client and name, the Timer with a search (seen); a Project without an open Task links to its Tasks. The server refuses a start on a sale or a documentation-only Project (seen: 400, `Time is tracked on Projects. Win this Opportunity first.`), which v1 gets too. The desktop agent's list leaves them out, but its start is not refused: what it recorded offline must not be lost. Time already on a sale stays, and the Project filter keeps that sale, marked Opportunity.
+
+## F72 - The register does not say when
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, the register on All
+- **Where:** `client/src/v2/time.ts:107-114`, `client/src/v2/V2Time.tsx`
+- **Severity:** reads badly
+
+Past entries show their day only: no start, no end (seen). On the real
+Workspace, 301 entries share their day with another entry of the same Member.
+There is no total for what is listed. The chip by the title reads `0.0 h`, with
+no word for what it counts: it is today's, and for an Owner everyone's, whatever
+Range is chosen.
+
+- **Fixed:** 2026-11-24. Entries read `17 Nov, 13:00 - 16:00`, the foot `36 entries · 70h 1m in all`, and the chip `You today 0.0 h`, the reader's own day (all seen).
+
+## F73 - A failed load is a dead end, and the filters are forgotten
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, the time routes answering 500
+- **Where:** `client/src/v2/V2Time.tsx:138-141`, `:318-329`, `:625-626`, `:732-746`
+- **Severity:** misleading
+
+Time Entries and Time stats say they could not be loaded, with no Try again
+(seen on Time stats). In Projects & Tasks a failed list of Projects or Tasks is
+not handled (from code). Range, Project, Status, Member, the period and the
+chosen Project are not in the address: they are lost on reload and cannot be
+shared (seen). The lists are kept for the session, so another Member's entries
+show only after one's own change or a return to the tab (from code).
+
+- **Fixed:** 2026-11-24. Entries, stats, Projects and Tasks that cannot be loaded say so with Try again (seen on the register, and it reloads). Filters, page, period and Project are in the address. The lists refresh on return to the screen.
+
+## F74 - Time Tracking polish
+
+- **Status:** closed - fixed 2026-11-24
+- **Found:** 2026-11-24, the dev Workspace (seen unless marked)
+
+- Pause and Stop are both drawn as the main button.
+- After Stop, the Task field is blank: its chosen Task outlives the Project's.
+- The status is a bordered box as wide as its column, on every row, `STOPPED`
+  on all but the running one. F51 fixed it in the Dossier.
+- Range `Today`, the default, is drawn as an active filter; a Project, Status
+  or Member that narrows the list is not.
+- `Member` and the task columns use other text sizes than the other registers.
+- A Task can be renamed to nothing and given any status by the route, and
+  deleted by anyone who can see its Project; its entries lose their Task (from
+  code).
+- The Timer's refusal says `Time Tracking → Projects & Tasks`, with no link.
+
+- **Fixed:** 2026-11-24. All but one. Stop is the main button, Pause an outline; the Task clears with its Project after Stop; the status is plain text; a filter is drawn active only when it narrows (or widens) the default; sizes follow the registers; the Task route refuses an empty name and an unknown status; the refusal carries a link. Left alone: who may delete a Task.

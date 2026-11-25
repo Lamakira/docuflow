@@ -929,7 +929,7 @@ button.df-attention-row {
 
 .df-time-register .df-register-head,
 .df-time-register .df-register-row {
-  grid-template-columns: 0.55fr 1.4fr 1fr 0.8fr 0.7fr 0.7fr 0.55fr;
+  grid-template-columns: 1.1fr 1.4fr 1fr 0.8fr 0.6fr 0.8fr 0.6fr;
 }
 
 .df-time-row[data-motion="standard"] {
@@ -950,6 +950,17 @@ button.df-attention-row {
 .df-time-row[data-state="leaving"][data-motion="standard"] {
   opacity: 0;
   transform: translateY(6px);
+}
+
+.df-time-person,
+.df-time-task {
+  font-size: var(--df-text-3);
+}
+
+.df-time-duration {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .df-time-clock {
@@ -3196,6 +3207,14 @@ button.df-activity-row {
   padding: var(--df-space-3) var(--df-space-4);
   font-size: var(--df-text-3);
   box-shadow: 0 12px 30px rgba(15, 21, 36, 0.18);
+}
+
+/* The toast's button (Undo) takes the toast's own ink: the palette's ink is
+   dark, and Sonner's default button ground is dark too. */
+.df-toaster [data-sonner-toast][data-styled="true"].df-toast [data-button] {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
 }
 
 .df-user-card {
@@ -7253,6 +7272,16 @@ a.df-dossier-client-link:hover {
   justify-content: space-between;
 }
 
+/* The same picker as a filter chip: as wide as its Project's name, up to a limit. */
+.df-v2 button.df-project-picker-chip {
+  max-width: 320px;
+  min-width: 0;
+  min-height: var(--df-control-h);
+  padding: 0 var(--df-space-2);
+  box-shadow: none;
+}
+
+.df-project-picker-chip > .df-project-picker-value,
 .df-project-picker-trigger > span,
 .df-project-picker-option > span {
   min-width: 0;
@@ -7264,6 +7293,11 @@ a.df-dossier-client-link:hover {
 .df-v2.df-project-picker {
   width: var(--radix-popover-trigger-width);
   padding: var(--df-space-1);
+}
+
+.df-v2.df-project-picker[data-variant="chip"] {
+  width: 320px;
+  max-width: calc(100vw - var(--df-space-5));
 }
 
 /* The list's own scrollbar (DESIGN.md): no arrows, no track, a thin thumb. */
