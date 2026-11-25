@@ -57,6 +57,7 @@ import { V2RegisterPager } from "./V2RegisterPager";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SkeletonBoard, SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 type WorkspacePeople = {
@@ -171,8 +172,7 @@ export function V2LegacyProjectPage() {
 
   return (
     <div className="df-page" data-testid="v2-projects">
-      <h1 className="df-title">Projects</h1>
-      <p className="df-subhead">Opening this Project…</p>
+      <V2PageHead title="Projects" subhead="Opening this Project…" />
     </div>
   );
 }
@@ -742,11 +742,7 @@ export function V2ProjectsPage() {
   if (isError || (boardView && boardError)) {
     return (
       <div className="df-page" data-testid="v2-projects">
-        <header className="df-today-head">
-          <div>
-            <h1 className="df-title">Projects</h1>
-          </div>
-        </header>
+        <V2PageHead title="Projects" />
         <V2LoadFailed
           title="Projects could not be loaded"
           copy="Something went wrong while loading them. Try again."
@@ -763,12 +759,10 @@ export function V2ProjectsPage() {
 
   return (
     <div className="df-page" data-testid="v2-projects">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Projects</h1>
-        </div>
-        {showNewProject ? (
-          <div className="df-library-actions">
+      <V2PageHead
+        title="Projects"
+        actions={
+          showNewProject ? (
             <Button
               variant="default"
               type="button"
@@ -778,9 +772,9 @@ export function V2ProjectsPage() {
               <Plus strokeWidth={1.6} aria-hidden />
               New Project
             </Button>
-          </div>
-        ) : null}
-      </header>
+          ) : null
+        }
+      />
 
       <V2FormDialog
         open={creating}

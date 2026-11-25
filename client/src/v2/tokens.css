@@ -708,11 +708,50 @@
 }
 
 
-.df-today-head {
+/* A page's head (V2PageHead): one line as tall as a button, so the title, its chip
+   and the actions share it, and the line about the page right under the title. */
+.df-page-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--df-space-4);
+  gap: var(--df-space-3) var(--df-space-4);
+}
+
+/* Room for the title and its chip on one line; without it, the actions go under. */
+.df-page-head-text {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.df-page-head-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--df-space-3);
+  min-height: var(--df-control-h);
+}
+
+.df-page-head-title > .df-title {
+  margin: 0;
+  line-height: var(--df-control-h);
+}
+
+.df-page-head .df-subhead {
+  margin: 0;
+}
+
+.df-page-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--df-space-2);
+}
+
+.df-page-head-actions :is(.df-btn, .df-filter-chip, .df-filter-input) {
+  height: var(--df-control-h);
+  padding-block: 0;
 }
 
 .df-subhead {
@@ -729,15 +768,18 @@
   height: calc(var(--df-text-3) * 1.55);
 }
 
-.df-date-chip {
+/* A count or a date beside a page's title: a filled pill in ink, seen at once, and
+   no border, so it does not pass for a control. */
+.df-head-chip {
+  border-radius: var(--df-radius-4);
+  padding: var(--df-space-1) var(--df-space-3);
+  background: color-mix(in srgb, var(--df-case-ink) 9%, transparent);
   font-family: var(--df-font-data);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   font-size: var(--df-text-2);
-  border: 1px solid var(--df-divider);
-  border-radius: var(--df-radius-2);
-  padding: var(--df-space-1) var(--df-space-2);
-  color: var(--df-archive-slate);
+  line-height: 1;
+  color: var(--df-case-ink);
   white-space: nowrap;
 }
 
@@ -1315,19 +1357,35 @@ button.df-activity-row {
   gap: var(--df-space-3);
 }
 
-.df-people-filter input {
-  transition: none;
-  animation: none;
-}
-
 .df-people-role {
   animation: none;
   transition: none;
 }
 
-.df-people-seats {
-  animation: none;
-  transition: none;
+/* An Archived Membership reads as set apart: its name and details mute. */
+.df-people-row-wrap[data-state="archived"] :is(.df-row-title, .df-people-role) {
+  color: var(--df-archive-slate);
+}
+
+/* What is wrong with a field, under it. */
+.df-field-problem {
+  color: var(--df-destructive);
+  font-size: var(--df-text-2);
+  line-height: 1.45;
+}
+
+.df-role-lines {
+  display: grid;
+  gap: var(--df-space-1);
+}
+
+.df-role-lines .df-note {
+  padding: 0;
+}
+
+.df-role-name {
+  font-weight: 500;
+  color: var(--df-case-ink);
 }
 
 .df-people-row-wrap[data-just-accepted="true"][data-motion="standard"] {
@@ -5096,7 +5154,7 @@ a.df-dossier-client-link:hover {
   min-height: 0;
 }
 
-.df-library-page > .df-today-head {
+.df-library-page > .df-page-head {
   padding: var(--df-space-5) var(--df-space-6) 0;
 }
 
@@ -5118,13 +5176,6 @@ a.df-dossier-client-link:hover {
   display: flex;
   flex-direction: column;
   gap: var(--df-space-5);
-}
-
-.df-library-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--df-space-2);
-  flex: none;
 }
 
 .df-filter-bar {
@@ -5194,7 +5245,6 @@ a.df-dossier-client-link:hover {
    of the ink button next to it. */
 .df-filter-bar .df-filter-chip,
 .df-filter-bar .df-filter-input,
-.df-library-actions .df-filter-input,
 .df-filter-bar .df-btn {
   display: inline-flex;
   align-items: center;
@@ -5809,13 +5859,6 @@ a.df-dossier-client-link:hover {
   flex-wrap: wrap;
 }
 
-.df-today-title-row {
-  display: flex;
-  align-items: center;
-  gap: var(--df-space-3);
-  flex-wrap: wrap;
-}
-
 .df-today-body {
   display: contents;
 }
@@ -5846,11 +5889,6 @@ a.df-dossier-client-link:hover {
   padding: var(--df-space-3) var(--df-space-4);
 }
 
-.df-today .df-date-chip {
-  border: 0;
-  padding: 0;
-}
-
 .df-today .df-kind {
   text-transform: none;
   letter-spacing: 0;
@@ -5858,10 +5896,6 @@ a.df-dossier-client-link:hover {
 
 .df-today .df-state[data-state="UPDATE MISSING"] {
   color: var(--df-alert-ink);
-}
-
-.df-today-headline {
-  min-width: 0;
 }
 
 /* One placeholder for an empty cell, in the meta style. */
@@ -6193,17 +6227,12 @@ a.df-dossier-client-link:hover {
   font-size: var(--df-text-6);
 }
 
-.df-v2[data-chrome="mobile"] .df-today-title-row {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--df-space-1);
+.df-v2[data-chrome="mobile"] .df-page-head-text {
+  flex: 0 1 auto;
 }
 
-.df-v2[data-chrome="mobile"] .df-date-chip {
-  border: 0;
-  padding: 0;
-  font-size: var(--df-text-1);
-  font-weight: 400;
+.df-v2[data-chrome="mobile"] .df-page-head-actions {
+  justify-content: flex-start;
 }
 
 .df-v2[data-chrome="mobile"] .df-subhead,
@@ -8100,14 +8129,6 @@ a.df-dossier-client-link:hover {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--df-space-4);
-}
-
-.df-platform-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
   gap: var(--df-space-4);
 }
 

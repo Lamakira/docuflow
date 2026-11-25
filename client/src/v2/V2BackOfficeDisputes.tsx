@@ -30,6 +30,7 @@ import { BackOfficeRegister, StripeLink } from "./V2BackOfficeParts";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { SkeletonBand, V2PageSkeleton } from "./V2Skeleton";
 import { V2EmptyLine } from "./V2EmptyState";
+import { V2PageHead } from "./V2PageHead";
 
 export function V2BackOfficeDisputes() {
   const now = useMemo(() => new Date(), []);
@@ -185,13 +186,7 @@ export function V2BackOfficeSupportRequest({ requestId }: { requestId: string })
 
   return (
     <div className="df-backoffice-section" data-testid="v2-backoffice-support-request">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          {back}
-          <h1 className="df-title">{page.title}</h1>
-          <p className="df-subhead">{page.subhead}</p>
-        </div>
-      </header>
+      <V2PageHead above={back} title={page.title} subhead={page.subhead} />
 
       <section className="df-card">
         <div className="df-backoffice-lines">

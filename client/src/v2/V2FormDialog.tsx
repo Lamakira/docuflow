@@ -62,7 +62,7 @@ export function V2FormDialog({
         </DialogHeader>
         <form className="df-form-dialog-body" onSubmit={submit}>
           {children}
-          {refusal ? <p className="df-refusal">{refusal}</p> : null}
+          {refusal ? <p className="df-refusal" role="alert">{refusal}</p> : null}
           <DialogFooter className="df-form-dialog-actions">
             <DialogClose asChild>
               <Button variant="outline" type="button" className="df-btn">

@@ -2,13 +2,19 @@
  * Readers of a new Daily Update (#341). When a Member submits one, every reader
  * of the Workspace gets an in-app notification — no email. A reader is whoever
  * `canViewDailyUpdates` lets into the dashboard: an Owner or Administrator, or
- * a Member granted `can_view_daily_updates`. At most one notification per
+ * a Member whose Membership carries the Capability. At most one notification per
  * author, reader and Workspace day, so a Member filing five Projects does not
  * flood the inbox. The caller awaits this inside the request's Workspace context.
  */
 
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
-import { memberships, users, workspaceRoles } from "@shared/schema";
+import { and, eq, exists, inArray, isNull, or } from "drizzle-orm";
+import {
+  VIEW_DAILY_UPDATES_CAPABILITY_ID,
+  membershipCapabilities,
+  memberships,
+  users,
+  workspaceRoles,
+} from "@shared/schema";
 import { db } from "./db";
 import { getWorkspaceTimeZone } from "./modules/time";
 import { startOfWorkday, workdayAt } from "./dailyUpdateNudge";
@@ -30,7 +36,21 @@ export async function dailyUpdateReaderIds(authorId: string): Promise<string[]> 
         eq(memberships.workspaceId, workspaceId),
         isNull(memberships.archivedAt),
         eq(users.isArchived, false),
-        or(inArray(workspaceRoles.slug, ["owner", "administrator"]), eq(users.canViewDailyUpdates, 1)),
+        or(
+          inArray(workspaceRoles.slug, ["owner", "administrator"]),
+          exists(
+            db
+              .select({ id: membershipCapabilities.id })
+              .from(membershipCapabilities)
+              .where(
+                and(
+                  eq(membershipCapabilities.membershipId, memberships.id),
+                  eq(membershipCapabilities.workspaceId, workspaceId),
+                  eq(membershipCapabilities.capabilityId, VIEW_DAILY_UPDATES_CAPABILITY_ID),
+                ),
+              ),
+          ),
+        ),
       ),
     );
   return rows.map((row) => row.id).filter((id) => id !== authorId);

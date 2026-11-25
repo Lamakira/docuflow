@@ -112,9 +112,14 @@ export async function makeMainAdmin(userId: string): Promise<void> {
   await updateUserRow(userId, "is_main_admin = 1");
 }
 
-/** Grant the daily-updates dashboard permission to a non-admin user. */
+/** Grant the daily-updates Capability on every Membership of a non-admin user. */
 export async function grantDailyUpdatesAccess(userId: string): Promise<void> {
-  await updateUserRow(userId, "can_view_daily_updates = 1");
+  await getOwnerPool().query(
+    `INSERT INTO membership_capabilities (membership_id, capability_id, workspace_id)
+     SELECT id, 'view_daily_updates', workspace_id FROM memberships WHERE user_id = $1
+     ON CONFLICT DO NOTHING`,
+    [userId]
+  );
 }
 
 const SEEDED_ROLE_IDS = {

@@ -25,6 +25,7 @@ import { FigureGrid, QueryRefusal } from "./V2BackOfficeParts";
 import { V2FilterSelect } from "./V2Select";
 import { SkeletonBand } from "./V2Skeleton";
 import { V2CompactEmpty } from "./V2EmptyState";
+import { V2PageHead } from "./V2PageHead";
 
 export function V2BackOfficeStats() {
   const [days, setDays] = useState<"7" | "30" | "90">("30");
@@ -59,17 +60,19 @@ export function V2BackOfficeStats() {
 
   return (
     <div className="df-backoffice-section" data-testid="v2-backoffice-stats">
-      <div className="df-platform-head">
-        <h1 className="df-title">Stats</h1>
-        <V2FilterSelect
-          label="PERIOD"
-          ariaLabel="Stats period"
-          value={days}
-          onChange={(next) => setDays(next as "7" | "30" | "90")}
-          options={statsPeriods}
-          testId="v2-backoffice-stats-period"
-        />
-      </div>
+      <V2PageHead
+        title="Stats"
+        actions={
+          <V2FilterSelect
+            label="PERIOD"
+            ariaLabel="Stats period"
+            value={days}
+            onChange={(next) => setDays(next as "7" | "30" | "90")}
+            options={statsPeriods}
+            testId="v2-backoffice-stats-period"
+          />
+        }
+      />
 
       {error ? (
         <section className="df-card">

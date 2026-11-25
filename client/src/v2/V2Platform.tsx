@@ -48,6 +48,7 @@ import { V2BackOfficeWorkspace } from "./V2BackOfficeWorkspace";
 import { SkeletonRows } from "./V2Skeleton";
 import { V2RowMenu } from "./V2RowMenu";
 import { V2CompactEmpty, V2EmptyLine } from "./V2EmptyState";
+import { V2PageHead } from "./V2PageHead";
 
 /** v1's `/admin`, `/admin/create` and `/admin/user/:id` (#266). */
 export function V2LegacyAdminRedirect() {
@@ -76,11 +77,9 @@ export function V2PlatformPage() {
   return (
     <V2PlatformFrame activeTab={parsed.tab}>
       <div className="df-platform-page" data-testid="v2-platform">
-        {/* Stats and the detail pages carry their own title. */}
-        {parsed.kind === "tab" && parsed.tab !== "stats" ? (
-          <h1 className="df-title" data-testid="v2-platform-heading">
-            {heading}
-          </h1>
+        {/* Stats, Users and the detail pages carry their own title. */}
+        {parsed.kind === "tab" && parsed.tab !== "stats" && parsed.tab !== "users" ? (
+          <V2PageHead title={heading} testId="v2-platform-heading" />
         ) : null}
         <div className="df-admin-panel" data-testid={`v2-platform-panel-${parsed.tab}`}>
           {parsed.kind === "workspace" ? (
@@ -90,7 +89,7 @@ export function V2PlatformPage() {
           ) : parsed.tab === "workspaces" ? (
             <V2BackOfficeWorkspaces />
           ) : parsed.tab === "users" ? (
-            <V2PlatformUsers />
+            <V2PlatformUsers heading={heading} />
           ) : parsed.tab === "subscriptions" ? (
             <V2BackOfficeSubscriptions />
           ) : parsed.tab === "disputes" ? (
@@ -107,7 +106,7 @@ export function V2PlatformPage() {
 }
 
 /** The User directory (#266), now the Users tab. Each row carries its own actions. */
-function V2PlatformUsers() {
+function V2PlatformUsers({ heading }: { heading: string }) {
   const now = useMemo(() => new Date(), []);
   const { user } = useAuth();
   const [filterQuery, setFilterQuery] = useState("");
@@ -166,19 +165,23 @@ function V2PlatformUsers() {
   return (
     <div data-testid="v2-platform-users">
       <div className="df-backoffice-section">
-        <p className="df-subhead">{directory.subhead}</p>
-        <div className="df-filter-bar">
-          <label className="df-filter-input">
-            <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
-            <input
-              type="search"
-              value={filterQuery}
-              onChange={(event) => setFilterQuery(event.target.value)}
-              placeholder={directory.filterPlaceholder}
-              aria-label="Filter Users"
-            />
-          </label>
-        </div>
+        <V2PageHead
+          title={heading}
+          subhead={directory.subhead}
+          testId="v2-platform-heading"
+          actions={
+            <label className="df-filter-input">
+              <Search width={14} height={14} strokeWidth={1.4} style={{ color: "var(--df-archive-slate)" }} />
+              <input
+                type="search"
+                value={filterQuery}
+                onChange={(event) => setFilterQuery(event.target.value)}
+                placeholder={directory.filterPlaceholder}
+                aria-label="Filter Users"
+              />
+            </label>
+          }
+        />
         {refusal ? <p className="df-refusal">{refusal}</p> : null}
 
         <section className="df-card df-platform-register" data-testid="v2-platform-register">

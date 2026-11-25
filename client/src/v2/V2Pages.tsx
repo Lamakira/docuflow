@@ -1,5 +1,6 @@
 import { matchV2Route } from "./presentation";
 import { useLocation } from "wouter";
+import { V2PageHead } from "./V2PageHead";
 
 export { V2TodayPage } from "./V2Today";
 export { V2DossierPage } from "./V2Dossier";
@@ -23,7 +24,7 @@ export function V2PlaceholderPage() {
 
   return (
     <div className="df-page" data-testid="v2-placeholder">
-      <h1 className="df-title">{title}</h1>
+      <V2PageHead title={title} />
       <p style={{ color: "var(--df-archive-slate)", fontSize: 13.5, maxWidth: "62ch", lineHeight: 1.55 }}>
         This destination is not in the current batch. It stays on v2 tokens rather than the previous screens.
       </p>

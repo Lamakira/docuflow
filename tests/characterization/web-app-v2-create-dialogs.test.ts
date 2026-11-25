@@ -46,7 +46,7 @@ describe("create actions open a dialog", () => {
     expect(dialog).toContain('from "@/components/ui/dialog"');
     expect(dialog).toMatch(/<DialogContent className="df-v2 /);
     expect(dialog).toContain("<DialogClose asChild>");
-    expect(dialog).toContain('{refusal ? <p className="df-refusal">{refusal}</p> : null}');
+    expect(dialog).toContain('{refusal ? <p className="df-refusal" role="alert">{refusal}</p> : null}');
   });
 
   it("draws no bare file input outside a dialog", () => {

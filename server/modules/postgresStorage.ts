@@ -171,6 +171,7 @@ import { getAllowedTimezones, upsertAllowedTimezones } from "./time/schedule";
 import { applyTimerCommand, listTimerCommands } from "./time/commands";
 import type { TimeEntryPage, TimeEntryPageOptions, TimePortionOptions, TimePortionRow } from "./time/persistence";
 import { assertSeatAvailable } from "./billing/seats";
+import { setDailyUpdatesGrant } from "./workspace/membershipManagement";
 import type { ImportableUser } from "./identity/userImport";
 import { eq, ne, and, desc, like, or, isNull, isNotNull, sql, gte, lt, lte, asc, count, inArray, ilike, getTableColumns, type AnyColumn, type SQL } from "drizzle-orm";
 import type {
@@ -1686,52 +1687,90 @@ export class DatabaseStorage implements IStorage {
   async archiveUser(userId: string, isArchived: boolean): Promise<SafeUser | undefined> {
     // Memberships live in RLS-scoped rows of every Workspace the User belongs
     // to: locate them, then touch each inside its own Workspace context (#323).
-    const held = await membershipsForUser(userId);
-    if (!isArchived) {
-      return db.transaction(async (tx) => {
-        for (const { workspaceId } of held.filter((row) => row.archivedAt !== null)) {
+    return db.transaction(async (tx) => {
+      const now = new Date();
+      if (!isArchived) {
+        const [account] = await tx
+          .select({ isArchived: users.isArchived })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        const returning = account?.isArchived ? await this.archivedWithAccount(userId, tx) : [];
+        for (const { workspaceId } of returning) {
           await runWithWorkspaceContext({ workspaceId }, () => assertSeatAvailable(tx));
         }
         const [updated] = await tx
           .update(users)
-          .set({ isArchived: false, updatedAt: new Date() })
+          .set({ isArchived: false, updatedAt: now })
           .where(eq(users.id, userId))
           .returning();
-        if (updated) {
-          for (const { workspaceId } of held) {
-            await runWithWorkspaceContext({ workspaceId }, async () => {
-              await tx
-                .update(memberships)
-                .set({ archivedAt: null, updatedAt: new Date() })
-                .where(and(eq(memberships.userId, userId), eq(memberships.workspaceId, workspaceId)));
-            });
-          }
+        for (const { id, workspaceId } of returning) {
+          await runWithWorkspaceContext({ workspaceId }, async () => {
+            await tx
+              .update(memberships)
+              .set({ archivedAt: null, updatedAt: now })
+              .where(and(eq(memberships.id, id), inWorkspace(memberships)));
+          });
         }
         return updated && toSafeUser(updated);
-      });
-    }
-    const [updated] = await db
-      .update(users)
-      .set({ isArchived, updatedAt: new Date() })
-      .where(eq(users.id, userId))
-      .returning();
-    if (updated) {
-      for (const { workspaceId } of held.filter((row) => row.archivedAt === null)) {
-        await runWithWorkspaceContext({ workspaceId }, async () => {
-          await db
-            .update(memberships)
-            .set({ archivedAt: new Date(), updatedAt: new Date() })
-            .where(
-              and(
-                eq(memberships.userId, userId),
-                eq(memberships.workspaceId, workspaceId),
-                isNull(memberships.archivedAt),
-              ),
-            );
-        });
       }
+      // The account first: an acceptance or a restore that holds it finishes
+      // before the Memberships are read, so none of them stays active.
+      const [updated] = await tx
+        .update(users)
+        .set({ isArchived, updatedAt: now })
+        .where(eq(users.id, userId))
+        .returning();
+      if (updated) {
+        const held = await membershipsForUser(userId, tx);
+        for (const { workspaceId } of held.filter((row) => row.archivedAt === null)) {
+          await runWithWorkspaceContext({ workspaceId }, async () => {
+            await tx
+              .update(memberships)
+              .set({ archivedAt: now, updatedAt: now })
+              .where(
+                and(
+                  eq(memberships.userId, userId),
+                  eq(memberships.workspaceId, workspaceId),
+                  isNull(memberships.archivedAt),
+                ),
+              );
+          });
+        }
+      }
+      return updated && toSafeUser(updated);
+    });
+  }
+
+  /**
+   * The Memberships that went with the account. They share its stamp (older
+   * ones were written a few ms apart). A Membership its own Workspace archived
+   * carries that Workspace's Audit Event at the very same instant, and stays.
+   */
+  private async archivedWithAccount(userId: string, tx: Pick<typeof db, "execute" | "select">) {
+    const archived = (await membershipsForUser(userId, tx))
+      .flatMap((row) => (row.archivedAt ? [{ ...row, archivedAt: row.archivedAt }] : []))
+      .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId));
+    const byAccount: typeof archived = [];
+    for (const row of archived) {
+      const [own] = await runWithWorkspaceContext({ workspaceId: row.workspaceId }, async () =>
+        tx
+          .select({ id: auditEvents.id })
+          .from(auditEvents)
+          .where(
+            and(
+              inWorkspace(auditEvents),
+              eq(auditEvents.action, "membership.archived"),
+              eq(auditEvents.resourceId, row.id),
+              eq(auditEvents.createdAt, row.archivedAt)
+            )
+          )
+          .limit(1)
+      );
+      if (!own) byAccount.push(row);
     }
-    return updated && toSafeUser(updated);
+    const latest = Math.max(...byAccount.map((row) => row.archivedAt.getTime()));
+    return byAccount.filter((row) => latest - row.archivedAt.getTime() <= 5_000);
   }
 
   async updateUserRole(userId: string, role: string): Promise<SafeUser | undefined> {
@@ -1744,12 +1783,34 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUser(userId: string, data: { firstName?: string; lastName?: string; email?: string; hoursPerDay?: number; canViewDailyUpdates?: number }): Promise<SafeUser | undefined> {
-    const [updated] = await db
-      .update(users)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(users.id, userId))
-      .returning();
-    return updated && toSafeUser(updated);
+    return db.transaction(async (tx) => {
+      const [before] = await tx
+        .select({ canViewDailyUpdates: users.canViewDailyUpdates })
+        .from(users)
+        .where(eq(users.id, userId))
+        .for("update");
+      const [updated] = await tx
+        .update(users)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(users.id, userId))
+        .returning();
+      // Only on a change: v1's console sends the whole form on every edit, and
+      // a rename must not undo what a Workspace granted on its own (F86).
+      if (updated && before && updated.canViewDailyUpdates !== before.canViewDailyUpdates) {
+        for (const { id, workspaceId } of await membershipsForUser(userId, tx)) {
+          await runWithWorkspaceContext({ workspaceId }, async () => {
+            // The Membership before its grant, as a Workspace's own change locks them.
+            await tx
+              .select({ id: memberships.id })
+              .from(memberships)
+              .where(and(inWorkspace(memberships), eq(memberships.id, id)))
+              .for("update");
+            await setDailyUpdatesGrant(tx, id, updated.canViewDailyUpdates === 1);
+          });
+        }
+      }
+      return updated && toSafeUser(updated);
+    });
   }
 
   /**

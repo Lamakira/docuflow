@@ -28,7 +28,7 @@ describe("v2 waits with real geometry", () => {
     const skeleton = source("V2Skeleton.tsx");
     expect(skeleton).not.toContain("Loading this Workspace");
     expect(skeleton).not.toMatch(/subhead\??:\s*string/);
-    expect(skeleton).toMatch(/<h1 className="df-title">\{title\}<\/h1>\s*\{hasSubhead \? <SkeletonSubhead \/> : null\}/);
+    expect(skeleton).toMatch(/<V2PageHead title=\{title\} subhead=\{hasSubhead \? <SkeletonSubhead \/> : null\} \/>/);
     const offenders = sources
       .filter(({ source: text }) => /<V2PageSkeleton[^>]*\bsubhead=/.test(text) || text.includes("LOADING_SUBHEAD"))
       .map(({ name }) => name);
@@ -57,7 +57,7 @@ describe("v2 waits with real geometry", () => {
     ["V2Projects.tsx", ["Project / client", "Budget used"]],
     ["V2Clients.tsx", ["CLIENT", "Company", "Source", "Contacts", "Client details"]],
     ["V2Opportunities.tsx", ["Opportunity record"]],
-    ["V2People.tsx", ["MEMBER", "Workspace role", "Capabilities"]],
+    ["V2People.tsx", ["Member", "Workspace role", "Access"]],
     ["V2Time.tsx", ["Timer", "When", "Duration", "By Project", "By Member"]],
     ["V2Activity.tsx", ["Tracking Policy", "When", "Source"]],
     ["V2DailyUpdates.tsx", ["Today"]],

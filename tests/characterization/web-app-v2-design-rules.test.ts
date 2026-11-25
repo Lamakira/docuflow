@@ -78,3 +78,45 @@ describe("DESIGN.md › Surfaces", () => {
     expect(withoutFallbacks).not.toMatch(/scrollbar-width:\s*thin/);
   });
 });
+
+describe("DESIGN.md › Spacing & layout", () => {
+  const screens = readdirSync(v2Dir)
+    .filter((name) => name.endsWith(".tsx") && name !== "V2PageHead.tsx")
+    .map((name) => ({ name, source: readFileSync(join(v2Dir, name), "utf8") }));
+  /** Not pages: a card on its own, and the File viewer's bar. */
+  const ownTitle = new Set(["V2FirstWorkspace.tsx", "V2InvitationAccept.tsx", "V2WorkspaceChooser.tsx", "V2FileViewer.tsx"]);
+
+  it("draws every page's head with V2PageHead", () => {
+    const offenders = screens
+      .filter(({ name, source }) => !ownTitle.has(name) && /className="df-title|df-page-head|df-head-chip/.test(source))
+      .map(({ name }) => name);
+    expect(offenders).toEqual([]);
+    expect(screens.filter(({ source }) => source.includes("<V2PageHead")).length).toBeGreaterThan(18);
+  });
+
+  it("puts the line about a page in its head, never in a note under it", () => {
+    for (const { name, source } of screens) {
+      expect(source, name).not.toMatch(/^( *)<V2PageHead\b(?:[^\n]*\/>\n|[\s\S]*?\n\1\/>\n)\s*(?:\{[\w.!&| ]+\? \(\s*)?<p className="df-(?:note|subhead)/m);
+    }
+  });
+
+  it("gives one or two filters no row of their own: they sit in the head", () => {
+    // Bars inside a card or under a section's title, not a page's.
+    const inSections = new Set(["V2BackOfficeDisputes.tsx", "V2BackOfficeAccess.tsx"]);
+    for (const { name, source } of screens.filter((screen) => !inSections.has(screen.name))) {
+      for (const [bar] of source.matchAll(/^( *)<div className="df-filter-bar[^"]*">\n[\s\S]*?\n\1<\/div>/gm)) {
+        const controls = bar.match(/<(?:V2FilterSelect|V2ProjectPicker|FilterCheck)\b|className="df-filter-input"/g) ?? [];
+        expect(controls.length, name).toBeGreaterThan(2);
+      }
+    }
+  });
+
+  it("gives the title's line the height of a button, and the chip no border", () => {
+    const rule = (selector: string) => css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.>]/g, "\\$&")} \\{([^}]*)\\}`))?.[1] ?? "";
+    expect(rule(".df-page-head-title")).toMatch(/min-height:\s*var\(--df-control-h\)/);
+    expect(rule(".df-page-head-title > .df-title")).toMatch(/line-height:\s*var\(--df-control-h\)/);
+    expect(rule(".df-head-chip")).not.toMatch(/border:/);
+    expect(rule(".df-head-chip")).toMatch(/color:\s*var\(--df-case-ink\);/);
+    expect(rule(".df-page-head .df-subhead")).toMatch(/margin:\s*0/);
+  });
+});

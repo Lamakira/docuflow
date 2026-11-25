@@ -16,6 +16,7 @@ import { useV2Chrome } from "./V2Shell";
 import { V2FilterSelect, V2_SELECT_NONE } from "./V2Select";
 import { Button } from "@/components/ui/button";
 import { SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 type ProjectsResponse = { data: CrmProjectWithDetails[]; total?: number };
 
@@ -135,14 +136,7 @@ export function V2DailyUpdatePage() {
 
   return (
     <div className="df-page" data-testid="v2-daily-update">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <div className="df-today-title-row">
-            <h1 className="df-title">Daily Update</h1>
-            <span className="df-date-chip">{page.dateChip}</span>
-          </div>
-        </div>
-      </header>
+      <V2PageHead title="Daily Update" chip={page.dateChip} />
 
       {page.kind === "refusal" ? <p className="df-refusal">{page.refusal}</p> : null}
       {writeRefusal ? <p className="df-refusal">{writeRefusal}</p> : null}

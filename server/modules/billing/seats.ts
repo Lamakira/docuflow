@@ -47,15 +47,25 @@ export async function countConsumedSeats(reader: SeatReader = db): Promise<numbe
   return Number(row?.count ?? 0);
 }
 
-/** Invitation will call this before send. Adding a Membership uses it too. */
-export async function assertSeatAvailable(reader: SeatReader = db): Promise<void> {
+/**
+ * Seat decisions in this Workspace wait for each other. A transaction that also
+ * locks Invitations, Users or Memberships takes this lock first.
+ */
+export async function lockSeats(reader: SeatReader): Promise<void> {
   await reader
     .select({ workspaceId: workspaceBilling.workspaceId })
     .from(workspaceBilling)
     .where(inWorkspace(workspaceBilling))
     .for("update");
+}
+
+/** Invitation will call this before send. Adding a Membership uses it too. */
+export async function assertSeatAvailable(reader: SeatReader = db): Promise<void> {
+  await lockSeats(reader);
   const consumed = await countConsumedSeats(reader);
-  const { seatCapacity } = await effectiveEntitlements();
+  // On the caller's connection: waiting for a second one under the lock would
+  // hang once enough seat decisions hold the pool.
+  const { seatCapacity } = await effectiveEntitlements(reader);
   if (consumed + 1 > seatCapacity) {
     throw new SeatExhaustedError();
   }

@@ -35,6 +35,7 @@ import { V2FilterSelect } from "./V2Select";
 import { V2DateRangeField } from "./V2DateField";
 import { dateToDay, type DayRange } from "./dates";
 import { V2CompactEmpty } from "./V2EmptyState";
+import { V2PageHead } from "./V2PageHead";
 
 type WorkspaceMembershipsResponse = {
   memberships: Array<{
@@ -190,14 +191,7 @@ export function V2AnalyticsPage() {
 
   return (
     <div className="df-page" data-testid="v2-analytics">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Analytics</h1>
-          <p className="df-subhead">
-            Recorded time, Activity Evidence, and operational warnings for {workspaceName}.
-          </p>
-        </div>
-      </header>
+      <V2PageHead title="Analytics" subhead={`Recorded time, Activity Evidence, and operational warnings for ${workspaceName}.`} />
       <AnalyticsSections
         analytics={analytics}
         loading={analyticsLoading}

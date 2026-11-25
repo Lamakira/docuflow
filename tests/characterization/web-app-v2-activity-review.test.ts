@@ -324,8 +324,10 @@ describe("the page, polished (F81)", () => {
     expect(source).toContain('from "@/components/ui/checkbox"');
     expect(source).not.toContain('type="checkbox"');
     expect(source).not.toContain("<input");
-    expect(source.match(/<Checkbox/g)).toHaveLength(2);
-    expect(source).toContain("<label htmlFor={id}>{label}</label>");
+    // The filter chip's Checkbox lives in V2FilterCheck.tsx, shared with People.
+    expect(source.match(/<Checkbox/g)).toHaveLength(1);
+    expect(source).toContain('from "./V2FilterCheck"');
+    expect(read("client/src/v2/V2FilterCheck.tsx")).toContain("<label htmlFor={id}>{label}</label>");
     expect(source.match(/<V2DateField/g)).toHaveLength(3);
     expect(source).toContain("max={filters.to || undefined}");
     expect(source).toContain("min={filters.from || undefined}");

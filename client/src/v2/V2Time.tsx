@@ -64,6 +64,7 @@ import { TimeRemovals } from "./timeRemovals";
 import { Button } from "@/components/ui/button";
 import { V2CompactEmpty, V2EmptyState, V2LoadFailed, V2RecordEmpty } from "./V2EmptyState";
 import { SkeletonRegister, SkeletonSection, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 type TimeEntry = TimeEntryWithDetails & { secondsInPeriod?: number };
 type TimeEntriesResponse = {
@@ -458,12 +459,7 @@ function TimeEntriesPane() {
 
   return (
     <>
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Time Tracking</h1>
-        </div>
-        <span className="df-count-chip">{page.workdayHours}</span>
-      </header>
+      <V2PageHead title="Time Tracking" chip={page.workdayHours} />
 
       <section className="df-card" data-testid="v2-time-timer">
         <div className="df-card-head">
@@ -754,25 +750,25 @@ function TimeStatsPane() {
 
   return (
     <>
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Time stats</h1>
-          <p className="df-subhead">{page.subhead}</p>
-        </div>
-        <V2FilterSelect
-          label="Period"
-          ariaLabel="Period"
-          value={period}
-          onChange={(next) =>
-            navigate(`${timeTabHref("stats")}${writeTimePeriod(search, next as TimePeriod)}`, { replace: true })
-          }
-          options={TIME_PERIODS.map((option) => ({
-            value: option,
-            label: timePeriodLabel(option),
-          }))}
-          testId="v2-time-stats-period"
-        />
-      </header>
+      <V2PageHead
+        title="Time stats"
+        subhead={page.subhead}
+        actions={
+          <V2FilterSelect
+            label="Period"
+            ariaLabel="Period"
+            value={period}
+            onChange={(next) =>
+              navigate(`${timeTabHref("stats")}${writeTimePeriod(search, next as TimePeriod)}`, { replace: true })
+            }
+            options={TIME_PERIODS.map((option) => ({
+              value: option,
+              label: timePeriodLabel(option),
+            }))}
+            testId="v2-time-stats-period"
+          />
+        }
+      />
 
       {isError && !data ? (
         <V2LoadFailed
@@ -1007,11 +1003,7 @@ function ProjectTasksPane() {
   }
 
   const header = (
-    <header className="df-today-head">
-      <div style={{ minWidth: 0 }}>
-        <h1 className="df-title">Projects &amp; Tasks</h1>
-      </div>
-    </header>
+    <V2PageHead title="Projects & Tasks" />
   );
 
   if (projectsFailed) {

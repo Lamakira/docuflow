@@ -9,13 +9,14 @@
 
 import type { ReactNode } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 /** Holds one subhead line, so the title block keeps its height when the real subhead lands. */
 export function SkeletonSubhead() {
   return (
-    <div className="df-subhead df-subhead-skeleton">
+    <span className="df-subhead-skeleton">
       <SkeletonBar width="long" />
-    </div>
+    </span>
   );
 }
 
@@ -243,12 +244,7 @@ export function V2PageSkeleton({
 }) {
   const body = (
     <>
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">{title}</h1>
-          {hasSubhead ? <SkeletonSubhead /> : null}
-        </div>
-      </header>
+      <V2PageHead title={title} subhead={hasSubhead ? <SkeletonSubhead /> : null} />
       <p className="df-sr-only" role="status">
         {status}
       </p>

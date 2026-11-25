@@ -6,6 +6,7 @@
 
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
+  VIEW_DAILY_UPDATES_CAPABILITY_ID,
   capabilities,
   membershipCapabilities,
   memberships,
@@ -18,6 +19,7 @@ import {
 import { db } from "../../db";
 import { forWorkspaces, inWorkspace, requireWorkspaceContext } from "../../workspaceContext";
 import { membershipsForUser } from "../../workspaceLocators";
+import { membershipRefusal } from "../../workspaceRole";
 
 export type WorkspaceCondition = "Trial" | "Read-only" | "Past due" | null;
 
@@ -127,8 +129,10 @@ export type WorkspacePersonView = {
   workspaceRole: string;
   capabilities: string[];
   archived: boolean;
-  hoursPerDay: number;
-  canViewDailyUpdates: number;
+  /** The grant on this Membership, shown to managers; 0 when the reader is a Member. */
+  canViewDailyUpdates: 0 | 1;
+  /** Whether this reader may change, archive or restore this Membership. */
+  manageable: boolean;
 };
 
 export type WorkspaceMembershipsResponse = {
@@ -144,7 +148,7 @@ export async function listWorkspaceMemberships(
   includeArchivedQuery: boolean,
 ): Promise<WorkspaceMembershipsResponse> {
   const [requester] = await db
-    .select({ slug: workspaceRoles.slug })
+    .select({ membershipId: memberships.id, slug: workspaceRoles.slug })
     .from(memberships)
     .innerJoin(workspaceRoles, eq(workspaceRoles.id, memberships.workspaceRoleId))
     .where(
@@ -165,8 +169,6 @@ export async function listWorkspaceMemberships(
       firstName: users.firstName,
       lastName: users.lastName,
       email: users.email,
-      hoursPerDay: users.hoursPerDay,
-      canViewDailyUpdates: users.canViewDailyUpdates,
       archivedAt: memberships.archivedAt,
       slug: workspaceRoles.slug,
       workspaceRoleId: memberships.workspaceRoleId,
@@ -207,6 +209,7 @@ export async function listWorkspaceMemberships(
       : await db
           .select({
             membershipId: membershipCapabilities.membershipId,
+            capabilityId: membershipCapabilities.capabilityId,
             name: capabilities.name,
           })
           .from(membershipCapabilities)
@@ -220,6 +223,11 @@ export async function listWorkspaceMemberships(
 
   const roleCapMap = new Map<string, string[]>();
   for (const cap of roleCaps) pushUnique(roleCapMap, cap.workspaceRoleId, cap.name);
+  const granted = new Set(
+    extraCaps
+      .filter((cap) => cap.capabilityId === VIEW_DAILY_UPDATES_CAPABILITY_ID)
+      .map((cap) => cap.membershipId),
+  );
   const extraCapMap = new Map<string, string[]>();
   for (const cap of extraCaps) pushUnique(extraCapMap, cap.membershipId, cap.name);
 
@@ -227,7 +235,8 @@ export async function listWorkspaceMemberships(
     memberships: rows.map((row) => {
       const names = [
         ...(roleCapMap.get(row.workspaceRoleId) ?? []),
-        ...(extraCapMap.get(row.membershipId) ?? []),
+        // What a Member was granted is the managers' to see.
+        ...(canReviewArchived ? (extraCapMap.get(row.membershipId) ?? []) : []),
       ];
       return {
         membershipId: row.membershipId,
@@ -238,8 +247,8 @@ export async function listWorkspaceMemberships(
         workspaceRole: membershipRoleLabel(row.slug),
         capabilities: [...new Set(names)].sort((a, b) => a.localeCompare(b)),
         archived: row.archivedAt != null,
-        hoursPerDay: row.hoursPerDay,
-        canViewDailyUpdates: row.canViewDailyUpdates,
+        canViewDailyUpdates: canReviewArchived && granted.has(row.membershipId) ? 1 : 0,
+        manageable: requester !== undefined && membershipRefusal(requester, row) === null,
       };
     }),
   };

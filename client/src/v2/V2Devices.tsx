@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { V2CompactEmpty, V2EmptyState, V2LoadFailed } from "./V2EmptyState";
 import { SkeletonRegister, V2PageSkeleton } from "./V2Skeleton";
+import { V2PageHead } from "./V2PageHead";
 
 type DevicesResponse = { data: DeviceInput[] };
 type PairingResponse = { pairingCode: string; expiresAt: string };
@@ -146,18 +147,16 @@ export function V2DevicesPage() {
 
   return (
     <div className="df-page" data-testid="v2-devices">
-      <header className="df-today-head">
-        <div style={{ minWidth: 0 }}>
-          <h1 className="df-title">Devices</h1>
-          <p className="df-subhead">{page.subhead}</p>
-        </div>
-        <div className="df-devices-actions">
+      <V2PageHead
+        title="Devices"
+        subhead={page.subhead}
+        actions={
           <Button variant="default" type="button" data-testid="v2-devices-pair" onClick={onPair} className="df-btn">
             <Plus strokeWidth={1.6} aria-hidden />
             Pair a device
           </Button>
-        </div>
-      </header>
+        }
+      />
 
       {actionRefusal ? <p className="df-refusal">{actionRefusal}</p> : null}
 
